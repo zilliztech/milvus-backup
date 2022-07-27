@@ -1,0 +1,146 @@
+syntax = "proto3";
+package proto;
+
+service MilvusBackupService {
+  // Create backup
+  rpc CreateBackup(CreateBackupRequest) returns (CreateBackupResponse) {}
+  // Get backup with the chosen name
+  rpc GetBackup(GetBackupRequest) returns (GetBackupResponse) {}
+  // List backups that contains the given collection name, if collection is not given, return all backups in the cluster
+  rpc ListBackups(ListBackupsRequest) returns (ListBackupsResponse) {}
+  // Delete backup by given backup name
+  rpc DeleteBackup(DeleteBackupRequest) returns (DeleteBackupResponse) {}
+  // Load backup to milvus, return backup load report
+  rpc LoadBackup(LoadBackupRequest) returns (LoadBackupResponse) {}
+}
+
+enum MsgType {
+  Undefined = 0;
+  CreateBackup = 100;
+  GetBackup = 101;
+  ListBackups = 102;
+  DeleteBackup = 103;
+  LoadBackup = 104;
+}
+
+message MsgBase {
+  MsgType msg_type = 1;
+  int64  msgID = 2;
+  uint64 timestamp = 3;
+}
+
+enum StatusCode {
+  Success = 0;
+  UnexpectedError = 1;
+  ConnectFailed = 2;
+  PermissionDenied = 3;
+}
+
+message Status {
+  StatusCode status = 1;
+  string reason = 2;
+}
+
+/**
+ * Create Backup in milvus
+ */
+message CreateBackupRequest {
+  MsgBase base = 1;
+  // backup name, if not set, will generate one
+  string backup_name = 2;
+  // collection names to backup, empty to backup all
+  repeated string collection_names = 3;
+}
+
+/**
+ * CreateBackupResponse
+ */
+message CreateBackupResponse {
+  Status base = 1;
+  BackupInfo collection_names = 3;
+}
+
+// todo to complete
+message CollectionBackupInfo {
+  int64 id = 1;
+  string collection_name = 2;
+  // backup progress status
+  string backup_status = 3;
+  // backup progress error
+  string backup_error = 4;
+  // whether the backup is able to recover
+  string health = 5;
+  // schema
+
+  // collection meta
+
+  // array of partitionInfo
+
+}
+
+message BackupInfo {
+  int64 id = 1;
+  string name = 2;
+  // backup timestamp
+  uint64 ts = 3;
+  // array of collection backup
+  repeated CollectionBackupInfo collection_infos = 4;
+  // backup progress status
+  string backup_status = 5;
+  // backup progress error
+  string backup_error = 6;
+  // whether the backup is able to recover
+  string health = 7;
+}
+
+message GetBackupRequest {
+  MsgBase base = 1;
+  string backup_name = 2;
+}
+
+message GetBackupResponse {
+  Status base = 1;
+  BackupInfo backup_info = 2;
+}
+
+
+message ListBackupsRequest {
+  MsgBase base = 1;
+  string collection_name = 2;
+}
+
+message ListBackupsResponse {
+  Status base = 1;
+  repeated BackupInfo backup_infos = 2;
+}
+
+message DeleteBackupRequest {
+  MsgBase base = 1;
+  string backup_name = 2;
+}
+
+message DeleteBackupResponse {
+  Status base = 1;
+}
+
+// todo to complete
+message LoadBackupReport {
+  Status base = 1;
+  BackupInfo backup_info = 2;
+}
+
+message LoadBackupRequest {
+  MsgBase base = 1;
+  string backup_name = 2;
+  repeated string collection_names = 3;
+  // Support two ways to rename the collections while recover
+  // 1, set a suffix
+  string collection_suffix = 4;
+  // 2, give a map to rename the collections, if not given, use the original name
+  map<string, string> collection_renames = 5;
+}
+
+message LoadBackupResponse {
+  Status base = 1;
+  LoadBackupReport report = 2;
+}
