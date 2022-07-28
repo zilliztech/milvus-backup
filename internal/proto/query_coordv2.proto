@@ -1,0 +1,7 @@
+syntax = "proto3";
+
+package milvus.proto.queryv2;
+
+option go_package = "github.com/zilliztech/milvus-backup/internal/proto/querypbv2";
+
+service QueryCoordV2{}
