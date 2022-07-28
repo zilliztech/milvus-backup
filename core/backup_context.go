@@ -41,26 +41,50 @@ func CreateBackupContext(ctx context.Context, params paramtable.ComponentParam) 
 }
 
 func (b BackupContext) CreateBackup(ctx context.Context, request *proto.CreateBackupRequest) (*proto.CreateBackupResponse, error) {
-	//TODO implement me
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	// 1, get collection list
+
+	// 2, get collection partition segment meta
+
+	// 3, Flush
+
+	// 4, copy data
+
+	// 5, wrap meta
+
 	panic("implement me")
 }
 
 func (b BackupContext) GetBackup(ctx context.Context, request *proto.GetBackupRequest) (*proto.GetBackupResponse, error) {
-	//TODO implement me
+	// 1, trigger inner sync to get the newest backup list in the milvus cluster
+
+	// 2, get wanted backup
 	panic("implement me")
 }
 
 func (b BackupContext) ListBackups(ctx context.Context, request *proto.ListBackupsRequest) (*proto.ListBackupsResponse, error) {
-	//TODO implement me
+	// 1, trigger inner sync to get the newest backup list in the milvus cluster
+
+	// 2, list wanted backup
 	panic("implement me")
 }
 
 func (b BackupContext) DeleteBackup(ctx context.Context, request *proto.DeleteBackupRequest) (*proto.DeleteBackupResponse, error) {
-	//TODO implement me
+	// 1, delete the backup
 	panic("implement me")
 }
 
 func (b BackupContext) LoadBackup(ctx context.Context, request *proto.LoadBackupRequest) (*proto.LoadBackupResponse, error) {
-	//TODO implement me
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	// 1, validate
+
+	// 2, create collections
+
+	// 3, execute bulkload
+
+	// 4, collect stats and return report
 	panic("implement me")
 }
