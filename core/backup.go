@@ -2,7 +2,7 @@ package core
 
 import (
 	"context"
-	proto "github.com/zilliztech/milvus-backup/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 )
 
 type Backup interface {

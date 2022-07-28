@@ -4,7 +4,8 @@ PWD 	  := $(shell pwd)
 
 PROGRAM=${PWD}
 GOPATH=$(go env GOPATH)
-PROTO_DIR=$PROGRAM/proto/
+BACK_PROTO_DIR=$PROGRAM/core/proto/
+GOOGLE_PROTO_DIR=${PROGRAM}/build/thirdparty/protobuf-src/src/
 
 echo ${PROGRAM}
 export protoc=${PROGRAM}/build/thirdparty/protobuf-build/protoc
@@ -18,7 +19,7 @@ fi
 export PATH=${GOPATH}/bin:$PATH
 echo `which protoc-gen-go`
 
-pushd ${PROTO_DIR}
+pushd ${BACK_PROTO_DIR}
 
 mkdir -p backuppb
 
@@ -27,7 +28,6 @@ ${protoc} --proto_path=. --go_out=plugins=grpc,paths=source_relative:./backuppb 
 popd
 
 MILVUS_PROTO_DIR=${PROGRAM}/internal/proto/
-GOOGLE_PROTO_DIR=${PROGRAM}/build/thirdparty/protobuf-src/src/
 
 pushd ${MILVUS_PROTO_DIR}
 

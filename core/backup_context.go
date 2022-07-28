@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	proto "github.com/zilliztech/milvus-backup/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 )
 
 // makes sure BackupContext implements `Backup`
