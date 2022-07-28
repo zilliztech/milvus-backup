@@ -5,15 +5,16 @@ import (
 	"sync"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/util/paramtable"
 )
 
 // makes sure BackupContext implements `Backup`
 var _ Backup = (*BackupContext)(nil)
 
 type BackupContext struct {
-	ctx           context.Context
-	mivlus_source MilvusSource
-	backupInfos   []proto.BackupInfo
+	ctx          context.Context
+	milvusSource *MilvusSource
+	backupInfos  []proto.BackupInfo
 	// lock to make sure only one backup is creating or loading
 	mu sync.Mutex
 	//milvusClient
@@ -21,10 +22,20 @@ type BackupContext struct {
 	//storageClient minioclient
 }
 
-func NewBackupContext(ctx context.Context) *BackupContext {
+func (b *BackupContext) GetMilvusSource() *MilvusSource {
+	return b.milvusSource
+}
+
+func (b *BackupContext) SetMilvusSource(milvusSource *MilvusSource) {
+	b.milvusSource = milvusSource
+}
+
+func CreateBackupContext(ctx context.Context, params paramtable.ComponentParam) *BackupContext {
 	return &BackupContext{
 		ctx: ctx,
-		//mivlus_source: mivlus_source,
+		milvusSource: &MilvusSource{
+			params: params,
+		},
 		//backupInfos: backupInfos,
 	}
 }
