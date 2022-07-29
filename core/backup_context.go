@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	backuppb "github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/util/paramtable"
 )
 
@@ -14,7 +14,7 @@ var _ Backup = (*BackupContext)(nil)
 type BackupContext struct {
 	ctx          context.Context
 	milvusSource *MilvusSource
-	backupInfos  []proto.BackupInfo
+	backupInfos  []backuppb.BackupInfo
 	// lock to make sure only one backup is creating or loading
 	mu sync.Mutex
 	//milvusClient
@@ -40,7 +40,7 @@ func CreateBackupContext(ctx context.Context, params paramtable.ComponentParam) 
 	}
 }
 
-func (b BackupContext) CreateBackup(ctx context.Context, request *proto.CreateBackupRequest) (*proto.CreateBackupResponse, error) {
+func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.CreateBackupRequest) (*backuppb.CreateBackupResponse, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -57,26 +57,26 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *proto.CreateBa
 	panic("implement me")
 }
 
-func (b BackupContext) GetBackup(ctx context.Context, request *proto.GetBackupRequest) (*proto.GetBackupResponse, error) {
+func (b BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBackupRequest) (*backuppb.GetBackupResponse, error) {
 	// 1, trigger inner sync to get the newest backup list in the milvus cluster
 
 	// 2, get wanted backup
 	panic("implement me")
 }
 
-func (b BackupContext) ListBackups(ctx context.Context, request *proto.ListBackupsRequest) (*proto.ListBackupsResponse, error) {
+func (b BackupContext) ListBackups(ctx context.Context, request *backuppb.ListBackupsRequest) (*backuppb.ListBackupsResponse, error) {
 	// 1, trigger inner sync to get the newest backup list in the milvus cluster
 
 	// 2, list wanted backup
 	panic("implement me")
 }
 
-func (b BackupContext) DeleteBackup(ctx context.Context, request *proto.DeleteBackupRequest) (*proto.DeleteBackupResponse, error) {
+func (b BackupContext) DeleteBackup(ctx context.Context, request *backuppb.DeleteBackupRequest) (*backuppb.DeleteBackupResponse, error) {
 	// 1, delete the backup
 	panic("implement me")
 }
 
-func (b BackupContext) LoadBackup(ctx context.Context, request *proto.LoadBackupRequest) (*proto.LoadBackupResponse, error) {
+func (b BackupContext) LoadBackup(ctx context.Context, request *backuppb.LoadBackupRequest) (*backuppb.LoadBackupResponse, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	// 1, validate

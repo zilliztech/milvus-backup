@@ -1,5 +1,11 @@
 syntax = "proto3";
-package proto;
+package milvus.proto.backup;
+
+option go_package="github.com/zilliztech/milvus-backup/core/proto/backuppb";
+
+import "schema.proto";
+import "common.proto";
+import "data_coord.proto";
 
 service MilvusBackupService {
   // Create backup
@@ -42,6 +48,64 @@ message Status {
 }
 
 /**
+ * lite version of Collection info
+ */
+message CollectionBackupInfo {
+  int64 collection_id = 1;
+  string db_name = 2;
+  string collection_name = 3;
+  schema.CollectionSchema schema = 4;
+  int32 shards_num = 5;
+  common.ConsistencyLevel consistency_level = 6;
+  uint64 backup_timestamp = 7;
+  // backup progress status
+  string backup_status = 8;
+  // backup progress error
+  string backup_error = 9;
+  // whether the backup is able to recover
+  string health = 10;
+}
+
+message PartitionBackupInfo {
+  int64 partition_id = 1;
+  string partition_name = 2;
+  int64 collection_id = 3;
+}
+
+/**
+ * lite version of datapb.SegmentInfo
+ */
+message BackupSegmentInfo {
+  int64 segment_id = 1;
+  int64 collection_id = 2;
+  int64 partition_id = 3;
+  int64 num_of_rows = 4;
+  repeated FieldBinlog binlogs = 5;
+  repeated FieldBinlog statslogs = 6;
+  repeated FieldBinlog deltalogs = 7;
+}
+
+message FieldBinlog{
+  int64 fieldID = 1;
+  repeated data.Binlog binlogs = 2;
+}
+
+message BackupInfo {
+  int64 id = 1;
+  string name = 2;
+  // backup timestamp
+  uint64 backup_timestamp = 3;
+  // array of collection backup
+  repeated CollectionBackupInfo collection_backups = 4;
+  // backup progress status
+  string backup_status = 5;
+  // backup progress error
+  string backup_error = 6;
+  // whether the backup is able to recover
+  string health = 7;
+}
+
+/**
  * Create Backup in milvus
  */
 message CreateBackupRequest {
@@ -58,39 +122,6 @@ message CreateBackupRequest {
 message CreateBackupResponse {
   Status base = 1;
   BackupInfo collection_names = 3;
-}
-
-// todo to complete
-message CollectionBackupInfo {
-  int64 id = 1;
-  string collection_name = 2;
-  // backup progress status
-  string backup_status = 3;
-  // backup progress error
-  string backup_error = 4;
-  // whether the backup is able to recover
-  string health = 5;
-  // schema
-
-  // collection meta
-
-  // array of partitionInfo
-
-}
-
-message BackupInfo {
-  int64 id = 1;
-  string name = 2;
-  // backup timestamp
-  uint64 ts = 3;
-  // array of collection backup
-  repeated CollectionBackupInfo collection_infos = 4;
-  // backup progress status
-  string backup_status = 5;
-  // backup progress error
-  string backup_error = 6;
-  // whether the backup is able to recover
-  string health = 7;
 }
 
 message GetBackupRequest {

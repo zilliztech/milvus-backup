@@ -19,14 +19,6 @@ fi
 export PATH=${GOPATH}/bin:$PATH
 echo `which protoc-gen-go`
 
-pushd ${BACK_PROTO_DIR}
-
-mkdir -p backuppb
-
-${protoc} --proto_path=. --go_out=plugins=grpc,paths=source_relative:./backuppb backup.proto
-
-popd
-
 MILVUS_PROTO_DIR=${PROGRAM}/internal/proto/
 
 pushd ${MILVUS_PROTO_DIR}
@@ -35,19 +27,15 @@ mkdir -p commonpb
 mkdir -p schemapb
 mkdir -p etcdpb
 mkdir -p indexcgopb
-
 mkdir -p internalpb
 mkdir -p milvuspb
 mkdir -p rootcoordpb
-
 mkdir -p segcorepb
 mkdir -p proxypb
-
 mkdir -p indexpb
 mkdir -p datapb
 mkdir -p querypb
 mkdir -p planpb
-
 mkdir -p querypbv2
 
 ${protoc} --proto_path="${GOOGLE_PROTO_DIR}" --proto_path=. --go_out=plugins=grpc,paths=source_relative:./commonpb common.proto
@@ -64,5 +52,16 @@ ${protoc} --proto_path="${GOOGLE_PROTO_DIR}" --proto_path=. --go_out=plugins=grp
 ${protoc} --proto_path="${GOOGLE_PROTO_DIR}" --proto_path=. --go_out=plugins=grpc,paths=source_relative:./planpb plan.proto
 ${protoc} --proto_path="${GOOGLE_PROTO_DIR}" --proto_path=. --go_out=plugins=grpc,paths=source_relative:./segcorepb segcore.proto
 ${protoc} --proto_path="${GOOGLE_PROTO_DIR}" --proto_path=. --go_out=plugins=grpc,paths=source_relative:./querypbv2 query_coordv2.proto
+
+popd
+
+echo ${MILVUS_PROTO_DIR}
+echo ${BACK_PROTO_DIR}
+
+pushd ${BACK_PROTO_DIR}
+
+mkdir -p backuppb
+
+${protoc} --proto_path="${GOOGLE_PROTO_DIR}" --proto_path="${MILVUS_PROTO_DIR}" --proto_path=. --go_out=plugins=grpc,paths=source_relative:./backuppb backup.proto
 
 popd
