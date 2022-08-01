@@ -57,39 +57,41 @@ message CollectionBackupInfo {
   schema.CollectionSchema schema = 4;
   int32 shards_num = 5;
   common.ConsistencyLevel consistency_level = 6;
-  uint64 backup_timestamp = 7;
+  // array of partition backup
+  repeated PartitionBackupInfo partition_backups = 7;
+  uint64 backup_timestamp = 8;
   // backup progress status
-  string backup_status = 8;
+  StatusCode backup_status = 9;
   // backup progress error
-  string backup_error = 9;
+  string backup_error = 10;
   // whether the backup is able to recover
-  string health = 10;
+  string health = 11;
 }
 
 message PartitionBackupInfo {
   int64 partition_id = 1;
   string partition_name = 2;
   int64 collection_id = 3;
+  // array of segment backup
+  repeated SegmentBackupInfo segment_backups = 7;
 }
 
 /**
  * lite version of datapb.SegmentInfo
  */
-message BackupSegmentInfo {
+message SegmentBackupInfo {
   int64 segment_id = 1;
   int64 collection_id = 2;
   int64 partition_id = 3;
   int64 num_of_rows = 4;
-  repeated FieldBinlog binlogs = 5;
-  repeated FieldBinlog statslogs = 6;
-  repeated FieldBinlog deltalogs = 7;
+  repeated data.FieldBinlog binlogs = 5;
+  repeated data.FieldBinlog statslogs = 6;
+  repeated data.FieldBinlog deltalogs = 7;
 }
 
-message FieldBinlog{
-  int64 fieldID = 1;
-  repeated data.Binlog binlogs = 2;
-}
-
+/**
+ * root of backup
+ */
 message BackupInfo {
   int64 id = 1;
   string name = 2;
@@ -98,11 +100,32 @@ message BackupInfo {
   // array of collection backup
   repeated CollectionBackupInfo collection_backups = 4;
   // backup progress status
-  string backup_status = 5;
+  StatusCode backup_status = 5;
   // backup progress error
   string backup_error = 6;
   // whether the backup is able to recover
   string health = 7;
+}
+
+/**
+ * For level storage
+ */
+message CollectionLevelBackupInfo {
+  repeated CollectionBackupInfo infos = 1;
+}
+
+/**
+ * For level storage
+ */
+message PartitionLevelBackupInfo {
+  repeated PartitionBackupInfo infos = 1;
+}
+
+/**
+ * For level storage
+ */
+message SegmentLevelBackupInfo {
+  repeated SegmentBackupInfo infos = 1;
 }
 
 /**
