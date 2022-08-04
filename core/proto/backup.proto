@@ -43,7 +43,7 @@ enum StatusCode {
 }
 
 message Status {
-  StatusCode status = 1;
+  StatusCode status_code = 1;
   string reason = 2;
 }
 
@@ -144,7 +144,7 @@ message CreateBackupRequest {
  */
 message CreateBackupResponse {
   Status status = 1;
-  BackupInfo collection_names = 3;
+  BackupInfo backup_info = 2;
 }
 
 message GetBackupRequest {
