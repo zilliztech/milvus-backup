@@ -15,12 +15,13 @@ func main() {
 	milvusYamlFile := "milvus.yaml"
 	params.GlobalInitWithYaml(milvusYamlFile)
 	params.InitOnce()
-	log.Info("Done")
 
 	context := context.Background()
 	backupContext := core.CreateBackupContext(context, params)
 
 	storageType := backupContext.GetMilvusSource().GetParams().CommonCfg.StorageType
+	milvusAddr := params.ProxyCfg.NetworkAddress
+	log.Info("milvusAddr", zap.String("milvusAddr", milvusAddr))
 	log.Info("storage type", zap.String("storage_type", storageType))
 
 	log.Info("Done")

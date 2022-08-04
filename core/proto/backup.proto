@@ -143,7 +143,7 @@ message CreateBackupRequest {
  * CreateBackupResponse
  */
 message CreateBackupResponse {
-  Status base = 1;
+  Status status = 1;
   BackupInfo collection_names = 3;
 }
 
@@ -153,7 +153,7 @@ message GetBackupRequest {
 }
 
 message GetBackupResponse {
-  Status base = 1;
+  Status status = 1;
   BackupInfo backup_info = 2;
 }
 
@@ -164,7 +164,7 @@ message ListBackupsRequest {
 }
 
 message ListBackupsResponse {
-  Status base = 1;
+  Status status = 1;
   repeated BackupInfo backup_infos = 2;
 }
 
@@ -179,8 +179,7 @@ message DeleteBackupResponse {
 
 // todo to complete
 message LoadBackupReport {
-  Status base = 1;
-  BackupInfo backup_info = 2;
+  BackupInfo backup_info = 1;
 }
 
 message LoadBackupRequest {
@@ -195,6 +194,6 @@ message LoadBackupRequest {
 }
 
 message LoadBackupResponse {
-  Status base = 1;
+  Status status = 1;
   LoadBackupReport report = 2;
 }
