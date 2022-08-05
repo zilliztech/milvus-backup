@@ -3,6 +3,7 @@ module github.com/zilliztech/milvus-backup
 go 1.16
 
 require (
+	github.com/gin-gonic/gin v1.7.7
 	github.com/go-basic/ipv4 v1.0.0
 	github.com/golang/protobuf v1.5.2
 	github.com/google/btree v1.0.1
