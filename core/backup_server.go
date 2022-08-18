@@ -5,6 +5,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/zilliztech/milvus-backup/internal/util/paramtable"
 	"net/http"
+	"net/http/pprof"
 )
 
 var Params paramtable.GrpcServerConfig
@@ -32,6 +33,7 @@ func (s *Server) Init() {
 }
 
 func (s *Server) Start() {
+	s.registerProfilePort()
 	s.engine.Run()
 }
 
@@ -45,6 +47,14 @@ func (s *Server) registerHTTPServer() {
 	NewHandlers(s.backupContext).RegisterRoutesTo(apiv1)
 	http.Handle("/", ginHandler)
 	s.engine = ginHandler
+}
+
+// registerHTTPServer register the http server, panic when failed
+func (s *Server) registerProfilePort() {
+	go func() {
+		http.HandleFunc("/debug/pprof/heap", pprof.Index)
+		http.ListenAndServe("localhost:8089", nil)
+	}()
 }
 
 type Handlers struct {
