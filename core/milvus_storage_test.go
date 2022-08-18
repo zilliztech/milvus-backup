@@ -2,6 +2,8 @@ package core
 
 import (
 	"context"
+	"github.com/zilliztech/milvus-backup/internal/log"
+	"go.uber.org/zap"
 	"path"
 	"strconv"
 	"strings"
@@ -483,4 +485,29 @@ func TestMinIOCM(t *testing.T) {
 		_, _, err = testCM.ListWithPrefix(pathWrong, true)
 		assert.Error(t, err)
 	})
+}
+
+func TestReadMilvusData(t *testing.T) {
+
+	Params.Init()
+	testBucket, err := Params.Load("minio.bucketName")
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	testCM, err := newMinIOMilvusStorage(ctx, testBucket)
+
+	paths, _, _ := testCM.ListWithPrefix("", true)
+	log.Info("paths:", zap.Strings("paths", paths))
+
+	exist, err := testCM.Exist("backup")
+	log.Info("exist", zap.Bool("exist", exist))
+	err = testCM.Write("backup", nil)
+	assert.NoError(t, err)
+	exist2, err := testCM.Exist("backup")
+	log.Info("exist", zap.Bool("exist", exist2))
+	err = testCM.Remove("backup")
+	exist3, err := testCM.Exist("backup")
+	log.Info("exist", zap.Bool("exist", exist3))
 }

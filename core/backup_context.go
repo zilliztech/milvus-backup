@@ -4,6 +4,8 @@ import (
 	"context"
 	"github.com/zilliztech/milvus-backup/internal/proto/datapb"
 	"github.com/zilliztech/milvus-backup/internal/util/typeutil"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -48,12 +50,17 @@ type BackupContext struct {
 	//milvusProxyClient     proxy.Client
 	//milvusRootCoordClient *rcc.Client
 	milvusDataCoordClient *dcc.Client
-	//metaClient   etcdclient
-	//storageClient minioclient
-	started bool
+	// milvus data storage client
+	milvusStorageClient MilvusStorage
+	started             bool
 }
 
+const (
+	BACKUP_PREFIX = "backup"
+)
+
 func (b *BackupContext) Start() error {
+	// start milvus go SDK client
 	c, err := gomilvus.NewGrpcClient(b.ctx, b.milvusSource.GetProxyAddr())
 	if err != nil {
 		log.Error("failed to connect to milvus", zap.Error(err))
@@ -61,6 +68,7 @@ func (b *BackupContext) Start() error {
 	}
 	b.milvusClient = c
 
+	// start milvus datacoord client
 	dataCoordClient, err := dcc.NewClient(b.ctx, b.milvusSource.GetDatacoordAddr())
 	if err != nil {
 		log.Error("failed to connect to milvus's datacoord", zap.Error(err))
@@ -69,6 +77,46 @@ func (b *BackupContext) Start() error {
 	b.milvusDataCoordClient = dataCoordClient
 	b.milvusDataCoordClient.Init()
 	b.milvusDataCoordClient.Start()
+
+	// start milvus storage client
+	var minioEndPoint string
+	Params.Init()
+	minioHost := Params.LoadWithDefault("minio.address", paramtable.DefaultMinioHost)
+	if strings.Contains(minioHost, ":") {
+		minioEndPoint = minioHost
+	}
+	port := Params.LoadWithDefault("minio.port", paramtable.DefaultMinioPort)
+	minioEndPoint = minioHost + ":" + port
+
+	bucketName, _ := Params.Load("minio.bucketName")
+	accessKeyID, _ := Params.Load("minio.accessKeyID")
+	secretAccessKey, _ := Params.Load("minio.secretAccessKey")
+	useSSLStr, _ := Params.Load("minio.useSSL")
+	useSSL, _ := strconv.ParseBool(useSSLStr)
+	minioClient, err := NewMinioMilvusStorage(b.ctx,
+		Address(minioEndPoint),
+		AccessKeyID(accessKeyID),
+		SecretAccessKeyID(secretAccessKey),
+		UseSSL(useSSL),
+		BucketName(bucketName),
+		UseIAM(false),
+		IAMEndpoint(""),
+		CreateBucket(true),
+	)
+	b.milvusStorageClient = minioClient
+
+	backupDirExist, err := b.milvusStorageClient.Exist(BACKUP_PREFIX)
+	if err != nil {
+		log.Error("failed to check backup dir exist", zap.Error(err))
+		return err
+	}
+	if !backupDirExist {
+		err = b.milvusStorageClient.Write(BACKUP_PREFIX, nil)
+		if err != nil {
+			log.Error("failed to create backup dir", zap.Error(err))
+			return err
+		}
+	}
 	//rootCoordClient, err := rcc.NewClient(b.ctx)
 	//if err != nil {
 	//	log.Error("failed to connect to milvus's rootcoord", zap.Error(err))
