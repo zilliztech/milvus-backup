@@ -2,7 +2,10 @@ package core
 
 import (
 	"context"
+	"github.com/zilliztech/milvus-backup/internal/proto/datapb"
+	"github.com/zilliztech/milvus-backup/internal/util/typeutil"
 	"sync"
+	"time"
 
 	gomilvus "github.com/milvus-io/milvus-sdk-go/v2/client"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
@@ -14,7 +17,22 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/proto/commonpb"
 	"github.com/zilliztech/milvus-backup/internal/proto/schemapb"
 	"github.com/zilliztech/milvus-backup/internal/util/paramtable"
+
+	dcc "github.com/zilliztech/milvus-backup/internal/distributed/datacoord/client"
 )
+
+type Backup interface {
+	// Create backuppb
+	CreateBackup(context.Context, *backuppb.CreateBackupRequest) (*backuppb.CreateBackupResponse, error)
+	// Get backuppb with the chosen name
+	GetBackup(context.Context, *backuppb.GetBackupRequest) (*backuppb.GetBackupResponse, error)
+	// List backups that contains the given collection name, if collection is not given, return all backups in the cluster
+	ListBackups(context.Context, *backuppb.ListBackupsRequest) (*backuppb.ListBackupsResponse, error)
+	// Delete backuppb by given backuppb name
+	DeleteBackup(context.Context, *backuppb.DeleteBackupRequest) (*backuppb.DeleteBackupResponse, error)
+	// Load backuppb to milvus, return backuppb load report
+	LoadBackup(context.Context, *backuppb.LoadBackupRequest) (*backuppb.LoadBackupResponse, error)
+}
 
 // makes sure BackupContext implements `Backup`
 var _ Backup = (*BackupContext)(nil)
@@ -29,39 +47,43 @@ type BackupContext struct {
 	milvusClient gomilvus.Client
 	//milvusProxyClient     proxy.Client
 	//milvusRootCoordClient *rcc.Client
-	//milvusDataCoordClient *dcc.Client
+	milvusDataCoordClient *dcc.Client
 	//metaClient   etcdclient
 	//storageClient minioclient
+	started bool
 }
 
-func (b *BackupContext) startConnection() error {
-	milvusAddr := b.milvusSource.GetParams().ProxyCfg.NetworkAddress
-	c, err := gomilvus.NewGrpcClient(b.ctx, milvusAddr)
+func (b *BackupContext) Start() error {
+	c, err := gomilvus.NewGrpcClient(b.ctx, b.milvusSource.GetProxyAddr())
 	if err != nil {
 		log.Error("failed to connect to milvus", zap.Error(err))
 		return err
 	}
 	b.milvusClient = c
-	//dataCoordClient, err := dcc.NewClient(b.ctx)
-	//if err != nil {
-	//	log.Error("failed to connect to milvus's datacoord", zap.Error(err))
-	//	return err
-	//}
-	//b.milvusDataCoordClient = dataCoordClient
-	//
+
+	dataCoordClient, err := dcc.NewClient(b.ctx, b.milvusSource.GetDatacoordAddr())
+	if err != nil {
+		log.Error("failed to connect to milvus's datacoord", zap.Error(err))
+		return err
+	}
+	b.milvusDataCoordClient = dataCoordClient
+	b.milvusDataCoordClient.Init()
+	b.milvusDataCoordClient.Start()
 	//rootCoordClient, err := rcc.NewClient(b.ctx)
 	//if err != nil {
 	//	log.Error("failed to connect to milvus's rootcoord", zap.Error(err))
 	//	return err
 	//}
 	//b.milvusRootCoordClient = rootCoordClient
+
+	b.started = true
 	return nil
 }
 
-func (b *BackupContext) closeConnection() error {
+func (b *BackupContext) Close() error {
 	err := b.milvusClient.Close()
 	//err = b.milvusRootCoordClient.Stop()
-	//err = b.milvusDataCoordClient.Stop()
+	err = b.milvusDataCoordClient.Stop()
 	return err
 }
 
@@ -70,10 +92,20 @@ func (b *BackupContext) GetMilvusSource() *MilvusSource {
 }
 
 func CreateBackupContext(ctx context.Context, params paramtable.ComponentParam) *BackupContext {
+	var Params paramtable.GrpcServerConfig
+	Params.InitOnce(typeutil.ProxyRole)
+	milvusAddr := Params.GetAddress()
+
+	var Params2 paramtable.GrpcServerConfig
+	Params2.InitOnce(typeutil.DataCoordRole)
+	milvusDatacoordAddr := Params2.GetAddress()
+
 	return &BackupContext{
 		ctx: ctx,
 		milvusSource: &MilvusSource{
-			params: params,
+			params:        params,
+			proxyAddr:     milvusAddr,
+			datacoordAddr: milvusDatacoordAddr,
 		},
 	}
 }
@@ -84,11 +116,13 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	err := b.startConnection()
-	if err != nil {
-		return &backuppb.CreateBackupResponse{
-			Status: &backuppb.Status{StatusCode: backuppb.StatusCode_ConnectFailed},
-		}, nil
+	if !b.started {
+		err := b.Start()
+		if err != nil {
+			return &backuppb.CreateBackupResponse{
+				Status: &backuppb.Status{StatusCode: backuppb.StatusCode_ConnectFailed},
+			}, nil
+		}
 	}
 
 	leveledBackupInfo := &LeveledBackupInfo{}
@@ -124,7 +158,7 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 
 	log.Info("collections to backup", zap.Any("collections", toBackupCollections))
 
-	collectionBackupInfos := make([]*backuppb.CollectionBackupInfo, len(toBackupCollections))
+	collectionBackupInfos := make([]*backuppb.CollectionBackupInfo, 0)
 	for _, collection := range toBackupCollections {
 		// list collection result is not complete
 		completeCollection, err := b.milvusClient.DescribeCollection(b.ctx, collection.Name)
@@ -164,14 +198,14 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 	}
 
 	// 2, get partition level meta
-	paritionBackupInfos := make([]*backuppb.PartitionBackupInfo, len(toBackupCollections))
+	partitionBackupInfos := make([]*backuppb.PartitionBackupInfo, 0)
 	for _, collection := range toBackupCollections {
-		paritions, err := b.milvusClient.ShowPartitions(b.ctx, collection.Name)
+		partitions, err := b.milvusClient.ShowPartitions(b.ctx, collection.Name)
 		if err != nil {
 			return nil, err
 		}
-		for _, partition := range paritions {
-			paritionBackupInfos = append(paritionBackupInfos, &backuppb.PartitionBackupInfo{
+		for _, partition := range partitions {
+			partitionBackupInfos = append(partitionBackupInfos, &backuppb.PartitionBackupInfo{
 				PartitionId:   partition.ID,
 				PartitionName: partition.Name,
 				CollectionId:  collection.ID,
@@ -181,19 +215,61 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 		}
 	}
 	leveledBackupInfo.partitionLevel = &backuppb.PartitionLevelBackupInfo{
-		Infos: paritionBackupInfos,
+		Infos: partitionBackupInfos,
 	}
 
+	log.Info("Finish build backup collection meta")
 	// 3, Flush
 
 	// 4, get segment level meta
 	// todo go sdk 没有ShowSegments方法
+	segmentBackupInfos := make([]*backuppb.SegmentBackupInfo, 0)
+	for _, part := range partitionBackupInfos {
+		collectionID := part.GetCollectionId()
+		partitionID := part.GetPartitionId()
+		resp, err := b.milvusDataCoordClient.GetRecoveryInfo(ctx, &datapb.GetRecoveryInfoRequest{
+			CollectionID: collectionID,
+			PartitionID:  partitionID,
+		})
+		if err != nil || resp.Status.ErrorCode != commonpb.ErrorCode_Success {
+			return nil, err
+		}
+		for _, binlogs := range resp.GetBinlogs() {
+			segmentBackupInfos = append(segmentBackupInfos, &backuppb.SegmentBackupInfo{
+				SegmentId:    binlogs.GetSegmentID(),
+				CollectionId: collectionID,
+				PartitionId:  partitionID,
+				NumOfRows:    binlogs.GetNumOfRows(),
+				Binlogs:      binlogs.GetFieldBinlogs(),
+				Deltalogs:    binlogs.GetDeltalogs(),
+				Statslogs:    binlogs.GetStatslogs(),
+			})
+		}
+	}
+	leveledBackupInfo.segmentLevel = &backuppb.SegmentLevelBackupInfo{
+		Infos: segmentBackupInfos,
+	}
 
-	// 5, wrap meta
+	// 5, copy data
+
+	// 6,wrap meta
 	completeBackupInfo, err := levelToTree(leveledBackupInfo)
 	if err != nil {
 		return nil, err
 	}
+
+	completeBackupInfo.BackupStatus = backuppb.StatusCode_Success
+	completeBackupInfo.BackupTimestamp = uint64(time.Now().Unix())
+	completeBackupInfo.Name = request.BackupName
+	// todo generate ID
+	completeBackupInfo.Id = 0
+
+	output, _ := serialize(completeBackupInfo)
+	log.Info(string(output.BackupMetaBytes))
+	log.Info(string(output.CollectionMetaBytes))
+	log.Info(string(output.PartitionMetaBytes))
+	log.Info(string(output.SegmentMetaBytes))
+
 	return &backuppb.CreateBackupResponse{
 		Status: &backuppb.Status{
 			StatusCode: backuppb.StatusCode_Success,

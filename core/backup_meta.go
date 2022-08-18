@@ -121,24 +121,24 @@ func serialize(backup *backuppb.BackupInfo) (*BackupMetaBytes, error) {
 // levelToTree rebuild complete tree structure BackupInfo from backup-collection-partition-segment 4-level structure
 func levelToTree(level *LeveledBackupInfo) (*backuppb.BackupInfo, error) {
 	backupInfo := &backuppb.BackupInfo{}
-	segmentDict := make(map[string][]*backuppb.SegmentBackupInfo, len(level.segmentLevel.Infos))
-	for _, segment := range level.segmentLevel.Infos {
+	segmentDict := make(map[string][]*backuppb.SegmentBackupInfo, len(level.segmentLevel.GetInfos()))
+	for _, segment := range level.segmentLevel.GetInfos() {
 		unqiueId := fmt.Sprintf("%d-%d", segment.GetCollectionId(), segment.GetPartitionId())
 		segmentDict[unqiueId] = append(segmentDict[unqiueId], segment)
 	}
 
-	partitionDict := make(map[int64][]*backuppb.PartitionBackupInfo, len(level.partitionLevel.Infos))
-	for _, partition := range level.partitionLevel.Infos {
+	partitionDict := make(map[int64][]*backuppb.PartitionBackupInfo, len(level.partitionLevel.GetInfos()))
+	for _, partition := range level.partitionLevel.GetInfos() {
 		unqiueId := partition.GetCollectionId()
 		partition.SegmentBackups = segmentDict[fmt.Sprintf("%d-%d", partition.GetCollectionId(), partition.GetPartitionId())]
 		partitionDict[unqiueId] = append(partitionDict[unqiueId], partition)
 	}
 
-	for _, collection := range level.collectionLevel.Infos {
+	for _, collection := range level.collectionLevel.GetInfos() {
 		collection.PartitionBackups = partitionDict[collection.GetCollectionId()]
 	}
 
-	backupInfo.CollectionBackups = level.collectionLevel.Infos
+	backupInfo.CollectionBackups = level.collectionLevel.GetInfos()
 	return backupInfo, nil
 }
 
