@@ -2,16 +2,15 @@ package core
 
 import (
 	"context"
+	gomilvus "github.com/milvus-io/milvus-sdk-go/v2/client"
+	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 	"github.com/zilliztech/milvus-backup/internal/proto/datapb"
 	"github.com/zilliztech/milvus-backup/internal/util/typeutil"
+	"go.uber.org/zap"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-
-	gomilvus "github.com/milvus-io/milvus-sdk-go/v2/client"
-	"github.com/milvus-io/milvus-sdk-go/v2/entity"
-	"go.uber.org/zap"
 
 	backuppb "github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/utils"
@@ -54,10 +53,6 @@ type BackupContext struct {
 	milvusStorageClient MilvusStorage
 	started             bool
 }
-
-const (
-	BACKUP_PREFIX = "backup"
-)
 
 func (b *BackupContext) Start() error {
 	// start milvus go SDK client
@@ -105,18 +100,18 @@ func (b *BackupContext) Start() error {
 	)
 	b.milvusStorageClient = minioClient
 
-	backupDirExist, err := b.milvusStorageClient.Exist(BACKUP_PREFIX)
-	if err != nil {
-		log.Error("failed to check backup dir exist", zap.Error(err))
-		return err
-	}
-	if !backupDirExist {
-		err = b.milvusStorageClient.Write(BACKUP_PREFIX, nil)
-		if err != nil {
-			log.Error("failed to create backup dir", zap.Error(err))
-			return err
-		}
-	}
+	//backupDirExist, err := b.milvusStorageClient.Exist(BACKUP_PREFIX)
+	//if err != nil {
+	//	log.Error("failed to check backup dir exist", zap.Error(err))
+	//	return err
+	//}
+	//if !backupDirExist {
+	//	err = b.milvusStorageClient.Write(BACKUP_PREFIX, nil)
+	//	if err != nil {
+	//		log.Error("failed to create backup dir", zap.Error(err))
+	//		return err
+	//	}
+	//}
 	//rootCoordClient, err := rcc.NewClient(b.ctx)
 	//if err != nil {
 	//	log.Error("failed to connect to milvus's rootcoord", zap.Error(err))
@@ -129,6 +124,7 @@ func (b *BackupContext) Start() error {
 }
 
 func (b *BackupContext) Close() error {
+	b.started = false
 	err := b.milvusClient.Close()
 	//err = b.milvusRootCoordClient.Stop()
 	err = b.milvusDataCoordClient.Stop()
@@ -267,6 +263,7 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 	}
 
 	log.Info("Finish build backup collection meta")
+
 	// 3, Flush
 
 	// 4, get segment level meta
@@ -298,25 +295,65 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 		Infos: segmentBackupInfos,
 	}
 
-	// 5, copy data
-
-	// 6,wrap meta
+	// 5, wrap meta
 	completeBackupInfo, err := levelToTree(leveledBackupInfo)
 	if err != nil {
 		return nil, err
 	}
-
 	completeBackupInfo.BackupStatus = backuppb.StatusCode_Success
 	completeBackupInfo.BackupTimestamp = uint64(time.Now().Unix())
 	completeBackupInfo.Name = request.BackupName
 	// todo generate ID
 	completeBackupInfo.Id = 0
 
+	// 6, copy data
+	for _, segment := range segmentBackupInfos {
+		for _, binlogs := range segment.Binlogs {
+			for _, binlog := range binlogs.GetBinlogs() {
+				targetPath := strings.Replace(binlog.GetLogPath(), "files", DataDirPath(completeBackupInfo), 1)
+				if targetPath == binlog.GetLogPath() {
+					log.Error("wrong target path",
+						zap.String("from", binlog.GetLogPath()),
+						zap.String("to", targetPath))
+					return &backuppb.CreateBackupResponse{
+						Status: &backuppb.Status{
+							StatusCode: backuppb.StatusCode_UnexpectedError,
+							Reason:     err.Error(),
+						},
+					}, nil
+				}
+
+				err = b.milvusStorageClient.Copy(binlog.GetLogPath(), targetPath)
+				if err != nil {
+					log.Info("Fail to copy file",
+						zap.String("from", binlog.GetLogPath()),
+						zap.String("to", targetPath))
+					return &backuppb.CreateBackupResponse{
+						Status: &backuppb.Status{
+							StatusCode: backuppb.StatusCode_UnexpectedError,
+							Reason:     err.Error(),
+						},
+					}, nil
+				} else {
+					log.Info("Successfully copy file",
+						zap.String("from", binlog.GetLogPath()),
+						zap.String("to", targetPath))
+				}
+			}
+		}
+	}
+
+	// 7, write meta data
 	output, _ := serialize(completeBackupInfo)
 	log.Info(string(output.BackupMetaBytes))
 	log.Info(string(output.CollectionMetaBytes))
 	log.Info(string(output.PartitionMetaBytes))
 	log.Info(string(output.SegmentMetaBytes))
+
+	b.milvusStorageClient.Write(BackupMetaPath(completeBackupInfo), output.BackupMetaBytes)
+	b.milvusStorageClient.Write(CollectionMetaPath(completeBackupInfo), output.CollectionMetaBytes)
+	b.milvusStorageClient.Write(PartitionMetaPath(completeBackupInfo), output.PartitionMetaBytes)
+	b.milvusStorageClient.Write(SegmentMetaPath(completeBackupInfo), output.SegmentMetaBytes)
 
 	return &backuppb.CreateBackupResponse{
 		Status: &backuppb.Status{
@@ -328,21 +365,157 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 
 func (b BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBackupRequest) (*backuppb.GetBackupResponse, error) {
 	// 1, trigger inner sync to get the newest backup list in the milvus cluster
+	if !b.started {
+		err := b.Start()
+		if err != nil {
+			return &backuppb.GetBackupResponse{
+				Status: &backuppb.Status{
+					StatusCode: backuppb.StatusCode_ConnectFailed,
+				},
+			}, nil
+		}
+	}
 
-	// 2, get wanted backup
-	panic("implement me")
+	resp := &backuppb.GetBackupResponse{
+		Status: &backuppb.Status{
+			StatusCode: backuppb.StatusCode_UnexpectedError,
+		},
+	}
+
+	if request.GetBackupName() == "" {
+		resp.Status.Reason = "empty backup name"
+		return resp, nil
+	}
+
+	backupPaths, _, err := b.milvusStorageClient.ListWithPrefix(generateBackupPath(request.GetBackupName()), false)
+	if err != nil {
+		log.Error("Fail to list backup directory", zap.String("backupName", request.GetBackupName()), zap.Error(err))
+		resp.Status.Reason = err.Error()
+		return resp, nil
+	}
+	if len(backupPaths) <= 0 {
+		log.Warn("Cannot find this backup", zap.String("backupName", request.GetBackupName()))
+		return &backuppb.GetBackupResponse{
+			Status: &backuppb.Status{
+				StatusCode: backuppb.StatusCode_Success,
+				Reason:     "Cannot find this backup",
+			},
+		}, nil
+	}
+
+	if len(backupPaths) > 1 {
+		log.Error("Find more than one backup", zap.String("backupName", request.GetBackupName()))
+		return &backuppb.GetBackupResponse{
+			Status: &backuppb.Status{
+				StatusCode: backuppb.StatusCode_UnexpectedError,
+				Reason:     "Find more than one backup",
+			},
+		}, nil
+	}
+
+	backup, err := b.readBackup(ctx, request.GetBackupName())
+	if err != nil {
+		log.Error("Fail to read backup", zap.String("backupName", request.GetBackupName()), zap.Error(err))
+		resp.Status.Reason = err.Error()
+		return resp, nil
+	}
+
+	return &backuppb.GetBackupResponse{
+		Status: &backuppb.Status{
+			StatusCode: backuppb.StatusCode_Success,
+		},
+		BackupInfo: backup,
+	}, nil
 }
 
 func (b BackupContext) ListBackups(ctx context.Context, request *backuppb.ListBackupsRequest) (*backuppb.ListBackupsResponse, error) {
-	// 1, trigger inner sync to get the newest backup list in the milvus cluster
+	if !b.started {
+		err := b.Start()
+		if err != nil {
+			return &backuppb.ListBackupsResponse{
+				Status: &backuppb.Status{
+					StatusCode: backuppb.StatusCode_ConnectFailed,
+				},
+			}, nil
+		}
+	}
 
-	// 2, list wanted backup
-	panic("implement me")
+	// 1, trigger inner sync to get the newest backup list in the milvus cluster
+	backupPaths, _, err := b.milvusStorageClient.ListWithPrefix(BACKUP_PREFIX, false)
+	resp := &backuppb.ListBackupsResponse{
+		Status: &backuppb.Status{
+			StatusCode: backuppb.StatusCode_UnexpectedError,
+		},
+	}
+	if err != nil {
+		log.Error("Fail to list backup directory", zap.Error(err))
+		resp.Status.Reason = err.Error()
+		return resp, nil
+	}
+
+	log.Info("List Backups", zap.Strings("backups", backupPaths))
+	backupInfos := make([]*backuppb.BackupInfo, 0)
+	for _, backupPath := range backupPaths {
+		backupResp, err := b.GetBackup(ctx, &backuppb.GetBackupRequest{
+			BackupName: BackupPathToName(backupPath),
+		})
+		if err != nil {
+			resp.Status.Reason = err.Error()
+			return resp, nil
+		}
+		if backupResp.GetStatus().StatusCode != backuppb.StatusCode_Success {
+			resp.Status.Reason = backupResp.GetStatus().GetReason()
+			return resp, nil
+		}
+
+		// 2, list wanted backup
+		if backupResp.GetBackupInfo() != nil {
+			if request.GetCollectionName() != "" {
+				backupInfos = append(backupInfos, backupResp.GetBackupInfo())
+			} else {
+				// if request.GetCollectionName() is defined only return backups contains the certain collection
+				for _, collectionMeta := range backupResp.GetBackupInfo().GetCollectionBackups() {
+					if collectionMeta.GetCollectionName() == request.GetCollectionName() {
+						backupInfos = append(backupInfos, backupResp.GetBackupInfo())
+					}
+				}
+			}
+		}
+	}
+
+	// 3, return
+	return &backuppb.ListBackupsResponse{
+		Status: &backuppb.Status{
+			StatusCode: backuppb.StatusCode_Success,
+		},
+		BackupInfos: backupInfos,
+	}, nil
 }
 
 func (b BackupContext) DeleteBackup(ctx context.Context, request *backuppb.DeleteBackupRequest) (*backuppb.DeleteBackupResponse, error) {
-	// 1, delete the backup
-	panic("implement me")
+	resp := &backuppb.DeleteBackupResponse{
+		Status: &backuppb.Status{
+			StatusCode: backuppb.StatusCode_UnexpectedError,
+		},
+	}
+
+	if request.GetBackupName() == "" {
+		resp.Status.Reason = "empty backup name"
+		return resp, nil
+	}
+
+	err := b.milvusStorageClient.RemoveWithPrefix(generateBackupPath(request.GetBackupName()))
+
+	if err != nil {
+		log.Error("Fail to delete backup", zap.String("backupName", request.GetBackupName()), zap.Error(err))
+		return nil, err
+	}
+
+	return &backuppb.DeleteBackupResponse{
+		Status: &backuppb.Status{
+			StatusCode: backuppb.StatusCode_Success,
+		},
+	}, nil
 }
 
 func (b BackupContext) LoadBackup(ctx context.Context, request *backuppb.LoadBackupRequest) (*backuppb.LoadBackupResponse, error) {
@@ -356,4 +529,52 @@ func (b BackupContext) LoadBackup(ctx context.Context, request *backuppb.LoadBac
 
 	// 4, collect stats and return report
 	panic("implement me")
+}
+
+func (b BackupContext) readBackup(ctx context.Context, backupName string) (*backuppb.BackupInfo, error) {
+	backupMetaDirPath := BACKUP_PREFIX + SEPERATOR + backupName + SEPERATOR + META_PREFIX
+	backupMetaPath := backupMetaDirPath + SEPERATOR + BACKUP_META_FILE
+	collectionMetaPath := backupMetaDirPath + SEPERATOR + COLLECTION_META_FILE
+	partitionMetaPath := backupMetaDirPath + SEPERATOR + PARTITION_META_FILE
+	segmentMetaPath := backupMetaDirPath + SEPERATOR + SEGMENT_META_FILE
+
+	backupMetaBytes, err := b.milvusStorageClient.Read(backupMetaPath)
+	if err != nil {
+		log.Error("Read backup meta failed", zap.String("path", backupMetaPath), zap.Error(err))
+		return nil, err
+	}
+	collectionBackupMetaBytes, err := b.milvusStorageClient.Read(collectionMetaPath)
+	if err != nil {
+		log.Error("Read collection meta failed", zap.String("path", collectionMetaPath), zap.Error(err))
+		return nil, err
+	}
+	partitionBackupMetaBytes, err := b.milvusStorageClient.Read(partitionMetaPath)
+	if err != nil {
+		log.Error("Read partition meta failed", zap.String("path", partitionMetaPath), zap.Error(err))
+		return nil, err
+	}
+	segmentBackupMetaBytes, err := b.milvusStorageClient.Read(segmentMetaPath)
+	if err != nil {
+		log.Error("Read segment meta failed", zap.String("path", segmentMetaPath), zap.Error(err))
+		return nil, err
+	}
+
+	completeBackupMetas := &BackupMetaBytes{
+		BackupMetaBytes:     backupMetaBytes,
+		CollectionMetaBytes: collectionBackupMetaBytes,
+		PartitionMetaBytes:  partitionBackupMetaBytes,
+		SegmentMetaBytes:    segmentBackupMetaBytes,
+	}
+
+	backupInfo, err := deserialize(completeBackupMetas)
+	if err != nil {
+		log.Error("Fail to deserialize backup info", zap.String("backupName", backupName), zap.Error(err))
+		return nil, err
+	}
+
+	return backupInfo, nil
+}
+
+func generateBackupPath(backupName string) string {
+	return BACKUP_PREFIX + SEPERATOR + backupName + SEPERATOR
 }

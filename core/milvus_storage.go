@@ -55,7 +55,7 @@ type MilvusStorage interface {
 	// RemoveWithPrefix remove files with same @prefix.
 	RemoveWithPrefix(prefix string) error
 	// Move move files from fromPath into toPath recursively
-	Move(fromPath string, toPath string) error
+	Copy(fromPath string, toPath string) error
 }
 
 // makes sure MinioMilvusStorage implements `MilvusStorage`
@@ -125,7 +125,7 @@ func newMinioMilvusStorageWithConfig(ctx context.Context, c *config) (*MinioMilv
 		Client:     minIOClient,
 		bucketName: c.bucketName,
 	}
-	log.Info("minio chunk manager init success.", zap.String("bucketname", c.bucketName), zap.String("root", c.rootPath))
+	log.Info("Milvus minio storage manager init success.", zap.String("bucketname", c.bucketName), zap.String("root", c.rootPath))
 	return mcm, nil
 }
 
@@ -334,21 +334,23 @@ func (mcm *MinioMilvusStorage) ListWithPrefix(prefix string, recursive bool) ([]
 	return objectsKeys, modTimes, nil
 }
 
-func (mcm *MinioMilvusStorage) Move(fromPath string, toPath string) error {
+func (mcm *MinioMilvusStorage) Copy(fromPath string, toPath string) error {
 	objectkeys, _, err := mcm.ListWithPrefix(fromPath, true)
 	if err != nil {
 		log.Warn("listWithPrefix error", zap.String("prefix", fromPath), zap.Error(err))
 		return err
 	}
-	toPath = toPath + "/"
 	for _, objectkey := range objectkeys {
 		src := minio.CopySrcOptions{Bucket: mcm.bucketName, Object: objectkey}
 		dstObjectKey := strings.Replace(objectkey, fromPath, toPath, 1)
 		dst := minio.CopyDestOptions{Bucket: mcm.bucketName, Object: dstObjectKey}
 
-		_, err = mcm.Client.CopyObject(context.Background(), dst, src)
+		_, err = mcm.Client.CopyObject(mcm.ctx, dst, src)
 		if err != nil {
-			log.Error("copyObject error", zap.String("srcObjectKey", objectkey), zap.String("dstObjectKey", dstObjectKey))
+			log.Error("copyObject error",
+				zap.String("srcObjectKey", objectkey),
+				zap.String("dstObjectKey", dstObjectKey),
+				zap.Error(err))
 			return err
 		}
 	}

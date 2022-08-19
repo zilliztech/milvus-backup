@@ -4,13 +4,22 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"strings"
 )
 
 const (
+	BACKUP_PREFIX        = "backup"
+	META_PREFIX          = "meta"
 	BACKUP_META_FILE     = "backup_meta.json"
-	COLLECTION_META_FILE = "collcetion_meta.json"
+	COLLECTION_META_FILE = "collection_meta.json"
 	PARTITION_META_FILE  = "partition_meta.json"
 	SEGMENT_META_FILE    = "segment_meta.json"
+	SEPERATOR            = "/"
+
+	DATA_PREFIX    = "data"
+	INSERT_LOG_DIR = "insert_log"
+	DELTA_LOG_DIR  = "delta_log"
+	STATS_LOG_DIR  = "stats_log"
 )
 
 type BackupMetaBytes struct {
@@ -160,4 +169,49 @@ func deserialize(backup *BackupMetaBytes) (*backuppb.BackupInfo, error) {
 		partitionLevel:  partitionLevel,
 		segmentLevel:    segmentLevel,
 	})
+}
+
+func BackupPathToName(path string) string {
+	return strings.Replace(path, BACKUP_PREFIX+SEPERATOR, "", 1)
+}
+
+func BackupDirPath(backup *backuppb.BackupInfo) string {
+	//return BACKUP_PREFIX + SEPERATOR + fmt.Sprint(backup.GetId()) + "_" + backup.GetName() + "_" + fmt.Sprint(backup.GetBackupTimestamp())
+	return BACKUP_PREFIX + SEPERATOR + backup.GetName()
+}
+
+func MetaDirPath(backup *backuppb.BackupInfo) string {
+	return BackupDirPath(backup) + SEPERATOR + META_PREFIX
+}
+
+func BackupMetaPath(backup *backuppb.BackupInfo) string {
+	return MetaDirPath(backup) + SEPERATOR + BACKUP_META_FILE
+}
+
+func CollectionMetaPath(backup *backuppb.BackupInfo) string {
+	return MetaDirPath(backup) + SEPERATOR + COLLECTION_META_FILE
+}
+
+func PartitionMetaPath(backup *backuppb.BackupInfo) string {
+	return MetaDirPath(backup) + SEPERATOR + PARTITION_META_FILE
+}
+
+func SegmentMetaPath(backup *backuppb.BackupInfo) string {
+	return MetaDirPath(backup) + SEPERATOR + SEGMENT_META_FILE
+}
+
+func DataDirPath(backup *backuppb.BackupInfo) string {
+	return BackupDirPath(backup) + SEPERATOR + DATA_PREFIX
+}
+
+func InsertlogDirPath(backup *backuppb.BackupInfo) string {
+	return DataDirPath(backup) + SEPERATOR + INSERT_LOG_DIR
+}
+
+func DeltalogDirPath(backup *backuppb.BackupInfo) string {
+	return DataDirPath(backup) + SEPERATOR + DELTA_LOG_DIR
+}
+
+func StatslogDirPath(backup *backuppb.BackupInfo) string {
+	return DataDirPath(backup) + SEPERATOR + STATS_LOG_DIR
 }

@@ -501,6 +501,7 @@ func TestReadMilvusData(t *testing.T) {
 	paths, _, _ := testCM.ListWithPrefix("", true)
 	log.Info("paths:", zap.Strings("paths", paths))
 
+	testCM.RemoveWithPrefix("backup")
 	exist, err := testCM.Exist("backup")
 	log.Info("exist", zap.Bool("exist", exist))
 	err = testCM.Write("backup", nil)
@@ -510,4 +511,26 @@ func TestReadMilvusData(t *testing.T) {
 	err = testCM.Remove("backup")
 	exist3, err := testCM.Exist("backup")
 	log.Info("exist", zap.Bool("exist", exist3))
+
+	err = testCM.Remove("backup1")
+	err = testCM.Remove("backup2")
+	err = testCM.Write("backup1", []byte("hello backup"))
+	assert.NoError(t, err)
+	err = testCM.Copy("backup1", "backup2")
+	assert.NoError(t, err)
+	value, err := testCM.Read("backup2")
+	log.Info("value of backup2", zap.String("value", string(value)))
+	assert.NoError(t, err)
+
+	err = testCM.Remove("backup1")
+	err = testCM.Remove("backup2")
+
+	fromPath := "files/insert_log/435005460620509185/435005460620509186/435005461053308929/101/435005461721776130"
+	toPath := "backup/0_test_backup_1660893537/data/insert_log/435005460620509185/435005460620509186/435005461053308929/101/435005461721776130"
+	err = testCM.Copy(fromPath, toPath)
+	value, err = testCM.Read(toPath)
+	log.Info("value of toPath", zap.String("value", string(value)))
+	assert.NoError(t, err)
+
+	testCM.RemoveWithPrefix("backup")
 }

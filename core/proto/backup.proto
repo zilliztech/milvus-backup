@@ -174,7 +174,7 @@ message DeleteBackupRequest {
 }
 
 message DeleteBackupResponse {
-  Status base = 1;
+  Status status = 1;
 }
 
 // todo to complete
