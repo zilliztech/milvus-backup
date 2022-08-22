@@ -186,10 +186,10 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 	}
 
 	toBackupCollections := func(collections []*entity.Collection, collectionNames []string) []*entity.Collection {
-		if collections == nil || len(collectionNames) == 0 {
+		if collectionNames == nil || len(collectionNames) == 0 {
 			return collections
 		}
-		res := make([]*entity.Collection, len(collections))
+		res := make([]*entity.Collection, 0)
 		collectionDict := make(map[string]bool, len(collectionNames))
 		for _, collectionName := range collectionNames {
 			collectionDict[collectionName] = true
@@ -321,7 +321,8 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 	// 5, wrap meta
 	completeBackupInfo, err := levelToTree(leveledBackupInfo)
 	if err != nil {
-		return nil, err
+		errorResp.Status.Reason = err.Error()
+		return errorResp, nil
 	}
 	completeBackupInfo.BackupStatus = backuppb.StatusCode_Success
 	completeBackupInfo.BackupTimestamp = uint64(time.Now().Unix())
@@ -338,25 +339,18 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 					log.Error("wrong target path",
 						zap.String("from", binlog.GetLogPath()),
 						zap.String("to", targetPath))
-					return &backuppb.CreateBackupResponse{
-						Status: &backuppb.Status{
-							StatusCode: backuppb.StatusCode_UnexpectedError,
-							Reason:     err.Error(),
-						},
-					}, nil
+					errorResp.Status.Reason = err.Error()
+					return errorResp, nil
 				}
 
 				err = b.milvusStorageClient.Copy(binlog.GetLogPath(), targetPath)
 				if err != nil {
 					log.Info("Fail to copy file",
+						zap.Error(err),
 						zap.String("from", binlog.GetLogPath()),
 						zap.String("to", targetPath))
-					return &backuppb.CreateBackupResponse{
-						Status: &backuppb.Status{
-							StatusCode: backuppb.StatusCode_UnexpectedError,
-							Reason:     err.Error(),
-						},
-					}, nil
+					errorResp.Status.Reason = err.Error()
+					return errorResp, nil
 				} else {
 					log.Info("Successfully copy file",
 						zap.String("from", binlog.GetLogPath()),
