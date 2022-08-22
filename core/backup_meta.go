@@ -172,7 +172,7 @@ func deserialize(backup *BackupMetaBytes) (*backuppb.BackupInfo, error) {
 }
 
 func BackupPathToName(path string) string {
-	return strings.Replace(path, BACKUP_PREFIX+SEPERATOR, "", 1)
+	return strings.Replace(strings.Replace(path, BACKUP_PREFIX+SEPERATOR, "", 1), SEPERATOR, "", 1)
 }
 
 func BackupDirPath(backup *backuppb.BackupInfo) string {

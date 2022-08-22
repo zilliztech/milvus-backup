@@ -2,24 +2,24 @@ package core
 
 import (
 	"context"
-	gomilvus "github.com/milvus-io/milvus-sdk-go/v2/client"
-	"github.com/milvus-io/milvus-sdk-go/v2/entity"
-	"github.com/zilliztech/milvus-backup/internal/proto/datapb"
-	"github.com/zilliztech/milvus-backup/internal/util/typeutil"
-	"go.uber.org/zap"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	backuppb "github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/utils"
+	dcc "github.com/zilliztech/milvus-backup/internal/distributed/datacoord/client"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/proto/commonpb"
+	"github.com/zilliztech/milvus-backup/internal/proto/datapb"
 	"github.com/zilliztech/milvus-backup/internal/proto/schemapb"
 	"github.com/zilliztech/milvus-backup/internal/util/paramtable"
+	"github.com/zilliztech/milvus-backup/internal/util/typeutil"
 
-	dcc "github.com/zilliztech/milvus-backup/internal/distributed/datacoord/client"
+	gomilvus "github.com/milvus-io/milvus-sdk-go/v2/client"
+	"github.com/milvus-io/milvus-sdk-go/v2/entity"
+	"go.uber.org/zap"
 )
 
 type Backup interface {
@@ -387,7 +387,7 @@ func (b BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBacku
 		return resp, nil
 	}
 
-	backupPaths, _, err := b.milvusStorageClient.ListWithPrefix(generateBackupPath(request.GetBackupName()), false)
+	backupPaths, _, err := b.milvusStorageClient.ListWithPrefix(generateBackupDirPath(request.GetBackupName()), false)
 	if err != nil {
 		log.Error("Fail to list backup directory", zap.String("backupName", request.GetBackupName()), zap.Error(err))
 		resp.Status.Reason = err.Error()
@@ -441,7 +441,7 @@ func (b BackupContext) ListBackups(ctx context.Context, request *backuppb.ListBa
 	}
 
 	// 1, trigger inner sync to get the newest backup list in the milvus cluster
-	backupPaths, _, err := b.milvusStorageClient.ListWithPrefix(BACKUP_PREFIX, false)
+	backupPaths, _, err := b.milvusStorageClient.ListWithPrefix(BACKUP_PREFIX+SEPERATOR, false)
 	resp := &backuppb.ListBackupsResponse{
 		Status: &backuppb.Status{
 			StatusCode: backuppb.StatusCode_UnexpectedError,
@@ -453,7 +453,7 @@ func (b BackupContext) ListBackups(ctx context.Context, request *backuppb.ListBa
 		return resp, nil
 	}
 
-	log.Info("List Backups", zap.Strings("backups", backupPaths))
+	log.Info("List Backups' path", zap.Strings("backup_paths", backupPaths))
 	backupInfos := make([]*backuppb.BackupInfo, 0)
 	for _, backupPath := range backupPaths {
 		backupResp, err := b.GetBackup(ctx, &backuppb.GetBackupRequest{
@@ -471,14 +471,14 @@ func (b BackupContext) ListBackups(ctx context.Context, request *backuppb.ListBa
 		// 2, list wanted backup
 		if backupResp.GetBackupInfo() != nil {
 			if request.GetCollectionName() != "" {
-				backupInfos = append(backupInfos, backupResp.GetBackupInfo())
-			} else {
 				// if request.GetCollectionName() is defined only return backups contains the certain collection
 				for _, collectionMeta := range backupResp.GetBackupInfo().GetCollectionBackups() {
 					if collectionMeta.GetCollectionName() == request.GetCollectionName() {
 						backupInfos = append(backupInfos, backupResp.GetBackupInfo())
 					}
 				}
+			} else {
+				backupInfos = append(backupInfos, backupResp.GetBackupInfo())
 			}
 		}
 	}
@@ -493,6 +493,17 @@ func (b BackupContext) ListBackups(ctx context.Context, request *backuppb.ListBa
 }
 
 func (b BackupContext) DeleteBackup(ctx context.Context, request *backuppb.DeleteBackupRequest) (*backuppb.DeleteBackupResponse, error) {
+	if !b.started {
+		err := b.Start()
+		if err != nil {
+			return &backuppb.DeleteBackupResponse{
+				Status: &backuppb.Status{
+					StatusCode: backuppb.StatusCode_ConnectFailed,
+				},
+			}, nil
+		}
+	}
+
 	resp := &backuppb.DeleteBackupResponse{
 		Status: &backuppb.Status{
 			StatusCode: backuppb.StatusCode_UnexpectedError,
@@ -504,7 +515,7 @@ func (b BackupContext) DeleteBackup(ctx context.Context, request *backuppb.Delet
 		return resp, nil
 	}
 
-	err := b.milvusStorageClient.RemoveWithPrefix(generateBackupPath(request.GetBackupName()))
+	err := b.milvusStorageClient.RemoveWithPrefix(generateBackupDirPath(request.GetBackupName()))
 
 	if err != nil {
 		log.Error("Fail to delete backup", zap.String("backupName", request.GetBackupName()), zap.Error(err))
@@ -575,6 +586,6 @@ func (b BackupContext) readBackup(ctx context.Context, backupName string) (*back
 	return backupInfo, nil
 }
 
-func generateBackupPath(backupName string) string {
-	return BACKUP_PREFIX + SEPERATOR + backupName + SEPERATOR
+func generateBackupDirPath(backupName string) string {
+	return BACKUP_PREFIX + SEPERATOR + backupName
 }
