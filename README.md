@@ -1,5 +1,24 @@
 # milvus-backup
 
+milvus-backup can use as a command line tool or a API server.
+
+Build
+
+```
+go build
+```
+
+Run server
+```
+export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn && ./milvus_backup --mode=server
+```
+
+Run Cmd[Under develop]
+```
+export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn && ./milvus_backup --mode=cmd
+```
+
+
 ## Code structure
 
 `internal` contains codes copied from milvus project.

@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"github.com/gin-gonic/gin"
+	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/util/paramtable"
 	"net/http"
 	"net/http/pprof"
@@ -17,15 +19,18 @@ const apiPathPrefix = "/api/v1"
 type Server struct {
 	backupContext *BackupContext
 	engine        *gin.Engine
+	config        *BackupConfig
 }
 
-func NewServer(ctx context.Context, params paramtable.ComponentParam) (*Server, error) {
-
-	var err error
-	server := &Server{}
-
-	server.backupContext = CreateBackupContext(ctx, params)
-	return server, err
+func NewServer(ctx context.Context, params paramtable.ComponentParam, opts ...BackupOption) (*Server, error) {
+	c := newDefaultBackupConfig()
+	for _, opt := range opts {
+		opt(c)
+	}
+	return &Server{
+		backupContext: CreateBackupContext(ctx, params),
+		config:        c,
+	}, nil
 }
 
 func (s *Server) Init() {
@@ -34,7 +39,8 @@ func (s *Server) Init() {
 
 func (s *Server) Start() {
 	s.registerProfilePort()
-	s.engine.Run()
+	s.engine.Run(s.config.port)
+	log.Info("Start backup server backend")
 }
 
 // registerHTTPServer register the http server, panic when failed
@@ -95,25 +101,34 @@ func (h *Handlers) handleHello(c *gin.Context) (interface{}, error) {
 }
 
 func (h *Handlers) handleCreateBackup(c *gin.Context) (interface{}, error) {
-	//username := c.PostForm("username")
-	//password := c.DefaultPostForm("password", "000000") // 可设置默认值
-	//
-	//c.JSON(http.StatusOK, gin.H{
-	//	"username": username,
-	//	"password": password,
-	//})
+	json := backuppb.CreateBackupRequest{}
+	c.BindJSON(&json)
+	resp, _ := h.backupContext.CreateBackup(h.backupContext.ctx, &json)
+	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
 
 func (h *Handlers) handleListBackups(c *gin.Context) (interface{}, error) {
+	json := backuppb.ListBackupsRequest{}
+	c.BindJSON(&json)
+	resp, _ := h.backupContext.ListBackups(h.backupContext.ctx, &json)
+	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
 
 func (h *Handlers) handleGetBackup(c *gin.Context) (interface{}, error) {
+	json := backuppb.GetBackupRequest{}
+	c.BindJSON(&json)
+	resp, _ := h.backupContext.GetBackup(h.backupContext.ctx, &json)
+	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
 
 func (h *Handlers) handleDeleteBackup(c *gin.Context) (interface{}, error) {
+	json := backuppb.DeleteBackupRequest{}
+	c.BindJSON(&json)
+	resp, _ := h.backupContext.DeleteBackup(h.backupContext.ctx, &json)
+	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
 

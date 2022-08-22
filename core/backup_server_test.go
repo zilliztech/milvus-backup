@@ -21,6 +21,7 @@ func TestBackupService(t *testing.T) {
 	assert.NoError(t, err)
 	server.Init()
 	server.Start()
+	time.Sleep(1000 * time.Second)
 
 }
 
