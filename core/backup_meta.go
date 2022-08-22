@@ -129,7 +129,14 @@ func serialize(backup *backuppb.BackupInfo) (*BackupMetaBytes, error) {
 
 // levelToTree rebuild complete tree structure BackupInfo from backup-collection-partition-segment 4-level structure
 func levelToTree(level *LeveledBackupInfo) (*backuppb.BackupInfo, error) {
-	backupInfo := &backuppb.BackupInfo{}
+	backupInfo := &backuppb.BackupInfo{
+		Id:              level.backupLevel.GetId(),
+		Name:            level.backupLevel.GetName(),
+		BackupTimestamp: level.backupLevel.GetBackupTimestamp(),
+		BackupStatus:    level.backupLevel.GetBackupStatus(),
+		BackupError:     level.backupLevel.GetBackupError(),
+		Health:          level.backupLevel.GetHealth(),
+	}
 	segmentDict := make(map[string][]*backuppb.SegmentBackupInfo, len(level.segmentLevel.GetInfos()))
 	for _, segment := range level.segmentLevel.GetInfos() {
 		unqiueId := fmt.Sprintf("%d-%d", segment.GetCollectionId(), segment.GetPartitionId())
@@ -168,6 +175,7 @@ func deserialize(backup *BackupMetaBytes) (*backuppb.BackupInfo, error) {
 		collectionLevel: collectionLevel,
 		partitionLevel:  partitionLevel,
 		segmentLevel:    segmentLevel,
+		backupLevel:     backupInfo,
 	})
 }
 

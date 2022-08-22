@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"strings"
 	"sync"
@@ -169,18 +170,19 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 		}
 	}
 
-	leveledBackupInfo := &LeveledBackupInfo{}
+	errorResp := &backuppb.CreateBackupResponse{
+		Status: &backuppb.Status{
+			StatusCode: backuppb.StatusCode_UnexpectedError,
+		},
+	}
 
+	leveledBackupInfo := &LeveledBackupInfo{}
 	// 1, get collection level meta
 	collections, err := b.milvusClient.ListCollections(b.ctx)
 	if err != nil {
 		log.Error("Fail in ListCollections", zap.Error(err))
-		return &backuppb.CreateBackupResponse{
-			Status: &backuppb.Status{
-				StatusCode: backuppb.StatusCode_UnexpectedError,
-				Reason:     err.Error(),
-			},
-		}, nil
+		errorResp.Status.Reason = err.Error()
+		return errorResp, nil
 	}
 
 	toBackupCollections := func(collections []*entity.Collection, collectionNames []string) []*entity.Collection {
@@ -207,7 +209,8 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 		// list collection result is not complete
 		completeCollection, err := b.milvusClient.DescribeCollection(b.ctx, collection.Name)
 		if err != nil {
-			return nil, err
+			errorResp.Status.Reason = err.Error()
+			return errorResp, nil
 		}
 		fields := make([]*schemapb.FieldSchema, 0)
 		for _, field := range completeCollection.Schema.Fields {
@@ -246,7 +249,8 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 	for _, collection := range toBackupCollections {
 		partitions, err := b.milvusClient.ShowPartitions(b.ctx, collection.Name)
 		if err != nil {
-			return nil, err
+			errorResp.Status.Reason = err.Error()
+			return errorResp, nil
 		}
 		for _, partition := range partitions {
 			partitionBackupInfos = append(partitionBackupInfos, &backuppb.PartitionBackupInfo{
@@ -267,30 +271,49 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 	// 3, Flush
 
 	// 4, get segment level meta
-	// todo go sdk 没有ShowSegments方法
+	// get segment infos by milvus SDK
+	// todo: make sure the Binlog filed is not needed: timestampTo, timestampFrom, EntriesNum, LogSize
 	segmentBackupInfos := make([]*backuppb.SegmentBackupInfo, 0)
-	for _, part := range partitionBackupInfos {
-		collectionID := part.GetCollectionId()
-		partitionID := part.GetPartitionId()
-		resp, err := b.milvusDataCoordClient.GetRecoveryInfo(ctx, &datapb.GetRecoveryInfoRequest{
-			CollectionID: collectionID,
-			PartitionID:  partitionID,
-		})
-		if err != nil || resp.Status.ErrorCode != commonpb.ErrorCode_Success {
-			return nil, err
+	for _, collection := range toBackupCollections {
+		segments, err := b.milvusClient.GetPersistentSegmentInfo(ctx, collection.Name)
+		if err != nil {
+			errorResp.Status.Reason = err.Error()
+			return errorResp, nil
 		}
-		for _, binlogs := range resp.GetBinlogs() {
-			segmentBackupInfos = append(segmentBackupInfos, &backuppb.SegmentBackupInfo{
-				SegmentId:    binlogs.GetSegmentID(),
-				CollectionId: collectionID,
-				PartitionId:  partitionID,
-				NumOfRows:    binlogs.GetNumOfRows(),
-				Binlogs:      binlogs.GetFieldBinlogs(),
-				Deltalogs:    binlogs.GetDeltalogs(),
-				Statslogs:    binlogs.GetStatslogs(),
-			})
+		for _, segment := range segments {
+			segmentInfo, err := b.readSegmentInfo(ctx, segment.CollectionID, segment.ParititionID, segment.ID, segment.NumRows)
+			if err != nil {
+				errorResp.Status.Reason = err.Error()
+				return errorResp, nil
+			}
+			segmentBackupInfos = append(segmentBackupInfos, segmentInfo)
 		}
 	}
+
+	// get segment infos by datacoord client
+	//for _, part := range partitionBackupInfos {
+	//	collectionID := part.GetCollectionId()
+	//	partitionID := part.GetPartitionId()
+	//	errorResp, err := b.milvusDataCoordClient.GetRecoveryInfo(ctx, &datapb.GetRecoveryInfoRequest{
+	//		CollectionID: collectionID,
+	//		PartitionID:  partitionID,
+	//	})
+	//	if err != nil || errorResp.Status.ErrorCode != commonpb.ErrorCode_Success {
+	//		return nil, err
+	//	}
+	//	for _, binlogs := range errorResp.GetBinlogs() {
+	//		segmentBackupInfos = append(segmentBackupInfos, &backuppb.SegmentBackupInfo{
+	//			SegmentId:    binlogs.GetSegmentID(),
+	//			CollectionId: collectionID,
+	//			PartitionId:  partitionID,
+	//			NumOfRows:    binlogs.GetNumOfRows(),
+	//			Binlogs:      binlogs.GetFieldBinlogs(),
+	//			Deltalogs:    binlogs.GetDeltalogs(),
+	//			Statslogs:    binlogs.GetStatslogs(),
+	//		})
+	//	}
+	//}
+
 	leveledBackupInfo.segmentLevel = &backuppb.SegmentLevelBackupInfo{
 		Infos: segmentBackupInfos,
 	}
@@ -385,32 +408,6 @@ func (b BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBacku
 	if request.GetBackupName() == "" {
 		resp.Status.Reason = "empty backup name"
 		return resp, nil
-	}
-
-	backupPaths, _, err := b.milvusStorageClient.ListWithPrefix(generateBackupDirPath(request.GetBackupName()), false)
-	if err != nil {
-		log.Error("Fail to list backup directory", zap.String("backupName", request.GetBackupName()), zap.Error(err))
-		resp.Status.Reason = err.Error()
-		return resp, nil
-	}
-	if len(backupPaths) <= 0 {
-		log.Warn("Cannot find this backup", zap.String("backupName", request.GetBackupName()))
-		return &backuppb.GetBackupResponse{
-			Status: &backuppb.Status{
-				StatusCode: backuppb.StatusCode_Success,
-				Reason:     "Cannot find this backup",
-			},
-		}, nil
-	}
-
-	if len(backupPaths) > 1 {
-		log.Error("Find more than one backup", zap.String("backupName", request.GetBackupName()))
-		return &backuppb.GetBackupResponse{
-			Status: &backuppb.Status{
-				StatusCode: backuppb.StatusCode_UnexpectedError,
-				Reason:     "Find more than one backup",
-			},
-		}, nil
 	}
 
 	backup, err := b.readBackup(ctx, request.GetBackupName())
@@ -587,5 +584,81 @@ func (b BackupContext) readBackup(ctx context.Context, backupName string) (*back
 }
 
 func generateBackupDirPath(backupName string) string {
-	return BACKUP_PREFIX + SEPERATOR + backupName
+	return BACKUP_PREFIX + SEPERATOR + backupName + SEPERATOR
+}
+
+func (b BackupContext) readSegmentInfo(ctx context.Context, collecitonID int64, partitionID int64, segmentID int64, numOfRows int64) (*backuppb.SegmentBackupInfo, error) {
+	segmentBackupInfo := backuppb.SegmentBackupInfo{
+		SegmentId:    segmentID,
+		CollectionId: collecitonID,
+		PartitionId:  partitionID,
+		NumOfRows:    numOfRows,
+	}
+
+	insertPath := fmt.Sprintf("%s/%v/%v/%v/", "files/insert_log", collecitonID, partitionID, segmentID)
+	fieldsLogDir, _, _ := b.milvusStorageClient.ListWithPrefix(insertPath, false)
+	insertLogs := make([]*datapb.FieldBinlog, 0)
+	for _, fieldLogDir := range fieldsLogDir {
+		binlogPaths, _, _ := b.milvusStorageClient.ListWithPrefix(fieldLogDir, false)
+		fieldIdStr := strings.Replace(strings.Replace(fieldLogDir, insertPath, "", 1), SEPERATOR, "", -1)
+		fieldId, _ := strconv.ParseInt(fieldIdStr, 10, 64)
+		binlogs := make([]*datapb.Binlog, 0)
+		for _, binlogPath := range binlogPaths {
+			binlogs = append(binlogs, &datapb.Binlog{
+				LogPath: binlogPath,
+			})
+		}
+		insertLogs = append(insertLogs, &datapb.FieldBinlog{
+			FieldID: fieldId,
+			Binlogs: binlogs,
+		})
+	}
+
+	deltaLogPath := fmt.Sprintf("%s/%v/%v/%v/", "files/delta_log", collecitonID, partitionID, segmentID)
+	deltaFieldsLogDir, _, _ := b.milvusStorageClient.ListWithPrefix(deltaLogPath, false)
+	deltaLogs := make([]*datapb.FieldBinlog, 0)
+	for _, deltaFieldLogDir := range deltaFieldsLogDir {
+		binlogPaths, _, _ := b.milvusStorageClient.ListWithPrefix(deltaFieldLogDir, false)
+		fieldIdStr := strings.Replace(strings.Replace(deltaFieldLogDir, deltaLogPath, "", 1), SEPERATOR, "", -1)
+		fieldId, _ := strconv.ParseInt(fieldIdStr, 10, 64)
+		binlogs := make([]*datapb.Binlog, 0)
+		for _, binlogPath := range binlogPaths {
+			binlogs = append(binlogs, &datapb.Binlog{
+				LogPath: binlogPath,
+			})
+		}
+		deltaLogs = append(deltaLogs, &datapb.FieldBinlog{
+			FieldID: fieldId,
+			Binlogs: binlogs,
+		})
+	}
+	if len(deltaLogs) == 0 {
+		deltaLogs = append(deltaLogs, &datapb.FieldBinlog{
+			FieldID: 0,
+		})
+	}
+
+	statsLogPath := fmt.Sprintf("%s/%v/%v/%v/", "files/stats_log", collecitonID, partitionID, segmentID)
+	statsFieldsLogDir, _, _ := b.milvusStorageClient.ListWithPrefix(statsLogPath, false)
+	statsLogs := make([]*datapb.FieldBinlog, 0)
+	for _, statsFieldLogDir := range statsFieldsLogDir {
+		binlogPaths, _, _ := b.milvusStorageClient.ListWithPrefix(statsFieldLogDir, false)
+		fieldIdStr := strings.Replace(strings.Replace(statsFieldLogDir, statsLogPath, "", 1), SEPERATOR, "", -1)
+		fieldId, _ := strconv.ParseInt(fieldIdStr, 10, 64)
+		binlogs := make([]*datapb.Binlog, 0)
+		for _, binlogPath := range binlogPaths {
+			binlogs = append(binlogs, &datapb.Binlog{
+				LogPath: binlogPath,
+			})
+		}
+		statsLogs = append(statsLogs, &datapb.FieldBinlog{
+			FieldID: fieldId,
+			Binlogs: binlogs,
+		})
+	}
+
+	segmentBackupInfo.Binlogs = insertLogs
+	segmentBackupInfo.Deltalogs = deltaLogs
+	segmentBackupInfo.Statslogs = statsLogs
+	return &segmentBackupInfo, nil
 }
