@@ -177,9 +177,22 @@ message DeleteBackupResponse {
   Status status = 1;
 }
 
-// todo to complete
-message LoadBackupReport {
-  BackupInfo backup_info = 1;
+enum LoadState {
+  INTI = 0;
+  EXECUTING = 1;
+  SUCCESS = 2;
+  FAIL = 3;
+  TIMEOUT = 4;
+}
+
+message LoadCollectionBackupTask {
+  LoadState state = 1;
+  string errorMessage = 2;
+  CollectionBackupInfo coll_backup = 3;
+  string target_collection_name = 4;
+  repeated int64 unloaded_segments = 5;
+  repeated int64 loaded_segments = 6;
+  int64 duration = 7;
 }
 
 message LoadBackupRequest {
@@ -195,5 +208,6 @@ message LoadBackupRequest {
 
 message LoadBackupResponse {
   Status status = 1;
-  LoadBackupReport report = 2;
+  BackupInfo backup_info = 2;
+  repeated LoadCollectionBackupTask collection_backup_tasks = 3;
 }

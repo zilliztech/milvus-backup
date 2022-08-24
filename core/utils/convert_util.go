@@ -53,3 +53,12 @@ func MapToKVPair(dict map[string]string) []*commonpb.KeyValuePair {
 	}
 	return kvs
 }
+
+// KvPairsMap converts common.KeyValuePair slices into map
+func KvPairsMap(kvps []*commonpb.KeyValuePair) map[string]string {
+	m := make(map[string]string)
+	for _, kvp := range kvps {
+		m[kvp.Key] = kvp.Value
+	}
+	return m
+}
