@@ -13,7 +13,16 @@ import (
 var Params paramtable.GrpcServerConfig
 var HTTPParams paramtable.HTTPConfig
 
-const apiPathPrefix = "/api/v1"
+const (
+	HELLO_API         = "/hello"
+	CREATE_BACKUP_API = "/create_backup"
+	LIST_BACKUPS_API  = "/list_backups"
+	GET_BACKUP_API    = "/get_backup"
+	DELETE_BACKUP_API = "/delete_backup"
+	LOAD_BACKUP_API   = "/load_backup"
+
+	API_V1_PREFIX = "/api/v1"
+)
 
 // Server is the Backup Server
 type Server struct {
@@ -49,7 +58,7 @@ func (s *Server) registerHTTPServer() {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	ginHandler := gin.Default()
-	apiv1 := ginHandler.Group(apiPathPrefix)
+	apiv1 := ginHandler.Group(API_V1_PREFIX)
 	NewHandlers(s.backupContext).RegisterRoutesTo(apiv1)
 	http.Handle("/", ginHandler)
 	s.engine = ginHandler
@@ -76,13 +85,12 @@ func NewHandlers(backupContext *BackupContext) *Handlers {
 
 // RegisterRouters registers routes to given router
 func (h *Handlers) RegisterRoutesTo(router gin.IRouter) {
-	router.GET("/hello", wrapHandler(h.handleHello))
-
-	router.POST("/create_backup", wrapHandler(h.handleCreateBackup))
-	router.GET("/list_backups", wrapHandler(h.handleListBackups))
-	router.GET("/get_backup", wrapHandler(h.handleGetBackup))
-	router.DELETE("/delete_backup", wrapHandler(h.handleDeleteBackup))
-	router.POST("/list_backups", wrapHandler(h.handleLoadBackup))
+	router.GET(HELLO_API, wrapHandler(h.handleHello))
+	router.POST(CREATE_BACKUP_API, wrapHandler(h.handleCreateBackup))
+	router.GET(LIST_BACKUPS_API, wrapHandler(h.handleListBackups))
+	router.GET(GET_BACKUP_API, wrapHandler(h.handleGetBackup))
+	router.DELETE(DELETE_BACKUP_API, wrapHandler(h.handleDeleteBackup))
+	router.POST(LOAD_BACKUP_API, wrapHandler(h.handleLoadBackup))
 }
 
 // handlerFunc handles http request with gin context
