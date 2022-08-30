@@ -1,5 +1,7 @@
 package core
 
+import "strings"
+
 // BackupConfig for setting params used by backup context and server.
 type BackupConfig struct {
 	port string
@@ -16,6 +18,9 @@ type BackupOption func(*BackupConfig)
 
 func Port(port string) BackupOption {
 	return func(c *BackupConfig) {
+		if !strings.HasPrefix(port, ":") {
+			port = ":" + port
+		}
 		c.port = port
 	}
 }
