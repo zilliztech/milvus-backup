@@ -1,30 +1,33 @@
 package main
 
 import (
-	"context"
 	"flag"
-	"fmt"
-	"github.com/zilliztech/milvus-backup/core"
-	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/util/paramtable"
+	"github.com/zilliztech/milvus-backup/cmd"
 )
 
 const COMMAND_DESC = `
 NAME:
-   milvus_backup - A milvus backup tool
+	milvus_backup - A milvus backup tool
+   
+	milvus_backup can use in two mode: command line or RESTAPI server.
+   	1, You you start a REST API server by:
+		milvus_backup --mode=server [SERVER_OPTIONS...]
+   	2, Or you can use it as CLI
 
-USAGE:
-   milvus_backup [options...]
-
-   milvus_backup can use in two mode: command line or RESTAPI server, you can choose mode like this:
-   milvus_backup --mode=cmd
-   milvus_backup --mode=server 
+CLI USAGE:
+	milvus_backup create_backup backup_name [collection_names]
+	milvus_backup list_backups
+    milvus_backup get_backup backup_name
+    milvus_backup delete_backup backup_name
+    milvus_backup load_backup backup_name
 
 GLOBAL OPTIONS:
-   --mode                           serve mode: cmd or server
-   --help                           show help
-   --port                           the port to listen if in SERVER mode
-   --milvus_config                  milvus config file to connect to the milvus cluster, default: milvus.yaml
+	--mode                           serve mode: cmd or server
+   	--help                           show help
+	--milvus_config                  milvus config file to connect to the milvus cluster, default: milvus.yaml
+
+SERVER_OPTIONS:
+	--port                           the port to listen if in SERVER mode
 `
 
 var (
@@ -42,26 +45,27 @@ func init() {
 }
 
 func main() {
-	flag.Parse()
-	if help == true {
-		fmt.Println(COMMAND_DESC)
-		return
-	}
-
-	if mode == "server" {
-		var params paramtable.ComponentParam
-		params.GlobalInitWithYaml(milvus_config)
-		params.InitOnce()
-
-		context := context.Background()
-		server, err := core.NewServer(context, params, core.Port(port))
-		if err != nil {
-			fmt.Errorf("Fail to create backup server, %s", err.Error())
-		}
-		server.Init()
-		server.Start()
-	} else if mode == "cmd" {
-
-	}
-	log.Info("Done")
+	cmd.Execute()
+	//flag.Parse()
+	//if help == true {
+	//	fmt.Println(COMMAND_DESC)
+	//	return
+	//}
+	//
+	//if mode == "server" {
+	//	var params paramtable.ComponentParam
+	//	params.GlobalInitWithYaml(milvus_config)
+	//	params.InitOnce()
+	//
+	//	context := context.Background()
+	//	server, err := core.NewServer(context, params, core.Port(port))
+	//	if err != nil {
+	//		fmt.Errorf("Fail to create backup server, %s", err.Error())
+	//	}
+	//	server.Init()
+	//	server.Start()
+	//} else {
+	//
+	//}
+	//log.Info("Done")
 }
