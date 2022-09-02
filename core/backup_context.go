@@ -11,7 +11,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/utils"
-	dcc "github.com/zilliztech/milvus-backup/internal/distributed/datacoord/client"
+	//dcc "github.com/zilliztech/milvus-backup/internal/distributed/datacoord/client"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/proto/commonpb"
 	"github.com/zilliztech/milvus-backup/internal/proto/datapb"
@@ -56,7 +56,7 @@ type BackupContext struct {
 	milvusClient gomilvus.Client
 	//milvusProxyClient     proxy.Client
 	//milvusRootCoordClient *rcc.Client
-	milvusDataCoordClient *dcc.Client
+	//milvusDataCoordClient *dcc.Client
 	// milvus data storage client
 	milvusStorageClient MilvusStorage
 	started             bool
@@ -72,14 +72,14 @@ func (b *BackupContext) Start() error {
 	b.milvusClient = c
 
 	// start milvus datacoord client
-	dataCoordClient, err := dcc.NewClient(b.ctx, b.milvusSource.GetDatacoordAddr())
-	if err != nil {
-		log.Error("failed to connect to milvus's datacoord", zap.Error(err))
-		return err
-	}
-	b.milvusDataCoordClient = dataCoordClient
-	b.milvusDataCoordClient.Init()
-	b.milvusDataCoordClient.Start()
+	//dataCoordClient, err := dcc.NewClient(b.ctx, b.milvusSource.GetDatacoordAddr())
+	//if err != nil {
+	//	log.Error("failed to connect to milvus's datacoord", zap.Error(err))
+	//	return err
+	//}
+	//b.milvusDataCoordClient = dataCoordClient
+	//b.milvusDataCoordClient.Init()
+	//b.milvusDataCoordClient.Start()
 
 	// start milvus storage client
 	var minioEndPoint string
@@ -135,7 +135,7 @@ func (b *BackupContext) Close() error {
 	b.started = false
 	err := b.milvusClient.Close()
 	//err = b.milvusRootCoordClient.Stop()
-	err = b.milvusDataCoordClient.Stop()
+	//err = b.milvusDataCoordClient.Stop()
 	return err
 }
 
@@ -148,16 +148,16 @@ func CreateBackupContext(ctx context.Context, params paramtable.ComponentParam) 
 	Params.InitOnce(typeutil.ProxyRole)
 	milvusAddr := Params.GetAddress()
 
-	var Params2 paramtable.GrpcServerConfig
-	Params2.InitOnce(typeutil.DataCoordRole)
-	milvusDatacoordAddr := Params2.GetAddress()
+	//var Params2 paramtable.GrpcServerConfig
+	//Params2.InitOnce(typeutil.DataCoordRole)
+	//milvusDatacoordAddr := Params2.GetAddress()
 
 	return &BackupContext{
 		ctx: ctx,
 		milvusSource: &MilvusSource{
-			params:        params,
-			proxyAddr:     milvusAddr,
-			datacoordAddr: milvusDatacoordAddr,
+			params:    params,
+			proxyAddr: milvusAddr,
+			//datacoordAddr: milvusDatacoordAddr,
 		},
 	}
 }
