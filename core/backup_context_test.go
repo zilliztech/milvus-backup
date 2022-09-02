@@ -4,15 +4,14 @@ import (
 	"context"
 	"github.com/stretchr/testify/assert"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/internal/util/paramtable"
 	"testing"
 )
 
 func TestCreateBackup(t *testing.T) {
-	var params paramtable.ComponentParam
-	params.InitOnce()
+	//var params paramtable.ComponentParam
+	//params.InitOnce()
 	context := context.Background()
-	backup := CreateBackupContext(context, params)
+	backup := CreateBackupContext(context)
 
 	req := &backuppb.CreateBackupRequest{
 		BackupName: "test_backup",
@@ -21,10 +20,10 @@ func TestCreateBackup(t *testing.T) {
 }
 
 func TestListBackups(t *testing.T) {
-	var params paramtable.ComponentParam
-	params.InitOnce()
+	//var params paramtable.ComponentParam
+	//params.InitOnce()
 	context := context.Background()
-	backupContext := CreateBackupContext(context, params)
+	backupContext := CreateBackupContext(context)
 
 	backupLists, err := backupContext.ListBackups(context, &backuppb.ListBackupsRequest{})
 	assert.NoError(t, err)
@@ -44,10 +43,10 @@ func TestListBackups(t *testing.T) {
 }
 
 func TestGetBackup(t *testing.T) {
-	var params paramtable.ComponentParam
-	params.InitOnce()
+	//var params paramtable.ComponentParam
+	//params.InitOnce()
 	context := context.Background()
-	backupContext := CreateBackupContext(context, params)
+	backupContext := CreateBackupContext(context)
 
 	backup, err := backupContext.GetBackup(context, &backuppb.GetBackupRequest{
 		BackupName: "test_backup",
@@ -57,10 +56,10 @@ func TestGetBackup(t *testing.T) {
 }
 
 func TestDeleteBackup(t *testing.T) {
-	var params paramtable.ComponentParam
-	params.InitOnce()
+	//var params paramtable.ComponentParam
+	//params.InitOnce()
 	context := context.Background()
-	backupContext := CreateBackupContext(context, params)
+	backupContext := CreateBackupContext(context)
 
 	backup, err := backupContext.DeleteBackup(context, &backuppb.DeleteBackupRequest{
 		BackupName: "test_backup",

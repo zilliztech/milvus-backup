@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	gomilvus "github.com/milvus-io/milvus-sdk-go/v2/client"
+	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/utils"
 	//dcc "github.com/zilliztech/milvus-backup/internal/distributed/datacoord/client"
@@ -17,10 +19,6 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/proto/datapb"
 	"github.com/zilliztech/milvus-backup/internal/proto/schemapb"
 	"github.com/zilliztech/milvus-backup/internal/util/paramtable"
-	"github.com/zilliztech/milvus-backup/internal/util/typeutil"
-
-	gomilvus "github.com/milvus-io/milvus-sdk-go/v2/client"
-	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 	"go.uber.org/zap"
 )
 
@@ -47,9 +45,11 @@ type Backup interface {
 var _ Backup = (*BackupContext)(nil)
 
 type BackupContext struct {
-	ctx          context.Context
-	milvusSource *MilvusSource
-	backupInfos  []backuppb.BackupInfo
+	ctx    context.Context
+	config *BackupConfig
+
+	//milvusSource *MilvusSource
+	backupInfos []backuppb.BackupInfo
 	// lock to make sure only one backup is creating or loading
 	mu sync.Mutex
 	// milvus go sdk client
@@ -64,7 +64,7 @@ type BackupContext struct {
 
 func (b *BackupContext) Start() error {
 	// start milvus go SDK client
-	c, err := gomilvus.NewGrpcClient(b.ctx, b.milvusSource.GetProxyAddr())
+	c, err := gomilvus.NewGrpcClient(b.ctx, b.config.milvusProxyAddr)
 	if err != nil {
 		log.Error("failed to connect to milvus", zap.Error(err))
 		return err
@@ -139,26 +139,26 @@ func (b *BackupContext) Close() error {
 	return err
 }
 
-func (b *BackupContext) GetMilvusSource() *MilvusSource {
-	return b.milvusSource
-}
+//func (b *BackupContext) GetMilvusSource() *MilvusSource {
+//	return b.milvusSource
+//}
 
-func CreateBackupContext(ctx context.Context, params paramtable.ComponentParam) *BackupContext {
-	var Params paramtable.GrpcServerConfig
-	Params.InitOnce(typeutil.ProxyRole)
-	milvusAddr := Params.GetAddress()
+func CreateBackupContext(ctx context.Context, opts ...BackupOption) *BackupContext {
+	//var Params paramtable.GrpcServerConfig
+	//Params.InitOnce(typeutil.ProxyRole)
+	//milvusAddr := Params.GetAddress()
 
 	//var Params2 paramtable.GrpcServerConfig
 	//Params2.InitOnce(typeutil.DataCoordRole)
 	//milvusDatacoordAddr := Params2.GetAddress()
+	c := newDefaultBackupConfig()
+	for _, opt := range opts {
+		opt(c)
+	}
 
 	return &BackupContext{
-		ctx: ctx,
-		milvusSource: &MilvusSource{
-			params:    params,
-			proxyAddr: milvusAddr,
-			//datacoordAddr: milvusDatacoordAddr,
-		},
+		ctx:    ctx,
+		config: c,
 	}
 }
 

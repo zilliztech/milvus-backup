@@ -4,12 +4,14 @@ import "strings"
 
 // BackupConfig for setting params used by backup context and server.
 type BackupConfig struct {
-	port string
+	port            string
+	milvusProxyAddr string
 }
 
 func newDefaultBackupConfig() *BackupConfig {
 	return &BackupConfig{
-		port: ":8080",
+		port:            ":8080",
+		milvusProxyAddr: "localhost:19530",
 	}
 }
 
@@ -22,5 +24,14 @@ func Port(port string) BackupOption {
 			port = ":" + port
 		}
 		c.port = port
+	}
+}
+
+func MilvusProxyAddress(milvusProxyAddr string) BackupOption {
+	return func(c *BackupConfig) {
+		//if !strings.HasPrefix(port, ":") {
+		//	port = ":" + port
+		//}
+		c.milvusProxyAddr = milvusProxyAddr
 	}
 }

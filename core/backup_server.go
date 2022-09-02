@@ -28,17 +28,16 @@ const (
 type Server struct {
 	backupContext *BackupContext
 	engine        *gin.Engine
-	config        *BackupConfig
 }
 
-func NewServer(ctx context.Context, params paramtable.ComponentParam, opts ...BackupOption) (*Server, error) {
-	c := newDefaultBackupConfig()
-	for _, opt := range opts {
-		opt(c)
-	}
+func NewServer(ctx context.Context, opts ...BackupOption) (*Server, error) {
+	//c := newDefaultBackupConfig()
+	//for _, opt := range opts {
+	//	opt(c)
+	//}
 	return &Server{
-		backupContext: CreateBackupContext(ctx, params),
-		config:        c,
+		backupContext: CreateBackupContext(ctx, opts...),
+		//config:        c,
 	}, nil
 }
 
@@ -48,8 +47,12 @@ func (s *Server) Init() {
 
 func (s *Server) Start() {
 	s.registerProfilePort()
-	s.engine.Run(s.config.port)
+	s.engine.Run(s.Config().port)
 	log.Info("Start backup server backend")
+}
+
+func (s *Server) Config() *BackupConfig {
+	return s.backupContext.config
 }
 
 // registerHTTPServer register the http server, panic when failed

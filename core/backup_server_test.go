@@ -3,7 +3,6 @@ package core
 import (
 	"context"
 	"github.com/stretchr/testify/assert"
-	"github.com/zilliztech/milvus-backup/internal/util/paramtable"
 	"net/http"
 	"net/http/pprof"
 	"testing"
@@ -11,13 +10,13 @@ import (
 )
 
 func TestBackupService(t *testing.T) {
-	var params paramtable.ComponentParam
-	milvusYamlFile := "milvus.yaml"
-	params.GlobalInitWithYaml(milvusYamlFile)
-	params.InitOnce()
+	//var params paramtable.ComponentParam
+	//milvusYamlFile := "milvus.yaml"
+	//params.GlobalInitWithYaml(milvusYamlFile)
+	//params.InitOnce()
 
 	context := context.Background()
-	server, err := NewServer(context, params)
+	server, err := NewServer(context)
 	assert.NoError(t, err)
 	server.Init()
 	server.Start()
