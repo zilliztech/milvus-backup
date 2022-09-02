@@ -191,7 +191,11 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 		errorResp.Status.Reason = err.Error()
 		return errorResp, nil
 	}
+	log.Info(fmt.Sprintf("List %v collections", len(collections)))
 
+	log.Debug("Request collection names",
+		zap.Strings("request_collection_names", request.GetCollectionNames()),
+		zap.Int("length", len(request.GetCollectionNames())))
 	toBackupCollections := func(collections []*entity.Collection, collectionNames []string) []*entity.Collection {
 		if collectionNames == nil || len(collectionNames) == 0 {
 			return collections
@@ -333,7 +337,11 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 	}
 	completeBackupInfo.BackupStatus = backuppb.StatusCode_Success
 	completeBackupInfo.BackupTimestamp = uint64(time.Now().Unix())
-	completeBackupInfo.Name = request.BackupName
+	if request.GetBackupName() == "" {
+		completeBackupInfo.Name = "backup_" + fmt.Sprint(time.Now().Unix())
+	} else {
+		completeBackupInfo.Name = request.BackupName
+	}
 	// todo generate ID
 	completeBackupInfo.Id = 0
 

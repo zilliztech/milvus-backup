@@ -15,7 +15,7 @@ func TestCreateBackup(t *testing.T) {
 	backup := CreateBackupContext(context, params)
 
 	req := &backuppb.CreateBackupRequest{
-		BackupName: "test_backup6",
+		BackupName: "test_backup7",
 	}
 	backup.CreateBackup(context, req)
 }

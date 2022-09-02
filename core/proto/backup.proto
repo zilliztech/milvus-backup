@@ -36,10 +36,11 @@ message MsgBase {
 }
 
 enum StatusCode {
-  Success = 0;
-  UnexpectedError = 1;
-  ConnectFailed = 2;
-  PermissionDenied = 3;
+  Unknown = 0;
+  Success = 1;
+  UnexpectedError = 2;
+  ConnectFailed = 3;
+  PermissionDenied = 4;
 }
 
 message Status {
