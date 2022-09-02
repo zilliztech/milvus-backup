@@ -15,7 +15,7 @@ func TestCreateBackup(t *testing.T) {
 	backup := CreateBackupContext(context, params)
 
 	req := &backuppb.CreateBackupRequest{
-		BackupName: "test_backup",
+		BackupName: "test_backup6",
 	}
 	backup.CreateBackup(context, req)
 }
@@ -34,7 +34,7 @@ func TestListBackups(t *testing.T) {
 		CollectionName: "hello_milvus",
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, len(backupListsWithCollection.BackupInfos), 1)
+	assert.Equal(t, 1, len(backupListsWithCollection.BackupInfos))
 
 	backupListsWithCollection2, err := backupContext.ListBackups(context, &backuppb.ListBackupsRequest{
 		CollectionName: "hello_milvus2",
@@ -63,7 +63,7 @@ func TestDeleteBackup(t *testing.T) {
 	backupContext := CreateBackupContext(context, params)
 
 	backup, err := backupContext.DeleteBackup(context, &backuppb.DeleteBackupRequest{
-		BackupName: "test_backup",
+		BackupName: "test_backup6",
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, backup.GetStatus().GetStatusCode(), backuppb.StatusCode_Success)

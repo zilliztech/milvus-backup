@@ -166,6 +166,7 @@ message ListBackupsRequest {
 message ListBackupsResponse {
   Status status = 1;
   repeated BackupInfo backup_infos = 2;
+  repeated string failBackups = 3;
 }
 
 message DeleteBackupRequest {

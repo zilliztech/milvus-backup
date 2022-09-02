@@ -444,6 +444,7 @@ func (b BackupContext) ListBackups(ctx context.Context, request *backuppb.ListBa
 		Status: &backuppb.Status{
 			StatusCode: backuppb.StatusCode_UnexpectedError,
 		},
+		FailBackups: []string{},
 	}
 	if err != nil {
 		log.Error("Fail to list backup directory", zap.Error(err))
@@ -453,17 +454,26 @@ func (b BackupContext) ListBackups(ctx context.Context, request *backuppb.ListBa
 
 	log.Info("List Backups' path", zap.Strings("backup_paths", backupPaths))
 	backupInfos := make([]*backuppb.BackupInfo, 0)
+	failBackups := make([]string, 0)
 	for _, backupPath := range backupPaths {
 		backupResp, err := b.GetBackup(ctx, &backuppb.GetBackupRequest{
 			BackupName: BackupPathToName(backupPath),
 		})
 		if err != nil {
+			log.Warn("Fail to read backup",
+				zap.String("path", backupPath),
+				zap.Error(err))
 			resp.Status.Reason = err.Error()
-			return resp, nil
+			failBackups = append(failBackups, BackupPathToName(backupPath))
+			//return resp, nil
 		}
 		if backupResp.GetStatus().StatusCode != backuppb.StatusCode_Success {
+			log.Warn("Fail to read backup",
+				zap.String("path", backupPath),
+				zap.String("error", backupResp.GetStatus().GetReason()))
 			resp.Status.Reason = backupResp.GetStatus().GetReason()
-			return resp, nil
+			failBackups = append(failBackups, BackupPathToName(backupPath))
+			//return resp, nil
 		}
 
 		// 2, list wanted backup
@@ -487,6 +497,7 @@ func (b BackupContext) ListBackups(ctx context.Context, request *backuppb.ListBa
 			StatusCode: backuppb.StatusCode_Success,
 		},
 		BackupInfos: backupInfos,
+		FailBackups: failBackups,
 	}, nil
 }
 

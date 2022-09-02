@@ -487,6 +487,20 @@ func TestMinIOCM(t *testing.T) {
 	})
 }
 
+func TestWriteAEmptyBackupFile(t *testing.T) {
+
+	Params.Init()
+	testBucket, err := Params.Load("minio.bucketName")
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	testCM, err := newMinIOMilvusStorage(ctx, testBucket)
+	err = testCM.Write("backup/test_backup6", nil)
+	assert.NoError(t, err)
+}
+
 func TestReadMilvusData(t *testing.T) {
 
 	Params.Init()
