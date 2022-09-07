@@ -15,11 +15,11 @@ var HTTPParams paramtable.HTTPConfig
 
 const (
 	HELLO_API         = "/hello"
-	CREATE_BACKUP_API = "/create_backup"
-	LIST_BACKUPS_API  = "/list_backups"
-	GET_BACKUP_API    = "/get_backup"
-	DELETE_BACKUP_API = "/delete_backup"
-	LOAD_BACKUP_API   = "/load_backup"
+	CREATE_BACKUP_API = "/create"
+	LIST_BACKUPS_API  = "/list"
+	GET_BACKUP_API    = "/get"
+	DELETE_BACKUP_API = "/delete"
+	LOAD_BACKUP_API   = "/load"
 
 	API_V1_PREFIX = "/api/v1"
 )
