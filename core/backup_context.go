@@ -300,6 +300,7 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 			segmentBackupInfos = append(segmentBackupInfos, segmentInfo)
 		}
 	}
+	log.Info(fmt.Sprintf("Get segment num %d", len(segmentBackupInfos)))
 
 	// get segment infos by datacoord client
 	//for _, part := range partitionBackupInfos {
@@ -347,7 +348,63 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 
 	// 6, copy data
 	for _, segment := range segmentBackupInfos {
-		for _, binlogs := range segment.Binlogs {
+		// insert log
+		for _, binlogs := range segment.GetBinlogs() {
+			for _, binlog := range binlogs.GetBinlogs() {
+				targetPath := strings.Replace(binlog.GetLogPath(), "files", DataDirPath(completeBackupInfo), 1)
+				if targetPath == binlog.GetLogPath() {
+					log.Error("wrong target path",
+						zap.String("from", binlog.GetLogPath()),
+						zap.String("to", targetPath))
+					errorResp.Status.Reason = err.Error()
+					return errorResp, nil
+				}
+
+				err = b.milvusStorageClient.Copy(binlog.GetLogPath(), targetPath)
+				if err != nil {
+					log.Info("Fail to copy file",
+						zap.Error(err),
+						zap.String("from", binlog.GetLogPath()),
+						zap.String("to", targetPath))
+					errorResp.Status.Reason = err.Error()
+					return errorResp, nil
+				} else {
+					log.Info("Successfully copy file",
+						zap.String("from", binlog.GetLogPath()),
+						zap.String("to", targetPath))
+				}
+			}
+		}
+		// delta log
+		for _, binlogs := range segment.GetDeltalogs() {
+			for _, binlog := range binlogs.GetBinlogs() {
+				targetPath := strings.Replace(binlog.GetLogPath(), "files", DataDirPath(completeBackupInfo), 1)
+				if targetPath == binlog.GetLogPath() {
+					log.Error("wrong target path",
+						zap.String("from", binlog.GetLogPath()),
+						zap.String("to", targetPath))
+					errorResp.Status.Reason = err.Error()
+					return errorResp, nil
+				}
+
+				err = b.milvusStorageClient.Copy(binlog.GetLogPath(), targetPath)
+				if err != nil {
+					log.Info("Fail to copy file",
+						zap.Error(err),
+						zap.String("from", binlog.GetLogPath()),
+						zap.String("to", targetPath))
+					errorResp.Status.Reason = err.Error()
+					return errorResp, nil
+				} else {
+					log.Info("Successfully copy file",
+						zap.String("from", binlog.GetLogPath()),
+						zap.String("to", targetPath))
+				}
+			}
+		}
+
+		// stats log
+		for _, binlogs := range segment.GetStatslogs() {
 			for _, binlog := range binlogs.GetBinlogs() {
 				targetPath := strings.Replace(binlog.GetLogPath(), "files", DataDirPath(completeBackupInfo), 1)
 				if targetPath == binlog.GetLogPath() {

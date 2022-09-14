@@ -501,6 +501,25 @@ func TestWriteAEmptyBackupFile(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+func TestReadBackupFiles(t *testing.T) {
+
+	Params.Init()
+	testBucket, err := Params.Load("minio.bucketName")
+	require.NoError(t, err)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	testCM, err := newMinIOMilvusStorage(ctx, testBucket)
+	files, _, err := testCM.ListWithPrefix("/backup", true)
+	assert.NoError(t, err)
+
+	for _, file := range files {
+		log.Info("BackupFiles", zap.String("path", file))
+	}
+
+}
+
 func TestReadMilvusData(t *testing.T) {
 
 	Params.Init()
