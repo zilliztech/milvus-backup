@@ -161,3 +161,51 @@ func TestGetBackupAfterCreate(t *testing.T) {
 		BackupName: randBackupName,
 	})
 }
+
+func TestGetBackupFaultBackup(t *testing.T) {
+	var params paramtable.ComponentParam
+	params.InitOnce()
+	context := context.Background()
+	backupContext := CreateBackupContext(context, params)
+	backupContext.Start()
+
+	randBackupName := fmt.Sprintf("test_%d", rand.Int())
+
+	backupContext.DeleteBackup(context, &backuppb.DeleteBackupRequest{
+		BackupName: randBackupName,
+	})
+
+	req := &backuppb.CreateBackupRequest{
+		BackupName: randBackupName,
+	}
+	resp, err := backupContext.CreateBackup(context, req)
+	assert.NoError(t, err)
+	assert.Equal(t, backuppb.StatusCode_Success, resp.GetStatus().GetStatusCode())
+
+	backupContext.milvusStorageClient.RemoveWithPrefix(BackupMetaPath(resp.GetBackupInfo()))
+
+	backup, err := backupContext.GetBackup(context, &backuppb.GetBackupRequest{
+		BackupName: randBackupName,
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, backuppb.StatusCode_UnexpectedError, backup.GetStatus().GetStatusCode())
+
+	// clean
+	backupContext.DeleteBackup(context, &backuppb.DeleteBackupRequest{
+		BackupName: randBackupName,
+	})
+}
+
+func TestGetBackupUnexistBackupName(t *testing.T) {
+	var params paramtable.ComponentParam
+	params.InitOnce()
+	context := context.Background()
+	backupContext := CreateBackupContext(context, params)
+	backupContext.Start()
+
+	backup, err := backupContext.GetBackup(context, &backuppb.GetBackupRequest{
+		BackupName: "un_exist",
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, backuppb.StatusCode_UnexpectedError, backup.GetStatus().GetStatusCode())
+}
