@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/util/paramtable"
+	"math/rand"
 	"testing"
 )
 
@@ -80,4 +81,83 @@ func TestDeleteBackup(t *testing.T) {
 
 	assert.Equal(t, 0, len(backupLists.GetBackupInfos()))
 
+}
+
+func TestCreateBackupWithUnexistCollection(t *testing.T) {
+	var params paramtable.ComponentParam
+	params.InitOnce()
+	context := context.Background()
+	backup := CreateBackupContext(context, params)
+
+	randBackupName := fmt.Sprintf("test_%d", rand.Int())
+
+	req := &backuppb.CreateBackupRequest{
+		BackupName:      randBackupName,
+		CollectionNames: []string{"not_exist"},
+	}
+	resp, err := backup.CreateBackup(context, req)
+	assert.NoError(t, err)
+	assert.Equal(t, backuppb.StatusCode_UnexpectedError, resp.GetStatus().GetStatusCode())
+	assert.Equal(t, "request backup collection does not exist: not_exist", resp.GetStatus().GetReason())
+
+	// clean
+	backup.DeleteBackup(context, &backuppb.DeleteBackupRequest{
+		BackupName: randBackupName,
+	})
+}
+
+func TestCreateBackupWithDuplicateName(t *testing.T) {
+	var params paramtable.ComponentParam
+	params.InitOnce()
+	context := context.Background()
+	backup := CreateBackupContext(context, params)
+
+	randBackupName := fmt.Sprintf("test_%d", rand.Int())
+
+	req := &backuppb.CreateBackupRequest{
+		BackupName: randBackupName,
+	}
+	resp, err := backup.CreateBackup(context, req)
+	assert.NoError(t, err)
+	assert.Equal(t, backuppb.StatusCode_Success, resp.GetStatus().GetStatusCode())
+
+	req2 := &backuppb.CreateBackupRequest{
+		BackupName: randBackupName,
+	}
+	resp2, err := backup.CreateBackup(context, req2)
+	assert.NoError(t, err)
+	assert.Equal(t, backuppb.StatusCode_UnexpectedError, resp2.GetStatus().GetStatusCode())
+	assert.Equal(t, fmt.Sprintf("backup already exist with the name: %s", req2.GetBackupName()), resp2.GetStatus().GetReason())
+
+	// clean
+	backup.DeleteBackup(context, &backuppb.DeleteBackupRequest{
+		BackupName: randBackupName,
+	})
+}
+
+func TestGetBackupAfterCreate(t *testing.T) {
+	var params paramtable.ComponentParam
+	params.InitOnce()
+	context := context.Background()
+	backupContext := CreateBackupContext(context, params)
+
+	randBackupName := fmt.Sprintf("test_%d", rand.Int())
+
+	req := &backuppb.CreateBackupRequest{
+		BackupName: randBackupName,
+	}
+	resp, err := backupContext.CreateBackup(context, req)
+	assert.NoError(t, err)
+	assert.Equal(t, backuppb.StatusCode_Success, resp.GetStatus().GetStatusCode())
+
+	backup, err := backupContext.GetBackup(context, &backuppb.GetBackupRequest{
+		BackupName: randBackupName,
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, backuppb.StatusCode_Success, backup.GetStatus().GetStatusCode())
+
+	// clean
+	backupContext.DeleteBackup(context, &backuppb.DeleteBackupRequest{
+		BackupName: randBackupName,
+	})
 }

@@ -184,34 +184,64 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 	}
 
 	leveledBackupInfo := &LeveledBackupInfo{}
-	// 1, get collection level meta
-	collections, err := b.milvusClient.ListCollections(b.ctx)
-	if err != nil {
-		log.Error("Fail in ListCollections", zap.Error(err))
-		errorResp.Status.Reason = err.Error()
-		return errorResp, nil
-	}
-	log.Info(fmt.Sprintf("List %v collections", len(collections)))
 
+	// backup name validate
+	if request.GetBackupName() != "" {
+		resp, err := b.GetBackup(b.ctx, &backuppb.GetBackupRequest{
+			BackupName: request.GetBackupName(),
+		})
+		if err != nil {
+			log.Error("fail in GetBackup", zap.Error(err))
+			errorResp.Status.Reason = err.Error()
+			return errorResp, nil
+		}
+		if resp.GetBackupInfo() != nil {
+			errMsg := fmt.Sprintf("backup already exist with the name: %s", request.GetBackupName())
+			log.Error(errMsg)
+			errorResp.Status.Reason = errMsg
+			return errorResp, nil
+		}
+	}
+
+	// 1, get collection level meta
 	log.Debug("Request collection names",
 		zap.Strings("request_collection_names", request.GetCollectionNames()),
 		zap.Int("length", len(request.GetCollectionNames())))
-	toBackupCollections := func(collections []*entity.Collection, collectionNames []string) []*entity.Collection {
-		if collectionNames == nil || len(collectionNames) == 0 {
-			return collections
+
+	var toBackupCollections []*entity.Collection
+	if request.GetCollectionNames() == nil || len(request.GetCollectionNames()) == 0 {
+		collections, err := b.milvusClient.ListCollections(b.ctx)
+		if err != nil {
+			log.Error("fail in ListCollections", zap.Error(err))
+			errorResp.Status.Reason = err.Error()
+			return errorResp, nil
 		}
-		res := make([]*entity.Collection, 0)
-		collectionDict := make(map[string]bool, len(collectionNames))
-		for _, collectionName := range collectionNames {
-			collectionDict[collectionName] = true
-		}
-		for _, collection := range collections {
-			if collectionDict[collection.Name] == true {
-				res = append(res, collection)
+		log.Debug(fmt.Sprintf("List %v collections", len(collections)))
+		toBackupCollections = collections
+	} else {
+		toBackupCollections := make([]*entity.Collection, 0)
+		for _, collectionName := range request.GetCollectionNames() {
+			exist, err := b.milvusClient.HasCollection(b.ctx, collectionName)
+			if err != nil {
+				log.Error("fail in HasCollection", zap.Error(err))
+				errorResp.Status.Reason = err.Error()
+				return errorResp, nil
 			}
+			if !exist {
+				errMsg := fmt.Sprintf("request backup collection does not exist: %s", collectionName)
+				log.Error(errMsg)
+				errorResp.Status.Reason = errMsg
+				return errorResp, nil
+			}
+			collection, err := b.milvusClient.DescribeCollection(b.ctx, collectionName)
+			if err != nil {
+				log.Error("fail in DescribeCollection", zap.Error(err))
+				errorResp.Status.Reason = err.Error()
+				return errorResp, nil
+			}
+			toBackupCollections = append(toBackupCollections, collection)
 		}
-		return res
-	}(collections, request.GetCollectionNames())
+	}
 
 	log.Info("collections to backup", zap.Any("collections", toBackupCollections))
 
@@ -746,7 +776,7 @@ func (b BackupContext) executeTask(ctx context.Context, task *backuppb.LoadColle
 		}
 		for _, segment := range partitionBackup.GetSegmentBackups() {
 			// bulkload
-			taskIds, err := b.milvusClient.Import(ctx, targetCollectionName, partitionBackup.GetPartitionName(), nil, BACKUP_ROW_BASED, getSegmentFiles(segment), nil)
+			taskIds, err := b.milvusClient.Bulkload(ctx, targetCollectionName, partitionBackup.GetPartitionName(), BACKUP_ROW_BASED, getSegmentFiles(segment), nil)
 			if err != nil {
 				log.Error("Fail to bulkload the segment",
 					zap.Error(err),
@@ -787,12 +817,12 @@ func (b BackupContext) executeTask(ctx context.Context, task *backuppb.LoadColle
 func (b BackupContext) watchImportState(ctx context.Context, taskId int64, timeout int64, sleepSeconds int) (bool, error) {
 	start := time.Now().Unix()
 	for time.Now().Unix()-start < timeout {
-		importTaskState, err := b.milvusClient.GetImportState(ctx, taskId)
+		importTaskState, err := b.milvusClient.GetBulkloadState(ctx, taskId)
 		switch importTaskState.State {
-		case entity.ImportState_ImportFailed:
+		case entity.BulkloadFailed:
 			return false, err
-		case entity.ImportState_ImportPersisted:
-		case entity.ImportState_ImportCompleted:
+		case entity.BulkloadPersisted:
+		case entity.BulkloadCompleted:
 			return false, nil
 		default:
 			time.Sleep(time.Second * time.Duration(sleepSeconds))
