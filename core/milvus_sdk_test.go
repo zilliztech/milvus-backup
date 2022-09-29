@@ -26,14 +26,22 @@ func TestProxyClient(t *testing.T) {
 	c2, err := gomilvus.NewGrpcClient(ctx, milvusAddr)
 	assert.NoError(t, err)
 	collections, err := c2.ListCollections(ctx)
-	log.Info("collections", zap.Any("colls", collections))
-	coll, err := c2.DescribeCollection(ctx, "hello_milvus")
-	log.Info("collection", zap.Any("hello_milvus", coll))
+	for _, coll := range collections {
+		log.Info("collections", zap.Any("coll", coll.Name), zap.Int64("id", coll.ID))
+	}
 
-	c2.DropCollection(ctx, "demo_bulkload")
-	c2.DropCollection(ctx, "hello_milvus")
+	//coll, err := c2.DescribeCollection(ctx, "hello_milvus")
+	//log.Info("collection", zap.Any("hello_milvus", coll))
 
-	//assert.NotEmpty(t, collections)
+	//c2.DropCollection(ctx, "demo_bulkload")
+	//c2.DropCollection(ctx, "hello_milvus")
+	//c2.DropCollection(ctx, "hello_milvus_recover")
+	//idCol, randomCol, embeddingCol = "ID", "random", "embeddings"
+	pks := entity.NewColumnInt64("ID", []int64{0, 1})
+	res, err := c2.QueryByPks(ctx, "hello_milvus_recover", nil, pks, []string{"random"}, gomilvus.WithSearchQueryConsistencyLevel(entity.ClStrong))
+	log.Info("query result", zap.Any("query result", res))
+
+	assert.Empty(t, collections)
 }
 
 func TestBulkload(t *testing.T) {

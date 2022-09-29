@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"github.com/stretchr/testify/assert"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/util/paramtable"
+	"go.uber.org/zap"
 	"math/rand"
 	"testing"
 )
@@ -208,4 +210,33 @@ func TestGetBackupUnexistBackupName(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, backuppb.StatusCode_UnexpectedError, backup.GetStatus().GetStatusCode())
+}
+
+func TestLoadBackup(t *testing.T) {
+	var params paramtable.ComponentParam
+	params.InitOnce()
+	context := context.Background()
+	backup := CreateBackupContext(context, params)
+	backup.Start()
+
+	randBackupName := fmt.Sprintf("test_%d", rand.Int())
+
+	req := &backuppb.CreateBackupRequest{
+		BackupName: randBackupName,
+	}
+	resp, err := backup.CreateBackup(context, req)
+	assert.NoError(t, err)
+	assert.Equal(t, backuppb.StatusCode_Success, resp.GetStatus().GetStatusCode())
+
+	loadResp, err := backup.LoadBackup(context, &backuppb.LoadBackupRequest{
+		BackupName:       randBackupName,
+		CollectionSuffix: "_recover",
+	})
+	assert.NoError(t, err)
+	log.Info("load backup", zap.Any("resp", loadResp))
+
+	//clean
+	backup.DeleteBackup(context, &backuppb.DeleteBackupRequest{
+		BackupName: randBackupName,
+	})
 }

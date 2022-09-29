@@ -310,6 +310,14 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 	log.Info("Finish build backup collection meta")
 
 	// 3, Flush
+	for _, coll := range toBackupCollections {
+		err := b.milvusClient.Flush(ctx, coll.Name, false)
+		if err != nil {
+			log.Error(fmt.Sprintf("fail to flush the collection: %s", coll.Name))
+			errorResp.Status.Reason = err.Error()
+			return errorResp, nil
+		}
+	}
 
 	// 4, get segment level meta
 	// get segment infos by milvus SDK
@@ -768,17 +776,23 @@ func (b BackupContext) executeLoadTask(ctx context.Context, backupName string, t
 	}
 
 	for _, partitionBackup := range task.GetCollBackup().GetPartitionBackups() {
-		// todo: handle default partition
-		err = b.milvusClient.CreatePartition(ctx, targetCollectionName, partitionBackup.GetPartitionName())
+		exist, err := b.milvusClient.HasPartition(ctx, targetCollectionName, partitionBackup.GetPartitionName())
 		if err != nil {
-			log.Error("fail to create partition", zap.Error(err))
+			log.Error("fail to check has partition", zap.Error(err))
 			return err
+		}
+		if !exist {
+			err = b.milvusClient.CreatePartition(ctx, targetCollectionName, partitionBackup.GetPartitionName())
+			if err != nil {
+				log.Error("fail to create partition", zap.Error(err))
+				return err
+			}
 		}
 
 		// bulkload
 		// todo ts
 		options := make(map[string]string)
-		err := b.executeBulkload(ctx, targetCollectionName, partitionBackup.GetPartitionName(), getPartitionFiles(backupName, partitionBackup), options)
+		err = b.executeBulkload(ctx, targetCollectionName, partitionBackup.GetPartitionName(), getPartitionFiles(backupName, partitionBackup), options)
 		if err != nil {
 			log.Error("fail to bulkload to partition",
 				zap.Error(err),
