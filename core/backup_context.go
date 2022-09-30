@@ -25,9 +25,11 @@ import (
 )
 
 const (
-	BACKUP_ROW_BASED        = false // bulkload backup should be columned based
-	BULKLOAD_TIMEOUT        = 10 * 60
-	BULKLOAD_SLEEP_INTERVAL = 3
+	BACKUP_ROW_BASED         = false // bulkload backup should be columned based
+	BULKLOAD_TIMEOUT         = 10 * 60
+	BULKLOAD_SLEEP_INTERVAL  = 3
+	BACKUP_NAME              = "BACKUP_NAME"
+	COLLECTION_RENAME_SUFFIX = "COLLECTION_RENAME_SUFFIX"
 )
 
 type Backup interface {
@@ -201,6 +203,12 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 			errorResp.Status.Reason = errMsg
 			return errorResp, nil
 		}
+	}
+	err := utils.ValidateType(request.GetBackupName(), BACKUP_NAME)
+	if err != nil {
+		log.Error("illegal backup name", zap.Error(err))
+		errorResp.Status.Reason = err.Error()
+		return errorResp, nil
 	}
 
 	// 1, get collection level meta
@@ -652,6 +660,15 @@ func (b BackupContext) LoadBackup(ctx context.Context, request *backuppb.LoadBac
 	}
 
 	// 1, get and validate
+	if request.GetCollectionSuffix() != "" {
+		err := utils.ValidateType(request.GetCollectionSuffix(), COLLECTION_RENAME_SUFFIX)
+		if err != nil {
+			log.Error("illegal collection rename suffix", zap.Error(err))
+			resp.Status.Reason = err.Error()
+			return resp, nil
+		}
+	}
+
 	getResp, err := b.GetBackup(ctx, &backuppb.GetBackupRequest{
 		BackupName: request.GetBackupName(),
 	})

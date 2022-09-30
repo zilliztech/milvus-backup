@@ -137,6 +137,27 @@ func TestCreateBackupWithDuplicateName(t *testing.T) {
 	})
 }
 
+func TestCreateBackupWithIllegalName(t *testing.T) {
+	var params paramtable.ComponentParam
+	params.InitOnce()
+	context := context.Background()
+	backup := CreateBackupContext(context, params)
+
+	randBackupName := "dahgg$%123"
+
+	req := &backuppb.CreateBackupRequest{
+		BackupName: randBackupName,
+	}
+	resp, err := backup.CreateBackup(context, req)
+	assert.NoError(t, err)
+	assert.Equal(t, backuppb.StatusCode_UnexpectedError, resp.GetStatus().GetStatusCode())
+
+	// clean
+	backup.DeleteBackup(context, &backuppb.DeleteBackupRequest{
+		BackupName: randBackupName,
+	})
+}
+
 func TestGetBackupAfterCreate(t *testing.T) {
 	var params paramtable.ComponentParam
 	params.InitOnce()
