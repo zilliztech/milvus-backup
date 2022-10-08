@@ -62,3 +62,11 @@ func KvPairsMap(kvps []*commonpb.KeyValuePair) map[string]string {
 	}
 	return m
 }
+
+func ArrayToMap(strs []int64) map[int64]bool {
+	ret := make(map[int64]bool)
+	for _, value := range strs {
+		ret[value] = true
+	}
+	return ret
+}

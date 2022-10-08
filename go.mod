@@ -31,6 +31,6 @@ require (
 
 replace (
 	github.com/apache/pulsar-client-go => github.com/milvus-io/pulsar-client-go v0.6.8
-	github.com/milvus-io/milvus-sdk-go/v2 => github.com/wayblink/milvus-sdk-go/v2 v2.1.8
+	github.com/milvus-io/milvus-sdk-go/v2 => github.com/wayblink/milvus-sdk-go/v2 v2.2.1
 	github.com/streamnative/pulsarctl => github.com/xiaofan-luan/pulsarctl v0.5.1
 )

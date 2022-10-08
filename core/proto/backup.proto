@@ -60,7 +60,7 @@ message CollectionBackupInfo {
   common.ConsistencyLevel consistency_level = 6;
   // array of partition backup
   repeated PartitionBackupInfo partition_backups = 7;
-  uint64 backup_timestamp = 8;
+  int64 backup_timestamp = 8;
   // backup progress status
   StatusCode backup_status = 9;
   // backup progress error

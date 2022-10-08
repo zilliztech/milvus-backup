@@ -19,9 +19,10 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/util/paramtable"
 	"github.com/zilliztech/milvus-backup/internal/util/typeutil"
 
+	"go.uber.org/zap"
+
 	gomilvus "github.com/milvus-io/milvus-sdk-go/v2/client"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
-	"go.uber.org/zap"
 )
 
 const (
@@ -318,13 +319,21 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 	log.Info("Finish build backup collection meta")
 
 	// 3, Flush
+	collSegmentsMap := make(map[string][]int64)
+	collSealTimeMap := make(map[string]int64)
 	for _, coll := range toBackupCollections {
-		err := b.milvusClient.Flush(ctx, coll.Name, false)
+		segmentIDs, timeOfSeal, err := b.milvusClient.Flush(ctx, coll.Name, false)
+		collSegmentsMap[coll.Name] = segmentIDs
+		collSealTimeMap[coll.Name] = timeOfSeal
 		if err != nil {
 			log.Error(fmt.Sprintf("fail to flush the collection: %s", coll.Name))
 			errorResp.Status.Reason = err.Error()
 			return errorResp, nil
 		}
+	}
+	// set collection backup time = timeOfSeal
+	for _, coll := range leveledBackupInfo.collectionLevel.GetInfos() {
+		coll.BackupTimestamp = collSealTimeMap[coll.CollectionName]
 	}
 
 	// 4, get segment level meta
@@ -332,18 +341,23 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 	// todo: make sure the Binlog filed is not needed: timestampTo, timestampFrom, EntriesNum, LogSize
 	segmentBackupInfos := make([]*backuppb.SegmentBackupInfo, 0)
 	for _, collection := range toBackupCollections {
+		segmentDict := utils.ArrayToMap(collSegmentsMap[collection.Name])
 		segments, err := b.milvusClient.GetPersistentSegmentInfo(ctx, collection.Name)
 		if err != nil {
 			errorResp.Status.Reason = err.Error()
 			return errorResp, nil
 		}
 		for _, segment := range segments {
-			segmentInfo, err := b.readSegmentInfo(ctx, segment.CollectionID, segment.ParititionID, segment.ID, segment.NumRows)
-			if err != nil {
-				errorResp.Status.Reason = err.Error()
-				return errorResp, nil
+			if segmentDict[segment.ID] {
+				segmentInfo, err := b.readSegmentInfo(ctx, segment.CollectionID, segment.ParititionID, segment.ID, segment.NumRows)
+				if err != nil {
+					errorResp.Status.Reason = err.Error()
+					return errorResp, nil
+				}
+				segmentBackupInfos = append(segmentBackupInfos, segmentInfo)
+			} else {
+				log.Debug("new segments after flush, skip it", zap.Int64("id", segment.ID))
 			}
-			segmentBackupInfos = append(segmentBackupInfos, segmentInfo)
 		}
 	}
 	log.Info(fmt.Sprintf("Get segment num %d", len(segmentBackupInfos)))
@@ -809,6 +823,7 @@ func (b BackupContext) executeLoadTask(ctx context.Context, backupName string, t
 		// bulkload
 		// todo ts
 		options := make(map[string]string)
+		options["end_ts"] = fmt.Sprint(task.GetCollBackup().BackupTimestamp)
 		err = b.executeBulkload(ctx, targetCollectionName, partitionBackup.GetPartitionName(), getPartitionFiles(backupName, partitionBackup), options)
 		if err != nil {
 			log.Error("fail to bulkload to partition",

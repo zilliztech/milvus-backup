@@ -9,6 +9,7 @@ GOOGLE_PROTO_DIR=${PROGRAM}/build/thirdparty/protobuf-src/src/
 
 echo ${PROGRAM}
 export protoc=${PROGRAM}/build/thirdparty/protobuf-build/protoc
+echo `${protoc} --version`
 which protoc-gen-go 1>/dev/null || (echo "Installing protoc-gen-go" && cd /tmp && go install github.com/golang/protobuf/protoc-gen-go@v1.3.2)
 
 if [ -z $GOPATH ]; then
