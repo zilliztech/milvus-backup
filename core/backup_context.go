@@ -322,8 +322,9 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 	collSegmentsMap := make(map[string][]int64)
 	collSealTimeMap := make(map[string]int64)
 	for _, coll := range toBackupCollections {
-		segmentIDs, timeOfSeal, err := b.milvusClient.Flush(ctx, coll.Name, false)
-		collSegmentsMap[coll.Name] = segmentIDs
+		newSealedSegmentIDs, flushedSegmentIDs, timeOfSeal, err := b.milvusClient.Flush(ctx, coll.Name, false)
+		log.Info("flush segments", zap.Int64s("newSealedSegmentIDs", newSealedSegmentIDs), zap.Int64s("flushedSegmentIDs", flushedSegmentIDs))
+		collSegmentsMap[coll.Name] = append(newSealedSegmentIDs, flushedSegmentIDs...)
 		collSealTimeMap[coll.Name] = timeOfSeal
 		if err != nil {
 			log.Error(fmt.Sprintf("fail to flush the collection: %s", coll.Name))
@@ -538,7 +539,7 @@ func (b BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBacku
 
 	backup, err := b.readBackup(ctx, request.GetBackupName())
 	if err != nil {
-		log.Error("Fail to read backup", zap.String("backupName", request.GetBackupName()), zap.Error(err))
+		log.Warn("Fail to read backup", zap.String("backupName", request.GetBackupName()), zap.Error(err))
 		resp.Status.Reason = err.Error()
 		return resp, nil
 	}
