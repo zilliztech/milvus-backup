@@ -19,8 +19,8 @@ var (
 )
 
 var loadBackupCmd = &cobra.Command{
-	Use:   "create",
-	Short: "create subcommand create a backup.",
+	Use:   "load",
+	Short: "load subcommand load a backup.",
 
 	Run: func(cmd *cobra.Command, args []string) {
 		var params paramtable.ComponentParam
