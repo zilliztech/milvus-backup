@@ -48,7 +48,7 @@ var createBackupCmd = &cobra.Command{
 
 func init() {
 	createBackupCmd.Flags().StringVarP(&backupName, "name", "n", "", "backup name, if unset will generate a name automatically")
-	createBackupCmd.Flags().StringVarP(&collectionNames, "collections", "c", "", "collectionNames to backup")
+	createBackupCmd.Flags().StringVarP(&collectionNames, "collections", "c", "", "collectionNames to backup, use ',' to connect multiple collections")
 
 	rootCmd.AddCommand(createBackupCmd)
 }
