@@ -1,15 +1,16 @@
-# milvus-backup
+# Milvus-backup
 
-## Introduction
-milvus-backup is the tool to backup and recovery milvus data. It can use as a command line tool or a API server.
+Milvus-backup is a tool to backup and recovery Milvus data. It can be used as a command line or an API server.
 
-milvus-backup needs to visit Milvus proxy and minio cluster. Currently, milvus-backup get these configs by reading `milvus.yaml` file. Same behaviour like Milvus.
-A default `milvus.yaml` is in `milvus-backup/configs/`. You can replace it with the config of your cluster. Both command line and REST API server needs it.
+Milvus-backup needs to visit Milvus proxy and minio cluster. Currently, Milvus-backup get these configs by reading `milvus.yaml` file. Same behaviour as Milvus.
+A default `milvus.yaml` is in `milvus-backup/configs/`. You can replace it with the config of your cluster. Both command line and REST API server need it.
 
-### Interfaces
+Milvus-backup has no large impact on Milvus. Milvus cluster can work as usual during backup. 
 
-#### Create
-Create a backup for the cluster. All the segment data will copy to a backup directory(in the same minio cluster/bucket of the cluster).
+# Interfaces
+
+## Create
+Create a backup for the cluster. Data of selected collections will be copied to a backup directory(in the same minio cluster/bucket of the cluster).
 The path tree of backups is like:
 ```
 /backup/my_backup_0
@@ -65,39 +66,50 @@ The path tree of backups is like:
    ......
 ```
 
-Support define collection_names to backup, if empty(default) to backup all.
+Support set a group of collection_names to backup, if empty(by default), will backup all collections.
 
-#### List
-List will scan the `backup` directory in minio and return all the backups exist in the cluster.
+## List
+List will scan the `backup` directory in minio and return all the backups that exist in the cluster.
 
-#### Get
+## Get
 Get backup by name.
 
-#### Delete
+## Delete
 Delete backup by name.
 
-#### Load
-Load backup by name, will recreate the collections in the cluster and recover the data through bulkload.
+## Load
+Load backup by name, will recreate the collections in the cluster and recover the data through bulkload. For more details about Bulkload, please see:
 
-As backup is arranged in collection/partition/segment three-level hireachy. Bulkloads will be done by segment one after another.
+As backup data is arranged in collection/partition/segment three-level hierarchy. Bulkloads will be done by partition one after another. Currently we don;t support concurrent load.
 
+# Development
 
-## Build && Development
+## Build
 
 ```
 go build
 ```
 Will generate an executable binary `milvus-backup` in the project directory.
 
-For developer, you can also test it in IDE. `core/backup_context_test.go` contains some test demos for all main interfaces.
+## Test
+
+For developers, you can also test it with IDE. `core/backup_context_test.go` contains some test demos for all main interfaces.
+
+Since milvus-backup depends on milvus-go-sdk and they both contain milvus.proto.
+It will throw error while running. Set environment to skip error message.
+```
+GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn
+```
+
+# Usage
 
 ## API server
 
-Use the following command can start a restAPI server. 
+After building, use the following command to start a RESTAPI server. 
 ```
 export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn && ./milvus-backup server
 ```
-In default, the server will listen to 8080. You can change it by:
+In default, the server will listen to 8080. You can change it by `--port` parameter:
 ```
 export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn && ./milvus-backup server --port 443
 ```
@@ -105,6 +117,7 @@ export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn && ./milvus-backup server --po
 ### APIs
 
 #### hello
+
 Just test the service is active.
 ```
 http://localhost:8080/api/v1/hello
@@ -151,8 +164,6 @@ curl --location --request POST 'http://localhost:8080/api/v1/load' \
 }'
 ```
 
-###
-
 ## Command Line 
 milvus-backup establish CLI based on cobra. Use the following command to see the usage.
 ```
@@ -181,18 +192,3 @@ Flags:
 Use "milvus-backup [command] --help" for more information about a command.
 ```
 
-## Code structure
-
-`internal` contains codes copied from milvus project.
-Keep the file structure consistent with milvus.
-Some minor adjustment are made for simplicity. 
-
-`core` contains the backup tool logic.
-
-## 
-
-milvus-backup and milvus-go-sdk both contain milvus.proto.
-It will throw error while running UTs. Set environment to enable UT.
-```
-GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn
-```
