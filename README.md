@@ -1,6 +1,6 @@
 # Milvus-backup
 
-Milvus-backup is a tool to backup and recovery Milvus data. It can be used as a command line or an API server.
+Milvus-backup is a tool to backup and recover Milvus data. It can be used as a command line or an API server.
 
 Milvus-backup needs to visit Milvus proxy and minio cluster. Currently, Milvus-backup get these configs by reading `milvus.yaml` file. Same behaviour as Milvus.
 A default `milvus.yaml` is in `milvus-backup/configs/`. You can replace it with the config of your cluster. Both command line and REST API server need it.
@@ -10,7 +10,7 @@ Milvus-backup has no large impact on Milvus. Milvus cluster can work as usual du
 # Interfaces
 
 ## Create
-Create a backup for the cluster. Data of selected collections will be copied to a backup directory(in the same minio cluster/bucket of the cluster).
+Create a backup for the cluster. Data of selected collections will be copied to a backup directory(in the same bucket of the cluster).
 The path tree of backups is like:
 ```
 /backup/my_backup_0
@@ -50,15 +50,6 @@ The path tree of backups is like:
     │               │   └── 434574379605819399
     │               └── 102
     │                   └── 434574379605819400
-    └── stats_log
-        └── 434574377495035905
-            └── 434574377495035906
-                ├── 434574378976149505
-                │   └── 100
-                │       └── 434574379605819393
-                └── 434574378976149506
-                    └── 100
-                        └── 434574379605819398
 /backup/my_backup_1
 ├── meta
 │  .......
@@ -80,7 +71,7 @@ Delete backup by name.
 ## Load
 Load backup by name, will recreate the collections in the cluster and recover the data through bulkload. For more details about Bulkload, please see:
 
-As backup data is arranged in collection/partition/segment three-level hierarchy. Bulkloads will be done by partition one after another. Currently we don;t support concurrent load.
+Bulkloads will be done by partition. Currently we don't support concurrent load.
 
 # Development
 
@@ -109,7 +100,7 @@ After building, use the following command to start a RESTAPI server.
 ```
 export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn && ./milvus-backup server
 ```
-In default, the server will listen to 8080. You can change it by `--port` parameter:
+By default, the server will listen to 8080. You can change it by `--port` parameter:
 ```
 export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn && ./milvus-backup server --port 443
 ```
@@ -165,7 +156,9 @@ curl --location --request POST 'http://localhost:8080/api/v1/load' \
 ```
 
 ## Command Line 
-milvus-backup establish CLI based on cobra. Use the following command to see the usage.
+
+Milvus-backup establish CLI based on cobra. Use the following command to see the usage.
+
 ```
 export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn && ./milvus-backup --help
 ```
@@ -184,6 +177,7 @@ Available Commands:
   get         get subcommand get backup by name.
   help        Help about any command
   list        list subcommand shows all backup in the cluster.
+  load        load subcommand load a backup.
   server      server subcommand start milvus-backup RESTAPI server.
 
 Flags:
