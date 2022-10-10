@@ -36,12 +36,13 @@ func TestProxyClient(t *testing.T) {
 	//c2.DropCollection(ctx, "demo_bulkload")
 	//c2.DropCollection(ctx, "hello_milvus")
 	//c2.DropCollection(ctx, "hello_milvus_recover")
+
 	//idCol, randomCol, embeddingCol = "ID", "random", "embeddings"
 	pks := entity.NewColumnInt64("ID", []int64{0, 1})
 	res, err := c2.QueryByPks(ctx, "hello_milvus_recover", nil, pks, []string{"random"}, gomilvus.WithSearchQueryConsistencyLevel(entity.ClStrong))
 	log.Info("query result", zap.Any("query result", res))
 
-	assert.Empty(t, collections)
+	//assert.Empty(t, collections)
 }
 
 func TestBulkload(t *testing.T) {

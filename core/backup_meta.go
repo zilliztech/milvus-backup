@@ -16,7 +16,7 @@ const (
 	SEGMENT_META_FILE    = "segment_meta.json"
 	SEPERATOR            = "/"
 
-	DATA_PREFIX    = "data"
+	BINGLOG_DIR    = "binlogs"
 	INSERT_LOG_DIR = "insert_log"
 	DELTA_LOG_DIR  = "delta_log"
 	STATS_LOG_DIR  = "stats_log"
@@ -209,7 +209,7 @@ func SegmentMetaPath(backup *backuppb.BackupInfo) string {
 }
 
 func DataDirPath(backup *backuppb.BackupInfo) string {
-	return BackupDirPath(backup) + SEPERATOR + DATA_PREFIX
+	return BackupDirPath(backup) + SEPERATOR + BINGLOG_DIR
 }
 
 func InsertlogDirPath(backup *backuppb.BackupInfo) string {

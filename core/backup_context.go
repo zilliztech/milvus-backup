@@ -668,6 +668,17 @@ func (b BackupContext) LoadBackup(ctx context.Context, request *backuppb.LoadBac
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	if !b.started {
+		err := b.Start()
+		if err != nil {
+			return &backuppb.LoadBackupResponse{
+				Status: &backuppb.Status{
+					StatusCode: backuppb.StatusCode_ConnectFailed,
+				},
+			}, nil
+		}
+	}
+
 	resp := &backuppb.LoadBackupResponse{
 		Status: &backuppb.Status{
 			StatusCode: backuppb.StatusCode_UnexpectedError,
@@ -825,6 +836,10 @@ func (b BackupContext) executeLoadTask(ctx context.Context, backupName string, t
 		// todo ts
 		options := make(map[string]string)
 		options["end_ts"] = fmt.Sprint(task.GetCollBackup().BackupTimestamp)
+		log.Debug("execute bulkload",
+			zap.String("collection", targetCollectionName),
+			zap.String("partition", partitionBackup.GetPartitionName()),
+			zap.Strings("files", getPartitionFiles(backupName, partitionBackup)))
 		err = b.executeBulkload(ctx, targetCollectionName, partitionBackup.GetPartitionName(), getPartitionFiles(backupName, partitionBackup), options)
 		if err != nil {
 			log.Error("fail to bulkload to partition",
@@ -867,6 +882,7 @@ func (b BackupContext) watchBulkloadState(ctx context.Context, taskId int64, tim
 	start := time.Now().Unix()
 	for time.Now().Unix()-start < timeout {
 		importTaskState, err := b.milvusClient.GetBulkloadState(ctx, taskId)
+		time.Sleep(time.Second * time.Duration(sleepSeconds))
 		switch importTaskState.State {
 		case entity.BulkloadFailed:
 			return err
@@ -874,7 +890,6 @@ func (b BackupContext) watchBulkloadState(ctx context.Context, taskId int64, tim
 		case entity.BulkloadCompleted:
 			return nil
 		default:
-			time.Sleep(time.Second * time.Duration(sleepSeconds))
 			continue
 		}
 	}
@@ -882,8 +897,8 @@ func (b BackupContext) watchBulkloadState(ctx context.Context, taskId int64, tim
 }
 
 func getPartitionFiles(backupName string, partition *backuppb.PartitionBackupInfo) []string {
-	insertPath := BACKUP_PREFIX + SEPERATOR + backupName + fmt.Sprintf("/%s/%v/%v/", "files/insert_log", partition.GetCollectionId(), partition.GetPartitionId())
-	deltaPath := BACKUP_PREFIX + SEPERATOR + backupName + fmt.Sprintf("/%s/%v/%v/", "files/delta_log", partition.GetCollectionId(), partition.GetPartitionId())
+	insertPath := fmt.Sprintf("%s/%s/%s/%s/%v/%v/", BACKUP_PREFIX, backupName, BINGLOG_DIR, INSERT_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId())
+	deltaPath := fmt.Sprintf("%s/%s/%s/%s/%v/%v/", BACKUP_PREFIX, backupName, BINGLOG_DIR, DELTA_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId())
 	return []string{insertPath, deltaPath}
 }
 

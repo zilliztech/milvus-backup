@@ -192,3 +192,30 @@ Flags:
 Use "milvus-backup [command] --help" for more information about a command.
 ```
 
+## Demo
+
+This demo is evolved from `hello_milvus`. To try this demo, you should have a healthy Milvus and pymilvus installed.
+
+1, Prepare data. Create a collection `hello_milvus` and insert some data.
+
+```
+python example/prepare_data.py
+```
+
+2, Create backup
+
+```
+export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn
+./milvus-backup create -n my_backup 
+```
+
+3, Load backup. Set suffix `_recover`. `hello_milvus` will be loaded with new name `hello_milvus_recover`. 
+```
+./milvus-backup load -n my_backup -s _recover
+```
+
+4, Verfiy data. Create index and do search on the recovered collection `hello_milvus_recover`.
+
+```
+python example/verify_data.py
+```
