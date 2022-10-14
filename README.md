@@ -89,7 +89,7 @@ For developers, you can also test it with IDE. `core/backup_context_test.go` con
 Since milvus-backup depends on milvus-go-sdk and they both contain milvus.proto.
 It will throw error while running. Set environment to skip error message.
 ```
-GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn
+GOLANG_PROTOBUF_REGISTRATION_CONFLICT=ignore
 ```
 
 # Usage
@@ -98,11 +98,11 @@ GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn
 
 After building, use the following command to start a RESTAPI server. 
 ```
-export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn && ./milvus-backup server
+export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=ignore && ./milvus-backup server
 ```
 By default, the server will listen to 8080. You can change it by `--port` parameter:
 ```
-export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn && ./milvus-backup server --port 443
+export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=ignore && ./milvus-backup server --port 443
 ```
 
 ### APIs
@@ -160,7 +160,7 @@ curl --location --request POST 'http://localhost:8080/api/v1/load' \
 Milvus-backup establish CLI based on cobra. Use the following command to see the usage.
 
 ```
-export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn && ./milvus-backup --help
+export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=ignore && ./milvus-backup --help
 ```
 
 ```
@@ -199,7 +199,7 @@ python example/prepare_data.py
 2, Create backup
 
 ```
-export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=warn
+export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=ignore
 ./milvus-backup create -n my_backup 
 ```
 
