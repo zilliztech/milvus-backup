@@ -1,0 +1,95 @@
+name: Test
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+jobs:
+  test-backup-restore:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        deploy_tools: [docker-compose]
+        milvus_mode: [standalone, cluster]
+        # mq_type: [pulsar, kafka]  # TODO: add pulsar and kafka
+    
+    steps:
+      - uses: actions/checkout@v3
+        
+      # - name: Creating kind cluster
+      #   uses: helm/kind-action@v1.2.0
+
+      # - name: Print cluster information
+      #   run: |
+      #     kubectl config view
+      #     kubectl cluster-info
+      #     kubectl get nodes
+      #     kubectl get pods -n kube-system
+      #     helm version
+      #     kubectl version      
+      
+      - name: Set up Python 3.8
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+
+      - uses: actions/setup-go@v3
+        with:
+          go-version: '1.18.0'
+      
+      - name: Build
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          go get
+          go build
+      - name: Install dependency
+        
+        timeout-minutes: 5
+        working-directory: tests
+        shell: bash
+        run: |
+          pip install -r requirements.txt --trusted-host https://test.pypi.org
+          
+      - name: Milvus deploy
+        
+        timeout-minutes: 15
+        shell: bash
+        working-directory: deployment/${{ matrix.milvus_mode }}
+        run: |
+          docker-compose up -d
+          bash ../../scripts/check_healthy.sh
+          docker-compose ps -a
+      
+      - name: Prepare data
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python example/prepare_data.py
+      
+      - name: Backup
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=ignore
+          ./milvus-backup create -n my_backup
+          ./milvus-backup list
+      - name: Load backup
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=ignore
+          ./milvus-backup load -n my_backup -s _recover
+      - name: Verify data
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python example/verify_data.py
+
+ 

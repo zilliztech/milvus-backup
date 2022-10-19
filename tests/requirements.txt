@@ -1,0 +1,2 @@
+--extra-index-url https://test.pypi.org/simple/
+pymilvus==2.2.0.dev49
