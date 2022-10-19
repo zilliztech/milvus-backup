@@ -24,9 +24,11 @@ entities = [
 print(fmt.format("start connecting to Milvus"))
 connections.connect("default", host="localhost", port="19530")
 
-has = utility.has_collection("hello_milvus_recover")
-print(f"Does collection hello_milvus_recover exist in Milvus: {has}")
-hello_milvus_recover = Collection("hello_milvus_recover")
+recover_collection_name = "hello_milvus_recover"
+
+has = utility.has_collection(recover_collection_name)
+print(f"Does collection {recover_collection_name} exist in Milvus: {has}")
+hello_milvus_recover = Collection(recover_collection_name)
 print(f"Number of entities in Milvus: {hello_milvus_recover.num_entities}")  # check the num_entites
 
 ################################################################################
@@ -102,5 +104,5 @@ print(search_latency_fmt.format(end_time - start_time))
 print(fmt.format("Drop collection `hello_milvus`"))
 utility.drop_collection("hello_milvus")
 
-print(fmt.format("Drop collection `hello_milvus_recover`"))
-utility.drop_collection("hello_milvus_recover")
+print(fmt.format(f"Drop collection {recover_collection_name}"))
+utility.drop_collection(recover_collection_name)
