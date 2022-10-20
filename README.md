@@ -78,6 +78,7 @@ Bulkloads will be done by partition. Currently we don't support concurrent load.
 ## Build
 
 ```
+go get
 go build
 ```
 Will generate an executable binary `milvus-backup` in the project directory.

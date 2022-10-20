@@ -29,6 +29,8 @@ recover_collection_name = "hello_milvus_recover"
 has = utility.has_collection(recover_collection_name)
 print(f"Does collection {recover_collection_name} exist in Milvus: {has}")
 hello_milvus_recover = Collection(recover_collection_name)
+hello_milvus_recover.flush()
+
 print(f"Number of entities in Milvus: {hello_milvus_recover.num_entities}")  # check the num_entites
 
 ################################################################################
