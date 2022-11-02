@@ -4,8 +4,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/proto/commonpb"
-	"github.com/zilliztech/milvus-backup/internal/proto/datapb"
 	"github.com/zilliztech/milvus-backup/internal/proto/schemapb"
 	"github.com/zilliztech/milvus-backup/internal/util/funcutil"
 	"strconv"
@@ -64,9 +64,9 @@ func TestBackupSerialize(t *testing.T) {
 		CollectionId: collection_id,
 		PartitionId:  101,
 		NumOfRows:    3000,
-		Binlogs:      []*datapb.FieldBinlog{{Binlogs: []*datapb.Binlog{{EntriesNum: 3000, TimestampFrom: 100, TimestampTo: 200, LogSize: 3000}}}},
-		Statslogs:    []*datapb.FieldBinlog{{Binlogs: []*datapb.Binlog{{EntriesNum: 3000, TimestampFrom: 100, TimestampTo: 200, LogSize: 6000}}}},
-		Deltalogs:    []*datapb.FieldBinlog{{Binlogs: []*datapb.Binlog{{EntriesNum: 3000, TimestampFrom: 100, TimestampTo: 200, LogSize: 9000}}}},
+		Binlogs:      []*backuppb.FieldBinlog{{Binlogs: []*backuppb.Binlog{{EntriesNum: 3000, TimestampFrom: 100, TimestampTo: 200, LogSize: 3000}}}},
+		Statslogs:    []*backuppb.FieldBinlog{{Binlogs: []*backuppb.Binlog{{EntriesNum: 3000, TimestampFrom: 100, TimestampTo: 200, LogSize: 6000}}}},
+		Deltalogs:    []*backuppb.FieldBinlog{{Binlogs: []*backuppb.Binlog{{EntriesNum: 3000, TimestampFrom: 100, TimestampTo: 200, LogSize: 9000}}}},
 	}
 
 	segement2 := &backuppb.SegmentBackupInfo{
@@ -74,9 +74,9 @@ func TestBackupSerialize(t *testing.T) {
 		CollectionId: collection_id,
 		PartitionId:  101,
 		NumOfRows:    3000,
-		Binlogs:      []*datapb.FieldBinlog{{Binlogs: []*datapb.Binlog{{EntriesNum: 3000, TimestampFrom: 100, TimestampTo: 200, LogSize: 3000}}}},
-		Statslogs:    []*datapb.FieldBinlog{{Binlogs: []*datapb.Binlog{{EntriesNum: 3000, TimestampFrom: 100, TimestampTo: 200, LogSize: 6000}}}},
-		Deltalogs:    []*datapb.FieldBinlog{{Binlogs: []*datapb.Binlog{{EntriesNum: 3000, TimestampFrom: 100, TimestampTo: 200, LogSize: 9000}}}},
+		Binlogs:      []*backuppb.FieldBinlog{{Binlogs: []*backuppb.Binlog{{EntriesNum: 3000, TimestampFrom: 100, TimestampTo: 200, LogSize: 3000}}}},
+		Statslogs:    []*backuppb.FieldBinlog{{Binlogs: []*backuppb.Binlog{{EntriesNum: 3000, TimestampFrom: 100, TimestampTo: 200, LogSize: 6000}}}},
+		Deltalogs:    []*backuppb.FieldBinlog{{Binlogs: []*backuppb.Binlog{{EntriesNum: 3000, TimestampFrom: 100, TimestampTo: 200, LogSize: 9000}}}},
 	}
 
 	segement3 := &backuppb.SegmentBackupInfo{
@@ -84,9 +84,9 @@ func TestBackupSerialize(t *testing.T) {
 		CollectionId: collection_id,
 		PartitionId:  102,
 		NumOfRows:    3000,
-		Binlogs:      []*datapb.FieldBinlog{{Binlogs: []*datapb.Binlog{{EntriesNum: 3000, TimestampFrom: 100, TimestampTo: 200, LogSize: 3000}}}},
-		Statslogs:    []*datapb.FieldBinlog{{Binlogs: []*datapb.Binlog{{EntriesNum: 3000, TimestampFrom: 100, TimestampTo: 200, LogSize: 6000}}}},
-		Deltalogs:    []*datapb.FieldBinlog{{Binlogs: []*datapb.Binlog{{EntriesNum: 3000, TimestampFrom: 100, TimestampTo: 200, LogSize: 9000}}}},
+		Binlogs:      []*backuppb.FieldBinlog{{Binlogs: []*backuppb.Binlog{{EntriesNum: 3000, TimestampFrom: 100, TimestampTo: 200, LogSize: 3000}}}},
+		Statslogs:    []*backuppb.FieldBinlog{{Binlogs: []*backuppb.Binlog{{EntriesNum: 3000, TimestampFrom: 100, TimestampTo: 200, LogSize: 6000}}}},
+		Deltalogs:    []*backuppb.FieldBinlog{{Binlogs: []*backuppb.Binlog{{EntriesNum: 3000, TimestampFrom: 100, TimestampTo: 200, LogSize: 9000}}}},
 	}
 
 	segement4 := &backuppb.SegmentBackupInfo{
@@ -94,9 +94,9 @@ func TestBackupSerialize(t *testing.T) {
 		CollectionId: collection_id,
 		PartitionId:  102,
 		NumOfRows:    3000,
-		Binlogs:      []*datapb.FieldBinlog{{Binlogs: []*datapb.Binlog{{EntriesNum: 3000, TimestampFrom: 100, TimestampTo: 200, LogSize: 3000}}}},
-		Statslogs:    []*datapb.FieldBinlog{{Binlogs: []*datapb.Binlog{{EntriesNum: 3000, TimestampFrom: 100, TimestampTo: 200, LogSize: 6000}}}},
-		Deltalogs:    []*datapb.FieldBinlog{{Binlogs: []*datapb.Binlog{{EntriesNum: 3000, TimestampFrom: 100, TimestampTo: 200, LogSize: 9000}}}},
+		Binlogs:      []*backuppb.FieldBinlog{{Binlogs: []*backuppb.Binlog{{EntriesNum: 3000, TimestampFrom: 100, TimestampTo: 200, LogSize: 3000}}}},
+		Statslogs:    []*backuppb.FieldBinlog{{Binlogs: []*backuppb.Binlog{{EntriesNum: 3000, TimestampFrom: 100, TimestampTo: 200, LogSize: 6000}}}},
+		Deltalogs:    []*backuppb.FieldBinlog{{Binlogs: []*backuppb.Binlog{{EntriesNum: 3000, TimestampFrom: 100, TimestampTo: 200, LogSize: 9000}}}},
 	}
 
 	partition1 := &backuppb.PartitionBackupInfo{

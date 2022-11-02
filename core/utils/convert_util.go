@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/zilliztech/milvus-backup/internal/proto/commonpb"
+	"github.com/milvus-io/milvus-proto/go-api/commonpb"
 )
 
 // kvPairToMap largely copied from internal/proxy/task.go#parseIndexParams

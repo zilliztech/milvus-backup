@@ -5,7 +5,6 @@ option go_package="github.com/zilliztech/milvus-backup/core/proto/backuppb";
 
 import "schema.proto";
 import "common.proto";
-import "data_coord.proto";
 
 service MilvusBackupService {
   // Create backup
@@ -85,9 +84,9 @@ message SegmentBackupInfo {
   int64 collection_id = 2;
   int64 partition_id = 3;
   int64 num_of_rows = 4;
-  repeated data.FieldBinlog binlogs = 5;
-  repeated data.FieldBinlog statslogs = 6;
-  repeated data.FieldBinlog deltalogs = 7;
+  repeated FieldBinlog binlogs = 5;
+  repeated FieldBinlog statslogs = 6;
+  repeated FieldBinlog deltalogs = 7;
 }
 
 /**
@@ -218,4 +217,18 @@ message LoadBackupResponse {
   Status status = 1;
   BackupInfo backup_info = 2;
   repeated LoadCollectionTask collection_load_tasks = 3;
+}
+
+// copied from milvus data_coord.proto
+message FieldBinlog{
+  int64 fieldID = 1;
+  repeated Binlog binlogs = 2;
+}
+
+message Binlog {
+  int64 entries_num = 1;
+  uint64 timestamp_from = 2;
+  uint64 timestamp_to = 3;
+  string log_path = 4;
+  int64 log_size = 5;
 }

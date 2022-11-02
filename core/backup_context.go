@@ -12,10 +12,9 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/utils"
 	//dcc "github.com/zilliztech/milvus-backup/internal/distributed/datacoord/client"
+	"github.com/milvus-io/milvus-proto/go-api/commonpb"
+	"github.com/milvus-io/milvus-proto/go-api/schemapb"
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/proto/commonpb"
-	"github.com/zilliztech/milvus-backup/internal/proto/datapb"
-	"github.com/zilliztech/milvus-backup/internal/proto/schemapb"
 	"github.com/zilliztech/milvus-backup/internal/util/paramtable"
 	"github.com/zilliztech/milvus-backup/internal/util/typeutil"
 
@@ -960,18 +959,18 @@ func (b BackupContext) readSegmentInfo(ctx context.Context, collecitonID int64, 
 
 	insertPath := fmt.Sprintf("%s/%v/%v/%v/", "files/insert_log", collecitonID, partitionID, segmentID)
 	fieldsLogDir, _, _ := b.milvusStorageClient.ListWithPrefix(insertPath, false)
-	insertLogs := make([]*datapb.FieldBinlog, 0)
+	insertLogs := make([]*backuppb.FieldBinlog, 0)
 	for _, fieldLogDir := range fieldsLogDir {
 		binlogPaths, _, _ := b.milvusStorageClient.ListWithPrefix(fieldLogDir, false)
 		fieldIdStr := strings.Replace(strings.Replace(fieldLogDir, insertPath, "", 1), SEPERATOR, "", -1)
 		fieldId, _ := strconv.ParseInt(fieldIdStr, 10, 64)
-		binlogs := make([]*datapb.Binlog, 0)
+		binlogs := make([]*backuppb.Binlog, 0)
 		for _, binlogPath := range binlogPaths {
-			binlogs = append(binlogs, &datapb.Binlog{
+			binlogs = append(binlogs, &backuppb.Binlog{
 				LogPath: binlogPath,
 			})
 		}
-		insertLogs = append(insertLogs, &datapb.FieldBinlog{
+		insertLogs = append(insertLogs, &backuppb.FieldBinlog{
 			FieldID: fieldId,
 			Binlogs: binlogs,
 		})
@@ -979,42 +978,42 @@ func (b BackupContext) readSegmentInfo(ctx context.Context, collecitonID int64, 
 
 	deltaLogPath := fmt.Sprintf("%s/%v/%v/%v/", "files/delta_log", collecitonID, partitionID, segmentID)
 	deltaFieldsLogDir, _, _ := b.milvusStorageClient.ListWithPrefix(deltaLogPath, false)
-	deltaLogs := make([]*datapb.FieldBinlog, 0)
+	deltaLogs := make([]*backuppb.FieldBinlog, 0)
 	for _, deltaFieldLogDir := range deltaFieldsLogDir {
 		binlogPaths, _, _ := b.milvusStorageClient.ListWithPrefix(deltaFieldLogDir, false)
 		fieldIdStr := strings.Replace(strings.Replace(deltaFieldLogDir, deltaLogPath, "", 1), SEPERATOR, "", -1)
 		fieldId, _ := strconv.ParseInt(fieldIdStr, 10, 64)
-		binlogs := make([]*datapb.Binlog, 0)
+		binlogs := make([]*backuppb.Binlog, 0)
 		for _, binlogPath := range binlogPaths {
-			binlogs = append(binlogs, &datapb.Binlog{
+			binlogs = append(binlogs, &backuppb.Binlog{
 				LogPath: binlogPath,
 			})
 		}
-		deltaLogs = append(deltaLogs, &datapb.FieldBinlog{
+		deltaLogs = append(deltaLogs, &backuppb.FieldBinlog{
 			FieldID: fieldId,
 			Binlogs: binlogs,
 		})
 	}
 	if len(deltaLogs) == 0 {
-		deltaLogs = append(deltaLogs, &datapb.FieldBinlog{
+		deltaLogs = append(deltaLogs, &backuppb.FieldBinlog{
 			FieldID: 0,
 		})
 	}
 
 	statsLogPath := fmt.Sprintf("%s/%v/%v/%v/", "files/stats_log", collecitonID, partitionID, segmentID)
 	statsFieldsLogDir, _, _ := b.milvusStorageClient.ListWithPrefix(statsLogPath, false)
-	statsLogs := make([]*datapb.FieldBinlog, 0)
+	statsLogs := make([]*backuppb.FieldBinlog, 0)
 	for _, statsFieldLogDir := range statsFieldsLogDir {
 		binlogPaths, _, _ := b.milvusStorageClient.ListWithPrefix(statsFieldLogDir, false)
 		fieldIdStr := strings.Replace(strings.Replace(statsFieldLogDir, statsLogPath, "", 1), SEPERATOR, "", -1)
 		fieldId, _ := strconv.ParseInt(fieldIdStr, 10, 64)
-		binlogs := make([]*datapb.Binlog, 0)
+		binlogs := make([]*backuppb.Binlog, 0)
 		for _, binlogPath := range binlogPaths {
-			binlogs = append(binlogs, &datapb.Binlog{
+			binlogs = append(binlogs, &backuppb.Binlog{
 				LogPath: binlogPath,
 			})
 		}
-		statsLogs = append(statsLogs, &datapb.FieldBinlog{
+		statsLogs = append(statsLogs, &backuppb.FieldBinlog{
 			FieldID: fieldId,
 			Binlogs: binlogs,
 		})

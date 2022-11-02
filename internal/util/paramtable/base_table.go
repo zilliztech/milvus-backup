@@ -25,9 +25,9 @@ import (
 	"github.com/spf13/cast"
 	"github.com/spf13/viper"
 
+	"github.com/milvus-io/milvus-proto/go-api/commonpb"
 	memkv "github.com/zilliztech/milvus-backup/internal/kv/mem"
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/proto/commonpb"
 	"github.com/zilliztech/milvus-backup/internal/util/logutil"
 	"github.com/zilliztech/milvus-backup/internal/util/typeutil"
 	"go.uber.org/zap"
