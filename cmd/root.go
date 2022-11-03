@@ -5,6 +5,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	config string
+)
+
 var rootCmd = &cobra.Command{
 	Use:   "milvus-backup",
 	Short: "milvus-backup is a backup tool for milvus.",
@@ -15,5 +19,7 @@ var rootCmd = &cobra.Command{
 }
 
 func Execute() {
+	rootCmd.PersistentFlags().StringVarP(&config, "config", "", "backup.yaml", "config YAML file of milvus")
+
 	rootCmd.Execute()
 }

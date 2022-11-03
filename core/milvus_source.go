@@ -1,9 +1,9 @@
 package core
 
-import "github.com/zilliztech/milvus-backup/internal/util/paramtable"
+import "github.com/zilliztech/milvus-backup/core/paramtable"
 
 type MilvusSource struct {
-	params    paramtable.ComponentParam
+	params    paramtable.BackupParams
 	proxyAddr string
 	//datacoordAddr string
 }
@@ -16,6 +16,6 @@ func (m *MilvusSource) GetProxyAddr() string {
 //	return m.datacoordAddr
 //}
 
-func (m *MilvusSource) GetParams() paramtable.ComponentParam {
+func (m *MilvusSource) GetParams() paramtable.BackupParams {
 	return m.params
 }

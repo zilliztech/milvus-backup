@@ -3,18 +3,20 @@ package core
 import (
 	"context"
 	"fmt"
-	"github.com/stretchr/testify/assert"
-	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/util/paramtable"
-	"go.uber.org/zap"
 	"math/rand"
 	"testing"
+
+	"github.com/zilliztech/milvus-backup/core/paramtable"
+	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/log"
+
+	"github.com/stretchr/testify/assert"
+	"go.uber.org/zap"
 )
 
 func TestCreateBackup(t *testing.T) {
-	var params paramtable.ComponentParam
-	params.InitOnce()
+	var params paramtable.BackupParams
+	params.Init()
 	context := context.Background()
 	backup := CreateBackupContext(context, params)
 
@@ -25,8 +27,8 @@ func TestCreateBackup(t *testing.T) {
 }
 
 func TestListBackups(t *testing.T) {
-	var params paramtable.ComponentParam
-	params.InitOnce()
+	var params paramtable.BackupParams
+	params.Init()
 	context := context.Background()
 	backupContext := CreateBackupContext(context, params)
 
@@ -53,8 +55,8 @@ func TestListBackups(t *testing.T) {
 }
 
 func TestGetBackup(t *testing.T) {
-	var params paramtable.ComponentParam
-	params.InitOnce()
+	var params paramtable.BackupParams
+	params.Init()
 	context := context.Background()
 	backupContext := CreateBackupContext(context, params)
 
@@ -66,8 +68,8 @@ func TestGetBackup(t *testing.T) {
 }
 
 func TestDeleteBackup(t *testing.T) {
-	var params paramtable.ComponentParam
-	params.InitOnce()
+	var params paramtable.BackupParams
+	params.Init()
 	context := context.Background()
 	backupContext := CreateBackupContext(context, params)
 
@@ -86,8 +88,8 @@ func TestDeleteBackup(t *testing.T) {
 }
 
 func TestCreateBackupWithUnexistCollection(t *testing.T) {
-	var params paramtable.ComponentParam
-	params.InitOnce()
+	var params paramtable.BackupParams
+	params.Init()
 	context := context.Background()
 	backup := CreateBackupContext(context, params)
 
@@ -109,8 +111,8 @@ func TestCreateBackupWithUnexistCollection(t *testing.T) {
 }
 
 func TestCreateBackupWithDuplicateName(t *testing.T) {
-	var params paramtable.ComponentParam
-	params.InitOnce()
+	var params paramtable.BackupParams
+	params.Init()
 	context := context.Background()
 	backup := CreateBackupContext(context, params)
 
@@ -138,8 +140,8 @@ func TestCreateBackupWithDuplicateName(t *testing.T) {
 }
 
 func TestCreateBackupWithIllegalName(t *testing.T) {
-	var params paramtable.ComponentParam
-	params.InitOnce()
+	var params paramtable.BackupParams
+	params.Init()
 	context := context.Background()
 	backup := CreateBackupContext(context, params)
 
@@ -159,8 +161,8 @@ func TestCreateBackupWithIllegalName(t *testing.T) {
 }
 
 func TestGetBackupAfterCreate(t *testing.T) {
-	var params paramtable.ComponentParam
-	params.InitOnce()
+	var params paramtable.BackupParams
+	params.Init()
 	context := context.Background()
 	backupContext := CreateBackupContext(context, params)
 
@@ -186,8 +188,8 @@ func TestGetBackupAfterCreate(t *testing.T) {
 }
 
 func TestGetBackupFaultBackup(t *testing.T) {
-	var params paramtable.ComponentParam
-	params.InitOnce()
+	var params paramtable.BackupParams
+	params.Init()
 	context := context.Background()
 	backupContext := CreateBackupContext(context, params)
 	backupContext.Start()
@@ -220,8 +222,8 @@ func TestGetBackupFaultBackup(t *testing.T) {
 }
 
 func TestGetBackupUnexistBackupName(t *testing.T) {
-	var params paramtable.ComponentParam
-	params.InitOnce()
+	var params paramtable.BackupParams
+	params.Init()
 	context := context.Background()
 	backupContext := CreateBackupContext(context, params)
 	backupContext.Start()
@@ -234,8 +236,8 @@ func TestGetBackupUnexistBackupName(t *testing.T) {
 }
 
 func TestLoadBackup(t *testing.T) {
-	var params paramtable.ComponentParam
-	params.InitOnce()
+	var params paramtable.BackupParams
+	params.Init()
 	context := context.Background()
 	backup := CreateBackupContext(context, params)
 	backup.Start()

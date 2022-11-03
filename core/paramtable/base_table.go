@@ -13,7 +13,6 @@ package paramtable
 
 import (
 	"fmt"
-	"net/url"
 	"os"
 	"path"
 	"runtime"
@@ -30,40 +29,28 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/util/logutil"
 	"github.com/zilliztech/milvus-backup/internal/util/typeutil"
-	"go.uber.org/zap"
 )
 
 // UniqueID is type alias of typeutil.UniqueID
 type UniqueID = typeutil.UniqueID
 
 const (
-	DefaultMilvusYaml           = "milvus.yaml"
-	DefaultEasyloggingYaml      = "easylogging.yaml"
-	DefaultMinioHost            = "localhost"
+	DefaultBackupYaml = "backup.yaml"
+
+	DefaultMinioAddress         = "localhost"
 	DefaultMinioPort            = "9000"
 	DefaultMinioAccessKey       = "minioadmin"
 	DefaultMinioSecretAccessKey = "minioadmin"
 	DefaultMinioUseSSL          = "false"
 	DefaultMinioBucketName      = "a-bucket"
+	DefaultMinioRootPath        = "files"
 	DefaultMinioUseIAM          = "false"
 	DefaultMinioIAMEndpoint     = ""
-	DefaultEtcdEndpoints        = "localhost:2379"
-	DefaultInsertBufferSize     = "16777216"
-	DefaultEnvPrefix            = "milvus"
+
+	DefaultLogLevel = "WARNING"
 )
 
-var defaultYaml = DefaultMilvusYaml
-
-// Base abstracts BaseTable
-// TODO: it's never used, consider to substitute BaseTable or to remove it
-type Base interface {
-	Load(key string) (string, error)
-	LoadRange(key, endKey string, limit int) ([]string, []string, error)
-	LoadYaml(fileName string) error
-	Remove(key string) error
-	Save(key, value string) error
-	Init()
-}
+var defaultYaml = DefaultBackupYaml
 
 // BaseTable the basics of paramtable
 type BaseTable struct {
@@ -137,11 +124,7 @@ func (gp *BaseTable) loadFromYaml(file string) {
 }
 
 func (gp *BaseTable) tryLoadFromEnv() {
-	gp.loadEtcdConfig()
 	gp.loadMinioConfig()
-	gp.loadMQConfig()
-	gp.loadDataNodeConfig()
-	gp.loadOtherEnvs()
 }
 
 // Load loads an object with @key.
@@ -333,62 +316,16 @@ func (gp *BaseTable) ParseIntWithDefault(key string, defaultValue int) int {
 	return value
 }
 
-// package methods
-
-// ConvertRangeToIntRange converts a range of strings to a range of ints.
-func ConvertRangeToIntRange(rangeStr, sep string) []int {
-	items := strings.Split(rangeStr, sep)
-	if len(items) != 2 {
-		panic("Illegal range ")
-	}
-
-	startStr := items[0]
-	endStr := items[1]
-	start, err := strconv.Atoi(startStr)
-	if err != nil {
-		panic(err)
-	}
-	end, err := strconv.Atoi(endStr)
-	if err != nil {
-		panic(err)
-	}
-
-	if start < 0 || end < 0 {
-		panic("Illegal range value")
-	}
-	if start > end {
-		panic("Illegal range value, start > end")
-	}
-	return []int{start, end}
-}
-
-// ConvertRangeToIntSlice convert given @rangeStr & @sep to a slice of ints.
-func ConvertRangeToIntSlice(rangeStr, sep string) []int {
-	rangeSlice := ConvertRangeToIntRange(rangeStr, sep)
-	start, end := rangeSlice[0], rangeSlice[1]
-	var ret []int
-	for i := start; i < end; i++ {
-		ret = append(ret, i)
-	}
-	return ret
-}
-
 // InitLogCfg init log of the base table
 func (gp *BaseTable) InitLogCfg() {
 	gp.Log = log.Config{}
-	format, err := gp.Load("log.format")
-	if err != nil {
-		panic(err)
-	}
+	format := gp.LoadWithDefault("log.format", "text")
 	gp.Log.Format = format
-	level, err := gp.Load("log.level")
-	if err != nil {
-		panic(err)
-	}
+	level := gp.LoadWithDefault("log.level", "debug")
 	gp.Log.Level = level
-	gp.Log.File.MaxSize = gp.ParseInt("log.file.maxSize")
-	gp.Log.File.MaxBackups = gp.ParseInt("log.file.maxBackups")
-	gp.Log.File.MaxDays = gp.ParseInt("log.file.maxAge")
+	gp.Log.File.MaxSize = gp.ParseIntWithDefault("log.file.maxSize", 300)
+	gp.Log.File.MaxBackups = gp.ParseIntWithDefault("log.file.maxBackups", 20)
+	gp.Log.File.MaxDays = gp.ParseIntWithDefault("log.file.maxAge", 10)
 }
 
 // SetLogConfig set log config of the base table
@@ -427,64 +364,10 @@ func (gp *BaseTable) SetLogger(id UniqueID) {
 	}
 }
 
-func (gp *BaseTable) loadKafkaConfig() {
-	brokerList := os.Getenv("KAFKA_BROKER_LIST")
-	if brokerList == "" {
-		brokerList = gp.Get("kafka.brokerList")
-	}
-	gp.Save("_KafkaBrokerList", brokerList)
-}
-
-func (gp *BaseTable) loadPulsarConfig() {
-	pulsarAddress := os.Getenv("PULSAR_ADDRESS")
-	if pulsarAddress == "" {
-		pulsarHost := gp.Get("pulsar.address")
-		port := gp.Get("pulsar.port")
-		if len(pulsarHost) != 0 && len(port) != 0 {
-			pulsarAddress = "pulsar://" + pulsarHost + ":" + port
-		}
-	}
-	gp.Save("_PulsarAddress", pulsarAddress)
-
-	// parse pulsar address to find the host
-	pulsarURL, err := url.ParseRequestURI(pulsarAddress)
-	if err != nil {
-		gp.Save("_PulsarWebAddress", "")
-		log.Info("failed to parse pulsar config, assume pulsar not used", zap.Error(err))
-		return
-	}
-	webport := gp.LoadWithDefault("pulsar.webport", "80")
-	pulsarWebAddress := "http://" + pulsarURL.Hostname() + ":" + webport
-	gp.Save("_PulsarWebAddress", pulsarWebAddress)
-	log.Info("Pulsar config", zap.String("pulsar url", pulsarAddress), zap.String("pulsar web url", pulsarWebAddress))
-}
-
-func (gp *BaseTable) loadRocksMQConfig() {
-	rocksmqPath := os.Getenv("ROCKSMQ_PATH")
-	if rocksmqPath == "" {
-		rocksmqPath = gp.Get("rocksmq.path")
-	}
-	gp.Save("_RocksmqPath", rocksmqPath)
-}
-
-func (gp *BaseTable) loadMQConfig() {
-	gp.loadPulsarConfig()
-	gp.loadKafkaConfig()
-	gp.loadRocksMQConfig()
-}
-
-func (gp *BaseTable) loadEtcdConfig() {
-	etcdEndpoints := os.Getenv("ETCD_ENDPOINTS")
-	if etcdEndpoints == "" {
-		etcdEndpoints = gp.LoadWithDefault("etcd.endpoints", DefaultEtcdEndpoints)
-	}
-	gp.Save("_EtcdEndpoints", etcdEndpoints)
-}
-
 func (gp *BaseTable) loadMinioConfig() {
 	minioAddress := os.Getenv("MINIO_ADDRESS")
 	if minioAddress == "" {
-		minioHost := gp.LoadWithDefault("minio.address", DefaultMinioHost)
+		minioHost := gp.LoadWithDefault("minio.address", DefaultMinioAddress)
 		port := gp.LoadWithDefault("minio.port", DefaultMinioPort)
 		minioAddress = minioHost + ":" + port
 	}
@@ -525,26 +408,4 @@ func (gp *BaseTable) loadMinioConfig() {
 		minioIAMEndpoint = gp.LoadWithDefault("minio.iamEndpoint", DefaultMinioIAMEndpoint)
 	}
 	gp.Save("_MinioIAMEndpoint", minioIAMEndpoint)
-}
-
-func (gp *BaseTable) loadDataNodeConfig() {
-	insertBufferFlushSize := os.Getenv("DATA_NODE_IBUFSIZE")
-	if insertBufferFlushSize == "" {
-		insertBufferFlushSize = gp.LoadWithDefault("datanode.flush.insertBufSize", DefaultInsertBufferSize)
-	}
-	gp.Save("_DATANODE_INSERTBUFSIZE", insertBufferFlushSize)
-}
-
-func (gp *BaseTable) loadOtherEnvs() {
-	// try to load environment start with ENV_PREFIX
-	for _, e := range os.Environ() {
-		parts := strings.SplitN(e, "=", 2)
-		if strings.Contains(parts[0], DefaultEnvPrefix) {
-			parts := strings.SplitN(e, "=", 2)
-			// remove the ENV PREFIX and use the rest as key
-			keyParts := strings.SplitAfterN(parts[0], ".", 2)
-			// mem kv throw no errors
-			gp.Save(keyParts[1], parts[1])
-		}
-	}
 }

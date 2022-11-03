@@ -6,8 +6,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/zilliztech/milvus-backup/core"
+	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/internal/util/paramtable"
 )
 
 var (
@@ -19,9 +19,9 @@ var deleteBackupCmd = &cobra.Command{
 	Short: "delete subcommand delete backup by name.",
 
 	Run: func(cmd *cobra.Command, args []string) {
-		var params paramtable.ComponentParam
-		params.GlobalInitWithYaml(milvusConfig)
-		params.InitOnce()
+		var params paramtable.BackupParams
+		params.GlobalInitWithYaml(config)
+		params.Init()
 
 		context := context.Background()
 		backupContext := core.CreateBackupContext(context, params)

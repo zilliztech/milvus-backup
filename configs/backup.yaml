@@ -1,0 +1,39 @@
+
+# milvus proxy address, compatible to milvus.yaml
+milvus:
+  address: localhost
+  port: 19530
+
+# Related configuration of minio, which is responsible for data persistence for Milvus.
+minio:
+  address: localhost # Address of MinIO/S3
+  port: 9000   # Port of MinIO/S3
+  accessKeyID: minioadmin # accessKeyID of MinIO/S3
+  secretAccessKey: minioadmin # MinIO/S3 encryption string
+  useSSL: false # Access to MinIO/S3 with SSL
+  bucketName: "a-bucket" # Bucket name in MinIO/S3
+  rootPath: files # The root path where the message is stored in MinIO/S3
+  # Whether to use AWS IAM role to access S3 instead of access/secret keys
+  # For more infomation, refer to https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_use.html
+  useIAM: false
+  # Custom endpoint for fetch IAM role credentials.
+  # Leave it empty if you want to use AWS default endpoint
+  iamEndpoint: ""
+
+backup:
+  storageType: minio # backup data storage engine: minio/S3/GCP
+
+backup-minio:
+  address: localhost # Address of MinIO/S3
+  port: 9000   # Port of MinIO/S3
+  accessKeyID: minioadmin # accessKeyID of MinIO/S3
+  secretAccessKey: minioadmin # MinIO/S3 encryption string
+  useSSL: false # Access to MinIO/S3 with SSL
+  bucketName: "a-bucket" # Bucket name in MinIO/S3
+  rootPath: files # The root path where the message is stored in MinIO/S3
+  # Whether to use AWS IAM role to access S3 instead of access/secret keys
+  # For more infomation, refer to https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_use.html
+  useIAM: false
+  # Custom endpoint for fetch IAM role credentials.
+  # Leave it empty if you want to use AWS default endpoint
+  iamEndpoint: ""

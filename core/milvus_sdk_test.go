@@ -2,24 +2,20 @@ package core
 
 import (
 	"context"
+	"testing"
+	"time"
+
+	"github.com/zilliztech/milvus-backup/internal/log"
+
 	gomilvus "github.com/milvus-io/milvus-sdk-go/v2/client"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 	"github.com/stretchr/testify/assert"
-	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/util/paramtable"
-	"github.com/zilliztech/milvus-backup/internal/util/typeutil"
 	"go.uber.org/zap"
-	"testing"
-	"time"
 )
 
 func TestProxyClient(t *testing.T) {
-	var params paramtable.ComponentParam
-	params.InitOnce()
 	ctx := context.Background()
-	var Params paramtable.GrpcServerConfig
-	Params.InitOnce(typeutil.ProxyRole)
-	milvusAddr := Params.GetAddress()
+	milvusAddr := "localhost:19530"
 	//c, err := proxy.NewClient(context, milvusAddr)
 	//assert.NoError(t, err)
 
@@ -46,12 +42,8 @@ func TestProxyClient(t *testing.T) {
 }
 
 func TestBulkload(t *testing.T) {
-	var params paramtable.ComponentParam
-	params.InitOnce()
 	ctx := context.Background()
-	var Params paramtable.GrpcServerConfig
-	Params.InitOnce(typeutil.ProxyRole)
-	milvusAddr := Params.GetAddress()
+	milvusAddr := "localhost:19530"
 	//c, err := proxy.NewClient(context, milvusAddr)
 	//assert.NoError(t, err)
 

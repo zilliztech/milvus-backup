@@ -8,11 +8,21 @@ import (
 	"github.com/milvus-io/milvus-proto/go-api/commonpb"
 )
 
+const (
+	logicalBits = 18
+	PARAMS      = "params"
+)
+
+// ComposeTS returns a timestamp composed of physical part and logical part
+func ComposeTS(physical, logical int64) uint64 {
+	return uint64((physical << logicalBits) + logical)
+}
+
 // kvPairToMap largely copied from internal/proxy/task.go#parseIndexParams
 func KVPairToMap(m []*commonpb.KeyValuePair) (map[string]string, error) {
 	params := make(map[string]string)
 	for _, kv := range m {
-		if kv.Key == "params" {
+		if kv.Key == PARAMS {
 			params, err := parseParamsMap(kv.Value)
 			if err != nil {
 				return nil, err
