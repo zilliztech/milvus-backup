@@ -6,12 +6,11 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/zilliztech/milvus-backup/core"
-	"github.com/zilliztech/milvus-backup/internal/util/paramtable"
+	"github.com/zilliztech/milvus-backup/core/paramtable"
 )
 
 var (
-	milvusConfig string
-	port         string
+	port string
 )
 
 var serverCmd = &cobra.Command{
@@ -19,9 +18,10 @@ var serverCmd = &cobra.Command{
 	Short: "server subcommand start milvus-backup RESTAPI server.",
 
 	Run: func(cmd *cobra.Command, args []string) {
-		var params paramtable.ComponentParam
-		params.GlobalInitWithYaml(milvusConfig)
-		params.InitOnce()
+		var params paramtable.BackupParams
+		fmt.Println("config:" + config)
+		params.GlobalInitWithYaml(config)
+		params.Init()
 
 		context := context.Background()
 		server, err := core.NewServer(context, params, core.Port(port))
@@ -34,7 +34,6 @@ var serverCmd = &cobra.Command{
 }
 
 func init() {
-	serverCmd.Flags().StringVarP(&milvusConfig, "milvusConfig", "c", "milvus.yaml", "config YAML file of milvus")
 	serverCmd.Flags().StringVarP(&port, "port", "p", "8080", "Port to listen")
 
 	rootCmd.AddCommand(serverCmd)

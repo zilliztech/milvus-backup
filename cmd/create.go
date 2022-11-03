@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 	"github.com/zilliztech/milvus-backup/core"
+	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/internal/util/paramtable"
 )
 
 var (
@@ -21,9 +21,10 @@ var createBackupCmd = &cobra.Command{
 	Short: "create subcommand create a backup.",
 
 	Run: func(cmd *cobra.Command, args []string) {
-		var params paramtable.ComponentParam
-		params.GlobalInitWithYaml(milvusConfig)
-		params.InitOnce()
+		var params paramtable.BackupParams
+		fmt.Println("config:" + config)
+		params.GlobalInitWithYaml(config)
+		params.Init()
 
 		context := context.Background()
 		backupContext := core.CreateBackupContext(context, params)
@@ -48,7 +49,7 @@ var createBackupCmd = &cobra.Command{
 
 func init() {
 	createBackupCmd.Flags().StringVarP(&backupName, "name", "n", "", "backup name, if unset will generate a name automatically")
-	createBackupCmd.Flags().StringVarP(&collectionNames, "collections", "c", "", "collectionNames to backup, use ',' to connect multiple collections")
+	createBackupCmd.Flags().StringVarP(&collectionNames, "colls", "", "", "collectionNames to backup, use ',' to connect multiple collections")
 
 	rootCmd.AddCommand(createBackupCmd)
 }

@@ -2,16 +2,14 @@ package core
 
 import (
 	"context"
-	"github.com/gin-gonic/gin"
-	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/util/paramtable"
 	"net/http"
 	"net/http/pprof"
-)
 
-var Params paramtable.GrpcServerConfig
-var HTTPParams paramtable.HTTPConfig
+	"github.com/gin-gonic/gin"
+	"github.com/zilliztech/milvus-backup/core/paramtable"
+	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/log"
+)
 
 const (
 	HELLO_API         = "/hello"
@@ -31,7 +29,7 @@ type Server struct {
 	config        *BackupConfig
 }
 
-func NewServer(ctx context.Context, params paramtable.ComponentParam, opts ...BackupOption) (*Server, error) {
+func NewServer(ctx context.Context, params paramtable.BackupParams, opts ...BackupOption) (*Server, error) {
 	c := newDefaultBackupConfig()
 	for _, opt := range opts {
 		opt(c)
@@ -54,7 +52,7 @@ func (s *Server) Start() {
 
 // registerHTTPServer register the http server, panic when failed
 func (s *Server) registerHTTPServer() {
-	if !HTTPParams.DebugMode {
+	if !Params.HTTPCfg.DebugMode {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	ginHandler := gin.Default()
