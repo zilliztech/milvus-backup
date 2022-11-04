@@ -1,15 +1,16 @@
 package core
 
 import (
-	"github.com/stretchr/testify/assert"
-	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/internal/proto/commonpb"
-	"github.com/zilliztech/milvus-backup/internal/proto/schemapb"
-	"github.com/zilliztech/milvus-backup/internal/util/funcutil"
 	"strconv"
 	"testing"
+
+	"github.com/milvus-io/milvus-proto/go-api/commonpb"
+	"github.com/milvus-io/milvus-proto/go-api/schemapb"
+	"github.com/stretchr/testify/assert"
+
+	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/util/funcutil"
 )
 
 func TestBackupSerialize(t *testing.T) {

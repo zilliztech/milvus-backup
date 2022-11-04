@@ -408,6 +408,7 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 					errorResp.Status.Reason = "Binlog file not exist"
 					return errorResp, nil
 				}
+
 				err = b.milvusStorageClient.Copy(binlog.GetLogPath(), targetPath)
 				if err != nil {
 					log.Info("Fail to copy file",
@@ -810,6 +811,7 @@ func (b BackupContext) executeLoadTask(ctx context.Context, backupName string, t
 		// todo ts
 		options := make(map[string]string)
 		options["end_ts"] = fmt.Sprint(task.GetCollBackup().BackupTimestamp)
+		options["backup"] = "true"
 		files, err := b.getPartitionFiles(backupName, partitionBackup)
 		if err != nil {
 			log.Error("fail to get partition backup binlog files",
@@ -869,13 +871,12 @@ func (b BackupContext) watchBulkloadState(ctx context.Context, taskId int64, tim
 		switch importTaskState.State {
 		case entity.BulkloadFailed:
 			return err
-		case entity.BulkloadPersisted:
 		case entity.BulkloadCompleted:
 			return nil
 		default:
+			time.Sleep(time.Second * time.Duration(sleepSeconds))
 			continue
 		}
-		time.Sleep(time.Second * time.Duration(sleepSeconds))
 	}
 	return errors.New("import task timeout")
 }
