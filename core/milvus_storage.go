@@ -203,6 +203,29 @@ func (mcm *MinioMilvusStorage) Exist(filePath string) (bool, error) {
 	return true, nil
 }
 
+//func (mcm *MinioMilvusStorage) Exist(filePath string) (bool, error) {
+//	objects := mcm.Client.ListObjects(mcm.ctx, mcm.bucketName, minio.ListObjectsOptions{Prefix: filePath, Recursive: false})
+//	if strings.HasSuffix(filePath, "/") && len(objects) > 0 {
+//		return true, nil
+//	}
+//	for object := range objects {
+//		if object.Err != nil {
+//			log.Warn("failed to list with prefix", zap.String("prefix", filePath), zap.Error(object.Err))
+//			return false, object.Err
+//		}
+//		if strings.HasSuffix(filePath, "/") {
+//
+//		}
+//		if object.Key == filePath {
+//			return true, nil
+//		}
+//
+//		if strings.Contains(object.Key, filePath) && strings.Split(object.Key, filePath)[1]
+//	}
+//	log.Warn("path not exist", zap.String("path", filePath))
+//	return false, nil
+//}
+
 // Read reads the minio storage data if exists.
 func (mcm *MinioMilvusStorage) Read(filePath string) ([]byte, error) {
 	object, err := mcm.Client.GetObject(mcm.ctx, mcm.bucketName, filePath, minio.GetObjectOptions{})

@@ -111,7 +111,7 @@ func (gp *BaseTable) initConfPath() string {
 		if _, err := os.Stat(configDir); err != nil {
 			_, fpath, _, _ := runtime.Caller(0)
 			// TODO, this is a hack, need to find better solution for relative path
-			configDir = path.Dir(fpath) + "/../../../configs/"
+			configDir = path.Dir(fpath) + "/../../configs/"
 		}
 	}
 	return configDir
