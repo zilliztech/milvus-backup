@@ -2,9 +2,9 @@ package core
 
 import (
 	"context"
+	"github.com/zilliztech/milvus-backup/core/storage"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"go.uber.org/zap"
-	"path"
 	"strconv"
 	"strings"
 	"testing"
@@ -14,22 +14,21 @@ import (
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 )
 
-// TODO: NewMinioChunkManager is deprecated. Rewrite this unittest.
-func newMinIOMilvusStorage(ctx context.Context, bucketName string) (*MinioMilvusStorage, error) {
+func newMinioChunkManager(ctx context.Context, bucketName string) (*storage.MinioChunkManager, error) {
 	endPoint := getMinioAddress()
 	accessKeyID, _ := Params.Load("minio.accessKeyID")
 	secretAccessKey, _ := Params.Load("minio.secretAccessKey")
 	useSSLStr, _ := Params.Load("minio.useSSL")
 	useSSL, _ := strconv.ParseBool(useSSLStr)
-	client, err := NewMinioMilvusStorage(ctx,
-		Address(endPoint),
-		AccessKeyID(accessKeyID),
-		SecretAccessKeyID(secretAccessKey),
-		UseSSL(useSSL),
-		BucketName(bucketName),
-		UseIAM(false),
-		IAMEndpoint(""),
-		CreateBucket(true),
+	client, err := storage.NewMinioChunkManager(ctx,
+		storage.Address(endPoint),
+		storage.AccessKeyID(accessKeyID),
+		storage.SecretAccessKeyID(secretAccessKey),
+		storage.UseSSL(useSSL),
+		storage.BucketName(bucketName),
+		storage.UseIAM(false),
+		storage.IAMEndpoint(""),
+		storage.CreateBucket(true),
 	)
 	return client, err
 }
@@ -43,450 +42,6 @@ func getMinioAddress() string {
 	return minioHost + ":" + port
 }
 
-func TestMinIOCMFail(t *testing.T) {
-	ctx := context.Background()
-	endPoint, _ := Params.Load("9.9.9.9")
-	accessKeyID, _ := Params.Load("minio.accessKeyID")
-	secretAccessKey, _ := Params.Load("minio.secretAccessKey")
-	useSSLStr, _ := Params.Load("minio.useSSL")
-	useSSL, _ := strconv.ParseBool(useSSLStr)
-	client, err := NewMinioMilvusStorage(ctx,
-		Address(endPoint),
-		AccessKeyID(accessKeyID),
-		SecretAccessKeyID(secretAccessKey),
-		UseSSL(useSSL),
-		BucketName("test"),
-		CreateBucket(true),
-	)
-	assert.Error(t, err)
-	assert.Nil(t, client)
-
-}
-
-func TestMinIOCM(t *testing.T) {
-	Params.Init()
-	testBucket, err := Params.Load("minio.bucketName")
-	require.NoError(t, err)
-
-	configRoot, err := Params.Load("minio.rootPath")
-	require.NoError(t, err)
-
-	testMinIOKVRoot := path.Join(configRoot, "milvus-minio-ut-root")
-
-	t.Run("test load", func(t *testing.T) {
-		testLoadRoot := path.Join(testMinIOKVRoot, "test_load")
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		testCM, err := newMinIOMilvusStorage(ctx, testBucket)
-		require.NoError(t, err)
-		defer testCM.RemoveWithPrefix(testLoadRoot)
-
-		prepareTests := []struct {
-			key   string
-			value []byte
-		}{
-			{"abc", []byte("123")},
-			{"abcd", []byte("1234")},
-			{"key_1", []byte("111")},
-			{"key_2", []byte("222")},
-			{"key_3", []byte("333")},
-		}
-
-		for _, test := range prepareTests {
-			err = testCM.Write(path.Join(testLoadRoot, test.key), test.value)
-			require.NoError(t, err)
-		}
-
-		loadTests := []struct {
-			isvalid       bool
-			loadKey       string
-			expectedValue []byte
-
-			description string
-		}{
-			{true, "abc", []byte("123"), "load valid key abc"},
-			{true, "abcd", []byte("1234"), "load valid key abcd"},
-			{true, "key_1", []byte("111"), "load valid key key_1"},
-			{true, "key_2", []byte("222"), "load valid key key_2"},
-			{true, "key_3", []byte("333"), "load valid key key_3"},
-			{false, "key_not_exist", []byte(""), "load invalid key key_not_exist"},
-			{false, "/", []byte(""), "load leading slash"},
-		}
-
-		for _, test := range loadTests {
-			t.Run(test.description, func(t *testing.T) {
-				if test.isvalid {
-					got, err := testCM.Read(path.Join(testLoadRoot, test.loadKey))
-					assert.NoError(t, err)
-					assert.Equal(t, test.expectedValue, got)
-				} else {
-					if test.loadKey == "/" {
-						got, err := testCM.Read(test.loadKey)
-						assert.Error(t, err)
-						assert.Empty(t, got)
-						return
-					}
-					got, err := testCM.Read(path.Join(testLoadRoot, test.loadKey))
-					assert.Error(t, err)
-					assert.Empty(t, got)
-				}
-			})
-		}
-
-		loadWithPrefixTests := []struct {
-			isvalid       bool
-			prefix        string
-			expectedValue [][]byte
-
-			description string
-		}{
-			{true, "abc", [][]byte{[]byte("123"), []byte("1234")}, "load with valid prefix abc"},
-			{true, "key_", [][]byte{[]byte("111"), []byte("222"), []byte("333")}, "load with valid prefix key_"},
-			{true, "prefix", [][]byte{}, "load with valid but not exist prefix prefix"},
-		}
-
-		for _, test := range loadWithPrefixTests {
-			t.Run(test.description, func(t *testing.T) {
-				gotk, gotv, err := testCM.ReadWithPrefix(path.Join(testLoadRoot, test.prefix))
-				assert.NoError(t, err)
-				assert.Equal(t, len(test.expectedValue), len(gotk))
-				assert.Equal(t, len(test.expectedValue), len(gotv))
-				assert.ElementsMatch(t, test.expectedValue, gotv)
-			})
-		}
-
-		multiLoadTests := []struct {
-			isvalid   bool
-			multiKeys []string
-
-			expectedValue [][]byte
-			description   string
-		}{
-			{false, []string{"key_1", "key_not_exist"}, [][]byte{[]byte("111"), nil}, "multiload 1 exist 1 not"},
-			{true, []string{"abc", "key_3"}, [][]byte{[]byte("123"), []byte("333")}, "multiload 2 exist"},
-		}
-
-		for _, test := range multiLoadTests {
-			t.Run(test.description, func(t *testing.T) {
-				for i := range test.multiKeys {
-					test.multiKeys[i] = path.Join(testLoadRoot, test.multiKeys[i])
-				}
-				if test.isvalid {
-					got, err := testCM.MultiRead(test.multiKeys)
-					assert.NoError(t, err)
-					assert.Equal(t, test.expectedValue, got)
-				} else {
-					got, err := testCM.MultiRead(test.multiKeys)
-					assert.Error(t, err)
-					assert.Equal(t, test.expectedValue, got)
-				}
-			})
-		}
-	})
-
-	t.Run("test MultiSave", func(t *testing.T) {
-		testMultiSaveRoot := path.Join(testMinIOKVRoot, "test_multisave")
-
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		testCM, err := newMinIOMilvusStorage(ctx, testBucket)
-		assert.Nil(t, err)
-		defer testCM.RemoveWithPrefix(testMultiSaveRoot)
-
-		err = testCM.Write(path.Join(testMultiSaveRoot, "key_1"), []byte("111"))
-		assert.Nil(t, err)
-
-		kvs := map[string][]byte{
-			path.Join(testMultiSaveRoot, "key_1"): []byte("123"),
-			path.Join(testMultiSaveRoot, "key_2"): []byte("456"),
-		}
-
-		err = testCM.MultiWrite(kvs)
-		assert.Nil(t, err)
-
-		val, err := testCM.Read(path.Join(testMultiSaveRoot, "key_1"))
-		assert.Nil(t, err)
-		assert.Equal(t, []byte("123"), val)
-	})
-
-	t.Run("test Remove", func(t *testing.T) {
-		testRemoveRoot := path.Join(testMinIOKVRoot, "test_remove")
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		testCM, err := newMinIOMilvusStorage(ctx, testBucket)
-		assert.Nil(t, err)
-		defer testCM.RemoveWithPrefix(testRemoveRoot)
-
-		prepareTests := []struct {
-			k string
-			v []byte
-		}{
-			{"key_1", []byte("123")},
-			{"key_2", []byte("456")},
-			{"mkey_1", []byte("111")},
-			{"mkey_2", []byte("222")},
-			{"mkey_3", []byte("333")},
-			{"key_prefix_1", []byte("111")},
-			{"key_prefix_2", []byte("222")},
-			{"key_prefix_3", []byte("333")},
-		}
-
-		for _, test := range prepareTests {
-			k := path.Join(testRemoveRoot, test.k)
-			err = testCM.Write(k, test.v)
-			require.NoError(t, err)
-		}
-
-		removeTests := []struct {
-			removeKey         string
-			valueBeforeRemove []byte
-
-			description string
-		}{
-			{"key_1", []byte("123"), "remove key_1"},
-			{"key_2", []byte("456"), "remove key_2"},
-		}
-
-		for _, test := range removeTests {
-			t.Run(test.description, func(t *testing.T) {
-				k := path.Join(testRemoveRoot, test.removeKey)
-				v, err := testCM.Read(k)
-				require.NoError(t, err)
-				require.Equal(t, test.valueBeforeRemove, v)
-
-				err = testCM.Remove(k)
-				assert.NoError(t, err)
-
-				v, err = testCM.Read(k)
-				require.Error(t, err)
-				require.Empty(t, v)
-			})
-		}
-
-		multiRemoveTest := []string{
-			path.Join(testRemoveRoot, "mkey_1"),
-			path.Join(testRemoveRoot, "mkey_2"),
-			path.Join(testRemoveRoot, "mkey_3"),
-		}
-
-		lv, err := testCM.MultiRead(multiRemoveTest)
-		require.NoError(t, err)
-		require.ElementsMatch(t, [][]byte{[]byte("111"), []byte("222"), []byte("333")}, lv)
-
-		err = testCM.MultiRemove(multiRemoveTest)
-		assert.NoError(t, err)
-
-		for _, k := range multiRemoveTest {
-			v, err := testCM.Read(k)
-			assert.Error(t, err)
-			assert.Empty(t, v)
-		}
-
-		removeWithPrefixTest := []string{
-			path.Join(testRemoveRoot, "key_prefix_1"),
-			path.Join(testRemoveRoot, "key_prefix_2"),
-			path.Join(testRemoveRoot, "key_prefix_3"),
-		}
-		removePrefix := path.Join(testRemoveRoot, "key_prefix")
-
-		lv, err = testCM.MultiRead(removeWithPrefixTest)
-		require.NoError(t, err)
-		require.ElementsMatch(t, [][]byte{[]byte("111"), []byte("222"), []byte("333")}, lv)
-
-		err = testCM.RemoveWithPrefix(removePrefix)
-		assert.NoError(t, err)
-
-		for _, k := range removeWithPrefixTest {
-			v, err := testCM.Read(k)
-			assert.Error(t, err)
-			assert.Empty(t, v)
-		}
-	})
-
-	t.Run("test ReadAt", func(t *testing.T) {
-		testLoadPartialRoot := path.Join(testMinIOKVRoot, "load_partial")
-
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		testCM, err := newMinIOMilvusStorage(ctx, testBucket)
-		require.NoError(t, err)
-		defer testCM.RemoveWithPrefix(testLoadPartialRoot)
-
-		key := path.Join(testLoadPartialRoot, "TestMinIOKV_LoadPartial_key")
-		value := []byte("TestMinIOKV_LoadPartial_value")
-
-		err = testCM.Write(key, value)
-		assert.NoError(t, err)
-
-		var off, length int64
-		var partial []byte
-
-		off, length = 1, 1
-		partial, err = testCM.ReadAt(key, off, length)
-		assert.NoError(t, err)
-		assert.ElementsMatch(t, partial, value[off:off+length])
-
-		off, length = 0, int64(len(value))
-		partial, err = testCM.ReadAt(key, off, length)
-		assert.NoError(t, err)
-		assert.ElementsMatch(t, partial, value[off:off+length])
-
-		// error case
-		off, length = 5, -2
-		_, err = testCM.ReadAt(key, off, length)
-		assert.Error(t, err)
-
-		off, length = -1, 2
-		_, err = testCM.ReadAt(key, off, length)
-		assert.Error(t, err)
-
-		off, length = 1, -2
-		_, err = testCM.ReadAt(key, off, length)
-		assert.Error(t, err)
-
-		err = testCM.Remove(key)
-		assert.NoError(t, err)
-		off, length = 1, 1
-		_, err = testCM.ReadAt(key, off, length)
-		assert.Error(t, err)
-	})
-
-	t.Run("test Size", func(t *testing.T) {
-		testGetSizeRoot := path.Join(testMinIOKVRoot, "get_size")
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		testCM, err := newMinIOMilvusStorage(ctx, testBucket)
-		require.NoError(t, err)
-		defer testCM.RemoveWithPrefix(testGetSizeRoot)
-
-		key := path.Join(testGetSizeRoot, "TestMinIOKV_GetSize_key")
-		value := []byte("TestMinIOKV_GetSize_value")
-
-		err = testCM.Write(key, value)
-		assert.NoError(t, err)
-
-		size, err := testCM.Size(key)
-		assert.NoError(t, err)
-		assert.Equal(t, size, int64(len(value)))
-
-		key2 := path.Join(testGetSizeRoot, "TestMemoryKV_GetSize_key2")
-
-		size, err = testCM.Size(key2)
-		assert.Error(t, err)
-		assert.Equal(t, int64(0), size)
-	})
-
-	t.Run("test Path", func(t *testing.T) {
-		testGetPathRoot := path.Join(testMinIOKVRoot, "get_path")
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		testCM, err := newMinIOMilvusStorage(ctx, testBucket)
-		require.NoError(t, err)
-		defer testCM.RemoveWithPrefix(testGetPathRoot)
-
-		key := path.Join(testGetPathRoot, "TestMinIOKV_GetSize_key")
-		value := []byte("TestMinIOKV_GetSize_value")
-
-		err = testCM.Write(key, value)
-		assert.NoError(t, err)
-
-		p, err := testCM.Path(key)
-		assert.NoError(t, err)
-		assert.Equal(t, p, key)
-
-		key2 := path.Join(testGetPathRoot, "TestMemoryKV_GetSize_key2")
-
-		p, err = testCM.Path(key2)
-		assert.Error(t, err)
-		assert.Equal(t, p, "")
-	})
-
-	t.Run("test Mmap", func(t *testing.T) {
-		testMmapRoot := path.Join(testMinIOKVRoot, "mmap")
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		testCM, err := newMinIOMilvusStorage(ctx, testBucket)
-		require.NoError(t, err)
-		defer testCM.RemoveWithPrefix(testMmapRoot)
-
-		key := path.Join(testMmapRoot, "TestMinIOKV_GetSize_key")
-		value := []byte("TestMinIOKV_GetSize_value")
-
-		err = testCM.Write(key, value)
-		assert.NoError(t, err)
-
-	})
-
-	t.Run("test Prefix", func(t *testing.T) {
-		testPrefix := path.Join(testMinIOKVRoot, "prefix")
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-
-		testCM, err := newMinIOMilvusStorage(ctx, testBucket)
-		require.NoError(t, err)
-		defer testCM.RemoveWithPrefix(testPrefix)
-
-		pathB := path.Join("a", "b")
-
-		key := path.Join(testPrefix, pathB)
-		value := []byte("a")
-
-		err = testCM.Write(key, value)
-		assert.NoError(t, err)
-
-		pathC := path.Join("a", "c")
-		key = path.Join(testPrefix, pathC)
-		err = testCM.Write(key, value)
-		assert.NoError(t, err)
-
-		pathPrefix := path.Join(testPrefix, "a")
-		r, m, err := testCM.ListWithPrefix(pathPrefix, true)
-		assert.NoError(t, err)
-		assert.Equal(t, len(r), 2)
-		assert.Equal(t, len(m), 2)
-
-		key = path.Join(testPrefix, "b", "b", "b")
-		err = testCM.Write(key, value)
-		assert.NoError(t, err)
-
-		key = path.Join(testPrefix, "b", "a", "b")
-		err = testCM.Write(key, value)
-		assert.NoError(t, err)
-
-		key = path.Join(testPrefix, "bc", "a", "b")
-		err = testCM.Write(key, value)
-		assert.NoError(t, err)
-		dirs, mods, err := testCM.ListWithPrefix(testPrefix+"/", false)
-		assert.NoError(t, err)
-		assert.Equal(t, 3, len(dirs))
-		assert.Equal(t, 3, len(mods))
-
-		dirs, mods, err = testCM.ListWithPrefix(path.Join(testPrefix, "b"), false)
-		assert.NoError(t, err)
-		assert.Equal(t, 2, len(dirs))
-		assert.Equal(t, 2, len(mods))
-
-		testCM.RemoveWithPrefix(testPrefix)
-		r, m, err = testCM.ListWithPrefix(pathPrefix, false)
-		assert.NoError(t, err)
-		assert.Equal(t, len(r), 0)
-		assert.Equal(t, len(m), 0)
-
-		// test wrong prefix
-		b := make([]byte, 2048)
-		pathWrong := path.Join(testPrefix, string(b))
-		_, _, err = testCM.ListWithPrefix(pathWrong, true)
-		assert.Error(t, err)
-	})
-}
-
 func TestWriteAEmptyBackupFile(t *testing.T) {
 
 	Params.Init()
@@ -496,8 +51,8 @@ func TestWriteAEmptyBackupFile(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	testCM, err := newMinIOMilvusStorage(ctx, testBucket)
-	err = testCM.Write("backup/test_backup6", nil)
+	testCM, err := newMinioChunkManager(ctx, testBucket)
+	err = testCM.Write(ctx, "backup/test_backup6", nil)
 	assert.NoError(t, err)
 }
 
@@ -510,8 +65,8 @@ func TestReadBackupFiles(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	testCM, err := newMinIOMilvusStorage(ctx, testBucket)
-	files, _, err := testCM.ListWithPrefix("/backup", true)
+	testCM, err := newMinioChunkManager(ctx, testBucket)
+	files, _, err := testCM.ListWithPrefix(ctx, "/backup", true)
 	assert.NoError(t, err)
 
 	for _, file := range files {
@@ -529,21 +84,21 @@ func TestReadMilvusData(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	testCM, err := newMinIOMilvusStorage(ctx, testBucket)
+	testCM, err := newMinioChunkManager(ctx, testBucket)
 
 	//exist0, err := testCM.Exist("backup/my_backup/binlogs/insert_log/437133320401190919/437133320401190920/")
 	//log.Info("exist", zap.Bool("exist", exist0))
 
-	exist1, err := testCM.Exist("backu")
+	exist1, err := testCM.Exist(ctx, "backu")
 	log.Info("exist", zap.Bool("exist", exist1))
 
-	exist2, err := testCM.Exist("files")
+	exist2, err := testCM.Exist(ctx, "files")
 	log.Info("exist", zap.Bool("exist", exist2))
 
-	exist3, err := testCM.Exist("files/")
+	exist3, err := testCM.Exist(ctx, "files/")
 	log.Info("exist", zap.Bool("exist", exist3))
 
-	files, _, err := testCM.ListWithPrefix("files", false)
+	files, _, err := testCM.ListWithPrefix(ctx, "files", false)
 	log.Info("exist", zap.Strings("files", files))
 	//
 	//paths, _, _ := testCM.ListWithPrefix("", true)

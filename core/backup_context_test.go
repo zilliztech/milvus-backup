@@ -207,7 +207,7 @@ func TestGetBackupFaultBackup(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, backuppb.StatusCode_Success, resp.GetStatus().GetStatusCode())
 
-	backupContext.milvusStorageClient.RemoveWithPrefix(BackupMetaPath(resp.GetBackupInfo()))
+	backupContext.milvusStorageClient.RemoveWithPrefix(context, BackupMetaPath(resp.GetBackupInfo()))
 
 	backup, err := backupContext.GetBackup(context, &backuppb.GetBackupRequest{
 		BackupName: randBackupName,
