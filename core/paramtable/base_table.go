@@ -45,9 +45,13 @@ const (
 	DefaultMinioBucketName      = "a-bucket"
 	DefaultMinioRootPath        = "files"
 	DefaultMinioUseIAM          = "false"
+	DefaultMinioCloudProvider   = "aws"
 	DefaultMinioIAMEndpoint     = ""
 
 	DefaultLogLevel = "WARNING"
+
+	DefaultMinioBackupBucketName = "a-bucket"
+	DefaultMinioBackupRootPath   = "backup"
 )
 
 var defaultYaml = DefaultBackupYaml

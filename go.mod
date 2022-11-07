@@ -4,7 +4,6 @@ go 1.16
 
 require (
 	github.com/gin-gonic/gin v1.7.7
-	github.com/go-basic/ipv4 v1.0.0
 	github.com/golang/protobuf v1.5.2
 	github.com/google/btree v1.0.1
 	github.com/milvus-io/milvus-proto/go-api v0.0.0-20221019080323-84e9fa2f9e45
@@ -17,13 +16,17 @@ require (
 	github.com/stretchr/testify v1.8.0
 	github.com/uber/jaeger-client-go v2.25.0+incompatible
 	go.etcd.io/etcd/client/v3 v3.5.0
-	go.etcd.io/etcd/server/v3 v3.5.0
 	go.uber.org/zap v1.17.0
 	google.golang.org/grpc v1.48.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 )
 
-require github.com/lingdor/stackerror v0.0.0-20191119040541-976d8885ed76
+require (
+	github.com/kr/text v0.2.0 // indirect
+	github.com/lingdor/stackerror v0.0.0-20191119040541-976d8885ed76
+	golang.org/x/exp v0.0.0-20200224162631-6cc2880d07d6
+	golang.org/x/oauth2 v0.0.0-20210402161424-2e8d93401602
+)
 
 replace (
 	github.com/apache/pulsar-client-go => github.com/milvus-io/pulsar-client-go v0.6.8

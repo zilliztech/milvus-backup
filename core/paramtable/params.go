@@ -59,6 +59,16 @@ func (p *MilvusConfig) initPort() {
 
 ///////////////////////////////////////////////////////////////////////////////
 // --- minio ---
+const (
+	CloudProviderAWS = "aws"
+	CloudProviderGCP = "gcp"
+)
+
+var supportedCloudProvider = map[string]bool{
+	CloudProviderAWS: true,
+	CloudProviderGCP: true,
+}
+
 type MinioConfig struct {
 	Base *BaseTable
 
@@ -70,7 +80,11 @@ type MinioConfig struct {
 	BucketName      string
 	RootPath        string
 	UseIAM          bool
+	CloudProvider   string
 	IAMEndpoint     string
+
+	BackupBucketName string
+	BackupRootPath   string
 }
 
 func (p *MinioConfig) init(base *BaseTable) {
@@ -84,7 +98,11 @@ func (p *MinioConfig) init(base *BaseTable) {
 	p.initBucketName()
 	p.initRootPath()
 	p.initUseIAM()
+	p.initCloudProvider()
 	p.initIAMEndpoint()
+
+	p.initBackupBucketName()
+	p.initBackupRootPath()
 }
 
 func (p *MinioConfig) initAddress() {
@@ -127,12 +145,33 @@ func (p *MinioConfig) initRootPath() {
 
 func (p *MinioConfig) initUseIAM() {
 	useIAM := p.Base.LoadWithDefault("minio.useIAM", DefaultMinioUseIAM)
-	p.UseIAM, _ = strconv.ParseBool(useIAM)
+	var err error
+	p.UseIAM, err = strconv.ParseBool(useIAM)
+	if err != nil {
+		panic("parse bool useIAM:" + err.Error())
+	}
+}
+
+func (p *MinioConfig) initCloudProvider() {
+	p.CloudProvider = p.Base.LoadWithDefault("minio.cloudProvider", DefaultMinioCloudProvider)
+	if !supportedCloudProvider[p.CloudProvider] {
+		panic("unsupported cloudProvider:" + p.CloudProvider)
+	}
 }
 
 func (p *MinioConfig) initIAMEndpoint() {
 	iamEndpoint := p.Base.LoadWithDefault("minio.iamEndpoint", DefaultMinioIAMEndpoint)
 	p.IAMEndpoint = iamEndpoint
+}
+
+func (p *MinioConfig) initBackupBucketName() {
+	bucketName := p.Base.LoadWithDefault("minio.backupBucketName", DefaultMinioBackupBucketName)
+	p.BackupBucketName = bucketName
+}
+
+func (p *MinioConfig) initBackupRootPath() {
+	rootPath := p.Base.LoadWithDefault("minio.backupRootPath", DefaultMinioBackupRootPath)
+	p.BackupRootPath = rootPath
 }
 
 type HTTPConfig struct {
