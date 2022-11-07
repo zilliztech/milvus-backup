@@ -30,40 +30,35 @@ const (
 	COLLECTION_RENAME_SUFFIX = "COLLECTION_RENAME_SUFFIX"
 )
 
-type Backup interface {
-	// Create backuppb
-	CreateBackup(context.Context, *backuppb.CreateBackupRequest) (*backuppb.CreateBackupResponse, error)
-	// Get backuppb with the chosen name
-	GetBackup(context.Context, *backuppb.GetBackupRequest) (*backuppb.GetBackupResponse, error)
-	// List backups that contains the given collection name, if collection is not given, return all backups in the cluster
-	ListBackups(context.Context, *backuppb.ListBackupsRequest) (*backuppb.ListBackupsResponse, error)
-	// Delete backuppb by given backuppb name
-	DeleteBackup(context.Context, *backuppb.DeleteBackupRequest) (*backuppb.DeleteBackupResponse, error)
-	// Load backuppb to milvus, return backuppb load report
-	LoadBackup(context.Context, *backuppb.LoadBackupRequest) (*backuppb.LoadBackupResponse, error)
-}
-
 // makes sure BackupContext implements `Backup`
 var _ Backup = (*BackupContext)(nil)
 
+// Don't use it, only exist in tests
 var Params paramtable.BackupParams
 
 type BackupContext struct {
-	ctx          context.Context
-	milvusSource *MilvusSource
-	backupInfos  []backuppb.BackupInfo
+	ctx context.Context
 	// lock to make sure only one backup is creating or loading
-	mu sync.Mutex
-	// milvus go sdk client
-	milvusClient        gomilvus.Client
-	milvusStorageClient storage.ChunkManager
-	started             bool
+	mu      sync.Mutex
+	started bool
+	params  paramtable.BackupParams
+
+	// milvus client
+	milvusClient gomilvus.Client
+
+	// data storage client
+	storageClient    storage.ChunkManager
+	milvusBucketName string
+	backupBucketName string
+	milvusRootPath   string
+	backupRootPath   string
 }
 
 func (b *BackupContext) Start() error {
 	// start milvus go SDK client
-	log.Debug("Start Milvus client", zap.String("address", b.milvusSource.GetProxyAddr()))
-	c, err := gomilvus.NewGrpcClient(b.ctx, b.milvusSource.GetProxyAddr())
+	milvusEndpoint := b.params.MilvusCfg.Address + ":" + b.params.MilvusCfg.Port
+	log.Debug("Start Milvus client", zap.String("endpoint", milvusEndpoint))
+	c, err := gomilvus.NewGrpcClient(b.ctx, milvusEndpoint)
 	if err != nil {
 		log.Error("failed to connect to milvus", zap.Error(err))
 		return err
@@ -71,23 +66,23 @@ func (b *BackupContext) Start() error {
 	b.milvusClient = c
 
 	// start milvus storage client
-	minioEndPoint := Params.MinioCfg.Address + ":" + Params.MinioCfg.Port
+	minioEndPoint := b.params.MinioCfg.Address + ":" + b.params.MinioCfg.Port
 	log.Debug("Start minio client",
 		zap.String("address", minioEndPoint),
-		zap.String("bucket", Params.MinioCfg.BucketName),
-		zap.String("backupBucket", Params.MinioCfg.BackupBucketName))
+		zap.String("bucket", b.milvusBucketName),
+		zap.String("backupBucket", b.backupBucketName))
 	minioClient, err := storage.NewMinioChunkManager(b.ctx,
 		storage.Address(minioEndPoint),
-		storage.AccessKeyID(Params.MinioCfg.AccessKeyID),
-		storage.SecretAccessKeyID(Params.MinioCfg.SecretAccessKey),
-		storage.UseSSL(Params.MinioCfg.UseSSL),
-		storage.BucketName(Params.MinioCfg.BackupBucketName),
-		storage.RootPath(Params.MinioCfg.RootPath),
-		storage.UseIAM(Params.MinioCfg.UseIAM),
-		storage.IAMEndpoint(Params.MinioCfg.IAMEndpoint),
+		storage.AccessKeyID(b.params.MinioCfg.AccessKeyID),
+		storage.SecretAccessKeyID(b.params.MinioCfg.SecretAccessKey),
+		storage.UseSSL(b.params.MinioCfg.UseSSL),
+		storage.BucketName(b.params.MinioCfg.BackupBucketName),
+		storage.RootPath(b.params.MinioCfg.RootPath),
+		storage.UseIAM(b.params.MinioCfg.UseIAM),
+		storage.IAMEndpoint(b.params.MinioCfg.IAMEndpoint),
 		storage.CreateBucket(true),
 	)
-	b.milvusStorageClient = minioClient
+	b.storageClient = minioClient
 	b.started = true
 	return nil
 }
@@ -98,21 +93,14 @@ func (b *BackupContext) Close() error {
 	return err
 }
 
-func (b *BackupContext) GetMilvusSource() *MilvusSource {
-	return b.milvusSource
-}
-
 func CreateBackupContext(ctx context.Context, params paramtable.BackupParams) *BackupContext {
-	Params.Init()
-	milvusAddr := Params.MilvusCfg.Address
-	milvusPort := Params.MilvusCfg.Port
-
 	return &BackupContext{
-		ctx: ctx,
-		milvusSource: &MilvusSource{
-			params:    params,
-			proxyAddr: milvusAddr + ":" + milvusPort,
-		},
+		ctx:              ctx,
+		params:           params,
+		milvusBucketName: params.MinioCfg.BucketName,
+		backupBucketName: params.MinioCfg.BackupBucketName,
+		milvusRootPath:   params.MinioCfg.RootPath,
+		backupRootPath:   params.MinioCfg.BackupRootPath,
 	}
 }
 
@@ -345,7 +333,7 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 		// insert log
 		for _, binlogs := range segment.GetBinlogs() {
 			for _, binlog := range binlogs.GetBinlogs() {
-				targetPath := strings.Replace(binlog.GetLogPath(), Params.MinioCfg.RootPath, DataDirPath(completeBackupInfo), 1)
+				targetPath := strings.Replace(binlog.GetLogPath(), b.milvusRootPath, BackupBinlogDirPath(b.backupRootPath, completeBackupInfo.GetName()), 1)
 				if targetPath == binlog.GetLogPath() {
 					log.Error("wrong target path",
 						zap.String("from", binlog.GetLogPath()),
@@ -354,7 +342,7 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 					return errorResp, nil
 				}
 
-				exist, err := b.milvusStorageClient.Exist(ctx, binlog.GetLogPath())
+				exist, err := b.storageClient.Exist(ctx, b.milvusBucketName, binlog.GetLogPath())
 				if err != nil {
 					log.Info("Fail to check file exist",
 						zap.Error(err),
@@ -370,7 +358,7 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 					return errorResp, nil
 				}
 
-				err = b.milvusStorageClient.Copy(ctx, binlog.GetLogPath(), targetPath)
+				err = b.storageClient.Copy(ctx, b.milvusBucketName, b.backupBucketName, binlog.GetLogPath(), targetPath)
 				if err != nil {
 					log.Info("Fail to copy file",
 						zap.Error(err),
@@ -388,7 +376,7 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 		// delta log
 		for _, binlogs := range segment.GetDeltalogs() {
 			for _, binlog := range binlogs.GetBinlogs() {
-				targetPath := strings.Replace(binlog.GetLogPath(), Params.MinioCfg.RootPath, DataDirPath(completeBackupInfo), 1)
+				targetPath := strings.Replace(binlog.GetLogPath(), b.milvusRootPath, BackupBinlogDirPath(b.backupRootPath, completeBackupInfo.GetName()), 1)
 				if targetPath == binlog.GetLogPath() {
 					log.Error("wrong target path",
 						zap.String("from", binlog.GetLogPath()),
@@ -397,7 +385,7 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 					return errorResp, nil
 				}
 
-				exist, err := b.milvusStorageClient.Exist(ctx, binlog.GetLogPath())
+				exist, err := b.storageClient.Exist(ctx, b.milvusBucketName, binlog.GetLogPath())
 				if err != nil {
 					log.Info("Fail to check file exist",
 						zap.Error(err),
@@ -412,7 +400,7 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 					errorResp.Status.Reason = "Binlog file not exist"
 					return errorResp, nil
 				}
-				err = b.milvusStorageClient.Copy(ctx, binlog.GetLogPath(), targetPath)
+				err = b.storageClient.Copy(ctx, b.milvusBucketName, b.backupBucketName, binlog.GetLogPath(), targetPath)
 				if err != nil {
 					log.Info("Fail to copy file",
 						zap.Error(err),
@@ -436,10 +424,10 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 	log.Info("partition meta", zap.String("value", string(output.PartitionMetaBytes)))
 	log.Info("segment meta", zap.String("value", string(output.SegmentMetaBytes)))
 
-	b.milvusStorageClient.Write(ctx, BackupMetaPath(completeBackupInfo), output.BackupMetaBytes)
-	b.milvusStorageClient.Write(ctx, CollectionMetaPath(completeBackupInfo), output.CollectionMetaBytes)
-	b.milvusStorageClient.Write(ctx, PartitionMetaPath(completeBackupInfo), output.PartitionMetaBytes)
-	b.milvusStorageClient.Write(ctx, SegmentMetaPath(completeBackupInfo), output.SegmentMetaBytes)
+	b.storageClient.Write(ctx, b.backupBucketName, BackupMetaPath(b.backupRootPath, completeBackupInfo.GetName()), output.BackupMetaBytes)
+	b.storageClient.Write(ctx, b.backupBucketName, CollectionMetaPath(b.backupRootPath, completeBackupInfo.GetName()), output.CollectionMetaBytes)
+	b.storageClient.Write(ctx, b.backupBucketName, PartitionMetaPath(b.backupRootPath, completeBackupInfo.GetName()), output.PartitionMetaBytes)
+	b.storageClient.Write(ctx, b.backupBucketName, SegmentMetaPath(b.backupRootPath, completeBackupInfo.GetName()), output.SegmentMetaBytes)
 
 	return &backuppb.CreateBackupResponse{
 		Status: &backuppb.Status{
@@ -501,7 +489,7 @@ func (b BackupContext) ListBackups(ctx context.Context, request *backuppb.ListBa
 	}
 
 	// 1, trigger inner sync to get the newest backup list in the milvus cluster
-	backupPaths, _, err := b.milvusStorageClient.ListWithPrefix(ctx, BACKUP_PREFIX+SEPERATOR, false)
+	backupPaths, _, err := b.storageClient.ListWithPrefix(ctx, b.backupBucketName, b.backupRootPath+SEPERATOR, false)
 	resp := &backuppb.ListBackupsResponse{
 		Status: &backuppb.Status{
 			StatusCode: backuppb.StatusCode_UnexpectedError,
@@ -519,14 +507,14 @@ func (b BackupContext) ListBackups(ctx context.Context, request *backuppb.ListBa
 	failBackups := make([]string, 0)
 	for _, backupPath := range backupPaths {
 		backupResp, err := b.GetBackup(ctx, &backuppb.GetBackupRequest{
-			BackupName: BackupPathToName(backupPath),
+			BackupName: BackupPathToName(b.backupRootPath, backupPath),
 		})
 		if err != nil {
 			log.Warn("Fail to read backup",
 				zap.String("path", backupPath),
 				zap.Error(err))
 			resp.Status.Reason = err.Error()
-			failBackups = append(failBackups, BackupPathToName(backupPath))
+			failBackups = append(failBackups, BackupPathToName(b.backupRootPath, backupPath))
 			//return resp, nil
 		}
 		if backupResp.GetStatus().StatusCode != backuppb.StatusCode_Success {
@@ -534,7 +522,7 @@ func (b BackupContext) ListBackups(ctx context.Context, request *backuppb.ListBa
 				zap.String("path", backupPath),
 				zap.String("error", backupResp.GetStatus().GetReason()))
 			resp.Status.Reason = backupResp.GetStatus().GetReason()
-			failBackups = append(failBackups, BackupPathToName(backupPath))
+			failBackups = append(failBackups, BackupPathToName(b.backupRootPath, backupPath))
 			//return resp, nil
 		}
 
@@ -586,7 +574,7 @@ func (b BackupContext) DeleteBackup(ctx context.Context, request *backuppb.Delet
 		return resp, nil
 	}
 
-	err := b.milvusStorageClient.RemoveWithPrefix(ctx, generateBackupDirPath(request.GetBackupName()))
+	err := b.storageClient.RemoveWithPrefix(ctx, b.backupBucketName, BackupDirPath(b.backupRootPath, request.GetBackupName()))
 
 	if err != nil {
 		log.Error("Fail to delete backup", zap.String("backupName", request.GetBackupName()), zap.Error(err))
@@ -773,7 +761,7 @@ func (b BackupContext) executeLoadTask(ctx context.Context, backupName string, t
 		options := make(map[string]string)
 		options["end_ts"] = fmt.Sprint(task.GetCollBackup().BackupTimestamp)
 		options["backup"] = "true"
-		files, err := b.getPartitionFiles(ctx, backupName, partitionBackup)
+		files, err := b.getBackupPartitionPaths(ctx, backupName, partitionBackup)
 		if err != nil {
 			log.Error("fail to get partition backup binlog files",
 				zap.Error(err),
@@ -842,11 +830,11 @@ func (b BackupContext) watchBulkloadState(ctx context.Context, taskId int64, tim
 	return errors.New("import task timeout")
 }
 
-func (b BackupContext) getPartitionFiles(ctx context.Context, backupName string, partition *backuppb.PartitionBackupInfo) ([]string, error) {
-	insertPath := fmt.Sprintf("%s/%s/%s/%s/%v/%v/", BACKUP_PREFIX, backupName, BINGLOG_DIR, INSERT_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId())
-	deltaPath := fmt.Sprintf("%s/%s/%s/%s/%v/%v/", BACKUP_PREFIX, backupName, BINGLOG_DIR, DELTA_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId())
+func (b BackupContext) getBackupPartitionPaths(ctx context.Context, backupName string, partition *backuppb.PartitionBackupInfo) ([]string, error) {
+	insertPath := fmt.Sprintf("%s/%s/%s/%s/%v/%v/", b.backupRootPath, backupName, BINGLOG_DIR, INSERT_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId())
+	deltaPath := fmt.Sprintf("%s/%s/%s/%s/%v/%v/", b.backupRootPath, backupName, BINGLOG_DIR, DELTA_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId())
 
-	exist, err := b.milvusStorageClient.Exist(ctx, deltaPath)
+	exist, err := b.storageClient.Exist(ctx, b.backupBucketName, deltaPath)
 	if err != nil {
 		log.Warn("check binlog exist fail", zap.Error(err))
 		return []string{}, err
@@ -858,13 +846,13 @@ func (b BackupContext) getPartitionFiles(ctx context.Context, backupName string,
 }
 
 func (b BackupContext) readBackup(ctx context.Context, backupName string) (*backuppb.BackupInfo, error) {
-	backupMetaDirPath := BACKUP_PREFIX + SEPERATOR + backupName + SEPERATOR + META_PREFIX
+	backupMetaDirPath := b.backupRootPath + SEPERATOR + backupName + SEPERATOR + META_PREFIX
 	backupMetaPath := backupMetaDirPath + SEPERATOR + BACKUP_META_FILE
 	collectionMetaPath := backupMetaDirPath + SEPERATOR + COLLECTION_META_FILE
 	partitionMetaPath := backupMetaDirPath + SEPERATOR + PARTITION_META_FILE
 	segmentMetaPath := backupMetaDirPath + SEPERATOR + SEGMENT_META_FILE
 
-	exist, err := b.milvusStorageClient.Exist(ctx, backupMetaPath)
+	exist, err := b.storageClient.Exist(ctx, b.backupBucketName, backupMetaPath)
 	if err != nil {
 		log.Error("check backup meta file failed", zap.String("path", backupMetaPath), zap.Error(err))
 		return nil, err
@@ -874,22 +862,22 @@ func (b BackupContext) readBackup(ctx context.Context, backupName string) (*back
 		return nil, err
 	}
 
-	backupMetaBytes, err := b.milvusStorageClient.Read(ctx, backupMetaPath)
+	backupMetaBytes, err := b.storageClient.Read(ctx, b.backupBucketName, backupMetaPath)
 	if err != nil {
 		log.Error("Read backup meta failed", zap.String("path", backupMetaPath), zap.Error(err))
 		return nil, err
 	}
-	collectionBackupMetaBytes, err := b.milvusStorageClient.Read(ctx, collectionMetaPath)
+	collectionBackupMetaBytes, err := b.storageClient.Read(ctx, b.backupBucketName, collectionMetaPath)
 	if err != nil {
 		log.Error("Read collection meta failed", zap.String("path", collectionMetaPath), zap.Error(err))
 		return nil, err
 	}
-	partitionBackupMetaBytes, err := b.milvusStorageClient.Read(ctx, partitionMetaPath)
+	partitionBackupMetaBytes, err := b.storageClient.Read(ctx, b.backupBucketName, partitionMetaPath)
 	if err != nil {
 		log.Error("Read partition meta failed", zap.String("path", partitionMetaPath), zap.Error(err))
 		return nil, err
 	}
-	segmentBackupMetaBytes, err := b.milvusStorageClient.Read(ctx, segmentMetaPath)
+	segmentBackupMetaBytes, err := b.storageClient.Read(ctx, b.backupBucketName, segmentMetaPath)
 	if err != nil {
 		log.Error("Read segment meta failed", zap.String("path", segmentMetaPath), zap.Error(err))
 		return nil, err
@@ -911,10 +899,6 @@ func (b BackupContext) readBackup(ctx context.Context, backupName string) (*back
 	return backupInfo, nil
 }
 
-func generateBackupDirPath(backupName string) string {
-	return BACKUP_PREFIX + SEPERATOR + backupName + SEPERATOR
-}
-
 func (b BackupContext) readSegmentInfo(ctx context.Context, collecitonID int64, partitionID int64, segmentID int64, numOfRows int64) (*backuppb.SegmentBackupInfo, error) {
 	segmentBackupInfo := backuppb.SegmentBackupInfo{
 		SegmentId:    segmentID,
@@ -923,13 +907,13 @@ func (b BackupContext) readSegmentInfo(ctx context.Context, collecitonID int64, 
 		NumOfRows:    numOfRows,
 	}
 
-	insertPath := fmt.Sprintf("%s/%s/%v/%v/%v/", Params.MinioCfg.RootPath, "insert_log", collecitonID, partitionID, segmentID)
+	insertPath := fmt.Sprintf("%s/%s/%v/%v/%v/", b.params.MinioCfg.RootPath, "insert_log", collecitonID, partitionID, segmentID)
 	log.Debug("insertPath", zap.String("insertPath", insertPath))
-	fieldsLogDir, _, _ := b.milvusStorageClient.ListWithPrefix(ctx, insertPath, false)
+	fieldsLogDir, _, _ := b.storageClient.ListWithPrefix(ctx, b.milvusBucketName, insertPath, false)
 	log.Debug("fieldsLogDir", zap.Any("fieldsLogDir", fieldsLogDir))
 	insertLogs := make([]*backuppb.FieldBinlog, 0)
 	for _, fieldLogDir := range fieldsLogDir {
-		binlogPaths, _, _ := b.milvusStorageClient.ListWithPrefix(ctx, fieldLogDir, false)
+		binlogPaths, _, _ := b.storageClient.ListWithPrefix(ctx, b.milvusBucketName, fieldLogDir, false)
 		fieldIdStr := strings.Replace(strings.Replace(fieldLogDir, insertPath, "", 1), SEPERATOR, "", -1)
 		fieldId, _ := strconv.ParseInt(fieldIdStr, 10, 64)
 		binlogs := make([]*backuppb.Binlog, 0)
@@ -944,11 +928,11 @@ func (b BackupContext) readSegmentInfo(ctx context.Context, collecitonID int64, 
 		})
 	}
 
-	deltaLogPath := fmt.Sprintf("%s/%s/%v/%v/%v/", Params.MinioCfg.RootPath, "delta_log", collecitonID, partitionID, segmentID)
-	deltaFieldsLogDir, _, _ := b.milvusStorageClient.ListWithPrefix(ctx, deltaLogPath, false)
+	deltaLogPath := fmt.Sprintf("%s/%s/%v/%v/%v/", b.params.MinioCfg.RootPath, "delta_log", collecitonID, partitionID, segmentID)
+	deltaFieldsLogDir, _, _ := b.storageClient.ListWithPrefix(ctx, b.milvusBucketName, deltaLogPath, false)
 	deltaLogs := make([]*backuppb.FieldBinlog, 0)
 	for _, deltaFieldLogDir := range deltaFieldsLogDir {
-		binlogPaths, _, _ := b.milvusStorageClient.ListWithPrefix(ctx, deltaFieldLogDir, false)
+		binlogPaths, _, _ := b.storageClient.ListWithPrefix(ctx, b.milvusBucketName, deltaFieldLogDir, false)
 		fieldIdStr := strings.Replace(strings.Replace(deltaFieldLogDir, deltaLogPath, "", 1), SEPERATOR, "", -1)
 		fieldId, _ := strconv.ParseInt(fieldIdStr, 10, 64)
 		binlogs := make([]*backuppb.Binlog, 0)
@@ -968,11 +952,11 @@ func (b BackupContext) readSegmentInfo(ctx context.Context, collecitonID int64, 
 		})
 	}
 
-	statsLogPath := fmt.Sprintf("%s/%s/%v/%v/%v/", Params.MinioCfg.RootPath, "stats_log", collecitonID, partitionID, segmentID)
-	statsFieldsLogDir, _, _ := b.milvusStorageClient.ListWithPrefix(ctx, statsLogPath, false)
+	statsLogPath := fmt.Sprintf("%s/%s/%v/%v/%v/", b.params.MinioCfg.RootPath, "stats_log", collecitonID, partitionID, segmentID)
+	statsFieldsLogDir, _, _ := b.storageClient.ListWithPrefix(ctx, b.milvusBucketName, statsLogPath, false)
 	statsLogs := make([]*backuppb.FieldBinlog, 0)
 	for _, statsFieldLogDir := range statsFieldsLogDir {
-		binlogPaths, _, _ := b.milvusStorageClient.ListWithPrefix(ctx, statsFieldLogDir, false)
+		binlogPaths, _, _ := b.storageClient.ListWithPrefix(ctx, b.milvusBucketName, statsFieldLogDir, false)
 		fieldIdStr := strings.Replace(strings.Replace(statsFieldLogDir, statsLogPath, "", 1), SEPERATOR, "", -1)
 		fieldId, _ := strconv.ParseInt(fieldIdStr, 10, 64)
 		binlogs := make([]*backuppb.Binlog, 0)
@@ -992,3 +976,13 @@ func (b BackupContext) readSegmentInfo(ctx context.Context, collecitonID int64, 
 	segmentBackupInfo.Statslogs = statsLogs
 	return &segmentBackupInfo, nil
 }
+
+//func (b *BackupContext) CopyBackup(ctx context.Context, request *backuppb.CopyBackupRequest) (*backuppb.CopyBackupResponse, error) {
+//	b.storageClient.Copy(ctx)
+//	backupPath := BackupDirPath(b.backupRootPath, request.GetBackupName())
+//	milvusBackupPath := BackupDirPath(BACKUP_PREFIX, request.GetBackupName())
+//	if request.GetCopyType() == backuppb.CopyType_Backup2Milvus {
+//
+//	}
+//
+//}

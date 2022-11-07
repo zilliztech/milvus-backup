@@ -17,6 +17,10 @@ service MilvusBackupService {
   rpc DeleteBackup(DeleteBackupRequest) returns (DeleteBackupResponse) {}
   // Load backup to milvus, return backup load report
   rpc LoadBackup(LoadBackupRequest) returns (LoadBackupResponse) {}
+
+  // Copy backup between buckets
+  // temporary interface since currently milvus BulkInsert doesn't support read data from other bucket
+  // rpc CopyBackup(CopyBackupRequest) returns (CopyBackupResponse) {}
 }
 
 enum MsgType {
@@ -217,6 +221,22 @@ message LoadBackupResponse {
   Status status = 1;
   BackupInfo backup_info = 2;
   repeated LoadCollectionTask collection_load_tasks = 3;
+}
+
+enum CopyType {
+  Milvus2Backup = 0;
+  Backup2Milvus = 1;
+}
+
+
+message CopyBackupRequest {
+  MsgBase base = 1;
+  string backup_name = 2;
+  CopyType copy_type = 3;
+}
+
+message CopyBackupResponse {
+  Status status = 1;
 }
 
 // copied from milvus data_coord.proto
