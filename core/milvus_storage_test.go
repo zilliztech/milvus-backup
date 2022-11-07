@@ -52,7 +52,7 @@ func TestWriteAEmptyBackupFile(t *testing.T) {
 	defer cancel()
 
 	testCM, err := newMinioChunkManager(ctx, testBucket)
-	err = testCM.Write(ctx, "backup/test_backup6", nil)
+	err = testCM.Write(ctx, testBucket, "backup/test_backup6", nil)
 	assert.NoError(t, err)
 }
 
@@ -66,7 +66,7 @@ func TestReadBackupFiles(t *testing.T) {
 	defer cancel()
 
 	testCM, err := newMinioChunkManager(ctx, testBucket)
-	files, _, err := testCM.ListWithPrefix(ctx, "/backup", true)
+	files, _, err := testCM.ListWithPrefix(ctx, testBucket, "/backup", true)
 	assert.NoError(t, err)
 
 	for _, file := range files {
@@ -89,16 +89,16 @@ func TestReadMilvusData(t *testing.T) {
 	//exist0, err := testCM.Exist("backup/my_backup/binlogs/insert_log/437133320401190919/437133320401190920/")
 	//log.Info("exist", zap.Bool("exist", exist0))
 
-	exist1, err := testCM.Exist(ctx, "backu")
+	exist1, err := testCM.Exist(ctx, testBucket, "backu")
 	log.Info("exist", zap.Bool("exist", exist1))
 
-	exist2, err := testCM.Exist(ctx, "files")
+	exist2, err := testCM.Exist(ctx, testBucket, "files")
 	log.Info("exist", zap.Bool("exist", exist2))
 
-	exist3, err := testCM.Exist(ctx, "files/")
+	exist3, err := testCM.Exist(ctx, testBucket, "files/")
 	log.Info("exist", zap.Bool("exist", exist3))
 
-	files, _, err := testCM.ListWithPrefix(ctx, "files", false)
+	files, _, err := testCM.ListWithPrefix(ctx, testBucket, "files", false)
 	log.Info("exist", zap.Strings("files", files))
 	//
 	//paths, _, _ := testCM.ListWithPrefix("", true)

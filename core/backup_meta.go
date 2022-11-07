@@ -179,47 +179,34 @@ func deserialize(backup *BackupMetaBytes) (*backuppb.BackupInfo, error) {
 	})
 }
 
-func BackupPathToName(path string) string {
-	return strings.Replace(strings.Replace(path, BACKUP_PREFIX+SEPERATOR, "", 1), SEPERATOR, "", 1)
+func BackupPathToName(backupRootPath, path string) string {
+	return strings.Replace(strings.Replace(path, backupRootPath+SEPERATOR, "", 1), SEPERATOR, "", 1)
 }
 
-func BackupDirPath(backup *backuppb.BackupInfo) string {
-	//return BACKUP_PREFIX + SEPERATOR + fmt.Sprint(backup.GetId()) + "_" + backup.GetName() + "_" + fmt.Sprint(backup.GetBackupTimestamp())
-	return BACKUP_PREFIX + SEPERATOR + backup.GetName()
+func BackupDirPath(backupRootPath, backupName string) string {
+	return backupRootPath + SEPERATOR + backupName + SEPERATOR
 }
 
-func MetaDirPath(backup *backuppb.BackupInfo) string {
-	return BackupDirPath(backup) + SEPERATOR + META_PREFIX
+func BackupMetaDirPath(backupRootPath, backupName string) string {
+	return backupRootPath + SEPERATOR + backupName + SEPERATOR + META_PREFIX
 }
 
-func BackupMetaPath(backup *backuppb.BackupInfo) string {
-	return MetaDirPath(backup) + SEPERATOR + BACKUP_META_FILE
+func BackupMetaPath(backupRootPath, backupName string) string {
+	return BackupMetaDirPath(backupRootPath, backupName) + SEPERATOR + BACKUP_META_FILE
 }
 
-func CollectionMetaPath(backup *backuppb.BackupInfo) string {
-	return MetaDirPath(backup) + SEPERATOR + COLLECTION_META_FILE
+func CollectionMetaPath(backupRootPath, backupName string) string {
+	return BackupMetaDirPath(backupRootPath, backupName) + SEPERATOR + COLLECTION_META_FILE
 }
 
-func PartitionMetaPath(backup *backuppb.BackupInfo) string {
-	return MetaDirPath(backup) + SEPERATOR + PARTITION_META_FILE
+func PartitionMetaPath(backupRootPath, backupName string) string {
+	return BackupMetaDirPath(backupRootPath, backupName) + SEPERATOR + PARTITION_META_FILE
 }
 
-func SegmentMetaPath(backup *backuppb.BackupInfo) string {
-	return MetaDirPath(backup) + SEPERATOR + SEGMENT_META_FILE
+func SegmentMetaPath(backupRootPath, backupName string) string {
+	return BackupMetaDirPath(backupRootPath, backupName) + SEPERATOR + SEGMENT_META_FILE
 }
 
-func DataDirPath(backup *backuppb.BackupInfo) string {
-	return BackupDirPath(backup) + SEPERATOR + BINGLOG_DIR
-}
-
-func InsertlogDirPath(backup *backuppb.BackupInfo) string {
-	return DataDirPath(backup) + SEPERATOR + INSERT_LOG_DIR
-}
-
-func DeltalogDirPath(backup *backuppb.BackupInfo) string {
-	return DataDirPath(backup) + SEPERATOR + DELTA_LOG_DIR
-}
-
-func StatslogDirPath(backup *backuppb.BackupInfo) string {
-	return DataDirPath(backup) + SEPERATOR + STATS_LOG_DIR
+func BackupBinlogDirPath(backupRootPath, backupName string) string {
+	return backupRootPath + SEPERATOR + backupName + SEPERATOR + BINGLOG_DIR
 }
