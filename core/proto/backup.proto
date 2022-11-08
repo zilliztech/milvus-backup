@@ -8,9 +8,9 @@ import "common.proto";
 
 service MilvusBackupService {
   // Create backup
-  rpc CreateBackup(CreateBackupRequest) returns (CreateBackupResponse) {}
+  rpc CreateBackup(CreateBackupRequest) returns (BackupInfoResponse) {}
   // Get backup with the chosen name
-  rpc GetBackup(GetBackupRequest) returns (GetBackupResponse) {}
+  rpc GetBackup(GetBackupRequest) returns (BackupInfoResponse) {}
   // List backups that contains the given collection name, if collection is not given, return all backups in the cluster
   rpc ListBackups(ListBackupsRequest) returns (ListBackupsResponse) {}
   // Delete backup by given backup name
@@ -18,10 +18,12 @@ service MilvusBackupService {
   // Load backup to milvus, return backup load report
   rpc LoadBackup(LoadBackupRequest) returns (LoadBackupResponse) {}
 
+  rpc GetLoadBackupState(GetLoadBackupStateRequest) returns (LoadBackupResponse) {}
+
   // Copy backup between buckets
   // temporary interface since currently milvus BulkInsert doesn't support read data from other bucket
   // rpc CopyBackup(CopyBackupRequest) returns (CopyBackupResponse) {}
-}
+ }
 
 enum MsgType {
   Undefined = 0;
@@ -55,21 +57,16 @@ message Status {
  * lite version of Collection info
  */
 message CollectionBackupInfo {
-  int64 collection_id = 1;
-  string db_name = 2;
-  string collection_name = 3;
-  schema.CollectionSchema schema = 4;
-  int32 shards_num = 5;
-  common.ConsistencyLevel consistency_level = 6;
+  BackupTaskState backup_state = 1;
+  int64 collection_id = 2;
+  string db_name = 3;
+  string collection_name = 4;
+  schema.CollectionSchema schema = 5;
+  int32 shards_num = 6;
+  common.ConsistencyLevel consistency_level = 7;
   // array of partition backup
-  repeated PartitionBackupInfo partition_backups = 7;
-  uint64 backup_timestamp = 8;
-  // backup progress status
-  StatusCode backup_status = 9;
-  // backup progress error
-  string backup_error = 10;
-  // whether the backup is able to recover
-  string health = 11;
+  repeated PartitionBackupInfo partition_backups = 8;
+  uint64 backup_timestamp = 9;
 }
 
 message PartitionBackupInfo {
@@ -97,18 +94,12 @@ message SegmentBackupInfo {
  * root of backup
  */
 message BackupInfo {
-  int64 id = 1;
+  BackupTaskState backup_state = 1;
   string name = 2;
   // backup timestamp
   uint64 backup_timestamp = 3;
   // array of collection backup
   repeated CollectionBackupInfo collection_backups = 4;
-  // backup progress status
-  StatusCode backup_status = 5;
-  // backup progress error
-  string backup_error = 6;
-  // whether the backup is able to recover
-  string health = 7;
 }
 
 /**
@@ -144,9 +135,9 @@ message CreateBackupRequest {
 }
 
 /**
- * CreateBackupResponse
+ * BackupInfoResponse
  */
-message CreateBackupResponse {
+message BackupInfoResponse {
   Status status = 1;
   BackupInfo backup_info = 2;
 }
@@ -155,12 +146,6 @@ message GetBackupRequest {
   MsgBase base = 1;
   string backup_name = 2;
 }
-
-message GetBackupResponse {
-  Status status = 1;
-  BackupInfo backup_info = 2;
-}
-
 
 message ListBackupsRequest {
   MsgBase base = 1;
@@ -182,28 +167,50 @@ message DeleteBackupResponse {
   Status status = 1;
 }
 
-enum LoadState {
-  INTIAL = 0;
-  EXECUTING = 1;
-  SUCCESS = 2;
-  FAIL = 3;
-  TIMEOUT = 4;
+enum BackupTaskStateCode {
+  BACKUP_INITIAL = 0;
+  BACKUP_EXECUTING = 1;
+  BACKUP_SUCCESS = 2;
+  BACKUP_FAIL = 3;
+  BACKUP_TIMEOUT = 4;
+}
+
+message BackupTaskState {
+  int64 id = 1;
+  BackupTaskStateCode code = 2;
+  string errorMessage = 3;
+  int64 start_time = 4;
+  int64 end_time = 5;
+  int32 progress = 6;
+}
+
+enum LoadTaskStateCode {
+  LOAD_INITIAL = 0;
+  LOAD_EXECUTING = 1;
+  LOAD_SUCCESS = 2;
+  LOAD_FAIL = 3;
+  LOAD_TIMEOUT = 4;
+}
+
+message LoadTaskState {
+  int64 id = 1;
+  LoadTaskStateCode code = 2;
+  string errorMessage = 3;
+  int64 start_time = 4;
+  int64 end_time = 5;
+  int32 progress = 6;
 }
 
 message LoadPartitionTask {
-  LoadState state = 1;
-  string errorMessage = 2;
-  PartitionBackupInfo part_backup = 3;
-  int64 duration = 4;
+  LoadTaskState load_state = 1;
+  PartitionBackupInfo part_backup = 2;
 }
 
 message LoadCollectionTask {
-  LoadState state = 1;
-  string errorMessage = 2;
-  CollectionBackupInfo coll_backup = 3;
-  string target_collection_name = 4;
-  repeated LoadPartitionTask partition_load_tasks = 5;
-  int64 duration = 6;
+  LoadTaskState load_state = 1;
+  CollectionBackupInfo coll_backup = 2;
+  string target_collection_name = 3;
+  repeated LoadPartitionTask partition_load_tasks = 4;
 }
 
 message LoadBackupRequest {
@@ -219,24 +226,29 @@ message LoadBackupRequest {
 
 message LoadBackupResponse {
   Status status = 1;
-  BackupInfo backup_info = 2;
-  repeated LoadCollectionTask collection_load_tasks = 3;
+  LoadTaskState load_state = 2;
+  BackupInfo backup_info = 3;
+  repeated LoadCollectionTask collection_load_tasks = 4;
 }
+//
+//enum CopyType {
+//  Milvus2Backup = 0;
+//  Backup2Milvus = 1;
+//}
+//
+//message CopyBackupRequest {
+//  MsgBase base = 1;
+//  string backup_name = 2;
+//  CopyType copy_type = 3;
+//}
+//
+//message CopyBackupResponse {
+//  Status status = 1;
+//}
 
-enum CopyType {
-  Milvus2Backup = 0;
-  Backup2Milvus = 1;
-}
-
-
-message CopyBackupRequest {
+message GetLoadBackupStateRequest {
   MsgBase base = 1;
-  string backup_name = 2;
-  CopyType copy_type = 3;
-}
-
-message CopyBackupResponse {
-  Status status = 1;
+  int64 id = 2;
 }
 
 // copied from milvus data_coord.proto

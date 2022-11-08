@@ -8,7 +8,6 @@ import (
 )
 
 const (
-	BACKUP_PREFIX        = "backup"
 	META_PREFIX          = "meta"
 	BACKUP_META_FILE     = "backup_meta.json"
 	COLLECTION_META_FILE = "collection_meta.json"
@@ -51,9 +50,6 @@ func treeToLevel(backup *backuppb.BackupInfo) (LeveledBackupInfo, error) {
 			ShardsNum:        collectionBack.GetShardsNum(),
 			ConsistencyLevel: collectionBack.GetConsistencyLevel(),
 			BackupTimestamp:  collectionBack.GetBackupTimestamp(),
-			BackupStatus:     collectionBack.GetBackupStatus(),
-			BackupError:      collectionBack.GetBackupError(),
-			Health:           collectionBack.GetHealth(),
 		}
 		collections = append(collections, cloneCollectionBackup)
 
@@ -81,12 +77,9 @@ func treeToLevel(backup *backuppb.BackupInfo) (LeveledBackupInfo, error) {
 		Infos: segments,
 	}
 	backupLevel := &backuppb.BackupInfo{
-		Id:              backup.GetId(),
+		BackupState:     backup.GetBackupState(),
 		Name:            backup.GetName(),
 		BackupTimestamp: backup.GetBackupTimestamp(),
-		BackupStatus:    backup.GetBackupStatus(),
-		BackupError:     backup.GetBackupError(),
-		Health:          backup.GetHealth(),
 	}
 
 	return LeveledBackupInfo{
@@ -130,12 +123,9 @@ func serialize(backup *backuppb.BackupInfo) (*BackupMetaBytes, error) {
 // levelToTree rebuild complete tree structure BackupInfo from backup-collection-partition-segment 4-level structure
 func levelToTree(level *LeveledBackupInfo) (*backuppb.BackupInfo, error) {
 	backupInfo := &backuppb.BackupInfo{
-		Id:              level.backupLevel.GetId(),
+		BackupState:     level.backupLevel.GetBackupState(),
 		Name:            level.backupLevel.GetName(),
 		BackupTimestamp: level.backupLevel.GetBackupTimestamp(),
-		BackupStatus:    level.backupLevel.GetBackupStatus(),
-		BackupError:     level.backupLevel.GetBackupError(),
-		Health:          level.backupLevel.GetHealth(),
 	}
 	segmentDict := make(map[string][]*backuppb.SegmentBackupInfo, len(level.segmentLevel.GetInfos()))
 	for _, segment := range level.segmentLevel.GetInfos() {

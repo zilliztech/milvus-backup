@@ -54,6 +54,11 @@ type BackupContext struct {
 	backupRootPath   string
 }
 
+func (b *BackupContext) GetLoadBackupState(ctx context.Context, request *backuppb.LoadBackupRequest) (*backuppb.LoadBackupResponse, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
 func (b *BackupContext) Start() error {
 	// start milvus go SDK client
 	milvusEndpoint := b.params.MilvusCfg.Address + ":" + b.params.MilvusCfg.Port
@@ -104,22 +109,20 @@ func CreateBackupContext(ctx context.Context, params paramtable.BackupParams) *B
 	}
 }
 
-// todo refine error handle
-// todo support get create backup progress
-func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.CreateBackupRequest) (*backuppb.CreateBackupResponse, error) {
+func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.CreateBackupRequest) (*backuppb.BackupInfoResponse, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
 	if !b.started {
 		err := b.Start()
 		if err != nil {
-			return &backuppb.CreateBackupResponse{
+			return &backuppb.BackupInfoResponse{
 				Status: &backuppb.Status{StatusCode: backuppb.StatusCode_ConnectFailed},
 			}, nil
 		}
 	}
 
-	errorResp := &backuppb.CreateBackupResponse{
+	errorResp := &backuppb.BackupInfoResponse{
 		Status: &backuppb.Status{
 			StatusCode: backuppb.StatusCode_UnexpectedError,
 		},
@@ -318,7 +321,6 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 		errorResp.Status.Reason = err.Error()
 		return errorResp, nil
 	}
-	completeBackupInfo.BackupStatus = backuppb.StatusCode_Success
 	completeBackupInfo.BackupTimestamp = uint64(time.Now().Unix())
 	if request.GetBackupName() == "" {
 		completeBackupInfo.Name = "backup_" + fmt.Sprint(time.Now().Unix())
@@ -326,7 +328,9 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 		completeBackupInfo.Name = request.BackupName
 	}
 	// todo generate ID
-	completeBackupInfo.Id = 0
+	completeBackupInfo.BackupState = &backuppb.BackupTaskState{
+		Id: 0,
+	}
 
 	// 6, copy data
 	for _, segment := range segmentBackupInfos {
@@ -429,7 +433,7 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 	b.storageClient.Write(ctx, b.backupBucketName, PartitionMetaPath(b.backupRootPath, completeBackupInfo.GetName()), output.PartitionMetaBytes)
 	b.storageClient.Write(ctx, b.backupBucketName, SegmentMetaPath(b.backupRootPath, completeBackupInfo.GetName()), output.SegmentMetaBytes)
 
-	return &backuppb.CreateBackupResponse{
+	return &backuppb.BackupInfoResponse{
 		Status: &backuppb.Status{
 			StatusCode: backuppb.StatusCode_Success,
 		},
@@ -437,12 +441,12 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 	}, nil
 }
 
-func (b BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBackupRequest) (*backuppb.GetBackupResponse, error) {
+func (b BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBackupRequest) (*backuppb.BackupInfoResponse, error) {
 	// 1, trigger inner sync to get the newest backup list in the milvus cluster
 	if !b.started {
 		err := b.Start()
 		if err != nil {
-			return &backuppb.GetBackupResponse{
+			return &backuppb.BackupInfoResponse{
 				Status: &backuppb.Status{
 					StatusCode: backuppb.StatusCode_ConnectFailed,
 				},
@@ -450,7 +454,7 @@ func (b BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBacku
 		}
 	}
 
-	resp := &backuppb.GetBackupResponse{
+	resp := &backuppb.BackupInfoResponse{
 		Status: &backuppb.Status{
 			StatusCode: backuppb.StatusCode_UnexpectedError,
 		},
@@ -468,7 +472,7 @@ func (b BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBacku
 		return resp, nil
 	}
 
-	return &backuppb.GetBackupResponse{
+	return &backuppb.BackupInfoResponse{
 		Status: &backuppb.Status{
 			StatusCode: backuppb.StatusCode_Success,
 		},
@@ -680,7 +684,9 @@ func (b BackupContext) LoadBackup(ctx context.Context, request *backuppb.LoadBac
 		}
 
 		task := &backuppb.LoadCollectionTask{
-			State:                backuppb.LoadState_INTIAL,
+			LoadState: &backuppb.LoadTaskState{
+				Code: backuppb.LoadTaskStateCode_LOAD_INITIAL,
+			},
 			CollBackup:           loadCollection,
 			TargetCollectionName: targetCollectionName,
 			PartitionLoadTasks:   []*backuppb.LoadPartitionTask{},
@@ -693,12 +699,12 @@ func (b BackupContext) LoadBackup(ctx context.Context, request *backuppb.LoadBac
 	for _, task := range loadCollectionTasks {
 		err := b.executeLoadTask(ctx, backup.GetName(), task)
 		if err != nil {
-			task.ErrorMessage = err.Error()
-			task.State = backuppb.LoadState_FAIL
+			task.LoadState.ErrorMessage = err.Error()
+			task.LoadState.Code = backuppb.LoadTaskStateCode_LOAD_FAIL
 			resp.Status.Reason = err.Error()
 			return resp, nil
 		}
-		task.State = backuppb.LoadState_SUCCESS
+		task.LoadState.Code = backuppb.LoadTaskStateCode_LOAD_SUCCESS
 	}
 
 	resp.Status.StatusCode = backuppb.StatusCode_Success
@@ -707,7 +713,7 @@ func (b BackupContext) LoadBackup(ctx context.Context, request *backuppb.LoadBac
 
 func (b BackupContext) executeLoadTask(ctx context.Context, backupName string, task *backuppb.LoadCollectionTask) error {
 	targetCollectionName := task.GetTargetCollectionName()
-	task.State = backuppb.LoadState_EXECUTING
+	task.LoadState.Code = backuppb.LoadTaskStateCode_LOAD_EXECUTING
 	log.With(zap.String("backupName", backupName))
 	// create collection
 	fields := make([]*entity.Field, 0)
