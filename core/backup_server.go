@@ -52,7 +52,7 @@ func (s *Server) Start() {
 
 // registerHTTPServer register the http server, panic when failed
 func (s *Server) registerHTTPServer() {
-	if !Params.HTTPCfg.DebugMode {
+	if !s.backupContext.params.HTTPCfg.DebugMode {
 		gin.SetMode(gin.ReleaseMode)
 	}
 	ginHandler := gin.Default()
