@@ -13,7 +13,7 @@ import (
 
 func TestBackupService(t *testing.T) {
 	var params paramtable.BackupParams
-	milvusYamlFile := "milvus.yaml"
+	milvusYamlFile := "backup.yaml"
 	params.GlobalInitWithYaml(milvusYamlFile)
 	params.Init()
 

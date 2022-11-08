@@ -122,20 +122,13 @@ func TestBackupSerialize(t *testing.T) {
 		ShardsNum:        2,
 		ConsistencyLevel: commonpb.ConsistencyLevel_Strong,
 		BackupTimestamp:  0,
-		BackupStatus:     backuppb.StatusCode_Success,
-		BackupError:      "",
-		Health:           "",
 		PartitionBackups: []*backuppb.PartitionBackupInfo{partition1, partition2},
 	}
 
 	backup := &backuppb.BackupInfo{
-		Id:                1,
 		Name:              "backup",
 		BackupTimestamp:   0,
 		CollectionBackups: []*backuppb.CollectionBackupInfo{collection},
-		BackupStatus:      backuppb.StatusCode_Success,
-		BackupError:       "",
-		Health:            "",
 	}
 
 	serData, err := serialize(backup)
