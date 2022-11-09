@@ -63,7 +63,20 @@ func (b *BackupContext) Start() error {
 	// start milvus go SDK client
 	milvusEndpoint := b.params.MilvusCfg.Address + ":" + b.params.MilvusCfg.Port
 	log.Debug("Start Milvus client", zap.String("endpoint", milvusEndpoint))
-	c, err := gomilvus.NewGrpcClient(b.ctx, milvusEndpoint)
+	var c gomilvus.Client
+	var err error
+	if b.params.MilvusCfg.AuthorizationEnabled && b.params.MilvusCfg.User != "" && b.params.MilvusCfg.Password != "" {
+		if b.params.MilvusCfg.TLSMode == 0 {
+			c, err = gomilvus.NewDefaultGrpcClientWithAuth(b.ctx, milvusEndpoint, b.params.MilvusCfg.User, b.params.MilvusCfg.Password)
+		} else if b.params.MilvusCfg.TLSMode == 1 || b.params.MilvusCfg.TLSMode == 2 {
+			c, err = gomilvus.NewDefaultGrpcClientWithTLSAuth(b.ctx, milvusEndpoint, b.params.MilvusCfg.User, b.params.MilvusCfg.Password)
+		} else {
+			log.Error("milvus.TLSMode is not illegal, support value 0, 1, 2")
+			return errors.New("milvus.TLSMode is not illegal, support value 0, 1, 2")
+		}
+	} else {
+		c, err = gomilvus.NewGrpcClient(b.ctx, milvusEndpoint)
+	}
 	if err != nil {
 		log.Error("failed to connect to milvus", zap.Error(err))
 		return err
@@ -667,6 +680,8 @@ func (b BackupContext) LoadBackup(ctx context.Context, request *backuppb.LoadBac
 			targetCollectionName = request.GetCollectionRenames()[backupCollectionName]
 		} else if request.GetCollectionSuffix() != "" {
 			targetCollectionName = backupCollectionName + request.GetCollectionSuffix()
+		} else {
+			targetCollectionName = backupCollectionName
 		}
 
 		exist, err := b.milvusClient.HasCollection(ctx, targetCollectionName)
