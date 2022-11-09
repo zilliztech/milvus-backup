@@ -59,47 +59,66 @@ func (b *BackupContext) GetLoadBackupState(ctx context.Context, request *backupp
 	panic("implement me")
 }
 
-func (b *BackupContext) Start() error {
-	// start milvus go SDK client
-	milvusEndpoint := b.params.MilvusCfg.Address + ":" + b.params.MilvusCfg.Port
+func CreateMilvusClient(ctx context.Context, params paramtable.BackupParams) (gomilvus.Client, error) {
+	milvusEndpoint := params.MilvusCfg.Address + ":" + params.MilvusCfg.Port
 	log.Debug("Start Milvus client", zap.String("endpoint", milvusEndpoint))
 	var c gomilvus.Client
 	var err error
-	if b.params.MilvusCfg.AuthorizationEnabled && b.params.MilvusCfg.User != "" && b.params.MilvusCfg.Password != "" {
-		if b.params.MilvusCfg.TLSMode == 0 {
-			c, err = gomilvus.NewDefaultGrpcClientWithAuth(b.ctx, milvusEndpoint, b.params.MilvusCfg.User, b.params.MilvusCfg.Password)
-		} else if b.params.MilvusCfg.TLSMode == 1 || b.params.MilvusCfg.TLSMode == 2 {
-			c, err = gomilvus.NewDefaultGrpcClientWithTLSAuth(b.ctx, milvusEndpoint, b.params.MilvusCfg.User, b.params.MilvusCfg.Password)
+	if params.MilvusCfg.AuthorizationEnabled && params.MilvusCfg.User != "" && params.MilvusCfg.Password != "" {
+		if params.MilvusCfg.TLSMode == 0 {
+			c, err = gomilvus.NewDefaultGrpcClientWithAuth(ctx, milvusEndpoint, params.MilvusCfg.User, params.MilvusCfg.Password)
+		} else if params.MilvusCfg.TLSMode == 1 || params.MilvusCfg.TLSMode == 2 {
+			c, err = gomilvus.NewDefaultGrpcClientWithTLSAuth(ctx, milvusEndpoint, params.MilvusCfg.User, params.MilvusCfg.Password)
 		} else {
 			log.Error("milvus.TLSMode is not illegal, support value 0, 1, 2")
-			return errors.New("milvus.TLSMode is not illegal, support value 0, 1, 2")
+			return nil, errors.New("milvus.TLSMode is not illegal, support value 0, 1, 2")
 		}
 	} else {
-		c, err = gomilvus.NewGrpcClient(b.ctx, milvusEndpoint)
+		c, err = gomilvus.NewGrpcClient(ctx, milvusEndpoint)
 	}
 	if err != nil {
 		log.Error("failed to connect to milvus", zap.Error(err))
-		return err
+		return nil, err
 	}
-	b.milvusClient = c
+	return c, nil
+}
 
-	// start milvus storage client
-	minioEndPoint := b.params.MinioCfg.Address + ":" + b.params.MinioCfg.Port
+func CreateStorageClient(ctx context.Context, params paramtable.BackupParams) (storage.ChunkManager, error) {
+	minioEndPoint := params.MinioCfg.Address + ":" + params.MinioCfg.Port
 	log.Debug("Start minio client",
 		zap.String("address", minioEndPoint),
-		zap.String("bucket", b.milvusBucketName),
-		zap.String("backupBucket", b.backupBucketName))
-	minioClient, err := storage.NewMinioChunkManager(b.ctx,
+		zap.String("bucket", params.MinioCfg.BucketName),
+		zap.String("backupBucket", params.MinioCfg.BackupBucketName))
+	minioClient, err := storage.NewMinioChunkManager(ctx,
 		storage.Address(minioEndPoint),
-		storage.AccessKeyID(b.params.MinioCfg.AccessKeyID),
-		storage.SecretAccessKeyID(b.params.MinioCfg.SecretAccessKey),
-		storage.UseSSL(b.params.MinioCfg.UseSSL),
-		storage.BucketName(b.params.MinioCfg.BackupBucketName),
-		storage.RootPath(b.params.MinioCfg.RootPath),
-		storage.UseIAM(b.params.MinioCfg.UseIAM),
-		storage.IAMEndpoint(b.params.MinioCfg.IAMEndpoint),
+		storage.AccessKeyID(params.MinioCfg.AccessKeyID),
+		storage.SecretAccessKeyID(params.MinioCfg.SecretAccessKey),
+		storage.UseSSL(params.MinioCfg.UseSSL),
+		storage.BucketName(params.MinioCfg.BackupBucketName),
+		storage.RootPath(params.MinioCfg.RootPath),
+		storage.CloudProvider(params.MinioCfg.CloudProvider),
+		storage.UseIAM(params.MinioCfg.UseIAM),
+		storage.IAMEndpoint(params.MinioCfg.IAMEndpoint),
 		storage.CreateBucket(true),
 	)
+	return minioClient, err
+}
+
+func (b *BackupContext) Start() error {
+	// start milvus go SDK client
+	milvusClient, err := CreateMilvusClient(b.ctx, b.params)
+	if err != nil {
+		log.Error("failed to initial milvus client", zap.Error(err))
+		return err
+	}
+	b.milvusClient = milvusClient
+
+	// start milvus storage client
+	minioClient, err := CreateStorageClient(b.ctx, b.params)
+	if err != nil {
+		log.Error("failed to initial storage client", zap.Error(err))
+		return err
+	}
 	b.storageClient = minioClient
 	b.started = true
 	return nil
