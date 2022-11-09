@@ -3,6 +3,12 @@
 milvus:
   address: localhost
   port: 19530
+  authorizationEnabled: false
+  # tls mode values [0, 1, 2]
+  # 0 is close, 1 is one-way authentication, 2 is two-way authentication.
+  tlsMode: 0
+  user: "root"
+  password: "Milvus"
 
 # Related configuration of minio, which is responsible for data persistence for Milvus.
 minio:

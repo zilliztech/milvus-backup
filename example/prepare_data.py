@@ -29,6 +29,7 @@ num_entities, dim = 3000, 8
 #
 # Note: the `using` parameter of the following methods is default to "default".
 print(fmt.format("start connecting to Milvus"))
+
 connections.connect("default", host="localhost", port="19530")
 
 has = utility.has_collection("hello_milvus")

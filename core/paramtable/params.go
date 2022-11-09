@@ -30,8 +30,12 @@ func (p *BackupParams) Init() {
 type MilvusConfig struct {
 	Base *BaseTable
 
-	Address string
-	Port    string
+	Address              string
+	Port                 string
+	User                 string
+	Password             string
+	AuthorizationEnabled bool
+	TLSMode              int
 }
 
 func (p *MilvusConfig) init(base *BaseTable) {
@@ -39,22 +43,50 @@ func (p *MilvusConfig) init(base *BaseTable) {
 
 	p.initAddress()
 	p.initPort()
+	p.initUser()
+	p.initPassword()
+	p.initAuthorizationEnabled()
+	p.initTLSMode()
 }
 
 func (p *MilvusConfig) initAddress() {
-	endpoint, err := p.Base.Load("milvus.address")
+	address, err := p.Base.Load("milvus.address")
 	if err != nil {
 		panic(err)
 	}
-	p.Address = endpoint
+	p.Address = address
 }
 
 func (p *MilvusConfig) initPort() {
-	endpoint, err := p.Base.Load("milvus.port")
+	port, err := p.Base.Load("milvus.port")
 	if err != nil {
 		panic(err)
 	}
-	p.Port = endpoint
+	p.Port = port
+}
+
+func (p *MilvusConfig) initUser() {
+	user, err := p.Base.Load("milvus.user")
+	if err != nil {
+		p.User = ""
+	}
+	p.User = user
+}
+
+func (p *MilvusConfig) initPassword() {
+	password, err := p.Base.Load("milvus.password")
+	if err != nil {
+		p.Password = ""
+	}
+	p.Password = password
+}
+
+func (p *MilvusConfig) initAuthorizationEnabled() {
+	p.AuthorizationEnabled = p.Base.ParseBool("milvus.authorizationEnabled", false)
+}
+
+func (p *MilvusConfig) initTLSMode() {
+	p.TLSMode = p.Base.ParseIntWithDefault("milvus.tlsMode", 0)
 }
 
 ///////////////////////////////////////////////////////////////////////////////
