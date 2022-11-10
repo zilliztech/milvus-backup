@@ -1,3 +1,0 @@
-[submodule "internal/milvus-proto"]
-	path = internal/milvus-proto
-	url = https://github.com/milvus-io/milvus-proto
