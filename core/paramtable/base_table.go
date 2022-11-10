@@ -24,7 +24,7 @@ import (
 	"github.com/spf13/cast"
 	"github.com/spf13/viper"
 
-	"github.com/milvus-io/milvus-proto/go-api/commonpb"
+	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	memkv "github.com/zilliztech/milvus-backup/internal/kv/mem"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/util/logutil"
@@ -93,7 +93,7 @@ func (gp *BaseTable) GetConfigDir() string {
 }
 
 // LoadFromKVPair saves given kv pair to paramtable
-func (gp *BaseTable) LoadFromKVPair(kvPairs []*commonpb.KeyValuePair) error {
+func (gp *BaseTable) LoadFromKVPair(kvPairs []*backuppb.KeyValuePair) error {
 	for _, pair := range kvPairs {
 		err := gp.Save(pair.Key, pair.Value)
 		if err != nil {

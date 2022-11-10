@@ -4,8 +4,6 @@ import (
 	"strconv"
 	"testing"
 
-	"github.com/milvus-io/milvus-proto/go-api/commonpb"
-	"github.com/milvus-io/milvus-proto/go-api/schemapb"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
@@ -15,29 +13,29 @@ import (
 
 func TestBackupSerialize(t *testing.T) {
 
-	constructCollectionSchema := func() *schemapb.CollectionSchema {
+	constructCollectionSchema := func() *backuppb.CollectionSchema {
 		int64Field := "int64"
 		floatVecField := "fVec"
 		dim := 128
 		prefix := "test_backup_"
 		collectionName := prefix + funcutil.GenRandomStr()
-		pk := &schemapb.FieldSchema{
+		pk := &backuppb.FieldSchema{
 			FieldID:      0,
 			Name:         int64Field,
 			IsPrimaryKey: true,
 			Description:  "",
-			DataType:     schemapb.DataType_Int64,
+			DataType:     backuppb.DataType_Int64,
 			TypeParams:   nil,
 			IndexParams:  nil,
 			AutoID:       true,
 		}
-		fVec := &schemapb.FieldSchema{
+		fVec := &backuppb.FieldSchema{
 			FieldID:      0,
 			Name:         floatVecField,
 			IsPrimaryKey: false,
 			Description:  "",
-			DataType:     schemapb.DataType_FloatVector,
-			TypeParams: []*commonpb.KeyValuePair{
+			DataType:     backuppb.DataType_FloatVector,
+			TypeParams: []*backuppb.KeyValuePair{
 				{
 					Key:   "dim",
 					Value: strconv.Itoa(dim),
@@ -46,11 +44,11 @@ func TestBackupSerialize(t *testing.T) {
 			IndexParams: nil,
 			AutoID:      false,
 		}
-		return &schemapb.CollectionSchema{
+		return &backuppb.CollectionSchema{
 			Name:        collectionName,
 			Description: "",
 			AutoID:      false,
-			Fields: []*schemapb.FieldSchema{
+			Fields: []*backuppb.FieldSchema{
 				pk,
 				fVec,
 			},
@@ -120,7 +118,7 @@ func TestBackupSerialize(t *testing.T) {
 		CollectionName:   "hello_milvus",
 		Schema:           schema,
 		ShardsNum:        2,
-		ConsistencyLevel: commonpb.ConsistencyLevel_Strong,
+		ConsistencyLevel: backuppb.ConsistencyLevel_Strong,
 		BackupTimestamp:  0,
 		PartitionBackups: []*backuppb.PartitionBackupInfo{partition1, partition2},
 	}
