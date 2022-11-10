@@ -6,7 +6,7 @@ require (
 	github.com/gin-gonic/gin v1.7.7
 	github.com/golang/protobuf v1.5.2
 	github.com/google/btree v1.0.1
-	github.com/milvus-io/milvus-proto/go-api v0.0.0-20221019080323-84e9fa2f9e45
+	//github.com/milvus-io/milvus-proto/go-api v0.0.0-20221019080323-84e9fa2f9e45
 	github.com/milvus-io/milvus-sdk-go/v2 v2.1.0
 	github.com/minio/minio-go/v7 v7.0.17
 	github.com/pkg/errors v0.9.1

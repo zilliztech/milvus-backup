@@ -5,7 +5,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/milvus-io/milvus-proto/go-api/commonpb"
+	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 )
 
 const (
@@ -19,7 +19,7 @@ func ComposeTS(physical, logical int64) uint64 {
 }
 
 // kvPairToMap largely copied from internal/proxy/task.go#parseIndexParams
-func KVPairToMap(m []*commonpb.KeyValuePair) (map[string]string, error) {
+func KVPairToMap(m []*backuppb.KeyValuePair) (map[string]string, error) {
 	params := make(map[string]string)
 	for _, kv := range m {
 		if kv.Key == PARAMS {
@@ -52,11 +52,11 @@ func parseParamsMap(mStr string) (map[string]string, error) {
 	return ret, nil
 }
 
-func MapToKVPair(dict map[string]string) []*commonpb.KeyValuePair {
-	kvs := make([]*commonpb.KeyValuePair, 0)
+func MapToKVPair(dict map[string]string) []*backuppb.KeyValuePair {
+	kvs := make([]*backuppb.KeyValuePair, 0)
 
 	for key, value := range dict {
-		kvs = append(kvs, &commonpb.KeyValuePair{
+		kvs = append(kvs, &backuppb.KeyValuePair{
 			Key:   key,
 			Value: value,
 		})
@@ -65,7 +65,7 @@ func MapToKVPair(dict map[string]string) []*commonpb.KeyValuePair {
 }
 
 // KvPairsMap converts common.KeyValuePair slices into map
-func KvPairsMap(kvps []*commonpb.KeyValuePair) map[string]string {
+func KvPairsMap(kvps []*backuppb.KeyValuePair) map[string]string {
 	m := make(map[string]string)
 	for _, kvp := range kvps {
 		m[kvp.Key] = kvp.Value

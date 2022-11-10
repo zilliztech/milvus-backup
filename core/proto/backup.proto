@@ -3,9 +3,6 @@ package milvus.proto.backup;
 
 option go_package="github.com/zilliztech/milvus-backup/core/proto/backuppb";
 
-import "schema.proto";
-import "common.proto";
-
 service MilvusBackupService {
   // Create backup
   rpc CreateBackup(CreateBackupRequest) returns (BackupInfoResponse) {}
@@ -61,9 +58,9 @@ message CollectionBackupInfo {
   int64 collection_id = 2;
   string db_name = 3;
   string collection_name = 4;
-  schema.CollectionSchema schema = 5;
+  CollectionSchema schema = 5;
   int32 shards_num = 6;
-  common.ConsistencyLevel consistency_level = 7;
+  ConsistencyLevel consistency_level = 7;
   // array of partition backup
   repeated PartitionBackupInfo partition_backups = 8;
   uint64 backup_timestamp = 9;
@@ -263,4 +260,74 @@ message Binlog {
   uint64 timestamp_to = 3;
   string log_path = 4;
   int64 log_size = 5;
+}
+
+// copied from milvus common.proto
+message KeyValuePair {
+  string key = 1;
+  string value = 2;
+}
+
+enum ConsistencyLevel {
+  Strong = 0;
+  Session = 1; // default in PyMilvus
+  Bounded = 2;
+  Eventually = 3;
+  Customized = 4; // Users pass their own `guarantee_timestamp`.
+}
+
+
+// copied from milvus schema.proto
+
+/**
+ * @brief Field data type
+ */
+enum DataType {
+  None = 0;
+  Bool = 1;
+  Int8 = 2;
+  Int16 = 3;
+  Int32 = 4;
+  Int64 = 5;
+
+  Float = 10;
+  Double = 11;
+
+  String = 20;
+  VarChar = 21; // variable-length strings with a specified maximum length
+
+  BinaryVector = 100;
+  FloatVector = 101;
+}
+
+enum FieldState {
+  FieldCreated = 0;
+  FieldCreating = 1;
+  FieldDropping = 2;
+  FieldDropped = 3;
+}
+
+/**
+ * @brief Field schema
+ */
+message FieldSchema {
+  int64 fieldID = 1;
+  string name = 2;
+  bool is_primary_key = 3;
+  string description = 4;
+  DataType data_type = 5;
+  repeated KeyValuePair type_params = 6;
+  repeated KeyValuePair index_params = 7;
+  bool autoID = 8;
+  FieldState state = 9; // To keep compatible with older version, the default state is `Created`.
+}
+
+/**
+ * @brief Collection schema
+ */
+message CollectionSchema {
+  string name = 1;
+  string description = 2;
+  bool autoID = 3; // deprecated later, keep compatible with c++ part now
+  repeated FieldSchema fields = 4;
 }
