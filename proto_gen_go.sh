@@ -19,16 +19,12 @@ fi
 
 export PATH=${GOPATH}/bin:$PATH
 echo `which protoc-gen-go`
-
-MILVUS_PROTO_DIR=${PROGRAM}/internal/milvus-proto/proto/
-
-echo ${MILVUS_PROTO_DIR}
 echo ${BACK_PROTO_DIR}
 
 pushd ${BACK_PROTO_DIR}
 
 mkdir -p backuppb
 
-${protoc} --proto_path="${GOOGLE_PROTO_DIR}" --proto_path="${MILVUS_PROTO_DIR}" --proto_path=. --go_out=plugins=grpc,paths=source_relative:./backuppb backup.proto
+${protoc} --proto_path="${GOOGLE_PROTO_DIR}" --proto_path=. --go_out=plugins=grpc,paths=source_relative:./backuppb backup.proto
 
 popd

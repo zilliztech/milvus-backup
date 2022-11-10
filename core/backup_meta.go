@@ -3,8 +3,9 @@ package core
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"strings"
+
+	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 )
 
 const (

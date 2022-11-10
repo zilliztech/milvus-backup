@@ -15,8 +15,6 @@ import (
 	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/log"
 
-	"github.com/milvus-io/milvus-proto/go-api/commonpb"
-	"github.com/milvus-io/milvus-proto/go-api/schemapb"
 	gomilvus "github.com/milvus-io/milvus-sdk-go/v2/client"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 	"go.uber.org/zap"
@@ -236,19 +234,19 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 			errorResp.Status.Reason = err.Error()
 			return errorResp, nil
 		}
-		fields := make([]*schemapb.FieldSchema, 0)
+		fields := make([]*backuppb.FieldSchema, 0)
 		for _, field := range completeCollection.Schema.Fields {
-			fields = append(fields, &schemapb.FieldSchema{
+			fields = append(fields, &backuppb.FieldSchema{
 				FieldID:      field.ID,
 				Name:         field.Name,
 				IsPrimaryKey: field.PrimaryKey,
 				Description:  field.Description,
-				DataType:     schemapb.DataType(field.DataType),
+				DataType:     backuppb.DataType(field.DataType),
 				TypeParams:   utils.MapToKVPair(field.TypeParams),
 				IndexParams:  utils.MapToKVPair(field.IndexParams),
 			})
 		}
-		schema := &schemapb.CollectionSchema{
+		schema := &backuppb.CollectionSchema{
 			Name:        completeCollection.Schema.CollectionName,
 			Description: completeCollection.Schema.Description,
 			AutoID:      completeCollection.Schema.AutoID,
@@ -260,7 +258,7 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 			CollectionName:   completeCollection.Name,
 			Schema:           schema,
 			ShardsNum:        completeCollection.ShardNum,
-			ConsistencyLevel: commonpb.ConsistencyLevel(completeCollection.ConsistencyLevel),
+			ConsistencyLevel: backuppb.ConsistencyLevel(completeCollection.ConsistencyLevel),
 		}
 		collectionBackupInfos = append(collectionBackupInfos, collectionBackup)
 	}
