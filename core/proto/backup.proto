@@ -40,9 +40,8 @@ message MsgBase {
 enum StatusCode {
   Unknown = 0;
   Success = 1;
-  UnexpectedError = 2;
-  ConnectFailed = 3;
-  PermissionDenied = 4;
+  Fail = 2;
+  Timeout = 3;
 }
 
 message Status {
@@ -129,6 +128,7 @@ message CreateBackupRequest {
   string backup_name = 2;
   // collection names to backup, empty to backup all
   repeated string collection_names = 3;
+  bool async = 4;
 }
 
 /**
@@ -219,6 +219,7 @@ message LoadBackupRequest {
   string collection_suffix = 4;
   // 2, give a map to rename the collections, if not given, use the original name
   map<string, string> collection_renames = 5;
+  bool async = 6;
 }
 
 message LoadBackupResponse {

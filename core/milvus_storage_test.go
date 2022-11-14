@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
@@ -86,8 +87,27 @@ func TestReadMilvusData(t *testing.T) {
 
 	client, err := CreateStorageClient(context, params)
 	assert.NoError(t, err)
-	paths, _, err := client.ListWithPrefix(context, params.MinioCfg.BucketName, params.MinioCfg.RootPath, true)
+	paths, _, err := client.ListWithPrefix(context, params.MinioCfg.BucketName, "file/insert_log/437296492118216229/437296492118216230/", true)
 	assert.NoError(t, err)
-	log.Info("paths", zap.Strings("paths", paths))
+	for _, path := range paths {
+		if strings.Contains(path, "index_files") {
+			continue
+		}
+		if strings.Contains(path, "437296588890839162") ||
+			strings.Contains(path, "437296588890833721") ||
+			strings.Contains(path, "437296584963129351") ||
+			strings.Contains(path, "437296581056135434") ||
+			strings.Contains(path, "437296588890833719") {
+			log.Info(path)
+			bytes, err := client.Read(context, params.MinioCfg.BucketName, path)
+			os.MkdirAll(path, os.ModePerm)
+			os.Remove(path)
+			err = os.WriteFile(path, bytes, 0666)
+			assert.NoError(t, err)
+			//log.Info("paths", zap.Strings("paths", paths))
+		}
+
+		//log.Info(path)
+	}
 
 }

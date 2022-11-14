@@ -80,3 +80,11 @@ func ArrayToMap(strs []int64) map[int64]bool {
 	}
 	return ret
 }
+
+func MapKeyArray(dict map[int64]bool) []int64 {
+	arr := make([]int64, 0)
+	for k, _ := range dict {
+		arr = append(arr, k)
+	}
+	return arr
+}

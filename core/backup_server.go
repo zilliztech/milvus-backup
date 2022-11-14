@@ -34,8 +34,13 @@ func NewServer(ctx context.Context, params paramtable.BackupParams, opts ...Back
 	for _, opt := range opts {
 		opt(c)
 	}
+	backupContext := CreateBackupContext(ctx, params)
+	err := backupContext.Start()
+	if err != nil {
+		return nil, err
+	}
 	return &Server{
-		backupContext: CreateBackupContext(ctx, params),
+		backupContext: backupContext,
 		config:        c,
 	}, nil
 }
@@ -109,6 +114,8 @@ func (h *Handlers) handleHello(c *gin.Context) (interface{}, error) {
 func (h *Handlers) handleCreateBackup(c *gin.Context) (interface{}, error) {
 	json := backuppb.CreateBackupRequest{}
 	c.BindJSON(&json)
+	// http will use async call
+	json.Async = true
 	resp, _ := h.backupContext.CreateBackup(h.backupContext.ctx, &json)
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
@@ -123,8 +130,10 @@ func (h *Handlers) handleListBackups(c *gin.Context) (interface{}, error) {
 }
 
 func (h *Handlers) handleGetBackup(c *gin.Context) (interface{}, error) {
-	json := backuppb.GetBackupRequest{}
-	c.BindJSON(&json)
+	json := backuppb.GetBackupRequest{
+		BackupName: c.Query("backup_name"),
+	}
+	//c.BindJSON(&json)
 	resp, _ := h.backupContext.GetBackup(h.backupContext.ctx, &json)
 	c.JSON(http.StatusOK, resp)
 	return nil, nil

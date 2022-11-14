@@ -50,6 +50,11 @@ type BackupContext struct {
 	backupBucketName string
 	milvusRootPath   string
 	backupRootPath   string
+
+	idGenerator utils.IdGenerator
+
+	backupNameIdDict map[string]int64
+	backupCache      map[int64]*backuppb.BackupInfo
 }
 
 func (b *BackupContext) GetLoadBackupState(ctx context.Context, request *backuppb.LoadBackupRequest) (*backuppb.LoadBackupResponse, error) {
@@ -118,6 +123,12 @@ func (b *BackupContext) Start() error {
 		return err
 	}
 	b.storageClient = minioClient
+
+	// init id generator to alloc id to tasks
+	b.idGenerator = utils.NewFlakeIdGenerator()
+	b.backupCache = make(map[int64]*backuppb.BackupInfo)
+	b.backupNameIdDict = make(map[string]int64)
+
 	b.started = true
 	return nil
 }
@@ -140,25 +151,19 @@ func CreateBackupContext(ctx context.Context, params paramtable.BackupParams) *B
 }
 
 func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.CreateBackupRequest) (*backuppb.BackupInfoResponse, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
+	errorResp := &backuppb.BackupInfoResponse{
+		Status: &backuppb.Status{
+			StatusCode: backuppb.StatusCode_Fail,
+		},
+	}
 
 	if !b.started {
 		err := b.Start()
 		if err != nil {
-			return &backuppb.BackupInfoResponse{
-				Status: &backuppb.Status{StatusCode: backuppb.StatusCode_ConnectFailed},
-			}, nil
+			errorResp.Status.Reason = err.Error()
+			return errorResp, nil
 		}
 	}
-
-	errorResp := &backuppb.BackupInfoResponse{
-		Status: &backuppb.Status{
-			StatusCode: backuppb.StatusCode_UnexpectedError,
-		},
-	}
-
-	leveledBackupInfo := &LeveledBackupInfo{}
 
 	// backup name validate
 	if request.GetBackupName() != "" {
@@ -184,6 +189,70 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 		return errorResp, nil
 	}
 
+	id, err := b.idGenerator.NextId()
+	if err != nil {
+		errorResp.Status.Reason = err.Error()
+		return errorResp, nil
+	}
+
+	var name string
+	if request.GetBackupName() == "" {
+		name = "backup_" + fmt.Sprint(time.Now().Unix())
+	} else {
+		name = request.BackupName
+	}
+	backup := &backuppb.BackupInfo{
+		BackupState: &backuppb.BackupTaskState{
+			Id:        id,
+			Code:      backuppb.BackupTaskStateCode_BACKUP_INITIAL,
+			StartTime: time.Now().Unix(),
+		},
+		Name: name,
+	}
+	b.backupCache[id] = backup
+	b.backupNameIdDict[name] = id
+
+	if request.Async {
+		resp := &backuppb.BackupInfoResponse{
+			Status: &backuppb.Status{
+				StatusCode: backuppb.StatusCode_Success,
+			},
+			BackupInfo: backup,
+		}
+		go b.doCreateBackup(ctx, request, id)
+		return resp, nil
+	} else {
+		return b.doCreateBackup(ctx, request, id)
+	}
+}
+
+func (b BackupContext) doCreateBackup(ctx context.Context, request *backuppb.CreateBackupRequest, id int64) (*backuppb.BackupInfoResponse, error) {
+	// rethink about the lock logic
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	errorResp := &backuppb.BackupInfoResponse{
+		Status: &backuppb.Status{
+			StatusCode: backuppb.StatusCode_Fail,
+		},
+	}
+
+	refreshBackupMetaFunc := func(id int64, leveledBackupInfo *LeveledBackupInfo) (*backuppb.BackupInfo, error) {
+		backupInfo, err := levelToTree(leveledBackupInfo)
+		if err != nil {
+			return backupInfo, err
+		}
+		b.backupCache[id] = backupInfo
+		return backupInfo, nil
+	}
+
+	backupInfo := b.backupCache[id]
+	// todo timestamp?
+	backupInfo.BackupTimestamp = uint64(time.Now().Unix())
+	backupInfo.BackupState.Code = backuppb.BackupTaskStateCode_BACKUP_EXECUTING
+	leveledBackupInfo := &LeveledBackupInfo{
+		backupLevel: backupInfo,
+	}
 	// 1, get collection level meta
 	log.Debug("Request collection names",
 		zap.Strings("request_collection_names", request.GetCollectionNames()),
@@ -223,7 +292,6 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 			toBackupCollections = append(toBackupCollections, collection)
 		}
 	}
-
 	log.Info("collections to backup", zap.Any("collections", toBackupCollections))
 
 	collectionBackupInfos := make([]*backuppb.CollectionBackupInfo, 0)
@@ -252,7 +320,19 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 			AutoID:      completeCollection.Schema.AutoID,
 			Fields:      fields,
 		}
+		collectionBackupId, err := b.idGenerator.NextId()
+		if err != nil {
+			errorResp.Status.Reason = err.Error()
+			return errorResp, nil
+		}
+		collectionBackupState := &backuppb.BackupTaskState{
+			Id:        collectionBackupId,
+			Code:      backuppb.BackupTaskStateCode_BACKUP_INITIAL,
+			StartTime: time.Now().Unix(),
+		}
+
 		collectionBackup := &backuppb.CollectionBackupInfo{
+			BackupState:      collectionBackupState,
 			CollectionId:     completeCollection.ID,
 			DbName:           "", // todo currently db_name is not used in many places
 			CollectionName:   completeCollection.Name,
@@ -265,234 +345,251 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 	leveledBackupInfo.collectionLevel = &backuppb.CollectionLevelBackupInfo{
 		Infos: collectionBackupInfos,
 	}
+	refreshBackupMetaFunc(id, leveledBackupInfo)
 
-	// 2, get partition level meta
-	partitionBackupInfos := make([]*backuppb.PartitionBackupInfo, 0)
-	for _, collection := range toBackupCollections {
-		partitions, err := b.milvusClient.ShowPartitions(b.ctx, collection.Name)
+	partitionLevelBackupInfos := make([]*backuppb.PartitionBackupInfo, 0)
+	segmentLevelBackupInfos := make([]*backuppb.SegmentBackupInfo, 0)
+	// backup collection
+	for _, collection := range collectionBackupInfos {
+		partitionBackupInfos := make([]*backuppb.PartitionBackupInfo, 0)
+		partitions, err := b.milvusClient.ShowPartitions(b.ctx, collection.GetCollectionName())
 		if err != nil {
 			errorResp.Status.Reason = err.Error()
 			return errorResp, nil
 		}
-		for _, partition := range partitions {
-			partitionBackupInfos = append(partitionBackupInfos, &backuppb.PartitionBackupInfo{
-				PartitionId:   partition.ID,
-				PartitionName: partition.Name,
-				CollectionId:  collection.ID,
-				//SegmentBackups is now empty,
-				//will fullfill after getting segments info and rearrange from level structure to tree structure
-			})
+
+		// Flush
+		newSealedSegmentIDs, flushedSegmentIDs, timeOfSeal, err := b.milvusClient.Flush(ctx, collection.GetCollectionName(), false)
+		if err != nil {
+			log.Error(fmt.Sprintf("fail to flush the collection: %s", collection.GetCollectionName()))
+			errorResp.Status.Reason = err.Error()
+			return errorResp, nil
 		}
-	}
-	leveledBackupInfo.partitionLevel = &backuppb.PartitionLevelBackupInfo{
-		Infos: partitionBackupInfos,
-	}
-
-	log.Info("Finish build backup collection meta")
-
-	// 3, Flush
-	collSegmentsMap := make(map[string][]int64)
-	collSealTimeMap := make(map[string]int64)
-	for _, coll := range toBackupCollections {
-		newSealedSegmentIDs, flushedSegmentIDs, timeOfSeal, err := b.milvusClient.Flush(ctx, coll.Name, false)
 		log.Info("flush segments",
 			zap.Int64s("newSealedSegmentIDs", newSealedSegmentIDs),
 			zap.Int64s("flushedSegmentIDs", flushedSegmentIDs),
 			zap.Int64("timeOfSeal", timeOfSeal))
-		collSegmentsMap[coll.Name] = append(newSealedSegmentIDs, flushedSegmentIDs...)
-		collSealTimeMap[coll.Name] = timeOfSeal
-		if err != nil {
-			log.Error(fmt.Sprintf("fail to flush the collection: %s", coll.Name))
-			errorResp.Status.Reason = err.Error()
-			return errorResp, nil
-		}
-	}
-	// set collection backup time = timeOfSeal
-	for _, coll := range leveledBackupInfo.collectionLevel.GetInfos() {
-		coll.BackupTimestamp = utils.ComposeTS(collSealTimeMap[coll.CollectionName], 0)
-	}
+		collection.BackupTimestamp = utils.ComposeTS(timeOfSeal, 0)
 
-	// 4, get segment level meta
-	// get segment infos by milvus SDK
-	// todo: make sure the Binlog filed is not needed: timestampTo, timestampFrom, EntriesNum, LogSize
-	segmentBackupInfos := make([]*backuppb.SegmentBackupInfo, 0)
-	for _, collection := range toBackupCollections {
-		segmentDict := utils.ArrayToMap(collSegmentsMap[collection.Name])
-		segments, err := b.milvusClient.GetPersistentSegmentInfo(ctx, collection.Name)
+		flushSegments := append(newSealedSegmentIDs, flushedSegmentIDs...)
+		segmentEntities, err := b.milvusClient.GetPersistentSegmentInfo(ctx, collection.GetCollectionName())
 		if err != nil {
 			errorResp.Status.Reason = err.Error()
 			return errorResp, nil
 		}
-		for _, segment := range segments {
-			if segmentDict[segment.ID] {
-				segmentInfo, err := b.readSegmentInfo(ctx, segment.CollectionID, segment.ParititionID, segment.ID, segment.NumRows)
-				if err != nil {
-					errorResp.Status.Reason = err.Error()
-					return errorResp, nil
+
+		checkSegmentsFunc := func(flushSegmentIds []int64, segmentEntities []*entity.Segment) ([]*entity.Segment, error) {
+			segmentDict := utils.ArrayToMap(flushSegmentIds)
+			checkedSegments := make([]*entity.Segment, 0)
+			for _, seg := range segmentEntities {
+				sid := seg.ID
+				if _, ok := segmentDict[sid]; ok {
+					delete(segmentDict, sid)
+					checkedSegments = append(checkedSegments, seg)
+				} else {
+					log.Warn("this may be new segments after flush, skip it", zap.Int64("id", sid))
 				}
-				if len(segmentInfo.Binlogs) == 0 {
-					log.Warn("this segment has no insert binlog", zap.Int64("id", segment.ID))
+			}
+			if len(segmentDict) > 0 {
+				errorMsg := "Segment return in Flush not exist in GetPersistentSegmentInfo. segment ids: " + fmt.Sprint(utils.MapKeyArray(segmentDict))
+				log.Warn(errorMsg)
+				return checkedSegments, errors.New(errorMsg)
+			}
+			return checkedSegments, nil
+		}
+		checkedSegments, err := checkSegmentsFunc(flushSegments, segmentEntities)
+		if err != nil {
+			collection.BackupState.Code = backuppb.BackupTaskStateCode_BACKUP_FAIL
+			collection.BackupState.ErrorMessage = err.Error()
+			errorResp.Status.Reason = err.Error()
+			return errorResp, nil
+		}
+
+		segmentBackupInfos := make([]*backuppb.SegmentBackupInfo, 0)
+		partSegInfoMap := make(map[int64][]*backuppb.SegmentBackupInfo)
+		for _, segment := range checkedSegments {
+			segmentInfo, err := b.readSegmentInfo(ctx, segment.CollectionID, segment.ParititionID, segment.ID, segment.NumRows)
+			if err != nil {
+				errorResp.Status.Reason = err.Error()
+				return errorResp, nil
+			}
+			if len(segmentInfo.Binlogs) == 0 {
+				log.Warn("this segment has no insert binlog", zap.Int64("id", segment.ID))
+			}
+			partSegInfoMap[segment.ParititionID] = append(partSegInfoMap[segment.ParititionID], segmentInfo)
+			segmentBackupInfos = append(segmentBackupInfos, segmentInfo)
+			segmentLevelBackupInfos = append(segmentLevelBackupInfos, segmentInfo)
+		}
+
+		leveledBackupInfo.segmentLevel = &backuppb.SegmentLevelBackupInfo{
+			Infos: segmentLevelBackupInfos,
+		}
+
+		for _, partition := range partitions {
+			partitionBackupInfo := &backuppb.PartitionBackupInfo{
+				PartitionId:    partition.ID,
+				PartitionName:  partition.Name,
+				CollectionId:   collection.GetCollectionId(),
+				SegmentBackups: partSegInfoMap[partition.ID],
+			}
+			partitionBackupInfos = append(partitionBackupInfos, partitionBackupInfo)
+			partitionLevelBackupInfos = append(partitionLevelBackupInfos, partitionBackupInfo)
+		}
+
+		leveledBackupInfo.partitionLevel = &backuppb.PartitionLevelBackupInfo{
+			Infos: partitionBackupInfos,
+		}
+		collection.PartitionBackups = partitionBackupInfos
+		refreshBackupMetaFunc(id, leveledBackupInfo)
+
+		// copy segment data
+		for _, segment := range segmentBackupInfos {
+			// insert log
+			for _, binlogs := range segment.GetBinlogs() {
+				for _, binlog := range binlogs.GetBinlogs() {
+					targetPath := strings.Replace(binlog.GetLogPath(), b.milvusRootPath, BackupBinlogDirPath(b.backupRootPath, backupInfo.GetName()), 1)
+					if targetPath == binlog.GetLogPath() {
+						log.Error("wrong target path",
+							zap.String("from", binlog.GetLogPath()),
+							zap.String("to", targetPath))
+						errorResp.Status.Reason = err.Error()
+						return errorResp, nil
+					}
+
+					exist, err := b.storageClient.Exist(ctx, b.milvusBucketName, binlog.GetLogPath())
+					if err != nil {
+						log.Info("Fail to check file exist",
+							zap.Error(err),
+							zap.String("file", binlog.GetLogPath()))
+						errorResp.Status.Reason = err.Error()
+						return errorResp, nil
+					}
+					if !exist {
+						log.Error("Binlog file not exist",
+							zap.Error(err),
+							zap.String("file", binlog.GetLogPath()))
+						errorResp.Status.Reason = "Binlog file not exist"
+						return errorResp, nil
+					}
+
+					err = b.storageClient.Copy(ctx, b.milvusBucketName, b.backupBucketName, binlog.GetLogPath(), targetPath)
+					if err != nil {
+						log.Info("Fail to copy file",
+							zap.Error(err),
+							zap.String("from", binlog.GetLogPath()),
+							zap.String("to", targetPath))
+						errorResp.Status.Reason = err.Error()
+						return errorResp, nil
+					} else {
+						log.Debug("Successfully copy file",
+							zap.String("from", binlog.GetLogPath()),
+							zap.String("to", targetPath))
+					}
 				}
-				segmentBackupInfos = append(segmentBackupInfos, segmentInfo)
-			} else {
-				log.Debug("new segments after flush, skip it", zap.Int64("id", segment.ID))
+			}
+			// delta log
+			for _, binlogs := range segment.GetDeltalogs() {
+				for _, binlog := range binlogs.GetBinlogs() {
+					targetPath := strings.Replace(binlog.GetLogPath(), b.milvusRootPath, BackupBinlogDirPath(b.backupRootPath, backupInfo.GetName()), 1)
+					if targetPath == binlog.GetLogPath() {
+						log.Error("wrong target path",
+							zap.String("from", binlog.GetLogPath()),
+							zap.String("to", targetPath))
+						errorResp.Status.Reason = err.Error()
+						return errorResp, nil
+					}
+
+					exist, err := b.storageClient.Exist(ctx, b.milvusBucketName, binlog.GetLogPath())
+					if err != nil {
+						log.Info("Fail to check file exist",
+							zap.Error(err),
+							zap.String("file", binlog.GetLogPath()))
+						errorResp.Status.Reason = err.Error()
+						return errorResp, nil
+					}
+					if !exist {
+						log.Error("Binlog file not exist",
+							zap.Error(err),
+							zap.String("file", binlog.GetLogPath()))
+						errorResp.Status.Reason = "Binlog file not exist"
+						return errorResp, nil
+					}
+					err = b.storageClient.Copy(ctx, b.milvusBucketName, b.backupBucketName, binlog.GetLogPath(), targetPath)
+					if err != nil {
+						log.Info("Fail to copy file",
+							zap.Error(err),
+							zap.String("from", binlog.GetLogPath()),
+							zap.String("to", targetPath))
+						errorResp.Status.Reason = err.Error()
+						return errorResp, nil
+					} else {
+						log.Info("Successfully copy file",
+							zap.String("from", binlog.GetLogPath()),
+							zap.String("to", targetPath))
+					}
+				}
 			}
 		}
+		refreshBackupMetaFunc(id, leveledBackupInfo)
 	}
-	log.Info(fmt.Sprintf("Get segment num %d", len(segmentBackupInfos)))
-
-	leveledBackupInfo.segmentLevel = &backuppb.SegmentLevelBackupInfo{
-		Infos: segmentBackupInfos,
-	}
-
-	// 5, wrap meta
-	completeBackupInfo, err := levelToTree(leveledBackupInfo)
+	completeBackup, err := refreshBackupMetaFunc(id, leveledBackupInfo)
 	if err != nil {
 		errorResp.Status.Reason = err.Error()
 		return errorResp, nil
 	}
-	completeBackupInfo.BackupTimestamp = uint64(time.Now().Unix())
-	if request.GetBackupName() == "" {
-		completeBackupInfo.Name = "backup_" + fmt.Sprint(time.Now().Unix())
-	} else {
-		completeBackupInfo.Name = request.BackupName
-	}
-	// todo generate ID
-	completeBackupInfo.BackupState = &backuppb.BackupTaskState{
-		Id: 0,
-	}
 
-	// 6, copy data
-	for _, segment := range segmentBackupInfos {
-		// insert log
-		for _, binlogs := range segment.GetBinlogs() {
-			for _, binlog := range binlogs.GetBinlogs() {
-				targetPath := strings.Replace(binlog.GetLogPath(), b.milvusRootPath, BackupBinlogDirPath(b.backupRootPath, completeBackupInfo.GetName()), 1)
-				if targetPath == binlog.GetLogPath() {
-					log.Error("wrong target path",
-						zap.String("from", binlog.GetLogPath()),
-						zap.String("to", targetPath))
-					errorResp.Status.Reason = err.Error()
-					return errorResp, nil
-				}
-
-				exist, err := b.storageClient.Exist(ctx, b.milvusBucketName, binlog.GetLogPath())
-				if err != nil {
-					log.Info("Fail to check file exist",
-						zap.Error(err),
-						zap.String("file", binlog.GetLogPath()))
-					errorResp.Status.Reason = err.Error()
-					return errorResp, nil
-				}
-				if !exist {
-					log.Error("Binlog file not exist",
-						zap.Error(err),
-						zap.String("file", binlog.GetLogPath()))
-					errorResp.Status.Reason = "Binlog file not exist"
-					return errorResp, nil
-				}
-
-				err = b.storageClient.Copy(ctx, b.milvusBucketName, b.backupBucketName, binlog.GetLogPath(), targetPath)
-				if err != nil {
-					log.Info("Fail to copy file",
-						zap.Error(err),
-						zap.String("from", binlog.GetLogPath()),
-						zap.String("to", targetPath))
-					errorResp.Status.Reason = err.Error()
-					return errorResp, nil
-				} else {
-					log.Debug("Successfully copy file",
-						zap.String("from", binlog.GetLogPath()),
-						zap.String("to", targetPath))
-				}
-			}
-		}
-		// delta log
-		for _, binlogs := range segment.GetDeltalogs() {
-			for _, binlog := range binlogs.GetBinlogs() {
-				targetPath := strings.Replace(binlog.GetLogPath(), b.milvusRootPath, BackupBinlogDirPath(b.backupRootPath, completeBackupInfo.GetName()), 1)
-				if targetPath == binlog.GetLogPath() {
-					log.Error("wrong target path",
-						zap.String("from", binlog.GetLogPath()),
-						zap.String("to", targetPath))
-					errorResp.Status.Reason = err.Error()
-					return errorResp, nil
-				}
-
-				exist, err := b.storageClient.Exist(ctx, b.milvusBucketName, binlog.GetLogPath())
-				if err != nil {
-					log.Info("Fail to check file exist",
-						zap.Error(err),
-						zap.String("file", binlog.GetLogPath()))
-					errorResp.Status.Reason = err.Error()
-					return errorResp, nil
-				}
-				if !exist {
-					log.Error("Binlog file not exist",
-						zap.Error(err),
-						zap.String("file", binlog.GetLogPath()))
-					errorResp.Status.Reason = "Binlog file not exist"
-					return errorResp, nil
-				}
-				err = b.storageClient.Copy(ctx, b.milvusBucketName, b.backupBucketName, binlog.GetLogPath(), targetPath)
-				if err != nil {
-					log.Info("Fail to copy file",
-						zap.Error(err),
-						zap.String("from", binlog.GetLogPath()),
-						zap.String("to", targetPath))
-					errorResp.Status.Reason = err.Error()
-					return errorResp, nil
-				} else {
-					log.Info("Successfully copy file",
-						zap.String("from", binlog.GetLogPath()),
-						zap.String("to", targetPath))
-				}
-			}
-		}
-	}
-
+	log.Info("sleep ......")
+	time.Sleep(30 * time.Second)
+	backupInfo.BackupState.Code = backuppb.BackupTaskStateCode_BACKUP_SUCCESS
 	// 7, write meta data
-	output, _ := serialize(completeBackupInfo)
+	output, _ := serialize(completeBackup)
 	log.Info("backup meta", zap.String("value", string(output.BackupMetaBytes)))
 	log.Info("collection meta", zap.String("value", string(output.CollectionMetaBytes)))
 	log.Info("partition meta", zap.String("value", string(output.PartitionMetaBytes)))
 	log.Info("segment meta", zap.String("value", string(output.SegmentMetaBytes)))
 
-	b.storageClient.Write(ctx, b.backupBucketName, BackupMetaPath(b.backupRootPath, completeBackupInfo.GetName()), output.BackupMetaBytes)
-	b.storageClient.Write(ctx, b.backupBucketName, CollectionMetaPath(b.backupRootPath, completeBackupInfo.GetName()), output.CollectionMetaBytes)
-	b.storageClient.Write(ctx, b.backupBucketName, PartitionMetaPath(b.backupRootPath, completeBackupInfo.GetName()), output.PartitionMetaBytes)
-	b.storageClient.Write(ctx, b.backupBucketName, SegmentMetaPath(b.backupRootPath, completeBackupInfo.GetName()), output.SegmentMetaBytes)
+	b.storageClient.Write(ctx, b.backupBucketName, BackupMetaPath(b.backupRootPath, completeBackup.GetName()), output.BackupMetaBytes)
+	b.storageClient.Write(ctx, b.backupBucketName, CollectionMetaPath(b.backupRootPath, completeBackup.GetName()), output.CollectionMetaBytes)
+	b.storageClient.Write(ctx, b.backupBucketName, PartitionMetaPath(b.backupRootPath, completeBackup.GetName()), output.PartitionMetaBytes)
+	b.storageClient.Write(ctx, b.backupBucketName, SegmentMetaPath(b.backupRootPath, completeBackup.GetName()), output.SegmentMetaBytes)
 
 	return &backuppb.BackupInfoResponse{
 		Status: &backuppb.Status{
 			StatusCode: backuppb.StatusCode_Success,
 		},
-		BackupInfo: completeBackupInfo,
+		BackupInfo: completeBackup,
 	}, nil
 }
 
 func (b BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBackupRequest) (*backuppb.BackupInfoResponse, error) {
 	// 1, trigger inner sync to get the newest backup list in the milvus cluster
-	if !b.started {
-		err := b.Start()
-		if err != nil {
-			return &backuppb.BackupInfoResponse{
-				Status: &backuppb.Status{
-					StatusCode: backuppb.StatusCode_ConnectFailed,
-				},
-			}, nil
-		}
-	}
 
 	resp := &backuppb.BackupInfoResponse{
 		Status: &backuppb.Status{
-			StatusCode: backuppb.StatusCode_UnexpectedError,
+			StatusCode: backuppb.StatusCode_Fail,
 		},
+	}
+
+	if !b.started {
+		err := b.Start()
+		if err != nil {
+			resp.Status.Reason = err.Error()
+			return resp, nil
+		}
 	}
 
 	if request.GetBackupName() == "" {
 		resp.Status.Reason = "empty backup name"
 		return resp, nil
+	}
+
+	if value, ok := b.backupNameIdDict[request.GetBackupName()]; ok {
+		return &backuppb.BackupInfoResponse{
+			Status: &backuppb.Status{
+				StatusCode: backuppb.StatusCode_Success,
+			},
+			BackupInfo: b.backupCache[value],
+		}, nil
 	}
 
 	backup, err := b.readBackup(ctx, request.GetBackupName())
@@ -511,25 +608,23 @@ func (b BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBacku
 }
 
 func (b BackupContext) ListBackups(ctx context.Context, request *backuppb.ListBackupsRequest) (*backuppb.ListBackupsResponse, error) {
+	resp := &backuppb.ListBackupsResponse{
+		Status: &backuppb.Status{
+			StatusCode: backuppb.StatusCode_Fail,
+		},
+		FailBackups: []string{},
+	}
+
 	if !b.started {
 		err := b.Start()
 		if err != nil {
-			return &backuppb.ListBackupsResponse{
-				Status: &backuppb.Status{
-					StatusCode: backuppb.StatusCode_ConnectFailed,
-				},
-			}, nil
+			resp.Status.Reason = err.Error()
+			return resp, nil
 		}
 	}
 
 	// 1, trigger inner sync to get the newest backup list in the milvus cluster
 	backupPaths, _, err := b.storageClient.ListWithPrefix(ctx, b.backupBucketName, b.backupRootPath+SEPERATOR, false)
-	resp := &backuppb.ListBackupsResponse{
-		Status: &backuppb.Status{
-			StatusCode: backuppb.StatusCode_UnexpectedError,
-		},
-		FailBackups: []string{},
-	}
 	if err != nil {
 		log.Error("Fail to list backup directory", zap.Error(err))
 		resp.Status.Reason = err.Error()
@@ -586,21 +681,18 @@ func (b BackupContext) ListBackups(ctx context.Context, request *backuppb.ListBa
 }
 
 func (b BackupContext) DeleteBackup(ctx context.Context, request *backuppb.DeleteBackupRequest) (*backuppb.DeleteBackupResponse, error) {
+	resp := &backuppb.DeleteBackupResponse{
+		Status: &backuppb.Status{
+			StatusCode: backuppb.StatusCode_Fail,
+		},
+	}
+
 	if !b.started {
 		err := b.Start()
 		if err != nil {
-			return &backuppb.DeleteBackupResponse{
-				Status: &backuppb.Status{
-					StatusCode: backuppb.StatusCode_ConnectFailed,
-				},
-			}, nil
+			resp.Status.Reason = err.Error()
+			return resp, nil
 		}
-	}
-
-	resp := &backuppb.DeleteBackupResponse{
-		Status: &backuppb.Status{
-			StatusCode: backuppb.StatusCode_UnexpectedError,
-		},
 	}
 
 	if request.GetBackupName() == "" {
@@ -626,21 +718,18 @@ func (b BackupContext) LoadBackup(ctx context.Context, request *backuppb.LoadBac
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	resp := &backuppb.LoadBackupResponse{
+		Status: &backuppb.Status{
+			StatusCode: backuppb.StatusCode_Fail,
+		},
+	}
+
 	if !b.started {
 		err := b.Start()
 		if err != nil {
-			return &backuppb.LoadBackupResponse{
-				Status: &backuppb.Status{
-					StatusCode: backuppb.StatusCode_ConnectFailed,
-				},
-			}, nil
+			resp.Status.Reason = err.Error()
+			return resp, nil
 		}
-	}
-
-	resp := &backuppb.LoadBackupResponse{
-		Status: &backuppb.Status{
-			StatusCode: backuppb.StatusCode_UnexpectedError,
-		},
 	}
 
 	// 1, get and validate
@@ -670,6 +759,35 @@ func (b BackupContext) LoadBackup(ctx context.Context, request *backuppb.LoadBac
 	backup := getResp.GetBackupInfo()
 	resp.BackupInfo = backup
 	log.Info("successfully get the backup to load", zap.String("backupName", backup.GetName()))
+
+	id, err := b.idGenerator.NextId()
+	if err != nil {
+		resp.Status.Reason = err.Error()
+		return resp, nil
+	}
+
+	if request.Async {
+		resp := &backuppb.LoadBackupResponse{
+			Status: &backuppb.Status{
+				StatusCode: backuppb.StatusCode_Success,
+			},
+			BackupInfo: backup,
+		}
+		go b.doLoadBackup(ctx, request, backup, id)
+		return resp, nil
+	} else {
+		return b.doLoadBackup(ctx, request, backup, id)
+	}
+
+}
+
+// wip
+func (b BackupContext) doLoadBackup(ctx context.Context, request *backuppb.LoadBackupRequest, backup *backuppb.BackupInfo, id int64) (*backuppb.LoadBackupResponse, error) {
+	resp := &backuppb.LoadBackupResponse{
+		Status: &backuppb.Status{
+			StatusCode: backuppb.StatusCode_Fail,
+		},
+	}
 
 	// 2, initial loadCollectionTasks
 	toLoadCollectionBackups := make([]*backuppb.CollectionBackupInfo, 0)
