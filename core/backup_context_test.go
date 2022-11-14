@@ -101,7 +101,7 @@ func TestCreateBackupWithUnexistCollection(t *testing.T) {
 	}
 	resp, err := backup.CreateBackup(context, req)
 	assert.NoError(t, err)
-	assert.Equal(t, backuppb.StatusCode_UnexpectedError, resp.GetStatus().GetStatusCode())
+	assert.Equal(t, backuppb.StatusCode_Fail, resp.GetStatus().GetStatusCode())
 	assert.Equal(t, "request backup collection does not exist: not_exist", resp.GetStatus().GetReason())
 
 	// clean
@@ -130,7 +130,7 @@ func TestCreateBackupWithDuplicateName(t *testing.T) {
 	}
 	resp2, err := backup.CreateBackup(context, req2)
 	assert.NoError(t, err)
-	assert.Equal(t, backuppb.StatusCode_UnexpectedError, resp2.GetStatus().GetStatusCode())
+	assert.Equal(t, backuppb.StatusCode_Fail, resp2.GetStatus().GetStatusCode())
 	assert.Equal(t, fmt.Sprintf("backup already exist with the name: %s", req2.GetBackupName()), resp2.GetStatus().GetReason())
 
 	// clean
@@ -152,7 +152,7 @@ func TestCreateBackupWithIllegalName(t *testing.T) {
 	}
 	resp, err := backup.CreateBackup(context, req)
 	assert.NoError(t, err)
-	assert.Equal(t, backuppb.StatusCode_UnexpectedError, resp.GetStatus().GetStatusCode())
+	assert.Equal(t, backuppb.StatusCode_Fail, resp.GetStatus().GetStatusCode())
 
 	// clean
 	backup.DeleteBackup(context, &backuppb.DeleteBackupRequest{
@@ -213,7 +213,7 @@ func TestGetBackupFaultBackup(t *testing.T) {
 		BackupName: randBackupName,
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, backuppb.StatusCode_UnexpectedError, backup.GetStatus().GetStatusCode())
+	assert.Equal(t, backuppb.StatusCode_Fail, backup.GetStatus().GetStatusCode())
 
 	// clean
 	backupContext.DeleteBackup(context, &backuppb.DeleteBackupRequest{
@@ -232,7 +232,7 @@ func TestGetBackupUnexistBackupName(t *testing.T) {
 		BackupName: "un_exist",
 	})
 	assert.NoError(t, err)
-	assert.Equal(t, backuppb.StatusCode_UnexpectedError, backup.GetStatus().GetStatusCode())
+	assert.Equal(t, backuppb.StatusCode_Fail, backup.GetStatus().GetStatusCode())
 }
 
 func TestLoadBackup(t *testing.T) {
@@ -241,7 +241,6 @@ func TestLoadBackup(t *testing.T) {
 	context := context.Background()
 	backup := CreateBackupContext(context, params)
 	backup.Start()
-
 	randBackupName := fmt.Sprintf("test_%d", rand.Int())
 
 	req := &backuppb.CreateBackupRequest{
