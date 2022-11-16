@@ -12,15 +12,15 @@ import (
 )
 
 var (
-	loadBackupName        string
-	loadCollectionNames   string
-	renameSuffix          string
-	renameCollectionNames string
+	restoreBackupName      string
+	restoreCollectionNames string
+	renameSuffix           string
+	renameCollectionNames  string
 )
 
-var loadBackupCmd = &cobra.Command{
-	Use:   "load",
-	Short: "load subcommand load a backup.",
+var restoreBackupCmd = &cobra.Command{
+	Use:   "restore",
+	Short: "restore subcommand restore a backup.",
 
 	Run: func(cmd *cobra.Command, args []string) {
 		var params paramtable.BackupParams
@@ -35,7 +35,7 @@ var loadBackupCmd = &cobra.Command{
 		if collectionNames == "" {
 			collectionNameArr = []string{}
 		} else {
-			collectionNameArr = strings.Split(loadCollectionNames, ",")
+			collectionNameArr = strings.Split(restoreCollectionNames, ",")
 		}
 
 		var renameMap map[string]string
@@ -44,18 +44,18 @@ var loadBackupCmd = &cobra.Command{
 		} else {
 			renameArr := strings.Split(renameCollectionNames, ",")
 			if len(renameArr) != len(collectionNameArr) {
-				fmt.Errorf("collection_names and renames num dismatch, Forbid to load")
+				fmt.Errorf("collection_names and renames num dismatch, Forbid to restore")
 			}
 		}
 
-		backup, err := backupContext.LoadBackup(context, &backuppb.LoadBackupRequest{
-			BackupName:        loadBackupName,
+		backup, err := backupContext.RestoreBackup(context, &backuppb.RestoreBackupRequest{
+			BackupName:        restoreBackupName,
 			CollectionNames:   collectionNameArr,
 			CollectionSuffix:  renameSuffix,
 			CollectionRenames: renameMap,
 		})
 		if err != nil {
-			fmt.Errorf("fail to load backup, %s", err.Error())
+			fmt.Errorf("fail to restore backup, %s", err.Error())
 		}
 
 		fmt.Println(backup.GetStatus())
@@ -63,10 +63,10 @@ var loadBackupCmd = &cobra.Command{
 }
 
 func init() {
-	loadBackupCmd.Flags().StringVarP(&loadBackupName, "name", "n", "", "backup name to load")
-	loadBackupCmd.Flags().StringVarP(&loadCollectionNames, "collections", "c", "", "collectionNames to load")
-	loadBackupCmd.Flags().StringVarP(&renameSuffix, "suffix", "s", "", "add a suffix to collection name to load")
-	loadBackupCmd.Flags().StringVarP(&renameCollectionNames, "rename", "r", "", "rename collections to new names")
+	restoreBackupCmd.Flags().StringVarP(&restoreBackupName, "name", "n", "", "backup name to restore")
+	restoreBackupCmd.Flags().StringVarP(&restoreCollectionNames, "collections", "c", "", "collectionNames to restore")
+	restoreBackupCmd.Flags().StringVarP(&renameSuffix, "suffix", "s", "", "add a suffix to collection name to restore")
+	restoreBackupCmd.Flags().StringVarP(&renameCollectionNames, "rename", "r", "", "rename collections to new names")
 
-	rootCmd.AddCommand(loadBackupCmd)
+	rootCmd.AddCommand(restoreBackupCmd)
 }

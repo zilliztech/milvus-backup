@@ -12,10 +12,10 @@ service MilvusBackupService {
   rpc ListBackups(ListBackupsRequest) returns (ListBackupsResponse) {}
   // Delete backup by given backup name
   rpc DeleteBackup(DeleteBackupRequest) returns (DeleteBackupResponse) {}
-  // Load backup to milvus, return backup load report
-  rpc LoadBackup(LoadBackupRequest) returns (LoadBackupResponse) {}
-
-  rpc GetLoadBackupState(GetLoadBackupStateRequest) returns (LoadBackupResponse) {}
+  // Restore backup to milvus, return backup restore report
+  rpc RestoreBackup(RestoreBackupRequest) returns (RestoreBackupResponse) {}
+  // Get restore state by given id
+  rpc GetRestore(GetRestoreStateRequest) returns (RestoreBackupResponse) {}
 
   // Copy backup between buckets
   // temporary interface since currently milvus BulkInsert doesn't support read data from other bucket
@@ -28,7 +28,8 @@ enum MsgType {
   GetBackup = 101;
   ListBackups = 102;
   DeleteBackup = 103;
-  LoadBackup = 104;
+  RestoreBackup = 104;
+  GetRestore = 105;
 }
 
 message MsgBase {
@@ -40,9 +41,8 @@ message MsgBase {
 enum StatusCode {
   Unknown = 0;
   Success = 1;
-  UnexpectedError = 2;
-  ConnectFailed = 3;
-  PermissionDenied = 4;
+  Fail = 2;
+  Timeout = 3;
 }
 
 message Status {
@@ -129,6 +129,7 @@ message CreateBackupRequest {
   string backup_name = 2;
   // collection names to backup, empty to backup all
   repeated string collection_names = 3;
+  bool async = 4;
 }
 
 /**
@@ -181,36 +182,36 @@ message BackupTaskState {
   int32 progress = 6;
 }
 
-enum LoadTaskStateCode {
-  LOAD_INITIAL = 0;
-  LOAD_EXECUTING = 1;
-  LOAD_SUCCESS = 2;
-  LOAD_FAIL = 3;
-  LOAD_TIMEOUT = 4;
+enum RestoreTaskStateCode {
+  INITIAL = 0;
+  EXECUTING = 1;
+  SUCCESS = 2;
+  FAIL = 3;
+  TIMEOUT = 4;
 }
 
-message LoadTaskState {
+message RestoreTaskState {
   int64 id = 1;
-  LoadTaskStateCode code = 2;
+  RestoreTaskStateCode code = 2;
   string errorMessage = 3;
   int64 start_time = 4;
   int64 end_time = 5;
   int32 progress = 6;
 }
 
-message LoadPartitionTask {
-  LoadTaskState load_state = 1;
+message RestorePartitionTask {
+  RestoreTaskState state = 1;
   PartitionBackupInfo part_backup = 2;
 }
 
-message LoadCollectionTask {
-  LoadTaskState load_state = 1;
+message RestoreCollectionTask {
+  RestoreTaskState state = 1;
   CollectionBackupInfo coll_backup = 2;
   string target_collection_name = 3;
-  repeated LoadPartitionTask partition_load_tasks = 4;
+  repeated RestorePartitionTask partition_restore_tasks = 4;
 }
 
-message LoadBackupRequest {
+message RestoreBackupRequest {
   MsgBase base = 1;
   string backup_name = 2;
   repeated string collection_names = 3;
@@ -219,13 +220,14 @@ message LoadBackupRequest {
   string collection_suffix = 4;
   // 2, give a map to rename the collections, if not given, use the original name
   map<string, string> collection_renames = 5;
+  bool async = 6;
 }
 
-message LoadBackupResponse {
+message RestoreBackupResponse {
   Status status = 1;
-  LoadTaskState load_state = 2;
+  RestoreTaskState state = 2;
   BackupInfo backup_info = 3;
-  repeated LoadCollectionTask collection_load_tasks = 4;
+  repeated RestoreCollectionTask collection_restore_tasks = 4;
 }
 //
 //enum CopyType {
@@ -243,7 +245,7 @@ message LoadBackupResponse {
 //  Status status = 1;
 //}
 
-message GetLoadBackupStateRequest {
+message GetRestoreStateRequest {
   MsgBase base = 1;
   int64 id = 2;
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/pprof"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
@@ -12,12 +13,13 @@ import (
 )
 
 const (
-	HELLO_API         = "/hello"
-	CREATE_BACKUP_API = "/create"
-	LIST_BACKUPS_API  = "/list"
-	GET_BACKUP_API    = "/get"
-	DELETE_BACKUP_API = "/delete"
-	LOAD_BACKUP_API   = "/load"
+	HELLO_API          = "/hello"
+	CREATE_BACKUP_API  = "/create"
+	LIST_BACKUPS_API   = "/list"
+	GET_BACKUP_API     = "/get_backup"
+	DELETE_BACKUP_API  = "/delete"
+	RESTORE_BACKUP_API = "/restore"
+	GET_RESTORE_API    = "/get_restore"
 
 	API_V1_PREFIX = "/api/v1"
 )
@@ -34,8 +36,13 @@ func NewServer(ctx context.Context, params paramtable.BackupParams, opts ...Back
 	for _, opt := range opts {
 		opt(c)
 	}
+	backupContext := CreateBackupContext(ctx, params)
+	err := backupContext.Start()
+	if err != nil {
+		return nil, err
+	}
 	return &Server{
-		backupContext: CreateBackupContext(ctx, params),
+		backupContext: backupContext,
 		config:        c,
 	}, nil
 }
@@ -88,7 +95,8 @@ func (h *Handlers) RegisterRoutesTo(router gin.IRouter) {
 	router.GET(LIST_BACKUPS_API, wrapHandler(h.handleListBackups))
 	router.GET(GET_BACKUP_API, wrapHandler(h.handleGetBackup))
 	router.DELETE(DELETE_BACKUP_API, wrapHandler(h.handleDeleteBackup))
-	router.POST(LOAD_BACKUP_API, wrapHandler(h.handleLoadBackup))
+	router.POST(RESTORE_BACKUP_API, wrapHandler(h.handleRestoreBackup))
+	router.GET(GET_RESTORE_API, wrapHandler(h.handleGetRestore))
 }
 
 // handlerFunc handles http request with gin context
@@ -109,35 +117,59 @@ func (h *Handlers) handleHello(c *gin.Context) (interface{}, error) {
 func (h *Handlers) handleCreateBackup(c *gin.Context) (interface{}, error) {
 	json := backuppb.CreateBackupRequest{}
 	c.BindJSON(&json)
+	// http will use async call
+	json.Async = true
 	resp, _ := h.backupContext.CreateBackup(h.backupContext.ctx, &json)
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
 
 func (h *Handlers) handleListBackups(c *gin.Context) (interface{}, error) {
-	json := backuppb.ListBackupsRequest{}
-	c.BindJSON(&json)
-	resp, _ := h.backupContext.ListBackups(h.backupContext.ctx, &json)
+	req := backuppb.ListBackupsRequest{
+		CollectionName: c.Query("collection_name"),
+	}
+	resp, _ := h.backupContext.ListBackups(h.backupContext.ctx, &req)
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
 
 func (h *Handlers) handleGetBackup(c *gin.Context) (interface{}, error) {
-	json := backuppb.GetBackupRequest{}
-	c.BindJSON(&json)
-	resp, _ := h.backupContext.GetBackup(h.backupContext.ctx, &json)
+	req := backuppb.GetBackupRequest{
+		BackupName: c.Query("backup_name"),
+	}
+	resp, _ := h.backupContext.GetBackup(h.backupContext.ctx, &req)
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
 
 func (h *Handlers) handleDeleteBackup(c *gin.Context) (interface{}, error) {
-	json := backuppb.DeleteBackupRequest{}
-	c.BindJSON(&json)
-	resp, _ := h.backupContext.DeleteBackup(h.backupContext.ctx, &json)
+	req := backuppb.DeleteBackupRequest{
+		BackupName: c.Query("backup_name"),
+	}
+	resp, _ := h.backupContext.DeleteBackup(h.backupContext.ctx, &req)
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
 
-func (h *Handlers) handleLoadBackup(c *gin.Context) (interface{}, error) {
+func (h *Handlers) handleRestoreBackup(c *gin.Context) (interface{}, error) {
+	json := backuppb.RestoreBackupRequest{}
+	c.BindJSON(&json)
+	// http will use async call
+	json.Async = true
+	resp, _ := h.backupContext.RestoreBackup(h.backupContext.ctx, &json)
+	c.JSON(http.StatusOK, resp)
+	return nil, nil
+}
+
+func (h *Handlers) handleGetRestore(c *gin.Context) (interface{}, error) {
+	id, err := strconv.ParseInt(c.Query("id"), 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	req := backuppb.GetRestoreStateRequest{
+		Id: id,
+	}
+	resp, _ := h.backupContext.GetRestore(h.backupContext.ctx, &req)
+	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }

@@ -68,10 +68,10 @@ Get backup by name.
 ## Delete
 Delete backup by name.
 
-## Load
-Load backup by name, will recreate the collections in the cluster and recover the data through bulkload. For more details about Bulkload, please see:
+## Restore
+Restore backup by name, will recreate the collections in the cluster and recover the data through bulkinsert. For more details about BulkInsert, please see:
 
-Bulkloads will be done by partition. Currently we don't support concurrent load.
+BulkInserts will be done by partition. Currently we don't support concurrent BulkInserts.
 
 # Development
 
@@ -146,9 +146,9 @@ http://localhost:8080/api/v1/get?backup_name=test_api
 http://localhost:8080/api/v1/delete?backup_name=test_api
 ```
 
-#### load
+#### restore
 ```
-curl --location --request POST 'http://localhost:8080/api/v1/load' \
+curl --location --request POST 'http://localhost:8080/api/v1/restore' \
 --header 'Content-Type: application/json' \
 --data-raw '{
     "backup_name":"test_api"
@@ -173,7 +173,7 @@ Available Commands:
   get         get subcommand get backup by name.
   help        Help about any command
   list        list subcommand shows all backup in the cluster.
-  load        load subcommand load a backup.
+  restore     restore subcommand restore a backup.
   server      server subcommand start milvus-backup RESTAPI server.
 
 Flags:
@@ -198,9 +198,9 @@ python example/prepare_data.py
 ./milvus-backup create -n my_backup 
 ```
 
-3, Load backup. Set suffix `_recover`. `hello_milvus` will be loaded with new name `hello_milvus_recover`. 
+3, Restore backup. Set suffix `_recover`. `hello_milvus` will be restored with new name `hello_milvus_recover`. 
 ```
-./milvus-backup load -n my_backup -s _recover
+./milvus-backup restore -n my_backup -s _recover
 ```
 
 4, Verfiy data. Create index and do search on the recovered collection `hello_milvus_recover`.
