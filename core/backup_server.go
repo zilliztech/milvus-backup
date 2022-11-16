@@ -122,31 +122,38 @@ func (h *Handlers) handleCreateBackup(c *gin.Context) (interface{}, error) {
 }
 
 func (h *Handlers) handleListBackups(c *gin.Context) (interface{}, error) {
-	json := backuppb.ListBackupsRequest{}
-	c.BindJSON(&json)
-	resp, _ := h.backupContext.ListBackups(h.backupContext.ctx, &json)
+	req := backuppb.ListBackupsRequest{
+		CollectionName: c.Query("collection_name"),
+	}
+	resp, _ := h.backupContext.ListBackups(h.backupContext.ctx, &req)
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
 
 func (h *Handlers) handleGetBackup(c *gin.Context) (interface{}, error) {
-	json := backuppb.GetBackupRequest{
+	req := backuppb.GetBackupRequest{
 		BackupName: c.Query("backup_name"),
 	}
-	//c.BindJSON(&json)
-	resp, _ := h.backupContext.GetBackup(h.backupContext.ctx, &json)
+	resp, _ := h.backupContext.GetBackup(h.backupContext.ctx, &req)
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
 
 func (h *Handlers) handleDeleteBackup(c *gin.Context) (interface{}, error) {
-	json := backuppb.DeleteBackupRequest{}
-	c.BindJSON(&json)
-	resp, _ := h.backupContext.DeleteBackup(h.backupContext.ctx, &json)
+	req := backuppb.DeleteBackupRequest{
+		BackupName: c.Query("backup_name"),
+	}
+	resp, _ := h.backupContext.DeleteBackup(h.backupContext.ctx, &req)
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
 
 func (h *Handlers) handleLoadBackup(c *gin.Context) (interface{}, error) {
+	json := backuppb.LoadBackupRequest{}
+	c.BindJSON(&json)
+	// http will use async call
+	json.Async = true
+	resp, _ := h.backupContext.LoadBackup(h.backupContext.ctx, &json)
+	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
