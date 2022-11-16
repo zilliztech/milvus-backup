@@ -15,10 +15,10 @@ type Backup interface {
 	ListBackups(context.Context, *backuppb.ListBackupsRequest) (*backuppb.ListBackupsResponse, error)
 	// Delete backuppb by given backuppb name
 	DeleteBackup(context.Context, *backuppb.DeleteBackupRequest) (*backuppb.DeleteBackupResponse, error)
-	// Load backuppb to milvus, return backuppb load report
-	LoadBackup(context.Context, *backuppb.LoadBackupRequest) (*backuppb.LoadBackupResponse, error)
-
-	GetLoadBackupState(context.Context, *backuppb.LoadBackupRequest) (*backuppb.LoadBackupResponse, error)
+	// Restore backuppb to milvus, return backup restore report
+	RestoreBackup(context.Context, *backuppb.RestoreBackupRequest) (*backuppb.RestoreBackupResponse, error)
+	// Get restore state by given id
+	GetRestore(context.Context, *backuppb.GetRestoreStateRequest) (*backuppb.RestoreBackupResponse, error)
 
 	// Copy backuppb between buckets
 	//CopyBackup(context.Context, *backuppb.CopyBackupRequest) (*backuppb.CopyBackupResponse, error)

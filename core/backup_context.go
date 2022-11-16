@@ -21,11 +21,11 @@ import (
 )
 
 const (
-	BACKUP_ROW_BASED         = false // bulkload backup should be columned based
-	BULKLOAD_TIMEOUT         = 10 * 60
-	BULKLOAD_SLEEP_INTERVAL  = 3
-	BACKUP_NAME              = "BACKUP_NAME"
-	COLLECTION_RENAME_SUFFIX = "COLLECTION_RENAME_SUFFIX"
+	BACKUP_ROW_BASED          = false // bulkinsert backup should be columned based
+	BULKINSERT_TIMEOUT        = 10 * 60
+	BULKINSERT_SLEEP_INTERVAL = 3
+	BACKUP_NAME               = "BACKUP_NAME"
+	COLLECTION_RENAME_SUFFIX  = "COLLECTION_RENAME_SUFFIX"
 )
 
 // makes sure BackupContext implements `Backup`
@@ -36,7 +36,7 @@ var Params paramtable.BackupParams
 
 type BackupContext struct {
 	ctx context.Context
-	// lock to make sure only one backup is creating or loading
+	// lock to make sure only one backup is creating or restoring
 	mu      sync.Mutex
 	started bool
 	params  paramtable.BackupParams
@@ -55,11 +55,6 @@ type BackupContext struct {
 
 	backupNameIdDict map[string]int64
 	backupCache      map[int64]*backuppb.BackupInfo
-}
-
-func (b *BackupContext) GetLoadBackupState(ctx context.Context, request *backuppb.LoadBackupRequest) (*backuppb.LoadBackupResponse, error) {
-	//TODO implement me
-	panic("implement me")
 }
 
 func CreateMilvusClient(ctx context.Context, params paramtable.BackupParams) (gomilvus.Client, error) {
@@ -714,11 +709,11 @@ func (b BackupContext) DeleteBackup(ctx context.Context, request *backuppb.Delet
 	}, nil
 }
 
-func (b BackupContext) LoadBackup(ctx context.Context, request *backuppb.LoadBackupRequest) (*backuppb.LoadBackupResponse, error) {
+func (b BackupContext) RestoreBackup(ctx context.Context, request *backuppb.RestoreBackupRequest) (*backuppb.RestoreBackupResponse, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	resp := &backuppb.LoadBackupResponse{
+	resp := &backuppb.RestoreBackupResponse{
 		Status: &backuppb.Status{
 			StatusCode: backuppb.StatusCode_Fail,
 		},
@@ -758,7 +753,7 @@ func (b BackupContext) LoadBackup(ctx context.Context, request *backuppb.LoadBac
 
 	backup := getResp.GetBackupInfo()
 	resp.BackupInfo = backup
-	log.Info("successfully get the backup to load", zap.String("backupName", backup.GetName()))
+	log.Info("successfully get the backup to restore", zap.String("backupName", backup.GetName()))
 
 	id, err := b.idGenerator.NextId()
 	if err != nil {
@@ -767,32 +762,32 @@ func (b BackupContext) LoadBackup(ctx context.Context, request *backuppb.LoadBac
 	}
 
 	if request.Async {
-		resp := &backuppb.LoadBackupResponse{
+		resp := &backuppb.RestoreBackupResponse{
 			Status: &backuppb.Status{
 				StatusCode: backuppb.StatusCode_Success,
 			},
 			BackupInfo: backup,
 		}
-		go b.doLoadBackup(ctx, request, backup, id)
+		go b.doRestoreBackup(ctx, request, backup, id)
 		return resp, nil
 	} else {
-		return b.doLoadBackup(ctx, request, backup, id)
+		return b.doRestoreBackup(ctx, request, backup, id)
 	}
 
 }
 
 // wip
-func (b BackupContext) doLoadBackup(ctx context.Context, request *backuppb.LoadBackupRequest, backup *backuppb.BackupInfo, id int64) (*backuppb.LoadBackupResponse, error) {
-	resp := &backuppb.LoadBackupResponse{
+func (b BackupContext) doRestoreBackup(ctx context.Context, request *backuppb.RestoreBackupRequest, backup *backuppb.BackupInfo, id int64) (*backuppb.RestoreBackupResponse, error) {
+	resp := &backuppb.RestoreBackupResponse{
 		Status: &backuppb.Status{
 			StatusCode: backuppb.StatusCode_Fail,
 		},
 	}
 
-	// 2, initial loadCollectionTasks
-	toLoadCollectionBackups := make([]*backuppb.CollectionBackupInfo, 0)
+	// 2, initial restoreCollectionTasks
+	toRestoreCollectionBackups := make([]*backuppb.CollectionBackupInfo, 0)
 	if len(request.GetCollectionNames()) == 0 {
-		toLoadCollectionBackups = backup.GetCollectionBackups()
+		toRestoreCollectionBackups = backup.GetCollectionBackups()
 	} else {
 		collectionNameDict := make(map[string]bool)
 		for _, collectName := range request.GetCollectionNames() {
@@ -800,15 +795,15 @@ func (b BackupContext) doLoadBackup(ctx context.Context, request *backuppb.LoadB
 		}
 		for _, collectionBackup := range backup.GetCollectionBackups() {
 			if collectionNameDict[collectionBackup.GetCollectionName()] {
-				toLoadCollectionBackups = append(toLoadCollectionBackups, collectionBackup)
+				toRestoreCollectionBackups = append(toRestoreCollectionBackups, collectionBackup)
 			}
 		}
 	}
-	log.Info("Collections to load", zap.Int("totalNum", len(toLoadCollectionBackups)))
+	log.Info("Collections to restore", zap.Int("totalNum", len(toRestoreCollectionBackups)))
 
-	loadCollectionTasks := make([]*backuppb.LoadCollectionTask, 0)
-	for _, loadCollection := range toLoadCollectionBackups {
-		backupCollectionName := loadCollection.GetSchema().GetName()
+	restoreCollectionTasks := make([]*backuppb.RestoreCollectionTask, 0)
+	for _, restoreCollection := range toRestoreCollectionBackups {
+		backupCollectionName := restoreCollection.GetSchema().GetName()
 		var targetCollectionName string
 		// rename collection, rename map has higher poriority then suffix
 		if len(request.GetCollectionRenames()) > 0 && request.GetCollectionRenames()[backupCollectionName] != "" {
@@ -826,44 +821,44 @@ func (b BackupContext) doLoadBackup(ctx context.Context, request *backuppb.LoadB
 			return resp, nil
 		}
 		if exist {
-			log.Error("The collection to load already exists",
+			log.Error("The collection to restore already exists",
 				zap.String("backupCollectName", backupCollectionName),
 				zap.String("targetCollectionName", targetCollectionName))
-			resp.Status.Reason = fmt.Sprintf("load target collection already exists in the cluster: %s", targetCollectionName)
+			resp.Status.Reason = fmt.Sprintf("restore target collection already exists in the cluster: %s", targetCollectionName)
 			return resp, nil
 		}
 
-		task := &backuppb.LoadCollectionTask{
-			LoadState: &backuppb.LoadTaskState{
-				Code: backuppb.LoadTaskStateCode_LOAD_INITIAL,
+		task := &backuppb.RestoreCollectionTask{
+			State: &backuppb.RestoreTaskState{
+				Code: backuppb.RestoreTaskStateCode_INITIAL,
 			},
-			CollBackup:           loadCollection,
-			TargetCollectionName: targetCollectionName,
-			PartitionLoadTasks:   []*backuppb.LoadPartitionTask{},
+			CollBackup:            restoreCollection,
+			TargetCollectionName:  targetCollectionName,
+			PartitionRestoreTasks: []*backuppb.RestorePartitionTask{},
 		}
-		loadCollectionTasks = append(loadCollectionTasks, task)
+		restoreCollectionTasks = append(restoreCollectionTasks, task)
 	}
-	resp.CollectionLoadTasks = loadCollectionTasks
+	resp.CollectionRestoreTasks = restoreCollectionTasks
 
-	// 3, execute load loadCollectionTasks
-	for _, task := range loadCollectionTasks {
-		err := b.executeLoadTask(ctx, backup.GetName(), task)
+	// 3, execute restore restoreCollectionTasks
+	for _, task := range restoreCollectionTasks {
+		err := b.executeRestoreTask(ctx, backup.GetName(), task)
 		if err != nil {
-			task.LoadState.ErrorMessage = err.Error()
-			task.LoadState.Code = backuppb.LoadTaskStateCode_LOAD_FAIL
+			task.State.ErrorMessage = err.Error()
+			task.State.Code = backuppb.RestoreTaskStateCode_FAIL
 			resp.Status.Reason = err.Error()
 			return resp, nil
 		}
-		task.LoadState.Code = backuppb.LoadTaskStateCode_LOAD_SUCCESS
+		task.State.Code = backuppb.RestoreTaskStateCode_SUCCESS
 	}
 
 	resp.Status.StatusCode = backuppb.StatusCode_Success
 	return resp, nil
 }
 
-func (b BackupContext) executeLoadTask(ctx context.Context, backupName string, task *backuppb.LoadCollectionTask) error {
+func (b BackupContext) executeRestoreTask(ctx context.Context, backupName string, task *backuppb.RestoreCollectionTask) error {
 	targetCollectionName := task.GetTargetCollectionName()
-	task.LoadState.Code = backuppb.LoadTaskStateCode_LOAD_EXECUTING
+	task.State.Code = backuppb.RestoreTaskStateCode_EXECUTING
 	log.With(zap.String("backupName", backupName))
 	// create collection
 	fields := make([]*entity.Field, 0)
@@ -912,7 +907,7 @@ func (b BackupContext) executeLoadTask(ctx context.Context, backupName string, t
 			}
 		}
 
-		// bulkload
+		// bulk insert
 		// todo ts
 		options := make(map[string]string)
 		options["end_ts"] = fmt.Sprint(task.GetCollBackup().BackupTimestamp)
@@ -926,13 +921,13 @@ func (b BackupContext) executeLoadTask(ctx context.Context, backupName string, t
 				zap.String("partition", partitionBackup.GetPartitionName()))
 			return err
 		}
-		log.Debug("execute bulkload",
+		log.Debug("execute bulk insert",
 			zap.String("collection", targetCollectionName),
 			zap.String("partition", partitionBackup.GetPartitionName()),
 			zap.Strings("files", files))
-		err = b.executeBulkload(ctx, targetCollectionName, partitionBackup.GetPartitionName(), files, options)
+		err = b.executeBulkInsert(ctx, targetCollectionName, partitionBackup.GetPartitionName(), files, options)
 		if err != nil {
-			log.Error("fail to bulkload to partition",
+			log.Error("fail to bulk insert to partition",
 				zap.Error(err),
 				zap.String("backupCollectionName", task.GetCollBackup().GetCollectionName()),
 				zap.String("targetCollectionName", targetCollectionName),
@@ -944,10 +939,10 @@ func (b BackupContext) executeLoadTask(ctx context.Context, backupName string, t
 	return nil
 }
 
-func (b BackupContext) executeBulkload(ctx context.Context, coll string, partition string, files []string, options map[string]string) error {
+func (b BackupContext) executeBulkInsert(ctx context.Context, coll string, partition string, files []string, options map[string]string) error {
 	taskIds, err := b.milvusClient.Bulkload(ctx, coll, partition, BACKUP_ROW_BASED, files, options)
 	if err != nil {
-		log.Error("fail to bulkload",
+		log.Error("fail to bulk insert",
 			zap.Error(err),
 			zap.String("collectionName", coll),
 			zap.String("partitionName", partition),
@@ -955,9 +950,9 @@ func (b BackupContext) executeBulkload(ctx context.Context, coll string, partiti
 		return err
 	}
 	for _, taskId := range taskIds {
-		loadErr := b.watchBulkloadState(ctx, taskId, BULKLOAD_TIMEOUT, BULKLOAD_SLEEP_INTERVAL)
+		loadErr := b.watchBulkInsertState(ctx, taskId, BULKINSERT_TIMEOUT, BULKINSERT_SLEEP_INTERVAL)
 		if loadErr != nil {
-			log.Error("fail or timeout to bulkload",
+			log.Error("fail or timeout to bulk insert",
 				zap.Error(err),
 				zap.Int64("taskId", taskId),
 				zap.String("targetCollectionName", coll),
@@ -968,7 +963,7 @@ func (b BackupContext) executeBulkload(ctx context.Context, coll string, partiti
 	return nil
 }
 
-func (b BackupContext) watchBulkloadState(ctx context.Context, taskId int64, timeout int64, sleepSeconds int) error {
+func (b BackupContext) watchBulkInsertState(ctx context.Context, taskId int64, timeout int64, sleepSeconds int) error {
 	start := time.Now().Unix()
 	for time.Now().Unix()-start < timeout {
 		importTaskState, err := b.milvusClient.GetBulkloadState(ctx, taskId)
@@ -1131,6 +1126,11 @@ func (b BackupContext) readSegmentInfo(ctx context.Context, collecitonID int64, 
 	segmentBackupInfo.Deltalogs = deltaLogs
 	segmentBackupInfo.Statslogs = statsLogs
 	return &segmentBackupInfo, nil
+}
+
+func (b *BackupContext) GetRestore(ctx context.Context, request *backuppb.GetRestoreStateRequest) (*backuppb.RestoreBackupResponse, error) {
+	//TODO implement me
+	panic("implement me")
 }
 
 //func (b *BackupContext) CopyBackup(ctx context.Context, request *backuppb.CopyBackupRequest) (*backuppb.CopyBackupResponse, error) {

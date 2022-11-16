@@ -80,12 +80,12 @@ jobs:
           export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=ignore
           ./milvus-backup create -n my_backup
           ./milvus-backup list
-      - name: Load backup
+      - name: Restore backup
         timeout-minutes: 5
         shell: bash
         run: |
           export GOLANG_PROTOBUF_REGISTRATION_CONFLICT=ignore
-          ./milvus-backup load -n my_backup -s _recover
+          ./milvus-backup restore -n my_backup -s _recover
       - name: Verify data
         timeout-minutes: 5
         shell: bash

@@ -29,7 +29,7 @@ func TestProxyClient(t *testing.T) {
 	//coll, err := c2.DescribeCollection(ctx, "hello_milvus")
 	//log.Info("collection", zap.Any("hello_milvus", coll))
 
-	//c2.DropCollection(ctx, "demo_bulkload")
+	//c2.DropCollection(ctx, "demo_bulkinsert")
 	//c2.DropCollection(ctx, "hello_milvus")
 	//c2.DropCollection(ctx, "hello_milvus_recover")
 
@@ -41,7 +41,7 @@ func TestProxyClient(t *testing.T) {
 	//assert.Empty(t, collections)
 }
 
-func TestBulkload(t *testing.T) {
+func TestBulkInsert(t *testing.T) {
 	ctx := context.Background()
 	milvusAddr := "localhost:19530"
 	//c, err := proxy.NewClient(context, milvusAddr)
@@ -52,7 +52,7 @@ func TestBulkload(t *testing.T) {
 
 	//MILVUS_DATA_PATH := "/tmp/milvus/data/"
 
-	_COLLECTION_NAME := "demo_bulkload"
+	_COLLECTION_NAME := "demo_bulk_insert"
 	_ID_FIELD_NAME := "id_field"
 	_VECTOR_FIELD_NAME := "float_vector_field"
 	_STR_FIELD_NAME := "str_field"
@@ -98,7 +98,7 @@ func TestBulkload(t *testing.T) {
 	}
 	schema := &entity.Schema{
 		CollectionName: _COLLECTION_NAME,
-		Description:    "demo bulkload",
+		Description:    "demo bulkinsert",
 		AutoID:         true,
 		Fields:         []*entity.Field{field1, field2, field3},
 	}
@@ -114,11 +114,11 @@ func TestBulkload(t *testing.T) {
 
 	ids, err := client.Bulkload(ctx, _COLLECTION_NAME, _PART_1, true, file_names, nil)
 
-	log.Info("bulkload task ids", zap.Int64s("ids", ids))
+	log.Info("bulk insert task ids", zap.Int64s("ids", ids))
 
 	for {
 		state, _ := client.GetBulkloadState(ctx, ids[0])
-		log.Info("bulkload task state", zap.Any("state", state))
+		log.Info("bulk insert task state", zap.Any("state", state))
 		time.Sleep(3 * time.Second)
 	}
 	//time.Sleep(30 * time.Second)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/pprof"
+	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
@@ -12,12 +13,13 @@ import (
 )
 
 const (
-	HELLO_API         = "/hello"
-	CREATE_BACKUP_API = "/create"
-	LIST_BACKUPS_API  = "/list"
-	GET_BACKUP_API    = "/get"
-	DELETE_BACKUP_API = "/delete"
-	LOAD_BACKUP_API   = "/load"
+	HELLO_API          = "/hello"
+	CREATE_BACKUP_API  = "/create"
+	LIST_BACKUPS_API   = "/list"
+	GET_BACKUP_API     = "/get_backup"
+	DELETE_BACKUP_API  = "/delete"
+	RESTORE_BACKUP_API = "/restore"
+	GET_RESTORE_API    = "/get_restore"
 
 	API_V1_PREFIX = "/api/v1"
 )
@@ -93,7 +95,8 @@ func (h *Handlers) RegisterRoutesTo(router gin.IRouter) {
 	router.GET(LIST_BACKUPS_API, wrapHandler(h.handleListBackups))
 	router.GET(GET_BACKUP_API, wrapHandler(h.handleGetBackup))
 	router.DELETE(DELETE_BACKUP_API, wrapHandler(h.handleDeleteBackup))
-	router.POST(LOAD_BACKUP_API, wrapHandler(h.handleLoadBackup))
+	router.POST(RESTORE_BACKUP_API, wrapHandler(h.handleRestoreBackup))
+	router.GET(GET_RESTORE_API, wrapHandler(h.handleGetRestore))
 }
 
 // handlerFunc handles http request with gin context
@@ -148,12 +151,25 @@ func (h *Handlers) handleDeleteBackup(c *gin.Context) (interface{}, error) {
 	return nil, nil
 }
 
-func (h *Handlers) handleLoadBackup(c *gin.Context) (interface{}, error) {
-	json := backuppb.LoadBackupRequest{}
+func (h *Handlers) handleRestoreBackup(c *gin.Context) (interface{}, error) {
+	json := backuppb.RestoreBackupRequest{}
 	c.BindJSON(&json)
 	// http will use async call
 	json.Async = true
-	resp, _ := h.backupContext.LoadBackup(h.backupContext.ctx, &json)
+	resp, _ := h.backupContext.RestoreBackup(h.backupContext.ctx, &json)
+	c.JSON(http.StatusOK, resp)
+	return nil, nil
+}
+
+func (h *Handlers) handleGetRestore(c *gin.Context) (interface{}, error) {
+	id, err := strconv.ParseInt(c.Query("id"), 10, 64)
+	if err != nil {
+		return nil, err
+	}
+	req := backuppb.GetRestoreStateRequest{
+		Id: id,
+	}
+	resp, _ := h.backupContext.GetRestore(h.backupContext.ctx, &req)
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }

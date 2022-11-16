@@ -235,7 +235,7 @@ func TestGetBackupUnexistBackupName(t *testing.T) {
 	assert.Equal(t, backuppb.StatusCode_Fail, backup.GetStatus().GetStatusCode())
 }
 
-func TestLoadBackup(t *testing.T) {
+func TestRestoreBackup(t *testing.T) {
 	var params paramtable.BackupParams
 	params.Init()
 	context := context.Background()
@@ -250,12 +250,12 @@ func TestLoadBackup(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, backuppb.StatusCode_Success, resp.GetStatus().GetStatusCode())
 
-	loadResp, err := backup.LoadBackup(context, &backuppb.LoadBackupRequest{
+	restoreResp, err := backup.RestoreBackup(context, &backuppb.RestoreBackupRequest{
 		BackupName:       randBackupName,
 		CollectionSuffix: "_recover",
 	})
 	assert.NoError(t, err)
-	log.Info("load backup", zap.Any("resp", loadResp))
+	log.Info("restore backup", zap.Any("resp", restoreResp))
 
 	//clean
 	backup.DeleteBackup(context, &backuppb.DeleteBackupRequest{
