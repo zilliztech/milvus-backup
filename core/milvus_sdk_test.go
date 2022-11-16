@@ -112,12 +112,12 @@ func TestBulkInsert(t *testing.T) {
 	file_names = append(file_names, "rows_1.json")
 	file_names = append(file_names, "rows_2.json")
 
-	ids, err := client.Bulkload(ctx, _COLLECTION_NAME, _PART_1, true, file_names, nil)
+	id, err := client.BulkInsert(ctx, _COLLECTION_NAME, _PART_1, file_names)
 
-	log.Info("bulk insert task ids", zap.Int64s("ids", ids))
+	log.Info("bulk insert task ids", zap.Int64("id", id))
 
 	for {
-		state, _ := client.GetBulkloadState(ctx, ids[0])
+		state, _ := client.GetBulkInsertState(ctx, id)
 		log.Info("bulk insert task state", zap.Any("state", state))
 		time.Sleep(3 * time.Second)
 	}

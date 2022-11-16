@@ -908,10 +908,6 @@ func (b BackupContext) executeRestoreTask(ctx context.Context, backupName string
 		}
 
 		// bulk insert
-		// todo ts
-		options := make(map[string]string)
-		options["end_ts"] = fmt.Sprint(task.GetCollBackup().BackupTimestamp)
-		options["backup"] = "true"
 		files, err := b.getBackupPartitionPaths(ctx, backupName, partitionBackup)
 		if err != nil {
 			log.Error("fail to get partition backup binlog files",
@@ -925,7 +921,7 @@ func (b BackupContext) executeRestoreTask(ctx context.Context, backupName string
 			zap.String("collection", targetCollectionName),
 			zap.String("partition", partitionBackup.GetPartitionName()),
 			zap.Strings("files", files))
-		err = b.executeBulkInsert(ctx, targetCollectionName, partitionBackup.GetPartitionName(), files, options)
+		err = b.executeBulkInsert(ctx, targetCollectionName, partitionBackup.GetPartitionName(), files, int64(task.GetCollBackup().BackupTimestamp))
 		if err != nil {
 			log.Error("fail to bulk insert to partition",
 				zap.Error(err),
@@ -939,8 +935,8 @@ func (b BackupContext) executeRestoreTask(ctx context.Context, backupName string
 	return nil
 }
 
-func (b BackupContext) executeBulkInsert(ctx context.Context, coll string, partition string, files []string, options map[string]string) error {
-	taskIds, err := b.milvusClient.Bulkload(ctx, coll, partition, BACKUP_ROW_BASED, files, options)
+func (b BackupContext) executeBulkInsert(ctx context.Context, coll string, partition string, files []string, endTime int64) error {
+	taskId, err := b.milvusClient.BulkInsert(ctx, coll, partition, files, gomilvus.IsBackup(), gomilvus.WithEndTs(endTime))
 	if err != nil {
 		log.Error("fail to bulk insert",
 			zap.Error(err),
@@ -949,16 +945,14 @@ func (b BackupContext) executeBulkInsert(ctx context.Context, coll string, parti
 			zap.Strings("files", files))
 		return err
 	}
-	for _, taskId := range taskIds {
-		loadErr := b.watchBulkInsertState(ctx, taskId, BULKINSERT_TIMEOUT, BULKINSERT_SLEEP_INTERVAL)
-		if loadErr != nil {
-			log.Error("fail or timeout to bulk insert",
-				zap.Error(err),
-				zap.Int64("taskId", taskId),
-				zap.String("targetCollectionName", coll),
-				zap.String("partitionName", partition))
-			return err
-		}
+	err = b.watchBulkInsertState(ctx, taskId, BULKINSERT_TIMEOUT, BULKINSERT_SLEEP_INTERVAL)
+	if err != nil {
+		log.Error("fail or timeout to bulk insert",
+			zap.Error(err),
+			zap.Int64("taskId", taskId),
+			zap.String("targetCollectionName", coll),
+			zap.String("partitionName", partition))
+		return err
 	}
 	return nil
 }
@@ -966,12 +960,12 @@ func (b BackupContext) executeBulkInsert(ctx context.Context, coll string, parti
 func (b BackupContext) watchBulkInsertState(ctx context.Context, taskId int64, timeout int64, sleepSeconds int) error {
 	start := time.Now().Unix()
 	for time.Now().Unix()-start < timeout {
-		importTaskState, err := b.milvusClient.GetBulkloadState(ctx, taskId)
+		importTaskState, err := b.milvusClient.GetBulkInsertState(ctx, taskId)
 		log.Debug("bulkinsert task state", zap.Int64("id", taskId), zap.Any("state", importTaskState))
 		switch importTaskState.State {
-		case entity.BulkloadFailed:
+		case entity.BulkInsertFailed:
 			return err
-		case entity.BulkloadCompleted:
+		case entity.BulkInsertCompleted:
 			return nil
 		default:
 			time.Sleep(time.Second * time.Duration(sleepSeconds))
