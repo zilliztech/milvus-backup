@@ -533,8 +533,6 @@ func (b BackupContext) doCreateBackup(ctx context.Context, request *backuppb.Cre
 		return errorResp, nil
 	}
 
-	log.Info("sleep ......")
-	time.Sleep(30 * time.Second)
 	backupInfo.BackupState.Code = backuppb.BackupTaskStateCode_BACKUP_SUCCESS
 	// 7, write meta data
 	output, _ := serialize(completeBackup)
