@@ -190,27 +190,6 @@ enum RestoreTaskStateCode {
   TIMEOUT = 4;
 }
 
-message RestoreTaskState {
-  int64 id = 1;
-  RestoreTaskStateCode code = 2;
-  string errorMessage = 3;
-  int64 start_time = 4;
-  int64 end_time = 5;
-  int32 progress = 6;
-}
-
-message RestorePartitionTask {
-  RestoreTaskState state = 1;
-  PartitionBackupInfo part_backup = 2;
-}
-
-message RestoreCollectionTask {
-  RestoreTaskState state = 1;
-  CollectionBackupInfo coll_backup = 2;
-  string target_collection_name = 3;
-  repeated RestorePartitionTask partition_restore_tasks = 4;
-}
-
 message RestoreBackupRequest {
   MsgBase base = 1;
   string backup_name = 2;
@@ -223,27 +202,43 @@ message RestoreBackupRequest {
   bool async = 6;
 }
 
+message RestorePartitionTask {
+  int64 id = 1;
+  RestoreTaskStateCode state_code = 2;
+  string errorMessage = 3;
+  int64 start_time = 4;
+  int64 end_time = 5;
+  int32 progress = 6;
+  PartitionBackupInfo part_backup = 7;
+}
+
+message RestoreCollectionTask {
+  int64 id = 1;
+  RestoreTaskStateCode state_code = 2;
+  string errorMessage = 3;
+  int64 start_time = 4;
+  int64 end_time = 5;
+  int32 progress = 6;
+  CollectionBackupInfo coll_backup = 7;
+  string target_collection_name = 8;
+  repeated RestorePartitionTask partition_restore_tasks = 9;
+}
+
+message RestoreBackupTask {
+  int64 id = 1;
+  RestoreTaskStateCode state_code = 2;
+  string errorMessage = 3;
+  int64 start_time = 4;
+  int64 end_time = 5;
+  int32 progress = 6;
+  BackupInfo backup_info = 7;
+  repeated RestoreCollectionTask collection_restore_tasks = 8;
+}
+
 message RestoreBackupResponse {
   Status status = 1;
-  RestoreTaskState state = 2;
-  BackupInfo backup_info = 3;
-  repeated RestoreCollectionTask collection_restore_tasks = 4;
+  RestoreBackupTask task = 2;
 }
-//
-//enum CopyType {
-//  Milvus2Backup = 0;
-//  Backup2Milvus = 1;
-//}
-//
-//message CopyBackupRequest {
-//  MsgBase base = 1;
-//  string backup_name = 2;
-//  CopyType copy_type = 3;
-//}
-//
-//message CopyBackupResponse {
-//  Status status = 1;
-//}
 
 message GetRestoreStateRequest {
   MsgBase base = 1;
