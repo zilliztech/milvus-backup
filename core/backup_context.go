@@ -21,7 +21,6 @@ import (
 )
 
 const (
-	BACKUP_ROW_BASED          = false // bulkinsert backup should be columned based
 	BULKINSERT_TIMEOUT        = 10 * 60
 	BULKINSERT_SLEEP_INTERVAL = 3
 	BACKUP_NAME               = "BACKUP_NAME"
@@ -55,6 +54,8 @@ type BackupContext struct {
 
 	backupNameIdDict map[string]int64
 	backupCache      map[int64]*backuppb.BackupInfo
+
+	restoreTasks map[int64]*backuppb.RestoreBackupTask
 }
 
 func CreateMilvusClient(ctx context.Context, params paramtable.BackupParams) (gomilvus.Client, error) {
@@ -123,7 +124,7 @@ func (b *BackupContext) Start() error {
 	b.idGenerator = utils.NewFlakeIdGenerator()
 	b.backupCache = make(map[int64]*backuppb.BackupInfo)
 	b.backupNameIdDict = make(map[string]int64)
-
+	b.restoreTasks = make(map[int64]*backuppb.RestoreBackupTask)
 	b.started = true
 	return nil
 }
@@ -708,9 +709,6 @@ func (b BackupContext) DeleteBackup(ctx context.Context, request *backuppb.Delet
 }
 
 func (b BackupContext) RestoreBackup(ctx context.Context, request *backuppb.RestoreBackupRequest) (*backuppb.RestoreBackupResponse, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	resp := &backuppb.RestoreBackupResponse{
 		Status: &backuppb.Status{
 			StatusCode: backuppb.StatusCode_Fail,
@@ -750,8 +748,6 @@ func (b BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Rest
 	}
 
 	backup := getResp.GetBackupInfo()
-	resp.BackupInfo = backup
-	log.Info("successfully get the backup to restore", zap.String("backupName", backup.GetName()))
 
 	id, err := b.idGenerator.NextId()
 	if err != nil {
@@ -759,28 +755,49 @@ func (b BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Rest
 		return resp, nil
 	}
 
+	task := &backuppb.RestoreBackupTask{
+		Id:         id,
+		StateCode:  backuppb.RestoreTaskStateCode_INITIAL,
+		StartTime:  time.Now().Unix(),
+		Progress:   0,
+		BackupInfo: backup,
+	}
+
 	if request.Async {
-		resp := &backuppb.RestoreBackupResponse{
+		go b.executeRestoreBackupTask(ctx, request, task)
+		asyncResp := &backuppb.RestoreBackupResponse{
 			Status: &backuppb.Status{
 				StatusCode: backuppb.StatusCode_Success,
 			},
-			BackupInfo: backup,
+			Task: task,
 		}
-		go b.doRestoreBackup(ctx, request, backup, id)
-		return resp, nil
+		return asyncResp, nil
 	} else {
-		return b.doRestoreBackup(ctx, request, backup, id)
+		endTask, err := b.executeRestoreBackupTask(ctx, request, task)
+		resp.Task = endTask
+		if err != nil {
+			resp.Status.Reason = err.Error()
+		}
+		resp.Status.StatusCode = backuppb.StatusCode_Success
+		return resp, nil
 	}
-
 }
 
 // wip
-func (b BackupContext) doRestoreBackup(ctx context.Context, request *backuppb.RestoreBackupRequest, backup *backuppb.BackupInfo, id int64) (*backuppb.RestoreBackupResponse, error) {
-	resp := &backuppb.RestoreBackupResponse{
-		Status: &backuppb.Status{
-			StatusCode: backuppb.StatusCode_Fail,
-		},
-	}
+func (b BackupContext) executeRestoreBackupTask(ctx context.Context, request *backuppb.RestoreBackupRequest, task *backuppb.RestoreBackupTask) (*backuppb.RestoreBackupTask, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	backup := task.GetBackupInfo()
+	id := task.GetId()
+	b.restoreTasks[id] = task
+
+	log.With(zap.Int64("id", id),
+		zap.String("backup_name", backup.GetName()))
+	//updateRestoreTaskFunc := func(id int64, task *backuppb.RestoreBackupTask) {
+	//	b.restoreTasks[id] = task
+	//}
+	//defer updateRestoreTaskFunc(id, task)
 
 	// 2, initial restoreCollectionTasks
 	toRestoreCollectionBackups := make([]*backuppb.CollectionBackupInfo, 0)
@@ -797,13 +814,13 @@ func (b BackupContext) doRestoreBackup(ctx context.Context, request *backuppb.Re
 			}
 		}
 	}
-	log.Info("Collections to restore", zap.Int("totalNum", len(toRestoreCollectionBackups)))
+	log.Info("Collections to restore", zap.Int("collection_num", len(toRestoreCollectionBackups)))
 
 	restoreCollectionTasks := make([]*backuppb.RestoreCollectionTask, 0)
 	for _, restoreCollection := range toRestoreCollectionBackups {
 		backupCollectionName := restoreCollection.GetSchema().GetName()
 		var targetCollectionName string
-		// rename collection, rename map has higher poriority then suffix
+		// rename collection, rename map has higher priority then suffix
 		if len(request.GetCollectionRenames()) > 0 && request.GetCollectionRenames()[backupCollectionName] != "" {
 			targetCollectionName = request.GetCollectionRenames()[backupCollectionName]
 		} else if request.GetCollectionSuffix() != "" {
@@ -814,49 +831,54 @@ func (b BackupContext) doRestoreBackup(ctx context.Context, request *backuppb.Re
 
 		exist, err := b.milvusClient.HasCollection(ctx, targetCollectionName)
 		if err != nil {
-			log.Error("fail to check whether the collection is exist", zap.Error(err), zap.String("collection_name", targetCollectionName))
-			resp.Status.Reason = err.Error()
-			return resp, nil
+			errorMsg := fmt.Sprintf("fail to check whether the collection is exist, collection_name: %s, err: %s", targetCollectionName, err)
+			log.Error(errorMsg)
+			return task, errors.New(errorMsg)
 		}
 		if exist {
-			log.Error("The collection to restore already exists",
-				zap.String("backupCollectName", backupCollectionName),
-				zap.String("targetCollectionName", targetCollectionName))
-			resp.Status.Reason = fmt.Sprintf("restore target collection already exists in the cluster: %s", targetCollectionName)
-			return resp, nil
+			errorMsg := fmt.Sprintf("The collection to restore already exists, backupCollectName: %s, targetCollectionName: %s", backupCollectionName, targetCollectionName)
+			log.Error(errorMsg)
+			return task, errors.New(errorMsg)
 		}
 
-		task := &backuppb.RestoreCollectionTask{
-			State: &backuppb.RestoreTaskState{
-				Code: backuppb.RestoreTaskStateCode_INITIAL,
-			},
+		id, err := b.idGenerator.NextId()
+		if err != nil {
+			log.Error("Fail in generate id", zap.Error(err))
+			return task, err
+		}
+
+		restoreCollectionTask := &backuppb.RestoreCollectionTask{
+			Id:                    id,
+			StateCode:             backuppb.RestoreTaskStateCode_INITIAL,
+			StartTime:             time.Now().Unix(),
 			CollBackup:            restoreCollection,
 			TargetCollectionName:  targetCollectionName,
 			PartitionRestoreTasks: []*backuppb.RestorePartitionTask{},
 		}
-		restoreCollectionTasks = append(restoreCollectionTasks, task)
+		restoreCollectionTasks = append(restoreCollectionTasks, restoreCollectionTask)
+		task.CollectionRestoreTasks = restoreCollectionTasks
 	}
-	resp.CollectionRestoreTasks = restoreCollectionTasks
 
-	// 3, execute restore restoreCollectionTasks
-	for _, task := range restoreCollectionTasks {
-		err := b.executeRestoreTask(ctx, backup.GetName(), task)
+	// 3, execute restoreCollectionTasks
+	for _, restoreCollectionTask := range restoreCollectionTasks {
+		_, err := b.executeRestoreCollectionTask(ctx, backup.GetName(), restoreCollectionTask)
 		if err != nil {
-			task.State.ErrorMessage = err.Error()
-			task.State.Code = backuppb.RestoreTaskStateCode_FAIL
-			resp.Status.Reason = err.Error()
-			return resp, nil
+			log.Error("executeRestoreCollectionTask failed",
+				zap.String("TargetCollectionName", restoreCollectionTask.GetTargetCollectionName()),
+				zap.Error(err))
+			return task, err
 		}
-		task.State.Code = backuppb.RestoreTaskStateCode_SUCCESS
+		restoreCollectionTask.StateCode = backuppb.RestoreTaskStateCode_SUCCESS
 	}
 
-	resp.Status.StatusCode = backuppb.StatusCode_Success
-	return resp, nil
+	task.StateCode = backuppb.RestoreTaskStateCode_SUCCESS
+	task.EndTime = time.Now().Unix()
+	return task, nil
 }
 
-func (b BackupContext) executeRestoreTask(ctx context.Context, backupName string, task *backuppb.RestoreCollectionTask) error {
+func (b BackupContext) executeRestoreCollectionTask(ctx context.Context, backupName string, task *backuppb.RestoreCollectionTask) (*backuppb.RestoreCollectionTask, error) {
 	targetCollectionName := task.GetTargetCollectionName()
-	task.State.Code = backuppb.RestoreTaskStateCode_EXECUTING
+	task.StateCode = backuppb.RestoreTaskStateCode_EXECUTING
 	log.With(zap.String("backupName", backupName))
 	// create collection
 	fields := make([]*entity.Field, 0)
@@ -887,21 +909,24 @@ func (b BackupContext) executeRestoreTask(ctx context.Context, backupName string
 		gomilvus.WithConsistencyLevel(entity.ConsistencyLevel(task.GetCollBackup().GetConsistencyLevel())))
 
 	if err != nil {
-		log.Error("fail to create collection", zap.Error(err), zap.String("targetCollectionName", targetCollectionName))
-		return err
+		errorMsg := fmt.Sprintf("fail to create collection, targetCollectionName: %s err: %s", targetCollectionName, err)
+		log.Error(errorMsg)
+		task.StateCode = backuppb.RestoreTaskStateCode_FAIL
+		task.ErrorMessage = errorMsg
+		return task, err
 	}
 
 	for _, partitionBackup := range task.GetCollBackup().GetPartitionBackups() {
 		exist, err := b.milvusClient.HasPartition(ctx, targetCollectionName, partitionBackup.GetPartitionName())
 		if err != nil {
 			log.Error("fail to check has partition", zap.Error(err))
-			return err
+			return task, err
 		}
 		if !exist {
 			err = b.milvusClient.CreatePartition(ctx, targetCollectionName, partitionBackup.GetPartitionName())
 			if err != nil {
 				log.Error("fail to create partition", zap.Error(err))
-				return err
+				return task, err
 			}
 		}
 
@@ -913,7 +938,7 @@ func (b BackupContext) executeRestoreTask(ctx context.Context, backupName string
 				zap.String("backupCollectionName", task.GetCollBackup().GetCollectionName()),
 				zap.String("targetCollectionName", targetCollectionName),
 				zap.String("partition", partitionBackup.GetPartitionName()))
-			return err
+			return task, err
 		}
 		log.Debug("execute bulk insert",
 			zap.String("collection", targetCollectionName),
@@ -926,11 +951,11 @@ func (b BackupContext) executeRestoreTask(ctx context.Context, backupName string
 				zap.String("backupCollectionName", task.GetCollBackup().GetCollectionName()),
 				zap.String("targetCollectionName", targetCollectionName),
 				zap.String("partition", partitionBackup.GetPartitionName()))
-			return err
+			return task, err
 		}
 	}
 
-	return nil
+	return task, err
 }
 
 func (b BackupContext) executeBulkInsert(ctx context.Context, coll string, partition string, files []string, endTime int64) error {
@@ -1121,16 +1146,34 @@ func (b BackupContext) readSegmentInfo(ctx context.Context, collecitonID int64, 
 }
 
 func (b *BackupContext) GetRestore(ctx context.Context, request *backuppb.GetRestoreStateRequest) (*backuppb.RestoreBackupResponse, error) {
-	//TODO implement me
-	panic("implement me")
-}
+	resp := &backuppb.RestoreBackupResponse{
+		Status: &backuppb.Status{
+			StatusCode: backuppb.StatusCode_Fail,
+		},
+	}
 
-//func (b *BackupContext) CopyBackup(ctx context.Context, request *backuppb.CopyBackupRequest) (*backuppb.CopyBackupResponse, error) {
-//	b.storageClient.Copy(ctx)
-//	backupPath := BackupDirPath(b.backupRootPath, request.GetBackupName())
-//	milvusBackupPath := BackupDirPath(BACKUP_PREFIX, request.GetBackupName())
-//	if request.GetCopyType() == backuppb.CopyType_Backup2Milvus {
-//
-//	}
-//
-//}
+	if !b.started {
+		err := b.Start()
+		if err != nil {
+			resp.Status.Reason = err.Error()
+			return resp, nil
+		}
+	}
+
+	if request.GetId() == 0 {
+		resp.Status.Reason = "empty restore id"
+		return resp, nil
+	}
+
+	if value, ok := b.restoreTasks[request.GetId()]; ok {
+		return &backuppb.RestoreBackupResponse{
+			Status: &backuppb.Status{
+				StatusCode: backuppb.StatusCode_Success,
+			},
+			Task: value,
+		}, nil
+	} else {
+		resp.Status.Reason = "restore id not exist in context"
+		return resp, nil
+	}
+}

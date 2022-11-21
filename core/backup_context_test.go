@@ -3,12 +3,11 @@ package core
 import (
 	"context"
 	"fmt"
-	"math/rand"
-	"testing"
-
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"math/rand"
+	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/zap"
