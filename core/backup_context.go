@@ -626,6 +626,7 @@ func (b BackupContext) ListBackups(ctx context.Context, request *backuppb.ListBa
 	}
 
 	log.Info("List Backups' path", zap.Strings("backup_paths", backupPaths))
+	log.Debug("List Backups' path", zap.Strings("backup_paths", backupPaths))
 	backupInfos := make([]*backuppb.BackupInfo, 0)
 	failBackups := make([]string, 0)
 	for _, backupPath := range backupPaths {

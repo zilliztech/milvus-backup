@@ -85,6 +85,8 @@ func (gp *BaseTable) Init() {
 	gp.loadFromYaml(defaultYaml)
 	gp.tryLoadFromEnv()
 	gp.InitLogCfg()
+	gp.SetLogConfig()
+	gp.SetLogger()
 }
 
 // GetConfigDir returns the config directory
@@ -327,6 +329,8 @@ func (gp *BaseTable) InitLogCfg() {
 	gp.Log.Format = format
 	level := gp.LoadWithDefault("log.level", "debug")
 	gp.Log.Level = level
+	gp.Log.Console = gp.ParseBool("log.console", false)
+	gp.Log.File.Filename = gp.LoadWithDefault("log.file.rootPath", "backup.log")
 	gp.Log.File.MaxSize = gp.ParseIntWithDefault("log.file.maxSize", 300)
 	gp.Log.File.MaxBackups = gp.ParseIntWithDefault("log.file.maxBackups", 20)
 	gp.Log.File.MaxDays = gp.ParseIntWithDefault("log.file.maxAge", 10)
@@ -347,18 +351,14 @@ func (gp *BaseTable) SetLogConfig() {
 	}
 }
 
-// SetLogger sets the logger file by given id
-func (gp *BaseTable) SetLogger(id UniqueID) {
+// SetLogger
+func (gp *BaseTable) SetLogger() {
 	rootPath, err := gp.Load("log.file.rootPath")
 	if err != nil {
 		panic(err)
 	}
 	if rootPath != "" {
-		if id < 0 {
-			gp.Log.File.Filename = path.Join(rootPath, gp.RoleName+".log")
-		} else {
-			gp.Log.File.Filename = path.Join(rootPath, gp.RoleName+"-"+strconv.FormatInt(id, 10)+".log")
-		}
+		gp.Log.File.Filename = rootPath
 	} else {
 		gp.Log.File.Filename = ""
 	}
