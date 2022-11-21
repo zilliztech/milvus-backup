@@ -1,3 +1,9 @@
+# Configures the system log output.
+log:
+  level: info # Only supports debug, info, warn, error, panic, or fatal. Default 'info'.
+  console: false
+  file:
+    rootPath: "logs/backup.log"
 
 # milvus proxy address, compatible to milvus.yaml
 milvus:
@@ -19,18 +25,8 @@ minio:
   useSSL: false # Access to MinIO/S3 with SSL
   bucketName: "a-bucket" # Bucket name in MinIO/S3
   rootPath: files # The root path where the message is stored in MinIO/S3
-  # Whether to use IAM role to access S3/GCS instead of access/secret keys
-  # For more infomation, refer to
-  # aws: https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles_use.html
-  # gcp: https://cloud.google.com/storage/docs/access-control/iam
   useIAM: false
-  # Cloud Provider of S3. Supports: "aws", "gcp".
-  # You can use "aws" for other cloud provider supports S3 API with signature v4, e.g.: minio
-  # You can use "gcp" for other cloud provider supports S3 API with signature v2
-  # When `useIAM` enabled, only "aws" & "gcp" is supported for now
   cloudProvider: "aws"
-  # Custom endpoint for fetch IAM role credentials.
-  # Leave it empty if you want to use AWS default endpoint
   iamEndpoint: ""
 
   backupBucketName: "a-bucket"

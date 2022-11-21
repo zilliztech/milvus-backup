@@ -59,21 +59,23 @@ func init() {
 
 // InitLogger initializes a zap logger.
 func InitLogger(cfg *Config, opts ...zap.Option) (*zap.Logger, *ZapProperties, error) {
-	var output zapcore.WriteSyncer
+	outputs := make([]zapcore.WriteSyncer, 0)
 	if len(cfg.File.Filename) > 0 {
 		lg, err := initFileLog(&cfg.File)
 		if err != nil {
 			return nil, nil, err
 		}
-		output = zapcore.AddSync(lg)
-	} else {
+		outputs = append(outputs, zapcore.AddSync(lg))
+	}
+	if cfg.Console {
 		stdOut, _, err := zap.Open([]string{"stdout"}...)
 		if err != nil {
 			return nil, nil, err
 		}
-		output = stdOut
+		outputs = append(outputs, stdOut)
 	}
-	return InitLoggerWithWriteSyncer(cfg, output, opts...)
+	writer := zap.CombineWriteSyncers(outputs...)
+	return InitLoggerWithWriteSyncer(cfg, writer, opts...)
 }
 
 // InitTestLogger initializes a logger for unit tests
