@@ -24,87 +24,85 @@ entities = [
 print(fmt.format("start connecting to Milvus"))
 connections.connect("default", host="localhost", port="19530")
 
-recover_collection_name = "hello_milvus_recover"
+recover_collections = ["hello_milvus_recover", "hello_milvus2_recover"]
 
-has = utility.has_collection(recover_collection_name)
-print(f"Does collection {recover_collection_name} exist in Milvus: {has}")
-hello_milvus_recover = Collection(recover_collection_name)
-hello_milvus_recover.flush()
+for recover_collection_name in recover_collections:
+    has = utility.has_collection(recover_collection_name)
+    print(f"Does collection {recover_collection_name} exist in Milvus: {has}")
+    recover_collection = Collection(recover_collection_name)
+    recover_collection.flush()
 
-print(f"Number of entities in Milvus: {hello_milvus_recover.num_entities}")  # check the num_entites
+    print(f"Number of entities in Milvus: {recover_collection_name} : {recover_collection.num_entities}")  # check the num_entites
 
-################################################################################
-# 4. create index
-# We are going to create an IVF_FLAT index for hello_milvus_recover collection.
-# create_index() can only be applied to `FloatVector` and `BinaryVector` fields.
-print(fmt.format("Start Creating index IVF_FLAT"))
-index = {
-    "index_type": "IVF_FLAT",
-    "metric_type": "L2",
-    "params": {"nlist": 128},
-}
+    ################################################################################
+    # 4. create index
+    # We are going to create an IVF_FLAT index for hello_milvus_recover collection.
+    # create_index() can only be applied to `FloatVector` and `BinaryVector` fields.
+    print(fmt.format("Start Creating index IVF_FLAT"))
+    index = {
+        "index_type": "IVF_FLAT",
+        "metric_type": "L2",
+        "params": {"nlist": 128},
+    }
 
-hello_milvus_recover.create_index("embeddings", index)
+    recover_collection.create_index("embeddings", index)
 
-################################################################################
-# 5. search, query, and hybrid search
-# After data were inserted into Milvus and indexed, you can perform:
-# - search based on vector similarity
-# - query based on scalar filtering(boolean, int, etc.)
-# - hybrid search based on vector similarity and scalar filtering.
-#
+    ################################################################################
+    # 5. search, query, and hybrid search
+    # After data were inserted into Milvus and indexed, you can perform:
+    # - search based on vector similarity
+    # - query based on scalar filtering(boolean, int, etc.)
+    # - hybrid search based on vector similarity and scalar filtering.
+    #
 
-# Before conducting a search or a query, you need to load the data in `hello_milvus` into memory.
-print(fmt.format("Start loading"))
-hello_milvus_recover.load()
+    # Before conducting a search or a query, you need to load the data in `hello_milvus` into memory.
+    print(fmt.format("Start loading"))
+    recover_collection.load()
 
-# -----------------------------------------------------------------------------
-# search based on vector similarity
-print(fmt.format("Start searching based on vector similarity"))
-vectors_to_search = entities[-1][-2:]
-search_params = {
-    "metric_type": "L2",
-    "params": {"nprobe": 10},
-}
+    # -----------------------------------------------------------------------------
+    # search based on vector similarity
+    print(fmt.format("Start searching based on vector similarity"))
+    vectors_to_search = entities[-1][-2:]
+    search_params = {
+        "metric_type": "L2",
+        "params": {"nprobe": 10},
+    }
 
-start_time = time.time()
-result = hello_milvus_recover.search(vectors_to_search, "embeddings", search_params, limit=3, output_fields=["random"])
-end_time = time.time()
+    start_time = time.time()
+    result = recover_collection.search(vectors_to_search, "embeddings", search_params, limit=3, output_fields=["random"])
+    end_time = time.time()
 
-for hits in result:
-    for hit in hits:
-        print(f"hit: {hit}, random field: {hit.entity.get('random')}")
-print(search_latency_fmt.format(end_time - start_time))
+    for hits in result:
+        for hit in hits:
+            print(f"hit: {hit}, random field: {hit.entity.get('random')}")
+    print(search_latency_fmt.format(end_time - start_time))
 
-# -----------------------------------------------------------------------------
-# query based on scalar filtering(boolean, int, etc.)
-print(fmt.format("Start querying with `random > 0.5`"))
+    # -----------------------------------------------------------------------------
+    # query based on scalar filtering(boolean, int, etc.)
+    print(fmt.format("Start querying with `random > 0.5`"))
 
-start_time = time.time()
-result = hello_milvus_recover.query(expr="random > 0.5", output_fields=["random", "embeddings"])
-end_time = time.time()
+    start_time = time.time()
+    result = recover_collection.query(expr="random > 0.5", output_fields=["random", "embeddings"])
+    end_time = time.time()
 
-print(f"query result:\n-{result[0]}")
-print(search_latency_fmt.format(end_time - start_time))
+    print(f"query result:\n-{result[0]}")
+    print(search_latency_fmt.format(end_time - start_time))
 
-# -----------------------------------------------------------------------------
-# hybrid search
-print(fmt.format("Start hybrid searching with `random > 0.5`"))
+    # -----------------------------------------------------------------------------
+    # hybrid search
+    print(fmt.format("Start hybrid searching with `random > 0.5`"))
 
-start_time = time.time()
-result = hello_milvus_recover.search(vectors_to_search, "embeddings", search_params, limit=3, expr="random > 0.5", output_fields=["random"])
-end_time = time.time()
+    start_time = time.time()
+    result = recover_collection.search(vectors_to_search, "embeddings", search_params, limit=3, expr="random > 0.5", output_fields=["random"])
+    end_time = time.time()
 
-for hits in result:
-    for hit in hits:
-        print(f"hit: {hit}, random field: {hit.entity.get('random')}")
-print(search_latency_fmt.format(end_time - start_time))
+    for hits in result:
+        for hit in hits:
+            print(f"hit: {hit}, random field: {hit.entity.get('random')}")
+    print(search_latency_fmt.format(end_time - start_time))
 
-###############################################################################
-# 7. drop collection
-# Finally, drop the hello_milvus, hello_milvus_recover collection
-print(fmt.format("Drop collection `hello_milvus`"))
-utility.drop_collection("hello_milvus")
-
-print(fmt.format(f"Drop collection {recover_collection_name}"))
-utility.drop_collection(recover_collection_name)
+    ###############################################################################
+    # 7. drop collection
+    # Finally, drop the hello_milvus, hello_milvus_recover collection
+    print(fmt.format(f"Drop collection {recover_collection_name}"))
+    utility.drop_collection(recover_collection_name)

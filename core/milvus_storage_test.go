@@ -16,6 +16,8 @@ import (
 	"go.uber.org/zap"
 )
 
+var Params paramtable.BackupParams
+
 func newMinioChunkManager(ctx context.Context, bucketName string) (*storage.MinioChunkManager, error) {
 	endPoint := getMinioAddress()
 	accessKeyID, _ := Params.Load("minio.accessKeyID")

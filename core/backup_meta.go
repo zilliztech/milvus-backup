@@ -78,7 +78,12 @@ func treeToLevel(backup *backuppb.BackupInfo) (LeveledBackupInfo, error) {
 		Infos: segments,
 	}
 	backupLevel := &backuppb.BackupInfo{
-		BackupState:     backup.GetBackupState(),
+		Id:              backup.GetId(),
+		StateCode:       backup.GetStateCode(),
+		ErrorMessage:    backup.GetErrorMessage(),
+		StartTime:       backup.GetStartTime(),
+		EndTime:         backup.GetEndTime(),
+		Progress:        backup.GetProgress(),
 		Name:            backup.GetName(),
 		BackupTimestamp: backup.GetBackupTimestamp(),
 	}
@@ -124,7 +129,12 @@ func serialize(backup *backuppb.BackupInfo) (*BackupMetaBytes, error) {
 // levelToTree rebuild complete tree structure BackupInfo from backup-collection-partition-segment 4-level structure
 func levelToTree(level *LeveledBackupInfo) (*backuppb.BackupInfo, error) {
 	backupInfo := &backuppb.BackupInfo{
-		BackupState:     level.backupLevel.GetBackupState(),
+		Id:              level.backupLevel.GetId(),
+		StateCode:       level.backupLevel.GetStateCode(),
+		ErrorMessage:    level.backupLevel.GetErrorMessage(),
+		StartTime:       level.backupLevel.GetStartTime(),
+		EndTime:         level.backupLevel.GetEndTime(),
+		Progress:        level.backupLevel.GetProgress(),
 		Name:            level.backupLevel.GetName(),
 		BackupTimestamp: level.backupLevel.GetBackupTimestamp(),
 	}

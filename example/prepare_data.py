@@ -54,7 +54,7 @@ fields = [
     FieldSchema(name="embeddings", dtype=DataType.FLOAT_VECTOR, dim=dim)
 ]
 
-schema = CollectionSchema(fields, "hello_milvus is the simplest demo to introduce the APIs")
+schema = CollectionSchema(fields, "hello_milvus")
 
 print(fmt.format("Create collection `hello_milvus`"))
 hello_milvus = Collection("hello_milvus", schema, consistency_level="Strong")
@@ -79,5 +79,17 @@ entities = [
 
 insert_result = hello_milvus.insert(entities)
 hello_milvus.flush()
-print(f"Number of entities in Milvus: {hello_milvus.num_entities}")  # check the num_entites
+print(f"Number of entities in hello_milvus: {hello_milvus.num_entities}")  # check the num_entites
+
+# create another collection
+
+print(fmt.format("Create collection `hello_milvus2`"))
+hello_milvus2 = Collection("hello_milvus2", schema, consistency_level="Strong")
+
+insert_result2 = hello_milvus2.insert(entities)
+hello_milvus2.flush()
+insert_result2 = hello_milvus2.insert(entities)
+hello_milvus2.flush()
+
+print(f"Number of entities in hello_milvus2: {hello_milvus2.num_entities}")  # check the num_entites
 
