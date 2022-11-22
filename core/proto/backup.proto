@@ -54,16 +54,20 @@ message Status {
  * lite version of Collection info
  */
 message CollectionBackupInfo {
-  BackupTaskState backup_state = 1;
-  int64 collection_id = 2;
-  string db_name = 3;
-  string collection_name = 4;
-  CollectionSchema schema = 5;
-  int32 shards_num = 6;
-  ConsistencyLevel consistency_level = 7;
-  // array of partition backup
-  repeated PartitionBackupInfo partition_backups = 8;
-  uint64 backup_timestamp = 9;
+  int64 id = 1;
+  BackupTaskStateCode state_code = 2;
+  string errorMessage = 3;
+  int64 start_time = 4;
+  int64 end_time = 5;
+  int32 progress = 6;
+  int64 collection_id = 7;
+  string db_name = 8;
+  string collection_name = 9;
+  CollectionSchema schema = 10;
+  int32 shards_num = 11;
+  ConsistencyLevel consistency_level = 12;
+  repeated PartitionBackupInfo partition_backups = 13;
+  uint64 backup_timestamp = 14;
 }
 
 message PartitionBackupInfo {
@@ -91,12 +95,17 @@ message SegmentBackupInfo {
  * root of backup
  */
 message BackupInfo {
-  BackupTaskState backup_state = 1;
-  string name = 2;
+  int64 id = 1;
+  BackupTaskStateCode state_code = 2;
+  string errorMessage = 3;
+  int64 start_time = 4;
+  int64 end_time = 5;
+  int32 progress = 6;
+  string name = 7;
   // backup timestamp
-  uint64 backup_timestamp = 3;
+  uint64 backup_timestamp = 8;
   // array of collection backup
-  repeated CollectionBackupInfo collection_backups = 4;
+  repeated CollectionBackupInfo collection_backups = 9;
 }
 
 /**
@@ -171,15 +180,6 @@ enum BackupTaskStateCode {
   BACKUP_SUCCESS = 2;
   BACKUP_FAIL = 3;
   BACKUP_TIMEOUT = 4;
-}
-
-message BackupTaskState {
-  int64 id = 1;
-  BackupTaskStateCode code = 2;
-  string errorMessage = 3;
-  int64 start_time = 4;
-  int64 end_time = 5;
-  int32 progress = 6;
 }
 
 enum RestoreTaskStateCode {
