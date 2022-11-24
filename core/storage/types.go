@@ -4,7 +4,6 @@ import (
 	"context"
 	"golang.org/x/exp/mmap"
 	"io"
-	"time"
 )
 
 type FileReader interface {
@@ -34,7 +33,7 @@ type ChunkManager interface {
 	Reader(ctx context.Context, bucketName string, filePath string) (FileReader, error)
 	// MultiRead reads @filePath and returns content.
 	MultiRead(ctx context.Context, bucketName string, filePaths []string) ([][]byte, error)
-	ListWithPrefix(ctx context.Context, bucketName string, prefix string, recursive bool) ([]string, []time.Time, error)
+	ListWithPrefix(ctx context.Context, bucketName string, prefix string, recursive bool) ([]string, []int64, error)
 	// ReadWithPrefix reads files with same @prefix and returns contents.
 	ReadWithPrefix(ctx context.Context, bucketName string, prefix string) ([]string, [][]byte, error)
 	Mmap(ctx context.Context, bucketName string, filePath string) (*mmap.ReaderAt, error)

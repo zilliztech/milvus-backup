@@ -27,15 +27,12 @@ var listBackupCmd = &cobra.Command{
 		context := context.Background()
 		backupContext := core.CreateBackupContext(context, params)
 
-		backups, err := backupContext.ListBackups(context, &backuppb.ListBackupsRequest{
+		backups := backupContext.ListBackups(context, &backuppb.ListBackupsRequest{
 			CollectionName: collectionName,
 		})
-		if err != nil {
-			fmt.Errorf("fail to list backup, %s", err.Error())
-		}
 
 		fmt.Println(">> Backups:")
-		for _, backup := range backups.GetBackupInfos() {
+		for _, backup := range backups.GetData() {
 			fmt.Println(backup.GetName())
 		}
 	},

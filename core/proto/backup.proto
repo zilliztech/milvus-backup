@@ -16,45 +16,22 @@ service MilvusBackupService {
   rpc RestoreBackup(RestoreBackupRequest) returns (RestoreBackupResponse) {}
   // Get restore state by given id
   rpc GetRestore(GetRestoreStateRequest) returns (RestoreBackupResponse) {}
-
-  // Copy backup between buckets
-  // temporary interface since currently milvus BulkInsert doesn't support read data from other bucket
-  // rpc CopyBackup(CopyBackupRequest) returns (CopyBackupResponse) {}
  }
 
-enum MsgType {
-  Undefined = 0;
-  CreateBackup = 100;
-  GetBackup = 101;
-  ListBackups = 102;
-  DeleteBackup = 103;
-  RestoreBackup = 104;
-  GetRestore = 105;
-}
-
-message MsgBase {
-  MsgType msg_type = 1;
-  int64  msgID = 2;
-  uint64 timestamp = 3;
-}
-
-enum StatusCode {
-  Unknown = 0;
-  Success = 1;
-  Fail = 2;
-  Timeout = 3;
-}
-
-message Status {
-  StatusCode status_code = 1;
-  string reason = 2;
+enum ResponseCode {
+  Success = 0;
+  Not_Support = 1;
+  No_Permission = 2;
+  Bad_Request = 3;
+  Parameter_Error = 400;
+  Request_Object_Not_Found = 404;
 }
 
 /**
  * lite version of Collection info
  */
 message CollectionBackupInfo {
-  int64 id = 1;
+  string id = 1;
   BackupTaskStateCode state_code = 2;
   string errorMessage = 3;
   int64 start_time = 4;
@@ -95,7 +72,7 @@ message SegmentBackupInfo {
  * root of backup
  */
 message BackupInfo {
-  int64 id = 1;
+  string id = 1;
   BackupTaskStateCode state_code = 2;
   string errorMessage = 3;
   int64 start_time = 4;
@@ -133,7 +110,7 @@ message SegmentLevelBackupInfo {
  * Create Backup in milvus
  */
 message CreateBackupRequest {
-  MsgBase base = 1;
+  string requestId = 1;
   // backup name, if not set, will generate one
   string backup_name = 2;
   // collection names to backup, empty to backup all
@@ -145,33 +122,39 @@ message CreateBackupRequest {
  * BackupInfoResponse
  */
 message BackupInfoResponse {
-  Status status = 1;
-  BackupInfo backup_info = 2;
+  string requestId = 1;
+  ResponseCode code = 2;
+  string msg = 3;
+  BackupInfo data = 4;
 }
 
 message GetBackupRequest {
-  MsgBase base = 1;
+  string requestId = 1;
   string backup_name = 2;
+  string backup_id = 3;
 }
 
 message ListBackupsRequest {
-  MsgBase base = 1;
+  string requestId = 1;
   string collection_name = 2;
 }
 
 message ListBackupsResponse {
-  Status status = 1;
-  repeated BackupInfo backup_infos = 2;
-  repeated string failBackups = 3;
+  string requestId = 1;
+  ResponseCode code = 2;
+  string msg = 3;
+  repeated BackupInfo data = 4;
 }
 
 message DeleteBackupRequest {
-  MsgBase base = 1;
+  string requestId = 1;
   string backup_name = 2;
 }
 
 message DeleteBackupResponse {
-  Status status = 1;
+  string requestId = 1;
+  ResponseCode code = 2;
+  string msg = 3;
 }
 
 enum BackupTaskStateCode {
@@ -191,7 +174,7 @@ enum RestoreTaskStateCode {
 }
 
 message RestoreBackupRequest {
-  MsgBase base = 1;
+  string requestId = 1;
   string backup_name = 2;
   repeated string collection_names = 3;
   // Support two ways to rename the collections while recover
@@ -203,7 +186,7 @@ message RestoreBackupRequest {
 }
 
 message RestorePartitionTask {
-  int64 id = 1;
+  string id = 1;
   RestoreTaskStateCode state_code = 2;
   string errorMessage = 3;
   int64 start_time = 4;
@@ -213,7 +196,7 @@ message RestorePartitionTask {
 }
 
 message RestoreCollectionTask {
-  int64 id = 1;
+  string id = 1;
   RestoreTaskStateCode state_code = 2;
   string errorMessage = 3;
   int64 start_time = 4;
@@ -225,24 +208,25 @@ message RestoreCollectionTask {
 }
 
 message RestoreBackupTask {
-  int64 id = 1;
+  string id = 1;
   RestoreTaskStateCode state_code = 2;
   string errorMessage = 3;
   int64 start_time = 4;
   int64 end_time = 5;
   int32 progress = 6;
-  BackupInfo backup_info = 7;
-  repeated RestoreCollectionTask collection_restore_tasks = 8;
+  repeated RestoreCollectionTask collection_restore_tasks = 7;
 }
 
 message RestoreBackupResponse {
-  Status status = 1;
-  RestoreBackupTask task = 2;
+  string requestId = 1;
+  ResponseCode code = 2;
+  string msg = 3;
+  RestoreBackupTask data = 4;
 }
 
 message GetRestoreStateRequest {
-  MsgBase base = 1;
-  int64 id = 2;
+  string requestId = 1;
+  string id = 2;
 }
 
 // copied from milvus data_coord.proto

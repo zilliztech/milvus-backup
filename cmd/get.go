@@ -27,14 +27,11 @@ var getBackupCmd = &cobra.Command{
 		context := context.Background()
 		backupContext := core.CreateBackupContext(context, params)
 
-		backup, err := backupContext.GetBackup(context, &backuppb.GetBackupRequest{
+		resp := backupContext.GetBackup(context, &backuppb.GetBackupRequest{
 			BackupName: getBackName,
 		})
-		if err != nil {
-			fmt.Errorf("fail to get backup, %s", err.Error())
-		}
 
-		fmt.Println(backup.GetBackupInfo().String())
+		fmt.Println(resp.GetCode(), "\n", resp.GetMsg())
 	},
 }
 

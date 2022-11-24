@@ -5,15 +5,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
-	"strings"
-	"time"
-
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/storage/gcp"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/util/errorutil"
 	"github.com/zilliztech/milvus-backup/internal/util/retry"
+	"io"
+	"strings"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -340,10 +338,10 @@ func (mcm *MinioChunkManager) RemoveWithPrefix(ctx context.Context, bucketName s
 	return nil
 }
 
-func (mcm *MinioChunkManager) ListWithPrefix(ctx context.Context, bucketName string, prefix string, recursive bool) ([]string, []time.Time, error) {
+func (mcm *MinioChunkManager) ListWithPrefix(ctx context.Context, bucketName string, prefix string, recursive bool) ([]string, []int64, error) {
 	objects := mcm.Client.ListObjects(ctx, bucketName, minio.ListObjectsOptions{Prefix: prefix, Recursive: recursive})
 	var objectsKeys []string
-	var modTimes []time.Time
+	var sizes []int64
 
 	for object := range objects {
 		if object.Err != nil {
@@ -351,9 +349,9 @@ func (mcm *MinioChunkManager) ListWithPrefix(ctx context.Context, bucketName str
 			return nil, nil, object.Err
 		}
 		objectsKeys = append(objectsKeys, object.Key)
-		modTimes = append(modTimes, object.LastModified)
+		sizes = append(sizes, object.Size)
 	}
-	return objectsKeys, modTimes, nil
+	return objectsKeys, sizes, nil
 }
 
 func (mcm *MinioChunkManager) Copy(ctx context.Context, fromBucketName string, toBucketName string, fromPath string, toPath string) error {
