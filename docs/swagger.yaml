@@ -1,0 +1,579 @@
+basePath: /api/v1
+definitions:
+  backuppb.BackupInfo:
+    properties:
+      backup_timestamp:
+        description: backup timestamp
+        type: integer
+      collection_backups:
+        description: array of collection backup
+        items:
+          $ref: '#/definitions/backuppb.CollectionBackupInfo'
+        type: array
+      end_time:
+        type: integer
+      errorMessage:
+        type: string
+      id:
+        type: string
+      name:
+        type: string
+      progress:
+        type: integer
+      start_time:
+        type: integer
+      state_code:
+        $ref: '#/definitions/backuppb.BackupTaskStateCode'
+    type: object
+  backuppb.BackupInfoResponse:
+    properties:
+      code:
+        $ref: '#/definitions/backuppb.ResponseCode'
+      data:
+        $ref: '#/definitions/backuppb.BackupInfo'
+      msg:
+        type: string
+      requestId:
+        type: string
+    type: object
+  backuppb.BackupTaskStateCode:
+    enum:
+    - 0
+    - 1
+    - 2
+    - 3
+    - 4
+    type: integer
+    x-enum-varnames:
+    - BackupTaskStateCode_BACKUP_INITIAL
+    - BackupTaskStateCode_BACKUP_EXECUTING
+    - BackupTaskStateCode_BACKUP_SUCCESS
+    - BackupTaskStateCode_BACKUP_FAIL
+    - BackupTaskStateCode_BACKUP_TIMEOUT
+  backuppb.Binlog:
+    properties:
+      entries_num:
+        type: integer
+      log_path:
+        type: string
+      log_size:
+        type: integer
+      timestamp_from:
+        type: integer
+      timestamp_to:
+        type: integer
+    type: object
+  backuppb.CollectionBackupInfo:
+    properties:
+      backup_timestamp:
+        type: integer
+      collection_id:
+        type: integer
+      collection_name:
+        type: string
+      consistency_level:
+        $ref: '#/definitions/backuppb.ConsistencyLevel'
+      db_name:
+        type: string
+      end_time:
+        type: integer
+      errorMessage:
+        type: string
+      id:
+        type: string
+      partition_backups:
+        items:
+          $ref: '#/definitions/backuppb.PartitionBackupInfo'
+        type: array
+      progress:
+        type: integer
+      schema:
+        $ref: '#/definitions/backuppb.CollectionSchema'
+      shards_num:
+        type: integer
+      start_time:
+        type: integer
+      state_code:
+        $ref: '#/definitions/backuppb.BackupTaskStateCode'
+    type: object
+  backuppb.CollectionSchema:
+    properties:
+      autoID:
+        type: boolean
+      description:
+        type: string
+      fields:
+        items:
+          $ref: '#/definitions/backuppb.FieldSchema'
+        type: array
+      name:
+        type: string
+    type: object
+  backuppb.ConsistencyLevel:
+    enum:
+    - 0
+    - 1
+    - 2
+    - 3
+    - 4
+    type: integer
+    x-enum-varnames:
+    - ConsistencyLevel_Strong
+    - ConsistencyLevel_Session
+    - ConsistencyLevel_Bounded
+    - ConsistencyLevel_Eventually
+    - ConsistencyLevel_Customized
+  backuppb.CreateBackupRequest:
+    properties:
+      async:
+        type: boolean
+      backup_name:
+        description: backup name, if not set, will generate one
+        type: string
+      collection_names:
+        description: collection names to backup, empty to backup all
+        items:
+          type: string
+        type: array
+      requestId:
+        type: string
+    type: object
+  backuppb.DataType:
+    enum:
+    - 0
+    - 1
+    - 2
+    - 3
+    - 4
+    - 5
+    - 10
+    - 11
+    - 20
+    - 21
+    - 100
+    - 101
+    type: integer
+    x-enum-varnames:
+    - DataType_None
+    - DataType_Bool
+    - DataType_Int8
+    - DataType_Int16
+    - DataType_Int32
+    - DataType_Int64
+    - DataType_Float
+    - DataType_Double
+    - DataType_String
+    - DataType_VarChar
+    - DataType_BinaryVector
+    - DataType_FloatVector
+  backuppb.DeleteBackupRequest:
+    properties:
+      backup_name:
+        type: string
+      requestId:
+        type: string
+    type: object
+  backuppb.DeleteBackupResponse:
+    properties:
+      code:
+        $ref: '#/definitions/backuppb.ResponseCode'
+      msg:
+        type: string
+      requestId:
+        type: string
+    type: object
+  backuppb.FieldBinlog:
+    properties:
+      binlogs:
+        items:
+          $ref: '#/definitions/backuppb.Binlog'
+        type: array
+      fieldID:
+        type: integer
+    type: object
+  backuppb.FieldSchema:
+    properties:
+      autoID:
+        type: boolean
+      data_type:
+        $ref: '#/definitions/backuppb.DataType'
+      description:
+        type: string
+      fieldID:
+        type: integer
+      index_params:
+        items:
+          $ref: '#/definitions/backuppb.KeyValuePair'
+        type: array
+      is_primary_key:
+        type: boolean
+      name:
+        type: string
+      state:
+        $ref: '#/definitions/backuppb.FieldState'
+      type_params:
+        items:
+          $ref: '#/definitions/backuppb.KeyValuePair'
+        type: array
+    type: object
+  backuppb.FieldState:
+    enum:
+    - 0
+    - 1
+    - 2
+    - 3
+    type: integer
+    x-enum-varnames:
+    - FieldState_FieldCreated
+    - FieldState_FieldCreating
+    - FieldState_FieldDropping
+    - FieldState_FieldDropped
+  backuppb.GetBackupRequest:
+    properties:
+      backup_id:
+        type: string
+      backup_name:
+        type: string
+      requestId:
+        type: string
+    type: object
+  backuppb.GetRestoreStateRequest:
+    properties:
+      id:
+        type: string
+      requestId:
+        type: string
+    type: object
+  backuppb.KeyValuePair:
+    properties:
+      key:
+        type: string
+      value:
+        type: string
+    type: object
+  backuppb.ListBackupsRequest:
+    properties:
+      collection_name:
+        type: string
+      requestId:
+        type: string
+    type: object
+  backuppb.ListBackupsResponse:
+    properties:
+      code:
+        $ref: '#/definitions/backuppb.ResponseCode'
+      data:
+        items:
+          $ref: '#/definitions/backuppb.BackupInfo'
+        type: array
+      msg:
+        type: string
+      requestId:
+        type: string
+    type: object
+  backuppb.PartitionBackupInfo:
+    properties:
+      collection_id:
+        type: integer
+      partition_id:
+        type: integer
+      partition_name:
+        type: string
+      segment_backups:
+        description: array of segment backup
+        items:
+          $ref: '#/definitions/backuppb.SegmentBackupInfo'
+        type: array
+    type: object
+  backuppb.ResponseCode:
+    enum:
+    - 0
+    - 1
+    - 2
+    - 3
+    - 400
+    - 404
+    type: integer
+    x-enum-varnames:
+    - ResponseCode_Success
+    - ResponseCode_Not_Support
+    - ResponseCode_No_Permission
+    - ResponseCode_Bad_Request
+    - ResponseCode_Parameter_Error
+    - ResponseCode_Request_Object_Not_Found
+  backuppb.RestoreBackupRequest:
+    properties:
+      async:
+        type: boolean
+      backup_name:
+        type: string
+      collection_names:
+        items:
+          type: string
+        type: array
+      collection_renames:
+        additionalProperties:
+          type: string
+        description: 2, give a map to rename the collections, if not given, use the
+          original name
+        type: object
+      collection_suffix:
+        description: |-
+          Support two ways to rename the collections while recover
+          1, set a suffix
+        type: string
+      requestId:
+        type: string
+    type: object
+  backuppb.RestoreBackupResponse:
+    properties:
+      code:
+        $ref: '#/definitions/backuppb.ResponseCode'
+      data:
+        $ref: '#/definitions/backuppb.RestoreBackupTask'
+      msg:
+        type: string
+      requestId:
+        type: string
+    type: object
+  backuppb.RestoreBackupTask:
+    properties:
+      collection_restore_tasks:
+        items:
+          $ref: '#/definitions/backuppb.RestoreCollectionTask'
+        type: array
+      end_time:
+        type: integer
+      errorMessage:
+        type: string
+      id:
+        type: string
+      progress:
+        type: integer
+      start_time:
+        type: integer
+      state_code:
+        $ref: '#/definitions/backuppb.RestoreTaskStateCode'
+    type: object
+  backuppb.RestoreCollectionTask:
+    properties:
+      coll_backup:
+        $ref: '#/definitions/backuppb.CollectionBackupInfo'
+      end_time:
+        type: integer
+      errorMessage:
+        type: string
+      id:
+        type: string
+      partition_restore_tasks:
+        items:
+          $ref: '#/definitions/backuppb.RestorePartitionTask'
+        type: array
+      progress:
+        type: integer
+      start_time:
+        type: integer
+      state_code:
+        $ref: '#/definitions/backuppb.RestoreTaskStateCode'
+      target_collection_name:
+        type: string
+    type: object
+  backuppb.RestorePartitionTask:
+    properties:
+      end_time:
+        type: integer
+      errorMessage:
+        type: string
+      id:
+        type: string
+      part_backup:
+        $ref: '#/definitions/backuppb.PartitionBackupInfo'
+      progress:
+        type: integer
+      start_time:
+        type: integer
+      state_code:
+        $ref: '#/definitions/backuppb.RestoreTaskStateCode'
+    type: object
+  backuppb.RestoreTaskStateCode:
+    enum:
+    - 0
+    - 1
+    - 2
+    - 3
+    - 4
+    type: integer
+    x-enum-varnames:
+    - RestoreTaskStateCode_INITIAL
+    - RestoreTaskStateCode_EXECUTING
+    - RestoreTaskStateCode_SUCCESS
+    - RestoreTaskStateCode_FAIL
+    - RestoreTaskStateCode_TIMEOUT
+  backuppb.SegmentBackupInfo:
+    properties:
+      binlogs:
+        items:
+          $ref: '#/definitions/backuppb.FieldBinlog'
+        type: array
+      collection_id:
+        type: integer
+      deltalogs:
+        items:
+          $ref: '#/definitions/backuppb.FieldBinlog'
+        type: array
+      num_of_rows:
+        type: integer
+      partition_id:
+        type: integer
+      segment_id:
+        type: integer
+      statslogs:
+        items:
+          $ref: '#/definitions/backuppb.FieldBinlog'
+        type: array
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: wayasxxx@gmail.com
+    name: wanganyang
+  description: A data backup & restore tool for Milvus
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  title: Milvus Backup Service
+  version: "1.0"
+paths:
+  /create:
+    post:
+      consumes:
+      - application/json
+      description: Create a backup with the given name and collections
+      parameters:
+      - description: CreateBackupRequest JSON
+        in: body
+        name: object
+        required: true
+        schema:
+          $ref: '#/definitions/backuppb.CreateBackupRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/backuppb.BackupInfoResponse'
+      summary: Create backup interface
+      tags:
+      - Backup
+  /delete:
+    delete:
+      consumes:
+      - application/json
+      description: Delete a backup with the given name
+      parameters:
+      - description: DeleteBackupRequest JSON
+        in: body
+        name: object
+        required: true
+        schema:
+          $ref: '#/definitions/backuppb.DeleteBackupRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/backuppb.DeleteBackupResponse'
+      summary: Delete backup interface
+      tags:
+      - Backup
+  /get_backup:
+    get:
+      consumes:
+      - application/json
+      description: Get the backup with the given name or id
+      parameters:
+      - description: GetBackupRequest JSON
+        in: body
+        name: object
+        required: true
+        schema:
+          $ref: '#/definitions/backuppb.GetBackupRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/backuppb.BackupInfoResponse'
+      summary: Get backup interface
+      tags:
+      - Backup
+  /get_restore:
+    get:
+      consumes:
+      - application/json
+      description: Get restore task state with the given id
+      parameters:
+      - description: GetRestoreStateRequest JSON
+        in: body
+        name: object
+        required: true
+        schema:
+          $ref: '#/definitions/backuppb.GetRestoreStateRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/backuppb.RestoreBackupResponse'
+      summary: Get restore interface
+      tags:
+      - Restore
+  /list:
+    get:
+      consumes:
+      - application/json
+      description: List all backups in current storage
+      parameters:
+      - description: ListBackupsRequest JSON
+        in: body
+        name: object
+        required: true
+        schema:
+          $ref: '#/definitions/backuppb.ListBackupsRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/backuppb.ListBackupsResponse'
+      summary: List Backups interface
+      tags:
+      - Backup
+  /restore:
+    post:
+      consumes:
+      - application/json
+      description: Submit a request to restore the data from backup
+      parameters:
+      - description: RestoreBackupRequest JSON
+        in: body
+        name: object
+        required: true
+        schema:
+          $ref: '#/definitions/backuppb.RestoreBackupRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/backuppb.RestoreBackupResponse'
+      summary: Restore interface
+      tags:
+      - Restore
+swagger: "2.0"

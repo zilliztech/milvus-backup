@@ -3,6 +3,8 @@ package core
 import (
 	"context"
 	"github.com/gin-gonic/gin"
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/log"
@@ -95,6 +97,7 @@ func (h *Handlers) RegisterRoutesTo(router gin.IRouter) {
 	router.DELETE(DELETE_BACKUP_API, wrapHandler(h.handleDeleteBackup))
 	router.POST(RESTORE_BACKUP_API, wrapHandler(h.handleRestoreBackup))
 	router.GET(GET_RESTORE_API, wrapHandler(h.handleGetRestore))
+	router.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 }
 
 // handlerFunc handles http request with gin context
@@ -112,16 +115,32 @@ func (h *Handlers) handleHello(c *gin.Context) (interface{}, error) {
 	return nil, nil
 }
 
+// CreateBackup Create backup interface
+// @Summary Create backup interface
+// @Description Create a backup with the given name and collections
+// @Tags Backup
+// @Accept application/json
+// @Produce application/json
+// @Param object body backuppb.CreateBackupRequest   true  "CreateBackupRequest JSON"
+// @Success 200 {object} backuppb.BackupInfoResponse
+// @Router /create [post]
 func (h *Handlers) handleCreateBackup(c *gin.Context) (interface{}, error) {
 	json := backuppb.CreateBackupRequest{}
 	c.BindJSON(&json)
-	// http will use async call
-	json.Async = true
 	resp := h.backupContext.CreateBackup(h.backupContext.ctx, &json)
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
 
+// ListBackups List Backups interface
+// @Summary List Backups interface
+// @Description List all backups in current storage
+// @Tags Backup
+// @Accept application/json
+// @Produce application/json
+// @Param object body backuppb.ListBackupsRequest   true  "ListBackupsRequest JSON"
+// @Success 200 {object} backuppb.ListBackupsResponse
+// @Router /list [get]
 func (h *Handlers) handleListBackups(c *gin.Context) (interface{}, error) {
 	req := backuppb.ListBackupsRequest{
 		CollectionName: c.Query("collection_name"),
@@ -131,6 +150,15 @@ func (h *Handlers) handleListBackups(c *gin.Context) (interface{}, error) {
 	return nil, nil
 }
 
+// RestoreBackup Get backup interface
+// @Summary Get backup interface
+// @Description Get the backup with the given name or id
+// @Tags Backup
+// @Accept application/json
+// @Produce application/json
+// @Param object body backuppb.GetBackupRequest   true  "GetBackupRequest JSON"
+// @Success 200 {object} backuppb.BackupInfoResponse
+// @Router /get_backup [get]
 func (h *Handlers) handleGetBackup(c *gin.Context) (interface{}, error) {
 	req := backuppb.GetBackupRequest{
 		BackupName: c.Query("backup_name"),
@@ -141,6 +169,15 @@ func (h *Handlers) handleGetBackup(c *gin.Context) (interface{}, error) {
 	return nil, nil
 }
 
+// DeleteBackup Delete backup interface
+// @Summary Delete backup interface
+// @Description Delete a backup with the given name
+// @Tags Backup
+// @Accept application/json
+// @Produce application/json
+// @Param object body backuppb.DeleteBackupRequest   true  "DeleteBackupRequest JSON"
+// @Success 200 {object} backuppb.DeleteBackupResponse
+// @Router /delete [delete]
 func (h *Handlers) handleDeleteBackup(c *gin.Context) (interface{}, error) {
 	req := backuppb.DeleteBackupRequest{
 		BackupName: c.Query("backup_name"),
@@ -150,16 +187,32 @@ func (h *Handlers) handleDeleteBackup(c *gin.Context) (interface{}, error) {
 	return nil, nil
 }
 
+// RestoreBackup Restore interface
+// @Summary Restore interface
+// @Description Submit a request to restore the data from backup
+// @Tags Restore
+// @Accept application/json
+// @Produce application/json
+// @Param object body backuppb.RestoreBackupRequest   true  "RestoreBackupRequest JSON"
+// @Success 200 {object} backuppb.RestoreBackupResponse
+// @Router /restore [post]
 func (h *Handlers) handleRestoreBackup(c *gin.Context) (interface{}, error) {
 	json := backuppb.RestoreBackupRequest{}
 	c.BindJSON(&json)
-	// http will use async call
-	json.Async = true
 	resp := h.backupContext.RestoreBackup(h.backupContext.ctx, &json)
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
 
+// GetRestore Get restore interface
+// @Summary Get restore interface
+// @Description Get restore task state with the given id
+// @Tags Restore
+// @Accept application/json
+// @Produce application/json
+// @Param object body backuppb.GetRestoreStateRequest   true  "GetRestoreStateRequest JSON"
+// @Success 200 {object} backuppb.RestoreBackupResponse
+// @Router /get_restore [get]
 func (h *Handlers) handleGetRestore(c *gin.Context) (interface{}, error) {
 	id := c.Query("id")
 	req := backuppb.GetRestoreStateRequest{

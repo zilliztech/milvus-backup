@@ -1,11 +1,10 @@
 # Milvus-backup
 
-Milvus-backup is a tool to backup and recover Milvus data. It can be used as a command line or an API server.
+Milvus-backup is a tool to backup and restore Milvus data. It can be used as a command line or an API server.
 
-Milvus-backup needs to visit Milvus proxy and minio cluster. Currently, Milvus-backup get these configs by reading `milvus.yaml` file. Same behaviour as Milvus.
-A default `milvus.yaml` is in `milvus-backup/configs/`. You can replace it with the config of your cluster. Both command line and REST API server need it.
+Milvus-backup needs to visit Milvus proxy and minio cluster. Related config can be edited in `configs/back.yaml`. 
 
-Milvus-backup has no large impact on Milvus. Milvus cluster can work as usual during backup. 
+Milvus-backup has no large impact on Milvus. Milvus cluster can work as usual during backup and restore. 
 
 # Interfaces
 
@@ -70,7 +69,7 @@ Delete backup by name.
 
 ## Restore
 Restore backup by name, will recreate the collections in the cluster and recover the data through bulkinsert. For more details about BulkInsert, please see:
-
+https://milvus.io/docs/v2.2.x/bulk_load.md
 BulkInserts will be done by partition. Currently we don't support concurrent BulkInserts.
 
 ## GetRestore
@@ -90,6 +89,7 @@ Will generate an executable binary `milvus-backup` in the project directory.
 
 For developers, you can also test it with IDE. `core/backup_context_test.go` contains some test demos for all main interfaces.
 Or you can test with cli.
+
 ```shell
 cd core
 go test -v -test.run TestCreateBackup
