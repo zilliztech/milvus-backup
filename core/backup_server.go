@@ -2,14 +2,12 @@ package core
 
 import (
 	"context"
-	"net/http"
-	"net/http/pprof"
-	"strconv"
-
 	"github.com/gin-gonic/gin"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"net/http"
+	"net/http/pprof"
 )
 
 const (
@@ -119,7 +117,7 @@ func (h *Handlers) handleCreateBackup(c *gin.Context) (interface{}, error) {
 	c.BindJSON(&json)
 	// http will use async call
 	json.Async = true
-	resp, _ := h.backupContext.CreateBackup(h.backupContext.ctx, &json)
+	resp := h.backupContext.CreateBackup(h.backupContext.ctx, &json)
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
@@ -128,7 +126,7 @@ func (h *Handlers) handleListBackups(c *gin.Context) (interface{}, error) {
 	req := backuppb.ListBackupsRequest{
 		CollectionName: c.Query("collection_name"),
 	}
-	resp, _ := h.backupContext.ListBackups(h.backupContext.ctx, &req)
+	resp := h.backupContext.ListBackups(h.backupContext.ctx, &req)
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
@@ -136,8 +134,9 @@ func (h *Handlers) handleListBackups(c *gin.Context) (interface{}, error) {
 func (h *Handlers) handleGetBackup(c *gin.Context) (interface{}, error) {
 	req := backuppb.GetBackupRequest{
 		BackupName: c.Query("backup_name"),
+		BackupId:   c.Query("backup_id"),
 	}
-	resp, _ := h.backupContext.GetBackup(h.backupContext.ctx, &req)
+	resp := h.backupContext.GetBackup(h.backupContext.ctx, &req)
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
@@ -146,7 +145,7 @@ func (h *Handlers) handleDeleteBackup(c *gin.Context) (interface{}, error) {
 	req := backuppb.DeleteBackupRequest{
 		BackupName: c.Query("backup_name"),
 	}
-	resp, _ := h.backupContext.DeleteBackup(h.backupContext.ctx, &req)
+	resp := h.backupContext.DeleteBackup(h.backupContext.ctx, &req)
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
@@ -156,20 +155,17 @@ func (h *Handlers) handleRestoreBackup(c *gin.Context) (interface{}, error) {
 	c.BindJSON(&json)
 	// http will use async call
 	json.Async = true
-	resp, _ := h.backupContext.RestoreBackup(h.backupContext.ctx, &json)
+	resp := h.backupContext.RestoreBackup(h.backupContext.ctx, &json)
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
 
 func (h *Handlers) handleGetRestore(c *gin.Context) (interface{}, error) {
-	id, err := strconv.ParseInt(c.Query("id"), 10, 64)
-	if err != nil {
-		return nil, err
-	}
+	id := c.Query("id")
 	req := backuppb.GetRestoreStateRequest{
 		Id: id,
 	}
-	resp, _ := h.backupContext.GetRestore(h.backupContext.ctx, &req)
+	resp := h.backupContext.GetRestore(h.backupContext.ctx, &req)
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }

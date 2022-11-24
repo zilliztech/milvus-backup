@@ -3,14 +3,13 @@ package core
 import (
 	"context"
 	"fmt"
+	"github.com/stretchr/testify/assert"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"go.uber.org/zap"
 	"math/rand"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"go.uber.org/zap"
 )
 
 func TestCreateBackup(t *testing.T) {
@@ -31,15 +30,14 @@ func TestListBackups(t *testing.T) {
 	context := context.Background()
 	backupContext := CreateBackupContext(context, params)
 
-	backupLists, err := backupContext.ListBackups(context, &backuppb.ListBackupsRequest{})
-	assert.NoError(t, err)
-	assert.Equal(t, backupLists.GetStatus().GetStatusCode(), backuppb.StatusCode_Success)
+	backupLists := backupContext.ListBackups(context, &backuppb.ListBackupsRequest{})
+	assert.Equal(t, backupLists.GetCode(), backuppb.ResponseCode_Success)
 
-	backupListsWithCollection, err := backupContext.ListBackups(context, &backuppb.ListBackupsRequest{
+	backupListsWithCollection := backupContext.ListBackups(context, &backuppb.ListBackupsRequest{
 		CollectionName: "hello_milvus",
 	})
 
-	for _, backup := range backupListsWithCollection.BackupInfos {
+	for _, backup := range backupListsWithCollection.GetData() {
 		fmt.Println(backup.GetName())
 	}
 
@@ -59,11 +57,10 @@ func TestGetBackup(t *testing.T) {
 	context := context.Background()
 	backupContext := CreateBackupContext(context, params)
 
-	backup, err := backupContext.GetBackup(context, &backuppb.GetBackupRequest{
+	backup := backupContext.GetBackup(context, &backuppb.GetBackupRequest{
 		BackupName: "test_backup",
 	})
-	assert.NoError(t, err)
-	assert.Equal(t, backup.GetStatus().GetStatusCode(), backuppb.StatusCode_Success)
+	assert.Equal(t, backup.GetCode(), backuppb.ResponseCode_Success)
 }
 
 func TestDeleteBackup(t *testing.T) {
@@ -72,17 +69,15 @@ func TestDeleteBackup(t *testing.T) {
 	context := context.Background()
 	backupContext := CreateBackupContext(context, params)
 
-	backup, err := backupContext.DeleteBackup(context, &backuppb.DeleteBackupRequest{
+	backup := backupContext.DeleteBackup(context, &backuppb.DeleteBackupRequest{
 		BackupName: "test_backup6",
 	})
-	assert.NoError(t, err)
-	assert.Equal(t, backup.GetStatus().GetStatusCode(), backuppb.StatusCode_Success)
+	assert.Equal(t, backup.GetCode(), backuppb.ResponseCode_Success)
 
-	backupLists, err := backupContext.ListBackups(context, &backuppb.ListBackupsRequest{})
-	assert.NoError(t, err)
-	assert.Equal(t, backupLists.GetStatus().GetStatusCode(), backuppb.StatusCode_Success)
+	backupLists := backupContext.ListBackups(context, &backuppb.ListBackupsRequest{})
+	assert.Equal(t, backupLists.GetCode(), backuppb.ResponseCode_Success)
 
-	assert.Equal(t, 0, len(backupLists.GetBackupInfos()))
+	assert.Equal(t, 0, len(backupLists.GetData()))
 
 }
 
@@ -98,10 +93,9 @@ func TestCreateBackupWithUnexistCollection(t *testing.T) {
 		BackupName:      randBackupName,
 		CollectionNames: []string{"not_exist"},
 	}
-	resp, err := backup.CreateBackup(context, req)
-	assert.NoError(t, err)
-	assert.Equal(t, backuppb.StatusCode_Fail, resp.GetStatus().GetStatusCode())
-	assert.Equal(t, "request backup collection does not exist: not_exist", resp.GetStatus().GetReason())
+	resp := backup.CreateBackup(context, req)
+	assert.Equal(t, backuppb.ResponseCode_Bad_Request, resp.GetCode())
+	assert.Equal(t, "request backup collection does not exist: not_exist", resp.GetMsg())
 
 	// clean
 	backup.DeleteBackup(context, &backuppb.DeleteBackupRequest{
@@ -120,17 +114,15 @@ func TestCreateBackupWithDuplicateName(t *testing.T) {
 	req := &backuppb.CreateBackupRequest{
 		BackupName: randBackupName,
 	}
-	resp, err := backup.CreateBackup(context, req)
-	assert.NoError(t, err)
-	assert.Equal(t, backuppb.StatusCode_Success, resp.GetStatus().GetStatusCode())
+	resp := backup.CreateBackup(context, req)
+	assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
 
 	req2 := &backuppb.CreateBackupRequest{
 		BackupName: randBackupName,
 	}
-	resp2, err := backup.CreateBackup(context, req2)
-	assert.NoError(t, err)
-	assert.Equal(t, backuppb.StatusCode_Fail, resp2.GetStatus().GetStatusCode())
-	assert.Equal(t, fmt.Sprintf("backup already exist with the name: %s", req2.GetBackupName()), resp2.GetStatus().GetReason())
+	resp2 := backup.CreateBackup(context, req2)
+	assert.Equal(t, backuppb.ResponseCode_Bad_Request, resp2.GetCode())
+	assert.Equal(t, fmt.Sprintf("backup already exist with the name: %s", req2.GetBackupName()), resp2.GetMsg())
 
 	// clean
 	backup.DeleteBackup(context, &backuppb.DeleteBackupRequest{
@@ -149,9 +141,8 @@ func TestCreateBackupWithIllegalName(t *testing.T) {
 	req := &backuppb.CreateBackupRequest{
 		BackupName: randBackupName,
 	}
-	resp, err := backup.CreateBackup(context, req)
-	assert.NoError(t, err)
-	assert.Equal(t, backuppb.StatusCode_Fail, resp.GetStatus().GetStatusCode())
+	resp := backup.CreateBackup(context, req)
+	assert.Equal(t, backuppb.ResponseCode_Bad_Request, resp.GetCode())
 
 	// clean
 	backup.DeleteBackup(context, &backuppb.DeleteBackupRequest{
@@ -170,15 +161,13 @@ func TestGetBackupAfterCreate(t *testing.T) {
 	req := &backuppb.CreateBackupRequest{
 		BackupName: randBackupName,
 	}
-	resp, err := backupContext.CreateBackup(context, req)
-	assert.NoError(t, err)
-	assert.Equal(t, backuppb.StatusCode_Success, resp.GetStatus().GetStatusCode())
+	resp := backupContext.CreateBackup(context, req)
+	assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
 
-	backup, err := backupContext.GetBackup(context, &backuppb.GetBackupRequest{
+	backup := backupContext.GetBackup(context, &backuppb.GetBackupRequest{
 		BackupName: randBackupName,
 	})
-	assert.NoError(t, err)
-	assert.Equal(t, backuppb.StatusCode_Success, backup.GetStatus().GetStatusCode())
+	assert.Equal(t, backuppb.ResponseCode_Success, backup.GetCode())
 
 	// clean
 	backupContext.DeleteBackup(context, &backuppb.DeleteBackupRequest{
@@ -202,17 +191,15 @@ func TestGetBackupFaultBackup(t *testing.T) {
 	req := &backuppb.CreateBackupRequest{
 		BackupName: randBackupName,
 	}
-	resp, err := backupContext.CreateBackup(context, req)
-	assert.NoError(t, err)
-	assert.Equal(t, backuppb.StatusCode_Success, resp.GetStatus().GetStatusCode())
+	resp := backupContext.CreateBackup(context, req)
+	assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
 
-	backupContext.storageClient.RemoveWithPrefix(context, params.MinioCfg.BackupBucketName, BackupMetaPath(params.MinioCfg.BackupRootPath, resp.GetBackupInfo().GetName()))
+	backupContext.storageClient.RemoveWithPrefix(context, params.MinioCfg.BackupBucketName, BackupMetaPath(params.MinioCfg.BackupRootPath, resp.GetData().GetName()))
 
-	backup, err := backupContext.GetBackup(context, &backuppb.GetBackupRequest{
+	backup := backupContext.GetBackup(context, &backuppb.GetBackupRequest{
 		BackupName: randBackupName,
 	})
-	assert.NoError(t, err)
-	assert.Equal(t, backuppb.StatusCode_Fail, backup.GetStatus().GetStatusCode())
+	assert.Equal(t, backuppb.ResponseCode_Bad_Request, backup.GetCode())
 
 	// clean
 	backupContext.DeleteBackup(context, &backuppb.DeleteBackupRequest{
@@ -227,11 +214,10 @@ func TestGetBackupUnexistBackupName(t *testing.T) {
 	backupContext := CreateBackupContext(context, params)
 	backupContext.Start()
 
-	backup, err := backupContext.GetBackup(context, &backuppb.GetBackupRequest{
+	backup := backupContext.GetBackup(context, &backuppb.GetBackupRequest{
 		BackupName: "un_exist",
 	})
-	assert.NoError(t, err)
-	assert.Equal(t, backuppb.StatusCode_Fail, backup.GetStatus().GetStatusCode())
+	assert.Equal(t, backuppb.ResponseCode_Bad_Request, backup.GetCode())
 }
 
 func TestRestoreBackup(t *testing.T) {
@@ -240,20 +226,25 @@ func TestRestoreBackup(t *testing.T) {
 	context := context.Background()
 	backup := CreateBackupContext(context, params)
 	backup.Start()
-	randBackupName := fmt.Sprintf("test_%d", rand.Int())
+	randBackupName := "test"
+	//fmt.Sprintf("test_%d", rand.Int())
 
 	req := &backuppb.CreateBackupRequest{
 		BackupName: randBackupName,
 	}
-	resp, err := backup.CreateBackup(context, req)
-	assert.NoError(t, err)
-	assert.Equal(t, backuppb.StatusCode_Success, resp.GetStatus().GetStatusCode())
+	resp := backup.CreateBackup(context, req)
+	assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
 
-	restoreResp, err := backup.RestoreBackup(context, &backuppb.RestoreBackupRequest{
+	getReq := &backuppb.GetBackupRequest{
+		BackupName: randBackupName,
+	}
+	getResp := backup.GetBackup(context, getReq)
+	assert.Equal(t, backuppb.ResponseCode_Success, getResp.GetCode())
+
+	restoreResp := backup.RestoreBackup(context, &backuppb.RestoreBackupRequest{
 		BackupName:       randBackupName,
 		CollectionSuffix: "_recover",
 	})
-	assert.NoError(t, err)
 	log.Info("restore backup", zap.Any("resp", restoreResp))
 
 	//clean

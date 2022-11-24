@@ -62,7 +62,7 @@ Support set a group of collection_names to backup, if empty(by default), will ba
 ## List
 List will scan the `backup` directory in minio and return all the backups that exist in the cluster.
 
-## Get
+## GetBackup
 Get backup by name.
 
 ## Delete
@@ -72,6 +72,9 @@ Delete backup by name.
 Restore backup by name, will recreate the collections in the cluster and recover the data through bulkinsert. For more details about BulkInsert, please see:
 
 BulkInserts will be done by partition. Currently we don't support concurrent BulkInserts.
+
+## GetRestore
+Only supported in rest API. Get restore task info by id. We support async restore in rest API. And we can use this method to get the restore executing state.
 
 # Development
 
@@ -133,10 +136,10 @@ curl --location --request POST 'http://localhost:8080/api/v1/create' \
 http://localhost:8080/api/v1/list
 ```
 
-#### get
+#### get_backup
 
 ```
-http://localhost:8080/api/v1/get?backup_name=test_api
+http://localhost:8080/api/v1/get_backup?backup_name=test_api
 ```
 
 #### delete
@@ -155,6 +158,10 @@ curl --location --request POST 'http://localhost:8080/api/v1/restore' \
 }'
 ```
 
+#### get_restore
+```
+http://localhost:8080/api/v1/get_restore?id=xxxx
+```
 ## Command Line 
 
 Milvus-backup establish CLI based on cobra. Use the following command to see the usage.

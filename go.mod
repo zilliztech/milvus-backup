@@ -15,15 +15,15 @@ require (
 	github.com/spf13/viper v1.8.1
 	github.com/stretchr/testify v1.8.0
 	github.com/uber/jaeger-client-go v2.25.0+incompatible
+	go.etcd.io/etcd/api/v3 v3.5.0
 	go.etcd.io/etcd/client/v3 v3.5.0
 	go.uber.org/zap v1.17.0
 	google.golang.org/grpc v1.48.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
-	go.etcd.io/etcd/api/v3 v3.5.0
-   	go.etcd.io/etcd/client/v3 v3.5.0
 )
 
 require (
+	github.com/google/uuid v1.3.0 // indirect
 	github.com/kr/text v0.2.0 // indirect
 	github.com/lingdor/stackerror v0.0.0-20191119040541-976d8885ed76
 	golang.org/x/exp v0.0.0-20200224162631-6cc2880d07d6

@@ -35,15 +35,11 @@ var createBackupCmd = &cobra.Command{
 		} else {
 			collectionNameArr = strings.Split(collectionNames, ",")
 		}
-		backup, err := backupContext.CreateBackup(context, &backuppb.CreateBackupRequest{
+		resp := backupContext.CreateBackup(context, &backuppb.CreateBackupRequest{
 			BackupName:      backupName,
 			CollectionNames: collectionNameArr,
 		})
-		if err != nil {
-			fmt.Errorf("fail to create backup, %s", err.Error())
-		}
-
-		fmt.Println(backup.GetStatus())
+		fmt.Println(resp.GetCode(), "\n", resp.GetMsg())
 	},
 }
 

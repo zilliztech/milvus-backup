@@ -48,17 +48,14 @@ var restoreBackupCmd = &cobra.Command{
 			}
 		}
 
-		backup, err := backupContext.RestoreBackup(context, &backuppb.RestoreBackupRequest{
+		resp := backupContext.RestoreBackup(context, &backuppb.RestoreBackupRequest{
 			BackupName:        restoreBackupName,
 			CollectionNames:   collectionNameArr,
 			CollectionSuffix:  renameSuffix,
 			CollectionRenames: renameMap,
 		})
-		if err != nil {
-			fmt.Errorf("fail to restore backup, %s", err.Error())
-		}
 
-		fmt.Println(backup.GetStatus())
+		fmt.Println(resp.GetCode(), "\n", resp.GetMsg())
 	},
 }
 

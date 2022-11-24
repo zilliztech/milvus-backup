@@ -26,14 +26,11 @@ var deleteBackupCmd = &cobra.Command{
 		context := context.Background()
 		backupContext := core.CreateBackupContext(context, params)
 
-		backup, err := backupContext.DeleteBackup(context, &backuppb.DeleteBackupRequest{
+		resp := backupContext.DeleteBackup(context, &backuppb.DeleteBackupRequest{
 			BackupName: deleteBackName,
 		})
-		if err != nil {
-			fmt.Errorf("fail to get backup, %s", err.Error())
-		}
 
-		fmt.Println(backup.GetStatus())
+		fmt.Println(resp.GetCode(), "\n", resp.GetMsg())
 	},
 }
 
