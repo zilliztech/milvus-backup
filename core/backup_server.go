@@ -116,7 +116,7 @@ func (h *Handlers) handleCreateBackup(c *gin.Context) (interface{}, error) {
 	json := backuppb.CreateBackupRequest{}
 	c.BindJSON(&json)
 	// http will use async call
-	json.Async = true
+	//json.Async = true
 	resp := h.backupContext.CreateBackup(h.backupContext.ctx, &json)
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
@@ -154,7 +154,7 @@ func (h *Handlers) handleRestoreBackup(c *gin.Context) (interface{}, error) {
 	json := backuppb.RestoreBackupRequest{}
 	c.BindJSON(&json)
 	// http will use async call
-	json.Async = true
+	//json.Async = true
 	resp := h.backupContext.RestoreBackup(h.backupContext.ctx, &json)
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
