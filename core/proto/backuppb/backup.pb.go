@@ -782,11 +782,13 @@ func (m *SegmentLevelBackupInfo) GetInfos() []*SegmentBackupInfo {
 //*
 // Create Backup in milvus
 type CreateBackupRequest struct {
+	// uuid of request, will generate one if not set
 	RequestId string `protobuf:"bytes,1,opt,name=requestId,proto3" json:"requestId,omitempty"`
-	// backup name, if not set, will generate one
+	// backup name, will generate one if not set
 	BackupName string `protobuf:"bytes,2,opt,name=backup_name,json=backupName,proto3" json:"backup_name,omitempty"`
 	// collection names to backup, empty to backup all
-	CollectionNames      []string `protobuf:"bytes,3,rep,name=collection_names,json=collectionNames,proto3" json:"collection_names,omitempty"`
+	CollectionNames []string `protobuf:"bytes,3,rep,name=collection_names,json=collectionNames,proto3" json:"collection_names,omitempty"`
+	// async or not
 	Async                bool     `protobuf:"varint,4,opt,name=async,proto3" json:"async,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
@@ -849,13 +851,17 @@ func (m *CreateBackupRequest) GetAsync() bool {
 //*
 // BackupInfoResponse
 type BackupInfoResponse struct {
-	RequestId            string       `protobuf:"bytes,1,opt,name=requestId,proto3" json:"requestId,omitempty"`
-	Code                 ResponseCode `protobuf:"varint,2,opt,name=code,proto3,enum=milvus.proto.backup.ResponseCode" json:"code,omitempty"`
-	Msg                  string       `protobuf:"bytes,3,opt,name=msg,proto3" json:"msg,omitempty"`
-	Data                 *BackupInfo  `protobuf:"bytes,4,opt,name=data,proto3" json:"data,omitempty"`
-	XXX_NoUnkeyedLiteral struct{}     `json:"-"`
-	XXX_unrecognized     []byte       `json:"-"`
-	XXX_sizecache        int32        `json:"-"`
+	// uuid of the request to response
+	RequestId string `protobuf:"bytes,1,opt,name=requestId,proto3" json:"requestId,omitempty"`
+	// response code. 0 means success. others are fail
+	Code ResponseCode `protobuf:"varint,2,opt,name=code,proto3,enum=milvus.proto.backup.ResponseCode" json:"code,omitempty"`
+	// error msg if fail
+	Msg string `protobuf:"bytes,3,opt,name=msg,proto3" json:"msg,omitempty"`
+	// backup info entity
+	Data                 *BackupInfo `protobuf:"bytes,4,opt,name=data,proto3" json:"data,omitempty"`
+	XXX_NoUnkeyedLiteral struct{}    `json:"-"`
+	XXX_unrecognized     []byte      `json:"-"`
+	XXX_sizecache        int32       `json:"-"`
 }
 
 func (m *BackupInfoResponse) Reset()         { *m = BackupInfoResponse{} }
@@ -912,8 +918,11 @@ func (m *BackupInfoResponse) GetData() *BackupInfo {
 }
 
 type GetBackupRequest struct {
-	RequestId            string   `protobuf:"bytes,1,opt,name=requestId,proto3" json:"requestId,omitempty"`
-	BackupName           string   `protobuf:"bytes,2,opt,name=backup_name,json=backupName,proto3" json:"backup_name,omitempty"`
+	// uuid of request, will generate one if not set
+	RequestId string `protobuf:"bytes,1,opt,name=requestId,proto3" json:"requestId,omitempty"`
+	// backup name to query, backup_name or backup_id is needed
+	BackupName string `protobuf:"bytes,2,opt,name=backup_name,json=backupName,proto3" json:"backup_name,omitempty"`
+	// backup to query
 	BackupId             string   `protobuf:"bytes,3,opt,name=backup_id,json=backupId,proto3" json:"backup_id,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
@@ -967,7 +976,9 @@ func (m *GetBackupRequest) GetBackupId() string {
 }
 
 type ListBackupsRequest struct {
-	RequestId            string   `protobuf:"bytes,1,opt,name=requestId,proto3" json:"requestId,omitempty"`
+	// uuid of request, will generate one if not set
+	RequestId string `protobuf:"bytes,1,opt,name=requestId,proto3" json:"requestId,omitempty"`
+	// if collection_name is set, will only return backups contains this collection
 	CollectionName       string   `protobuf:"bytes,2,opt,name=collection_name,json=collectionName,proto3" json:"collection_name,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
@@ -1014,9 +1025,13 @@ func (m *ListBackupsRequest) GetCollectionName() string {
 }
 
 type ListBackupsResponse struct {
-	RequestId            string        `protobuf:"bytes,1,opt,name=requestId,proto3" json:"requestId,omitempty"`
-	Code                 ResponseCode  `protobuf:"varint,2,opt,name=code,proto3,enum=milvus.proto.backup.ResponseCode" json:"code,omitempty"`
-	Msg                  string        `protobuf:"bytes,3,opt,name=msg,proto3" json:"msg,omitempty"`
+	// uuid of the request to response
+	RequestId string `protobuf:"bytes,1,opt,name=requestId,proto3" json:"requestId,omitempty"`
+	// response code. 0 means success. others are fail
+	Code ResponseCode `protobuf:"varint,2,opt,name=code,proto3,enum=milvus.proto.backup.ResponseCode" json:"code,omitempty"`
+	// error msg if fail
+	Msg string `protobuf:"bytes,3,opt,name=msg,proto3" json:"msg,omitempty"`
+	// backup info entities
 	Data                 []*BackupInfo `protobuf:"bytes,4,rep,name=data,proto3" json:"data,omitempty"`
 	XXX_NoUnkeyedLiteral struct{}      `json:"-"`
 	XXX_unrecognized     []byte        `json:"-"`
@@ -1077,7 +1092,9 @@ func (m *ListBackupsResponse) GetData() []*BackupInfo {
 }
 
 type DeleteBackupRequest struct {
-	RequestId            string   `protobuf:"bytes,1,opt,name=requestId,proto3" json:"requestId,omitempty"`
+	// uuid of request, will generate one if not set
+	RequestId string `protobuf:"bytes,1,opt,name=requestId,proto3" json:"requestId,omitempty"`
+	// backup name
 	BackupName           string   `protobuf:"bytes,2,opt,name=backup_name,json=backupName,proto3" json:"backup_name,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
@@ -1124,12 +1141,15 @@ func (m *DeleteBackupRequest) GetBackupName() string {
 }
 
 type DeleteBackupResponse struct {
-	RequestId            string       `protobuf:"bytes,1,opt,name=requestId,proto3" json:"requestId,omitempty"`
-	Code                 ResponseCode `protobuf:"varint,2,opt,name=code,proto3,enum=milvus.proto.backup.ResponseCode" json:"code,omitempty"`
-	Msg                  string       `protobuf:"bytes,3,opt,name=msg,proto3" json:"msg,omitempty"`
-	XXX_NoUnkeyedLiteral struct{}     `json:"-"`
-	XXX_unrecognized     []byte       `json:"-"`
-	XXX_sizecache        int32        `json:"-"`
+	// uuid of the request to response
+	RequestId string `protobuf:"bytes,1,opt,name=requestId,proto3" json:"requestId,omitempty"`
+	// response code. 0 means success. others are fail
+	Code ResponseCode `protobuf:"varint,2,opt,name=code,proto3,enum=milvus.proto.backup.ResponseCode" json:"code,omitempty"`
+	// error msg if fail
+	Msg                  string   `protobuf:"bytes,3,opt,name=msg,proto3" json:"msg,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
 func (m *DeleteBackupResponse) Reset()         { *m = DeleteBackupResponse{} }
@@ -1179,18 +1199,23 @@ func (m *DeleteBackupResponse) GetMsg() string {
 }
 
 type RestoreBackupRequest struct {
-	RequestId       string   `protobuf:"bytes,1,opt,name=requestId,proto3" json:"requestId,omitempty"`
-	BackupName      string   `protobuf:"bytes,2,opt,name=backup_name,json=backupName,proto3" json:"backup_name,omitempty"`
+	// uuid of request, will generate one if not set
+	RequestId string `protobuf:"bytes,1,opt,name=requestId,proto3" json:"requestId,omitempty"`
+	// backup name to restore
+	BackupName string `protobuf:"bytes,2,opt,name=backup_name,json=backupName,proto3" json:"backup_name,omitempty"`
+	// collections to restore
 	CollectionNames []string `protobuf:"bytes,3,rep,name=collection_names,json=collectionNames,proto3" json:"collection_names,omitempty"`
 	// Support two ways to rename the collections while recover
 	// 1, set a suffix
 	CollectionSuffix string `protobuf:"bytes,4,opt,name=collection_suffix,json=collectionSuffix,proto3" json:"collection_suffix,omitempty"`
-	// 2, give a map to rename the collections, if not given, use the original name
-	CollectionRenames    map[string]string `protobuf:"bytes,5,rep,name=collection_renames,json=collectionRenames,proto3" json:"collection_renames,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
-	Async                bool              `protobuf:"varint,6,opt,name=async,proto3" json:"async,omitempty"`
-	XXX_NoUnkeyedLiteral struct{}          `json:"-"`
-	XXX_unrecognized     []byte            `json:"-"`
-	XXX_sizecache        int32             `json:"-"`
+	// 2, give a map to rename the collections, if not given, use the original name.
+	// collection_renames has higher priority than collection_suffix
+	CollectionRenames map[string]string `protobuf:"bytes,5,rep,name=collection_renames,json=collectionRenames,proto3" json:"collection_renames,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+	// execute asynchronously or not
+	Async                bool     `protobuf:"varint,6,opt,name=async,proto3" json:"async,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
 func (m *RestoreBackupRequest) Reset()         { *m = RestoreBackupRequest{} }
@@ -1538,9 +1563,13 @@ func (m *RestoreBackupTask) GetCollectionRestoreTasks() []*RestoreCollectionTask
 }
 
 type RestoreBackupResponse struct {
-	RequestId            string             `protobuf:"bytes,1,opt,name=requestId,proto3" json:"requestId,omitempty"`
-	Code                 ResponseCode       `protobuf:"varint,2,opt,name=code,proto3,enum=milvus.proto.backup.ResponseCode" json:"code,omitempty"`
-	Msg                  string             `protobuf:"bytes,3,opt,name=msg,proto3" json:"msg,omitempty"`
+	// uuid of the request to response
+	RequestId string `protobuf:"bytes,1,opt,name=requestId,proto3" json:"requestId,omitempty"`
+	// response code. 0 means success. others are fail
+	Code ResponseCode `protobuf:"varint,2,opt,name=code,proto3,enum=milvus.proto.backup.ResponseCode" json:"code,omitempty"`
+	// error msg if fail
+	Msg string `protobuf:"bytes,3,opt,name=msg,proto3" json:"msg,omitempty"`
+	// restore task info entity
 	Data                 *RestoreBackupTask `protobuf:"bytes,4,opt,name=data,proto3" json:"data,omitempty"`
 	XXX_NoUnkeyedLiteral struct{}           `json:"-"`
 	XXX_unrecognized     []byte             `json:"-"`
@@ -1601,7 +1630,9 @@ func (m *RestoreBackupResponse) GetData() *RestoreBackupTask {
 }
 
 type GetRestoreStateRequest struct {
-	RequestId            string   `protobuf:"bytes,1,opt,name=requestId,proto3" json:"requestId,omitempty"`
+	// uuid of request, will generate one if not set
+	RequestId string `protobuf:"bytes,1,opt,name=requestId,proto3" json:"requestId,omitempty"`
+	// restore task id to query
 	Id                   string   `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`

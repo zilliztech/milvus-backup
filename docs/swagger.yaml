@@ -28,12 +28,18 @@ definitions:
   backuppb.BackupInfoResponse:
     properties:
       code:
-        $ref: '#/definitions/backuppb.ResponseCode'
+        allOf:
+        - $ref: '#/definitions/backuppb.ResponseCode'
+        description: response code. 0 means success. others are fail
       data:
-        $ref: '#/definitions/backuppb.BackupInfo'
+        allOf:
+        - $ref: '#/definitions/backuppb.BackupInfo'
+        description: backup info entity
       msg:
+        description: error msg if fail
         type: string
       requestId:
+        description: uuid of the request to response
         type: string
     type: object
   backuppb.BackupTaskStateCode:
@@ -126,9 +132,10 @@ definitions:
   backuppb.CreateBackupRequest:
     properties:
       async:
+        description: async or not
         type: boolean
       backup_name:
-        description: backup name, if not set, will generate one
+        description: backup name, will generate one if not set
         type: string
       collection_names:
         description: collection names to backup, empty to backup all
@@ -136,6 +143,7 @@ definitions:
           type: string
         type: array
       requestId:
+        description: uuid of request, will generate one if not set
         type: string
     type: object
   backuppb.DataType:
@@ -169,17 +177,23 @@ definitions:
   backuppb.DeleteBackupRequest:
     properties:
       backup_name:
+        description: backup name
         type: string
       requestId:
+        description: uuid of request, will generate one if not set
         type: string
     type: object
   backuppb.DeleteBackupResponse:
     properties:
       code:
-        $ref: '#/definitions/backuppb.ResponseCode'
+        allOf:
+        - $ref: '#/definitions/backuppb.ResponseCode'
+        description: response code. 0 means success. others are fail
       msg:
+        description: error msg if fail
         type: string
       requestId:
+        description: uuid of the request to response
         type: string
     type: object
   backuppb.FieldBinlog:
@@ -231,17 +245,22 @@ definitions:
   backuppb.GetBackupRequest:
     properties:
       backup_id:
+        description: backup to query
         type: string
       backup_name:
+        description: backup name to query, backup_name or backup_id is needed
         type: string
       requestId:
+        description: uuid of request, will generate one if not set
         type: string
     type: object
   backuppb.GetRestoreStateRequest:
     properties:
       id:
+        description: restore task id to query
         type: string
       requestId:
+        description: uuid of request, will generate one if not set
         type: string
     type: object
   backuppb.KeyValuePair:
@@ -254,21 +273,29 @@ definitions:
   backuppb.ListBackupsRequest:
     properties:
       collection_name:
+        description: if collection_name is set, will only return backups contains
+          this collection
         type: string
       requestId:
+        description: uuid of request, will generate one if not set
         type: string
     type: object
   backuppb.ListBackupsResponse:
     properties:
       code:
-        $ref: '#/definitions/backuppb.ResponseCode'
+        allOf:
+        - $ref: '#/definitions/backuppb.ResponseCode'
+        description: response code. 0 means success. others are fail
       data:
+        description: backup info entities
         items:
           $ref: '#/definitions/backuppb.BackupInfo'
         type: array
       msg:
+        description: error msg if fail
         type: string
       requestId:
+        description: uuid of the request to response
         type: string
     type: object
   backuppb.PartitionBackupInfo:
@@ -304,18 +331,22 @@ definitions:
   backuppb.RestoreBackupRequest:
     properties:
       async:
+        description: execute asynchronously or not
         type: boolean
       backup_name:
+        description: backup name to restore
         type: string
       collection_names:
+        description: collections to restore
         items:
           type: string
         type: array
       collection_renames:
         additionalProperties:
           type: string
-        description: 2, give a map to rename the collections, if not given, use the
-          original name
+        description: |-
+          2, give a map to rename the collections, if not given, use the original name.
+          collection_renames has higher priority than collection_suffix
         type: object
       collection_suffix:
         description: |-
@@ -323,17 +354,24 @@ definitions:
           1, set a suffix
         type: string
       requestId:
+        description: uuid of request, will generate one if not set
         type: string
     type: object
   backuppb.RestoreBackupResponse:
     properties:
       code:
-        $ref: '#/definitions/backuppb.ResponseCode'
+        allOf:
+        - $ref: '#/definitions/backuppb.ResponseCode'
+        description: response code. 0 means success. others are fail
       data:
-        $ref: '#/definitions/backuppb.RestoreBackupTask'
+        allOf:
+        - $ref: '#/definitions/backuppb.RestoreBackupTask'
+        description: restore task info entity
       msg:
+        description: error msg if fail
         type: string
       requestId:
+        description: uuid of the request to response
         type: string
     type: object
   backuppb.RestoreBackupTask:
