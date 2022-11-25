@@ -110,11 +110,13 @@ message SegmentLevelBackupInfo {
  * Create Backup in milvus
  */
 message CreateBackupRequest {
+  // uuid of request, will generate one if not set
   string requestId = 1;
-  // backup name, if not set, will generate one
+  // backup name, will generate one if not set
   string backup_name = 2;
   // collection names to backup, empty to backup all
   repeated string collection_names = 3;
+  // async or not
   bool async = 4;
 }
 
@@ -122,38 +124,56 @@ message CreateBackupRequest {
  * BackupInfoResponse
  */
 message BackupInfoResponse {
+  // uuid of the request to response
   string requestId = 1;
+  // response code. 0 means success. others are fail
   ResponseCode code = 2;
+  // error msg if fail
   string msg = 3;
+  // backup info entity
   BackupInfo data = 4;
 }
 
 message GetBackupRequest {
+  // uuid of request, will generate one if not set
   string requestId = 1;
+  // backup name to query, backup_name or backup_id is needed
   string backup_name = 2;
+  // backup to query
   string backup_id = 3;
 }
 
 message ListBackupsRequest {
+  // uuid of request, will generate one if not set
   string requestId = 1;
+  // if collection_name is set, will only return backups contains this collection
   string collection_name = 2;
 }
 
 message ListBackupsResponse {
+  // uuid of the request to response
   string requestId = 1;
+  // response code. 0 means success. others are fail
   ResponseCode code = 2;
+  // error msg if fail
   string msg = 3;
+  // backup info entities
   repeated BackupInfo data = 4;
 }
 
 message DeleteBackupRequest {
+  // uuid of request, will generate one if not set
   string requestId = 1;
+  // backup name
   string backup_name = 2;
 }
 
 message DeleteBackupResponse {
+  // uuid of the request to response
   string requestId = 1;
+  // response code. 0 means success. others are fail
   ResponseCode code = 2;
+  // error msg if fail
   string msg = 3;
 }
 
@@ -174,14 +194,19 @@ enum RestoreTaskStateCode {
 }
 
 message RestoreBackupRequest {
+  // uuid of request, will generate one if not set
   string requestId = 1;
+  // backup name to restore
   string backup_name = 2;
+  // collections to restore
   repeated string collection_names = 3;
   // Support two ways to rename the collections while recover
   // 1, set a suffix
   string collection_suffix = 4;
-  // 2, give a map to rename the collections, if not given, use the original name
+  // 2, give a map to rename the collections, if not given, use the original name.
+  // collection_renames has higher priority than collection_suffix
   map<string, string> collection_renames = 5;
+  // execute asynchronously or not
   bool async = 6;
 }
 
@@ -218,14 +243,20 @@ message RestoreBackupTask {
 }
 
 message RestoreBackupResponse {
+  // uuid of the request to response
   string requestId = 1;
+  // response code. 0 means success. others are fail
   ResponseCode code = 2;
+  // error msg if fail
   string msg = 3;
+  // restore task info entity
   RestoreBackupTask data = 4;
 }
 
 message GetRestoreStateRequest {
+  // uuid of request, will generate one if not set
   string requestId = 1;
+  // restore task id to query
   string id = 2;
 }
 

@@ -270,15 +270,27 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "code": {
-                    "$ref": "#/definitions/backuppb.ResponseCode"
+                    "description": "response code. 0 means success. others are fail",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/backuppb.ResponseCode"
+                        }
+                    ]
                 },
                 "data": {
-                    "$ref": "#/definitions/backuppb.BackupInfo"
+                    "description": "backup info entity",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/backuppb.BackupInfo"
+                        }
+                    ]
                 },
                 "msg": {
+                    "description": "error msg if fail",
                     "type": "string"
                 },
                 "requestId": {
+                    "description": "uuid of the request to response",
                     "type": "string"
                 }
             }
@@ -411,10 +423,11 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "async": {
+                    "description": "async or not",
                     "type": "boolean"
                 },
                 "backup_name": {
-                    "description": "backup name, if not set, will generate one",
+                    "description": "backup name, will generate one if not set",
                     "type": "string"
                 },
                 "collection_names": {
@@ -425,6 +438,7 @@ const docTemplate = `{
                     }
                 },
                 "requestId": {
+                    "description": "uuid of request, will generate one if not set",
                     "type": "string"
                 }
             }
@@ -464,9 +478,11 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "backup_name": {
+                    "description": "backup name",
                     "type": "string"
                 },
                 "requestId": {
+                    "description": "uuid of request, will generate one if not set",
                     "type": "string"
                 }
             }
@@ -475,12 +491,19 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "code": {
-                    "$ref": "#/definitions/backuppb.ResponseCode"
+                    "description": "response code. 0 means success. others are fail",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/backuppb.ResponseCode"
+                        }
+                    ]
                 },
                 "msg": {
+                    "description": "error msg if fail",
                     "type": "string"
                 },
                 "requestId": {
+                    "description": "uuid of the request to response",
                     "type": "string"
                 }
             }
@@ -556,12 +579,15 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "backup_id": {
+                    "description": "backup to query",
                     "type": "string"
                 },
                 "backup_name": {
+                    "description": "backup name to query, backup_name or backup_id is needed",
                     "type": "string"
                 },
                 "requestId": {
+                    "description": "uuid of request, will generate one if not set",
                     "type": "string"
                 }
             }
@@ -570,9 +596,11 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "id": {
+                    "description": "restore task id to query",
                     "type": "string"
                 },
                 "requestId": {
+                    "description": "uuid of request, will generate one if not set",
                     "type": "string"
                 }
             }
@@ -592,9 +620,11 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "collection_name": {
+                    "description": "if collection_name is set, will only return backups contains this collection",
                     "type": "string"
                 },
                 "requestId": {
+                    "description": "uuid of request, will generate one if not set",
                     "type": "string"
                 }
             }
@@ -603,18 +633,26 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "code": {
-                    "$ref": "#/definitions/backuppb.ResponseCode"
+                    "description": "response code. 0 means success. others are fail",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/backuppb.ResponseCode"
+                        }
+                    ]
                 },
                 "data": {
+                    "description": "backup info entities",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/backuppb.BackupInfo"
                     }
                 },
                 "msg": {
+                    "description": "error msg if fail",
                     "type": "string"
                 },
                 "requestId": {
+                    "description": "uuid of the request to response",
                     "type": "string"
                 }
             }
@@ -663,19 +701,22 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "async": {
+                    "description": "execute asynchronously or not",
                     "type": "boolean"
                 },
                 "backup_name": {
+                    "description": "backup name to restore",
                     "type": "string"
                 },
                 "collection_names": {
+                    "description": "collections to restore",
                     "type": "array",
                     "items": {
                         "type": "string"
                     }
                 },
                 "collection_renames": {
-                    "description": "2, give a map to rename the collections, if not given, use the original name",
+                    "description": "2, give a map to rename the collections, if not given, use the original name.\ncollection_renames has higher priority than collection_suffix",
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
@@ -686,6 +727,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "requestId": {
+                    "description": "uuid of request, will generate one if not set",
                     "type": "string"
                 }
             }
@@ -694,15 +736,27 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "code": {
-                    "$ref": "#/definitions/backuppb.ResponseCode"
+                    "description": "response code. 0 means success. others are fail",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/backuppb.ResponseCode"
+                        }
+                    ]
                 },
                 "data": {
-                    "$ref": "#/definitions/backuppb.RestoreBackupTask"
+                    "description": "restore task info entity",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/backuppb.RestoreBackupTask"
+                        }
+                    ]
                 },
                 "msg": {
+                    "description": "error msg if fail",
                     "type": "string"
                 },
                 "requestId": {
+                    "description": "uuid of the request to response",
                     "type": "string"
                 }
             }

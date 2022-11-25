@@ -9,53 +9,7 @@ Milvus-backup has no large impact on Milvus. Milvus cluster can work as usual du
 # Interfaces
 
 ## Create
-Create a backup for the cluster. Data of selected collections will be copied to a backup directory(in the same bucket of the cluster).
-The path tree of backups is like:
-```
-/backup/my_backup_0
-├── meta
-│   ├── backup_meta.json
-│   ├── collection_meta.json
-│   ├── partition_meta.json
-│   └── segment_meta.json
-└── binlogs
-    ├── delta_log
-    │   └── 434574377495035905
-    │       └── 434574377495035906
-    │           └── 434574378976149505
-    │               └── 434574382554415105
-    ├── insert_log
-    │   └── 434574377495035905
-    │       └── 434574377495035906
-    │           ├── 434574378976149505
-    │           │   ├── 0
-    │           │   │   └── 434574379605819396
-    │           │   ├── 1
-    │           │   │   └── 434574379605819397
-    │           │   ├── 100
-    │           │   │   └── 434574379605819393
-    │           │   ├── 101
-    │           │   │   └── 434574379605819394
-    │           │   └── 102
-    │           │       └── 434574379605819395
-    │           └── 434574378976149506
-    │               ├── 0
-    │               │   └── 434574379605819401
-    │               ├── 1
-    │               │   └── 434574379605819402
-    │               ├── 100
-    │               │   └── 434574379605819398
-    │               ├── 101
-    │               │   └── 434574379605819399
-    │               └── 102
-    │                   └── 434574379605819400
-/backup/my_backup_1
-├── meta
-│  .......
-└── binlogs
-   ......
-```
-
+Create a backup for the cluster. Data of selected collections will be copied to a backup directory.
 Support set a group of collection_names to backup, if empty(by default), will backup all collections.
 
 ## List
@@ -110,15 +64,11 @@ By default, the server will listen to 8080. You can change it by `--port` parame
 
 ### APIs
 
-#### hello
-
-Just test the service is active.
-```
-http://localhost:8080/api/v1/hello
-```
+#### swagger UI
+We provide swagger UI to show details of APIs. You can see it by:
 
 ```
-Hello, This is backup service
+http://localhost:8080/api/v1/docs/index.html
 ```
 
 #### create
