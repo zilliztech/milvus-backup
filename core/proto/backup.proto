@@ -22,7 +22,7 @@ enum ResponseCode {
   Success = 0;
   Not_Support = 1;
   No_Permission = 2;
-  Bad_Request = 3;
+  Fail = 3;
   Parameter_Error = 400;
   Request_Object_Not_Found = 404;
 }

@@ -160,7 +160,7 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 	if !b.started {
 		err := b.Start()
 		if err != nil {
-			resp.Code = backuppb.ResponseCode_Bad_Request
+			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = err.Error()
 			return resp
 		}
@@ -173,7 +173,7 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 		})
 		if getResp.GetCode() != backuppb.ResponseCode_Success {
 			log.Error("fail in GetBackup", zap.String("msg", getResp.GetMsg()))
-			resp.Code = backuppb.ResponseCode_Bad_Request
+			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = getResp.GetMsg()
 			return resp
 		}
@@ -223,7 +223,7 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 		task, err := b.executeCreateBackup(ctx, request, backup)
 		resp.Data = task
 		if err != nil {
-			resp.Code = backuppb.ResponseCode_Bad_Request
+			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = err.Error()
 		} else {
 			resp.Code = backuppb.ResponseCode_Success
@@ -273,7 +273,7 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 		log.Debug(fmt.Sprintf("List %v collections", len(collections)))
 		toBackupCollections = collections
 	} else {
-		toBackupCollections := make([]*entity.Collection, 0)
+		//toBackupCollections := make([]*entity.Collection, 0)
 		for _, collectionName := range request.GetCollectionNames() {
 			exist, err := b.milvusClient.HasCollection(b.ctx, collectionName)
 			if err != nil {
@@ -560,7 +560,7 @@ func (b BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBacku
 	if !b.started {
 		err := b.Start()
 		if err != nil {
-			resp.Code = backuppb.ResponseCode_Bad_Request
+			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = err.Error()
 			return resp
 		}
@@ -591,7 +591,7 @@ func (b BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBacku
 			backup, err := b.readBackup(ctx, request.GetBackupName())
 			if err != nil {
 				log.Warn("Fail to read backup", zap.String("backupName", request.GetBackupName()), zap.Error(err))
-				resp.Code = backuppb.ResponseCode_Bad_Request
+				resp.Code = backuppb.ResponseCode_Fail
 				resp.Msg = err.Error()
 				return resp
 			}
@@ -619,7 +619,7 @@ func (b BackupContext) ListBackups(ctx context.Context, request *backuppb.ListBa
 	if !b.started {
 		err := b.Start()
 		if err != nil {
-			resp.Code = backuppb.ResponseCode_Bad_Request
+			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = err.Error()
 			return resp
 		}
@@ -629,7 +629,7 @@ func (b BackupContext) ListBackups(ctx context.Context, request *backuppb.ListBa
 	backupPaths, _, err := b.storageClient.ListWithPrefix(ctx, b.backupBucketName, b.backupRootPath+SEPERATOR, false)
 	if err != nil {
 		log.Error("Fail to list backup directory", zap.Error(err))
-		resp.Code = backuppb.ResponseCode_Bad_Request
+		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
 		return resp
 	}
@@ -645,7 +645,7 @@ func (b BackupContext) ListBackups(ctx context.Context, request *backuppb.ListBa
 			log.Warn("Fail to read backup",
 				zap.String("path", backupPath),
 				zap.String("error", backupResp.GetMsg()))
-			resp.Code = backuppb.ResponseCode_Bad_Request
+			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = backupResp.Msg
 			return resp
 		}
@@ -694,7 +694,7 @@ func (b BackupContext) DeleteBackup(ctx context.Context, request *backuppb.Delet
 	if !b.started {
 		err := b.Start()
 		if err != nil {
-			resp.Code = backuppb.ResponseCode_Bad_Request
+			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = err.Error()
 			return resp
 		}
@@ -740,7 +740,7 @@ func (b BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Rest
 	if !b.started {
 		err := b.Start()
 		if err != nil {
-			resp.Code = backuppb.ResponseCode_Bad_Request
+			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = err.Error()
 			return resp
 		}
@@ -764,7 +764,7 @@ func (b BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Rest
 		log.Error("fail to get backup",
 			zap.String("backupName", request.GetBackupName()),
 			zap.String("msg", getResp.GetMsg()))
-		resp.Code = backuppb.ResponseCode_Bad_Request
+		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = getResp.GetMsg()
 		return resp
 	}
@@ -820,14 +820,14 @@ func (b BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Rest
 		if err != nil {
 			errorMsg := fmt.Sprintf("fail to check whether the collection is exist, collection_name: %s, err: %s", targetCollectionName, err)
 			log.Error(errorMsg)
-			resp.Code = backuppb.ResponseCode_Bad_Request
+			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = errorMsg
 			return resp
 		}
 		if exist {
 			errorMsg := fmt.Sprintf("The collection to restore already exists, backupCollectName: %s, targetCollectionName: %s", backupCollectionName, targetCollectionName)
 			log.Error(errorMsg)
-			resp.Code = backuppb.ResponseCode_Bad_Request
+			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = errorMsg
 			return resp
 		}
@@ -858,7 +858,7 @@ func (b BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Rest
 		endTask, err := b.executeRestoreBackupTask(ctx, backup, task)
 		resp.Data = endTask
 		if err != nil {
-			resp.Code = backuppb.ResponseCode_Bad_Request
+			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = err.Error()
 		} else {
 			resp.Code = backuppb.ResponseCode_Success
@@ -1192,14 +1192,14 @@ func (b *BackupContext) GetRestore(ctx context.Context, request *backuppb.GetRes
 	if !b.started {
 		err := b.Start()
 		if err != nil {
-			resp.Code = backuppb.ResponseCode_Bad_Request
+			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = err.Error()
 			return resp
 		}
 	}
 
 	if request.GetId() == "" {
-		resp.Code = backuppb.ResponseCode_Bad_Request
+		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = "empty restore id"
 		return resp
 	}
@@ -1210,7 +1210,7 @@ func (b *BackupContext) GetRestore(ctx context.Context, request *backuppb.GetRes
 		resp.Data = value
 		return resp
 	} else {
-		resp.Code = backuppb.ResponseCode_Bad_Request
+		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = "restore id not exist in context"
 		return resp
 	}

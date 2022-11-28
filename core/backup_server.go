@@ -22,6 +22,8 @@ const (
 	GET_RESTORE_API    = "/get_restore"
 
 	API_V1_PREFIX = "/api/v1"
+
+	DOCS_API = "/docs/*any"
 )
 
 // Server is the Backup Server
@@ -97,7 +99,7 @@ func (h *Handlers) RegisterRoutesTo(router gin.IRouter) {
 	router.DELETE(DELETE_BACKUP_API, wrapHandler(h.handleDeleteBackup))
 	router.POST(RESTORE_BACKUP_API, wrapHandler(h.handleRestoreBackup))
 	router.GET(GET_RESTORE_API, wrapHandler(h.handleGetRestore))
-	router.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	router.GET(DOCS_API, ginSwagger.WrapHandler(swaggerFiles.Handler))
 }
 
 // handlerFunc handles http request with gin context
@@ -128,6 +130,9 @@ func (h *Handlers) handleCreateBackup(c *gin.Context) (interface{}, error) {
 	json := backuppb.CreateBackupRequest{}
 	c.BindJSON(&json)
 	resp := h.backupContext.CreateBackup(h.backupContext.ctx, &json)
+	if h.backupContext.params.HTTPCfg.SimpleResponse {
+		resp = SimpleBackupResponse(resp)
+	}
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
@@ -146,6 +151,9 @@ func (h *Handlers) handleListBackups(c *gin.Context) (interface{}, error) {
 		CollectionName: c.Query("collection_name"),
 	}
 	resp := h.backupContext.ListBackups(h.backupContext.ctx, &req)
+	if h.backupContext.params.HTTPCfg.SimpleResponse {
+		resp = SimpleListBackupsResponse(resp)
+	}
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
@@ -165,6 +173,9 @@ func (h *Handlers) handleGetBackup(c *gin.Context) (interface{}, error) {
 		BackupId:   c.Query("backup_id"),
 	}
 	resp := h.backupContext.GetBackup(h.backupContext.ctx, &req)
+	if h.backupContext.params.HTTPCfg.SimpleResponse {
+		resp = SimpleBackupResponse(resp)
+	}
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
@@ -200,6 +211,9 @@ func (h *Handlers) handleRestoreBackup(c *gin.Context) (interface{}, error) {
 	json := backuppb.RestoreBackupRequest{}
 	c.BindJSON(&json)
 	resp := h.backupContext.RestoreBackup(h.backupContext.ctx, &json)
+	if h.backupContext.params.HTTPCfg.SimpleResponse {
+		resp = SimpleRestoreResponse(resp)
+	}
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
@@ -219,6 +233,9 @@ func (h *Handlers) handleGetRestore(c *gin.Context) (interface{}, error) {
 		Id: id,
 	}
 	resp := h.backupContext.GetRestore(h.backupContext.ctx, &req)
+	if h.backupContext.params.HTTPCfg.SimpleResponse {
+		resp = SimpleRestoreResponse(resp)
+	}
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }

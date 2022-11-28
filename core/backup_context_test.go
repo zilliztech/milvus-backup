@@ -19,7 +19,8 @@ func TestCreateBackup(t *testing.T) {
 	backup := CreateBackupContext(context, params)
 
 	req := &backuppb.CreateBackupRequest{
-		BackupName: "test_21",
+		BackupName:      "test_21",
+		CollectionNames: []string{"hello_milvus", "hello_milvus2"},
 	}
 	backup.CreateBackup(context, req)
 }
@@ -94,7 +95,7 @@ func TestCreateBackupWithUnexistCollection(t *testing.T) {
 		CollectionNames: []string{"not_exist"},
 	}
 	resp := backup.CreateBackup(context, req)
-	assert.Equal(t, backuppb.ResponseCode_Bad_Request, resp.GetCode())
+	assert.Equal(t, backuppb.ResponseCode_Fail, resp.GetCode())
 	assert.Equal(t, "request backup collection does not exist: not_exist", resp.GetMsg())
 
 	// clean
@@ -121,7 +122,7 @@ func TestCreateBackupWithDuplicateName(t *testing.T) {
 		BackupName: randBackupName,
 	}
 	resp2 := backup.CreateBackup(context, req2)
-	assert.Equal(t, backuppb.ResponseCode_Bad_Request, resp2.GetCode())
+	assert.Equal(t, backuppb.ResponseCode_Fail, resp2.GetCode())
 	assert.Equal(t, fmt.Sprintf("backup already exist with the name: %s", req2.GetBackupName()), resp2.GetMsg())
 
 	// clean
@@ -142,7 +143,7 @@ func TestCreateBackupWithIllegalName(t *testing.T) {
 		BackupName: randBackupName,
 	}
 	resp := backup.CreateBackup(context, req)
-	assert.Equal(t, backuppb.ResponseCode_Bad_Request, resp.GetCode())
+	assert.Equal(t, backuppb.ResponseCode_Fail, resp.GetCode())
 
 	// clean
 	backup.DeleteBackup(context, &backuppb.DeleteBackupRequest{
@@ -199,7 +200,7 @@ func TestGetBackupFaultBackup(t *testing.T) {
 	backup := backupContext.GetBackup(context, &backuppb.GetBackupRequest{
 		BackupName: randBackupName,
 	})
-	assert.Equal(t, backuppb.ResponseCode_Bad_Request, backup.GetCode())
+	assert.Equal(t, backuppb.ResponseCode_Fail, backup.GetCode())
 
 	// clean
 	backupContext.DeleteBackup(context, &backuppb.DeleteBackupRequest{
@@ -217,7 +218,7 @@ func TestGetBackupUnexistBackupName(t *testing.T) {
 	backup := backupContext.GetBackup(context, &backuppb.GetBackupRequest{
 		BackupName: "un_exist",
 	})
-	assert.Equal(t, backuppb.ResponseCode_Bad_Request, backup.GetCode())
+	assert.Equal(t, backuppb.ResponseCode_Fail, backup.GetCode())
 }
 
 func TestRestoreBackup(t *testing.T) {

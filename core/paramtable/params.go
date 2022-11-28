@@ -209,8 +209,9 @@ func (p *MinioConfig) initBackupRootPath() {
 type HTTPConfig struct {
 	Base *BaseTable
 
-	Enabled   bool
-	DebugMode bool
+	Enabled        bool
+	DebugMode      bool
+	SimpleResponse bool
 }
 
 func (p *HTTPConfig) init(base *BaseTable) {
@@ -218,12 +219,17 @@ func (p *HTTPConfig) init(base *BaseTable) {
 
 	p.initHTTPEnabled()
 	p.initHTTPDebugMode()
+	p.initHTTPSimpleResponse()
 }
 
 func (p *HTTPConfig) initHTTPEnabled() {
-	p.Enabled = p.Base.ParseBool("proxy.http.enabled", true)
+	p.Enabled = p.Base.ParseBool("http.enabled", true)
 }
 
 func (p *HTTPConfig) initHTTPDebugMode() {
-	p.DebugMode = p.Base.ParseBool("proxy.http.debug_mode", false)
+	p.DebugMode = p.Base.ParseBool("http.debug_mode", false)
+}
+
+func (p *HTTPConfig) initHTTPSimpleResponse() {
+	p.SimpleResponse = p.Base.ParseBool("http.simpleResponse", false)
 }

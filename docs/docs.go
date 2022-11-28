@@ -692,7 +692,7 @@ const docTemplate = `{
                 "ResponseCode_Success",
                 "ResponseCode_Not_Support",
                 "ResponseCode_No_Permission",
-                "ResponseCode_Bad_Request",
+                "ResponseCode_Fail",
                 "ResponseCode_Parameter_Error",
                 "ResponseCode_Request_Object_Not_Found"
             ]
