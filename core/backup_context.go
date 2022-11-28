@@ -273,7 +273,7 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 		log.Debug(fmt.Sprintf("List %v collections", len(collections)))
 		toBackupCollections = collections
 	} else {
-		toBackupCollections := make([]*entity.Collection, 0)
+		//toBackupCollections := make([]*entity.Collection, 0)
 		for _, collectionName := range request.GetCollectionNames() {
 			exist, err := b.milvusClient.HasCollection(b.ctx, collectionName)
 			if err != nil {

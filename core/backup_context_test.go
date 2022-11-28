@@ -19,7 +19,8 @@ func TestCreateBackup(t *testing.T) {
 	backup := CreateBackupContext(context, params)
 
 	req := &backuppb.CreateBackupRequest{
-		BackupName: "test_21",
+		BackupName:      "test_21",
+		CollectionNames: []string{"hello_milvus", "hello_milvus2"},
 	}
 	backup.CreateBackup(context, req)
 }
