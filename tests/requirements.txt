@@ -1,6 +1,7 @@
 --extra-index-url https://test.pypi.org/simple/
 loguru==0.5.3
 decorest==0.1.0
+typing_extensions==4.4.0
 --extra-index-url https://test.pypi.org/simple/
 pytest-cov==2.8.1
 requests==2.26.0
