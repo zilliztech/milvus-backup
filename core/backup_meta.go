@@ -211,3 +211,82 @@ func SegmentMetaPath(backupRootPath, backupName string) string {
 func BackupBinlogDirPath(backupRootPath, backupName string) string {
 	return backupRootPath + SEPERATOR + backupName + SEPERATOR + BINGLOG_DIR
 }
+
+func SimpleListBackupsResponse(input *backuppb.ListBackupsResponse) *backuppb.ListBackupsResponse {
+	simpleBackupInfos := make([]*backuppb.BackupInfo, 0)
+	for _, backup := range input.GetData() {
+		simpleBackupInfos = append(simpleBackupInfos, &backuppb.BackupInfo{
+			Id:              backup.GetId(),
+			Name:            backup.GetName(),
+			StateCode:       backup.GetStateCode(),
+			ErrorMessage:    backup.GetErrorMessage(),
+			BackupTimestamp: backup.GetBackupTimestamp(),
+		})
+	}
+	return &backuppb.ListBackupsResponse{
+		RequestId: input.GetRequestId(),
+		Code:      input.GetCode(),
+		Msg:       input.GetMsg(),
+		Data:      simpleBackupInfos,
+	}
+}
+
+func SimpleBackupResponse(input *backuppb.BackupInfoResponse) *backuppb.BackupInfoResponse {
+	backup := input.GetData()
+
+	collections := make([]*backuppb.CollectionBackupInfo, 0)
+	for _, coll := range backup.GetCollectionBackups() {
+		collections = append(collections, &backuppb.CollectionBackupInfo{
+			StateCode:       coll.GetStateCode(),
+			ErrorMessage:    coll.GetErrorMessage(),
+			CollectionName:  coll.GetCollectionName(),
+			BackupTimestamp: coll.GetBackupTimestamp(),
+		})
+	}
+	simpleBackupInfo := &backuppb.BackupInfo{
+		Id:                backup.GetId(),
+		Name:              backup.GetName(),
+		StateCode:         backup.GetStateCode(),
+		ErrorMessage:      backup.GetErrorMessage(),
+		BackupTimestamp:   backup.GetBackupTimestamp(),
+		CollectionBackups: collections,
+	}
+	return &backuppb.BackupInfoResponse{
+		RequestId: input.GetRequestId(),
+		Code:      input.GetCode(),
+		Msg:       input.GetMsg(),
+		Data:      simpleBackupInfo,
+	}
+}
+
+func SimpleRestoreResponse(input *backuppb.RestoreBackupResponse) *backuppb.RestoreBackupResponse {
+	restore := input.GetData()
+
+	collectionRestores := make([]*backuppb.RestoreCollectionTask, 0)
+	for _, coll := range restore.GetCollectionRestoreTasks() {
+		collectionRestores = append(collectionRestores, &backuppb.RestoreCollectionTask{
+			StateCode:            coll.GetStateCode(),
+			ErrorMessage:         coll.GetErrorMessage(),
+			StartTime:            coll.GetStartTime(),
+			EndTime:              coll.GetEndTime(),
+			Progress:             coll.GetProgress(),
+			TargetCollectionName: coll.GetTargetCollectionName(),
+		})
+	}
+
+	simpleRestore := &backuppb.RestoreBackupTask{
+		Id:           restore.GetId(),
+		StateCode:    restore.GetStateCode(),
+		ErrorMessage: restore.GetErrorMessage(),
+		StartTime:    restore.GetStartTime(),
+		EndTime:      restore.GetEndTime(),
+		Progress:     restore.GetProgress(),
+	}
+
+	return &backuppb.RestoreBackupResponse{
+		RequestId: input.GetRequestId(),
+		Code:      input.GetCode(),
+		Msg:       input.GetMsg(),
+		Data:      simpleRestore,
+	}
+}

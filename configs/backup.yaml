@@ -5,6 +5,9 @@ log:
   file:
     rootPath: "logs/backup.log"
 
+http:
+  simpleResponse: true
+
 # milvus proxy address, compatible to milvus.yaml
 milvus:
   address: localhost
@@ -32,5 +35,3 @@ minio:
   backupBucketName: "a-bucket"
   backupRootPath: "backup"
 
-backup:
-  storageType: minio # backup data storage engine: minio/S3/GCP
