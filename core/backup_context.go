@@ -415,11 +415,17 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 		}
 
 		for _, partition := range partitions {
+			partitionSegments := partSegInfoMap[partition.ID]
+			var size int64 = 0
+			for _, seg := range partitionSegments {
+				size += seg.GetSize()
+			}
 			partitionBackupInfo := &backuppb.PartitionBackupInfo{
 				PartitionId:    partition.ID,
 				PartitionName:  partition.Name,
 				CollectionId:   collection.GetCollectionId(),
 				SegmentBackups: partSegInfoMap[partition.ID],
+				Size:           size,
 			}
 			partitionBackupInfos = append(partitionBackupInfos, partitionBackupInfo)
 			partitionLevelBackupInfos = append(partitionLevelBackupInfos, partitionBackupInfo)
@@ -517,6 +523,12 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 		}
 		refreshBackupMetaFunc(id, leveledBackupInfo)
 	}
+
+	var backupSize int64 = 0
+	for _, coll := range leveledBackupInfo.collectionLevel.GetInfos() {
+		backupSize += coll.GetSize()
+	}
+	backupInfo.Size = backupSize
 	backupInfo, err := refreshBackupMetaFunc(id, leveledBackupInfo)
 	if err != nil {
 		return backupInfo, err
@@ -832,7 +844,12 @@ func (b BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Rest
 			return resp
 		}
 
+		var toRestoreSize int64 = 0
+		for _, partitionBackup := range restoreCollection.GetPartitionBackups() {
+			toRestoreSize += partitionBackup.GetSize()
+		}
 		id := utils.UUID()
+
 		restoreCollectionTask := &backuppb.RestoreCollectionTask{
 			Id:                    id,
 			StateCode:             backuppb.RestoreTaskStateCode_INITIAL,
@@ -840,9 +857,13 @@ func (b BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Rest
 			CollBackup:            restoreCollection,
 			TargetCollectionName:  targetCollectionName,
 			PartitionRestoreTasks: []*backuppb.RestorePartitionTask{},
+			ToRestoreSize:         toRestoreSize,
+			RestoredSize:          0,
+			Progress:              0,
 		}
 		restoreCollectionTasks = append(restoreCollectionTasks, restoreCollectionTask)
 		task.CollectionRestoreTasks = restoreCollectionTasks
+		task.ToRestoreSize = task.GetToRestoreSize() + toRestoreSize
 	}
 
 	if request.Async {
@@ -875,6 +896,7 @@ func (b BackupContext) executeRestoreBackupTask(ctx context.Context, backup *bac
 
 	id := task.GetId()
 	b.restoreTasks[id] = task
+	task.StateCode = backuppb.RestoreTaskStateCode_EXECUTING
 
 	log.With(zap.String("id", id),
 		zap.String("backup_name", backup.GetName()))
@@ -887,7 +909,7 @@ func (b BackupContext) executeRestoreBackupTask(ctx context.Context, backup *bac
 
 	// 3, execute restoreCollectionTasks
 	for _, restoreCollectionTask := range restoreCollectionTasks {
-		_, err := b.executeRestoreCollectionTask(ctx, backup.GetName(), restoreCollectionTask)
+		endTask, err := b.executeRestoreCollectionTask(ctx, backup.GetName(), restoreCollectionTask)
 		log.Info("end restore", zap.String("collection_name", restoreCollectionTask.GetTargetCollectionName()))
 		if err != nil {
 			log.Error("executeRestoreCollectionTask failed",
@@ -896,6 +918,9 @@ func (b BackupContext) executeRestoreBackupTask(ctx context.Context, backup *bac
 			return task, err
 		}
 		restoreCollectionTask.StateCode = backuppb.RestoreTaskStateCode_SUCCESS
+		task.RestoredSize += endTask.RestoredSize
+		task.Progress = int32(100 * task.GetRestoredSize() / task.GetToRestoreSize())
+		updateRestoreTaskFunc(id, task)
 	}
 
 	task.StateCode = backuppb.RestoreTaskStateCode_SUCCESS
@@ -977,6 +1002,8 @@ func (b BackupContext) executeRestoreCollectionTask(ctx context.Context, backupN
 				zap.String("partition", partitionBackup.GetPartitionName()))
 			return task, err
 		}
+		task.RestoredSize = task.RestoredSize + partitionBackup.GetSize()
+		task.Progress = int32(100 * task.RestoredSize / task.ToRestoreSize)
 	}
 
 	return task, err
@@ -1103,6 +1130,7 @@ func (b BackupContext) readSegmentInfo(ctx context.Context, collecitonID int64, 
 		PartitionId:  partitionID,
 		NumOfRows:    numOfRows,
 	}
+	var size int64 = 0
 
 	insertPath := fmt.Sprintf("%s/%s/%v/%v/%v/", b.params.MinioCfg.RootPath, "insert_log", collecitonID, partitionID, segmentID)
 	log.Debug("insertPath", zap.String("insertPath", insertPath))
@@ -1119,6 +1147,7 @@ func (b BackupContext) readSegmentInfo(ctx context.Context, collecitonID int64, 
 				LogPath: binlogPath,
 				LogSize: sizes[index],
 			})
+			size += sizes[index]
 		}
 		insertLogs = append(insertLogs, &backuppb.FieldBinlog{
 			FieldID: fieldId,
@@ -1139,6 +1168,7 @@ func (b BackupContext) readSegmentInfo(ctx context.Context, collecitonID int64, 
 				LogPath: binlogPath,
 				LogSize: sizes[index],
 			})
+			size += sizes[index]
 		}
 		deltaLogs = append(deltaLogs, &backuppb.FieldBinlog{
 			FieldID: fieldId,
@@ -1151,29 +1181,31 @@ func (b BackupContext) readSegmentInfo(ctx context.Context, collecitonID int64, 
 		})
 	}
 
-	statsLogPath := fmt.Sprintf("%s/%s/%v/%v/%v/", b.params.MinioCfg.RootPath, "stats_log", collecitonID, partitionID, segmentID)
-	statsFieldsLogDir, _, _ := b.storageClient.ListWithPrefix(ctx, b.milvusBucketName, statsLogPath, false)
-	statsLogs := make([]*backuppb.FieldBinlog, 0)
-	for _, statsFieldLogDir := range statsFieldsLogDir {
-		binlogPaths, sizes, _ := b.storageClient.ListWithPrefix(ctx, b.milvusBucketName, statsFieldLogDir, false)
-		fieldIdStr := strings.Replace(strings.Replace(statsFieldLogDir, statsLogPath, "", 1), SEPERATOR, "", -1)
-		fieldId, _ := strconv.ParseInt(fieldIdStr, 10, 64)
-		binlogs := make([]*backuppb.Binlog, 0)
-		for index, binlogPath := range binlogPaths {
-			binlogs = append(binlogs, &backuppb.Binlog{
-				LogPath: binlogPath,
-				LogSize: sizes[index],
-			})
-		}
-		statsLogs = append(statsLogs, &backuppb.FieldBinlog{
-			FieldID: fieldId,
-			Binlogs: binlogs,
-		})
-	}
+	//statsLogPath := fmt.Sprintf("%s/%s/%v/%v/%v/", b.params.MinioCfg.RootPath, "stats_log", collecitonID, partitionID, segmentID)
+	//statsFieldsLogDir, _, _ := b.storageClient.ListWithPrefix(ctx, b.milvusBucketName, statsLogPath, false)
+	//statsLogs := make([]*backuppb.FieldBinlog, 0)
+	//for _, statsFieldLogDir := range statsFieldsLogDir {
+	//	binlogPaths, sizes, _ := b.storageClient.ListWithPrefix(ctx, b.milvusBucketName, statsFieldLogDir, false)
+	//	fieldIdStr := strings.Replace(strings.Replace(statsFieldLogDir, statsLogPath, "", 1), SEPERATOR, "", -1)
+	//	fieldId, _ := strconv.ParseInt(fieldIdStr, 10, 64)
+	//	binlogs := make([]*backuppb.Binlog, 0)
+	//	for index, binlogPath := range binlogPaths {
+	//		binlogs = append(binlogs, &backuppb.Binlog{
+	//			LogPath: binlogPath,
+	//			LogSize: sizes[index],
+	//		})
+	//	}
+	//	statsLogs = append(statsLogs, &backuppb.FieldBinlog{
+	//		FieldID: fieldId,
+	//		Binlogs: binlogs,
+	//	})
+	//}
 
 	segmentBackupInfo.Binlogs = insertLogs
 	segmentBackupInfo.Deltalogs = deltaLogs
-	segmentBackupInfo.Statslogs = statsLogs
+	//segmentBackupInfo.Statslogs = statsLogs
+
+	segmentBackupInfo.Size = size
 	return &segmentBackupInfo, nil
 }
 
@@ -1207,7 +1239,7 @@ func (b *BackupContext) GetRestore(ctx context.Context, request *backuppb.GetRes
 	if value, ok := b.restoreTasks[request.GetId()]; ok {
 		resp.Code = backuppb.ResponseCode_Success
 		resp.Msg = "success"
-		resp.Data = value
+		resp.Data = UpdateRestoreBackupTask(value)
 		return resp
 	} else {
 		resp.Code = backuppb.ResponseCode_Fail
