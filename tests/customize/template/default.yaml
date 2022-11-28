@@ -1,0 +1,29 @@
+apiVersion: milvus.io/v1alpha1
+kind: MilvusCluster
+metadata:
+  name: my-release
+  labels:
+    app: milvus
+spec:
+  dependencies:
+    etcd:
+      inCluster:
+        deletionPolicy: Delete
+        pvcDeletion: true
+    pulsar:
+      inCluster:
+        deletionPolicy: Delete
+        pvcDeletion: true
+        values:
+          proxy:
+            configData:
+              httpNumThreads: "100"
+    storage:
+      inCluster:
+        deletionPolicy: Delete
+        pvcDeletion: true
+  config:
+    log:
+      level: debug
+  components: {}
+  
