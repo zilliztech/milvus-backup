@@ -51,6 +51,7 @@ func treeToLevel(backup *backuppb.BackupInfo) (LeveledBackupInfo, error) {
 			ShardsNum:        collectionBack.GetShardsNum(),
 			ConsistencyLevel: collectionBack.GetConsistencyLevel(),
 			BackupTimestamp:  collectionBack.GetBackupTimestamp(),
+			Size:             collectionBack.GetSize(),
 		}
 		collections = append(collections, cloneCollectionBackup)
 
@@ -59,6 +60,7 @@ func treeToLevel(backup *backuppb.BackupInfo) (LeveledBackupInfo, error) {
 				PartitionId:   partitionBack.GetPartitionId(),
 				PartitionName: partitionBack.GetPartitionName(),
 				CollectionId:  partitionBack.GetCollectionId(),
+				Size:          partitionBack.GetSize(),
 			}
 			partitions = append(partitions, clonePartitionBackupInfo)
 
@@ -137,6 +139,7 @@ func levelToTree(level *LeveledBackupInfo) (*backuppb.BackupInfo, error) {
 		Progress:        level.backupLevel.GetProgress(),
 		Name:            level.backupLevel.GetName(),
 		BackupTimestamp: level.backupLevel.GetBackupTimestamp(),
+		Size:            level.backupLevel.GetSize(),
 	}
 	segmentDict := make(map[string][]*backuppb.SegmentBackupInfo, len(level.segmentLevel.GetInfos()))
 	for _, segment := range level.segmentLevel.GetInfos() {
@@ -152,7 +155,13 @@ func levelToTree(level *LeveledBackupInfo) (*backuppb.BackupInfo, error) {
 	}
 
 	for _, collection := range level.collectionLevel.GetInfos() {
+		collPartitions := partitionDict[collection.GetCollectionId()]
+		var size int64 = 0
+		for _, part := range collPartitions {
+			size += part.GetSize()
+		}
 		collection.PartitionBackups = partitionDict[collection.GetCollectionId()]
+		collection.Size = size
 	}
 
 	backupInfo.CollectionBackups = level.collectionLevel.GetInfos()
@@ -275,12 +284,13 @@ func SimpleRestoreResponse(input *backuppb.RestoreBackupResponse) *backuppb.Rest
 	}
 
 	simpleRestore := &backuppb.RestoreBackupTask{
-		Id:           restore.GetId(),
-		StateCode:    restore.GetStateCode(),
-		ErrorMessage: restore.GetErrorMessage(),
-		StartTime:    restore.GetStartTime(),
-		EndTime:      restore.GetEndTime(),
-		Progress:     restore.GetProgress(),
+		Id:                     restore.GetId(),
+		StateCode:              restore.GetStateCode(),
+		ErrorMessage:           restore.GetErrorMessage(),
+		StartTime:              restore.GetStartTime(),
+		EndTime:                restore.GetEndTime(),
+		CollectionRestoreTasks: collectionRestores,
+		Progress:               restore.GetProgress(),
 	}
 
 	return &backuppb.RestoreBackupResponse{
@@ -289,4 +299,14 @@ func SimpleRestoreResponse(input *backuppb.RestoreBackupResponse) *backuppb.Rest
 		Msg:       input.GetMsg(),
 		Data:      simpleRestore,
 	}
+}
+
+func UpdateRestoreBackupTask(input *backuppb.RestoreBackupTask) *backuppb.RestoreBackupTask {
+	var storedSize int64 = 0
+	for _, coll := range input.GetCollectionRestoreTasks() {
+		storedSize += coll.GetRestoredSize()
+	}
+	progress := int32(100 * storedSize / input.ToRestoreSize)
+	input.Progress = progress
+	return input
 }
