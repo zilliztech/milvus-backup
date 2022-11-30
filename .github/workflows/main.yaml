@@ -10,7 +10,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  test-backup-restore:
+  test-backup-restore-cli:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -21,27 +21,17 @@ jobs:
     
     steps:
       - uses: actions/checkout@v3
-        
-      # - name: Creating kind cluster
-      #   uses: helm/kind-action@v1.2.0
 
-      # - name: Print cluster information
-      #   run: |
-      #     kubectl config view
-      #     kubectl cluster-info
-      #     kubectl get nodes
-      #     kubectl get pods -n kube-system
-      #     helm version
-      #     kubectl version      
-      
       - name: Set up Python 3.8
         uses: actions/setup-python@v2
         with:
           python-version: 3.8
+          cache: pip
 
       - uses: actions/setup-go@v3
         with:
           go-version: '1.18.0'
+          cache: true
       
       - name: Build
         timeout-minutes: 5
@@ -97,4 +87,74 @@ jobs:
         run: |
           ./milvus-backup delete -n my_backup
           ./milvus-backup list
+
+  test-backup-restore-api:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        deploy_tools: [docker-compose]
+        milvus_mode: [standalone, cluster]
+        # mq_type: [pulsar, kafka]  # TODO: add pulsar and kafka
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python 3.8
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+          cache: pip
+
+      - uses: actions/setup-go@v3
+        with:
+          go-version: '1.18.0'
+          cache: true
+
+      - name: Build
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          go get
+          go build
+      - name: Install dependency
+
+        timeout-minutes: 5
+        working-directory: tests
+        shell: bash
+        run: |
+          pip install -r requirements.txt --trusted-host https://test.pypi.org
+
+      - name: Milvus deploy
+
+        timeout-minutes: 15
+        shell: bash
+        working-directory: deployment/${{ matrix.milvus_mode }}
+        run: |
+          docker-compose up -d
+          bash ../../scripts/check_healthy.sh
+          docker-compose ps -a
+
+      - name: Start server
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          ./milvus-backup server > server.log 2>&1 &
+
+      - name: Run test
+        timeout-minutes: 60
+        shell: bash
+        working-directory: tests
+        run: |
+          pytest -s -v --tags L0 L1
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v2
+        with:
+          name: logs-${{ matrix.milvus_mode }}
+          path: |
+            server.log
+            /tmp/ci_logs
+
 
