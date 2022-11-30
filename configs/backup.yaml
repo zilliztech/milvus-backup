@@ -1,6 +1,6 @@
 # Configures the system log output.
 log:
-  level: debug # Only supports debug, info, warn, error, panic, or fatal. Default 'info'.
+  level: info # Only supports debug, info, warn, error, panic, or fatal. Default 'info'.
   console: true
   file:
     rootPath: "logs/backup.log"
