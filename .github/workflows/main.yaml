@@ -2,9 +2,29 @@ name: Test
 
 on:
   push:
+    paths:
+      - 'build/**'
+      - 'cmd/**'
+      - 'configs/**'
+      - 'core/**'
+      - 'example/**'
+      - 'internal/**'
+      - 'tests/**'
+      - '!**.md'
+      - '.github/workflows/main.yaml'
     branches:
       - master
   pull_request:
+    paths:
+      - 'build/**'
+      - 'cmd/**'
+      - 'configs/**'
+      - 'core/**'
+      - 'example/**'
+      - 'internal/**'
+      - 'tests/**'
+      - '!**.md'
+      - '.github/workflows/main.yaml'
     branches:
       - master
   workflow_dispatch:
