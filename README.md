@@ -23,7 +23,7 @@ Delete backup by name.
 
 ## Restore
 Restore backup by name, will recreate the collections in the cluster and recover the data through bulkinsert. For more details about BulkInsert, please see:
-https://milvus.io/docs/v2.2.x/bulk_load.md
+https://milvus.io/docs/bulk_load.md
 BulkInserts will be done by partition. Currently we don't support concurrent BulkInserts.
 
 ## GetRestore
