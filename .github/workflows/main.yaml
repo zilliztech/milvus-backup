@@ -37,6 +37,7 @@ jobs:
       matrix:
         deploy_tools: [docker-compose]
         milvus_mode: [standalone, cluster]
+        another_milvus_mode: [standalone, cluster]
         # mq_type: [pulsar, kafka]  # TODO: add pulsar and kafka
     
     steps:
@@ -101,12 +102,61 @@ jobs:
         run: |
           python example/verify_data.py         
 
+      - name: Save Backup
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          sudo cp -r deployment/${{ matrix.milvus_mode }}/volumes/minio/a-bucket/backup ${{ matrix.milvus_mode }}-backup
+   
       - name: delete backup
         timeout-minutes: 5
         shell: bash
         run: |
           ./milvus-backup delete -n my_backup
           ./milvus-backup list
+
+      - name: Uninstall Milvus
+        timeout-minutes: 5
+        shell: bash
+        working-directory: deployment/${{ matrix.milvus_mode }}
+        run: |
+          docker-compose down
+          sudo rm -rf volumes
+      
+      - name: Deploy Another Milvus
+        timeout-minutes: 15
+        shell: bash
+        working-directory: deployment/${{ matrix.another_milvus_mode }}
+        run: |
+          docker-compose up -d
+          bash ../../scripts/check_healthy.sh
+          docker-compose ps -a
+      
+      - name: Copy Backup to Another Milvus
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          sudo mkdir -p deployment/${{ matrix.another_milvus_mode }}/volumes/minio/a-bucket/backup
+          sudo cp -r ${{ matrix.milvus_mode }}-backup/my_backup deployment/${{ matrix.another_milvus_mode }}/volumes/minio/a-bucket/backup
+      
+      - name: List backup from another Milvus
+        timeout-minutes: 5
+        working-directory: deployment/${{ matrix.another_milvus_mode }}/volumes/minio
+        shell: bash
+        run: |
+          pwd
+          ls -l
+          tree
+      - name: Restore backup from another Milvus
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          ./milvus-backup restore -n my_backup -s _recover
+      - name: Verify data from another Milvus
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python example/verify_data.py          
 
   test-backup-restore-api:
     runs-on: ubuntu-latest
