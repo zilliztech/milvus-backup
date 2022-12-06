@@ -123,12 +123,14 @@ func (h *Handlers) handleHello(c *gin.Context) (interface{}, error) {
 // @Tags Backup
 // @Accept application/json
 // @Produce application/json
+// @Param request_id header string true "request_id"
 // @Param object body backuppb.CreateBackupRequest   true  "CreateBackupRequest JSON"
 // @Success 200 {object} backuppb.BackupInfoResponse
 // @Router /create [post]
 func (h *Handlers) handleCreateBackup(c *gin.Context) (interface{}, error) {
 	json := backuppb.CreateBackupRequest{}
 	c.BindJSON(&json)
+	json.RequestId = c.GetHeader("request_id")
 	resp := h.backupContext.CreateBackup(h.backupContext.ctx, &json)
 	if h.backupContext.params.HTTPCfg.SimpleResponse {
 		resp = SimpleBackupResponse(resp)
@@ -141,13 +143,14 @@ func (h *Handlers) handleCreateBackup(c *gin.Context) (interface{}, error) {
 // @Summary List Backups interface
 // @Description List all backups in current storage
 // @Tags Backup
-// @Accept application/json
 // @Produce application/json
-// @Param object body backuppb.ListBackupsRequest   true  "ListBackupsRequest JSON"
+// @Param request_id header string true "request_id"
+// @Param collection_name query string true "collection_name"
 // @Success 200 {object} backuppb.ListBackupsResponse
 // @Router /list [get]
 func (h *Handlers) handleListBackups(c *gin.Context) (interface{}, error) {
 	req := backuppb.ListBackupsRequest{
+		RequestId:      c.GetHeader("request_id"),
 		CollectionName: c.Query("collection_name"),
 	}
 	resp := h.backupContext.ListBackups(h.backupContext.ctx, &req)
@@ -162,13 +165,15 @@ func (h *Handlers) handleListBackups(c *gin.Context) (interface{}, error) {
 // @Summary Get backup interface
 // @Description Get the backup with the given name or id
 // @Tags Backup
-// @Accept application/json
 // @Produce application/json
-// @Param object body backuppb.GetBackupRequest   true  "GetBackupRequest JSON"
+// @Param request_id header string true "request_id"
+// @Param backup_name query string true "backup_name"
+// @Param backup_id query string true "backup_id"
 // @Success 200 {object} backuppb.BackupInfoResponse
 // @Router /get_backup [get]
 func (h *Handlers) handleGetBackup(c *gin.Context) (interface{}, error) {
 	req := backuppb.GetBackupRequest{
+		RequestId:  c.GetHeader("request_id"),
 		BackupName: c.Query("backup_name"),
 		BackupId:   c.Query("backup_id"),
 	}
@@ -184,13 +189,14 @@ func (h *Handlers) handleGetBackup(c *gin.Context) (interface{}, error) {
 // @Summary Delete backup interface
 // @Description Delete a backup with the given name
 // @Tags Backup
-// @Accept application/json
 // @Produce application/json
-// @Param object body backuppb.DeleteBackupRequest   true  "DeleteBackupRequest JSON"
+// @Param request_id header string true "request_id"
+// @Param backup_name query string true "backup_name"
 // @Success 200 {object} backuppb.DeleteBackupResponse
 // @Router /delete [delete]
 func (h *Handlers) handleDeleteBackup(c *gin.Context) (interface{}, error) {
 	req := backuppb.DeleteBackupRequest{
+		RequestId:  c.GetHeader("request_id"),
 		BackupName: c.Query("backup_name"),
 	}
 	resp := h.backupContext.DeleteBackup(h.backupContext.ctx, &req)
@@ -204,12 +210,14 @@ func (h *Handlers) handleDeleteBackup(c *gin.Context) (interface{}, error) {
 // @Tags Restore
 // @Accept application/json
 // @Produce application/json
+// @Param request_id header string true "request_id"
 // @Param object body backuppb.RestoreBackupRequest   true  "RestoreBackupRequest JSON"
 // @Success 200 {object} backuppb.RestoreBackupResponse
 // @Router /restore [post]
 func (h *Handlers) handleRestoreBackup(c *gin.Context) (interface{}, error) {
 	json := backuppb.RestoreBackupRequest{}
 	c.BindJSON(&json)
+	json.RequestId = c.GetHeader("request_id")
 	resp := h.backupContext.RestoreBackup(h.backupContext.ctx, &json)
 	if h.backupContext.params.HTTPCfg.SimpleResponse {
 		resp = SimpleRestoreResponse(resp)
@@ -222,15 +230,15 @@ func (h *Handlers) handleRestoreBackup(c *gin.Context) (interface{}, error) {
 // @Summary Get restore interface
 // @Description Get restore task state with the given id
 // @Tags Restore
-// @Accept application/json
 // @Produce application/json
-// @Param object body backuppb.GetRestoreStateRequest   true  "GetRestoreStateRequest JSON"
+// @Param request_id header string true "request_id"
+// @param id query string true "id"
 // @Success 200 {object} backuppb.RestoreBackupResponse
 // @Router /get_restore [get]
 func (h *Handlers) handleGetRestore(c *gin.Context) (interface{}, error) {
-	id := c.Query("id")
 	req := backuppb.GetRestoreStateRequest{
-		Id: id,
+		RequestId: c.GetHeader("request_id"),
+		Id:        c.Query("id"),
 	}
 	resp := h.backupContext.GetRestore(h.backupContext.ctx, &req)
 	if h.backupContext.params.HTTPCfg.SimpleResponse {

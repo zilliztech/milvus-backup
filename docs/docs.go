@@ -38,6 +38,13 @@ const docTemplate = `{
                 "summary": "Create backup interface",
                 "parameters": [
                     {
+                        "type": "string",
+                        "description": "request_id",
+                        "name": "request_id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
                         "description": "CreateBackupRequest JSON",
                         "name": "object",
                         "in": "body",
@@ -60,9 +67,6 @@ const docTemplate = `{
         "/delete": {
             "delete": {
                 "description": "Delete a backup with the given name",
-                "consumes": [
-                    "application/json"
-                ],
                 "produces": [
                     "application/json"
                 ],
@@ -72,13 +76,18 @@ const docTemplate = `{
                 "summary": "Delete backup interface",
                 "parameters": [
                     {
-                        "description": "DeleteBackupRequest JSON",
-                        "name": "object",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/backuppb.DeleteBackupRequest"
-                        }
+                        "type": "string",
+                        "description": "request_id",
+                        "name": "request_id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "backup_name",
+                        "name": "backup_name",
+                        "in": "query",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -94,9 +103,6 @@ const docTemplate = `{
         "/get_backup": {
             "get": {
                 "description": "Get the backup with the given name or id",
-                "consumes": [
-                    "application/json"
-                ],
                 "produces": [
                     "application/json"
                 ],
@@ -106,13 +112,25 @@ const docTemplate = `{
                 "summary": "Get backup interface",
                 "parameters": [
                     {
-                        "description": "GetBackupRequest JSON",
-                        "name": "object",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/backuppb.GetBackupRequest"
-                        }
+                        "type": "string",
+                        "description": "request_id",
+                        "name": "request_id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "backup_name",
+                        "name": "backup_name",
+                        "in": "query",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "backup_id",
+                        "name": "backup_id",
+                        "in": "query",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -128,9 +146,6 @@ const docTemplate = `{
         "/get_restore": {
             "get": {
                 "description": "Get restore task state with the given id",
-                "consumes": [
-                    "application/json"
-                ],
                 "produces": [
                     "application/json"
                 ],
@@ -140,13 +155,18 @@ const docTemplate = `{
                 "summary": "Get restore interface",
                 "parameters": [
                     {
-                        "description": "GetRestoreStateRequest JSON",
-                        "name": "object",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/backuppb.GetRestoreStateRequest"
-                        }
+                        "type": "string",
+                        "description": "request_id",
+                        "name": "request_id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "id",
+                        "name": "id",
+                        "in": "query",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -162,9 +182,6 @@ const docTemplate = `{
         "/list": {
             "get": {
                 "description": "List all backups in current storage",
-                "consumes": [
-                    "application/json"
-                ],
                 "produces": [
                     "application/json"
                 ],
@@ -174,13 +191,18 @@ const docTemplate = `{
                 "summary": "List Backups interface",
                 "parameters": [
                     {
-                        "description": "ListBackupsRequest JSON",
-                        "name": "object",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/backuppb.ListBackupsRequest"
-                        }
+                        "type": "string",
+                        "description": "request_id",
+                        "name": "request_id",
+                        "in": "header",
+                        "required": true
+                    },
+                    {
+                        "type": "string",
+                        "description": "collection_name",
+                        "name": "collection_name",
+                        "in": "query",
+                        "required": true
                     }
                 ],
                 "responses": {
@@ -207,6 +229,13 @@ const docTemplate = `{
                 ],
                 "summary": "Restore interface",
                 "parameters": [
+                    {
+                        "type": "string",
+                        "description": "request_id",
+                        "name": "request_id",
+                        "in": "header",
+                        "required": true
+                    },
                     {
                         "description": "RestoreBackupRequest JSON",
                         "name": "object",
@@ -256,6 +285,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "progress": {
+                    "type": "integer"
+                },
+                "size": {
                     "type": "integer"
                 },
                 "start_time": {
@@ -374,6 +406,9 @@ const docTemplate = `{
                 "shards_num": {
                     "type": "integer"
                 },
+                "size": {
+                    "type": "integer"
+                },
                 "start_time": {
                     "type": "integer"
                 },
@@ -474,19 +509,6 @@ const docTemplate = `{
                 "DataType_FloatVector"
             ]
         },
-        "backuppb.DeleteBackupRequest": {
-            "type": "object",
-            "properties": {
-                "backup_name": {
-                    "description": "backup name",
-                    "type": "string"
-                },
-                "requestId": {
-                    "description": "uuid of request, will generate one if not set",
-                    "type": "string"
-                }
-            }
-        },
         "backuppb.DeleteBackupResponse": {
             "type": "object",
             "properties": {
@@ -575,36 +597,6 @@ const docTemplate = `{
                 "FieldState_FieldDropped"
             ]
         },
-        "backuppb.GetBackupRequest": {
-            "type": "object",
-            "properties": {
-                "backup_id": {
-                    "description": "backup to query",
-                    "type": "string"
-                },
-                "backup_name": {
-                    "description": "backup name to query, backup_name or backup_id is needed",
-                    "type": "string"
-                },
-                "requestId": {
-                    "description": "uuid of request, will generate one if not set",
-                    "type": "string"
-                }
-            }
-        },
-        "backuppb.GetRestoreStateRequest": {
-            "type": "object",
-            "properties": {
-                "id": {
-                    "description": "restore task id to query",
-                    "type": "string"
-                },
-                "requestId": {
-                    "description": "uuid of request, will generate one if not set",
-                    "type": "string"
-                }
-            }
-        },
         "backuppb.KeyValuePair": {
             "type": "object",
             "properties": {
@@ -612,19 +604,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "value": {
-                    "type": "string"
-                }
-            }
-        },
-        "backuppb.ListBackupsRequest": {
-            "type": "object",
-            "properties": {
-                "collection_name": {
-                    "description": "if collection_name is set, will only return backups contains this collection",
-                    "type": "string"
-                },
-                "requestId": {
-                    "description": "uuid of request, will generate one if not set",
                     "type": "string"
                 }
             }
@@ -675,6 +654,9 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/backuppb.SegmentBackupInfo"
                     }
+                },
+                "size": {
+                    "type": "integer"
                 }
             }
         },
@@ -782,11 +764,17 @@ const docTemplate = `{
                 "progress": {
                     "type": "integer"
                 },
+                "restored_size": {
+                    "type": "integer"
+                },
                 "start_time": {
                     "type": "integer"
                 },
                 "state_code": {
                     "$ref": "#/definitions/backuppb.RestoreTaskStateCode"
+                },
+                "to_restore_size": {
+                    "type": "integer"
                 }
             }
         },
@@ -814,6 +802,9 @@ const docTemplate = `{
                 "progress": {
                     "type": "integer"
                 },
+                "restored_size": {
+                    "type": "integer"
+                },
                 "start_time": {
                     "type": "integer"
                 },
@@ -822,6 +813,9 @@ const docTemplate = `{
                 },
                 "target_collection_name": {
                     "type": "string"
+                },
+                "to_restore_size": {
+                    "type": "integer"
                 }
             }
         },
@@ -893,6 +887,9 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "segment_id": {
+                    "type": "integer"
+                },
+                "size": {
                     "type": "integer"
                 },
                 "statslogs": {
