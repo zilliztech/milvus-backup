@@ -947,7 +947,7 @@ func (b BackupContext) executeRestoreBackupTask(ctx context.Context, backup *bac
 		restoreCollectionTask.StateCode = backuppb.RestoreTaskStateCode_SUCCESS
 		task.RestoredSize += endTask.RestoredSize
 		if task.GetToRestoreSize() == 0 {
-			task.Progress = 0
+			task.Progress = 100
 		} else {
 			task.Progress = int32(100 * task.GetRestoredSize() / task.GetToRestoreSize())
 		}
@@ -1035,7 +1035,7 @@ func (b BackupContext) executeRestoreCollectionTask(ctx context.Context, backupN
 		}
 		task.RestoredSize = task.RestoredSize + partitionBackup.GetSize()
 		if task.ToRestoreSize == 0 {
-			task.Progress = 0
+			task.Progress = 100
 		} else {
 			task.Progress = int32(100 * task.RestoredSize / task.ToRestoreSize)
 		}
