@@ -306,7 +306,10 @@ func UpdateRestoreBackupTask(input *backuppb.RestoreBackupTask) *backuppb.Restor
 	for _, coll := range input.GetCollectionRestoreTasks() {
 		storedSize += coll.GetRestoredSize()
 	}
-	progress := int32(100 * storedSize / input.ToRestoreSize)
-	input.Progress = progress
+	if input.ToRestoreSize == 0 {
+		input.Progress = 100
+	} else {
+		input.Progress = int32(storedSize * 100 / input.ToRestoreSize)
+	}
 	return input
 }

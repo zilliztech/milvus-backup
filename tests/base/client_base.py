@@ -273,7 +273,8 @@ class TestcaseBase(Base):
                                                                      primary_field=primary_field)
         collection_w = self.init_collection_wrap(name=name, schema=default_schema, active_trace=True)
         assert collection_w.name == name
-        cf.insert_data(collection_w, nb, is_binary, dim=dim)
+        if nb > 0:
+            cf.insert_data(collection_w, nb=nb, is_binary=is_binary, dim=dim)
         if is_flushed:
             collection_w.flush(timeout=180)
         if check_function:
