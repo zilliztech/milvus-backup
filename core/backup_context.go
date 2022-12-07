@@ -601,7 +601,75 @@ func (b BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBacku
 			resp.Data = b.backupTasks[value]
 			return resp
 		} else {
-			backup, err := b.readBackup(ctx, request.GetBackupName())
+			backupPath := b.backupRootPath + SEPERATOR + request.GetBackupName()
+			backup, err := b.readBackup(ctx, b.backupBucketName, backupPath)
+			if err != nil {
+				log.Warn("Fail to read backup", zap.String("backupName", request.GetBackupName()), zap.Error(err))
+				resp.Code = backuppb.ResponseCode_Fail
+				resp.Msg = err.Error()
+				return resp
+			}
+
+			resp.Data = backup
+			if backup == nil {
+				resp.Code = backuppb.ResponseCode_Request_Object_Not_Found
+				resp.Msg = "not found"
+			} else {
+				resp.Code = backuppb.ResponseCode_Success
+				resp.Msg = "success"
+			}
+		}
+	}
+
+	return resp
+}
+
+func (b BackupContext) GetBackup2(ctx context.Context, request *backuppb.GetBackupRequest) *backuppb.BackupInfoResponse {
+	if request.GetRequestId() == "" {
+		request.RequestId = utils.UUID()
+	}
+	log.Info("receive GetBackupRequest",
+		zap.String("requestId", request.GetRequestId()),
+		zap.String("backupName", request.GetBackupName()),
+		zap.String("backupId", request.GetBackupId()))
+
+	resp := &backuppb.BackupInfoResponse{
+		RequestId: request.GetRequestId(),
+	}
+
+	if !b.started {
+		err := b.Start()
+		if err != nil {
+			resp.Code = backuppb.ResponseCode_Fail
+			resp.Msg = err.Error()
+			return resp
+		}
+	}
+
+	if request.GetBackupId() == "" && request.GetBackupName() == "" {
+		resp.Code = backuppb.ResponseCode_Parameter_Error
+		resp.Msg = "empty backup name and backup id"
+		return resp
+	}
+
+	if request.GetBackupId() != "" {
+		if value, ok := b.backupTasks[request.GetBackupId()]; ok {
+			resp.Code = backuppb.ResponseCode_Success
+			resp.Msg = "success"
+			resp.Data = value
+			return resp
+		}
+	}
+
+	if request.GetBackupName() != "" {
+		if value, ok := b.backupNameIdDict[request.GetBackupName()]; ok {
+			resp.Code = backuppb.ResponseCode_Success
+			resp.Msg = "success"
+			resp.Data = b.backupTasks[value]
+			return resp
+		} else {
+			backupPath := b.backupRootPath + SEPERATOR + request.GetBackupName()
+			backup, err := b.readBackup(ctx, b.milvusBucketName, backupPath)
 			if err != nil {
 				log.Warn("Fail to read backup", zap.String("backupName", request.GetBackupName()), zap.Error(err))
 				resp.Code = backuppb.ResponseCode_Fail
@@ -796,7 +864,7 @@ func (b BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Rest
 		}
 	}
 
-	getResp := b.GetBackup(ctx, &backuppb.GetBackupRequest{
+	getResp := b.GetBackup2(ctx, &backuppb.GetBackupRequest{
 		BackupName: request.GetBackupName(),
 	})
 	if getResp.GetCode() != backuppb.ResponseCode_Success {
@@ -1104,41 +1172,58 @@ func (b BackupContext) getBackupPartitionPaths(ctx context.Context, backupName s
 	return []string{insertPath, deltaPath}, nil
 }
 
-func (b BackupContext) readBackup(ctx context.Context, backupName string) (*backuppb.BackupInfo, error) {
-	backupMetaDirPath := b.backupRootPath + SEPERATOR + backupName + SEPERATOR + META_PREFIX
+func (b BackupContext) readBackup(ctx context.Context, bucketName string, backupPath string) (*backuppb.BackupInfo, error) {
+	backupMetaDirPath := backupPath + SEPERATOR + META_PREFIX
 	backupMetaPath := backupMetaDirPath + SEPERATOR + BACKUP_META_FILE
 	collectionMetaPath := backupMetaDirPath + SEPERATOR + COLLECTION_META_FILE
 	partitionMetaPath := backupMetaDirPath + SEPERATOR + PARTITION_META_FILE
 	segmentMetaPath := backupMetaDirPath + SEPERATOR + SEGMENT_META_FILE
 
-	exist, err := b.storageClient.Exist(ctx, b.backupBucketName, backupMetaPath)
+	exist, err := b.storageClient.Exist(ctx, bucketName, backupMetaPath)
 	if err != nil {
-		log.Error("check backup meta file failed", zap.String("path", backupMetaPath), zap.Error(err))
+		log.Error("check backup meta file failed",
+			zap.String("bucket_name", bucketName),
+			zap.String("path", backupMetaPath), zap.Error(err))
 		return nil, err
 	}
 	if !exist {
-		log.Warn("read backup meta file not exist, you may need to create it first", zap.String("path", backupMetaPath), zap.Error(err))
+		log.Warn("read backup meta file not exist, you may need to create it first",
+			zap.String("bucket_name", bucketName),
+			zap.String("path", backupMetaPath),
+			zap.Error(err))
 		return nil, err
 	}
 
-	backupMetaBytes, err := b.storageClient.Read(ctx, b.backupBucketName, backupMetaPath)
+	backupMetaBytes, err := b.storageClient.Read(ctx, bucketName, backupMetaPath)
 	if err != nil {
-		log.Error("Read backup meta failed", zap.String("path", backupMetaPath), zap.Error(err))
+		log.Error("Read backup meta failed",
+			zap.String("bucket_name", bucketName),
+			zap.String("path", backupMetaPath),
+			zap.Error(err))
 		return nil, err
 	}
-	collectionBackupMetaBytes, err := b.storageClient.Read(ctx, b.backupBucketName, collectionMetaPath)
+	collectionBackupMetaBytes, err := b.storageClient.Read(ctx, bucketName, collectionMetaPath)
 	if err != nil {
-		log.Error("Read collection meta failed", zap.String("path", collectionMetaPath), zap.Error(err))
+		log.Error("Read collection meta failed",
+			zap.String("bucket_name", bucketName),
+			zap.String("path", collectionMetaPath),
+			zap.Error(err))
 		return nil, err
 	}
-	partitionBackupMetaBytes, err := b.storageClient.Read(ctx, b.backupBucketName, partitionMetaPath)
+	partitionBackupMetaBytes, err := b.storageClient.Read(ctx, bucketName, partitionMetaPath)
 	if err != nil {
-		log.Error("Read partition meta failed", zap.String("path", partitionMetaPath), zap.Error(err))
+		log.Error("Read partition meta failed",
+			zap.String("bucket_name", bucketName),
+			zap.String("path", partitionMetaPath),
+			zap.Error(err))
 		return nil, err
 	}
-	segmentBackupMetaBytes, err := b.storageClient.Read(ctx, b.backupBucketName, segmentMetaPath)
+	segmentBackupMetaBytes, err := b.storageClient.Read(ctx, bucketName, segmentMetaPath)
 	if err != nil {
-		log.Error("Read segment meta failed", zap.String("path", segmentMetaPath), zap.Error(err))
+		log.Error("Read segment meta failed",
+			zap.String("bucket_name", bucketName),
+			zap.String("path", segmentMetaPath),
+			zap.Error(err))
 		return nil, err
 	}
 
@@ -1151,7 +1236,7 @@ func (b BackupContext) readBackup(ctx context.Context, backupName string) (*back
 
 	backupInfo, err := deserialize(completeBackupMetas)
 	if err != nil {
-		log.Error("Fail to deserialize backup info", zap.String("backupName", backupName), zap.Error(err))
+		log.Error("Fail to deserialize backup info", zap.String("backupPath", backupPath), zap.Error(err))
 		return nil, err
 	}
 
