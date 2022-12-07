@@ -57,9 +57,9 @@ After building, use the following command to start a RESTAPI server.
 ```
 ./milvus-backup server
 ```
-By default, the server will listen to 8080. You can change it by `--port` parameter:
+By default, the server will listen to 8080. You can change it by `-p` parameter:
 ```
-./milvus-backup server --port 443
+./milvus-backup server -p 443
 ```
 
 ### APIs
@@ -77,26 +77,33 @@ http://localhost:8080/api/v1/docs/index.html
 curl --location --request POST 'http://localhost:8080/api/v1/create' \
 --header 'Content-Type: application/json' \
 --data-raw '{
-    "backup_name":"test_api"
+  "async": true,
+  "backup_name": "test_backup",
+  "collection_names": [
+    "test_collection1","test_collection2"
+  ]
 }'
 ```
 #### list
 
 ```
-http://localhost:8080/api/v1/list
+curl --location --request GET 'http://localhost:8080/api/v1/list' \
+--header 'Content-Type: application/json'
 ```
 
 #### get_backup
 
 ```
-http://localhost:8080/api/v1/get_backup?backup_name=test_api
+curl --location --request GET 'http://localhost:8080/api/v1/get_backup?backup_id=test_backup_id&backup_name=test_backup' \
+--header 'Content-Type: application/json'
 ```
 
 #### delete
 
 ```
 // DELETE method
-http://localhost:8080/api/v1/delete?backup_name=test_api
+curl --location --request DELETE 'http://localhost:8080/api/v1/delete?backup_name=test_api' \
+--header 'Content-Type: application/json'
 ```
 
 #### restore
@@ -104,13 +111,19 @@ http://localhost:8080/api/v1/delete?backup_name=test_api
 curl --location --request POST 'http://localhost:8080/api/v1/restore' \
 --header 'Content-Type: application/json' \
 --data-raw '{
-    "backup_name":"test_api"
+    "async": true,
+    "collection_names": [
+    "test_collection1"
+  ],
+    "collection_suffix": "_bak",
+    "backup_name":"test_backup"
 }'
 ```
 
 #### get_restore
 ```
-http://localhost:8080/api/v1/get_restore?id=xxxx
+curl --location --request GET 'http://localhost:8080/api/v1/get_restore?id=test_restore_id' \
+--header 'Content-Type: application/json'
 ```
 ## Command Line 
 
