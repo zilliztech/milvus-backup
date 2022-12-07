@@ -171,13 +171,14 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 		getResp := b.GetBackup(b.ctx, &backuppb.GetBackupRequest{
 			BackupName: request.GetBackupName(),
 		})
-		if getResp.GetCode() != backuppb.ResponseCode_Success {
+		if getResp.GetCode() == backuppb.ResponseCode_Request_Object_Not_Found {
+			log.Info("backup not exist", zap.String("backup_name", request.GetBackupName()))
+		} else if getResp.GetCode() != backuppb.ResponseCode_Success {
 			log.Error("fail in GetBackup", zap.String("msg", getResp.GetMsg()))
 			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = getResp.GetMsg()
 			return resp
-		}
-		if getResp.GetData() != nil {
+		} else if getResp.GetData() != nil {
 			errMsg := fmt.Sprintf("backup already exist with the name: %s", request.GetBackupName())
 			log.Error(errMsg)
 			resp.Code = backuppb.ResponseCode_Parameter_Error
@@ -607,9 +608,15 @@ func (b BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBacku
 				resp.Msg = err.Error()
 				return resp
 			}
-			resp.Code = backuppb.ResponseCode_Success
-			resp.Msg = "success"
+
 			resp.Data = backup
+			if backup == nil {
+				resp.Code = backuppb.ResponseCode_Request_Object_Not_Found
+				resp.Msg = "not found"
+			} else {
+				resp.Code = backuppb.ResponseCode_Success
+				resp.Msg = "success"
+			}
 		}
 	}
 
@@ -715,6 +722,26 @@ func (b BackupContext) DeleteBackup(ctx context.Context, request *backuppb.Delet
 	if request.GetBackupName() == "" {
 		resp.Code = backuppb.ResponseCode_Parameter_Error
 		resp.Msg = "empty backup name"
+		return resp
+	}
+
+	getResp := b.GetBackup(b.ctx, &backuppb.GetBackupRequest{
+		BackupName: request.GetBackupName(),
+	})
+	if getResp.GetCode() == backuppb.ResponseCode_Request_Object_Not_Found {
+		resp.Code = backuppb.ResponseCode_Request_Object_Not_Found
+		resp.Msg = getResp.GetMsg()
+		return resp
+	} else if getResp.GetCode() != backuppb.ResponseCode_Success {
+		log.Error("fail in GetBackup", zap.String("msg", getResp.GetMsg()))
+		resp.Code = backuppb.ResponseCode_Fail
+		resp.Msg = getResp.GetMsg()
+		return resp
+	} else if getResp.GetData() == nil {
+		errMsg := fmt.Sprintf("backup does not exist: %s", request.GetBackupName())
+		log.Warn(errMsg)
+		resp.Code = backuppb.ResponseCode_Request_Object_Not_Found
+		resp.Msg = errMsg
 		return resp
 	}
 
