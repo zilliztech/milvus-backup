@@ -44,36 +44,6 @@ class Base:
     def teardown_method(self, method):
         log.info(("*" * 35) + " teardown " + ("*" * 35))
         log.info("[teardown_method] Start teardown test case %s..." % method.__name__)
-        try:
-            """ Drop collection before disconnect """
-            if not self.connection_wrap.has_connection(alias=DefaultConfig.DEFAULT_USING)[0]:
-                self.connection_wrap.connect(alias=DefaultConfig.DEFAULT_USING, host=cf.param_info.param_host,
-                                             port=cf.param_info.param_port)
-
-            if self.collection_wrap.collection is not None:
-                if self.collection_wrap.collection.name.startswith("alias"):
-                    log.info(f"collection {self.collection_wrap.collection.name} is alias, skip drop operation")
-                else:
-                    self.collection_wrap.drop(check_task=ct.CheckTasks.check_nothing)
-
-            collection_list = self.utility_wrap.list_collections()[0]
-            for collection_object in self.collection_object_list:
-                if collection_object.collection is not None and collection_object.name in collection_list:
-                    collection_object.drop(check_task=ct.CheckTasks.check_nothing)
-        except Exception as e:
-            log.debug(str(e))
-
-        try:
-            """ Delete connection and reset configuration"""
-            res = self.connection_wrap.list_connections()
-            for i in res[0]:
-                self.connection_wrap.remove_connection(i[0])
-
-            # because the connection is in singleton mode, it needs to be restored to the original state after teardown
-            self.connection_wrap.add_connection(default={"host": DefaultConfig.DEFAULT_HOST,
-                                                         "port": DefaultConfig.DEFAULT_PORT})
-        except Exception as e:
-            log.debug(str(e))
 
 
 class TestcaseBase(Base):
@@ -335,7 +305,9 @@ class TestcaseBase(Base):
     def compare_collections(self, src_name, dist_name):
         collection_src, _ = self.collection_wrap.init_collection(name=src_name)
         collection_dist, _ = self.collection_wrap.init_collection(name=dist_name)
-        assert collection_src.num_entities == collection_dist.num_entities
+        assert collection_src.num_entities == collection_dist.num_entities, \
+            f"collection_src num_entities: {collection_src.num_entities} != " \
+            f"collection_dist num_entities: {collection_dist.num_entities}"
         assert collection_src.schema == collection_dist.schema
 
     def check_collection_binary(self, name):

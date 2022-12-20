@@ -163,8 +163,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        deploy_tools: [docker-compose]
+        deploy_tools: [docker-compose, helm]
         milvus_mode: [standalone, cluster]
+        exclude:
+          - deploy_tools: helm
+            milvus_mode: cluster
         # mq_type: [pulsar, kafka]  # TODO: add pulsar and kafka
 
     steps:
@@ -181,10 +184,21 @@ jobs:
           go-version: '1.18.0'
           cache: true
 
+      - name: Creating kind cluster
+        if: ${{ matrix.deploy_tools == 'helm' }}
+        uses: helm/kind-action@v1.2.0
+
       - name: Build
         timeout-minutes: 5
         shell: bash
         run: |
+          if [ ${{ matrix.deploy_tools }} == 'helm' ]; then
+            yq -i '.minio.bucketName = "milvus-bucket"' configs/backup.yaml
+            yq -i '.minio.backupBucketName = "milvus-bucket"' configs/backup.yaml
+            yq -i '.minio.rootPath = "file"' configs/backup.yaml
+          fi
+          yq -i '.log.level = "debug"' configs/backup.yaml
+          cat configs/backup.yaml || true
           go get
           go build
       - name: Install dependency
@@ -201,9 +215,25 @@ jobs:
         shell: bash
         working-directory: deployment/${{ matrix.milvus_mode }}
         run: |
-          docker-compose up -d
-          bash ../../scripts/check_healthy.sh
-          docker-compose ps -a
+          if [ ${{ matrix.deploy_tools}} == "helm" ]; then
+            helm repo add milvus https://milvus-io.github.io/milvus-helm
+            helm repo update
+            helm install --wait --timeout 600s milvus-backup milvus/milvus -f values.yaml
+            kubectl get pods
+            kubectl port-forward service/milvus-backup 19530 >/dev/null 2>&1 &
+            kubectl port-forward service/milvus-backup-minio 9000  >/dev/null 2>&1 &
+            sleep 10
+            nc -vz 127.0.0.1 19530
+            nc -vz 127.0.0.1 9000
+            sleep 10
+            kubectl get pods -n default | grep milvus-backup
+          fi
+          
+          if [ ${{ matrix.deploy_tools}} == "docker-compose" ]; then
+            docker-compose up -d
+            bash ../../scripts/check_healthy.sh
+            docker-compose ps -a
+          fi
 
       - name: Start server
         timeout-minutes: 5
@@ -212,19 +242,28 @@ jobs:
           ./milvus-backup server > server.log 2>&1 &
 
       - name: Run test
-        timeout-minutes: 60
+        timeout-minutes: 15
         shell: bash
         working-directory: tests
         run: |
           pytest -s -v -n 4 --tags L0 L1
 
+      - name: Get Milvus status
+        shell: bash
+        working-directory: deployment/${{ matrix.milvus_mode }}
+        run: |
+          docker-compose ps -a || true
+          kubectl get pods -n default || true
+          
+
       - name: Upload logs
-        if: always()
+        if: ${{ ! success() }}
         uses: actions/upload-artifact@v2
         with:
-          name: logs-${{ matrix.milvus_mode }}
+          name: logs-${{ matrix.deploy_tools }}-${{ matrix.milvus_mode }}
           path: |
-            server.log
+            ./logs
+            ./server.log
             /tmp/ci_logs
 
 
