@@ -190,8 +190,8 @@ jobs:
         shell: bash
         run: |
           if [ ${{ matrix.deploy_tools }} == 'helm' ]; then
-            yq -i '.minio.bucketName = milvus-bucket' configs/backup.yaml
-            yq -i '.minio.rootPath = file' configs/backup.yaml
+            yq -i '.minio.bucketName = "milvus-bucket"' configs/backup.yaml
+            yq -i '.minio.rootPath = "file"' configs/backup.yaml
           fi
           cat configs/backup.yaml || true
           go get
