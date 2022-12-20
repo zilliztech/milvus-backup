@@ -243,13 +243,21 @@ jobs:
         run: |
           pytest -s -v -n 4 --tags L0 L1
 
+      - name: Get Milvus status
+        shell: bash
+        working-directory: deployment/${{ matrix.milvus_mode }}
+        run: |
+          docker-compose ps -a || true
+          kubectl get pods -n default || true
+          
+
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v2
         with:
-          name: logs-${{ matrix.milvus_mode }}
+          name: logs-${{ matrix.milvus_mode }}-${{ matrix.milvus_mode }}
           path: |
-            server.log
+            ./server.log
             /tmp/ci_logs
 
 
