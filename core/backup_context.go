@@ -14,6 +14,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/storage"
 	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/util/retry"
 
 	gomilvus "github.com/milvus-io/milvus-sdk-go/v2/client"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
@@ -986,11 +987,13 @@ func (b BackupContext) executeRestoreCollectionTask(ctx context.Context, backupN
 		Fields:         fields,
 	}
 
-	err := b.milvusClient.CreateCollection(
-		ctx,
-		collectionSchema,
-		task.GetCollBackup().GetShardsNum(),
-		gomilvus.WithConsistencyLevel(entity.ConsistencyLevel(task.GetCollBackup().GetConsistencyLevel())))
+	err := retry.Do(ctx, func() error {
+		return b.milvusClient.CreateCollection(
+			ctx,
+			collectionSchema,
+			task.GetCollBackup().GetShardsNum(),
+			gomilvus.WithConsistencyLevel(entity.ConsistencyLevel(task.GetCollBackup().GetConsistencyLevel())))
+	}, retry.Attempts(10), retry.Sleep(1*time.Second))
 
 	if err != nil {
 		errorMsg := fmt.Sprintf("fail to create collection, targetCollectionName: %s err: %s", targetCollectionName, err)
@@ -1007,7 +1010,9 @@ func (b BackupContext) executeRestoreCollectionTask(ctx context.Context, backupN
 			return task, err
 		}
 		if !exist {
-			err = b.milvusClient.CreatePartition(ctx, targetCollectionName, partitionBackup.GetPartitionName())
+			err = retry.Do(ctx, func() error {
+				return b.milvusClient.CreatePartition(ctx, targetCollectionName, partitionBackup.GetPartitionName())
+			}, retry.Attempts(10), retry.Sleep(1*time.Second))
 			if err != nil {
 				log.Error("fail to create partition", zap.Error(err))
 				return task, err
