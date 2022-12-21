@@ -50,8 +50,8 @@ type BackupContext struct {
 
 	idGenerator utils.IdGenerator
 
-	backupNameIdDict map[string]string
-	backupTasks      map[string]*backuppb.BackupInfo
+	backupNameIdDict sync.Map //map[string]string
+	backupTasks      sync.Map //map[string]*backuppb.BackupInfo
 
 	restoreTasks map[string]*backuppb.RestoreBackupTask
 }
@@ -120,8 +120,8 @@ func (b *BackupContext) Start() error {
 
 	// init id generator to alloc id to tasks
 	b.idGenerator = utils.NewFlakeIdGenerator()
-	b.backupTasks = make(map[string]*backuppb.BackupInfo)
-	b.backupNameIdDict = make(map[string]string)
+	b.backupTasks = sync.Map{}
+	b.backupNameIdDict = sync.Map{}
 	b.restoreTasks = make(map[string]*backuppb.RestoreBackupTask)
 	b.started = true
 	return nil
@@ -209,8 +209,8 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 		StartTime: time.Now().UnixNano() / int64(time.Millisecond),
 		Name:      name,
 	}
-	b.backupTasks[id] = backup
-	b.backupNameIdDict[name] = id
+	b.backupTasks.Store(id, backup)
+	b.backupNameIdDict.Store(name, id)
 
 	if request.Async {
 		go b.executeCreateBackup(ctx, request, backup)
@@ -248,7 +248,7 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 		if err != nil {
 			return backupInfo, err
 		}
-		b.backupTasks[id] = backupInfo
+		b.backupTasks.Store(id, backupInfo)
 		return backup, nil
 	}
 
@@ -587,19 +587,22 @@ func (b BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBacku
 	}
 
 	if request.GetBackupId() != "" {
-		if value, ok := b.backupTasks[request.GetBackupId()]; ok {
+		if value, ok := b.backupTasks.Load(request.GetBackupId()); ok {
 			resp.Code = backuppb.ResponseCode_Success
 			resp.Msg = "success"
-			resp.Data = value
+			resp.Data = value.(*backuppb.BackupInfo)
 			return resp
 		}
 	}
 
 	if request.GetBackupName() != "" {
-		if value, ok := b.backupNameIdDict[request.GetBackupName()]; ok {
+		if id, ok := b.backupNameIdDict.Load(request.GetBackupName()); ok {
 			resp.Code = backuppb.ResponseCode_Success
 			resp.Msg = "success"
-			resp.Data = b.backupTasks[value]
+			backup, ok := b.backupTasks.Load(id)
+			if ok {
+				resp.Data = backup.(*backuppb.BackupInfo)
+			}
 			return resp
 		} else {
 			backup, err := b.readBackup(ctx, request.GetBackupName())
