@@ -145,6 +145,10 @@ message GetBackupRequest {
   string backup_name = 2;
   // backup to query
   string backup_id = 3;
+  // if bucket_name and path is set. will override bucket/path in config.
+  string bucket_name = 4;
+  // if bucket_name and path is set. will override bucket/path in config.
+  string path = 5;
 }
 
 message ListBackupsRequest {
@@ -212,6 +216,10 @@ message RestoreBackupRequest {
   map<string, string> collection_renames = 5;
   // execute asynchronously or not
   bool async = 6;
+  // if bucket_name and path is set. will override bucket/path in config.
+  string bucket_name = 7;
+  // if bucket_name and path is set. will override bucket/path in config.
+  string path = 8;
 }
 
 message RestorePartitionTask {
