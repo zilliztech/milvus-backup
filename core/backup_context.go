@@ -360,6 +360,7 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 			return backupInfo, err
 		}
 		log.Info("flush segments",
+			zap.String("collectionName", collection.GetCollectionName()),
 			zap.Int64s("newSealedSegmentIDs", newSealedSegmentIDs),
 			zap.Int64s("flushedSegmentIDs", flushedSegmentIDs),
 			zap.Int64("timeOfSeal", timeOfSeal))
@@ -370,6 +371,9 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 		if err != nil {
 			return backupInfo, err
 		}
+		log.Info("GetPersistentSegmentInfo from milvus",
+			zap.String("collectionName", collection.GetCollectionName()),
+			zap.Int("segmentNum", len(segmentEntities)))
 
 		checkSegmentsFunc := func(flushSegmentIds []int64, segmentEntities []*entity.Segment) ([]*entity.Segment, error) {
 			segmentDict := utils.ArrayToMap(flushSegmentIds)
@@ -396,6 +400,10 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 			collection.ErrorMessage = err.Error()
 			return backupInfo, err
 		}
+		log.Info("Finished segment check",
+			zap.String("collectionName", collection.GetCollectionName()),
+			zap.Int("before check", len(segmentEntities)),
+			zap.Int("after check", len(checkedSegments)))
 
 		segmentBackupInfos := make([]*backuppb.SegmentBackupInfo, 0)
 		partSegInfoMap := make(map[int64][]*backuppb.SegmentBackupInfo)
@@ -411,6 +419,9 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 			segmentBackupInfos = append(segmentBackupInfos, segmentInfo)
 			segmentLevelBackupInfos = append(segmentLevelBackupInfos, segmentInfo)
 		}
+		log.Info("readSegmentInfo from storage",
+			zap.String("collectionName", collection.GetCollectionName()),
+			zap.Int("segmentNum", len(checkedSegments)))
 
 		leveledBackupInfo.segmentLevel = &backuppb.SegmentLevelBackupInfo{
 			Infos: segmentLevelBackupInfos,
@@ -438,9 +449,17 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 		}
 		collection.PartitionBackups = partitionBackupInfos
 		refreshBackupMetaFunc(id, leveledBackupInfo)
+		log.Info("finish build partition info",
+			zap.String("collectionName", collection.GetCollectionName()),
+			zap.Int("partitionNum", len(partitionBackupInfos)))
+
+		log.Info("Begin copy data",
+			zap.String("collectionName", collection.GetCollectionName()),
+			zap.Int("segmentNum", len(segmentBackupInfos)))
 
 		// copy segment data
 		for _, segment := range segmentBackupInfos {
+			start := time.Now().Unix()
 			log.Debug("copy segment",
 				zap.Int64("collection_id", segment.GetCollectionId()),
 				zap.Int64("partition_id", segment.GetPartitionId()),
@@ -522,6 +541,12 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 					}
 				}
 			}
+			duration := time.Now().Unix() - start
+			log.Debug("copy segment finished",
+				zap.Int64("collection_id", segment.GetCollectionId()),
+				zap.Int64("partition_id", segment.GetPartitionId()),
+				zap.Int64("segment_id", segment.GetSegmentId()),
+				zap.Int64("cost_time", duration))
 		}
 		refreshBackupMetaFunc(id, leveledBackupInfo)
 	}
