@@ -20,6 +20,11 @@ const (
 	INSERT_LOG_DIR = "insert_log"
 	DELTA_LOG_DIR  = "delta_log"
 	STATS_LOG_DIR  = "stats_log"
+
+	LoadState_NotExist = "NotExist"
+	LoadState_NotLoad  = "NotLoad"
+	LoadState_Loading  = "Loading"
+	LoadState_Loaded   = "Loaded"
 )
 
 type BackupMetaBytes struct {
@@ -52,6 +57,9 @@ func treeToLevel(backup *backuppb.BackupInfo) (LeveledBackupInfo, error) {
 			ConsistencyLevel: collectionBack.GetConsistencyLevel(),
 			BackupTimestamp:  collectionBack.GetBackupTimestamp(),
 			Size:             collectionBack.GetSize(),
+			HasIndex:         collectionBack.GetHasIndex(),
+			IndexInfo:        collectionBack.GetIndexInfo(),
+			LoadState:        collectionBack.GetLoadState(),
 		}
 		collections = append(collections, cloneCollectionBackup)
 
@@ -61,6 +69,7 @@ func treeToLevel(backup *backuppb.BackupInfo) (LeveledBackupInfo, error) {
 				PartitionName: partitionBack.GetPartitionName(),
 				CollectionId:  partitionBack.GetCollectionId(),
 				Size:          partitionBack.GetSize(),
+				LoadState:     partitionBack.GetLoadState(),
 			}
 			partitions = append(partitions, clonePartitionBackupInfo)
 
@@ -250,6 +259,9 @@ func SimpleBackupResponse(input *backuppb.BackupInfoResponse) *backuppb.BackupIn
 			ErrorMessage:    coll.GetErrorMessage(),
 			CollectionName:  coll.GetCollectionName(),
 			BackupTimestamp: coll.GetBackupTimestamp(),
+			HasIndex:        coll.GetHasIndex(),
+			IndexInfo:       coll.GetIndexInfo(),
+			LoadState:       coll.GetLoadState(),
 		})
 	}
 	simpleBackupInfo := &backuppb.BackupInfo{
