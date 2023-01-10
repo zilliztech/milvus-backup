@@ -27,4 +27,7 @@ mkdir -p backuppb
 
 ${protoc} --proto_path="${GOOGLE_PROTO_DIR}" --proto_path=. --go_out=plugins=grpc,paths=source_relative:./backuppb backup.proto
 
+# remove has_index
+sed -i "" -e "s/has_index,omitempty/has_index/g" ./backuppb/backup.pb.go
+
 popd

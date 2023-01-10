@@ -324,6 +324,37 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 			AutoID:      completeCollection.Schema.AutoID,
 			Fields:      fields,
 		}
+
+		hasIndex := false
+		var indexInfo *backuppb.IndexInfo
+		for _, field := range completeCollection.Schema.Fields {
+			if field.DataType != entity.FieldTypeBinaryVector && field.DataType != entity.FieldTypeFloatVector {
+				continue
+			}
+
+			indexState, err := b.milvusClient.GetIndexState(b.ctx, collection.Name, field.Name)
+			if err != nil {
+				log.Error("fail in GetIndexState", zap.Error(err))
+				return backupInfo, err
+			}
+			if indexState == 0 {
+				continue
+			}
+			fieldIndex, err := b.milvusClient.DescribeIndex(b.ctx, collection.Name, field.Name)
+			if err != nil {
+				log.Error("fail in DescribeIndex", zap.Error(err))
+				return backupInfo, err
+			}
+			if len(fieldIndex) != 0 {
+				indexInfo = &backuppb.IndexInfo{
+					Name:      fieldIndex[0].Name(),
+					IndexType: string(fieldIndex[0].IndexType()),
+					Params:    fieldIndex[0].Params(),
+				}
+				hasIndex = true
+			}
+		}
+
 		collectionBackupId := utils.UUID()
 		collectionBackup := &backuppb.CollectionBackupInfo{
 			Id:               collectionBackupId,
@@ -335,6 +366,8 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 			Schema:           schema,
 			ShardsNum:        completeCollection.ShardNum,
 			ConsistencyLevel: backuppb.ConsistencyLevel(completeCollection.ConsistencyLevel),
+			HasIndex:         hasIndex,
+			IndexInfo:        indexInfo,
 		}
 		collectionBackupInfos = append(collectionBackupInfos, collectionBackup)
 	}
@@ -351,6 +384,43 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 		if err != nil {
 			log.Error("fail to ShowPartitions", zap.Error(err))
 			return backupInfo, err
+		}
+
+		// use GetLoadingProgress currently, GetLoadState is a new interface @20230104  milvus pr#21515
+		collectionLoadProgress, err := b.milvusClient.GetLoadingProgress(ctx, collection.GetCollectionName(), []string{})
+		if err != nil {
+			log.Error("fail to GetLoadingProgress of collection", zap.Error(err))
+			return backupInfo, err
+		}
+
+		var collectionLoadState string
+		partitionLoadStates := make(map[string]string, 0)
+		if collectionLoadProgress == 0 {
+			collectionLoadState = LoadState_NotLoad
+			for _, partition := range partitions {
+				partitionLoadStates[partition.Name] = LoadState_NotLoad
+			}
+		} else if collectionLoadProgress == 100 {
+			collectionLoadState = LoadState_Loaded
+			for _, partition := range partitions {
+				partitionLoadStates[partition.Name] = LoadState_Loaded
+			}
+		} else {
+			collectionLoadState = LoadState_Loading
+			for _, partition := range partitions {
+				loadProgress, err := b.milvusClient.GetLoadingProgress(ctx, collection.GetCollectionName(), []string{partition.Name})
+				if err != nil {
+					log.Error("fail to GetLoadingProgress of partition", zap.Error(err))
+					return backupInfo, err
+				}
+				if loadProgress == 0 {
+					partitionLoadStates[partition.Name] = LoadState_NotLoad
+				} else if loadProgress == 100 {
+					partitionLoadStates[partition.Name] = LoadState_Loaded
+				} else {
+					partitionLoadStates[partition.Name] = LoadState_Loading
+				}
+			}
 		}
 
 		// Flush
@@ -428,6 +498,7 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 				CollectionId:   collection.GetCollectionId(),
 				SegmentBackups: partSegInfoMap[partition.ID],
 				Size:           size,
+				LoadState:      partitionLoadStates[partition.Name],
 			}
 			partitionBackupInfos = append(partitionBackupInfos, partitionBackupInfo)
 			partitionLevelBackupInfos = append(partitionLevelBackupInfos, partitionBackupInfo)
@@ -437,6 +508,7 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 			Infos: partitionLevelBackupInfos,
 		}
 		collection.PartitionBackups = partitionBackupInfos
+		collection.LoadState = collectionLoadState
 		refreshBackupMetaFunc(id, leveledBackupInfo)
 
 		// copy segment data
@@ -949,7 +1021,6 @@ func (b BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Rest
 	}
 }
 
-// wip
 func (b BackupContext) executeRestoreBackupTask(ctx context.Context, backupBucketName string, backupPath string, backup *backuppb.BackupInfo, task *backuppb.RestoreBackupTask) (*backuppb.RestoreBackupTask, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
