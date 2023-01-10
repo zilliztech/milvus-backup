@@ -27,6 +27,12 @@ enum ResponseCode {
   Request_Object_Not_Found = 404;
 }
 
+message IndexInfo {
+  string name = 1;
+  string index_type = 2;
+  map<string, string> params = 3;
+}
+
 /**
  * lite version of Collection info
  */
@@ -46,6 +52,9 @@ message CollectionBackupInfo {
   repeated PartitionBackupInfo partition_backups = 13;
   uint64 backup_timestamp = 14;
   int64 size = 15;
+  bool has_index = 16;
+  IndexInfo index_info = 17;
+  string load_state = 18;
 }
 
 message PartitionBackupInfo {
@@ -53,8 +62,9 @@ message PartitionBackupInfo {
   string partition_name = 2;
   int64 collection_id = 3;
   // array of segment backup
-  repeated SegmentBackupInfo segment_backups = 7;
-  int64 size = 8;
+  repeated SegmentBackupInfo segment_backups = 4;
+  int64 size = 5;
+  string load_state = 6;
 }
 
 /**
