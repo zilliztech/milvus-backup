@@ -54,6 +54,7 @@ class TestCreateBackup(TestcaseBase):
             res = client.wait_create_backup_complete(back_up_name)
             assert res is True
         res = client.list_backup()
+        log.info(f"list backup response: {res}")
         if "data" in res:
             all_backup = [r["name"] for r in res["data"]]
         else:

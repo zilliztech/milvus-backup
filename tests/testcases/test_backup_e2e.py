@@ -46,6 +46,7 @@ class TestE2e(TestcaseBase):
         log.info(f"restore_backup: {res}")
         res, _ = self.utility_wrap.list_collections()
         assert name_origin + suffix in res
+        self.compare_collections(name_origin, name_origin + suffix)
         res = client.delete_backup(back_up_name)
         res = client.list_backup()
         if "data" in res:
