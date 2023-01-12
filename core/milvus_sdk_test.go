@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -124,4 +125,30 @@ func TestBulkInsert(t *testing.T) {
 	//time.Sleep(30 * time.Second)
 
 	client.DropCollection(ctx, _COLLECTION_NAME)
+}
+
+func TestGetIndex(t *testing.T) {
+	ctx := context.Background()
+	milvusAddr := "localhost:19530"
+	c, err := gomilvus.NewGrpcClient(ctx, milvusAddr)
+	assert.NoError(t, err)
+
+	coll, err := c.DescribeCollection(ctx, "hello_milvus_recover")
+
+	//log.Info("coll", zap.Any("coll", coll))
+	fmt.Println(coll.Schema.Fields[0])
+	fmt.Println(coll.Schema.Fields[1])
+	fmt.Println(coll.Schema.Fields[2])
+
+	index, err := c.DescribeIndex(ctx, "hello_milvus_recover", "embeddings")
+	fmt.Println(index)
+
+	indexState, err := c.GetIndexState(ctx, "hello_milvus", "embeddings")
+	fmt.Println(indexState)
+	progress, err := c.GetLoadingProgress(ctx, "hello_milvus_recover", []string{})
+	fmt.Println(progress)
+
+	loadState, err := c.GetLoadState(ctx, "hello_milvus_recover", []string{})
+	fmt.Println(loadState)
+
 }
