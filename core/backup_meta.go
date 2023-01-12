@@ -262,6 +262,9 @@ func SimpleBackupResponse(input *backuppb.BackupInfoResponse) *backuppb.BackupIn
 			HasIndex:        coll.GetHasIndex(),
 			IndexInfo:       coll.GetIndexInfo(),
 			LoadState:       coll.GetLoadState(),
+			Schema:          coll.GetSchema(),
+			Size:            coll.GetSize(),
+			Progress:        coll.GetProgress(),
 		})
 	}
 	simpleBackupInfo := &backuppb.BackupInfo{
@@ -271,6 +274,10 @@ func SimpleBackupResponse(input *backuppb.BackupInfoResponse) *backuppb.BackupIn
 		ErrorMessage:      backup.GetErrorMessage(),
 		BackupTimestamp:   backup.GetBackupTimestamp(),
 		CollectionBackups: collections,
+		StartTime:         backup.GetStartTime(),
+		EndTime:           backup.GetEndTime(),
+		Progress:          backup.GetProgress(),
+		Size:              backup.GetSize(),
 	}
 	return &backuppb.BackupInfoResponse{
 		RequestId: input.GetRequestId(),
