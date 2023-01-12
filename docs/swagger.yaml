@@ -87,7 +87,13 @@ definitions:
         type: integer
       errorMessage:
         type: string
+      has_index:
+        type: boolean
       id:
+        type: string
+      index_info:
+        $ref: '#/definitions/backuppb.IndexInfo'
+      load_state:
         type: string
       partition_backups:
         items:
@@ -237,6 +243,17 @@ definitions:
     - FieldState_FieldCreating
     - FieldState_FieldDropping
     - FieldState_FieldDropped
+  backuppb.IndexInfo:
+    properties:
+      index_type:
+        type: string
+      name:
+        type: string
+      params:
+        additionalProperties:
+          type: string
+        type: object
+    type: object
   backuppb.KeyValuePair:
     properties:
       key:
@@ -266,6 +283,8 @@ definitions:
     properties:
       collection_id:
         type: integer
+      load_state:
+        type: string
       partition_id:
         type: integer
       partition_name:
@@ -302,6 +321,10 @@ definitions:
       backup_name:
         description: backup name to restore
         type: string
+      bucket_name:
+        description: if bucket_name and path is set. will override bucket/path in
+          config.
+        type: string
       collection_names:
         description: collections to restore
         items:
@@ -318,6 +341,10 @@ definitions:
         description: |-
           Support two ways to rename the collections while recover
           1, set a suffix
+        type: string
+      path:
+        description: if bucket_name and path is set. will override bucket/path in
+          config.
         type: string
       requestId:
         description: uuid of request, will generate one if not set
@@ -446,7 +473,6 @@ definitions:
           $ref: '#/definitions/backuppb.FieldBinlog'
         type: array
     type: object
-host: localhost:8080
 info:
   contact:
     email: wayasxxx@gmail.com
