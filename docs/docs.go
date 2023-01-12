@@ -388,7 +388,16 @@ const docTemplate = `{
                 "errorMessage": {
                     "type": "string"
                 },
+                "has_index": {
+                    "type": "boolean"
+                },
                 "id": {
+                    "type": "string"
+                },
+                "index_info": {
+                    "$ref": "#/definitions/backuppb.IndexInfo"
+                },
+                "load_state": {
                     "type": "string"
                 },
                 "partition_backups": {
@@ -597,6 +606,23 @@ const docTemplate = `{
                 "FieldState_FieldDropped"
             ]
         },
+        "backuppb.IndexInfo": {
+            "type": "object",
+            "properties": {
+                "index_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "params": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "backuppb.KeyValuePair": {
             "type": "object",
             "properties": {
@@ -641,6 +667,9 @@ const docTemplate = `{
             "properties": {
                 "collection_id": {
                     "type": "integer"
+                },
+                "load_state": {
+                    "type": "string"
                 },
                 "partition_id": {
                     "type": "integer"
@@ -690,6 +719,10 @@ const docTemplate = `{
                     "description": "backup name to restore",
                     "type": "string"
                 },
+                "bucket_name": {
+                    "description": "if bucket_name and path is set. will override bucket/path in config.",
+                    "type": "string"
+                },
                 "collection_names": {
                     "description": "collections to restore",
                     "type": "array",
@@ -706,6 +739,10 @@ const docTemplate = `{
                 },
                 "collection_suffix": {
                     "description": "Support two ways to rename the collections while recover\n1, set a suffix",
+                    "type": "string"
+                },
+                "path": {
+                    "description": "if bucket_name and path is set. will override bucket/path in config.",
                     "type": "string"
                 },
                 "requestId": {
@@ -906,7 +943,7 @@ const docTemplate = `{
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
-	Host:             "localhost:8080",
+	Host:             "",
 	BasePath:         "/api/v1",
 	Schemes:          []string{},
 	Title:            "Milvus Backup Service",

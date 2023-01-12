@@ -13,7 +13,6 @@
         },
         "version": "1.0"
     },
-    "host": "localhost:8080",
     "basePath": "/api/v1",
     "paths": {
         "/create": {
@@ -381,7 +380,16 @@
                 "errorMessage": {
                     "type": "string"
                 },
+                "has_index": {
+                    "type": "boolean"
+                },
                 "id": {
+                    "type": "string"
+                },
+                "index_info": {
+                    "$ref": "#/definitions/backuppb.IndexInfo"
+                },
+                "load_state": {
                     "type": "string"
                 },
                 "partition_backups": {
@@ -590,6 +598,23 @@
                 "FieldState_FieldDropped"
             ]
         },
+        "backuppb.IndexInfo": {
+            "type": "object",
+            "properties": {
+                "index_type": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "params": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
         "backuppb.KeyValuePair": {
             "type": "object",
             "properties": {
@@ -634,6 +659,9 @@
             "properties": {
                 "collection_id": {
                     "type": "integer"
+                },
+                "load_state": {
+                    "type": "string"
                 },
                 "partition_id": {
                     "type": "integer"
@@ -683,6 +711,10 @@
                     "description": "backup name to restore",
                     "type": "string"
                 },
+                "bucket_name": {
+                    "description": "if bucket_name and path is set. will override bucket/path in config.",
+                    "type": "string"
+                },
                 "collection_names": {
                     "description": "collections to restore",
                     "type": "array",
@@ -699,6 +731,10 @@
                 },
                 "collection_suffix": {
                     "description": "Support two ways to rename the collections while recover\n1, set a suffix",
+                    "type": "string"
+                },
+                "path": {
+                    "description": "if bucket_name and path is set. will override bucket/path in config.",
                     "type": "string"
                 },
                 "requestId": {
