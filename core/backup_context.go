@@ -330,18 +330,6 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 		log.Info("try to get index",
 			zap.String("collection_name", completeCollection.Name))
 		for _, field := range completeCollection.Schema.Fields {
-			if field.DataType != entity.FieldTypeBinaryVector && field.DataType != entity.FieldTypeFloatVector {
-				continue
-			}
-
-			//indexState, err := b.milvusClient.GetIndexState(b.ctx, completeCollection.Name, field.Name)
-			//if err != nil {
-			//	log.Error("fail in GetIndexState", zap.Error(err))
-			//	return backupInfo, err
-			//}
-			//if indexState == 0 {
-			//	continue
-			//}
 			fieldIndex, err := b.milvusClient.DescribeIndex(b.ctx, completeCollection.Name, field.Name)
 			if err != nil {
 				if strings.HasPrefix(err.Error(), "index doesn't exist") {
