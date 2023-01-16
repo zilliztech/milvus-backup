@@ -26,12 +26,13 @@ minio:
   accessKeyID: minioadmin # accessKeyID of MinIO/S3
   secretAccessKey: minioadmin # MinIO/S3 encryption string
   useSSL: false # Access to MinIO/S3 with SSL
-  bucketName: "a-bucket" # Bucket name in MinIO/S3
-  rootPath: files # The root path where the message is stored in MinIO/S3
   useIAM: false
   cloudProvider: "aws"
   iamEndpoint: ""
+  
+  bucketName: "a-bucket" # Milvus Bucket name in MinIO/S3, make it the same as your milvus instance
+  rootPath: "files" # Milvus storage root path in MinIO/S3, make it the same as your milvus instance
 
-  backupBucketName: "a-bucket"
-  backupRootPath: "backup"
+  backupBucketName: "a-bucket" # Bucket name to store backup data. Backup data will store to backupBucketName/backupRootPath
+  backupRootPath: "backup" # Rootpath to store backup data. Backup data will store to backupBucketName/backupRootPath
 

@@ -169,17 +169,15 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 
 	// backup name validate
 	if request.GetBackupName() != "" {
-		getResp := b.GetBackup(b.ctx, &backuppb.GetBackupRequest{
-			BackupName: request.GetBackupName(),
-		})
-		if getResp.GetCode() == backuppb.ResponseCode_Request_Object_Not_Found {
-			log.Info("backup not exist", zap.String("backup_name", request.GetBackupName()))
-		} else if getResp.GetCode() != backuppb.ResponseCode_Success {
-			log.Error("fail in GetBackup", zap.String("msg", getResp.GetMsg()))
+		exist, err := b.storageClient.Exist(b.ctx, b.backupBucketName, b.backupRootPath+SEPERATOR+request.GetBackupName())
+		if err != nil {
+			errMsg := fmt.Sprintf("fail to check whether exist backup with name: %s", request.GetBackupName())
+			log.Error(errMsg, zap.Error(err))
 			resp.Code = backuppb.ResponseCode_Fail
-			resp.Msg = getResp.GetMsg()
+			resp.Msg = errMsg + "/n" + err.Error()
 			return resp
-		} else if getResp.GetData() != nil {
+		}
+		if exist {
 			errMsg := fmt.Sprintf("backup already exist with the name: %s", request.GetBackupName())
 			log.Error(errMsg)
 			resp.Code = backuppb.ResponseCode_Parameter_Error
@@ -326,22 +324,13 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 		}
 
 		hasIndex := false
-		var indexInfo *backuppb.IndexInfo
+		indexInfos := make([]*backuppb.IndexInfo, 0)
 		log.Info("try to get index",
 			zap.String("collection_name", completeCollection.Name))
 		for _, field := range completeCollection.Schema.Fields {
 			if field.DataType != entity.FieldTypeBinaryVector && field.DataType != entity.FieldTypeFloatVector {
 				continue
 			}
-
-			//indexState, err := b.milvusClient.GetIndexState(b.ctx, completeCollection.Name, field.Name)
-			//if err != nil {
-			//	log.Error("fail in GetIndexState", zap.Error(err))
-			//	return backupInfo, err
-			//}
-			//if indexState == 0 {
-			//	continue
-			//}
 			fieldIndex, err := b.milvusClient.DescribeIndex(b.ctx, completeCollection.Name, field.Name)
 			if err != nil {
 				if strings.HasPrefix(err.Error(), "index doesn't exist") {
@@ -361,11 +350,13 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 				zap.String("field_name", field.Name),
 				zap.Any("index info", fieldIndex))
 			if len(fieldIndex) != 0 {
-				indexInfo = &backuppb.IndexInfo{
-					Name:      fieldIndex[0].Name(),
+				indexInfo := &backuppb.IndexInfo{
+					FieldName: field.Name,
+					IndexName: fieldIndex[0].Name(),
 					IndexType: string(fieldIndex[0].IndexType()),
 					Params:    fieldIndex[0].Params(),
 				}
+				indexInfos = append(indexInfos, indexInfo)
 				hasIndex = true
 			}
 		}
@@ -382,7 +373,7 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 			ShardsNum:        completeCollection.ShardNum,
 			ConsistencyLevel: backuppb.ConsistencyLevel(completeCollection.ConsistencyLevel),
 			HasIndex:         hasIndex,
-			IndexInfo:        indexInfo,
+			IndexInfos:       indexInfos,
 		}
 		collectionBackupInfos = append(collectionBackupInfos, collectionBackup)
 	}
@@ -1287,7 +1278,7 @@ func (b BackupContext) readBackup(ctx context.Context, bucketName string, backup
 		return nil, err
 	}
 	if !exist {
-		log.Warn("read backup meta file not exist, you may need to create it first", zap.String("path", backupMetaPath), zap.Error(err))
+		log.Warn("read backup meta file not exist", zap.String("path", backupMetaPath), zap.Error(err))
 		return nil, err
 	}
 

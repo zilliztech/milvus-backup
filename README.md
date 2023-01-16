@@ -5,6 +5,7 @@ Milvus-backup is a tool to backup and restore Milvus data. It can be used as a c
 Milvus-backup needs to visit Milvus proxy and minio cluster. Related config can be edited in `configs/backup.yaml`. 
 > **Note**
 > Please make sure the config of Minio is correct. There are some differences for the default value of Minio config when the Milvus is deployed by docker-compose and k8s.
+> Remind it is not supported to backup data to a local path. Backup data is also stored in minio or some other kind of object storage your milvus used.
 
 |field|docker-compose |k8s|
 |---|---|---|

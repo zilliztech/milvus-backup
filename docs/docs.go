@@ -394,8 +394,11 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
-                "index_info": {
-                    "$ref": "#/definitions/backuppb.IndexInfo"
+                "index_infos": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/backuppb.IndexInfo"
+                    }
                 },
                 "load_state": {
                     "type": "string"
@@ -609,10 +612,13 @@ const docTemplate = `{
         "backuppb.IndexInfo": {
             "type": "object",
             "properties": {
-                "index_type": {
+                "field_name": {
                     "type": "string"
                 },
-                "name": {
+                "index_name": {
+                    "type": "string"
+                },
+                "index_type": {
                     "type": "string"
                 },
                 "params": {

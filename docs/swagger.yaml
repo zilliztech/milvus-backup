@@ -91,8 +91,10 @@ definitions:
         type: boolean
       id:
         type: string
-      index_info:
-        $ref: '#/definitions/backuppb.IndexInfo'
+      index_infos:
+        items:
+          $ref: '#/definitions/backuppb.IndexInfo'
+        type: array
       load_state:
         type: string
       partition_backups:
@@ -245,9 +247,11 @@ definitions:
     - FieldState_FieldDropped
   backuppb.IndexInfo:
     properties:
-      index_type:
+      field_name:
         type: string
-      name:
+      index_name:
+        type: string
+      index_type:
         type: string
       params:
         additionalProperties:
