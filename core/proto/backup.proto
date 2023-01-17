@@ -28,9 +28,10 @@ enum ResponseCode {
 }
 
 message IndexInfo {
-  string name = 1;
-  string index_type = 2;
-  map<string, string> params = 3;
+  string field_name = 1;
+  string index_name = 2;
+  string index_type = 3;
+  map<string, string> params = 4;
 }
 
 /**
@@ -53,7 +54,7 @@ message CollectionBackupInfo {
   uint64 backup_timestamp = 14;
   int64 size = 15;
   bool has_index = 16;
-  IndexInfo index_info = 17;
+  repeated IndexInfo index_infos = 17;
   string load_state = 18;
 }
 

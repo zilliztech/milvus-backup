@@ -66,6 +66,7 @@ func (s *Server) registerHTTPServer() {
 	}
 	ginHandler := gin.Default()
 	apiv1 := ginHandler.Group(API_V1_PREFIX)
+	ginHandler.Any("", wrapHandler(handleHello))
 	NewHandlers(s.backupContext).RegisterRoutesTo(apiv1)
 	http.Handle("/", ginHandler)
 	s.engine = ginHandler
@@ -77,6 +78,11 @@ func (s *Server) registerProfilePort() {
 		http.HandleFunc("/debug/pprof/heap", pprof.Index)
 		http.ListenAndServe("localhost:8089", nil)
 	}()
+}
+
+func handleHello(c *gin.Context) (interface{}, error) {
+	c.String(200, "Hello, This is backup service")
+	return nil, nil
 }
 
 type Handlers struct {
@@ -92,7 +98,7 @@ func NewHandlers(backupContext *BackupContext) *Handlers {
 
 // RegisterRouters registers routes to given router
 func (h *Handlers) RegisterRoutesTo(router gin.IRouter) {
-	router.GET(HELLO_API, wrapHandler(h.handleHello))
+	router.GET(HELLO_API, wrapHandler(handleHello))
 	router.POST(CREATE_BACKUP_API, wrapHandler(h.handleCreateBackup))
 	router.GET(LIST_BACKUPS_API, wrapHandler(h.handleListBackups))
 	router.GET(GET_BACKUP_API, wrapHandler(h.handleGetBackup))
@@ -110,11 +116,6 @@ func wrapHandler(handle handlerFunc) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		handle(c)
 	}
-}
-
-func (h *Handlers) handleHello(c *gin.Context) (interface{}, error) {
-	c.String(200, "Hello, This is backup service")
-	return nil, nil
 }
 
 // CreateBackup Create backup interface

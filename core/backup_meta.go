@@ -58,7 +58,7 @@ func treeToLevel(backup *backuppb.BackupInfo) (LeveledBackupInfo, error) {
 			BackupTimestamp:  collectionBack.GetBackupTimestamp(),
 			Size:             collectionBack.GetSize(),
 			HasIndex:         collectionBack.GetHasIndex(),
-			IndexInfo:        collectionBack.GetIndexInfo(),
+			IndexInfos:       collectionBack.GetIndexInfos(),
 			LoadState:        collectionBack.GetLoadState(),
 		}
 		collections = append(collections, cloneCollectionBackup)
@@ -260,7 +260,7 @@ func SimpleBackupResponse(input *backuppb.BackupInfoResponse) *backuppb.BackupIn
 			CollectionName:  coll.GetCollectionName(),
 			BackupTimestamp: coll.GetBackupTimestamp(),
 			HasIndex:        coll.GetHasIndex(),
-			IndexInfo:       coll.GetIndexInfo(),
+			IndexInfos:      coll.GetIndexInfos(),
 			LoadState:       coll.GetLoadState(),
 			Schema:          coll.GetSchema(),
 			Size:            coll.GetSize(),
