@@ -6,7 +6,7 @@ require (
 	github.com/gin-gonic/gin v1.8.1
 	github.com/golang/protobuf v1.5.2
 	github.com/google/btree v1.0.1
-	github.com/milvus-io/milvus-sdk-go/v2 v2.1.0
+	github.com/milvus-io/milvus-sdk-go/v2 v2.2.0
 	github.com/minio/minio-go/v7 v7.0.17
 	github.com/pkg/errors v0.9.1
 	github.com/sony/sonyflake v1.1.0
@@ -42,6 +42,6 @@ require (
 
 replace (
 	github.com/apache/pulsar-client-go => github.com/milvus-io/pulsar-client-go v0.6.8
-	github.com/milvus-io/milvus-sdk-go/v2 => github.com/wayblink/milvus-sdk-go/v2 v2.2.6
+	github.com/milvus-io/milvus-sdk-go/v2 => github.com/wayblink/milvus-sdk-go/v2 v2.2.12
 	github.com/streamnative/pulsarctl => github.com/xiaofan-luan/pulsarctl v0.5.1
 )
