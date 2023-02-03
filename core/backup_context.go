@@ -22,8 +22,8 @@ import (
 )
 
 const (
-	BULKINSERT_TIMEOUT        = 10 * 60
-	BULKINSERT_SLEEP_INTERVAL = 3
+	BULKINSERT_TIMEOUT        = 60 * 60
+	BULKINSERT_SLEEP_INTERVAL = 5
 	BACKUP_NAME               = "BACKUP_NAME"
 	COLLECTION_RENAME_SUFFIX  = "COLLECTION_RENAME_SUFFIX"
 )
@@ -1228,16 +1228,30 @@ func (b BackupContext) executeBulkInsert(ctx context.Context, coll string, parti
 }
 
 func (b BackupContext) watchBulkInsertState(ctx context.Context, taskId int64, timeout int64, sleepSeconds int) error {
-	start := time.Now().Unix()
-	for time.Now().Unix()-start < timeout {
+	lastProgress := 0
+	lastUpdateTime := time.Now().Unix()
+	for {
 		importTaskState, err := b.milvusClient.GetBulkInsertState(ctx, taskId)
-		log.Debug("bulkinsert task state", zap.Int64("id", taskId), zap.Any("state", importTaskState))
+		currentTimestamp := time.Now().Unix()
+		log.Info("bulkinsert task state",
+			zap.Int64("id", taskId),
+			zap.Any("state", importTaskState),
+			zap.Int("progress", importTaskState.Progress()),
+			zap.Int64("currentTimestamp", currentTimestamp),
+			zap.Int64("lastUpdateTime", lastUpdateTime))
 		switch importTaskState.State {
 		case entity.BulkInsertFailed:
 			return err
 		case entity.BulkInsertCompleted:
 			return nil
 		default:
+			currentProgress := importTaskState.Progress()
+			if currentProgress > lastProgress {
+				lastUpdateTime = time.Now().Unix()
+			} else if (currentTimestamp - lastUpdateTime) >= timeout {
+				log.Warn(fmt.Sprintf("bulkinsert task state progress hang for more than %d s", timeout))
+				return errors.New("import task timeout")
+			}
 			time.Sleep(time.Second * time.Duration(sleepSeconds))
 			continue
 		}
