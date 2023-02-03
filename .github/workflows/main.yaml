@@ -12,6 +12,7 @@ on:
       - 'tests/**'
       - '!**.md'
       - '.github/workflows/main.yaml'
+      - 'deployment/**'
     branches:
       - master
   pull_request:
@@ -25,6 +26,7 @@ on:
       - 'tests/**'
       - '!**.md'
       - '.github/workflows/main.yaml'
+      - 'deployment/**'
     branches:
       - master
   workflow_dispatch:
