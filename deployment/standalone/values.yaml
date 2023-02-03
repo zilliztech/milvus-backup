@@ -3,7 +3,7 @@ cluster:
 image:
   all:
     repository: milvusdb/milvus
-    tag: master-latest
+    tag: 2.2.0-latest
     pullPolicy: IfNotPresent
 
 kafka:
