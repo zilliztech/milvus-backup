@@ -257,7 +257,19 @@ jobs:
           docker-compose ps -a || true
           kubectl get pods -n default || true
           
-
+      - name: Export logs
+        if: ${{ always() }}
+        shell: bash
+        working-directory: deployment/${{ matrix.milvus_mode }}
+        run: |
+          if [ ${{ matrix.deploy_tools}} == "helm" ]; then
+            bash ../../scripts/export_log_k8s.sh default milvus-backup logs
+          fi
+          
+          if [ ${{ matrix.deploy_tools}} == "docker-compose" ]; then
+            bash ../../scripts/export_log_docker.sh logs
+          fi    
+      
       - name: Upload logs
         if: ${{ ! success() }}
         uses: actions/upload-artifact@v2
@@ -267,5 +279,6 @@ jobs:
             ./logs
             ./server.log
             /tmp/ci_logs
+            deployment/${{ matrix.milvus_mode }}/logs
 
 
