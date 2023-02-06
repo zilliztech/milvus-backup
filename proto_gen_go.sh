@@ -31,5 +31,7 @@ ${protoc} --proto_path="${GOOGLE_PROTO_DIR}" --proto_path=. --go_out=plugins=grp
 sed -i "" -e "s/has_index,omitempty/has_index/g" ./backuppb/backup.pb.go
 # remove data omitempty
 sed -i "" -e "s/data,omitempty/data/g" ./backuppb/backup.pb.go
+# remove size omitempty
+sed -i "" -e "s/size,omitempty/size/g" ./backuppb/backup.pb.go
 
 popd

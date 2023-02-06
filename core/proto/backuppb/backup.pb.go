@@ -331,7 +331,7 @@ type CollectionBackupInfo struct {
 	ConsistencyLevel     ConsistencyLevel       `protobuf:"varint,12,opt,name=consistency_level,json=consistencyLevel,proto3,enum=milvus.proto.backup.ConsistencyLevel" json:"consistency_level,omitempty"`
 	PartitionBackups     []*PartitionBackupInfo `protobuf:"bytes,13,rep,name=partition_backups,json=partitionBackups,proto3" json:"partition_backups,omitempty"`
 	BackupTimestamp      uint64                 `protobuf:"varint,14,opt,name=backup_timestamp,json=backupTimestamp,proto3" json:"backup_timestamp,omitempty"`
-	Size                 int64                  `protobuf:"varint,15,opt,name=size,proto3" json:"size,omitempty"`
+	Size                 int64                  `protobuf:"varint,15,opt,name=size,proto3" json:"size"`
 	HasIndex             bool                   `protobuf:"varint,16,opt,name=has_index,json=hasIndex,proto3" json:"has_index"`
 	IndexInfos           []*IndexInfo           `protobuf:"bytes,17,rep,name=index_infos,json=indexInfos,proto3" json:"index_infos,omitempty"`
 	LoadState            string                 `protobuf:"bytes,18,opt,name=load_state,json=loadState,proto3" json:"load_state,omitempty"`
@@ -497,7 +497,7 @@ type PartitionBackupInfo struct {
 	CollectionId  int64  `protobuf:"varint,3,opt,name=collection_id,json=collectionId,proto3" json:"collection_id,omitempty"`
 	// array of segment backup
 	SegmentBackups       []*SegmentBackupInfo `protobuf:"bytes,4,rep,name=segment_backups,json=segmentBackups,proto3" json:"segment_backups,omitempty"`
-	Size                 int64                `protobuf:"varint,5,opt,name=size,proto3" json:"size,omitempty"`
+	Size                 int64                `protobuf:"varint,5,opt,name=size,proto3" json:"size"`
 	LoadState            string               `protobuf:"bytes,6,opt,name=load_state,json=loadState,proto3" json:"load_state,omitempty"`
 	XXX_NoUnkeyedLiteral struct{}             `json:"-"`
 	XXX_unrecognized     []byte               `json:"-"`
@@ -581,7 +581,7 @@ type SegmentBackupInfo struct {
 	Binlogs              []*FieldBinlog `protobuf:"bytes,5,rep,name=binlogs,proto3" json:"binlogs,omitempty"`
 	Statslogs            []*FieldBinlog `protobuf:"bytes,6,rep,name=statslogs,proto3" json:"statslogs,omitempty"`
 	Deltalogs            []*FieldBinlog `protobuf:"bytes,7,rep,name=deltalogs,proto3" json:"deltalogs,omitempty"`
-	Size                 int64          `protobuf:"varint,8,opt,name=size,proto3" json:"size,omitempty"`
+	Size                 int64          `protobuf:"varint,8,opt,name=size,proto3" json:"size"`
 	XXX_NoUnkeyedLiteral struct{}       `json:"-"`
 	XXX_unrecognized     []byte         `json:"-"`
 	XXX_sizecache        int32          `json:"-"`
@@ -682,7 +682,7 @@ type BackupInfo struct {
 	BackupTimestamp uint64 `protobuf:"varint,8,opt,name=backup_timestamp,json=backupTimestamp,proto3" json:"backup_timestamp,omitempty"`
 	// array of collection backup
 	CollectionBackups    []*CollectionBackupInfo `protobuf:"bytes,9,rep,name=collection_backups,json=collectionBackups,proto3" json:"collection_backups,omitempty"`
-	Size                 int64                   `protobuf:"varint,10,opt,name=size,proto3" json:"size,omitempty"`
+	Size                 int64                   `protobuf:"varint,10,opt,name=size,proto3" json:"size"`
 	XXX_NoUnkeyedLiteral struct{}                `json:"-"`
 	XXX_unrecognized     []byte                  `json:"-"`
 	XXX_sizecache        int32                   `json:"-"`
@@ -1544,8 +1544,8 @@ type RestoreCollectionTask struct {
 	CollBackup            *CollectionBackupInfo   `protobuf:"bytes,6,opt,name=coll_backup,json=collBackup,proto3" json:"coll_backup,omitempty"`
 	TargetCollectionName  string                  `protobuf:"bytes,7,opt,name=target_collection_name,json=targetCollectionName,proto3" json:"target_collection_name,omitempty"`
 	PartitionRestoreTasks []*RestorePartitionTask `protobuf:"bytes,8,rep,name=partition_restore_tasks,json=partitionRestoreTasks,proto3" json:"partition_restore_tasks,omitempty"`
-	RestoredSize          int64                   `protobuf:"varint,9,opt,name=restored_size,json=restoredSize,proto3" json:"restored_size,omitempty"`
-	ToRestoreSize         int64                   `protobuf:"varint,10,opt,name=to_restore_size,json=toRestoreSize,proto3" json:"to_restore_size,omitempty"`
+	RestoredSize          int64                   `protobuf:"varint,9,opt,name=restored_size,json=restoredSize,proto3" json:"restored_size"`
+	ToRestoreSize         int64                   `protobuf:"varint,10,opt,name=to_restore_size,json=toRestoreSize,proto3" json:"to_restore_size"`
 	Progress              int32                   `protobuf:"varint,11,opt,name=progress,proto3" json:"progress,omitempty"`
 	XXX_NoUnkeyedLiteral  struct{}                `json:"-"`
 	XXX_unrecognized      []byte                  `json:"-"`
@@ -1661,8 +1661,8 @@ type RestoreBackupTask struct {
 	StartTime              int64                    `protobuf:"varint,4,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
 	EndTime                int64                    `protobuf:"varint,5,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
 	CollectionRestoreTasks []*RestoreCollectionTask `protobuf:"bytes,6,rep,name=collection_restore_tasks,json=collectionRestoreTasks,proto3" json:"collection_restore_tasks,omitempty"`
-	RestoredSize           int64                    `protobuf:"varint,7,opt,name=restored_size,json=restoredSize,proto3" json:"restored_size,omitempty"`
-	ToRestoreSize          int64                    `protobuf:"varint,8,opt,name=to_restore_size,json=toRestoreSize,proto3" json:"to_restore_size,omitempty"`
+	RestoredSize           int64                    `protobuf:"varint,7,opt,name=restored_size,json=restoredSize,proto3" json:"restored_size"`
+	ToRestoreSize          int64                    `protobuf:"varint,8,opt,name=to_restore_size,json=toRestoreSize,proto3" json:"to_restore_size"`
 	Progress               int32                    `protobuf:"varint,9,opt,name=progress,proto3" json:"progress,omitempty"`
 	XXX_NoUnkeyedLiteral   struct{}                 `json:"-"`
 	XXX_unrecognized       []byte                   `json:"-"`
@@ -1926,7 +1926,7 @@ type Binlog struct {
 	TimestampFrom        uint64   `protobuf:"varint,2,opt,name=timestamp_from,json=timestampFrom,proto3" json:"timestamp_from,omitempty"`
 	TimestampTo          uint64   `protobuf:"varint,3,opt,name=timestamp_to,json=timestampTo,proto3" json:"timestamp_to,omitempty"`
 	LogPath              string   `protobuf:"bytes,4,opt,name=log_path,json=logPath,proto3" json:"log_path,omitempty"`
-	LogSize              int64    `protobuf:"varint,5,opt,name=log_size,json=logSize,proto3" json:"log_size,omitempty"`
+	LogSize              int64    `protobuf:"varint,5,opt,name=log_size,json=logSize,proto3" json:"log_size"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`
