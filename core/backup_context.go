@@ -1052,6 +1052,7 @@ func (b BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Rest
 		resp.Data = endTask
 		if err != nil {
 			resp.Code = backuppb.ResponseCode_Fail
+			log.Error("execute restore collection fail", zap.String("backupId", backup.GetId()), zap.Error(err))
 			resp.Msg = err.Error()
 		} else {
 			resp.Code = backuppb.ResponseCode_Success
@@ -1083,13 +1084,13 @@ func (b BackupContext) executeRestoreBackupTask(ctx context.Context, backupBucke
 	// 3, execute restoreCollectionTasks
 	for _, restoreCollectionTask := range restoreCollectionTasks {
 		endTask, err := b.executeRestoreCollectionTask(ctx, backupBucketName, backupPath, restoreCollectionTask)
-		log.Info("end restore", zap.String("collection_name", restoreCollectionTask.GetTargetCollectionName()))
 		if err != nil {
 			log.Error("executeRestoreCollectionTask failed",
 				zap.String("TargetCollectionName", restoreCollectionTask.GetTargetCollectionName()),
 				zap.Error(err))
 			return task, err
 		}
+		log.Info("finish restore collection", zap.String("collection_name", restoreCollectionTask.GetTargetCollectionName()))
 		restoreCollectionTask.StateCode = backuppb.RestoreTaskStateCode_SUCCESS
 		task.RestoredSize += endTask.RestoredSize
 		if task.GetToRestoreSize() == 0 {
@@ -1235,13 +1236,21 @@ func (b BackupContext) watchBulkInsertState(ctx context.Context, taskId int64, t
 		currentTimestamp := time.Now().Unix()
 		log.Info("bulkinsert task state",
 			zap.Int64("id", taskId),
+			zap.Int32("state", int32(importTaskState.State)),
 			zap.Any("state", importTaskState),
 			zap.Int("progress", importTaskState.Progress()),
 			zap.Int64("currentTimestamp", currentTimestamp),
 			zap.Int64("lastUpdateTime", lastUpdateTime))
+		if err != nil {
+			return err
+		}
 		switch importTaskState.State {
 		case entity.BulkInsertFailed:
-			return err
+			if value, ok := importTaskState.Infos["failed_reason"]; ok {
+				return errors.New("bulk insert fail, info: " + value)
+			} else {
+				return errors.New("bulk insert fail")
+			}
 		case entity.BulkInsertCompleted:
 			return nil
 		default:
