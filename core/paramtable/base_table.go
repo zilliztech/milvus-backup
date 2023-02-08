@@ -322,6 +322,35 @@ func (gp *BaseTable) ParseIntWithDefault(key string, defaultValue int) int {
 	return value
 }
 
+func (gp *BaseTable) ParseDataSizeWithDefault(key string, defaultValue string) (int64, error) {
+	valueStr := strings.ToLower(gp.LoadWithDefault(key, defaultValue))
+	if strings.HasSuffix(valueStr, "g") || strings.HasSuffix(valueStr, "gb") {
+		size, err := strconv.ParseInt(strings.Split(valueStr, "g")[0], 10, 64)
+		if err != nil {
+			return 0, err
+		}
+		return size * 1024 * 1024 * 1024, nil
+	} else if strings.HasSuffix(valueStr, "m") || strings.HasSuffix(valueStr, "mb") {
+		size, err := strconv.ParseInt(strings.Split(valueStr, "m")[0], 10, 64)
+		if err != nil {
+			return 0, err
+		}
+		return size * 1024 * 1024, nil
+	} else if strings.HasSuffix(valueStr, "k") || strings.HasSuffix(valueStr, "kb") {
+		size, err := strconv.ParseInt(strings.Split(valueStr, "k")[0], 10, 64)
+		if err != nil {
+			return 0, err
+		}
+		return size * 1024, nil
+	}
+
+	size, err := strconv.ParseInt(strings.Split(valueStr, "k")[0], 10, 64)
+	if err != nil {
+		return 0, err
+	}
+	return size, nil
+}
+
 // InitLogCfg init log of the base table
 func (gp *BaseTable) InitLogCfg() {
 	gp.Log = log.Config{}

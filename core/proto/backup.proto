@@ -80,6 +80,10 @@ message SegmentBackupInfo {
   repeated FieldBinlog statslogs = 6;
   repeated FieldBinlog deltalogs = 7;
   int64 size = 8;
+  // separate segments into multi groups by size, 
+  // segments in one group will be copied into one directory during backup
+  // and will bulkinsert in one call during restore
+  int64 group_id = 9; 
 }
 
 /**
