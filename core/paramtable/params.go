@@ -11,6 +11,7 @@ type BackupParams struct {
 	HTTPCfg   HTTPConfig
 	MilvusCfg MilvusConfig
 	MinioCfg  MinioConfig
+	BackupCfg BackupConfig
 }
 
 func (p *BackupParams) InitOnce() {
@@ -25,6 +26,27 @@ func (p *BackupParams) Init() {
 	p.HTTPCfg.init(&p.BaseTable)
 	p.MilvusCfg.init(&p.BaseTable)
 	p.MinioCfg.init(&p.BaseTable)
+	p.BackupCfg.init(&p.BaseTable)
+}
+
+type BackupConfig struct {
+	Base *BaseTable
+
+	MaxSegmentGroupSize int64
+}
+
+func (p *BackupConfig) init(base *BaseTable) {
+	p.Base = base
+
+	p.initMaxSegmentGroupSize()
+}
+
+func (p *BackupConfig) initMaxSegmentGroupSize() {
+	size, err := p.Base.ParseDataSizeWithDefault("backup.maxSegmentGroupSize", "2g")
+	if err != nil {
+		panic(err)
+	}
+	p.MaxSegmentGroupSize = size
 }
 
 type MilvusConfig struct {
@@ -89,7 +111,7 @@ func (p *MilvusConfig) initTLSMode() {
 	p.TLSMode = p.Base.ParseIntWithDefault("milvus.tlsMode", 0)
 }
 
-///////////////////////////////////////////////////////////////////////////////
+// /////////////////////////////////////////////////////////////////////////////
 // --- minio ---
 const (
 	CloudProviderAWS = "aws"

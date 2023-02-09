@@ -335,7 +335,7 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 			if err != nil {
 				if strings.HasPrefix(err.Error(), "index doesn't exist") {
 					// todo
-					log.Error("field has no index",
+					log.Warn("field has no index",
 						zap.String("collection_name", completeCollection.Name),
 						zap.String("field_name", field.Name),
 						zap.Error(err))
@@ -535,17 +535,63 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 			zap.String("collectionName", collection.GetCollectionName()),
 			zap.Int("segmentNum", len(segmentBackupInfos)))
 
-		// copy segment data
+		for _, part := range partitionBackupInfos {
+			if part.GetSize() > b.params.BackupCfg.MaxSegmentGroupSize {
+				log.Info("partition size is larger than MaxSegmentGroupSize, will separate segments into groups in backup files",
+					zap.Int64("collectionId", part.GetCollectionId()),
+					zap.Int64("partitionId", part.GetPartitionId()),
+					zap.Int64("partitionSize", part.GetSize()),
+					zap.Int64("MaxSegmentGroupSize", b.params.BackupCfg.MaxSegmentGroupSize))
+				segments := partSegInfoMap[part.GetPartitionId()]
+				var bufferSize int64 = 0
+				// 0 is illegal value, start from 1
+				var segGroupID int64 = 1
+				for _, seg := range segments {
+					if seg.Size > b.params.BackupCfg.MaxSegmentGroupSize && bufferSize == 0 {
+						seg.GroupId = segGroupID
+						segGroupID = segGroupID + 1
+					} else if bufferSize+seg.Size > b.params.BackupCfg.MaxSegmentGroupSize {
+						segGroupID = segGroupID + 1
+						seg.GroupId = segGroupID
+						bufferSize = 0
+						bufferSize = bufferSize + seg.Size
+					} else {
+						seg.GroupId = segGroupID
+						bufferSize = bufferSize + seg.Size
+					}
+				}
+			} else {
+				log.Info("partition size is smaller than MaxSegmentGroupSize, won't separate segments into groups in backup files",
+					zap.Int64("collectionId", part.GetCollectionId()),
+					zap.Int64("partitionId", part.GetPartitionId()),
+					zap.Int64("partitionSize", part.GetSize()),
+					zap.Int64("MaxSegmentGroupSize", b.params.BackupCfg.MaxSegmentGroupSize))
+			}
+		}
+
 		for _, segment := range segmentBackupInfos {
 			start := time.Now().Unix()
 			log.Debug("copy segment",
 				zap.Int64("collection_id", segment.GetCollectionId()),
 				zap.Int64("partition_id", segment.GetPartitionId()),
-				zap.Int64("segment_id", segment.GetSegmentId()))
+				zap.Int64("segment_id", segment.GetSegmentId()),
+				zap.Int64("group_id", segment.GetGroupId()))
 			// insert log
 			for _, binlogs := range segment.GetBinlogs() {
 				for _, binlog := range binlogs.GetBinlogs() {
-					targetPath := strings.Replace(binlog.GetLogPath(), b.milvusRootPath, BackupBinlogDirPath(b.backupRootPath, backupInfo.GetName()), 1)
+					// generate target path
+					// milvus_rootpath/insert_log/collection_id/partition_id/segment_id/ =>
+					// backup_rootpath/backup_name/insert_log/collection_id/partition_id/group_id/segment_id
+					targetPath := strings.Replace(binlog.GetLogPath(),
+						b.milvusRootPath,
+						BackupBinlogDirPath(b.backupRootPath, backupInfo.GetName()),
+						1)
+					if segment.GetGroupId() != 0 {
+						targetPath = strings.Replace(targetPath,
+							strconv.FormatInt(segment.GetPartitionId(), 10),
+							strconv.FormatInt(segment.GetPartitionId(), 10)+"/"+strconv.FormatInt(segment.GetGroupId(), 10),
+							1)
+					}
 					if targetPath == binlog.GetLogPath() {
 						log.Error("wrong target path",
 							zap.String("from", binlog.GetLogPath()),
@@ -584,7 +630,19 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 			// delta log
 			for _, binlogs := range segment.GetDeltalogs() {
 				for _, binlog := range binlogs.GetBinlogs() {
-					targetPath := strings.Replace(binlog.GetLogPath(), b.milvusRootPath, BackupBinlogDirPath(b.backupRootPath, backupInfo.GetName()), 1)
+					// generate target path
+					// milvus_rootpath/delta_log/collection_id/partition_id/segment_id/ =>
+					// backup_rootpath/backup_name/delta_log/collection_id/partition_id/group_id/segment_id
+					targetPath := strings.Replace(binlog.GetLogPath(),
+						b.milvusRootPath,
+						BackupBinlogDirPath(b.backupRootPath, backupInfo.GetName()),
+						1)
+					if segment.GetGroupId() != 0 {
+						targetPath = strings.Replace(targetPath,
+							strconv.FormatInt(segment.GetPartitionId(), 10),
+							strconv.FormatInt(segment.GetPartitionId(), 10)+"/"+strconv.FormatInt(segment.GetGroupId(), 10),
+							1)
+					}
 					if targetPath == binlog.GetLogPath() {
 						log.Error("wrong target path",
 							zap.String("from", binlog.GetLogPath()),
@@ -1172,23 +1230,50 @@ func (b BackupContext) executeRestoreCollectionTask(ctx context.Context, backupB
 			zap.String("partitionName", partitionBackup.GetPartitionName()))
 
 		// bulk insert
-		files, err := b.getBackupPartitionPaths(ctx, backupBucketName, backupPath, partitionBackup)
-		if err != nil {
-			log.Error("fail to get partition backup binlog files",
-				zap.Error(err),
-				zap.String("backupCollectionName", task.GetCollBackup().GetCollectionName()),
-				zap.String("targetCollectionName", targetCollectionName),
-				zap.String("partition", partitionBackup.GetPartitionName()))
-			return task, err
-		}
-		err = b.executeBulkInsert(ctx, targetCollectionName, partitionBackup.GetPartitionName(), files, int64(task.GetCollBackup().BackupTimestamp))
-		if err != nil {
-			log.Error("fail to bulk insert to partition",
-				zap.Error(err),
-				zap.String("backupCollectionName", task.GetCollBackup().GetCollectionName()),
-				zap.String("targetCollectionName", targetCollectionName),
-				zap.String("partition", partitionBackup.GetPartitionName()))
-			return task, err
+		groupIds := collectGroupIdsFromSegments(partitionBackup.GetSegmentBackups())
+
+		if len(groupIds) == 1 && groupIds[0] == 0 {
+			// backward compatible old backup without group id
+			files, err := b.getBackupPartitionPaths(ctx, backupBucketName, backupPath, partitionBackup)
+			if err != nil {
+				log.Error("fail to get partition backup binlog files",
+					zap.Error(err),
+					zap.String("backupCollectionName", task.GetCollBackup().GetCollectionName()),
+					zap.String("targetCollectionName", targetCollectionName),
+					zap.String("partition", partitionBackup.GetPartitionName()))
+				return task, err
+			}
+			err = b.executeBulkInsert(ctx, targetCollectionName, partitionBackup.GetPartitionName(), files, int64(task.GetCollBackup().BackupTimestamp))
+			if err != nil {
+				log.Error("fail to bulk insert to partition",
+					zap.Error(err),
+					zap.String("backupCollectionName", task.GetCollBackup().GetCollectionName()),
+					zap.String("targetCollectionName", targetCollectionName),
+					zap.String("partition", partitionBackup.GetPartitionName()))
+				return task, err
+			}
+		} else {
+			// bulk insert by segment groups
+			for _, groupId := range groupIds {
+				files, err := b.getBackupPartitionPathsWithGroupID(ctx, backupBucketName, backupPath, partitionBackup, groupId)
+				if err != nil {
+					log.Error("fail to get partition backup binlog files",
+						zap.Error(err),
+						zap.String("backupCollectionName", task.GetCollBackup().GetCollectionName()),
+						zap.String("targetCollectionName", targetCollectionName),
+						zap.String("partition", partitionBackup.GetPartitionName()))
+					return task, err
+				}
+				err = b.executeBulkInsert(ctx, targetCollectionName, partitionBackup.GetPartitionName(), files, int64(task.GetCollBackup().BackupTimestamp))
+				if err != nil {
+					log.Error("fail to bulk insert to partition",
+						zap.Error(err),
+						zap.String("backupCollectionName", task.GetCollBackup().GetCollectionName()),
+						zap.String("targetCollectionName", targetCollectionName),
+						zap.String("partition", partitionBackup.GetPartitionName()))
+					return task, err
+				}
+			}
 		}
 		task.RestoredSize = task.RestoredSize + partitionBackup.GetSize()
 		if task.ToRestoreSize == 0 {
@@ -1199,6 +1284,18 @@ func (b BackupContext) executeRestoreCollectionTask(ctx context.Context, backupB
 	}
 
 	return task, err
+}
+
+func collectGroupIdsFromSegments(segments []*backuppb.SegmentBackupInfo) []int64 {
+	dict := make(map[int64]bool)
+	res := make([]int64, 0)
+	for _, seg := range segments {
+		if _, ok := dict[seg.GetGroupId()]; !ok {
+			dict[seg.GetGroupId()] = true
+			res = append(res, seg.GetGroupId())
+		}
+	}
+	return res
 }
 
 func (b BackupContext) executeBulkInsert(ctx context.Context, coll string, partition string, files []string, endTime int64) error {
@@ -1276,6 +1373,27 @@ func (b BackupContext) getBackupPartitionPaths(ctx context.Context, bucketName s
 
 	insertPath := fmt.Sprintf("%s/%s/%s/%v/%v/", backupPath, BINGLOG_DIR, INSERT_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId())
 	deltaPath := fmt.Sprintf("%s/%s/%s/%v/%v/", backupPath, BINGLOG_DIR, DELTA_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId())
+
+	exist, err := b.storageClient.Exist(ctx, bucketName, deltaPath)
+	if err != nil {
+		log.Warn("check binlog exist fail", zap.Error(err))
+		return []string{}, err
+	}
+	if !exist {
+		return []string{insertPath, ""}, nil
+	}
+	return []string{insertPath, deltaPath}, nil
+}
+
+func (b BackupContext) getBackupPartitionPathsWithGroupID(ctx context.Context, bucketName string, backupPath string, partition *backuppb.PartitionBackupInfo, groupId int64) ([]string, error) {
+	log.Info("getBackupPartitionPaths",
+		zap.String("bucketName", bucketName),
+		zap.String("backupPath", backupPath),
+		zap.Int64("partitionID", partition.GetPartitionId()),
+		zap.Int64("groupId", groupId))
+
+	insertPath := fmt.Sprintf("%s/%s/%s/%v/%v/%d", backupPath, BINGLOG_DIR, INSERT_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId(), groupId)
+	deltaPath := fmt.Sprintf("%s/%s/%s/%v/%v/%d", backupPath, BINGLOG_DIR, DELTA_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId(), groupId)
 
 	exist, err := b.storageClient.Exist(ctx, bucketName, deltaPath)
 	if err != nil {

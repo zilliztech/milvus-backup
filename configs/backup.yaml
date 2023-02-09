@@ -36,3 +36,5 @@ minio:
   backupBucketName: "a-bucket" # Bucket name to store backup data. Backup data will store to backupBucketName/backupRootPath
   backupRootPath: "backup" # Rootpath to store backup data. Backup data will store to backupBucketName/backupRootPath
 
+backup:
+  maxSegmentGroupSize: 2G
