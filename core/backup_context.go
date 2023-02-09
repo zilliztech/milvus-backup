@@ -13,6 +13,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/storage"
 	"github.com/zilliztech/milvus-backup/core/utils"
+	"github.com/zilliztech/milvus-backup/internal/common"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/util/retry"
 
@@ -26,6 +27,8 @@ const (
 	BULKINSERT_SLEEP_INTERVAL = 5
 	BACKUP_NAME               = "BACKUP_NAME"
 	COLLECTION_RENAME_SUFFIX  = "COLLECTION_RENAME_SUFFIX"
+	WORKER_NUM                = 100
+	RPS                       = 1000
 )
 
 // makes sure BackupContext implements `Backup`
@@ -569,6 +572,8 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 			}
 		}
 
+		wp := common.NewWorkerPool(ctx, WORKER_NUM, RPS)
+		wp.Start()
 		for _, segment := range segmentBackupInfos {
 			start := time.Now().Unix()
 			log.Debug("copy segment",
@@ -599,32 +604,38 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 						return backupInfo, err
 					}
 
-					exist, err := b.storageClient.Exist(ctx, b.milvusBucketName, binlog.GetLogPath())
-					if err != nil {
-						log.Info("Fail to check file exist",
-							zap.Error(err),
-							zap.String("file", binlog.GetLogPath()))
-						return backupInfo, err
-					}
-					if !exist {
-						log.Error("Binlog file not exist",
-							zap.Error(err),
-							zap.String("file", binlog.GetLogPath()))
-						return backupInfo, err
-					}
+					binlog := binlog
+					job := func(ctx context.Context) error {
+						exist, err := b.storageClient.Exist(ctx, b.milvusBucketName, binlog.GetLogPath())
+						if err != nil {
+							log.Info("Fail to check file exist",
+								zap.Error(err),
+								zap.String("file", binlog.GetLogPath()))
+							return err
+						}
+						if !exist {
+							log.Error("Binlog file not exist",
+								zap.Error(err),
+								zap.String("file", binlog.GetLogPath()))
+							return err
+						}
 
-					err = b.storageClient.Copy(ctx, b.milvusBucketName, b.backupBucketName, binlog.GetLogPath(), targetPath)
-					if err != nil {
-						log.Info("Fail to copy file",
-							zap.Error(err),
-							zap.String("from", binlog.GetLogPath()),
-							zap.String("to", targetPath))
-						return backupInfo, err
-					} else {
-						log.Debug("Successfully copy file",
-							zap.String("from", binlog.GetLogPath()),
-							zap.String("to", targetPath))
+						err = b.storageClient.Copy(ctx, b.milvusBucketName, b.backupBucketName, binlog.GetLogPath(), targetPath)
+						if err != nil {
+							log.Info("Fail to copy file",
+								zap.Error(err),
+								zap.String("from", binlog.GetLogPath()),
+								zap.String("to", targetPath))
+							return err
+						} else {
+							log.Debug("Successfully copy file",
+								zap.String("from", binlog.GetLogPath()),
+								zap.String("to", targetPath))
+						}
+
+						return nil
 					}
+					wp.Submit(job)
 				}
 			}
 			// delta log
@@ -650,31 +661,36 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 						return backupInfo, err
 					}
 
-					exist, err := b.storageClient.Exist(ctx, b.milvusBucketName, binlog.GetLogPath())
-					if err != nil {
-						log.Info("Fail to check file exist",
-							zap.Error(err),
-							zap.String("file", binlog.GetLogPath()))
-						return backupInfo, err
+					binlog := binlog
+					job := func(ctx context.Context) error {
+						exist, err := b.storageClient.Exist(ctx, b.milvusBucketName, binlog.GetLogPath())
+						if err != nil {
+							log.Info("Fail to check file exist",
+								zap.Error(err),
+								zap.String("file", binlog.GetLogPath()))
+							return err
+						}
+						if !exist {
+							log.Error("Binlog file not exist",
+								zap.Error(err),
+								zap.String("file", binlog.GetLogPath()))
+							return err
+						}
+						err = b.storageClient.Copy(ctx, b.milvusBucketName, b.backupBucketName, binlog.GetLogPath(), targetPath)
+						if err != nil {
+							log.Info("Fail to copy file",
+								zap.Error(err),
+								zap.String("from", binlog.GetLogPath()),
+								zap.String("to", targetPath))
+							return err
+						} else {
+							log.Info("Successfully copy file",
+								zap.String("from", binlog.GetLogPath()),
+								zap.String("to", targetPath))
+						}
+						return err
 					}
-					if !exist {
-						log.Error("Binlog file not exist",
-							zap.Error(err),
-							zap.String("file", binlog.GetLogPath()))
-						return backupInfo, err
-					}
-					err = b.storageClient.Copy(ctx, b.milvusBucketName, b.backupBucketName, binlog.GetLogPath(), targetPath)
-					if err != nil {
-						log.Info("Fail to copy file",
-							zap.Error(err),
-							zap.String("from", binlog.GetLogPath()),
-							zap.String("to", targetPath))
-						return backupInfo, err
-					} else {
-						log.Info("Successfully copy file",
-							zap.String("from", binlog.GetLogPath()),
-							zap.String("to", targetPath))
-					}
+					wp.Submit(job)
 				}
 			}
 			duration := time.Now().Unix() - start
@@ -683,6 +699,10 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 				zap.Int64("partition_id", segment.GetPartitionId()),
 				zap.Int64("segment_id", segment.GetSegmentId()),
 				zap.Int64("cost_time", duration))
+		}
+		wp.Done()
+		if err := wp.Wait(); err != nil {
+			return backupInfo, err
 		}
 		refreshBackupMetaFunc(id, leveledBackupInfo)
 	}
