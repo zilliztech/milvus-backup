@@ -16,6 +16,8 @@ definitions:
         type: string
       id:
         type: string
+      milvus_version:
+        type: string
       name:
         type: string
       progress:
@@ -464,6 +466,12 @@ definitions:
         items:
           $ref: '#/definitions/backuppb.FieldBinlog'
         type: array
+      group_id:
+        description: |-
+          separate segments into multi groups by size,
+          segments in one group will be copied into one directory during backup
+          and will bulkinsert in one call during restore
+        type: integer
       num_of_rows:
         type: integer
       partition_id:
