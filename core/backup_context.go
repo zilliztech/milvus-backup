@@ -325,12 +325,13 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 
 		hasIndex := false
 		indexInfos := make([]*backuppb.IndexInfo, 0)
+		indexDict := make(map[string]*backuppb.IndexInfo, 0)
 		log.Info("try to get index",
 			zap.String("collection_name", completeCollection.Name))
 		for _, field := range completeCollection.Schema.Fields {
-			if field.DataType != entity.FieldTypeBinaryVector && field.DataType != entity.FieldTypeFloatVector {
-				continue
-			}
+			//if field.DataType != entity.FieldTypeBinaryVector && field.DataType != entity.FieldTypeFloatVector {
+			//	continue
+			//}
 			fieldIndex, err := b.milvusClient.DescribeIndex(b.ctx, completeCollection.Name, field.Name)
 			if err != nil {
 				if strings.HasPrefix(err.Error(), "index doesn't exist") {
@@ -349,15 +350,19 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 				zap.String("collection_name", completeCollection.Name),
 				zap.String("field_name", field.Name),
 				zap.Any("index info", fieldIndex))
-			if len(fieldIndex) != 0 {
-				indexInfo := &backuppb.IndexInfo{
-					FieldName: field.Name,
-					IndexName: fieldIndex[0].Name(),
-					IndexType: string(fieldIndex[0].IndexType()),
-					Params:    fieldIndex[0].Params(),
+			for _, index := range fieldIndex {
+				if _, ok := indexDict[index.Name()]; ok {
+					continue
+				} else {
+					indexInfo := &backuppb.IndexInfo{
+						FieldName: index.FieldName(),
+						IndexName: index.Name(),
+						IndexType: string(index.IndexType()),
+						Params:    index.Params(),
+					}
+					indexInfos = append(indexInfos, indexInfo)
+					indexDict[index.Name()] = indexInfo
 				}
-				indexInfos = append(indexInfos, indexInfo)
-				hasIndex = true
 			}
 		}
 

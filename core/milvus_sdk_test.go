@@ -152,3 +152,93 @@ func TestGetIndex(t *testing.T) {
 	fmt.Println(loadState)
 
 }
+
+func TestCreateIndex(t *testing.T) {
+	ctx := context.Background()
+	milvusAddr := "localhost:19530"
+	client, err := gomilvus.NewGrpcClient(ctx, milvusAddr)
+	assert.NoError(t, err)
+
+	_COLLECTION_NAME := "demo_bulk_insert2"
+	_ID_FIELD_NAME := "id_field"
+	_VECTOR_FIELD_NAME := "float_vector_field"
+	_STR_FIELD_NAME := "str_field"
+
+	// String field parameter
+	_MAX_LENGTH := "65535"
+
+	// Vector field parameter
+	_DIM := "8"
+
+	//field1 = FieldSchema(name=_ID_FIELD_NAME, dtype=DataType.INT64, description="int64", is_primary=True, auto_id=True)
+	//field2 = FieldSchema(name=_VECTOR_FIELD_NAME, dtype=DataType.FLOAT_VECTOR, description="float vector", dim=_DIM,
+	//	is_primary=False)
+	//field3 = FieldSchema(name=_STR_FIELD_NAME, dtype=DataType.VARCHAR, description="string",
+	//	max_length=_MAX_LENGTH, is_primary=False)
+	//schema = CollectionSchema(fields=[field1, field2, field3], description="collection description")
+	//collection = Collection(name=_COLLECTION_NAME, data=None, schema=schema)
+
+	field1 := &entity.Field{
+		Name:        _ID_FIELD_NAME,
+		DataType:    entity.FieldTypeInt64,
+		Description: "int64",
+		PrimaryKey:  true,
+		AutoID:      true,
+	}
+	field2 := &entity.Field{
+		Name:        _VECTOR_FIELD_NAME,
+		DataType:    entity.FieldTypeFloatVector,
+		Description: "float vector",
+		TypeParams: map[string]string{
+			entity.TypeParamDim: _DIM,
+		},
+		PrimaryKey: false,
+	}
+	field3 := &entity.Field{
+		Name:        _STR_FIELD_NAME,
+		DataType:    entity.FieldTypeVarChar,
+		Description: "string",
+		PrimaryKey:  false,
+		TypeParams: map[string]string{
+			entity.TypeParamMaxLength: _MAX_LENGTH,
+		},
+	}
+	schema := &entity.Schema{
+		CollectionName: _COLLECTION_NAME,
+		Description:    "demo bulkinsert",
+		AutoID:         true,
+		Fields:         []*entity.Field{field1, field2, field3},
+	}
+	//client.DropCollection(ctx, _COLLECTION_NAME)
+	fmt.Println(schema)
+	client.CreateCollection(ctx, schema, 2)
+
+	idx, err := entity.NewIndexTRIE(entity.IP)
+	err = client.CreateIndex(ctx, _COLLECTION_NAME, _STR_FIELD_NAME, idx, false, gomilvus.WithIndexName("_default_idx_102"))
+	fmt.Println(err)
+
+	idx2, _ := entity.NewIndexHNSW(entity.L2, 8, 96)
+	//err = client.DropIndex(ctx, _COLLECTION_NAME, _VECTOR_FIELD_NAME, gomilvus.WithIndexName("_default_idx_101"))
+	//fmt.Println(err)
+	err = client.CreateIndex(ctx, _COLLECTION_NAME, _VECTOR_FIELD_NAME, idx2, false, gomilvus.WithIndexName("_default_idx_102"))
+
+	fmt.Println(err)
+}
+
+func TestDescribeIndex(t *testing.T) {
+	ctx := context.Background()
+	milvusAddr := "localhost:19530"
+	client, err := gomilvus.NewGrpcClient(ctx, milvusAddr)
+	assert.NoError(t, err)
+
+	_COLLECTION_NAME := "demo_bulk_insert2"
+	_STR_FIELD_NAME := "str_field"
+	_VECTOR_FIELD_NAME := "float_vector_field"
+
+	idxs, err := client.DescribeIndex(ctx, _COLLECTION_NAME, _STR_FIELD_NAME)
+	fmt.Println(idxs)
+	fmt.Println(err)
+	idxs2, err := client.DescribeIndex(ctx, _COLLECTION_NAME, _VECTOR_FIELD_NAME)
+	fmt.Println(idxs2)
+	fmt.Println(err)
+}

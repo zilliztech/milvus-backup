@@ -425,8 +425,8 @@ github.com/ugorji/go v1.2.7/go.mod h1:nF9osbDWLy6bDVv/Rtoh6QgnvNDpmCalQV5urGCCS6
 github.com/ugorji/go/codec v1.2.7 h1:YPXUKf7fYbp/y8xloBqZOw2qaVggbfwMlI8WM3wZUJ0=
 github.com/ugorji/go/codec v1.2.7/go.mod h1:WGN1fab3R1fzQlVQTkfxVtIBhWDRqOviHU95kRgeqEY=
 github.com/urfave/cli/v2 v2.3.0/go.mod h1:LJmUH05zAU44vOAcrfzZQKsZbVcdbOG8rtL3/XcUArI=
-github.com/wayblink/milvus-sdk-go/v2 v2.2.12 h1:h0UvUs4SWeIQU/BOuvnXzYhnerVJ6BzunAGviRkUw5A=
-github.com/wayblink/milvus-sdk-go/v2 v2.2.12/go.mod h1:4V+s61EAKSc104exqgGEmiTnTyqUDHG2nxTa4Lflz0U=
+github.com/wayblink/milvus-sdk-go/v2 v2.2.16 h1:ruO6iMab1wOFcZRc6o2nh4PPKPpmwAhapMBf/z6ZT3o=
+github.com/wayblink/milvus-sdk-go/v2 v2.2.16/go.mod h1:4V+s61EAKSc104exqgGEmiTnTyqUDHG2nxTa4Lflz0U=
 github.com/yuin/goldmark v1.1.25/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.1.32/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
