@@ -51,6 +51,7 @@ print(f"Does collection hello_milvus exist in Milvus: {has}")
 fields = [
     FieldSchema(name="pk", dtype=DataType.INT64, is_primary=True, auto_id=False),
     FieldSchema(name="random", dtype=DataType.DOUBLE),
+    FieldSchema(name="var", dtype=DataType.VARCHAR, max_length=65535),
     FieldSchema(name="embeddings", dtype=DataType.FLOAT_VECTOR, dim=dim)
 ]
 
@@ -74,6 +75,7 @@ entities = [
     # provide the pk field because `auto_id` is set to False
     [i for i in range(num_entities)],
     rng.random(num_entities).tolist(),  # field random, only supports list
+    [str(i) for i in range(num_entities)],
     rng.random((num_entities, dim)),    # field embeddings, supports numpy.ndarray and list
 ]
 
@@ -90,6 +92,13 @@ insert_result2 = hello_milvus2.insert(entities)
 hello_milvus2.flush()
 insert_result2 = hello_milvus2.insert(entities)
 hello_milvus2.flush()
+
+index_params = {"index_type": "IVF_FLAT", "params": {"nlist": 128}, "metric_type": "L2"}
+hello_milvus.create_index("embeddings", index_params)
+
+
+index_params2 = {"index_type": "TRIE"}
+hello_milvus.create_index("var", index_params2)
 
 print(f"Number of entities in hello_milvus2: {hello_milvus2.num_entities}")  # check the num_entites
 
