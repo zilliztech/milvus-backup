@@ -3,6 +3,7 @@ module github.com/zilliztech/milvus-backup
 go 1.16
 
 require (
+	github.com/blang/semver/v4 v4.0.0
 	github.com/gin-gonic/gin v1.8.1
 	github.com/golang/protobuf v1.5.2
 	github.com/google/btree v1.0.1
@@ -40,8 +41,4 @@ require (
 	golang.org/x/tools v0.3.0 // indirect
 )
 
-replace (
-	github.com/apache/pulsar-client-go => github.com/milvus-io/pulsar-client-go v0.6.8
-	github.com/milvus-io/milvus-sdk-go/v2 => github.com/wayblink/milvus-sdk-go/v2 v2.2.16
-	github.com/streamnative/pulsarctl => github.com/xiaofan-luan/pulsarctl v0.5.1
-)
+replace github.com/milvus-io/milvus-sdk-go/v2 => github.com/wayblink/milvus-sdk-go/v2 v2.2.16

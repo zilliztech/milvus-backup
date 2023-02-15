@@ -102,6 +102,7 @@ message BackupInfo {
   // array of collection backup
   repeated CollectionBackupInfo collection_backups = 9;
   int64 size = 10;
+  string milvus_version = 11;
 }
 
 /**

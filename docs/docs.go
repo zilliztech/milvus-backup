@@ -281,6 +281,9 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "milvus_version": {
+                    "type": "string"
+                },
                 "name": {
                     "type": "string"
                 },
@@ -922,6 +925,10 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/backuppb.FieldBinlog"
                     }
+                },
+                "group_id": {
+                    "description": "separate segments into multi groups by size,\nsegments in one group will be copied into one directory during backup\nand will bulkinsert in one call during restore",
+                    "type": "integer"
                 },
                 "num_of_rows": {
                     "type": "integer"

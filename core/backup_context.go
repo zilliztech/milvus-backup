@@ -201,11 +201,33 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 		name = request.BackupName
 	}
 
+	milvusVersion, err := b.milvusClient.GetVersion(b.ctx)
+	if err != nil {
+		log.Error("fail to get milvus version", zap.Error(err))
+		resp.Code = backuppb.ResponseCode_Fail
+		resp.Msg = err.Error()
+		return resp
+	}
+	//support, err := utils.IsSupportVersion(milvusVersion)
+	//if err != nil {
+	//	log.Error("check milvus version fail", zap.String("milvusVersion", milvusVersion), zap.Error(err))
+	//	resp.Code = backuppb.ResponseCode_Fail
+	//	resp.Msg = err.Error()
+	//	return resp
+	//}
+	//if !support {
+	//	msg := utils.NotSupportVersionMsg
+	//	log.Error(msg, zap.String("version", milvusVersion))
+	//	resp.Code = backuppb.ResponseCode_Fail
+	//	resp.Msg = msg
+	//	return resp
+	//}
 	backup := &backuppb.BackupInfo{
-		Id:        id,
-		StateCode: backuppb.BackupTaskStateCode_BACKUP_INITIAL,
-		StartTime: time.Now().UnixNano() / int64(time.Millisecond),
-		Name:      name,
+		Id:            id,
+		StateCode:     backuppb.BackupTaskStateCode_BACKUP_INITIAL,
+		StartTime:     time.Now().UnixNano() / int64(time.Millisecond),
+		Name:          name,
+		MilvusVersion: milvusVersion,
 	}
 	b.backupTasks.Store(id, backup)
 	b.backupNameIdDict.Store(name, id)
@@ -979,6 +1001,28 @@ func (b BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Rest
 			return resp
 		}
 	}
+
+	//milvusVersion, err := b.milvusClient.GetVersion(b.ctx)
+	//if err != nil {
+	//	log.Error("fail to get milvus version", zap.Error(err))
+	//	resp.Code = backuppb.ResponseCode_Fail
+	//	resp.Msg = err.Error()
+	//	return resp
+	//}
+	//support, err := utils.IsSupportVersion(milvusVersion)
+	//if err != nil {
+	//	log.Error("check milvus version fail", zap.String("milvusVersion", milvusVersion), zap.Error(err))
+	//	resp.Code = backuppb.ResponseCode_Fail
+	//	resp.Msg = err.Error()
+	//	return resp
+	//}
+	//if !support {
+	//	msg := utils.NotSupportVersionMsg
+	//	log.Error(msg, zap.String("version", milvusVersion))
+	//	resp.Code = backuppb.ResponseCode_Fail
+	//	resp.Msg = msg
+	//	return resp
+	//}
 
 	// 1, get and validate
 	if request.GetCollectionSuffix() != "" {

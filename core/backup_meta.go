@@ -97,6 +97,7 @@ func treeToLevel(backup *backuppb.BackupInfo) (LeveledBackupInfo, error) {
 		Progress:        backup.GetProgress(),
 		Name:            backup.GetName(),
 		BackupTimestamp: backup.GetBackupTimestamp(),
+		MilvusVersion:   backup.GetMilvusVersion(),
 	}
 
 	return LeveledBackupInfo{
@@ -149,6 +150,7 @@ func levelToTree(level *LeveledBackupInfo) (*backuppb.BackupInfo, error) {
 		Name:            level.backupLevel.GetName(),
 		BackupTimestamp: level.backupLevel.GetBackupTimestamp(),
 		Size:            level.backupLevel.GetSize(),
+		MilvusVersion:   level.backupLevel.GetMilvusVersion(),
 	}
 	segmentDict := make(map[string][]*backuppb.SegmentBackupInfo, len(level.segmentLevel.GetInfos()))
 	for _, segment := range level.segmentLevel.GetInfos() {
@@ -274,6 +276,7 @@ func SimpleBackupResponse(input *backuppb.BackupInfoResponse) *backuppb.BackupIn
 		ErrorMessage:      backup.GetErrorMessage(),
 		BackupTimestamp:   backup.GetBackupTimestamp(),
 		CollectionBackups: collections,
+		MilvusVersion:     backup.GetMilvusVersion(),
 		StartTime:         backup.GetStartTime(),
 		EndTime:           backup.GetEndTime(),
 		Progress:          backup.GetProgress(),
