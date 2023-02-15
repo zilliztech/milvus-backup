@@ -45,6 +45,12 @@ var restoreBackupCmd = &cobra.Command{
 			renameArr := strings.Split(renameCollectionNames, ",")
 			if len(renameArr) != len(collectionNameArr) {
 				fmt.Errorf("collection_names and renames num dismatch, Forbid to restore")
+			} else {
+				renameMap = make(map[string]string)
+				for i, collectionname := range collectionNameArr {
+					renameMap[collectionname] = renameArr[i]
+				}
+
 			}
 		}
 
