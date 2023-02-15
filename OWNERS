@@ -1,0 +1,6 @@
+filters:
+  "*":
+    reviewers:
+      - wayblink
+    approvers:
+      - wayblink

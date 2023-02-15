@@ -1,0 +1,120 @@
+pull_request_rules:
+  - name: Add needs-dco label when DCO check failed
+    conditions:
+      - base=master
+      - -status-success=DCO
+    actions:
+      label:
+        remove:
+          - dco-passed
+        add:
+          - needs-dco
+      comment:
+        message: |
+          @{{author}} Thanks for your contribution. Please submit with DCO, see the contributing guide https://github.com/milvus-io/milvus/blob/master/CONTRIBUTING.md#developer-certificate-of-origin-dco.
+
+  - name: Add dco-passed label when DCO check passed
+    conditions:
+      - base=master
+      - status-success=DCO
+    actions:
+      label:
+        remove:
+          - needs-dco
+        add:
+          - dco-passed
+
+  - name: Test passed for code changed-master
+    conditions:
+      - base=master
+      - "status-success=test-backup-restore-cli (docker-compose, standalone, standalone)"
+      - "status-success=test-backup-restore-cli (docker-compose, standalone, cluster)"
+      - "status-success=test-backup-restore-cli (docker-compose, cluster, standalone)"
+      - "status-success=test-backup-restore-cli (docker-compose, cluster, cluster)"
+      - "status-success=test-backup-restore-api (docker-compose, standalone)"
+      - "status-success=test-backup-restore-api (docker-compose, cluster)"
+      - "status-success=test-backup-restore-api (helm, standalone)"
+      - "status-success=codecov/patch"
+      - "status-success=codecov/project"
+    actions:
+      label:
+        add:
+          - ci-passed
+
+  - name: Test passed for non-code changed
+    conditions:
+      - base=master
+      - -files~=^(?!.*\.(md)).*$
+      - -files~=^(?!docs\/).+
+      - -files~=^(?!scripts\/).+
+    actions:
+      label:
+        add:
+          - ci-passed
+
+  - name: Test passed for mergify changed
+    conditions:
+      - base=master
+      - -files~=^(?!\.github\/mergify\.yml).*$
+    actions:
+      label:
+        add:
+          - ci-passed
+
+  - name: Blocking PR if missing a related issue or PR doesn't have kind/improvement label
+    conditions:
+      - base=master
+      - and:
+        - -body~=\#[0-9]{1,6}(\s+|$)
+        - -body~=https://github.com/milvus-io/milvus/issues/[0-9]{1,6}(\s+|$)
+      - -label=kind/improvement
+      - -title~=\[automated\]
+    actions:
+      label:
+        add:
+          - do-not-merge/missing-related-issue
+      comment:
+        message: |
+          @{{author}} Please associate the related issue to the body of your Pull Request.  (eg. “issue: #<xyz>”)
+  - name: Dismiss block label if related issue be added into PR
+    conditions:
+      - or:
+        - and:
+          - base=master
+          - or:
+            - body~=\#[0-9]{1,6}(\s+|$)
+            - body~=https://github.com/milvus-io/milvus/issues/[0-9]{1,6}(\s+|$)
+        - and:
+          - base=master
+          - label=kind/improvement
+    actions:
+      label:
+        remove:
+          - do-not-merge/missing-related-issue
+
+  - name: Dismiss block label if automated create PR
+    conditions:
+      - base=master
+      - title~=\[automated\]
+    actions:
+      label:
+        remove:
+          - do-not-merge/missing-related-issue
+
+  - name: Remove ci-passed label when status for code checker or ut  is not success-master
+    conditions:
+      - label!=manual-pass
+      - base=master
+      - files~=^(?=.*((\.(go|h|cpp)|CMakeLists.txt))).*$
+      - or:
+        - "status-success!=test-backup-restore-cli (docker-compose, standalone, standalone)"
+        - "status-success!=test-backup-restore-cli (docker-compose, standalone, cluster)"
+        - "status-success!=test-backup-restore-cli (docker-compose, cluster, standalone)"
+        - "status-success!=test-backup-restore-cli (docker-compose, cluster, cluster)"
+        - "status-success!=test-backup-restore-api (docker-compose, standalone)"
+        - "status-success!=test-backup-restore-api (docker-compose, cluster)"
+        - "status-success!=test-backup-restore-api (helm, standalone)"
+    actions:
+      label:
+        remove:
+          - ci-passed
