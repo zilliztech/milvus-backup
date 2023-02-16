@@ -83,7 +83,7 @@ pull_request_rules:
           - base=master
           - or:
             - body~=\#[0-9]{1,6}(\s+|$)
-            - body~=https://github.com/milvus-io/milvus/issues/[0-9]{1,6}(\s+|$)
+            - body~=https://github.com/zilliztech/milvus-backup/issues/[0-9]{1,6}(\s+|$)
         - and:
           - base=master
           - label=kind/improvement
