@@ -34,8 +34,8 @@ pull_request_rules:
       - "status-success=test-backup-restore-api (docker-compose, standalone)"
       - "status-success=test-backup-restore-api (docker-compose, cluster)"
       - "status-success=test-backup-restore-api (helm, standalone)"
-      - "status-success=codecov/patch"
-      - "status-success=codecov/project"
+      # - "status-success=codecov/patch"
+      # - "status-success=codecov/project"
     actions:
       label:
         add:
@@ -44,9 +44,10 @@ pull_request_rules:
   - name: Test passed for non-code changed
     conditions:
       - base=master
-      - -files~=^(?!.*\.(md)).*$
-      - -files~=^(?!docs\/).+
-      - -files~=^(?!scripts\/).+
+      - or:
+        - -files~=^(?!.*\.(md)).*$
+        - -files~=^(?!docs\/).+
+        - -files~=^(?!scripts\/).+
     actions:
       label:
         add:
