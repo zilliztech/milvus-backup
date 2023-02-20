@@ -370,7 +370,12 @@ const docTemplate = `{
         "backuppb.CollectionBackupInfo": {
             "type": "object",
             "properties": {
+                "backup_physical_timestamp": {
+                    "description": "physical unix time of backup",
+                    "type": "integer"
+                },
                 "backup_timestamp": {
+                    "description": "logical time of backup, used for restore",
                     "type": "integer"
                 },
                 "collection_id": {

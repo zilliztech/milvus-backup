@@ -51,11 +51,14 @@ message CollectionBackupInfo {
   int32 shards_num = 11;
   ConsistencyLevel consistency_level = 12;
   repeated PartitionBackupInfo partition_backups = 13;
+  // logical time of backup, used for restore
   uint64 backup_timestamp = 14;
   int64 size = 15;
   bool has_index = 16;
   repeated IndexInfo index_infos = 17;
   string load_state = 18;
+  // physical unix time of backup 
+  uint64 backup_physical_timestamp = 19;
 }
 
 message PartitionBackupInfo {
