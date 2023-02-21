@@ -49,17 +49,18 @@ func treeToLevel(backup *backuppb.BackupInfo) (LeveledBackupInfo, error) {
 
 	for _, collectionBack := range backup.GetCollectionBackups() {
 		cloneCollectionBackup := &backuppb.CollectionBackupInfo{
-			CollectionId:     collectionBack.GetCollectionId(),
-			DbName:           collectionBack.GetDbName(),
-			CollectionName:   collectionBack.GetCollectionName(),
-			Schema:           collectionBack.GetSchema(),
-			ShardsNum:        collectionBack.GetShardsNum(),
-			ConsistencyLevel: collectionBack.GetConsistencyLevel(),
-			BackupTimestamp:  collectionBack.GetBackupTimestamp(),
-			Size:             collectionBack.GetSize(),
-			HasIndex:         collectionBack.GetHasIndex(),
-			IndexInfos:       collectionBack.GetIndexInfos(),
-			LoadState:        collectionBack.GetLoadState(),
+			CollectionId:            collectionBack.GetCollectionId(),
+			DbName:                  collectionBack.GetDbName(),
+			CollectionName:          collectionBack.GetCollectionName(),
+			Schema:                  collectionBack.GetSchema(),
+			ShardsNum:               collectionBack.GetShardsNum(),
+			ConsistencyLevel:        collectionBack.GetConsistencyLevel(),
+			BackupTimestamp:         collectionBack.GetBackupTimestamp(),
+			Size:                    collectionBack.GetSize(),
+			HasIndex:                collectionBack.GetHasIndex(),
+			IndexInfos:              collectionBack.GetIndexInfos(),
+			LoadState:               collectionBack.GetLoadState(),
+			BackupPhysicalTimestamp: collectionBack.GetBackupPhysicalTimestamp(),
 		}
 		collections = append(collections, cloneCollectionBackup)
 
@@ -257,16 +258,17 @@ func SimpleBackupResponse(input *backuppb.BackupInfoResponse) *backuppb.BackupIn
 	collections := make([]*backuppb.CollectionBackupInfo, 0)
 	for _, coll := range backup.GetCollectionBackups() {
 		collections = append(collections, &backuppb.CollectionBackupInfo{
-			StateCode:       coll.GetStateCode(),
-			ErrorMessage:    coll.GetErrorMessage(),
-			CollectionName:  coll.GetCollectionName(),
-			BackupTimestamp: coll.GetBackupTimestamp(),
-			HasIndex:        coll.GetHasIndex(),
-			IndexInfos:      coll.GetIndexInfos(),
-			LoadState:       coll.GetLoadState(),
-			Schema:          coll.GetSchema(),
-			Size:            coll.GetSize(),
-			Progress:        coll.GetProgress(),
+			StateCode:               coll.GetStateCode(),
+			ErrorMessage:            coll.GetErrorMessage(),
+			CollectionName:          coll.GetCollectionName(),
+			BackupTimestamp:         coll.GetBackupTimestamp(),
+			HasIndex:                coll.GetHasIndex(),
+			IndexInfos:              coll.GetIndexInfos(),
+			LoadState:               coll.GetLoadState(),
+			Schema:                  coll.GetSchema(),
+			Size:                    coll.GetSize(),
+			Progress:                coll.GetProgress(),
+			BackupPhysicalTimestamp: coll.GetBackupPhysicalTimestamp(),
 		})
 	}
 	simpleBackupInfo := &backuppb.BackupInfo{

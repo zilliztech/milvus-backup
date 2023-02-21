@@ -471,6 +471,7 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 			zap.Int64s("flushedSegmentIDs", flushedSegmentIDs),
 			zap.Int64("timeOfSeal", timeOfSeal))
 		collection.BackupTimestamp = utils.ComposeTS(timeOfSeal, 0)
+		collection.BackupPhysicalTimestamp = uint64(timeOfSeal)
 
 		flushSegments := append(newSealedSegmentIDs, flushedSegmentIDs...)
 		segmentEntities, err := b.milvusClient.GetPersistentSegmentInfo(ctx, collection.GetCollectionName())

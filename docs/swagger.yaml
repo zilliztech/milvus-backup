@@ -75,7 +75,11 @@ definitions:
     type: object
   backuppb.CollectionBackupInfo:
     properties:
+      backup_physical_timestamp:
+        description: physical unix time of backup
+        type: integer
       backup_timestamp:
+        description: logical time of backup, used for restore
         type: integer
       collection_id:
         type: integer
