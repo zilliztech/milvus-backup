@@ -11,11 +11,16 @@ import (
 
 var (
 	port string
+
+)
+
+var (
+	BackupConfig string
 )
 
 var serverCmd = &cobra.Command{
 	Use:   "server",
-	Short: "server subcommand start milvus-backup RESTAPI server.",
+	Short: "server subcommand start milvus-backup RESTfulAPI server.",
 
 	Run: func(cmd *cobra.Command, args []string) {
 		var params paramtable.BackupParams
@@ -35,6 +40,6 @@ var serverCmd = &cobra.Command{
 
 func init() {
 	serverCmd.Flags().StringVarP(&port, "port", "p", "8080", "Port to listen")
-
+	serverCmd.Flags().StringVarP(&BackupConfig, "config", "c", "backup.yaml", "Config for backup")
 	rootCmd.AddCommand(serverCmd)
 }
