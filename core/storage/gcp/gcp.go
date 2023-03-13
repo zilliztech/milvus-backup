@@ -7,14 +7,16 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/pkg/errors"
+	"go.uber.org/atomic"
 	"golang.org/x/oauth2"
 	"golang.org/x/oauth2/google"
 )
 
 // WrapHTTPTransport wraps http.Transport, add an auth header to support GCP native auth
 type WrapHTTPTransport struct {
-	tokenSrc oauth2.TokenSource
-	backend  transport
+	tokenSrc     oauth2.TokenSource
+	backend      transport
+	currentToken atomic.Pointer[oauth2.Token]
 }
 
 // transport abstracts http.Transport to simplify test
@@ -30,19 +32,21 @@ func NewWrapHTTPTransport(secure bool) (*WrapHTTPTransport, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to create default transport")
 	}
-	return &WrapHTTPTransport{
-		tokenSrc: tokenSrc,
-		backend:  backend,
-	}, nil
+	return &WrapHTTPTransport{tokenSrc: tokenSrc, backend: backend}, nil
 }
 
-// RoundTrip implements http.RoundTripper
+// RoundTrip wraps original http.RoundTripper by Adding a Bearer token acquired from tokenSrc
 func (t *WrapHTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	token, err := t.tokenSrc.Token()
-	if err != nil {
-		return nil, errors.Wrap(err, "failed to acquire token")
+	// here Valid() means the token won't be expired in 10 sec
+	// so the http client timeout shouldn't be longer, or we need to change the default `expiryDelta` time
+	if !t.currentToken.Load().Valid() {
+		newToken, err := t.tokenSrc.Token()
+		if err != nil {
+			return nil, errors.Wrap(err, "failed to acquire token")
+		}
+		t.currentToken.Store(newToken)
 	}
-	req.Header.Set("Authorization", "Bearer "+token.AccessToken)
+	req.Header.Set("Authorization", "Bearer "+t.currentToken.Load().AccessToken)
 	return t.backend.RoundTrip(req)
 }
 
