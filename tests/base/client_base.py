@@ -44,7 +44,25 @@ class Base:
     def teardown_method(self, method):
         log.info(("*" * 35) + " teardown " + ("*" * 35))
         log.info("[teardown_method] Start teardown test case %s..." % method.__name__)
+        try:
+            """ Drop collection before disconnect """
+            if not self.connection_wrap.has_connection(alias=DefaultConfig.DEFAULT_USING)[0]:
+                self.connection_wrap.connect(alias=DefaultConfig.DEFAULT_USING, host=cf.param_info.param_host,
+                                             port=cf.param_info.param_port)
 
+            if self.collection_wrap.collection is not None:
+                if self.collection_wrap.collection.name.startswith("alias"):
+                    log.info(f"collection {self.collection_wrap.collection.name} is alias, skip drop operation")
+                else:
+                    self.collection_wrap.drop(check_task=ct.CheckTasks.check_nothing)
+
+            collection_list = self.utility_wrap.list_collections()[0]
+            for collection_object in self.collection_object_list:
+                if collection_object.collection is not None and collection_object.name in collection_list:
+                    collection_object.drop(check_task=ct.CheckTasks.check_nothing)        
+            
+        except Exception as e:
+            log.debug(str(e))
 
 class TestcaseBase(Base):
     """
