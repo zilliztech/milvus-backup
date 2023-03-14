@@ -244,11 +244,11 @@ jobs:
           ./milvus-backup server > server.log 2>&1 &
 
       - name: Run test
-        timeout-minutes: 30
+        timeout-minutes: 60
         shell: bash
         working-directory: tests
         run: |
-          pytest -s -v -n 4 --tags L0 L1
+          pytest -s -v --log-cli-level=INFO --capture=no --tags L0 L1 
 
       - name: Get Milvus status
         shell: bash
