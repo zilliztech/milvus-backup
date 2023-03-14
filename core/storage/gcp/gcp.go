@@ -12,6 +12,11 @@ import (
 	"golang.org/x/oauth2/google"
 )
 
+const (
+	_xAmzPrefix  = "X-Amz-"
+	_xGoogPrefix = "X-Goog-"
+)
+
 // WrapHTTPTransport wraps http.Transport, add an auth header to support GCP native auth
 type WrapHTTPTransport struct {
 	tokenSrc     oauth2.TokenSource
@@ -37,16 +42,26 @@ func NewWrapHTTPTransport(secure bool) (*WrapHTTPTransport, error) {
 
 // RoundTrip wraps original http.RoundTripper by Adding a Bearer token acquired from tokenSrc
 func (t *WrapHTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	for k, v := range req.Header {
+		if strings.HasPrefix(k, _xAmzPrefix) {
+			req.Header[strings.Replace(k, _xAmzPrefix, _xGoogPrefix, 1)] = v
+			delete(req.Header, k)
+		}
+	}
 	// here Valid() means the token won't be expired in 10 sec
 	// so the http client timeout shouldn't be longer, or we need to change the default `expiryDelta` time
-	if !t.currentToken.Load().Valid() {
+	currentToken := t.currentToken.Load()
+	if currentToken.Valid() {
+		req.Header.Set("Authorization", "Bearer "+currentToken.AccessToken)
+	} else {
 		newToken, err := t.tokenSrc.Token()
 		if err != nil {
 			return nil, errors.Wrap(err, "failed to acquire token")
 		}
+		req.Header.Set("Authorization", "Bearer "+newToken.AccessToken)
 		t.currentToken.Store(newToken)
 	}
-	req.Header.Set("Authorization", "Bearer "+t.currentToken.Load().AccessToken)
+
 	return t.backend.RoundTrip(req)
 }
 
