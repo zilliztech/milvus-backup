@@ -14,7 +14,7 @@ on:
       - '.github/workflows/main.yaml'
       - 'deployment/**'
     branches:
-      - master
+      - main
   pull_request:
     paths:
       - 'build/**'
@@ -28,7 +28,7 @@ on:
       - '.github/workflows/main.yaml'
       - 'deployment/**'
     branches:
-      - master
+      - main
   workflow_dispatch:
 
 jobs:
