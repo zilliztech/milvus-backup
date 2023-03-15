@@ -1,7 +1,7 @@
 pull_request_rules:
   - name: Add needs-dco label when DCO check failed
     conditions:
-      - base=master
+      - base=main
       - -status-success=DCO
     actions:
       label:
@@ -11,11 +11,11 @@ pull_request_rules:
           - needs-dco
       comment:
         message: |
-          @{{author}} Thanks for your contribution. Please submit with DCO, see the contributing guide https://github.com/milvus-io/milvus/blob/master/CONTRIBUTING.md#developer-certificate-of-origin-dco.
+          @{{author}} Thanks for your contribution. Please submit with DCO, see the contributing guide https://github.com/milvus-io/milvus/blob/main/CONTRIBUTING.md#developer-certificate-of-origin-dco.
 
   - name: Add dco-passed label when DCO check passed
     conditions:
-      - base=master
+      - base=main
       - status-success=DCO
     actions:
       label:
@@ -24,9 +24,9 @@ pull_request_rules:
         add:
           - dco-passed
 
-  - name: Test passed for code changed-master
+  - name: Test passed for code changed-main
     conditions:
-      - base=master
+      - base=main
       - "status-success=test-backup-restore-cli (docker-compose, standalone, standalone)"
       - "status-success=test-backup-restore-cli (docker-compose, standalone, cluster)"
       - "status-success=test-backup-restore-cli (docker-compose, cluster, standalone)"
@@ -43,7 +43,7 @@ pull_request_rules:
 
   - name: Test passed for non-code changed
     conditions:
-      - base=master
+      - base=main
       - or:
         - -files~=^(?!.*\.(md)).*$
         - -files~=^(?!docs\/).+
@@ -55,7 +55,7 @@ pull_request_rules:
 
   - name: Test passed for mergify changed
     conditions:
-      - base=master
+      - base=main
       - -files~=^(?!\.github\/mergify\.yml).*$
     actions:
       label:
@@ -64,7 +64,7 @@ pull_request_rules:
 
   - name: Blocking PR if missing a related issue or PR doesn't have kind/improvement label
     conditions:
-      - base=master
+      - base=main
       - and:
         - -body~=\#[0-9]{1,6}(\s+|$)
         - -body~=https://github.com/zilliztech/milvus-backup/issues/[0-9]{1,6}(\s+|$)
@@ -81,12 +81,12 @@ pull_request_rules:
     conditions:
       - or:
         - and:
-          - base=master
+          - base=main
           - or:
             - body~=\#[0-9]{1,6}(\s+|$)
             - body~=https://github.com/zilliztech/milvus-backup/issues/[0-9]{1,6}(\s+|$)
         - and:
-          - base=master
+          - base=main
           - label=kind/improvement
     actions:
       label:
@@ -95,17 +95,17 @@ pull_request_rules:
 
   - name: Dismiss block label if automated create PR
     conditions:
-      - base=master
+      - base=main
       - title~=\[automated\]
     actions:
       label:
         remove:
           - do-not-merge/missing-related-issue
 
-  - name: Remove ci-passed label when status for code checker or ut  is not success-master
+  - name: Remove ci-passed label when status for code checker or ut  is not success-main
     conditions:
       - label!=manual-pass
-      - base=master
+      - base=main
       - files~=^(?=.*((\.(go|h|cpp)|CMakeLists.txt))).*$
       - or:
         - "status-success!=test-backup-restore-cli (docker-compose, standalone, standalone)"
