@@ -1,85 +1,68 @@
 # Milvus-backup
 
-Milvus-backup is a tool to backup and restore Milvus data. It can be used as a command line or an API server.
+Milvus-Backup is a tool that allows users to backup and restore Milvus data. This tool can be utilized either through the command line or an API server.
 
-Milvus-backup needs to visit Milvus proxy and minio cluster. Related config can be edited in `configs/backup.yaml`. 
+In order to use Milvus-Backup effectively, access to Milvus proxy and Minio cluster is required. Configuration settings related to this access can be edited in `configs/backup.yaml`.
+
 > **Note**
-> Please make sure the config of Minio is correct. There are some differences for the default value of Minio config when the Milvus is deployed by docker-compose and k8s.
-> Remind it is not supported to backup data to a local path. Backup data is also stored in minio or some other kind of object storage your milvus used.
+>
+> Please ensure that the configuration settings for Minio are accurate. There may be variations in the default value of Minio's configuration depending on how Milvus is deployed, either by docker-compose or k8s.
+>
+> Please be advised that it is not possible to backup data to a local path. Backup data is stored in Minio or another object storage solution used by your Milvus instance.
+> |field|docker-compose |k8s|
+> |---|---|---|
+> |bucketName|a-bucket|milvus-bucket|
+> |rootPath|files|file|
 
-|field|docker-compose |k8s|
-|---|---|---|
-|bucketName|a-bucket|milvus-bucket|
-|rootPath|files|file|
+The Milvus-backup process has negligible impact on the performance of Milvus. Milvus cluster is fully functional and can operate normally while backup and restoration are in progress.
 
-Milvus-backup has no large impact on Milvus. Milvus cluster can work as usual during backup and restore. 
+## Development
 
-# Interfaces
-
-## Create
-Create a backup for the cluster. Data of selected collections will be copied to a backup directory.
-Support set a group of collection_names to backup, if empty(by default), will backup all collections.
-
-## List
-List will scan the `backup` directory in minio and return all the backups that exist in the cluster.
-
-## GetBackup
-Get backup by name.
-
-## Delete
-Delete backup by name.
-
-## Restore
-Restore backup by name, will recreate the collections in the cluster and recover the data through bulkinsert. For more details about BulkInsert, please see:
-https://milvus.io/docs/bulk_load.md
-BulkInserts will be done by partition. Currently we don't support concurrent BulkInserts.
-
-## GetRestore
-Only supported in rest API. Get restore task info by id. We support async restore in rest API. And we can use this method to get the restore executing state.
-
-# Development
-
-## Build
+### Build
 
 ```
 go get
 go build
 ```
+
 Will generate an executable binary `milvus-backup` in the project directory.
 
-## Test
+### Test
 
-For developers, you can also test it with IDE. `core/backup_context_test.go` contains some test demos for all main interfaces.
-Or you can test with cli.
+Developers can also test it using an IDE. `core/backup_context_test.go` contains test demos for all main interfaces. Alternatively, you can test it using the command line interface:
 
 ```shell
 cd core
 go test -v -test.run TestCreateBackup
 ```
 
-# Usage
-
 ## API server
 
-After building, use the following command to start a RESTAPI server. 
-```
+To start the RESTAPI server, use the following command after building:
+
+```shell
 ./milvus-backup server
 ```
-By default, the server will listen to 8080. You can change it by `-p` parameter:
-```
+
+The server will listen on port 8080 by default. However, you can change it by using the `-p` parameter as shown below:
+
+```shell
 ./milvus-backup server -p 443
 ```
 
-### APIs
+### swagger UI
 
-#### swagger UI
-We provide swagger UI to show details of APIs. You can see it by:
+We offer access to our Swagger UI, which displays comprehensive information for our APIs. To view it, simply go to
 
 ```
 http://localhost:8080/api/v1/docs/index.html
 ```
 
-#### create
+### API Reference
+
+### `/create`
+
+Creates a backup for the cluster. Data of selected collections will be copied to a backup directory. You can specify a group of collection names to backup, or if left empty (by default), it will backup all collections.
 
 ```
 curl --location --request POST 'http://localhost:8080/api/v1/create' \
@@ -92,29 +75,41 @@ curl --location --request POST 'http://localhost:8080/api/v1/create' \
   ]
 }'
 ```
-#### list
+
+### `/list`
+
+Lists all backups that exist in the `backup` directory in MinIO.
 
 ```
 curl --location --request GET 'http://localhost:8080/api/v1/list' \
 --header 'Content-Type: application/json'
 ```
 
-#### get_backup
+### `/get_backup`
+
+Retrieves a backup by name.
 
 ```
 curl --location --request GET 'http://localhost:8080/api/v1/get_backup?backup_id=test_backup_id&backup_name=test_backup' \
 --header 'Content-Type: application/json'
 ```
 
-#### delete
+### `/delete`
+
+Deletes a backup by name.
 
 ```
-// DELETE method
 curl --location --request DELETE 'http://localhost:8080/api/v1/delete?backup_name=test_api' \
 --header 'Content-Type: application/json'
 ```
 
-#### restore
+### `/restore`
+
+Restores a backup by name. It recreates the collections in the cluster and recovers the data through bulk insert. For more details about bulk insert, please refer to:
+https://milvus.io/docs/bulk_insert.md
+
+Bulk inserts will be done by partition. Currently, concurrent bulk inserts are not supported.
+
 ```
 curl --location --request POST 'http://localhost:8080/api/v1/restore' \
 --header 'Content-Type: application/json' \
@@ -128,12 +123,16 @@ curl --location --request POST 'http://localhost:8080/api/v1/restore' \
 }'
 ```
 
-#### get_restore
+### `/get_restore`
+
+This is only available in the REST API. Retrieves restore task information by ID. We support async restore in the REST API, and you can use this method to get information on the restore execution status.
+
 ```
 curl --location --request GET 'http://localhost:8080/api/v1/get_restore?id=test_restore_id' \
 --header 'Content-Type: application/json'
 ```
-## Command Line 
+
+## Command Line
 
 Milvus-backup establish CLI based on cobra. Use the following command to see the usage.
 
@@ -162,27 +161,42 @@ Use "milvus-backup [command] --help" for more information about a command.
 
 ## Demo
 
-This demo is evolved from `hello_milvus`. To try this demo, you should have a healthy Milvus and pymilvus installed.
+To try this demo, you should have a functional Milvus server installed and have pymilvus library installed.
 
-1, Prepare data. Create a collection `hello_milvus` and insert some data.
+Step 1: Prepare the Data
+
+Create a collection in Milvus called `hello_milvus` and insert some data using the following command:
 
 ```
 python example/prepare_data.py
 ```
 
-2, Create backup
+Step 2: Create a Backup
+
+Use the following command to create a backup of the `hello_milvus` collection:
 
 ```
-./milvus-backup create -n my_backup 
+./milvus-backup create -n my_backup
 ```
 
-3, Restore backup. Set suffix `_recover`. `hello_milvus` will be restored with new name `hello_milvus_recover`. 
+Step 3: Restore the Backup
+
+Restore the backup using the following command:
+
 ```
 ./milvus-backup restore -n my_backup -s _recover
 ```
 
-4, Verfiy data. Create index and do search on the recovered collection `hello_milvus_recover`.
+This will create a new collection called `hello_milvus_recover` which contains the data from the original collection.
+
+Step 4: Verify the Restored Data
+
+Create an index on the restored collection using the following command:
 
 ```
 python example/verify_data.py
 ```
+
+This will perform a search on the `hello_milvus_recover` collection and verify that the restored data is correct.
+
+That's it! You have successfully backed up and restored your Milvus collection.
