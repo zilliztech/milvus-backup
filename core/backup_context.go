@@ -336,6 +336,7 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 				Name:         field.Name,
 				IsPrimaryKey: field.PrimaryKey,
 				Description:  field.Description,
+				AutoID:       field.AutoID,
 				DataType:     backuppb.DataType(field.DataType),
 				TypeParams:   utils.MapToKVPair(field.TypeParams),
 				IndexParams:  utils.MapToKVPair(field.IndexParams),
