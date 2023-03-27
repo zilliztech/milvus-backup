@@ -30,6 +30,7 @@ for recover_collection_name in recover_collections:
     has = utility.has_collection(recover_collection_name)
     print(f"Does collection {recover_collection_name} exist in Milvus: {has}")
     recover_collection = Collection(recover_collection_name)
+    print(recover_collection.schema)
     recover_collection.flush()
 
     print(f"Number of entities in Milvus: {recover_collection_name} : {recover_collection.num_entities}")  # check the num_entites
