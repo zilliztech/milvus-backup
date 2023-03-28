@@ -615,7 +615,10 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 			}
 		}
 
-		wp := common.NewWorkerPool(ctx, WORKER_NUM, RPS)
+		wp, err := common.NewWorkerPool(ctx, WORKER_NUM, RPS)
+		if err != nil {
+			return backupInfo, err
+		}
 		wp.Start()
 		for _, segment := range segmentBackupInfos {
 			start := time.Now().Unix()
