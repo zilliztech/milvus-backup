@@ -1477,8 +1477,8 @@ func (b BackupContext) getBackupPartitionPathsWithGroupID(ctx context.Context, b
 		zap.Int64("partitionID", partition.GetPartitionId()),
 		zap.Int64("groupId", groupId))
 
-	insertPath := fmt.Sprintf("%s/%s/%s/%v/%v/%d", backupPath, BINGLOG_DIR, INSERT_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId(), groupId)
-	deltaPath := fmt.Sprintf("%s/%s/%s/%v/%v/%d", backupPath, BINGLOG_DIR, DELTA_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId(), groupId)
+	insertPath := fmt.Sprintf("%s/%s/%s/%v/%v/%d/", backupPath, BINGLOG_DIR, INSERT_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId(), groupId)
+	deltaPath := fmt.Sprintf("%s/%s/%s/%v/%v/%d/", backupPath, BINGLOG_DIR, DELTA_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId(), groupId)
 
 	exist, err := b.storageClient.Exist(ctx, bucketName, deltaPath)
 	if err != nil {
