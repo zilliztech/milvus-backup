@@ -109,6 +109,10 @@ func (gp *BaseTable) initConfPath() string {
 	// check if user set conf dir through env
 	configDir, find := syscall.Getenv("MILVUSCONF")
 	if !find {
+		if _, err := os.Stat(defaultYaml); err == nil {
+			return path.Dir(defaultYaml)
+		}
+
 		runPath, err := os.Getwd()
 		if err != nil {
 			panic(err)
@@ -174,7 +178,7 @@ func (gp *BaseTable) LoadRange(key, endKey string, limit int) ([]string, []strin
 
 func (gp *BaseTable) LoadYaml(fileName string) error {
 	config := viper.New()
-	configFile := gp.configDir + fileName
+	configFile := fmt.Sprintf("%s/%s", strings.TrimRight(gp.configDir, "/"), path.Base(fileName))
 	if _, err := os.Stat(configFile); err != nil {
 		panic("cannot access config file: " + configFile)
 	}
