@@ -6,6 +6,7 @@ body:
   attributes:
     value: |
       Thanks for taking the time to fill out this bug report! Please fill the form in English!
+      Please avoid pasting your complete backup configuration and ensure the security of your confidential information.
 - type: textarea
   attributes:
     label: Current Behavior
