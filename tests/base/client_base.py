@@ -1,5 +1,5 @@
 import sys
-from pymilvus import DefaultConfig
+from pymilvus import DefaultConfig, DataType
 
 sys.path.append("..")
 from base.connections_wrapper import ApiConnectionsWrapper
@@ -59,10 +59,11 @@ class Base:
             collection_list = self.utility_wrap.list_collections()[0]
             for collection_object in self.collection_object_list:
                 if collection_object.collection is not None and collection_object.name in collection_list:
-                    collection_object.drop(check_task=ct.CheckTasks.check_nothing)        
-            
+                    collection_object.drop(check_task=ct.CheckTasks.check_nothing)
+
         except Exception as e:
             log.debug(str(e))
+
 
 class TestcaseBase(Base):
     """
@@ -267,9 +268,11 @@ class TestcaseBase(Base):
             collection_w.flush(timeout=180)
         if check_function:
             if is_binary:
-                collection_w.create_index(ct.default_binary_vec_field_name, ct.default_bin_flat_index, index_name=cf.gen_unique_str())
+                collection_w.create_index(ct.default_binary_vec_field_name, ct.default_bin_flat_index,
+                                          index_name=cf.gen_unique_str())
             else:
-                collection_w.create_index(ct.default_float_vec_field_name, ct.default_index, index_name=cf.gen_unique_str())
+                collection_w.create_index(ct.default_float_vec_field_name, ct.default_index,
+                                          index_name=cf.gen_unique_str())
 
             collection_w.create_index(field_name=ct.default_string_field_name,
                                       index_params={},
@@ -289,7 +292,8 @@ class TestcaseBase(Base):
             term_expr = f'{ct.default_int64_field_name} in [1001,1201,4999,2999]'
             res, _ = collection_w.query(term_expr)
 
-    def verify_data(self, name=None, dim=ct.default_dim, is_binary=False, auto_id=False, primary_field=ct.default_int64_field_name):
+    def verify_data(self, name=None, dim=ct.default_dim, is_binary=False, auto_id=False,
+                    primary_field=ct.default_int64_field_name):
         collection_w, _ = self.collection_wrap.init_collection(name=name)
         default_schema = cf.gen_default_collection_schema(auto_id=auto_id, dim=dim, primary_field=primary_field)
         if is_binary:
@@ -298,7 +302,8 @@ class TestcaseBase(Base):
         collection_w = self.init_collection_wrap(name=name, schema=default_schema, active_trace=True)
 
         if is_binary:
-            collection_w.create_index(ct.default_binary_vec_field_name, ct.default_bin_flat_index, index_name=cf.gen_unique_str())
+            collection_w.create_index(ct.default_binary_vec_field_name, ct.default_bin_flat_index,
+                                      index_name=cf.gen_unique_str())
         else:
             collection_w.create_index(ct.default_float_vec_field_name, ct.default_index, index_name=cf.gen_unique_str())
 
@@ -320,6 +325,14 @@ class TestcaseBase(Base):
         term_expr = f'{ct.default_int64_field_name} in [1001,1201,4999,2999]'
         collection_w.query(term_expr)
 
+    def is_binary_by_schema(self, schema):
+        fields = schema.fields
+        for field in fields:
+            if field.dtype == DataType.BINARY_VECTOR:
+                return True
+            if field.dtype == DataType.FLOAT_VECTOR:
+                return False
+
     def compare_collections(self, src_name, dist_name):
         collection_src, _ = self.collection_wrap.init_collection(name=src_name)
         collection_dist, _ = self.collection_wrap.init_collection(name=dist_name)
@@ -327,6 +340,20 @@ class TestcaseBase(Base):
             f"collection_src num_entities: {collection_src.num_entities} != " \
             f"collection_dist num_entities: {collection_dist.num_entities}"
         assert collection_src.schema == collection_dist.schema
+
+        for coll in [collection_src, collection_dist]:
+            is_binary = self.is_binary_by_schema(coll.schema)
+            if is_binary:
+                coll.create_index(ct.default_binary_vec_field_name, ct.default_bin_flat_index,
+                                  index_name=cf.gen_unique_str())
+            else:
+                coll.create_index(ct.default_float_vec_field_name, ct.default_index, index_name=cf.gen_unique_str())
+            coll.load()
+        src_res = collection_src.query(expr=f'{ct.default_int64_field_name} > 0',
+                                       output_fields=[ct.default_int64_field_name, ct.default_json_field_name])
+        dist_res = collection_dist.query(expr=f'{ct.default_int64_field_name} > 0',
+                                         output_fields=[ct.default_int64_field_name, ct.default_json_field_name])
+        assert len(dist_res) == len(src_res)
 
     def check_collection_binary(self, name):
         collection_w, _ = self.collection_wrap.init_collection(name=name)
@@ -336,4 +363,3 @@ class TestcaseBase(Base):
         else:
             is_binary = False
         return is_binary
-

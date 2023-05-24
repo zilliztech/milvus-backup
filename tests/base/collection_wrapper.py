@@ -32,13 +32,13 @@ class ApiCollectionWrapper:
         self.active_trace = active_trace
         consistency_level = kwargs.get("consistency_level", CONSISTENCY_STRONG)
         kwargs.update({"consistency_level": consistency_level})
-
+        kwargs.update({"shards_num": shards_num})
         """ In order to distinguish the same name of collection """
         func_name = sys._getframe().f_code.co_name
-        res, is_succ = api_request([Collection, name, schema, using, shards_num], **kwargs)
+        res, is_succ = api_request([Collection, name, schema, using], **kwargs)
         self.collection = res if is_succ else None
         check_result = ResponseChecker(res, func_name, check_task, check_items, is_succ,
-                                       name=name, schema=schema, using=using, shards_num=shards_num, **kwargs).run()
+                                       name=name, schema=schema, using=using, **kwargs).run()
         return res, check_result
 
     @property
