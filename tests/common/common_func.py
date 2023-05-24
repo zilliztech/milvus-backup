@@ -101,6 +101,12 @@ def gen_double_field(name=ct.default_double_field_name, is_primary=False, descri
     return double_field
 
 
+def gen_json_field(name=ct.default_json_field_name, is_primary=False, description=ct.default_desc):
+    json_field, _ = ApiFieldSchemaWrapper().init_field_schema(name=name, dtype=DataType.JSON,
+                                                                description=description, is_primary=is_primary)
+    return json_field
+
+
 def gen_float_vec_field(name=ct.default_float_vec_field_name, is_primary=False, dim=ct.default_dim,
                         description=ct.default_desc):
     float_vec_field, _ = ApiFieldSchemaWrapper().init_field_schema(name=name, dtype=DataType.FLOAT_VECTOR,
@@ -119,7 +125,7 @@ def gen_binary_vec_field(name=ct.default_binary_vec_field_name, is_primary=False
 
 def gen_default_collection_schema(description=ct.default_desc, primary_field=ct.default_int64_field_name,
                                   auto_id=False, dim=ct.default_dim):
-    fields = [gen_int64_field(), gen_float_field(), gen_string_field(), gen_float_vec_field(dim=dim)]
+    fields = [gen_int64_field(), gen_float_field(), gen_string_field(), gen_json_field(), gen_float_vec_field(dim=dim)]
     schema, _ = ApiCollectionSchemaWrapper().init_collection_schema(fields=fields, description=description,
                                                                     primary_field=primary_field, auto_id=auto_id)
     return schema
@@ -162,7 +168,7 @@ def gen_collection_schema(fields, primary_field=None, description=ct.default_des
 
 def gen_default_binary_collection_schema(description=ct.default_desc, primary_field=ct.default_int64_field_name,
                                          auto_id=False, dim=ct.default_dim):
-    fields = [gen_int64_field(), gen_float_field(), gen_string_field(), gen_binary_vec_field(dim=dim)]
+    fields = [gen_int64_field(), gen_float_field(), gen_string_field(), gen_json_field(), gen_binary_vec_field(dim=dim)]
     binary_schema, _ = ApiCollectionSchemaWrapper().init_collection_schema(fields=fields, description=description,
                                                                            primary_field=primary_field,
                                                                            auto_id=auto_id)
@@ -213,11 +219,13 @@ def gen_default_dataframe_data(nb=ct.default_nb, dim=ct.default_dim, start=0):
     int_values = pd.Series(data=[i for i in range(start, start + nb)])
     float_values = pd.Series(data=[np.float32(i) for i in range(start, start + nb)], dtype="float32")
     string_values = pd.Series(data=[str(i) for i in range(start, start + nb)], dtype="string")
+    json_values = pd.Series(data=[{"key": i} for i in range(start, start + nb)],)
     float_vec_values = gen_vectors(nb, dim)
     df = pd.DataFrame({
         ct.default_int64_field_name: int_values,
         ct.default_float_field_name: float_values,
         ct.default_string_field_name: string_values,
+        ct.default_json_field_name: json_values,
         ct.default_float_vec_field_name: float_vec_values
     })
     return df
@@ -300,11 +308,13 @@ def gen_default_binary_dataframe_data(nb=ct.default_nb, dim=ct.default_dim, star
     int_values = pd.Series(data=[i for i in range(start, start + nb)])
     float_values = pd.Series(data=[np.float32(i) for i in range(start, start + nb)], dtype="float32")
     string_values = pd.Series(data=[str(i) for i in range(start, start + nb)], dtype="string")
+    json_values = pd.Series(data=[{"key": i} for i in range(start, start + nb)],)
     binary_raw_values, binary_vec_values = gen_binary_vectors(nb, dim)
     df = pd.DataFrame({
         ct.default_int64_field_name: int_values,
         ct.default_float_field_name: float_values,
         ct.default_string_field_name: string_values,
+        ct.default_json_field_name: json_values,
         ct.default_binary_vec_field_name: binary_vec_values
     })
     return df, binary_raw_values
