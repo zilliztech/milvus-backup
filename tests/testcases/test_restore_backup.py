@@ -1,6 +1,7 @@
 import time
 import pytest
-
+import numpy as np
+from pymilvus import db
 from base.client_base import TestcaseBase
 from common import common_func as cf
 from common import common_type as ct
@@ -74,4 +75,124 @@ class TestRestoreBackup(TestcaseBase):
             assert name + suffix in res
         for name in restore_collections:
             self.compare_collections(name, name+suffix)
+
+    def test_milvus_restore_back_with_db_support(self):
+        # prepare data
+        self._connect()
+        names_origin = []
+        for i in range(2):
+            db_name = cf.gen_unique_str("db")
+            db.create_database(db_name)
+            db.using_database(db_name)
+            collection_name = cf.gen_unique_str(prefix)
+            self.prepare_data(name=collection_name, db_name=db_name, nb=3000, is_binary=False, auto_id=True, check_function=False)
+            assert collection_name in self.utility_wrap.list_collections()[0]
+            names_origin.append(f"{db_name}.{collection_name}")
+        log.info(f"name_origin:{names_origin}")
+        # create backup
+        back_up_name = cf.gen_unique_str(backup_prefix)
+        payload = {
+            "async": False,
+            "backup_name": back_up_name,
+            "collection_names": names_origin,
+        }
+        log.info(f"payload: {payload}")
+        res = client.create_backup(payload)
+        log.info(f"create backup response: {res}")
+        res = client.list_backup()
+        log.info(f"list_backup {res}")
+        if "data" in res:
+            all_backup = [r["name"] for r in res["data"]]
+        else:
+            all_backup = []
+        assert back_up_name in all_backup
+        payload = {"async": False, "backup_name": back_up_name,
+                   # "collection_names": names_origin,
+                   "collection_suffix": suffix}
+        log.info(f"restore payload: {payload}")
+        res = client.restore_backup(payload)
+        log.info(f"restore_backup: {res}")
+        for name in names_origin:
+            db_name = name.split(".")[0]
+            collection_name = name.split(".")[1]
+            db.using_database(db_name)
+
+            res, _ = self.utility_wrap.list_collections()
+            log.info(f"collection list in db {db_name}: {res}")
+            assert collection_name + suffix in res
+            self.compare_collections(collection_name, collection_name + suffix)
+
+    @pytest.mark.parametrize("include_partition_key", [True, False])
+    @pytest.mark.parametrize("include_dynamic", [True, False])
+    @pytest.mark.parametrize("include_json", [True, False])
+    def test_milvus_restore_back_with_new_feature_support(self, include_json, include_dynamic, include_partition_key):
+        self._connect()
+        name_origin = cf.gen_unique_str(prefix)
+        back_up_name = cf.gen_unique_str(backup_prefix)
+        if include_json:
+            fields = [cf.gen_int64_field(name="int64", is_primary=True),
+                      cf.gen_int64_field(name="key"),
+                      cf.gen_json_field(name="json"),
+                      cf.gen_float_vec_field(name="float_vector", dim=128),
+                      ]
+        else:
+            fields = [cf.gen_int64_field(name="int64", is_primary=True),
+                      cf.gen_int64_field(name="key"),
+                      cf.gen_float_vec_field(name="float_vector", dim=128),
+                      ]
+        if include_partition_key:
+            partition_key = "key"
+            default_schema = cf.gen_collection_schema(fields,
+                                                      enable_dynamic_field=include_dynamic,
+                                                      partition_key_field=partition_key)
+        else:
+            default_schema = cf.gen_collection_schema(fields,
+                                                      enable_dynamic_field=include_dynamic)
+
+        collection_w = self.init_collection_wrap(name=name_origin, schema=default_schema, active_trace=True)
+        nb = 3000
+        if include_json:
+            data = [
+                [i for i in range(nb)],
+                [i % 3 for i in range(nb)],
+                [{f"key_{str(i)}": i} for i in range(nb)],
+                [[np.float32(i) for i in range(128)] for _ in range(nb)],
+            ]
+        else:
+            data = [
+                [i for i in range(nb)],
+                [i % 3 for i in range(nb)],
+                [[np.float32(i) for i in range(128)] for _ in range(nb)],
+            ]
+        collection_w.insert(data=data)
+
+        res = client.create_backup({"async": False, "backup_name": back_up_name, "collection_names": [name_origin]})
+        log.info(f"create_backup {res}")
+        res = client.list_backup()
+        log.info(f"list_backup {res}")
+        if "data" in res:
+            all_backup = [r["name"] for r in res["data"]]
+        else:
+            all_backup = []
+        assert back_up_name in all_backup
+        backup = client.get_backup(back_up_name)
+        assert backup["data"]["name"] == back_up_name
+        backup_collections = [backup["collection_name"]for backup in backup["data"]["collection_backups"]]
+        assert name_origin in backup_collections
+        res = client.restore_backup({"async": False, "backup_name": back_up_name, "collection_names": [name_origin],
+                                     "collection_suffix": suffix})
+        log.info(f"restore_backup: {res}")
+        res, _ = self.utility_wrap.list_collections()
+        assert name_origin + suffix in res
+        output_fields = None
+        if not include_json:
+            output_fields = [ct.default_int64_field_name]
+        self.compare_collections(name_origin, name_origin + suffix, output_fields=output_fields)
+        res = client.delete_backup(back_up_name)
+        res = client.list_backup()
+        if "data" in res:
+            all_backup = [r["name"] for r in res["data"]]
+        else:
+            all_backup = []
+        assert back_up_name not in all_backup
 
