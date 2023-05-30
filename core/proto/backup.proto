@@ -354,8 +354,20 @@ enum FieldState {
   FieldDropped = 3;
 }
 
+message ValueField {
+  oneof data {
+    bool bool_data = 1;
+    int32 int_data = 2;
+    int64 long_data = 3;
+    float float_data = 4;
+    double double_data = 5;
+    string string_data = 6;
+    bytes bytes_data = 7;
+  }
+}
+
 /**
- * @brief Field schema
+ * @brief Field schema. The same as https://github.com/milvus-io/milvus-proto schema.proto
  */
 message FieldSchema {
   int64 fieldID = 1;
@@ -367,6 +379,10 @@ message FieldSchema {
   repeated KeyValuePair index_params = 7;
   bool autoID = 8;
   FieldState state = 9; // To keep compatible with older version, the default state is `Created`.
+  DataType element_type = 10; // For array type, the element type is stored here
+  ValueField default_value = 11; // default_value only support scalars except array and json for now
+  bool is_dynamic = 12; // mark whether this field is the dynamic field
+  bool is_partition_key = 13; // enable logic partitions
 }
 
 /**
@@ -377,4 +393,5 @@ message CollectionSchema {
   string description = 2;
   bool autoID = 3; // deprecated later, keep compatible with c++ part now
   repeated FieldSchema fields = 4;
+  bool enable_dynamic_field = 5; // mark whether this table has the dynamic field function enabled.
 }

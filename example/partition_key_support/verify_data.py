@@ -28,7 +28,7 @@ if host == None:
 print(fmt.format(f"Milvus host: {host}"))
 connections.connect("default", host=host, port="19530")
 
-recover_collections = ["hello_milvus_recover", "hello_milvus2_recover"]
+recover_collections = ["hello_milvus_pk_recover"]
 
 for recover_collection_name in recover_collections:
     has = utility.has_collection(recover_collection_name)
@@ -109,5 +109,5 @@ for recover_collection_name in recover_collections:
     ###############################################################################
     # 7. drop collection
     # Finally, drop the hello_milvus, hello_milvus_recover collection
-    print(fmt.format(f"Drop collection {recover_collection_name}"))
-    utility.drop_collection(recover_collection_name)
+    # print(fmt.format(f"Drop collection {recover_collection_name}"))
+    # utility.drop_collection(recover_collection_name)
