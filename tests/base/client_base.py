@@ -1,5 +1,5 @@
 import sys
-from pymilvus import DefaultConfig, DataType
+from pymilvus import DefaultConfig, DataType, db
 
 sys.path.append("..")
 from base.connections_wrapper import ApiConnectionsWrapper
@@ -248,12 +248,13 @@ class TestcaseBase(Base):
             assert collection_w.num_entities == nb_of_segment * (i + 1)
         return collection_w
 
-    def prepare_data(self, name=None, nb=ct.default_nb, dim=ct.default_dim, is_binary=False, auto_id=False,
+    def prepare_data(self, name=None, db_name="default", nb=ct.default_nb, dim=ct.default_dim, is_binary=False, auto_id=False,
                      primary_field=ct.default_int64_field_name, is_flushed=True, check_function=False):
         """
         prepare data for test case
         """
         self._connect()
+        db.using_database(db_name)
         prefix = "backup_e2e_"
         name = cf.gen_unique_str(prefix) if name is None else name
         default_schema = cf.gen_default_collection_schema(auto_id=auto_id, dim=dim, primary_field=primary_field)
@@ -333,7 +334,9 @@ class TestcaseBase(Base):
             if field.dtype == DataType.FLOAT_VECTOR:
                 return False
 
-    def compare_collections(self, src_name, dist_name):
+    def compare_collections(self, src_name, dist_name, output_fields=None):
+        if output_fields is None:
+            output_fields = [ct.default_int64_field_name, ct.default_json_field_name]
         collection_src, _ = self.collection_wrap.init_collection(name=src_name)
         collection_dist, _ = self.collection_wrap.init_collection(name=dist_name)
         assert collection_src.num_entities == collection_dist.num_entities, \
@@ -349,10 +352,12 @@ class TestcaseBase(Base):
             else:
                 coll.create_index(ct.default_float_vec_field_name, ct.default_index, index_name=cf.gen_unique_str())
             coll.load()
-        src_res = collection_src.query(expr=f'{ct.default_int64_field_name} > 0',
-                                       output_fields=[ct.default_int64_field_name, ct.default_json_field_name])
-        dist_res = collection_dist.query(expr=f'{ct.default_int64_field_name} > 0',
-                                         output_fields=[ct.default_int64_field_name, ct.default_json_field_name])
+        src_res = collection_src.query(expr=f'{ct.default_int64_field_name} >= 0',
+                                       output_fields=output_fields)
+        log.info(f"src res: {len(src_res)}")
+        dist_res = collection_dist.query(expr=f'{ct.default_int64_field_name} >= 0',
+                                         output_fields=output_fields)
+        log.info(f"dist res: {len(dist_res)}")
         assert len(dist_res) == len(src_res)
 
     def check_collection_binary(self, name):
