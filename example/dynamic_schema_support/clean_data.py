@@ -1,8 +1,8 @@
+import os
 from pymilvus import (
     connections,
     utility,
 )
-import os
 
 fmt = "\n=== {:30} ===\n"
 

@@ -3,6 +3,7 @@ import os
 import numpy as np
 from pymilvus import (
     connections,
+    db,
     utility,
     FieldSchema, CollectionSchema, DataType,
     Collection,
@@ -28,9 +29,12 @@ if host == None:
 print(fmt.format(f"Milvus host: {host}"))
 connections.connect("default", host=host, port="19530")
 
-recover_collections = ["hello_milvus_recover", "hello_milvus2_recover"]
+recover_collections = [["db1", "hello_milvus_recover"], ["db2","hello_milvus2_recover"]]
 
-for recover_collection_name in recover_collections:
+for recover_collection in recover_collections:
+    recover_db_name = recover_collection[0]
+    recover_collection_name = recover_collection[1]
+    db.using_database(db_name=recover_db_name)
     has = utility.has_collection(recover_collection_name)
     print(f"Does collection {recover_collection_name} exist in Milvus: {has}")
     recover_collection = Collection(recover_collection_name)

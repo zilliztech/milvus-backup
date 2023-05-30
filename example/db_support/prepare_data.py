@@ -11,6 +11,7 @@ import os
 import numpy as np
 from pymilvus import (
     connections,
+    db,
     utility,
     FieldSchema, CollectionSchema, DataType,
     Collection,
@@ -30,11 +31,18 @@ num_entities, dim = 3000, 8
 # Note: the `using` parameter of the following methods is default to "default".
 print(fmt.format("start connecting to Milvus"))
 
+print(fmt.format("start connecting to Milvus"))
 host = os.environ.get('MILVUS_HOST')
 if host == None:
     host = "localhost"
 print(fmt.format(f"Milvus host: {host}"))
 connections.connect("default", host=host, port="19530")
+
+if "db1" not in db.list_database():
+    print("\ncreate database: db1")
+    db.create_database(db_name="db1")
+
+db.using_database(db_name="db1")
 
 has = utility.has_collection("hello_milvus")
 print(f"Does collection hello_milvus exist in Milvus: {has}")
@@ -61,7 +69,7 @@ fields = [
 
 schema = CollectionSchema(fields, "hello_milvus")
 
-print(fmt.format("Create collection `hello_milvus`"))
+print(fmt.format("Create collection `db1.hello_milvus`"))
 hello_milvus = Collection("hello_milvus", schema, consistency_level="Strong")
 
 ################################################################################
@@ -87,6 +95,14 @@ insert_result = hello_milvus.insert(entities)
 hello_milvus.flush()
 print(f"Number of entities in hello_milvus: {hello_milvus.num_entities}")  # check the num_entites
 
+index_params = {"index_type": "IVF_FLAT", "params": {"nlist": 128}, "metric_type": "L2"}
+hello_milvus.create_index("embeddings", index_params)
+
+if "db2" not in db.list_database():
+    print("\ncreate database: db2")
+    db.create_database(db_name="db2")
+    
+db.using_database(db_name="db2")
 # create another collection
 fields2 = [
     FieldSchema(name="pk", dtype=DataType.INT64, is_primary=True, auto_id=True),
@@ -97,7 +113,7 @@ fields2 = [
 
 schema2 = CollectionSchema(fields2, "hello_milvus2")
 
-print(fmt.format("Create collection `hello_milvus2`"))
+print(fmt.format("Create collection `db2.hello_milvus2`"))
 hello_milvus2 = Collection("hello_milvus2", schema2, consistency_level="Strong")
 
 entities2 = [
@@ -110,10 +126,6 @@ insert_result2 = hello_milvus2.insert(entities2)
 hello_milvus2.flush()
 insert_result2 = hello_milvus2.insert(entities2)
 hello_milvus2.flush()
-
-index_params = {"index_type": "IVF_FLAT", "params": {"nlist": 128}, "metric_type": "L2"}
-hello_milvus.create_index("embeddings", index_params)
-
 
 index_params2 = {"index_type": "TRIE"}
 hello_milvus2.create_index("var", index_params2)
