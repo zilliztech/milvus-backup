@@ -160,9 +160,9 @@ def gen_collection_schema_all_datatype(description=ct.default_desc,
     return schema
 
 
-def gen_collection_schema(fields, primary_field=None, description=ct.default_desc, auto_id=False):
+def gen_collection_schema(fields, primary_field=None, description=ct.default_desc, auto_id=False, **kwargs):
     schema, _ = ApiCollectionSchemaWrapper().init_collection_schema(fields=fields, primary_field=primary_field,
-                                                                    description=description, auto_id=auto_id)
+                                                                    description=description, auto_id=auto_id, **kwargs)
     return schema
 
 
@@ -318,7 +318,6 @@ def gen_default_binary_dataframe_data(nb=ct.default_nb, dim=ct.default_dim, star
         ct.default_binary_vec_field_name: binary_vec_values
     })
     return df, binary_raw_values
-
 
 def gen_default_list_data(nb=ct.default_nb, dim=ct.default_dim):
     int_values = [i for i in range(nb)]
