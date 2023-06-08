@@ -13,6 +13,9 @@ on:
       - '!**.md'
       - '.github/workflows/main.yaml'
       - 'deployment/**'
+      - '**/*.go'
+      - '**/go.mod'
+      - '**/go.sum'
     branches:
       - main
   pull_request:
@@ -27,6 +30,9 @@ on:
       - '!**.md'
       - '.github/workflows/main.yaml'
       - 'deployment/**'
+      - '**/*.go'
+      - '**/go.mod'
+      - '**/go.sum'      
     branches:
       - main
   workflow_dispatch:
