@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
+	"github.com/zilliztech/milvus-backup/core/storage/aliyun"
 	"github.com/zilliztech/milvus-backup/core/storage/gcp"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/util/errorutil"
@@ -54,8 +55,17 @@ func NewMinioChunkManager(ctx context.Context, opts ...Option) (*MinioChunkManag
 func newMinioChunkManagerWithConfig(ctx context.Context, c *config) (*MinioChunkManager, error) {
 	var creds *credentials.Credentials
 	var newMinioFn = minio.New
+	var bucketLookupType = minio.BucketLookupAuto
 
 	switch c.cloudProvider {
+	case paramtable.CloudProviderAliyun:
+		// auto doesn't work for aliyun, so we set to dns deliberately
+		bucketLookupType = minio.BucketLookupDNS
+		if c.useIAM {
+			newMinioFn = aliyun.NewMinioClient
+		} else {
+			creds = credentials.NewStaticV4(c.accessKeyID, c.secretAccessKeyID, "")
+		}
 	case paramtable.CloudProviderGCP:
 		newMinioFn = gcp.NewMinioClient
 		if !c.useIAM {
@@ -69,8 +79,9 @@ func newMinioChunkManagerWithConfig(ctx context.Context, c *config) (*MinioChunk
 		}
 	}
 	minioOpts := &minio.Options{
-		Creds:  creds,
-		Secure: c.useSSL,
+		BucketLookup: bucketLookupType,
+		Creds:        creds,
+		Secure:       c.useSSL,
 	}
 	minIOClient, err := newMinioFn(c.address, minioOpts)
 	// options nil or invalid formatted endpoint, don't need to retry
