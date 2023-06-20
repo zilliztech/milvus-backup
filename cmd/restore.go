@@ -9,6 +9,9 @@ import (
 	"github.com/zilliztech/milvus-backup/core"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/log"
+
+	"go.uber.org/zap"
 )
 
 var (
@@ -24,15 +27,14 @@ var restoreBackupCmd = &cobra.Command{
 
 	Run: func(cmd *cobra.Command, args []string) {
 		var params paramtable.BackupParams
-		fmt.Println("config:" + config)
 		params.GlobalInitWithYaml(config)
 		params.Init()
 
 		context := context.Background()
 		backupContext := core.CreateBackupContext(context, params)
-
+		log.Info("restore cmd input args", zap.Strings("args", args))
 		var collectionNameArr []string
-		if collectionNames == "" {
+		if restoreCollectionNames == "" {
 			collectionNameArr = []string{}
 		} else {
 			collectionNameArr = strings.Split(restoreCollectionNames, ",")
