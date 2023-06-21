@@ -114,13 +114,15 @@ func (p *MilvusConfig) initTLSMode() {
 // /////////////////////////////////////////////////////////////////////////////
 // --- minio ---
 const (
-	CloudProviderAWS = "aws"
-	CloudProviderGCP = "gcp"
+	CloudProviderAWS    = "aws"
+	CloudProviderGCP    = "gcp"
+	CloudProviderAliyun = "ali"
 )
 
 var supportedCloudProvider = map[string]bool{
-	CloudProviderAWS: true,
-	CloudProviderGCP: true,
+	CloudProviderAWS:    true,
+	CloudProviderGCP:    true,
+	CloudProviderAliyun: true,
 }
 
 type MinioConfig struct {
