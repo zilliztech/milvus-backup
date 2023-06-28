@@ -543,6 +543,18 @@ func (b BackupContext) copySegments(ctx context.Context, segments []*backuppb.Se
 		return err
 	}
 	wp.Start()
+
+	// generate target path
+	// milvus_rootpath/insert_log/collection_id/partition_id/segment_id/ =>
+	// backup_rootpath/backup_name/binlog/insert_log/collection_id/partition_id/group_id/segment_id
+	backupPathFunc := func(binlogPath, rootPath, backupBinlogPath string) string {
+		if binlogPath == "" {
+			return dstPath + binlogPath
+		} else {
+			return strings.Replace(binlogPath, rootPath, dstPath, 1)
+		}
+	}
+
 	for _, segment := range segments {
 		start := time.Now().Unix()
 		log.Debug("copy segment",
@@ -553,14 +565,7 @@ func (b BackupContext) copySegments(ctx context.Context, segments []*backuppb.Se
 		// insert log
 		for _, binlogs := range segment.GetBinlogs() {
 			for _, binlog := range binlogs.GetBinlogs() {
-				// generate target path
-				// milvus_rootpath/insert_log/collection_id/partition_id/segment_id/ =>
-				// backup_rootpath/backup_name/insert_log/collection_id/partition_id/group_id/segment_id
-				targetPath := strings.Replace(binlog.GetLogPath(),
-					b.milvusRootPath,
-					dstPath,
-					//BackupBinlogDirPath(b.backupRootPath, backupInfo.GetName()),
-					1)
+				targetPath := backupPathFunc(binlog.GetLogPath(), b.milvusRootPath, dstPath)
 				if segment.GetGroupId() != 0 {
 					targetPath = strings.Replace(targetPath,
 						strconv.FormatInt(segment.GetPartitionId(), 10),
@@ -608,14 +613,7 @@ func (b BackupContext) copySegments(ctx context.Context, segments []*backuppb.Se
 		// delta log
 		for _, binlogs := range segment.GetDeltalogs() {
 			for _, binlog := range binlogs.GetBinlogs() {
-				// generate target path
-				// milvus_rootpath/delta_log/collection_id/partition_id/segment_id/ =>
-				// backup_rootpath/backup_name/delta_log/collection_id/partition_id/group_id/segment_id
-				targetPath := strings.Replace(binlog.GetLogPath(),
-					b.milvusRootPath,
-					dstPath,
-					//BackupBinlogDirPath(b.backupRootPath, backupInfo.GetName()),
-					1)
+				targetPath := backupPathFunc(binlog.GetLogPath(), b.milvusRootPath, dstPath)
 				if segment.GetGroupId() != 0 {
 					targetPath = strings.Replace(targetPath,
 						strconv.FormatInt(segment.GetPartitionId(), 10),
