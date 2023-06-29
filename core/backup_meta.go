@@ -298,6 +298,7 @@ func SimpleRestoreResponse(input *backuppb.RestoreBackupResponse) *backuppb.Rest
 	collectionRestores := make([]*backuppb.RestoreCollectionTask, 0)
 	for _, coll := range restore.GetCollectionRestoreTasks() {
 		collectionRestores = append(collectionRestores, &backuppb.RestoreCollectionTask{
+			Id:                   coll.GetId(),
 			StateCode:            coll.GetStateCode(),
 			ErrorMessage:         coll.GetErrorMessage(),
 			StartTime:            coll.GetStartTime(),
