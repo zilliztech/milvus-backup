@@ -222,7 +222,7 @@ func (b BackupContext) executeRestoreBackupTask(ctx context.Context, backupBucke
 
 	// 3, execute restoreCollectionTasks
 	for _, restoreCollectionTask := range restoreCollectionTasks {
-		endTask, err := b.executeRestoreCollectionTask(ctx, backupBucketName, backupPath, restoreCollectionTask)
+		endTask, err := b.executeRestoreCollectionTask(ctx, backupBucketName, backupPath, restoreCollectionTask, id)
 		if err != nil {
 			log.Error("executeRestoreCollectionTask failed",
 				zap.String("TargetCollectionName", restoreCollectionTask.GetTargetCollectionName()),
@@ -245,7 +245,7 @@ func (b BackupContext) executeRestoreBackupTask(ctx context.Context, backupBucke
 	return task, nil
 }
 
-func (b BackupContext) executeRestoreCollectionTask(ctx context.Context, backupBucketName string, backupPath string, task *backuppb.RestoreCollectionTask) (*backuppb.RestoreCollectionTask, error) {
+func (b BackupContext) executeRestoreCollectionTask(ctx context.Context, backupBucketName string, backupPath string, task *backuppb.RestoreCollectionTask, parentTaskID string) (*backuppb.RestoreCollectionTask, error) {
 	targetCollectionName := task.GetTargetCollectionName()
 	task.StateCode = backuppb.RestoreTaskStateCode_EXECUTING
 	log.Info("start restore",
@@ -314,6 +314,19 @@ func (b BackupContext) executeRestoreCollectionTask(ctx context.Context, backupB
 	}
 	log.Info("create collection", zap.String("collectionName", targetCollectionName), zap.Bool("hasPartitionKey", hasPartitionKey))
 
+	tempDir := "restore-temp-" + parentTaskID + SEPERATOR
+	isSameBucket := b.milvusBucketName == backupBucketName
+	// clean the temporary file
+	defer func() {
+		if !isSameBucket {
+			log.Info("Delete temporary file", zap.String("dir", tempDir))
+			err := b.storageClient.RemoveWithPrefix(ctx, b.milvusBucketName, tempDir)
+			if err != nil {
+				log.Warn("Delete temporary file failed", zap.Error(err))
+			}
+		}
+	}()
+
 	for _, partitionBackup := range task.GetCollBackup().GetPartitionBackups() {
 		exist, err := b.milvusClient.HasPartition(ctx, targetCollectionName, partitionBackup.GetPartitionName())
 		if err != nil {
@@ -334,8 +347,41 @@ func (b BackupContext) executeRestoreCollectionTask(ctx context.Context, backupB
 			zap.String("partitionName", partitionBackup.GetPartitionName()))
 
 		// bulk insert
-		groupIds := collectGroupIdsFromSegments(partitionBackup.GetSegmentBackups())
+		copyAndBulkInsert := func(files []string) error {
+			realFiles := make([]string, len(files))
+			// if milvus bucket and backup bucket are not the same, should copy the data first
+			if !isSameBucket {
+				log.Info("milvus bucket and backup bucket are not the same, copy the data first", zap.Strings("files", files))
+				for i, file := range files {
+					// empty delta file, no need to copy
+					if file == "" {
+						realFiles[i] = file
+					} else {
+						err := b.storageClient.Copy(ctx, backupBucketName, b.milvusBucketName, file, tempDir+file)
+						if err != nil {
+							log.Error("fail to copy backup date from backup bucket to restore target milvus bucket", zap.Error(err))
+							return err
+						}
+						realFiles[i] = tempDir + file
+					}
+				}
+			} else {
+				realFiles = files
+			}
 
+			err = b.executeBulkInsert(ctx, targetCollectionName, partitionBackup.GetPartitionName(), realFiles, int64(task.GetCollBackup().BackupTimestamp))
+			if err != nil {
+				log.Error("fail to bulk insert to partition",
+					zap.Error(err),
+					zap.String("backupCollectionName", task.GetCollBackup().GetCollectionName()),
+					zap.String("targetCollectionName", targetCollectionName),
+					zap.String("partition", partitionBackup.GetPartitionName()))
+				return err
+			}
+			return nil
+		}
+
+		groupIds := collectGroupIdsFromSegments(partitionBackup.GetSegmentBackups())
 		if len(groupIds) == 1 && groupIds[0] == 0 {
 			// backward compatible old backup without group id
 			files, err := b.getBackupPartitionPaths(ctx, backupBucketName, backupPath, partitionBackup)
@@ -347,9 +393,9 @@ func (b BackupContext) executeRestoreCollectionTask(ctx context.Context, backupB
 					zap.String("partition", partitionBackup.GetPartitionName()))
 				return task, err
 			}
-			err = b.executeBulkInsert(ctx, targetCollectionName, partitionBackup.GetPartitionName(), files, int64(task.GetCollBackup().BackupTimestamp))
+			err = copyAndBulkInsert(files)
 			if err != nil {
-				log.Error("fail to bulk insert to partition",
+				log.Error("fail to (copy and) bulkinsert data",
 					zap.Error(err),
 					zap.String("backupCollectionName", task.GetCollBackup().GetCollectionName()),
 					zap.String("targetCollectionName", targetCollectionName),
@@ -368,9 +414,9 @@ func (b BackupContext) executeRestoreCollectionTask(ctx context.Context, backupB
 						zap.String("partition", partitionBackup.GetPartitionName()))
 					return task, err
 				}
-				err = b.executeBulkInsert(ctx, targetCollectionName, partitionBackup.GetPartitionName(), files, int64(task.GetCollBackup().BackupTimestamp))
+				err = copyAndBulkInsert(files)
 				if err != nil {
-					log.Error("fail to bulk insert to partition",
+					log.Error("fail to (copy and) bulkinsert data",
 						zap.Error(err),
 						zap.String("backupCollectionName", task.GetCollBackup().GetCollectionName()),
 						zap.String("targetCollectionName", targetCollectionName),
