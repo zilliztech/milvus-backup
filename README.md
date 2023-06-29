@@ -16,6 +16,13 @@ In order to use Milvus-Backup effectively, access to Milvus proxy and Minio clus
 
 The Milvus-backup process has negligible impact on the performance of Milvus. Milvus cluster is fully functional and can operate normally while backup and restoration are in progress.
 
+## Compatibility
+|      Milvus      |  Milvus-backup   |
+|:----------------:|:----------------:|
+| v2.2.9 and above | v0.3.0 and above |
+| v2.2.0 to v2.2.8 | v0.1.0 to v0.2.2 |
+
+
 ## Development
 
 ### Build
