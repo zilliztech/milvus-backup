@@ -198,7 +198,11 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 		log.Error("parse backup collections from request failed", zap.Error(err))
 		return backupInfo, err
 	}
-	log.Info("collections to backup", zap.Any("collections", toBackupCollections))
+	collectionNames := make([]string, len(toBackupCollections))
+	for i, coll := range toBackupCollections {
+		collectionNames[i] = coll.collectionName
+	}
+	log.Info("collections to backup", zap.Strings("collections", collectionNames))
 
 	collectionBackupInfos := make([]*backuppb.CollectionBackupInfo, 0)
 	partitionLevelBackupInfos := make([]*backuppb.PartitionBackupInfo, 0)

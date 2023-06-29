@@ -11,6 +11,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/util/errorutil"
 	"github.com/zilliztech/milvus-backup/internal/util/retry"
+	"golang.org/x/sync/errgroup"
 	"io"
 	"strings"
 
@@ -339,11 +340,32 @@ func (mcm *MinioChunkManager) MultiRemove(ctx context.Context, bucketName string
 
 // RemoveWithPrefix removes all objects with the same prefix @prefix from minio.
 func (mcm *MinioChunkManager) RemoveWithPrefix(ctx context.Context, bucketName string, prefix string) error {
-	objects := mcm.Client.ListObjects(ctx, mcm.bucketName, minio.ListObjectsOptions{Prefix: prefix, Recursive: true})
-	for rErr := range mcm.Client.RemoveObjects(ctx, bucketName, objects, minio.RemoveObjectsOptions{GovernanceBypass: false}) {
-		if rErr.Err != nil {
-			log.Warn("failed to remove objects", zap.String("prefix", prefix), zap.Error(rErr.Err))
-			return rErr.Err
+	objects := mcm.Client.ListObjects(ctx, bucketName, minio.ListObjectsOptions{Prefix: prefix, Recursive: true})
+	i := 0
+	maxGoroutine := 10
+	removeKeys := make([]string, 0, len(objects))
+	for object := range objects {
+		if object.Err != nil {
+			return object.Err
+		}
+		removeKeys = append(removeKeys, object.Key)
+	}
+	for i < len(removeKeys) {
+		runningGroup, groupCtx := errgroup.WithContext(ctx)
+		for j := 0; j < maxGoroutine && i < len(removeKeys); j++ {
+			key := removeKeys[i]
+			runningGroup.Go(func() error {
+				err := mcm.Client.RemoveObject(groupCtx, bucketName, key, minio.RemoveObjectOptions{})
+				if err != nil {
+					log.Warn("failed to remove object", zap.String("path", key), zap.Error(err))
+					return err
+				}
+				return nil
+			})
+			i++
+		}
+		if err := runningGroup.Wait(); err != nil {
+			return err
 		}
 	}
 	return nil
