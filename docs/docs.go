@@ -446,6 +446,9 @@ const docTemplate = `{
                 "description": {
                     "type": "string"
                 },
+                "enable_dynamic_field": {
+                    "type": "boolean"
+                },
                 "fields": {
                     "type": "array",
                     "items": {
@@ -491,6 +494,10 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                },
+                "db_collections": {
+                    "description": "database and collections to backup. A json string. To support database. 2023.7.7",
+                    "type": "string"
                 },
                 "requestId": {
                     "description": "uuid of request, will generate one if not set",
@@ -573,8 +580,14 @@ const docTemplate = `{
                 "data_type": {
                     "$ref": "#/definitions/backuppb.DataType"
                 },
+                "default_value": {
+                    "$ref": "#/definitions/backuppb.ValueField"
+                },
                 "description": {
                     "type": "string"
+                },
+                "element_type": {
+                    "$ref": "#/definitions/backuppb.DataType"
                 },
                 "fieldID": {
                     "type": "integer"
@@ -584,6 +597,12 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/backuppb.KeyValuePair"
                     }
+                },
+                "is_dynamic": {
+                    "type": "boolean"
+                },
+                "is_partition_key": {
+                    "type": "boolean"
                 },
                 "is_primary_key": {
                     "type": "boolean"
@@ -753,6 +772,10 @@ const docTemplate = `{
                 },
                 "collection_suffix": {
                     "description": "Support two ways to rename the collections while recover\n1, set a suffix",
+                    "type": "string"
+                },
+                "db_collections": {
+                    "description": "database and collections to restore. A json string. To support database. 2023.7.7",
                     "type": "string"
                 },
                 "path": {
@@ -952,6 +975,14 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/backuppb.FieldBinlog"
                     }
+                }
+            }
+        },
+        "backuppb.ValueField": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "description": "Types that are valid to be assigned to Data:\n\t*ValueField_BoolData\n\t*ValueField_IntData\n\t*ValueField_LongData\n\t*ValueField_FloatData\n\t*ValueField_DoubleData\n\t*ValueField_StringData\n\t*ValueField_BytesData"
                 }
             }
         }
