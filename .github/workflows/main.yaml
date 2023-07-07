@@ -302,6 +302,109 @@ jobs:
         run: |
           python example/verify_data.py          
 
+  test-backup-restore-with-custom-config:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        deploy_tools: [helm]
+        milvus_mode: [standalone]
+        milvus_minio_rootpath: ["", "file"]
+        backup_bucket_name: ["milvus-backup", "milvus-bucket"]
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python 3.8
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+          cache: pip
+
+      - uses: actions/setup-go@v3
+        with:
+          go-version: '1.18.0'
+          cache: true
+
+      - name: Creating kind cluster
+        if: ${{ matrix.deploy_tools == 'helm' }}
+        uses: helm/kind-action@v1.2.0
+
+      - name: Modify Milvus config
+
+        timeout-minutes: 15
+        shell: bash
+        working-directory: deployment/${{ matrix.milvus_mode }}
+        run: |
+          yq -i '.minio.rootPath = "${{ matrix.milvus_minio_rootpath }}"' values.yaml
+      - name: Build
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          if [ ${{ matrix.deploy_tools }} == 'helm' ]; then
+            yq -i '.minio.bucketName = "milvus-bucket"' configs/backup.yaml
+            yq -i '.minio.rootPath = "${{ matrix.milvus_minio_rootpath }}"' configs/backup.yaml
+            yq -i '.minio.backupBucketName = "${{ matrix.backup_bucket_name }}"' configs/backup.yaml
+            
+          fi
+          yq -i '.log.level = "debug"' configs/backup.yaml
+          cat configs/backup.yaml || true
+          go get
+          go build
+      - name: Install dependency
+
+        timeout-minutes: 5
+        working-directory: tests
+        shell: bash
+        run: |
+          pip install -r requirements.txt --trusted-host https://test.pypi.org
+      - name: Milvus deploy
+
+        timeout-minutes: 15
+        shell: bash
+        working-directory: deployment/${{ matrix.milvus_mode }}
+        run: |
+          if [ ${{ matrix.deploy_tools}} == "helm" ]; then
+            helm repo add milvus https://milvus-io.github.io/milvus-helm
+            helm repo update
+            helm install --wait --timeout 600s milvus-backup milvus/milvus -f values.yaml
+            kubectl get pods
+            kubectl port-forward service/milvus-backup 19530 >/dev/null 2>&1 &
+            kubectl port-forward service/milvus-backup-minio 9000  >/dev/null 2>&1 &
+            sleep 10
+            nc -vz 127.0.0.1 19530
+            nc -vz 127.0.0.1 9000
+            sleep 10
+            kubectl get pods -n default | grep milvus-backup
+          fi
+          
+          if [ ${{ matrix.deploy_tools}} == "docker-compose" ]; then
+            docker-compose up -d
+            bash ../../scripts/check_healthy.sh
+            docker-compose ps -a
+          fi
+      - name: Prepare data
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python example/prepare_data.py
+      - name: Backup
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          ./milvus-backup list
+          ./milvus-backup create -n my_backup
+          ./milvus-backup list
+      - name: Restore backup
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          ./milvus-backup restore -n my_backup -s _recover
+      - name: Verify data
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python example/verify_data.py
   test-backup-restore-api:
     runs-on: ubuntu-latest
     strategy:
