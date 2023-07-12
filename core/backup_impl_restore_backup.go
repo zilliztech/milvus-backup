@@ -170,8 +170,8 @@ func (b BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Rest
 			targetCollectionName = backupCollectionName
 		}
 
-		b.milvusClient.UsingDatabase(ctx, restoreCollection.DbName)
-		exist, err := b.milvusClient.HasCollection(ctx, targetCollectionName)
+		b.getMilvusClient().UsingDatabase(ctx, restoreCollection.DbName)
+		exist, err := b.getMilvusClient().HasCollection(ctx, targetCollectionName)
 		if err != nil {
 			errorMsg := fmt.Sprintf("fail to check whether the collection is exist, collection_name: %s, err: %s", targetCollectionName, err)
 			log.Error(errorMsg)
@@ -319,19 +319,19 @@ func (b BackupContext) executeRestoreCollectionTask(ctx context.Context, backupB
 	if dbName == "" {
 		dbName = "default"
 	}
-	b.milvusClient.UsingDatabase(ctx, dbName)
+	b.getMilvusClient().UsingDatabase(ctx, dbName)
 
 	err := retry.Do(ctx, func() error {
 		if hasPartitionKey {
 			partitionNum := len(task.GetCollBackup().GetPartitionBackups())
-			return b.milvusClient.CreateCollection(
+			return b.getMilvusClient().CreateCollection(
 				ctx,
 				collectionSchema,
 				task.GetCollBackup().GetShardsNum(),
 				gomilvus.WithConsistencyLevel(entity.ConsistencyLevel(task.GetCollBackup().GetConsistencyLevel())),
 				gomilvus.WithPartitionNum(int64(partitionNum)))
 		}
-		return b.milvusClient.CreateCollection(
+		return b.getMilvusClient().CreateCollection(
 			ctx,
 			collectionSchema,
 			task.GetCollBackup().GetShardsNum(),
@@ -352,7 +352,7 @@ func (b BackupContext) executeRestoreCollectionTask(ctx context.Context, backupB
 	defer func() {
 		if !isSameBucket {
 			log.Info("Delete temporary file", zap.String("dir", tempDir))
-			err := b.storageClient.RemoveWithPrefix(ctx, b.milvusBucketName, tempDir)
+			err := b.getStorageClient().RemoveWithPrefix(ctx, b.milvusBucketName, tempDir)
 			if err != nil {
 				log.Warn("Delete temporary file failed", zap.Error(err))
 			}
@@ -360,14 +360,14 @@ func (b BackupContext) executeRestoreCollectionTask(ctx context.Context, backupB
 	}()
 
 	for _, partitionBackup := range task.GetCollBackup().GetPartitionBackups() {
-		exist, err := b.milvusClient.HasPartition(ctx, targetCollectionName, partitionBackup.GetPartitionName())
+		exist, err := b.getMilvusClient().HasPartition(ctx, targetCollectionName, partitionBackup.GetPartitionName())
 		if err != nil {
 			log.Error("fail to check has partition", zap.Error(err))
 			return task, err
 		}
 		if !exist {
 			err = retry.Do(ctx, func() error {
-				return b.milvusClient.CreatePartition(ctx, targetCollectionName, partitionBackup.GetPartitionName())
+				return b.getMilvusClient().CreatePartition(ctx, targetCollectionName, partitionBackup.GetPartitionName())
 			}, retry.Attempts(10), retry.Sleep(1*time.Second))
 			if err != nil {
 				log.Error("fail to create partition", zap.Error(err))
@@ -389,7 +389,7 @@ func (b BackupContext) executeRestoreCollectionTask(ctx context.Context, backupB
 					if file == "" {
 						realFiles[i] = file
 					} else {
-						err := b.storageClient.Copy(ctx, backupBucketName, b.milvusBucketName, file, tempDir+file)
+						err := b.getStorageClient().Copy(ctx, backupBucketName, b.milvusBucketName, file, tempDir+file)
 						if err != nil {
 							log.Error("fail to copy backup date from backup bucket to restore target milvus bucket", zap.Error(err))
 							return err
@@ -486,7 +486,7 @@ func (b BackupContext) executeBulkInsert(ctx context.Context, coll string, parti
 		zap.String("partition", partition),
 		zap.Strings("files", files),
 		zap.Int64("endTime", endTime))
-	taskId, err := b.milvusClient.BulkInsert(ctx, coll, partition, files, gomilvus.IsBackup(), gomilvus.WithEndTs(endTime))
+	taskId, err := b.getMilvusClient().BulkInsert(ctx, coll, partition, files, gomilvus.IsBackup(), gomilvus.WithEndTs(endTime))
 	if err != nil {
 		log.Error("fail to bulk insert",
 			zap.Error(err),
@@ -511,7 +511,7 @@ func (b BackupContext) watchBulkInsertState(ctx context.Context, taskId int64, t
 	lastProgress := 0
 	lastUpdateTime := time.Now().Unix()
 	for {
-		importTaskState, err := b.milvusClient.GetBulkInsertState(ctx, taskId)
+		importTaskState, err := b.getMilvusClient().GetBulkInsertState(ctx, taskId)
 		currentTimestamp := time.Now().Unix()
 		if err != nil {
 			return err
@@ -556,7 +556,7 @@ func (b BackupContext) getBackupPartitionPaths(ctx context.Context, bucketName s
 	insertPath := fmt.Sprintf("%s/%s/%s/%v/%v/", backupPath, BINGLOG_DIR, INSERT_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId())
 	deltaPath := fmt.Sprintf("%s/%s/%s/%v/%v/", backupPath, BINGLOG_DIR, DELTA_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId())
 
-	exist, err := b.storageClient.Exist(ctx, bucketName, deltaPath)
+	exist, err := b.getStorageClient().Exist(ctx, bucketName, deltaPath)
 	if err != nil {
 		log.Warn("check binlog exist fail", zap.Error(err))
 		return []string{}, err
@@ -577,7 +577,7 @@ func (b BackupContext) getBackupPartitionPathsWithGroupID(ctx context.Context, b
 	insertPath := fmt.Sprintf("%s/%s/%s/%v/%v/%d/", backupPath, BINGLOG_DIR, INSERT_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId(), groupId)
 	deltaPath := fmt.Sprintf("%s/%s/%s/%v/%v/%d/", backupPath, BINGLOG_DIR, DELTA_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId(), groupId)
 
-	exist, err := b.storageClient.Exist(ctx, bucketName, deltaPath)
+	exist, err := b.getStorageClient().Exist(ctx, bucketName, deltaPath)
 	if err != nil {
 		log.Warn("check binlog exist fail", zap.Error(err))
 		return []string{}, err
