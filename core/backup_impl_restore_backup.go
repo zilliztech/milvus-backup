@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/cockroachdb/errors"
+	jsoniter "github.com/json-iterator/go"
 	gomilvus "github.com/milvus-io/milvus-sdk-go/v2/client"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 	"go.uber.org/zap"
@@ -29,7 +30,8 @@ func (b BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Rest
 		zap.Any("CollectionRenames", request.GetCollectionRenames()),
 		zap.Bool("async", request.GetAsync()),
 		zap.String("bucketName", request.GetBucketName()),
-		zap.String("path", request.GetPath()))
+		zap.String("path", request.GetPath()),
+		zap.String("databaseCollections", request.GetDbCollections()))
 
 	resp := &backuppb.RestoreBackupResponse{
 		RequestId: request.GetRequestId(),
@@ -99,7 +101,36 @@ func (b BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Rest
 
 	// 2, initial restoreCollectionTasks
 	toRestoreCollectionBackups := make([]*backuppb.CollectionBackupInfo, 0)
-	if len(request.GetCollectionNames()) == 0 {
+
+	if request.GetDbCollections() != "" {
+		var dbCollections DbCollections
+		err := jsoniter.UnmarshalFromString(request.GetDbCollections(), &dbCollections)
+		if err != nil {
+			log.Error("fail in unmarshal dbCollections in RestoreBackupRequest", zap.String("dbCollections", request.GetDbCollections()), zap.Error(err))
+			errorMsg := fmt.Sprintf("fail in unmarshal dbCollections in RestoreBackupRequest， dbCollections: %s, err: %s", request.GetDbCollections(), err)
+			log.Error(errorMsg)
+			resp.Code = backuppb.ResponseCode_Fail
+			resp.Msg = errorMsg
+			return resp
+		}
+		for db, collections := range dbCollections {
+			if len(collections) == 0 {
+				for _, collectionBackup := range backup.GetCollectionBackups() {
+					if collectionBackup.GetDbName() == db {
+						toRestoreCollectionBackups = append(toRestoreCollectionBackups, collectionBackup)
+					}
+				}
+			} else {
+				for _, coll := range collections {
+					for _, collectionBackup := range backup.GetCollectionBackups() {
+						if collectionBackup.GetDbName() == db && collectionBackup.CollectionName == coll {
+							toRestoreCollectionBackups = append(toRestoreCollectionBackups, collectionBackup)
+						}
+					}
+				}
+			}
+		}
+	} else if len(request.GetCollectionNames()) == 0 {
 		toRestoreCollectionBackups = backup.GetCollectionBackups()
 	} else {
 		collectionNameDict := make(map[string]bool)
@@ -139,6 +170,7 @@ func (b BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Rest
 			targetCollectionName = backupCollectionName
 		}
 
+		b.milvusClient.UsingDatabase(ctx, restoreCollection.DbName)
 		exist, err := b.milvusClient.HasCollection(ctx, targetCollectionName)
 		if err != nil {
 			errorMsg := fmt.Sprintf("fail to check whether the collection is exist, collection_name: %s, err: %s", targetCollectionName, err)

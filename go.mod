@@ -10,6 +10,7 @@ require (
 	github.com/golang/protobuf v1.5.2
 	github.com/google/btree v1.0.1
 	github.com/google/uuid v1.1.2
+	github.com/json-iterator/go v1.1.12
 	github.com/lingdor/stackerror v0.0.0-20191119040541-976d8885ed76
 	github.com/milvus-io/milvus-sdk-go/v2 v2.2.2
 	github.com/minio/minio-go/v7 v7.0.17
@@ -61,7 +62,6 @@ require (
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
-	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/compress v1.13.5 // indirect
 	github.com/klauspost/cpuid v1.3.1 // indirect
 	github.com/kr/pretty v0.3.0 // indirect

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	jsoniter "github.com/json-iterator/go"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 	"go.uber.org/zap"
 
@@ -25,6 +26,7 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 		zap.String("requestId", request.GetRequestId()),
 		zap.String("backupName", request.GetBackupName()),
 		zap.Strings("collections", request.GetCollectionNames()),
+		zap.String("databaseCollections", request.GetDbCollections()),
 		zap.Bool("async", request.GetAsync()))
 
 	resp := &backuppb.BackupInfoResponse{
@@ -130,11 +132,48 @@ type collection struct {
 	collectionName string
 }
 
+// parse collections to backup
+// For backward compatibility：
+//   1，parse dbCollections first,
+//   2，if dbCollections not set, use collectionNames
 func (b BackupContext) parseBackupCollections(request *backuppb.CreateBackupRequest) ([]collection, error) {
 	log.Debug("Request collection names",
 		zap.Strings("request_collection_names", request.GetCollectionNames()),
 		zap.Int("length", len(request.GetCollectionNames())))
 	var toBackupCollections []collection
+
+	// first priority: dbCollections
+	if request.GetDbCollections() != "" {
+		var dbCollections DbCollections
+		err := jsoniter.UnmarshalFromString(request.GetDbCollections(), &dbCollections)
+		if err != nil {
+			log.Error("fail in unmarshal dbCollections in CreateBackupRequest", zap.String("dbCollections", request.GetDbCollections()), zap.Error(err))
+			return nil, err
+		}
+		for db, collections := range dbCollections {
+			if len(collections) == 0 {
+				err := b.milvusClient.UsingDatabase(b.ctx, db)
+				if err != nil {
+					log.Error("fail to call SDK use database", zap.Error(err))
+					return nil, err
+				}
+				collections, err := b.milvusClient.ListCollections(b.ctx)
+				if err != nil {
+					log.Error("fail in ListCollections", zap.Error(err))
+					return nil, err
+				}
+				for _, coll := range collections {
+					toBackupCollections = append(toBackupCollections, collection{db, coll.Name})
+				}
+			} else {
+				for _, coll := range collections {
+					toBackupCollections = append(toBackupCollections, collection{db, coll})
+				}
+			}
+		}
+		return toBackupCollections, nil
+	}
+
 	if request.GetCollectionNames() == nil || len(request.GetCollectionNames()) == 0 {
 		dbs, err := b.milvusClient.ListDatabases(b.ctx)
 		if err != nil {
