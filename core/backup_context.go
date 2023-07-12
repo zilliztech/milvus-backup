@@ -100,20 +100,20 @@ func CreateStorageClient(ctx context.Context, params paramtable.BackupParams) (s
 
 func (b *BackupContext) Start() error {
 	// start milvus go SDK client
-	milvusClient, err := CreateMilvusClient(b.ctx, b.params)
-	if err != nil {
-		log.Error("failed to initial milvus client", zap.Error(err))
-		return err
-	}
-	b.milvusClient = milvusClient
+	//milvusClient, err := CreateMilvusClient(b.ctx, b.params)
+	//if err != nil {
+	//	log.Error("failed to initial milvus client", zap.Error(err))
+	//	return err
+	//}
+	//b.milvusClient = milvusClient
 
 	// start milvus storage client
-	minioClient, err := CreateStorageClient(b.ctx, b.params)
-	if err != nil {
-		log.Error("failed to initial storage client", zap.Error(err))
-		return err
-	}
-	b.storageClient = minioClient
+	//minioClient, err := CreateStorageClient(b.ctx, b.params)
+	//if err != nil {
+	//	log.Error("failed to initial storage client", zap.Error(err))
+	//	return err
+	//}
+	//b.storageClient = minioClient
 
 	b.backupTasks = sync.Map{}
 	b.backupNameIdDict = sync.Map{}
@@ -134,11 +134,11 @@ func (b *BackupContext) Start() error {
 
 func (b *BackupContext) Close() error {
 	b.started = false
-	err := b.milvusClient.Close()
-	//if b.copyWorkerPool != nil {
-	//	b.copyWorkerPool.Done()
-	//}
-	return err
+	if b.milvusClient != nil {
+		err := b.getMilvusClient().Close()
+		return err
+	}
+	return nil
 }
 
 func CreateBackupContext(ctx context.Context, params paramtable.BackupParams) *BackupContext {
@@ -150,6 +150,30 @@ func CreateBackupContext(ctx context.Context, params paramtable.BackupParams) *B
 		milvusRootPath:   params.MinioCfg.RootPath,
 		backupRootPath:   params.MinioCfg.BackupRootPath,
 	}
+}
+
+func (b BackupContext) getMilvusClient() gomilvus.Client {
+	if b.milvusClient == nil {
+		milvusClient, err := CreateMilvusClient(b.ctx, b.params)
+		if err != nil {
+			log.Error("failed to initial milvus client", zap.Error(err))
+			panic(err)
+		}
+		b.milvusClient = milvusClient
+	}
+	return b.milvusClient
+}
+
+func (b BackupContext) getStorageClient() storage.ChunkManager {
+	if b.storageClient == nil {
+		storageClient, err := CreateStorageClient(b.ctx, b.params)
+		if err != nil {
+			log.Error("failed to initial storage client", zap.Error(err))
+			panic(err)
+		}
+		b.storageClient = storageClient
+	}
+	return b.storageClient
 }
 
 func (b BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBackupRequest) *backuppb.BackupInfoResponse {
@@ -264,7 +288,7 @@ func (b BackupContext) ListBackups(ctx context.Context, request *backuppb.ListBa
 	}
 
 	// 1, trigger inner sync to get the newest backup list in the milvus cluster
-	backupPaths, _, err := b.storageClient.ListWithPrefix(ctx, b.backupBucketName, b.backupRootPath+SEPERATOR, false)
+	backupPaths, _, err := b.getStorageClient().ListWithPrefix(ctx, b.backupBucketName, b.backupRootPath+SEPERATOR, false)
 	if err != nil {
 		log.Error("Fail to list backup directory", zap.Error(err))
 		resp.Code = backuppb.ResponseCode_Fail
@@ -366,7 +390,7 @@ func (b BackupContext) DeleteBackup(ctx context.Context, request *backuppb.Delet
 		return resp
 	}
 
-	err := b.storageClient.RemoveWithPrefix(ctx, b.backupBucketName, BackupDirPath(b.backupRootPath, request.GetBackupName()))
+	err := b.getStorageClient().RemoveWithPrefix(ctx, b.backupBucketName, BackupDirPath(b.backupRootPath, request.GetBackupName()))
 
 	if err != nil {
 		log.Error("Fail to delete backup", zap.String("backupName", request.GetBackupName()), zap.Error(err))
@@ -388,7 +412,7 @@ func (b BackupContext) readBackup(ctx context.Context, bucketName string, backup
 	partitionMetaPath := backupMetaDirPath + SEPERATOR + PARTITION_META_FILE
 	segmentMetaPath := backupMetaDirPath + SEPERATOR + SEGMENT_META_FILE
 
-	exist, err := b.storageClient.Exist(ctx, bucketName, backupMetaPath)
+	exist, err := b.getStorageClient().Exist(ctx, bucketName, backupMetaPath)
 	if err != nil {
 		log.Error("check backup meta file failed", zap.String("path", backupMetaPath), zap.Error(err))
 		return nil, err
@@ -398,22 +422,22 @@ func (b BackupContext) readBackup(ctx context.Context, bucketName string, backup
 		return nil, err
 	}
 
-	backupMetaBytes, err := b.storageClient.Read(ctx, bucketName, backupMetaPath)
+	backupMetaBytes, err := b.getStorageClient().Read(ctx, bucketName, backupMetaPath)
 	if err != nil {
 		log.Error("Read backup meta failed", zap.String("path", backupMetaPath), zap.Error(err))
 		return nil, err
 	}
-	collectionBackupMetaBytes, err := b.storageClient.Read(ctx, bucketName, collectionMetaPath)
+	collectionBackupMetaBytes, err := b.getStorageClient().Read(ctx, bucketName, collectionMetaPath)
 	if err != nil {
 		log.Error("Read collection meta failed", zap.String("path", collectionMetaPath), zap.Error(err))
 		return nil, err
 	}
-	partitionBackupMetaBytes, err := b.storageClient.Read(ctx, bucketName, partitionMetaPath)
+	partitionBackupMetaBytes, err := b.getStorageClient().Read(ctx, bucketName, partitionMetaPath)
 	if err != nil {
 		log.Error("Read partition meta failed", zap.String("path", partitionMetaPath), zap.Error(err))
 		return nil, err
 	}
-	segmentBackupMetaBytes, err := b.storageClient.Read(ctx, bucketName, segmentMetaPath)
+	segmentBackupMetaBytes, err := b.getStorageClient().Read(ctx, bucketName, segmentMetaPath)
 	if err != nil {
 		log.Error("Read segment meta failed", zap.String("path", segmentMetaPath), zap.Error(err))
 		return nil, err
