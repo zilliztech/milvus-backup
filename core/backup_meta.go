@@ -260,7 +260,9 @@ func SimpleBackupResponse(input *backuppb.BackupInfoResponse) *backuppb.BackupIn
 		collections = append(collections, &backuppb.CollectionBackupInfo{
 			StateCode:               coll.GetStateCode(),
 			ErrorMessage:            coll.GetErrorMessage(),
+			DbName:                  coll.GetDbName(),
 			CollectionName:          coll.GetCollectionName(),
+			CollectionId:            coll.GetCollectionId(),
 			BackupTimestamp:         coll.GetBackupTimestamp(),
 			HasIndex:                coll.GetHasIndex(),
 			IndexInfos:              coll.GetIndexInfos(),
@@ -338,3 +340,5 @@ func UpdateRestoreBackupTask(input *backuppb.RestoreBackupTask) *backuppb.Restor
 	}
 	return input
 }
+
+type DbCollections = map[string][]string

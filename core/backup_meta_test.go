@@ -1,9 +1,14 @@
 package core
 
 import (
+	"bufio"
+	"fmt"
+	"io"
+	"os"
 	"strconv"
 	"testing"
 
+	jsoniter "github.com/json-iterator/go"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
@@ -138,4 +143,91 @@ func TestBackupSerialize(t *testing.T) {
 
 	deserBackup, err := deserialize(serData)
 	log.Info(deserBackup.String())
+}
+
+func TestDbCollectionJson(t *testing.T) {
+	dbCollection := DbCollections{"db1": []string{"coll1", "coll2"}, "db2": []string{"coll3", "coll4"}}
+	jsonStr, err := jsoniter.MarshalToString(dbCollection)
+	assert.NoError(t, err)
+	println(jsonStr)
+
+	var dbCollection2 DbCollections
+	jsoniter.UnmarshalFromString(jsonStr, &dbCollection2)
+	println(dbCollection2)
+}
+
+func readBackup(backupDir string) (*backuppb.BackupInfo, error) {
+	readByteFunc := func(filepath string) ([]byte, error) {
+		file, err := os.OpenFile(filepath, os.O_RDWR, 0666)
+		if err != nil {
+			fmt.Println("Open file error!", err)
+			return nil, err
+		}
+
+		// Get the file size
+		stat, err := file.Stat()
+		if err != nil {
+			fmt.Println(err)
+			return nil, err
+		}
+
+		bs := make([]byte, stat.Size())
+		_, err = bufio.NewReader(file).Read(bs)
+		if err != nil && err != io.EOF {
+			fmt.Println(err)
+			return nil, err
+		}
+		return bs, nil
+	}
+
+	backupPath := backupDir + "/backup_meta.json"
+	collectionPath := backupDir + "/collection_meta.json"
+	partitionPath := backupDir + "/partition_meta.json"
+	segmentPath := backupDir + "/segment_meta.json"
+
+	backupMetaBytes, err := readByteFunc(backupPath)
+	if err != nil {
+		return nil, err
+	}
+	collectionBackupMetaBytes, err := readByteFunc(collectionPath)
+	if err != nil {
+		return nil, err
+	}
+	partitionBackupMetaBytes, err := readByteFunc(partitionPath)
+	if err != nil {
+		return nil, err
+	}
+	segmentBackupMetaBytes, err := readByteFunc(segmentPath)
+	if err != nil {
+		return nil, err
+	}
+
+	completeBackupMetas := &BackupMetaBytes{
+		BackupMetaBytes:     backupMetaBytes,
+		CollectionMetaBytes: collectionBackupMetaBytes,
+		PartitionMetaBytes:  partitionBackupMetaBytes,
+		SegmentMetaBytes:    segmentBackupMetaBytes,
+	}
+
+	deserBackup, err := deserialize(completeBackupMetas)
+
+	return deserBackup, err
+}
+
+func TestReadBackupFile(t *testing.T) {
+	filepath := "/tmp/hxs_meta"
+
+	backupInfo, err := readBackup(filepath)
+	assert.NoError(t, err)
+
+	levelBackupInfo, err := treeToLevel(backupInfo)
+	assert.NoError(t, err)
+	assert.NotNil(t, levelBackupInfo)
+
+	output, _ := serialize(backupInfo)
+	BackupMetaStr := string(output.BackupMetaBytes)
+	segmentMetaStr := string(output.SegmentMetaBytes)
+	fmt.Sprintf(BackupMetaStr)
+	fmt.Sprintf(segmentMetaStr)
+	//log.Info("segment meta", zap.String("value", string(output.SegmentMetaBytes)))
 }
