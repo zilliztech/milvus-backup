@@ -213,7 +213,7 @@ func TestCreateIndex(t *testing.T) {
 	fmt.Println(schema)
 	client.CreateCollection(ctx, schema, 2)
 
-	idx, err := entity.NewIndexTRIE(entity.IP)
+	idx := entity.NewScalarIndex()
 	err = client.CreateIndex(ctx, _COLLECTION_NAME, _STR_FIELD_NAME, idx, false, gomilvus.WithIndexName("_default_idx_102"))
 	fmt.Println(err)
 

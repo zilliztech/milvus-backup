@@ -307,7 +307,7 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 					continue
 				} else {
 					indexInfo := &backuppb.IndexInfo{
-						FieldName: index.FieldName(),
+						FieldName: field.Name,
 						IndexName: index.Name(),
 						IndexType: string(index.IndexType()),
 						Params:    index.Params(),
