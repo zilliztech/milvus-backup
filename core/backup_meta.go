@@ -14,6 +14,7 @@ const (
 	COLLECTION_META_FILE = "collection_meta.json"
 	PARTITION_META_FILE  = "partition_meta.json"
 	SEGMENT_META_FILE    = "segment_meta.json"
+	FULL_META_FILE       = "full_meta.json"
 	SEPERATOR            = "/"
 
 	BINGLOG_DIR    = "binlogs"
@@ -32,6 +33,7 @@ type BackupMetaBytes struct {
 	CollectionMetaBytes []byte
 	PartitionMetaBytes  []byte
 	SegmentMetaBytes    []byte
+	FullMetaBytes       []byte
 }
 
 type LeveledBackupInfo struct {
@@ -130,12 +132,17 @@ func serialize(backup *backuppb.BackupInfo) (*BackupMetaBytes, error) {
 	if err != nil {
 		return nil, err
 	}
+	fullMetaBytes, err := json.Marshal(backup)
+	if err != nil {
+		return nil, err
+	}
 
 	return &BackupMetaBytes{
 		BackupMetaBytes:     backupMetaBytes,
 		CollectionMetaBytes: collectionBackupMetaBytes,
 		PartitionMetaBytes:  partitionBackupMetaBytes,
 		SegmentMetaBytes:    segmentBackupMetaBytes,
+		FullMetaBytes:       fullMetaBytes,
 	}, nil
 }
 
@@ -227,6 +234,10 @@ func PartitionMetaPath(backupRootPath, backupName string) string {
 
 func SegmentMetaPath(backupRootPath, backupName string) string {
 	return BackupMetaDirPath(backupRootPath, backupName) + SEPERATOR + SEGMENT_META_FILE
+}
+
+func FullMetaPath(backupRootPath, backupName string) string {
+	return BackupMetaDirPath(backupRootPath, backupName) + SEPERATOR + FULL_META_FILE
 }
 
 func BackupBinlogDirPath(backupRootPath, backupName string) string {

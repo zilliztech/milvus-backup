@@ -127,7 +127,7 @@ hello_milvus2.flush()
 insert_result2 = hello_milvus2.insert(entities2)
 hello_milvus2.flush()
 
-index_params2 = {"index_type": "TRIE"}
+index_params2 = {"index_type": "Trie"}
 hello_milvus2.create_index("var", index_params2)
 
 print(f"Number of entities in hello_milvus2: {hello_milvus2.num_entities}")  # check the num_entites
