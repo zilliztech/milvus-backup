@@ -18,7 +18,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/util/retry"
 )
 
-func (b BackupContext) RestoreBackup(ctx context.Context, request *backuppb.RestoreBackupRequest) *backuppb.RestoreBackupResponse {
+func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.RestoreBackupRequest) *backuppb.RestoreBackupResponse {
 	if request.GetRequestId() == "" {
 		request.RequestId = utils.UUID()
 	}
@@ -233,7 +233,7 @@ func (b BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Rest
 	}
 }
 
-func (b BackupContext) executeRestoreBackupTask(ctx context.Context, backupBucketName string, backupPath string, backup *backuppb.BackupInfo, task *backuppb.RestoreBackupTask) (*backuppb.RestoreBackupTask, error) {
+func (b *BackupContext) executeRestoreBackupTask(ctx context.Context, backupBucketName string, backupPath string, backup *backuppb.BackupInfo, task *backuppb.RestoreBackupTask) (*backuppb.RestoreBackupTask, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -277,7 +277,7 @@ func (b BackupContext) executeRestoreBackupTask(ctx context.Context, backupBucke
 	return task, nil
 }
 
-func (b BackupContext) executeRestoreCollectionTask(ctx context.Context, backupBucketName string, backupPath string, task *backuppb.RestoreCollectionTask, parentTaskID string) (*backuppb.RestoreCollectionTask, error) {
+func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backupBucketName string, backupPath string, task *backuppb.RestoreCollectionTask, parentTaskID string) (*backuppb.RestoreCollectionTask, error) {
 	targetCollectionName := task.GetTargetCollectionName()
 	task.StateCode = backuppb.RestoreTaskStateCode_EXECUTING
 	log.Info("start restore",
@@ -480,7 +480,7 @@ func collectGroupIdsFromSegments(segments []*backuppb.SegmentBackupInfo) []int64
 	return res
 }
 
-func (b BackupContext) executeBulkInsert(ctx context.Context, coll string, partition string, files []string, endTime int64) error {
+func (b *BackupContext) executeBulkInsert(ctx context.Context, coll string, partition string, files []string, endTime int64) error {
 	log.Debug("execute bulk insert",
 		zap.String("collection", coll),
 		zap.String("partition", partition),
@@ -507,7 +507,7 @@ func (b BackupContext) executeBulkInsert(ctx context.Context, coll string, parti
 	return nil
 }
 
-func (b BackupContext) watchBulkInsertState(ctx context.Context, taskId int64, timeout int64, sleepSeconds int) error {
+func (b *BackupContext) watchBulkInsertState(ctx context.Context, taskId int64, timeout int64, sleepSeconds int) error {
 	lastProgress := 0
 	lastUpdateTime := time.Now().Unix()
 	for {
@@ -547,7 +547,7 @@ func (b BackupContext) watchBulkInsertState(ctx context.Context, taskId int64, t
 	return errors.New("import task timeout")
 }
 
-func (b BackupContext) getBackupPartitionPaths(ctx context.Context, bucketName string, backupPath string, partition *backuppb.PartitionBackupInfo) ([]string, error) {
+func (b *BackupContext) getBackupPartitionPaths(ctx context.Context, bucketName string, backupPath string, partition *backuppb.PartitionBackupInfo) ([]string, error) {
 	log.Info("getBackupPartitionPaths",
 		zap.String("bucketName", bucketName),
 		zap.String("backupPath", backupPath),
@@ -567,7 +567,7 @@ func (b BackupContext) getBackupPartitionPaths(ctx context.Context, bucketName s
 	return []string{insertPath, deltaPath}, nil
 }
 
-func (b BackupContext) getBackupPartitionPathsWithGroupID(ctx context.Context, bucketName string, backupPath string, partition *backuppb.PartitionBackupInfo, groupId int64) ([]string, error) {
+func (b *BackupContext) getBackupPartitionPathsWithGroupID(ctx context.Context, bucketName string, backupPath string, partition *backuppb.PartitionBackupInfo, groupId int64) ([]string, error) {
 	log.Info("getBackupPartitionPaths",
 		zap.String("bucketName", bucketName),
 		zap.String("backupPath", backupPath),

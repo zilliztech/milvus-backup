@@ -18,7 +18,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
-func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.CreateBackupRequest) *backuppb.BackupInfoResponse {
+func (b *BackupContext) CreateBackup(ctx context.Context, request *backuppb.CreateBackupRequest) *backuppb.BackupInfoResponse {
 	if request.GetRequestId() == "" {
 		request.RequestId = utils.UUID()
 	}
@@ -116,7 +116,7 @@ func (b BackupContext) CreateBackup(ctx context.Context, request *backuppb.Creat
 	}
 }
 
-func (b BackupContext) refreshBackupMeta(id string, backupInfo *backuppb.BackupInfo, leveledBackupInfo *LeveledBackupInfo) (*backuppb.BackupInfo, error) {
+func (b *BackupContext) refreshBackupMeta(id string, backupInfo *backuppb.BackupInfo, leveledBackupInfo *LeveledBackupInfo) (*backuppb.BackupInfo, error) {
 	log.Debug("call refreshBackupMeta", zap.String("id", id))
 	backup, err := levelToTree(leveledBackupInfo)
 	if err != nil {
@@ -136,9 +136,10 @@ type collection struct {
 // For backward compatibility：
 //   1，parse dbCollections first,
 //   2，if dbCollections not set, use collectionNames
-func (b BackupContext) parseBackupCollections(request *backuppb.CreateBackupRequest) ([]collection, error) {
+func (b *BackupContext) parseBackupCollections(request *backuppb.CreateBackupRequest) ([]collection, error) {
 	log.Debug("Request collection names",
 		zap.Strings("request_collection_names", request.GetCollectionNames()),
+		zap.String("request_db_collections", request.GetDbCollections()),
 		zap.Int("length", len(request.GetCollectionNames())))
 	var toBackupCollections []collection
 
@@ -163,6 +164,7 @@ func (b BackupContext) parseBackupCollections(request *backuppb.CreateBackupRequ
 					return nil, err
 				}
 				for _, coll := range collections {
+					log.Debug("Add collection to toBackupCollections", zap.String("db", db), zap.String("collection", coll.Name))
 					toBackupCollections = append(toBackupCollections, collection{db, coll.Name})
 				}
 			} else {
@@ -171,6 +173,7 @@ func (b BackupContext) parseBackupCollections(request *backuppb.CreateBackupRequ
 				}
 			}
 		}
+		log.Debug("Parsed backup collections from request.db_collections", zap.Int("length", len(toBackupCollections)))
 		return toBackupCollections, nil
 	}
 
@@ -219,7 +222,7 @@ func (b BackupContext) parseBackupCollections(request *backuppb.CreateBackupRequ
 	return toBackupCollections, nil
 }
 
-func (b BackupContext) executeCreateBackup(ctx context.Context, request *backuppb.CreateBackupRequest, backupInfo *backuppb.BackupInfo) (*backuppb.BackupInfo, error) {
+func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backuppb.CreateBackupRequest, backupInfo *backuppb.BackupInfo) (*backuppb.BackupInfo, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -581,7 +584,7 @@ func (b BackupContext) executeCreateBackup(ctx context.Context, request *backupp
 	return backupInfo, nil
 }
 
-func (b BackupContext) copySegments(ctx context.Context, segments []*backuppb.SegmentBackupInfo, dstPath string) error {
+func (b *BackupContext) copySegments(ctx context.Context, segments []*backuppb.SegmentBackupInfo, dstPath string) error {
 	wp, err := common.NewWorkerPool(ctx, WORKER_NUM, RPS)
 	if err != nil {
 		return err
@@ -714,7 +717,7 @@ func (b BackupContext) copySegments(ctx context.Context, segments []*backuppb.Se
 	return nil
 }
 
-func (b BackupContext) readSegmentInfo(ctx context.Context, collecitonID int64, partitionID int64, segmentID int64, numOfRows int64) (*backuppb.SegmentBackupInfo, error) {
+func (b *BackupContext) readSegmentInfo(ctx context.Context, collecitonID int64, partitionID int64, segmentID int64, numOfRows int64) (*backuppb.SegmentBackupInfo, error) {
 	segmentBackupInfo := backuppb.SegmentBackupInfo{
 		SegmentId:    segmentID,
 		CollectionId: collecitonID,

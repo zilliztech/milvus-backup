@@ -19,8 +19,9 @@ func TestCreateBackup(t *testing.T) {
 	backup := CreateBackupContext(context, params)
 
 	req := &backuppb.CreateBackupRequest{
-		BackupName:      "test_21",
-		CollectionNames: []string{"hello_milvus", "hello_milvus2"},
+		BackupName: "test_21",
+		//CollectionNames: []string{"hello_milvus", "hello_milvus2"},
+		DbCollections: "{\"db1\":[]}",
 	}
 	backup.CreateBackup(context, req)
 }
@@ -195,7 +196,7 @@ func TestGetBackupFaultBackup(t *testing.T) {
 	resp := backupContext.CreateBackup(context, req)
 	assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
 
-	backupContext.storageClient.RemoveWithPrefix(context, params.MinioCfg.BackupBucketName, BackupMetaPath(params.MinioCfg.BackupRootPath, resp.GetData().GetName()))
+	backupContext.getStorageClient().RemoveWithPrefix(context, params.MinioCfg.BackupBucketName, BackupMetaPath(params.MinioCfg.BackupRootPath, resp.GetData().GetName()))
 
 	backup := backupContext.GetBackup(context, &backuppb.GetBackupRequest{
 		BackupName: randBackupName,
