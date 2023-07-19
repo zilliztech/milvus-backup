@@ -10,6 +10,11 @@ builds:
     goos:
       - linux
       - darwin
+    ldflags:
+      - -w -s
+      - -X main.version={{ .Version }}
+      - -X main.commit={{ .Commit }}
+      - -X main.date={{ .Date }}
 
 archives:
   - format: tar.gz
@@ -25,6 +30,9 @@ checksum:
   name_template: 'checksums.txt'
 snapshot:
   name_template: "{{ incpatch .Version }}-next"
+
+
+
 changelog:
   sort: asc
   use: github
