@@ -556,12 +556,12 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 		backupSize += coll.GetSize()
 	}
 	backupInfo.Size = backupSize
+	backupInfo.EndTime = time.Now().UnixNano() / int64(time.Millisecond)
+	backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_SUCCESS
 	backupInfo, err = b.refreshBackupMeta(id, backupInfo, leveledBackupInfo)
 	if err != nil {
 		return backupInfo, err
 	}
-	backupInfo.EndTime = time.Now().UnixNano() / int64(time.Millisecond)
-	backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_SUCCESS
 	// 7, write meta data
 	output, _ := serialize(backupInfo)
 	log.Debug("backup meta", zap.String("value", string(output.BackupMetaBytes)))

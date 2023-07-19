@@ -196,26 +196,17 @@ func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBack
 		if err != nil {
 			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = err.Error()
-			return resp
 		}
-	}
-
-	if request.GetBackupId() == "" && request.GetBackupName() == "" {
+	} else if request.GetBackupId() == "" && request.GetBackupName() == "" {
 		resp.Code = backuppb.ResponseCode_Parameter_Error
 		resp.Msg = "empty backup name and backup id"
-		return resp
-	}
-
-	if request.GetBackupId() != "" {
+	} else if request.GetBackupId() != "" {
 		if value, ok := b.backupTasks.Load(request.GetBackupId()); ok {
 			resp.Code = backuppb.ResponseCode_Success
 			resp.Msg = "success"
 			resp.Data = value.(*backuppb.BackupInfo)
-			return resp
 		}
-	}
-
-	if request.GetBackupName() != "" {
+	} else if request.GetBackupName() != "" {
 		if id, ok := b.backupNameIdDict.Load(request.GetBackupName()); ok {
 			resp.Code = backuppb.ResponseCode_Success
 			resp.Msg = "success"
@@ -223,7 +214,6 @@ func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBack
 			if ok {
 				resp.Data = backup.(*backuppb.BackupInfo)
 			}
-			return resp
 		} else {
 			var backupBucketName string
 			var backupPath string
@@ -242,7 +232,6 @@ func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBack
 					zap.Error(err))
 				resp.Code = backuppb.ResponseCode_Fail
 				resp.Msg = err.Error()
-				return resp
 			}
 
 			resp.Data = backup
