@@ -100,6 +100,7 @@ func treeToLevel(backup *backuppb.BackupInfo) (LeveledBackupInfo, error) {
 		Progress:        backup.GetProgress(),
 		Name:            backup.GetName(),
 		BackupTimestamp: backup.GetBackupTimestamp(),
+		Size:            backup.GetSize(),
 		MilvusVersion:   backup.GetMilvusVersion(),
 	}
 
