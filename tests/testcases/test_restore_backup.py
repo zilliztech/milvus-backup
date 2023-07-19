@@ -1,7 +1,9 @@
 import time
 import pytest
+import json
 import numpy as np
-from pymilvus import db
+from collections import defaultdict
+from pymilvus import db, list_collections, Collection
 from base.client_base import TestcaseBase
 from common import common_func as cf
 from common import common_type as ct
@@ -196,3 +198,64 @@ class TestRestoreBackup(TestcaseBase):
             all_backup = []
         assert back_up_name not in all_backup
 
+    @pytest.mark.parametrize("drop_db", [True, False])
+    @pytest.mark.parametrize("str_json", [True, False])
+    def test_milvus_restore_with_db_collections(self, drop_db, str_json):
+        # prepare data
+        self._connect()
+        names_origin = []
+        db_collections = defaultdict(list)
+        for i in range(2):
+            db_name = cf.gen_unique_str("db")
+            db.create_database(db_name)
+            db.using_database(db_name)
+            for j in range(2):
+                collection_name = cf.gen_unique_str(prefix)
+                self.prepare_data(name=collection_name, db_name=db_name, nb=3000, is_binary=False, auto_id=True)
+                assert collection_name in self.utility_wrap.list_collections()[0]
+                names_origin.append(f"{db_name}.{collection_name}")
+                db_collections[db_name].append(collection_name)
+        db_collections = dict(db_collections)
+        log.info(f"db_collections:{db_collections}")
+        log.info(f"name_origin:{names_origin}")
+        # create backup
+        back_up_name = cf.gen_unique_str(backup_prefix)
+        payload = {
+            "async": False,
+            "backup_name": back_up_name,
+            "db_collections": json.dumps(db_collections) if str_json else db_collections,
+        }
+        log.info(f"payload: {payload}")
+        res = client.create_backup(payload)
+        log.info(f"create backup response: {res}")
+        res = client.list_backup()
+        log.info(f"list_backup {res}")
+        if "data" in res:
+            all_backup = [r["name"] for r in res["data"]]
+        else:
+            all_backup = []
+        assert back_up_name in all_backup
+        if drop_db:
+            # delete db to check that restore can create db if not exist
+            for db_name in db_collections:
+                db.using_database(db_name)
+                all_collections = list_collections()
+                for c in all_collections:
+                    collection = Collection(name=c)
+                    collection.drop()
+                db.drop_database(db_name)
+        payload = {"async": False, "backup_name": back_up_name,
+                   "db_collections": db_collections,
+                   "collection_suffix": suffix}
+        log.info(f"restore payload: {payload}")
+        res = client.restore_backup(payload)
+        log.info(f"restore_backup: {res}")
+        for name in names_origin:
+            db_name = name.split(".")[0]
+            collection_name = name.split(".")[1]
+            db.using_database(db_name)
+            res, _ = self.utility_wrap.list_collections()
+            log.info(f"collection list in db {db_name}: {res}")
+            assert collection_name + suffix in res
+            if not drop_db:
+                self.compare_collections(collection_name, collection_name + suffix)
