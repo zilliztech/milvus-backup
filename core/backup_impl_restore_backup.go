@@ -170,7 +170,42 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 			targetCollectionName = backupCollectionName
 		}
 
-		b.getMilvusClient().UsingDatabase(ctx, restoreCollection.DbName)
+		// check if the database exist, if not, create it first
+		dbs, err := b.getMilvusClient().ListDatabases(ctx)
+		if err != nil {
+			errorMsg := fmt.Sprintf("fail to list databases, err: %s", err)
+			log.Error(errorMsg)
+			resp.Code = backuppb.ResponseCode_Fail
+			resp.Msg = errorMsg
+			return resp
+		}
+		var hasDatabase = false
+		for _, db := range dbs {
+			if db.Name == restoreCollection.DbName {
+				hasDatabase = true
+				break
+			}
+		}
+		if !hasDatabase {
+			err := b.getMilvusClient().CreateDatabase(ctx, restoreCollection.DbName)
+			if err != nil {
+				errorMsg := fmt.Sprintf("fail to create database %s, err: %s", restoreCollection.DbName, err)
+				log.Error(errorMsg)
+				resp.Code = backuppb.ResponseCode_Fail
+				resp.Msg = errorMsg
+				return resp
+			}
+		}
+		err = b.getMilvusClient().UsingDatabase(ctx, restoreCollection.DbName)
+		if err != nil {
+			errorMsg := fmt.Sprintf("fail to switch database %s, err: %s", restoreCollection.DbName, err)
+			log.Error(errorMsg)
+			resp.Code = backuppb.ResponseCode_Fail
+			resp.Msg = errorMsg
+			return resp
+		}
+
+		// check if the collection exist, if exist, will not restore
 		exist, err := b.getMilvusClient().HasCollection(ctx, targetCollectionName)
 		if err != nil {
 			errorMsg := fmt.Sprintf("fail to check whether the collection is exist, collection_name: %s, err: %s", targetCollectionName, err)
