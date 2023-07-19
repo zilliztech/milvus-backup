@@ -36,10 +36,10 @@ type BackupContext struct {
 	params  paramtable.BackupParams
 
 	// milvus client
-	milvusClient gomilvus.Client
+	milvusClient *gomilvus.Client
 
 	// data storage client
-	storageClient    storage.ChunkManager
+	storageClient    *storage.ChunkManager
 	milvusBucketName string
 	backupBucketName string
 	milvusRootPath   string
@@ -152,31 +152,31 @@ func CreateBackupContext(ctx context.Context, params paramtable.BackupParams) *B
 	}
 }
 
-func (b BackupContext) getMilvusClient() gomilvus.Client {
+func (b *BackupContext) getMilvusClient() gomilvus.Client {
 	if b.milvusClient == nil {
 		milvusClient, err := CreateMilvusClient(b.ctx, b.params)
 		if err != nil {
 			log.Error("failed to initial milvus client", zap.Error(err))
 			panic(err)
 		}
-		b.milvusClient = milvusClient
+		b.milvusClient = &milvusClient
 	}
-	return b.milvusClient
+	return *b.milvusClient
 }
 
-func (b BackupContext) getStorageClient() storage.ChunkManager {
+func (b *BackupContext) getStorageClient() storage.ChunkManager {
 	if b.storageClient == nil {
 		storageClient, err := CreateStorageClient(b.ctx, b.params)
 		if err != nil {
 			log.Error("failed to initial storage client", zap.Error(err))
 			panic(err)
 		}
-		b.storageClient = storageClient
+		b.storageClient = &storageClient
 	}
-	return b.storageClient
+	return *b.storageClient
 }
 
-func (b BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBackupRequest) *backuppb.BackupInfoResponse {
+func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBackupRequest) *backuppb.BackupInfoResponse {
 	if request.GetRequestId() == "" {
 		request.RequestId = utils.UUID()
 	}
@@ -196,26 +196,17 @@ func (b BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBacku
 		if err != nil {
 			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = err.Error()
-			return resp
 		}
-	}
-
-	if request.GetBackupId() == "" && request.GetBackupName() == "" {
+	} else if request.GetBackupId() == "" && request.GetBackupName() == "" {
 		resp.Code = backuppb.ResponseCode_Parameter_Error
 		resp.Msg = "empty backup name and backup id"
-		return resp
-	}
-
-	if request.GetBackupId() != "" {
+	} else if request.GetBackupId() != "" {
 		if value, ok := b.backupTasks.Load(request.GetBackupId()); ok {
 			resp.Code = backuppb.ResponseCode_Success
 			resp.Msg = "success"
 			resp.Data = value.(*backuppb.BackupInfo)
-			return resp
 		}
-	}
-
-	if request.GetBackupName() != "" {
+	} else if request.GetBackupName() != "" {
 		if id, ok := b.backupNameIdDict.Load(request.GetBackupName()); ok {
 			resp.Code = backuppb.ResponseCode_Success
 			resp.Msg = "success"
@@ -223,7 +214,6 @@ func (b BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBacku
 			if ok {
 				resp.Data = backup.(*backuppb.BackupInfo)
 			}
-			return resp
 		} else {
 			var backupBucketName string
 			var backupPath string
@@ -242,7 +232,6 @@ func (b BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBacku
 					zap.Error(err))
 				resp.Code = backuppb.ResponseCode_Fail
 				resp.Msg = err.Error()
-				return resp
 			}
 
 			resp.Data = backup
@@ -266,7 +255,7 @@ func (b BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBacku
 	return resp
 }
 
-func (b BackupContext) ListBackups(ctx context.Context, request *backuppb.ListBackupsRequest) *backuppb.ListBackupsResponse {
+func (b *BackupContext) ListBackups(ctx context.Context, request *backuppb.ListBackupsRequest) *backuppb.ListBackupsResponse {
 	if request.GetRequestId() == "" {
 		request.RequestId = utils.UUID()
 	}
@@ -343,7 +332,7 @@ func (b BackupContext) ListBackups(ctx context.Context, request *backuppb.ListBa
 	return resp
 }
 
-func (b BackupContext) DeleteBackup(ctx context.Context, request *backuppb.DeleteBackupRequest) *backuppb.DeleteBackupResponse {
+func (b *BackupContext) DeleteBackup(ctx context.Context, request *backuppb.DeleteBackupRequest) *backuppb.DeleteBackupResponse {
 	if request.GetRequestId() == "" {
 		request.RequestId = utils.UUID()
 	}
@@ -405,7 +394,7 @@ func (b BackupContext) DeleteBackup(ctx context.Context, request *backuppb.Delet
 	return resp
 }
 
-func (b BackupContext) readBackup(ctx context.Context, bucketName string, backupPath string) (*backuppb.BackupInfo, error) {
+func (b *BackupContext) readBackup(ctx context.Context, bucketName string, backupPath string) (*backuppb.BackupInfo, error) {
 	backupMetaDirPath := backupPath + SEPERATOR + META_PREFIX
 	backupMetaPath := backupMetaDirPath + SEPERATOR + BACKUP_META_FILE
 	collectionMetaPath := backupMetaDirPath + SEPERATOR + COLLECTION_META_FILE

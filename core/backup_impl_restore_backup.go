@@ -18,7 +18,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/util/retry"
 )
 
-func (b BackupContext) RestoreBackup(ctx context.Context, request *backuppb.RestoreBackupRequest) *backuppb.RestoreBackupResponse {
+func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.RestoreBackupRequest) *backuppb.RestoreBackupResponse {
 	if request.GetRequestId() == "" {
 		request.RequestId = utils.UUID()
 	}
@@ -170,7 +170,43 @@ func (b BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Rest
 			targetCollectionName = backupCollectionName
 		}
 
-		b.getMilvusClient().UsingDatabase(ctx, restoreCollection.DbName)
+		// check if the database exist, if not, create it first
+		dbs, err := b.getMilvusClient().ListDatabases(ctx)
+		if err != nil {
+			errorMsg := fmt.Sprintf("fail to list databases, err: %s", err)
+			log.Error(errorMsg)
+			resp.Code = backuppb.ResponseCode_Fail
+			resp.Msg = errorMsg
+			return resp
+		}
+		var hasDatabase = false
+		for _, db := range dbs {
+			if db.Name == restoreCollection.DbName {
+				hasDatabase = true
+				break
+			}
+		}
+		if !hasDatabase {
+			err := b.getMilvusClient().CreateDatabase(ctx, restoreCollection.DbName)
+			if err != nil {
+				errorMsg := fmt.Sprintf("fail to create database %s, err: %s", restoreCollection.DbName, err)
+				log.Error(errorMsg)
+				resp.Code = backuppb.ResponseCode_Fail
+				resp.Msg = errorMsg
+				return resp
+			}
+			log.Info("create database", zap.String("database", restoreCollection.DbName))
+		}
+		err = b.getMilvusClient().UsingDatabase(ctx, restoreCollection.DbName)
+		if err != nil {
+			errorMsg := fmt.Sprintf("fail to switch database %s, err: %s", restoreCollection.DbName, err)
+			log.Error(errorMsg)
+			resp.Code = backuppb.ResponseCode_Fail
+			resp.Msg = errorMsg
+			return resp
+		}
+
+		// check if the collection exist, if exist, will not restore
 		exist, err := b.getMilvusClient().HasCollection(ctx, targetCollectionName)
 		if err != nil {
 			errorMsg := fmt.Sprintf("fail to check whether the collection is exist, collection_name: %s, err: %s", targetCollectionName, err)
@@ -233,7 +269,7 @@ func (b BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Rest
 	}
 }
 
-func (b BackupContext) executeRestoreBackupTask(ctx context.Context, backupBucketName string, backupPath string, backup *backuppb.BackupInfo, task *backuppb.RestoreBackupTask) (*backuppb.RestoreBackupTask, error) {
+func (b *BackupContext) executeRestoreBackupTask(ctx context.Context, backupBucketName string, backupPath string, backup *backuppb.BackupInfo, task *backuppb.RestoreBackupTask) (*backuppb.RestoreBackupTask, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -277,7 +313,7 @@ func (b BackupContext) executeRestoreBackupTask(ctx context.Context, backupBucke
 	return task, nil
 }
 
-func (b BackupContext) executeRestoreCollectionTask(ctx context.Context, backupBucketName string, backupPath string, task *backuppb.RestoreCollectionTask, parentTaskID string) (*backuppb.RestoreCollectionTask, error) {
+func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backupBucketName string, backupPath string, task *backuppb.RestoreCollectionTask, parentTaskID string) (*backuppb.RestoreCollectionTask, error) {
 	targetCollectionName := task.GetTargetCollectionName()
 	task.StateCode = backuppb.RestoreTaskStateCode_EXECUTING
 	log.Info("start restore",
@@ -344,7 +380,7 @@ func (b BackupContext) executeRestoreCollectionTask(ctx context.Context, backupB
 		task.ErrorMessage = errorMsg
 		return task, err
 	}
-	log.Info("create collection", zap.String("collectionName", targetCollectionName), zap.Bool("hasPartitionKey", hasPartitionKey))
+	log.Info("create collection", zap.String("database", dbName), zap.String("collectionName", targetCollectionName), zap.Bool("hasPartitionKey", hasPartitionKey))
 
 	tempDir := "restore-temp-" + parentTaskID + SEPERATOR
 	isSameBucket := b.milvusBucketName == backupBucketName
@@ -480,7 +516,7 @@ func collectGroupIdsFromSegments(segments []*backuppb.SegmentBackupInfo) []int64
 	return res
 }
 
-func (b BackupContext) executeBulkInsert(ctx context.Context, coll string, partition string, files []string, endTime int64) error {
+func (b *BackupContext) executeBulkInsert(ctx context.Context, coll string, partition string, files []string, endTime int64) error {
 	log.Debug("execute bulk insert",
 		zap.String("collection", coll),
 		zap.String("partition", partition),
@@ -507,7 +543,7 @@ func (b BackupContext) executeBulkInsert(ctx context.Context, coll string, parti
 	return nil
 }
 
-func (b BackupContext) watchBulkInsertState(ctx context.Context, taskId int64, timeout int64, sleepSeconds int) error {
+func (b *BackupContext) watchBulkInsertState(ctx context.Context, taskId int64, timeout int64, sleepSeconds int) error {
 	lastProgress := 0
 	lastUpdateTime := time.Now().Unix()
 	for {
@@ -547,7 +583,7 @@ func (b BackupContext) watchBulkInsertState(ctx context.Context, taskId int64, t
 	return errors.New("import task timeout")
 }
 
-func (b BackupContext) getBackupPartitionPaths(ctx context.Context, bucketName string, backupPath string, partition *backuppb.PartitionBackupInfo) ([]string, error) {
+func (b *BackupContext) getBackupPartitionPaths(ctx context.Context, bucketName string, backupPath string, partition *backuppb.PartitionBackupInfo) ([]string, error) {
 	log.Info("getBackupPartitionPaths",
 		zap.String("bucketName", bucketName),
 		zap.String("backupPath", backupPath),
@@ -567,7 +603,7 @@ func (b BackupContext) getBackupPartitionPaths(ctx context.Context, bucketName s
 	return []string{insertPath, deltaPath}, nil
 }
 
-func (b BackupContext) getBackupPartitionPathsWithGroupID(ctx context.Context, bucketName string, backupPath string, partition *backuppb.PartitionBackupInfo, groupId int64) ([]string, error) {
+func (b *BackupContext) getBackupPartitionPathsWithGroupID(ctx context.Context, bucketName string, backupPath string, partition *backuppb.PartitionBackupInfo, groupId int64) ([]string, error) {
 	log.Info("getBackupPartitionPaths",
 		zap.String("bucketName", bucketName),
 		zap.String("backupPath", backupPath),
