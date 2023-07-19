@@ -724,7 +724,11 @@ func (b BackupContext) readSegmentInfo(ctx context.Context, collecitonID int64, 
 
 	insertPath := fmt.Sprintf("%s/%s/%v/%v/%v/", b.params.MinioCfg.RootPath, "insert_log", collecitonID, partitionID, segmentID)
 	log.Debug("insertPath", zap.String("insertPath", insertPath))
-	fieldsLogDir, _, _ := b.getStorageClient().ListWithPrefix(ctx, b.milvusBucketName, insertPath, false)
+	fieldsLogDir, _, err := b.getStorageClient().ListWithPrefix(ctx, b.milvusBucketName, insertPath, false)
+	if err != nil {
+		log.Error("Fail to list segment path", zap.String("insertPath", insertPath), zap.Error(err))
+		return &segmentBackupInfo, err
+	}
 	log.Debug("fieldsLogDir", zap.Any("fieldsLogDir", fieldsLogDir))
 	insertLogs := make([]*backuppb.FieldBinlog, 0)
 	for _, fieldLogDir := range fieldsLogDir {
