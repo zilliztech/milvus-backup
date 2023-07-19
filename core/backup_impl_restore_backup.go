@@ -195,6 +195,7 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 				resp.Msg = errorMsg
 				return resp
 			}
+			log.Info("create database", zap.String("database", restoreCollection.DbName))
 		}
 		err = b.getMilvusClient().UsingDatabase(ctx, restoreCollection.DbName)
 		if err != nil {
@@ -379,7 +380,7 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 		task.ErrorMessage = errorMsg
 		return task, err
 	}
-	log.Info("create collection", zap.String("collectionName", targetCollectionName), zap.Bool("hasPartitionKey", hasPartitionKey))
+	log.Info("create collection", zap.String("database", dbName), zap.String("collectionName", targetCollectionName), zap.Bool("hasPartitionKey", hasPartitionKey))
 
 	tempDir := "restore-temp-" + parentTaskID + SEPERATOR
 	isSameBucket := b.milvusBucketName == backupBucketName
