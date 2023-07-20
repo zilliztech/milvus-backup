@@ -496,8 +496,7 @@ const docTemplate = `{
                     }
                 },
                 "db_collections": {
-                    "description": "database and collections to backup. A json string. To support database. 2023.7.7",
-                    "type": "string"
+                    "description": "database and collections to backup. A json string. To support database. 2023.7.7"
                 },
                 "requestId": {
                     "description": "uuid of request, will generate one if not set",
@@ -775,8 +774,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "db_collections": {
-                    "description": "database and collections to restore. A json string. To support database. 2023.7.7",
-                    "type": "string"
+                    "description": "database and collections to restore. A json string. To support database. 2023.7.7"
                 },
                 "path": {
                     "description": "if bucket_name and path is set. will override bucket/path in config.",
