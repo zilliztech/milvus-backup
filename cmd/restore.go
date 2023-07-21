@@ -10,6 +10,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/log"
 
 	"go.uber.org/zap"
@@ -71,7 +72,7 @@ var restoreBackupCmd = &cobra.Command{
 			CollectionNames:   collectionNameArr,
 			CollectionSuffix:  renameSuffix,
 			CollectionRenames: renameMap,
-			DbCollections:     restoreDatabaseCollections,
+			DbCollections:     utils.WrapDBCollections(restoreDatabaseCollections),
 		})
 
 		fmt.Println(resp.GetCode(), "\n", resp.GetMsg())

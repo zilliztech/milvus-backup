@@ -10,6 +10,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/core/utils"
 )
 
 var (
@@ -55,7 +56,7 @@ var createBackupCmd = &cobra.Command{
 		resp := backupContext.CreateBackup(context, &backuppb.CreateBackupRequest{
 			BackupName:      backupName,
 			CollectionNames: collectionNameArr,
-			DbCollections:   dbCollections,
+			DbCollections:   utils.WrapDBCollections(dbCollections),
 		})
 		fmt.Println(resp.GetCode(), "\n", resp.GetMsg())
 	},

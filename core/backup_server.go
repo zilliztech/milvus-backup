@@ -129,10 +129,13 @@ func wrapHandler(handle handlerFunc) gin.HandlerFunc {
 // @Success 200 {object} backuppb.BackupInfoResponse
 // @Router /create [post]
 func (h *Handlers) handleCreateBackup(c *gin.Context) (interface{}, error) {
-	json := backuppb.CreateBackupRequest{}
-	c.BindJSON(&json)
-	json.RequestId = c.GetHeader("request_id")
-	resp := h.backupContext.CreateBackup(h.backupContext.ctx, &json)
+	requestBody := backuppb.CreateBackupRequest{}
+	if err := c.ShouldBindJSON(&requestBody); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return nil, nil
+	}
+	requestBody.RequestId = c.GetHeader("request_id")
+	resp := h.backupContext.CreateBackup(h.backupContext.ctx, &requestBody)
 	if h.backupContext.params.HTTPCfg.SimpleResponse {
 		resp = SimpleBackupResponse(resp)
 	}
@@ -216,10 +219,15 @@ func (h *Handlers) handleDeleteBackup(c *gin.Context) (interface{}, error) {
 // @Success 200 {object} backuppb.RestoreBackupResponse
 // @Router /restore [post]
 func (h *Handlers) handleRestoreBackup(c *gin.Context) (interface{}, error) {
-	json := backuppb.RestoreBackupRequest{}
-	c.BindJSON(&json)
-	json.RequestId = c.GetHeader("request_id")
-	resp := h.backupContext.RestoreBackup(h.backupContext.ctx, &json)
+	requestBody := backuppb.RestoreBackupRequest{}
+	//c.BindJSON(&json)
+	if err := c.ShouldBindJSON(&requestBody); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return nil, nil
+	}
+
+	requestBody.RequestId = c.GetHeader("request_id")
+	resp := h.backupContext.RestoreBackup(h.backupContext.ctx, &requestBody)
 	if h.backupContext.params.HTTPCfg.SimpleResponse {
 		resp = SimpleRestoreResponse(resp)
 	}

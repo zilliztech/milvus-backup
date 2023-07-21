@@ -31,7 +31,7 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 		zap.Bool("async", request.GetAsync()),
 		zap.String("bucketName", request.GetBucketName()),
 		zap.String("path", request.GetPath()),
-		zap.String("databaseCollections", request.GetDbCollections()))
+		zap.String("databaseCollections", utils.GetRestoreDBCollections(request)))
 
 	resp := &backuppb.RestoreBackupResponse{
 		RequestId: request.GetRequestId(),
@@ -102,11 +102,12 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 	// 2, initial restoreCollectionTasks
 	toRestoreCollectionBackups := make([]*backuppb.CollectionBackupInfo, 0)
 
-	if request.GetDbCollections() != "" {
+	dbCollectionsStr := utils.GetRestoreDBCollections(request)
+	if dbCollectionsStr != "" {
 		var dbCollections DbCollections
-		err := jsoniter.UnmarshalFromString(request.GetDbCollections(), &dbCollections)
+		err := jsoniter.UnmarshalFromString(dbCollectionsStr, &dbCollections)
 		if err != nil {
-			log.Error("fail in unmarshal dbCollections in RestoreBackupRequest", zap.String("dbCollections", request.GetDbCollections()), zap.Error(err))
+			log.Error("fail in unmarshal dbCollections in RestoreBackupRequest", zap.String("dbCollections", dbCollectionsStr), zap.Error(err))
 			errorMsg := fmt.Sprintf("fail in unmarshal dbCollections in RestoreBackupRequest， dbCollections: %s, err: %s", request.GetDbCollections(), err)
 			log.Error(errorMsg)
 			resp.Code = backuppb.ResponseCode_Fail
