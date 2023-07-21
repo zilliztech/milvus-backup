@@ -1,6 +1,8 @@
 syntax = "proto3";
 package milvus.proto.backup;
 
+import "google/protobuf/struct.proto";
+
 option go_package="github.com/zilliztech/milvus-backup/core/proto/backuppb";
 
 service MilvusBackupService {
@@ -142,7 +144,7 @@ message CreateBackupRequest {
   // async or not
   bool async = 4;
   // database and collections to backup. A json string. To support database. 2023.7.7
-  string db_collections = 5;
+  google.protobuf.Value db_collections = 5;
 }
 
 /**
@@ -242,7 +244,7 @@ message RestoreBackupRequest {
   // if bucket_name and path is set. will override bucket/path in config.
   string path = 8;
   // database and collections to restore. A json string. To support database. 2023.7.7
-  string db_collections = 9;
+  google.protobuf.Value db_collections = 9;
 }
 
 message RestorePartitionTask {

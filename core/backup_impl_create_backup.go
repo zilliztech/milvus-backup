@@ -26,7 +26,7 @@ func (b *BackupContext) CreateBackup(ctx context.Context, request *backuppb.Crea
 		zap.String("requestId", request.GetRequestId()),
 		zap.String("backupName", request.GetBackupName()),
 		zap.Strings("collections", request.GetCollectionNames()),
-		zap.String("databaseCollections", request.GetDbCollections()),
+		zap.String("databaseCollections", utils.GetCreateDBCollections(request)),
 		zap.Bool("async", request.GetAsync()))
 
 	resp := &backuppb.BackupInfoResponse{
@@ -139,16 +139,17 @@ type collection struct {
 func (b *BackupContext) parseBackupCollections(request *backuppb.CreateBackupRequest) ([]collection, error) {
 	log.Debug("Request collection names",
 		zap.Strings("request_collection_names", request.GetCollectionNames()),
-		zap.String("request_db_collections", request.GetDbCollections()),
+		zap.String("request_db_collections", utils.GetCreateDBCollections(request)),
 		zap.Int("length", len(request.GetCollectionNames())))
 	var toBackupCollections []collection
 
+	dbCollectionsStr := utils.GetCreateDBCollections(request)
 	// first priority: dbCollections
-	if request.GetDbCollections() != "" {
+	if dbCollectionsStr != "" {
 		var dbCollections DbCollections
-		err := jsoniter.UnmarshalFromString(request.GetDbCollections(), &dbCollections)
+		err := jsoniter.UnmarshalFromString(dbCollectionsStr, &dbCollections)
 		if err != nil {
-			log.Error("fail in unmarshal dbCollections in CreateBackupRequest", zap.String("dbCollections", request.GetDbCollections()), zap.Error(err))
+			log.Error("fail in unmarshal dbCollections in CreateBackupRequest", zap.String("dbCollections", dbCollectionsStr), zap.Error(err))
 			return nil, err
 		}
 		for db, collections := range dbCollections {

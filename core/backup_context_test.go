@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"go.uber.org/zap"
 	"math/rand"
@@ -21,7 +22,7 @@ func TestCreateBackup(t *testing.T) {
 	req := &backuppb.CreateBackupRequest{
 		BackupName: "test_21",
 		//CollectionNames: []string{"hello_milvus", "hello_milvus2"},
-		DbCollections: "{\"db1\":[]}",
+		DbCollections: utils.WrapDBCollections(""),
 	}
 	backup.CreateBackup(context, req)
 }
