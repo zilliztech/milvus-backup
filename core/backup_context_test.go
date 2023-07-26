@@ -229,6 +229,22 @@ func TestRestoreBackup(t *testing.T) {
 	context := context.Background()
 	backup := CreateBackupContext(context, params)
 	backup.Start()
+	backupName := "demo"
+	//fmt.Sprintf("test_%d", rand.Int())
+
+	restoreResp := backup.RestoreBackup(context, &backuppb.RestoreBackupRequest{
+		BackupName:    backupName,
+		DbCollections: utils.WrapDBCollections("{\"default\":[]}"),
+	})
+	log.Info("restore backup", zap.Any("resp", restoreResp))
+}
+
+func TestCreateAndRestoreBackup(t *testing.T) {
+	var params paramtable.BackupParams
+	params.Init()
+	context := context.Background()
+	backup := CreateBackupContext(context, params)
+	backup.Start()
 	randBackupName := "test"
 	//fmt.Sprintf("test_%d", rand.Int())
 

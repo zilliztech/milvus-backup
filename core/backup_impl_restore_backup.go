@@ -117,6 +117,9 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 		for db, collections := range dbCollections {
 			if len(collections) == 0 {
 				for _, collectionBackup := range backup.GetCollectionBackups() {
+					if collectionBackup.GetDbName() == "" {
+						collectionBackup.DbName = "default"
+					}
 					if collectionBackup.GetDbName() == db {
 						toRestoreCollectionBackups = append(toRestoreCollectionBackups, collectionBackup)
 					}
@@ -124,6 +127,9 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 			} else {
 				for _, coll := range collections {
 					for _, collectionBackup := range backup.GetCollectionBackups() {
+						if collectionBackup.GetDbName() == "" {
+							collectionBackup.DbName = "default"
+						}
 						if collectionBackup.GetDbName() == db && collectionBackup.CollectionName == coll {
 							toRestoreCollectionBackups = append(toRestoreCollectionBackups, collectionBackup)
 						}
@@ -145,11 +151,10 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 			collectionNameDict[fullCollectionName] = true
 		}
 		for _, collectionBackup := range backup.GetCollectionBackups() {
-			dbName := "default"
-			if collectionBackup.GetDbName() != "" {
-				dbName = collectionBackup.GetDbName()
+			if collectionBackup.GetDbName() == "" {
+				collectionBackup.DbName = "default"
 			}
-			fullCollectionName := dbName + "." + collectionBackup.GetCollectionName()
+			fullCollectionName := collectionBackup.GetDbName() + "." + collectionBackup.GetCollectionName()
 			collectionBackup.GetCollectionName()
 			if collectionNameDict[fullCollectionName] {
 				toRestoreCollectionBackups = append(toRestoreCollectionBackups, collectionBackup)
