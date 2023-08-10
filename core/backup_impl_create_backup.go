@@ -726,8 +726,15 @@ func (b *BackupContext) readSegmentInfo(ctx context.Context, collecitonID int64,
 		NumOfRows:    numOfRows,
 	}
 	var size int64 = 0
+	var rootPath string
 
-	insertPath := fmt.Sprintf("%s/%s/%v/%v/%v/", b.params.MinioCfg.RootPath, "insert_log", collecitonID, partitionID, segmentID)
+        if b.params.MinioCfg.RootPath != "" {
+                rootPath = fmt.Sprintf("%s/", b.params.MinioCfg.RootPath)
+        } else {
+                rootPath = ""
+        }
+
+	insertPath := fmt.Sprintf("%s%s/%v/%v/%v/", rootPath, "insert_log", collecitonID, partitionID, segmentID)
 	log.Debug("insertPath", zap.String("insertPath", insertPath))
 	fieldsLogDir, _, err := b.getStorageClient().ListWithPrefix(ctx, b.milvusBucketName, insertPath, false)
 	if err != nil {
