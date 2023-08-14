@@ -12,7 +12,7 @@ require (
 	github.com/google/uuid v1.1.2
 	github.com/json-iterator/go v1.1.12
 	github.com/lingdor/stackerror v0.0.0-20191119040541-976d8885ed76
-	github.com/milvus-io/milvus-sdk-go/v2 v2.2.2
+	github.com/milvus-io/milvus-sdk-go/v2 v2.3.0-beta
 	github.com/minio/minio-go/v7 v7.0.17
 	github.com/pkg/errors v0.9.1
 	github.com/sony/sonyflake v1.1.0
