@@ -431,7 +431,7 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 				delete(segmentDict, sid)
 				filledSegments = append(filledSegments, seg)
 			} else {
-				log.Warn("this may be new segments after flush, skip it", zap.Int64("id", sid))
+				log.Debug("this may be new segments after flush, skip it", zap.Int64("id", sid))
 			}
 		}
 		for _, seg := range segmentEntitiesBeforeFlush {
@@ -440,7 +440,7 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 				delete(segmentDict, sid)
 				filledSegments = append(filledSegments, seg)
 			} else {
-				log.Warn("this may be old segments before flush, skip it", zap.Int64("id", sid))
+				log.Debug("this may be old segments before flush, skip it", zap.Int64("id", sid))
 			}
 		}
 		if len(segmentDict) > 0 {
@@ -728,11 +728,11 @@ func (b *BackupContext) readSegmentInfo(ctx context.Context, collecitonID int64,
 	var size int64 = 0
 	var rootPath string
 
-        if b.params.MinioCfg.RootPath != "" {
-                rootPath = fmt.Sprintf("%s/", b.params.MinioCfg.RootPath)
-        } else {
-                rootPath = ""
-        }
+	if b.params.MinioCfg.RootPath != "" {
+		rootPath = fmt.Sprintf("%s/", b.params.MinioCfg.RootPath)
+	} else {
+		rootPath = ""
+	}
 
 	insertPath := fmt.Sprintf("%s%s/%v/%v/%v/", rootPath, "insert_log", collecitonID, partitionID, segmentID)
 	log.Debug("insertPath", zap.String("insertPath", insertPath))
