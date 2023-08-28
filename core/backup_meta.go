@@ -319,6 +319,9 @@ func SimpleRestoreResponse(input *backuppb.RestoreBackupResponse) *backuppb.Rest
 			EndTime:              coll.GetEndTime(),
 			Progress:             coll.GetProgress(),
 			TargetCollectionName: coll.GetTargetCollectionName(),
+			TargetDbName:         coll.GetTargetDbName(),
+			ToRestoreSize:        coll.GetToRestoreSize(),
+			RestoredSize:         coll.GetRestoredSize(),
 		})
 	}
 

@@ -163,18 +163,45 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 	}
 	log.Info("Collections to restore", zap.Int("collection_num", len(toRestoreCollectionBackups)))
 
+	// add default db in collection_renames if not set
+	collectionRenames := make(map[string]string)
+	dbRenames := make(map[string]string)
+	for oldname, newName := range request.GetCollectionRenames() {
+		if strings.HasSuffix(oldname, ".*") && strings.HasSuffix(newName, ".*") {
+			dbRenames[strings.Split(oldname, ".*")[0]] = strings.Split(newName, ".*")[0]
+		}
+
+		var fullCollectionName string
+		if strings.Contains(oldname, ".") {
+			fullCollectionName = oldname
+		} else {
+			fullCollectionName = "default." + oldname
+		}
+		var fullCollectionNewName string
+		if strings.Contains(newName, ".") {
+			fullCollectionNewName = newName
+		} else {
+			fullCollectionNewName = "default." + newName
+		}
+		collectionRenames[fullCollectionName] = fullCollectionNewName
+	}
+
 	restoreCollectionTasks := make([]*backuppb.RestoreCollectionTask, 0)
 	for _, restoreCollection := range toRestoreCollectionBackups {
-		backupCollectionName := restoreCollection.GetSchema().GetName()
-		var targetCollectionName string
-		// rename collection, rename map has higher priority then suffix
-		if len(request.GetCollectionRenames()) > 0 && request.GetCollectionRenames()[backupCollectionName] != "" {
-			targetCollectionName = request.GetCollectionRenames()[backupCollectionName]
-		} else if request.GetCollectionSuffix() != "" {
-			targetCollectionName = backupCollectionName + request.GetCollectionSuffix()
-		} else {
-			targetCollectionName = backupCollectionName
+		backupDBCollectionName := restoreCollection.DbName + "." + restoreCollection.GetSchema().GetName()
+		targetDBName := restoreCollection.DbName
+		targetCollectionName := restoreCollection.GetSchema().GetName()
+		if value, ok := dbRenames[restoreCollection.DbName]; ok {
+			targetDBName = value
 		}
+		// rename collection, rename map has higher priority then suffix
+		if len(request.GetCollectionRenames()) > 0 && collectionRenames[backupDBCollectionName] != "" {
+			targetDBName = strings.Split(collectionRenames[backupDBCollectionName], ".")[0]
+			targetCollectionName = strings.Split(collectionRenames[backupDBCollectionName], ".")[1]
+		} else if request.GetCollectionSuffix() != "" {
+			targetCollectionName = targetCollectionName + request.GetCollectionSuffix()
+		}
+		targetDBCollectionName := targetDBName + "." + targetCollectionName
 
 		// check if the database exist, if not, create it first
 		dbs, err := b.getMilvusClient().ListDatabases(ctx)
@@ -187,25 +214,25 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 		}
 		var hasDatabase = false
 		for _, db := range dbs {
-			if db.Name == restoreCollection.DbName {
+			if db.Name == targetDBName {
 				hasDatabase = true
 				break
 			}
 		}
 		if !hasDatabase {
-			err := b.getMilvusClient().CreateDatabase(ctx, restoreCollection.DbName)
+			err := b.getMilvusClient().CreateDatabase(ctx, targetDBName)
 			if err != nil {
-				errorMsg := fmt.Sprintf("fail to create database %s, err: %s", restoreCollection.DbName, err)
+				errorMsg := fmt.Sprintf("fail to create database %s, err: %s", targetDBName, err)
 				log.Error(errorMsg)
 				resp.Code = backuppb.ResponseCode_Fail
 				resp.Msg = errorMsg
 				return resp
 			}
-			log.Info("create database", zap.String("database", restoreCollection.DbName))
+			log.Info("create database", zap.String("database", targetDBName))
 		}
-		err = b.getMilvusClient().UsingDatabase(ctx, restoreCollection.DbName)
+		err = b.getMilvusClient().UsingDatabase(ctx, targetDBName)
 		if err != nil {
-			errorMsg := fmt.Sprintf("fail to switch database %s, err: %s", restoreCollection.DbName, err)
+			errorMsg := fmt.Sprintf("fail to switch database %s, err: %s", targetDBName, err)
 			log.Error(errorMsg)
 			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = errorMsg
@@ -215,14 +242,14 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 		// check if the collection exist, if exist, will not restore
 		exist, err := b.getMilvusClient().HasCollection(ctx, targetCollectionName)
 		if err != nil {
-			errorMsg := fmt.Sprintf("fail to check whether the collection is exist, collection_name: %s, err: %s", targetCollectionName, err)
+			errorMsg := fmt.Sprintf("fail to check whether the collection is exist, collection_name: %s, err: %s", targetDBCollectionName, err)
 			log.Error(errorMsg)
 			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = errorMsg
 			return resp
 		}
 		if exist {
-			errorMsg := fmt.Sprintf("The collection to restore already exists, backupCollectName: %s, targetCollectionName: %s", backupCollectionName, targetCollectionName)
+			errorMsg := fmt.Sprintf("The collection to restore already exists, backupCollectName: %s, targetCollectionName: %s", backupDBCollectionName, targetDBCollectionName)
 			log.Error(errorMsg)
 			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = errorMsg
@@ -240,6 +267,7 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 			StateCode:             backuppb.RestoreTaskStateCode_INITIAL,
 			StartTime:             time.Now().Unix(),
 			CollBackup:            restoreCollection,
+			TargetDbName:          targetDBName,
 			TargetCollectionName:  targetCollectionName,
 			PartitionRestoreTasks: []*backuppb.RestorePartitionTask{},
 			ToRestoreSize:         toRestoreSize,
@@ -299,11 +327,14 @@ func (b *BackupContext) executeRestoreBackupTask(ctx context.Context, backupBuck
 		endTask, err := b.executeRestoreCollectionTask(ctx, backupBucketName, backupPath, restoreCollectionTask, id)
 		if err != nil {
 			log.Error("executeRestoreCollectionTask failed",
+				zap.String("TargetDBName", restoreCollectionTask.GetTargetDbName()),
 				zap.String("TargetCollectionName", restoreCollectionTask.GetTargetCollectionName()),
 				zap.Error(err))
 			return task, err
 		}
-		log.Info("finish restore collection", zap.String("collection_name", restoreCollectionTask.GetTargetCollectionName()))
+		log.Info("finish restore collection",
+			zap.String("db_name", restoreCollectionTask.GetTargetDbName()),
+			zap.String("collection_name", restoreCollectionTask.GetTargetCollectionName()))
 		restoreCollectionTask.StateCode = backuppb.RestoreTaskStateCode_SUCCESS
 		task.RestoredSize += endTask.RestoredSize
 		if task.GetToRestoreSize() == 0 {
@@ -320,10 +351,12 @@ func (b *BackupContext) executeRestoreBackupTask(ctx context.Context, backupBuck
 }
 
 func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backupBucketName string, backupPath string, task *backuppb.RestoreCollectionTask, parentTaskID string) (*backuppb.RestoreCollectionTask, error) {
+	targetDBName := task.GetTargetDbName()
 	targetCollectionName := task.GetTargetCollectionName()
 	task.StateCode = backuppb.RestoreTaskStateCode_EXECUTING
 	log.Info("start restore",
-		zap.String("collection_name", task.GetTargetCollectionName()),
+		zap.String("db_name", targetDBName),
+		zap.String("collection_name", targetCollectionName),
 		zap.String("backupBucketName", backupBucketName),
 		zap.String("backupPath", backupPath))
 	// create collection
@@ -357,11 +390,7 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 		EnableDynamicField: task.GetCollBackup().GetSchema().GetEnableDynamicField(),
 	}
 
-	dbName := task.GetCollBackup().GetDbName()
-	if dbName == "" {
-		dbName = "default"
-	}
-	b.getMilvusClient().UsingDatabase(ctx, dbName)
+	b.getMilvusClient().UsingDatabase(ctx, targetDBName)
 
 	err := retry.Do(ctx, func() error {
 		if hasPartitionKey {
@@ -386,7 +415,10 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 		task.ErrorMessage = errorMsg
 		return task, err
 	}
-	log.Info("create collection", zap.String("database", dbName), zap.String("collectionName", targetCollectionName), zap.Bool("hasPartitionKey", hasPartitionKey))
+	log.Info("create collection",
+		zap.String("database", targetDBName),
+		zap.String("collectionName", targetCollectionName),
+		zap.Bool("hasPartitionKey", hasPartitionKey))
 
 	tempDir := "restore-temp-" + parentTaskID + SEPERATOR
 	isSameBucket := b.milvusBucketName == backupBucketName
