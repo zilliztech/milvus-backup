@@ -4,18 +4,28 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 )
 
 const (
-	logicalBits = 18
-	PARAMS      = "params"
+	logicalBits     = 18
+	logicalBitsMask = (1 << logicalBits) - 1
+	PARAMS          = "params"
 )
 
 // ComposeTS returns a timestamp composed of physical part and logical part
 func ComposeTS(physical, logical int64) uint64 {
 	return uint64((physical << logicalBits) + logical)
+}
+
+// ParseTS returns a timestamp composed of physical part and logical part
+func ParseTS(ts uint64) (time.Time, uint64) {
+	logical := ts & logicalBitsMask
+	physical := ts >> logicalBits
+	physicalTime := time.Unix(int64(physical/1000), int64(physical)%1000*time.Millisecond.Nanoseconds())
+	return physicalTime, logical
 }
 
 // kvPairToMap largely copied from internal/proxy/task.go#parseIndexParams

@@ -496,7 +496,8 @@ const docTemplate = `{
                     }
                 },
                 "db_collections": {
-                    "description": "database and collections to backup. A json string. To support database. 2023.7.7"
+                    "description": "database and collections to backup. A json string. To support database. 2023.7.7",
+                    "type": "string"
                 },
                 "requestId": {
                     "description": "uuid of request, will generate one if not set",
@@ -774,7 +775,8 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "db_collections": {
-                    "description": "database and collections to restore. A json string. To support database. 2023.7.7"
+                    "description": "database and collections to restore. A json string. To support database. 2023.7.7",
+                    "type": "string"
                 },
                 "path": {
                     "description": "if bucket_name and path is set. will override bucket/path in config.",
@@ -884,6 +886,9 @@ const docTemplate = `{
                     "$ref": "#/definitions/backuppb.RestoreTaskStateCode"
                 },
                 "target_collection_name": {
+                    "type": "string"
+                },
+                "target_db_name": {
                     "type": "string"
                 },
                 "to_restore_size": {
