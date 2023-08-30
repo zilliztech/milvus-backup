@@ -269,6 +269,7 @@ message RestoreCollectionTask {
   int64 restored_size = 9;
   int64 to_restore_size = 10;
   int32 progress = 11;
+  string target_db_name = 12;
 }
 
 message RestoreBackupTask {
