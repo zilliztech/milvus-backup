@@ -2,6 +2,8 @@ package cmd
 
 import (
 	"errors"
+	"fmt"
+
 	"github.com/spf13/cobra"
 )
 
@@ -22,4 +24,8 @@ func Execute() {
 	rootCmd.PersistentFlags().StringVarP(&config, "config", "", "backup.yaml", "config YAML file of milvus")
 
 	rootCmd.Execute()
+}
+
+func SetVersionInfo(version, commit, date string) {
+	rootCmd.Version = fmt.Sprintf("%s (Built on %s from Git SHA %s)", version, date, commit)
 }
