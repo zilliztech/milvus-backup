@@ -560,7 +560,13 @@ func (b *BackupContext) executeBulkInsert(ctx context.Context, coll string, part
 		zap.String("partition", partition),
 		zap.Strings("files", files),
 		zap.Int64("endTime", endTime))
-	taskId, err := b.getMilvusClient().BulkInsert(ctx, coll, partition, files, gomilvus.IsBackup(), gomilvus.WithEndTs(endTime))
+	var taskId int64
+	var err error
+	if endTime == 0 {
+		taskId, err = b.getMilvusClient().BulkInsert(ctx, coll, partition, files, gomilvus.IsBackup())
+	} else {
+		taskId, err = b.getMilvusClient().BulkInsert(ctx, coll, partition, files, gomilvus.IsBackup(), gomilvus.WithEndTs(endTime))
+	}
 	if err != nil {
 		log.Error("fail to bulk insert",
 			zap.Error(err),

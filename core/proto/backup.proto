@@ -147,6 +147,8 @@ message CreateBackupRequest {
   bool async = 4;
   // database and collections to backup. A json string. To support database. 2023.7.7
   google.protobuf.Value db_collections = 5;
+  // force backup skip flush, Should make sure data has been stored into disk when using it
+  bool force = 6;
 }
 
 /**
