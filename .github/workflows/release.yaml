@@ -28,4 +28,5 @@ jobs:
           version: latest
           args: release --clean
         env:
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}  
+          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          GITHUB_HOMEBREW_TOKEN: ${{ secrets.HOMEBREW_TOKEN }}
