@@ -486,3 +486,53 @@ func (b *BackupContext) GetRestore(ctx context.Context, request *backuppb.GetRes
 		return resp
 	}
 }
+
+func (b *BackupContext) Check(ctx context.Context) string {
+	version, err := b.getMilvusClient().GetVersion(ctx)
+	if err != nil {
+		return "Failed to connect to milvus " + err.Error()
+	}
+
+	info := fmt.Sprintf(
+		"Milvus version: %s\n"+
+			"Storage:\n"+
+			"milvus-bucket: %s\n"+
+			"milvus-rootpath: %s\n"+
+			"backup-bucket: %s\n"+
+			"backup-rootpath: %s\n",
+		version, b.milvusBucketName, b.milvusRootPath, b.backupBucketName, b.backupRootPath)
+
+	paths, _, err := b.getStorageClient().ListWithPrefix(ctx, b.milvusBucketName, b.milvusRootPath+SEPERATOR, false)
+	if err != nil {
+		return "Failed to connect to storage milvus path\n" + info + err.Error()
+	}
+
+	if len(paths) == 0 {
+		return "Milvus storage root path is empty, please verify config if your cluster has is not empty" + info
+	}
+
+	paths, _, err = b.getStorageClient().ListWithPrefix(ctx, b.backupBucketName, b.backupRootPath+SEPERATOR, false)
+	if err != nil {
+		return "Failed to connect to storage backup path " + info + err.Error()
+	}
+
+	CHECK_PATH := ".milvus_backup_check"
+
+	err = b.getStorageClient().Write(ctx, b.milvusBucketName, b.milvusRootPath+SEPERATOR+CHECK_PATH, []byte{1})
+	if err != nil {
+		return "Failed to connect to storage milvus path\n" + info + err.Error()
+	}
+	defer func() {
+		b.getStorageClient().Remove(ctx, b.milvusBucketName, b.milvusRootPath+SEPERATOR+CHECK_PATH)
+	}()
+
+	err = b.getStorageClient().Copy(ctx, b.milvusBucketName, b.backupBucketName, b.milvusRootPath+SEPERATOR+CHECK_PATH, b.backupRootPath+SEPERATOR+CHECK_PATH)
+	if err != nil {
+		return "Failed to copy file from milvus storage to backup storage\n" + info + err.Error()
+	}
+	defer func() {
+		b.getStorageClient().Remove(ctx, b.backupBucketName, b.backupRootPath+SEPERATOR+CHECK_PATH)
+	}()
+
+	return "Succeed to connect to milvus and storage.\n" + info
+}

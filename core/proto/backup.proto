@@ -18,6 +18,8 @@ service MilvusBackupService {
   rpc RestoreBackup(RestoreBackupRequest) returns (RestoreBackupResponse) {}
   // Get restore state by given id
   rpc GetRestore(GetRestoreStateRequest) returns (RestoreBackupResponse) {}
+  // Check connections
+  rpc Check(CheckRequest) returns (CheckResponse) {}
  }
 
 enum ResponseCode {
@@ -401,4 +403,14 @@ message CollectionSchema {
   bool autoID = 3; // deprecated later, keep compatible with c++ part now
   repeated FieldSchema fields = 4;
   bool enable_dynamic_field = 5; // mark whether this table has the dynamic field function enabled.
+}
+
+message CheckRequest {
+}
+
+message CheckResponse {
+  // response code. 0 means success. others are fail
+  ResponseCode code = 1;
+  // error msg if fail
+  string msg = 2;
 }

@@ -24,6 +24,8 @@ const (
 	API_V1_PREFIX = "/api/v1"
 
 	DOCS_API = "/docs/*any"
+
+	CHECK_API = "/check"
 )
 
 // Server is the Backup Server
@@ -105,6 +107,7 @@ func (h *Handlers) RegisterRoutesTo(router gin.IRouter) {
 	router.DELETE(DELETE_BACKUP_API, wrapHandler(h.handleDeleteBackup))
 	router.POST(RESTORE_BACKUP_API, wrapHandler(h.handleRestoreBackup))
 	router.GET(GET_RESTORE_API, wrapHandler(h.handleGetRestore))
+	router.GET(CHECK_API, wrapHandler(h.handleCheck))
 	router.GET(DOCS_API, ginSwagger.WrapHandler(swaggerFiles.Handler))
 }
 
@@ -253,6 +256,12 @@ func (h *Handlers) handleGetRestore(c *gin.Context) (interface{}, error) {
 	if h.backupContext.params.HTTPCfg.SimpleResponse {
 		resp = SimpleRestoreResponse(resp)
 	}
+	c.JSON(http.StatusOK, resp)
+	return nil, nil
+}
+
+func (h *Handlers) handleCheck(c *gin.Context) (interface{}, error) {
+	resp := h.backupContext.Check(h.backupContext.ctx)
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
