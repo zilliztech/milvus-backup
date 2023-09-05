@@ -390,63 +390,75 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 			}
 		}
 
-		// Flush
-		segmentEntitiesBeforeFlush, err := b.getMilvusClient().GetPersistentSegmentInfo(ctx, collection.GetCollectionName())
-		if err != nil {
-			return backupInfo, err
-		}
-		log.Info("GetPersistentSegmentInfo before flush from milvus",
-			zap.String("collectionName", collection.GetCollectionName()),
-			zap.Int("segmentNumBeforeFlush", len(segmentEntitiesBeforeFlush)))
-
-		newSealedSegmentIDs, flushedSegmentIDs, timeOfSeal, err := b.getMilvusClient().FlushV2(ctx, collection.GetCollectionName(), false)
-		if err != nil {
-			log.Error(fmt.Sprintf("fail to flush the collection: %s", collection.GetCollectionName()))
-			return backupInfo, err
-		}
-		log.Info("flush segments",
-			zap.String("collectionName", collection.GetCollectionName()),
-			zap.Int64s("newSealedSegmentIDs", newSealedSegmentIDs),
-			zap.Int64s("flushedSegmentIDs", flushedSegmentIDs),
-			zap.Int64("timeOfSeal", timeOfSeal))
-		collection.BackupTimestamp = utils.ComposeTS(timeOfSeal, 0)
-		collection.BackupPhysicalTimestamp = uint64(timeOfSeal)
-
-		flushSegmentIDs := append(newSealedSegmentIDs, flushedSegmentIDs...)
-		segmentEntitiesAfterFlush, err := b.getMilvusClient().GetPersistentSegmentInfo(ctx, collection.GetCollectionName())
-		if err != nil {
-			return backupInfo, err
-		}
-		log.Info("GetPersistentSegmentInfo after flush from milvus",
-			zap.String("collectionName", collection.GetCollectionName()),
-			zap.Int("segmentNumBeforeFlush", len(segmentEntitiesBeforeFlush)),
-			zap.Int("segmentNumAfterFlush", len(segmentEntitiesAfterFlush)))
-
 		// fill segments
 		filledSegments := make([]*entity.Segment, 0)
-		segmentDict := utils.ArrayToMap(flushSegmentIDs)
-		for _, seg := range segmentEntitiesAfterFlush {
-			sid := seg.ID
-			if _, ok := segmentDict[sid]; ok {
-				delete(segmentDict, sid)
-				filledSegments = append(filledSegments, seg)
-			} else {
-				log.Debug("this may be new segments after flush, skip it", zap.Int64("id", sid))
+		if !request.GetForce() {
+			// Flush
+			segmentEntitiesBeforeFlush, err := b.getMilvusClient().GetPersistentSegmentInfo(ctx, collection.GetCollectionName())
+			if err != nil {
+				return backupInfo, err
 			}
-		}
-		for _, seg := range segmentEntitiesBeforeFlush {
-			sid := seg.ID
-			if _, ok := segmentDict[sid]; ok {
-				delete(segmentDict, sid)
-				filledSegments = append(filledSegments, seg)
-			} else {
-				log.Debug("this may be old segments before flush, skip it", zap.Int64("id", sid))
+			log.Info("GetPersistentSegmentInfo before flush from milvus",
+				zap.String("collectionName", collection.GetCollectionName()),
+				zap.Int("segmentNumBeforeFlush", len(segmentEntitiesBeforeFlush)))
+			newSealedSegmentIDs, flushedSegmentIDs, timeOfSeal, err := b.getMilvusClient().FlushV2(ctx, collection.GetCollectionName(), false)
+			if err != nil {
+				log.Error(fmt.Sprintf("fail to flush the collection: %s", collection.GetCollectionName()))
+				return backupInfo, err
 			}
-		}
-		if len(segmentDict) > 0 {
-			// very rare situation, segments return in flush doesn't exist in either segmentEntitiesBeforeFlush and segmentEntitiesAfterFlush
-			errorMsg := "Segment return in Flush not exist in GetPersistentSegmentInfo. segment ids: " + fmt.Sprint(utils.MapKeyArray(segmentDict))
-			log.Warn(errorMsg)
+			log.Info("flush segments",
+				zap.String("collectionName", collection.GetCollectionName()),
+				zap.Int64s("newSealedSegmentIDs", newSealedSegmentIDs),
+				zap.Int64s("flushedSegmentIDs", flushedSegmentIDs),
+				zap.Int64("timeOfSeal", timeOfSeal))
+			collection.BackupTimestamp = utils.ComposeTS(timeOfSeal, 0)
+			collection.BackupPhysicalTimestamp = uint64(timeOfSeal)
+
+			flushSegmentIDs := append(newSealedSegmentIDs, flushedSegmentIDs...)
+			segmentEntitiesAfterFlush, err := b.getMilvusClient().GetPersistentSegmentInfo(ctx, collection.GetCollectionName())
+			if err != nil {
+				return backupInfo, err
+			}
+			log.Info("GetPersistentSegmentInfo after flush from milvus",
+				zap.String("collectionName", collection.GetCollectionName()),
+				zap.Int("segmentNumBeforeFlush", len(segmentEntitiesBeforeFlush)),
+				zap.Int("segmentNumAfterFlush", len(segmentEntitiesAfterFlush)))
+			segmentDict := utils.ArrayToMap(flushSegmentIDs)
+			for _, seg := range segmentEntitiesAfterFlush {
+				sid := seg.ID
+				if _, ok := segmentDict[sid]; ok {
+					delete(segmentDict, sid)
+					filledSegments = append(filledSegments, seg)
+				} else {
+					log.Debug("this may be new segments after flush, skip it", zap.Int64("id", sid))
+				}
+			}
+			for _, seg := range segmentEntitiesBeforeFlush {
+				sid := seg.ID
+				if _, ok := segmentDict[sid]; ok {
+					delete(segmentDict, sid)
+					filledSegments = append(filledSegments, seg)
+				} else {
+					log.Debug("this may be old segments before flush, skip it", zap.Int64("id", sid))
+				}
+			}
+			if len(segmentDict) > 0 {
+				// very rare situation, segments return in flush doesn't exist in either segmentEntitiesBeforeFlush and segmentEntitiesAfterFlush
+				errorMsg := "Segment return in Flush not exist in GetPersistentSegmentInfo. segment ids: " + fmt.Sprint(utils.MapKeyArray(segmentDict))
+				log.Warn(errorMsg)
+			}
+		} else {
+			// Flush
+			segmentEntitiesBeforeFlush, err := b.getMilvusClient().GetPersistentSegmentInfo(ctx, collection.GetCollectionName())
+			if err != nil {
+				return backupInfo, err
+			}
+			log.Info("GetPersistentSegmentInfo from milvus",
+				zap.String("collectionName", collection.GetCollectionName()),
+				zap.Int("segmentNum", len(segmentEntitiesBeforeFlush)))
+			for _, seg := range segmentEntitiesBeforeFlush {
+				filledSegments = append(filledSegments, seg)
+			}
 		}
 
 		if err != nil {
