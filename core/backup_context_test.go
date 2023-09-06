@@ -3,14 +3,15 @@ package core
 import (
 	"context"
 	"fmt"
+	"math/rand"
+	"testing"
+
 	"github.com/stretchr/testify/assert"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"go.uber.org/zap"
-	"math/rand"
-	"testing"
 )
 
 func TestCreateBackup(t *testing.T) {
@@ -82,6 +83,26 @@ func TestDeleteBackup(t *testing.T) {
 
 	assert.Equal(t, 0, len(backupLists.GetData()))
 
+}
+
+func TestCreateBackupWithNoName(t *testing.T) {
+	var params paramtable.BackupParams
+	params.Init()
+	context := context.Background()
+	backup := CreateBackupContext(context, params)
+
+	randBackupName := ""
+
+	req := &backuppb.CreateBackupRequest{
+		BackupName: randBackupName,
+	}
+	resp := backup.CreateBackup(context, req)
+	assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
+
+	// clean
+	backup.DeleteBackup(context, &backuppb.DeleteBackupRequest{
+		BackupName: randBackupName,
+	})
 }
 
 func TestCreateBackupWithUnexistCollection(t *testing.T) {
