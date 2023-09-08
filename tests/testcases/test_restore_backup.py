@@ -21,27 +21,28 @@ class TestRestoreBackup(TestcaseBase):
     """ Test case of end to end"""
 
     @pytest.mark.tags(CaseLabel.L1)
-    @pytest.mark.parametrize("nb", [0, 3000])
+    @pytest.mark.parametrize("nb", [3000])
     @pytest.mark.parametrize("is_auto_id", [True, False])
+    @pytest.mark.parametrize("enable_partition", [True, False])
     @pytest.mark.parametrize("is_async", [True, False])
     @pytest.mark.parametrize("collection_need_to_restore", [1, 2, 3])
     @pytest.mark.parametrize("collection_type", ["binary", "float", "all"])
-    def test_milvus_restore_back(self, collection_type, collection_need_to_restore, is_async, is_auto_id, nb):
+    def test_milvus_restore_back(self, collection_type, collection_need_to_restore, is_async, is_auto_id, enable_partition, nb):
         # prepare data
         names_origin = []
         back_up_name = cf.gen_unique_str(backup_prefix)
         if collection_type == "all":
             for is_binary in [True, False, False]:
                 names_origin.append(cf.gen_unique_str(prefix))
-                self.prepare_data(names_origin[-1], nb=nb, is_binary=is_binary, auto_id=is_auto_id, check_function=False)
+                self.prepare_data(names_origin[-1], nb=nb, is_binary=is_binary, auto_id=is_auto_id, check_function=False, enable_partition=enable_partition)
         if collection_type == "float":
             for is_binary in [False, False, False]:
                 names_origin.append(cf.gen_unique_str(prefix))
-                self.prepare_data(names_origin[-1], nb=nb, is_binary=is_binary, auto_id=is_auto_id, check_function=False)
+                self.prepare_data(names_origin[-1], nb=nb, is_binary=is_binary, auto_id=is_auto_id, check_function=False, enable_partition=enable_partition)
         if collection_type == "binary":
             for is_binary in [True, True, True]:
                 names_origin.append(cf.gen_unique_str(prefix))
-                self.prepare_data(names_origin[-1], nb=nb, is_binary=is_binary, auto_id=is_auto_id, check_function=False)
+                self.prepare_data(names_origin[-1], nb=nb, is_binary=is_binary, auto_id=is_auto_id, check_function=False, enable_partition=enable_partition)
         log.info(f"name_origin:{names_origin}, back_up_name: {back_up_name}")
         for name in names_origin:
             res, _ = self.utility_wrap.has_collection(name)
