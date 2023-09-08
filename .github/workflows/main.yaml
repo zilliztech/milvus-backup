@@ -103,6 +103,7 @@ jobs:
         timeout-minutes: 5
         shell: bash
         run: |
+          ./milvus-backup check
           ./milvus-backup list
           ./milvus-backup create -n my_backup
           ./milvus-backup list
@@ -232,6 +233,7 @@ jobs:
         timeout-minutes: 5
         shell: bash
         run: |
+          ./milvus-backup check
           ./milvus-backup list
           ./milvus-backup create -n my_backup
           ./milvus-backup list
@@ -392,6 +394,7 @@ jobs:
         timeout-minutes: 5
         shell: bash
         run: |
+          ./milvus-backup check
           ./milvus-backup list
           ./milvus-backup create -n my_backup
           ./milvus-backup list

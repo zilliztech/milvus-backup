@@ -508,7 +508,7 @@ func (b *BackupContext) Check(ctx context.Context) string {
 	}
 
 	if len(paths) == 0 {
-		return "Milvus storage root path is empty, please verify config if your cluster has is not empty" + info
+		return "Milvus storage root path is empty, please verify config if your cluster has is not empty\n" + info
 	}
 
 	paths, _, err = b.getStorageClient().ListWithPrefix(ctx, b.backupBucketName, b.backupRootPath+SEPERATOR, false)
