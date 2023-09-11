@@ -249,7 +249,7 @@ class TestcaseBase(Base):
         return collection_w
 
     def prepare_data(self, name=None, db_name="default", nb=ct.default_nb, dim=ct.default_dim, is_binary=False, auto_id=False,
-                     primary_field=ct.default_int64_field_name, is_flushed=True, check_function=False):
+                     primary_field=ct.default_int64_field_name, is_flushed=True, check_function=False, enable_partition=False):
         """
         prepare data for test case
         """
@@ -262,6 +262,9 @@ class TestcaseBase(Base):
             default_schema = cf.gen_default_binary_collection_schema(auto_id=auto_id, dim=dim,
                                                                      primary_field=primary_field)
         collection_w = self.init_collection_wrap(name=name, schema=default_schema, active_trace=True)
+        # create partitions
+        if enable_partition:
+            partition_w = self.init_partition_wrap(collection_wrap=collection_w)
         assert collection_w.name == name
         if nb > 0:
             cf.insert_data(collection_w, nb=nb, is_binary=is_binary, auto_id=auto_id, dim=dim)
@@ -343,6 +346,11 @@ class TestcaseBase(Base):
             f"collection_src num_entities: {collection_src.num_entities} != " \
             f"collection_dist num_entities: {collection_dist.num_entities}"
         assert collection_src.schema == collection_dist.schema
+        # get partitions
+        partitions_src = collection_src.partitions
+        partitions_dist = collection_dist.partitions
+        log.info(f"partitions_src: {partitions_src}, partitions_dist: {partitions_dist}")
+        assert len(partitions_src) == len(partitions_dist)
 
         for coll in [collection_src, collection_dist]:
             is_binary = self.is_binary_by_schema(coll.schema)

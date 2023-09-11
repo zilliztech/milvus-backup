@@ -492,7 +492,7 @@ jobs:
           ./milvus-backup server > server.log 2>&1 &
 
       - name: Run test
-        timeout-minutes: 60
+        timeout-minutes: 90
         shell: bash
         working-directory: tests
         run: |
