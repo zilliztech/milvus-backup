@@ -2,7 +2,16 @@
 
 Milvus-Backup is a tool that allows users to backup and restore Milvus data. This tool can be utilized either through the command line or an API server.
 
-In order to use Milvus-Backup effectively, access to Milvus proxy and Minio cluster is required. Configuration settings related to this access can be edited in `configs/backup.yaml`.
+The Milvus-backup process has negligible impact on the performance of Milvus. Milvus cluster is fully functional and can operate normally while backup and restoration are in progress.
+
+## Compatibility
+|      Milvus      |  Milvus-backup   |
+|:----------------:|:----------------:|
+| v2.2.9 and above | v0.3.0 and above |
+| v2.2.0 to v2.2.8 | v0.1.0 to v0.2.2 |
+
+## Config
+In order to use Milvus-Backup, access to Milvus proxy and Minio cluster is required. Configuration settings related to this access can be edited in `configs/backup.yaml`.
 
 > **Note**
 >
@@ -13,15 +22,6 @@ In order to use Milvus-Backup effectively, access to Milvus proxy and Minio clus
 > |---|---|---|
 > |bucketName|a-bucket|milvus-bucket|
 > |rootPath|files|file|
-
-The Milvus-backup process has negligible impact on the performance of Milvus. Milvus cluster is fully functional and can operate normally while backup and restoration are in progress.
-
-## Compatibility
-|      Milvus      |  Milvus-backup   |
-|:----------------:|:----------------:|
-| v2.2.9 and above | v0.3.0 and above |
-| v2.2.0 to v2.2.8 | v0.1.0 to v0.2.2 |
-
 
 ## Development
 
@@ -144,14 +144,14 @@ curl --location --request GET 'http://localhost:8080/api/v1/get_restore?id=test_
 Milvus-backup establish CLI based on cobra. Use the following command to see the usage.
 
 ```
-milvus-backup is a backup tool for milvus.
+milvus-backup is a backup&restore tool for milvus.
 
 Usage:
   milvus-backup [flags]
   milvus-backup [command]
 
 Available Commands:
-  completion  Generate the autocompletion script for the specified shell
+  check       check if the connects is right.
   create      create subcommand create a backup.
   delete      delete subcommand delete backup by name.
   get         get subcommand get backup by name.
@@ -161,7 +161,8 @@ Available Commands:
   server      server subcommand start milvus-backup RESTAPI server.
 
 Flags:
-  -h, --help   help for milvus-backup
+      --config string   config YAML file of milvus (default "backup.yaml")
+  -h, --help            help for milvus-backup
 
 Use "milvus-backup [command] --help" for more information about a command.
 ```
@@ -169,6 +170,26 @@ Use "milvus-backup [command] --help" for more information about a command.
 ## Demo
 
 To try this demo, you should have a functional Milvus server installed and have pymilvus library installed.
+
+Step 0: Check the connections
+
+First of all, we can use `check` command to check whether connections to milvus and storage is normal:
+
+```
+./milvus-backup check
+```
+
+normal output:
+
+```shell
+Succeed to connect to milvus and storage.
+Milvus version: v2.3
+Storage:
+milvus-bucket: a-bucket
+milvus-rootpath: files
+backup-bucket: a-bucket
+backup-rootpath: backup
+```
 
 Step 1: Prepare the Data
 
