@@ -13,8 +13,8 @@ var (
 
 var rootCmd = &cobra.Command{
 	Use:   "milvus-backup",
-	Short: "milvus-backup is a backup tool for milvus.",
-	Long:  `milvus-backup is a backup tool for milvus.`,
+	Short: "milvus-backup is a backup&restore tool for milvus.",
+	Long:  `milvus-backup is a backup&restore tool for milvus.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		Error(cmd, args, errors.New("unrecognized command"))
 	},
@@ -22,7 +22,7 @@ var rootCmd = &cobra.Command{
 
 func Execute() {
 	rootCmd.PersistentFlags().StringVarP(&config, "config", "", "backup.yaml", "config YAML file of milvus")
-
+	rootCmd.CompletionOptions.DisableDefaultCmd = true
 	rootCmd.Execute()
 }
 
