@@ -43,6 +43,9 @@ func (b *BackupContext) CreateBackup(ctx context.Context, request *backuppb.Crea
 	}
 
 	// backup name validate
+	if request.GetBackupName() == "" {
+		request.BackupName = "backup_" + fmt.Sprint(time.Now().UTC().Format("2006_01_02_15_04_05_")) + fmt.Sprint(time.Now().Nanosecond())
+	}
 	if request.GetBackupName() != "" {
 		exist, err := b.getStorageClient().Exist(b.ctx, b.backupBucketName, b.backupRootPath+SEPERATOR+request.GetBackupName())
 		if err != nil {
@@ -68,12 +71,7 @@ func (b *BackupContext) CreateBackup(ctx context.Context, request *backuppb.Crea
 		return resp
 	}
 
-	var name string
-	if request.GetBackupName() == "" {
-		name = "backup_" + fmt.Sprint(time.Now().Unix())
-	} else {
-		name = request.BackupName
-	}
+	var name string = request.BackupName
 
 	milvusVersion, err := b.getMilvusClient().GetVersion(b.ctx)
 	if err != nil {
