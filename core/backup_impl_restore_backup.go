@@ -138,7 +138,12 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 			}
 		}
 	} else if len(request.GetCollectionNames()) == 0 {
-		toRestoreCollectionBackups = backup.GetCollectionBackups()
+		for _, collectionBackup := range backup.GetCollectionBackups() {
+			if collectionBackup.GetDbName() == "" {
+				collectionBackup.DbName = "default"
+			}
+			toRestoreCollectionBackups = append(toRestoreCollectionBackups, collectionBackup)
+		}
 	} else {
 		collectionNameDict := make(map[string]bool)
 		for _, collectionName := range request.GetCollectionNames() {
@@ -155,7 +160,6 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 				collectionBackup.DbName = "default"
 			}
 			fullCollectionName := collectionBackup.GetDbName() + "." + collectionBackup.GetCollectionName()
-			collectionBackup.GetCollectionName()
 			if collectionNameDict[fullCollectionName] {
 				toRestoreCollectionBackups = append(toRestoreCollectionBackups, collectionBackup)
 			}
