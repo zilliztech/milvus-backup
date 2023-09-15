@@ -1,7 +1,7 @@
 # Configures the system log output.
 log:
   level: info # Only supports debug, info, warn, error, panic, or fatal. Default 'info'.
-  console: true
+  console: true # whether print log to console
   file:
     rootPath: "logs/backup.log"
 

@@ -176,6 +176,8 @@ message GetBackupRequest {
   string bucket_name = 4;
   // if bucket_name and path is set. will override bucket/path in config.
   string path = 5;
+  // if true, return simple response without too much detail to display
+  bool without_detail = 6;
 }
 
 message ListBackupsRequest {

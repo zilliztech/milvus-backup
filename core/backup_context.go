@@ -197,7 +197,9 @@ func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBack
 			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = err.Error()
 		}
-	} else if request.GetBackupId() == "" && request.GetBackupName() == "" {
+	}
+
+	if request.GetBackupId() == "" && request.GetBackupName() == "" {
 		resp.Code = backuppb.ResponseCode_Parameter_Error
 		resp.Msg = "empty backup name and backup id"
 	} else if request.GetBackupId() != "" {
@@ -243,6 +245,10 @@ func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBack
 				resp.Msg = "success"
 			}
 		}
+	}
+
+	if request.WithoutDetail {
+		resp = SimpleBackupResponse(resp)
 	}
 
 	log.Info("finish GetBackupRequest",
