@@ -482,10 +482,10 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 			err = b.executeBulkInsert(ctx, targetCollectionName, partitionBackup.GetPartitionName(), realFiles, int64(task.GetCollBackup().BackupTimestamp))
 			if err != nil {
 				log.Error("fail to bulk insert to partition",
-					zap.Error(err),
 					zap.String("backupCollectionName", task.GetCollBackup().GetCollectionName()),
 					zap.String("targetCollectionName", targetCollectionName),
-					zap.String("partition", partitionBackup.GetPartitionName()))
+					zap.String("partition", partitionBackup.GetPartitionName()),
+					zap.Error(err))
 				return err
 			}
 			return nil
