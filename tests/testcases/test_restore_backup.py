@@ -17,10 +17,10 @@ suffix = "_bak"
 client = MilvusBackupClient("http://localhost:8080/api/v1")
 
 
+@pytest.mark.tags(CaseLabel.L0)
 class TestRestoreBackup(TestcaseBase):
     """ Test case of end to end"""
 
-    @pytest.mark.tags(CaseLabel.L1)
     @pytest.mark.parametrize("nb", [3000])
     @pytest.mark.parametrize("is_auto_id", [True, False])
     @pytest.mark.parametrize("enable_partition", [True, False])
