@@ -44,13 +44,18 @@ var restoreBackupCmd = &cobra.Command{
 			collectionNameArr = strings.Split(restoreCollectionNames, ",")
 		}
 
-		var renameMap map[string]string
-		if renameCollectionNames == "" {
-			renameMap = map[string]string{}
-		} else {
+		renameMap := make(map[string]string, 0)
+		if renameCollectionNames != "" {
+			fmt.Println("rename: " + renameCollectionNames)
 			renameArr := strings.Split(renameCollectionNames, ",")
-			if len(renameArr) != len(collectionNameArr) {
-				fmt.Errorf("collection_names and renames num dismatch, Forbid to restore")
+			for _, rename := range renameArr {
+				if strings.Contains(rename, ":") {
+					splits := strings.Split(rename, ":")
+					renameMap[splits[0]] = splits[1]
+				} else {
+					fmt.Println("illegal rename parameter")
+					return
+				}
 			}
 		}
 
@@ -83,9 +88,9 @@ func init() {
 	restoreBackupCmd.Flags().StringVarP(&restoreBackupName, "name", "n", "", "backup name to restore")
 	restoreBackupCmd.Flags().StringVarP(&restoreCollectionNames, "collections", "c", "", "collectionNames to restore")
 	restoreBackupCmd.Flags().StringVarP(&renameSuffix, "suffix", "s", "", "add a suffix to collection name to restore")
-	restoreBackupCmd.Flags().StringVarP(&renameCollectionNames, "rename", "r", "", "rename collections to new names")
+	restoreBackupCmd.Flags().StringVarP(&renameCollectionNames, "rename", "r", "", "rename collections to new names, format: db1.collection1:db2.collection1_new,db1.collection2:db2.collection2_new")
 	restoreBackupCmd.Flags().StringVarP(&restoreDatabases, "databases", "d", "", "databases to restore, if not set, restore all databases")
-	restoreBackupCmd.Flags().StringVarP(&restoreDatabaseCollections, "database_collections", "f", "", "databases and collections to restore, json format: {\"db1\":[\"c1\", \"c2\"],\"db2\":[]}")
+	restoreBackupCmd.Flags().StringVarP(&restoreDatabaseCollections, "database_collections", "a", "", "databases and collections to restore, json format: {\"db1\":[\"c1\", \"c2\"],\"db2\":[]}")
 
 	rootCmd.AddCommand(restoreBackupCmd)
 }

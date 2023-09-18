@@ -62,7 +62,7 @@ func TestGetBackup(t *testing.T) {
 	backupContext := CreateBackupContext(context, params)
 
 	backup := backupContext.GetBackup(context, &backuppb.GetBackupRequest{
-		BackupName: "test_backup",
+		BackupName: "mybackup",
 	})
 	assert.Equal(t, backup.GetCode(), backuppb.ResponseCode_Success)
 }
