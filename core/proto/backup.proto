@@ -251,6 +251,10 @@ message RestoreBackupRequest {
   string path = 8;
   // database and collections to restore. A json string. To support database. 2023.7.7
   google.protobuf.Value db_collections = 9;
+  // if true only restore meta
+  bool metaOnly = 10;
+  // if true restore index info
+  bool restoreIndex = 11; 
 }
 
 message RestorePartitionTask {
@@ -276,6 +280,10 @@ message RestoreCollectionTask {
   int64 to_restore_size = 10;
   int32 progress = 11;
   string target_db_name = 12;
+  // if true only restore meta
+  bool metaOnly = 13;
+  // if true restore index info
+  bool restoreIndex = 14;
 }
 
 message RestoreBackupTask {
