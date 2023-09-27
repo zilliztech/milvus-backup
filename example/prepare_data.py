@@ -111,11 +111,9 @@ hello_milvus2.flush()
 insert_result2 = hello_milvus2.insert(entities2)
 hello_milvus2.flush()
 
-index_params = {"index_type": "IVF_FLAT", "params": {"nlist": 128}, "metric_type": "L2"}
-hello_milvus.create_index("embeddings", index_params)
-
-
-hello_milvus2.create_index(field_name="var",index_name="scalar_index")
+# index_params = {"index_type": "IVF_FLAT", "params": {"nlist": 128}, "metric_type": "L2"}
+# hello_milvus.create_index("embeddings", index_params)
+# hello_milvus2.create_index(field_name="var",index_name="scalar_index")
 
 # index_params2 = {"index_type": "Trie"}
 # hello_milvus2.create_index("var", index_params2)

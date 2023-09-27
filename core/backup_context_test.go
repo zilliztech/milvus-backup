@@ -38,7 +38,7 @@ func TestListBackups(t *testing.T) {
 	assert.Equal(t, backupLists.GetCode(), backuppb.ResponseCode_Success)
 
 	backupListsWithCollection := backupContext.ListBackups(context, &backuppb.ListBackupsRequest{
-		CollectionName: "hello_milvus",
+		//CollectionName: "hello_milvus",
 	})
 
 	for _, backup := range backupListsWithCollection.GetData() {
