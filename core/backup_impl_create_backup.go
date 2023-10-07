@@ -288,7 +288,8 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 			//}
 			fieldIndex, err := b.getMilvusClient().DescribeIndex(b.ctx, completeCollection.Name, field.Name)
 			if err != nil {
-				if strings.HasPrefix(err.Error(), "index doesn't exist") {
+				if strings.Contains(err.Error(), "index not found") ||
+					strings.HasPrefix(err.Error(), "index doesn't exist") {
 					// todo
 					log.Warn("field has no index",
 						zap.String("collection_name", completeCollection.Name),
