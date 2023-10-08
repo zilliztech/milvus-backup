@@ -53,6 +53,8 @@ const (
 	DefaultMinioBackupBucketName = "a-bucket"
 	DefaultMinioBackupRootPath   = "backup"
 
+	DefaultStorageType = "minio"
+
 	DefaultMilvusAddress              = "localhost"
 	DefaultMilvusPort                 = "19530"
 	DefaultMilvusAuthorizationEnabled = "false"

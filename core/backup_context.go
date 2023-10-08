@@ -83,18 +83,7 @@ func CreateStorageClient(ctx context.Context, params paramtable.BackupParams) (s
 		zap.String("address", minioEndPoint),
 		zap.String("bucket", params.MinioCfg.BucketName),
 		zap.String("backupBucket", params.MinioCfg.BackupBucketName))
-	minioClient, err := storage.NewMinioChunkManager(ctx,
-		storage.Address(minioEndPoint),
-		storage.AccessKeyID(params.MinioCfg.AccessKeyID),
-		storage.SecretAccessKeyID(params.MinioCfg.SecretAccessKey),
-		storage.UseSSL(params.MinioCfg.UseSSL),
-		storage.BucketName(params.MinioCfg.BackupBucketName),
-		storage.RootPath(params.MinioCfg.RootPath),
-		storage.CloudProvider(params.MinioCfg.CloudProvider),
-		storage.UseIAM(params.MinioCfg.UseIAM),
-		storage.IAMEndpoint(params.MinioCfg.IAMEndpoint),
-		storage.CreateBucket(true),
-	)
+	minioClient, err := storage.NewChunkManager(ctx, params)
 	return minioClient, err
 }
 

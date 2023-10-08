@@ -21,12 +21,18 @@ import (
 	"golang.org/x/exp/mmap"
 )
 
+const NoSuchKey = "NoSuchKey"
+
 var (
 	ErrNoSuchKey = errors.New("NoSuchKey")
 )
 
 func WrapErrNoSuchKey(key string) error {
 	return fmt.Errorf("%w(key=%s)", ErrNoSuchKey, key)
+}
+
+func IsErrNoSuchKey(err error) bool {
+	return strings.HasPrefix(err.Error(), NoSuchKey)
 }
 
 var CheckBucketRetryAttempts uint = 20

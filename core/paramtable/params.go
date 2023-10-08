@@ -114,15 +114,19 @@ func (p *MilvusConfig) initTLSMode() {
 // /////////////////////////////////////////////////////////////////////////////
 // --- minio ---
 const (
+	Minio               = "minio"
 	CloudProviderAWS    = "aws"
 	CloudProviderGCP    = "gcp"
 	CloudProviderAliyun = "ali"
+	CloudProviderAzure  = "azure"
 )
 
 var supportedCloudProvider = map[string]bool{
+	Minio:               true,
 	CloudProviderAWS:    true,
 	CloudProviderGCP:    true,
 	CloudProviderAliyun: true,
+	CloudProviderAzure:  true,
 }
 
 type MinioConfig struct {
@@ -141,11 +145,14 @@ type MinioConfig struct {
 
 	BackupBucketName string
 	BackupRootPath   string
+
+	StorageType string
 }
 
 func (p *MinioConfig) init(base *BaseTable) {
 	p.Base = base
 
+	p.initStorageType()
 	p.initAddress()
 	p.initPort()
 	p.initAccessKeyID()
@@ -172,10 +179,7 @@ func (p *MinioConfig) initPort() {
 }
 
 func (p *MinioConfig) initAccessKeyID() {
-	keyID, err := p.Base.Load("minio.accessKeyID")
-	if err != nil {
-		panic(err)
-	}
+	keyID := p.Base.LoadWithDefault("minio.accessKeyID", DefaultMinioAccessKey)
 	p.AccessKeyID = keyID
 }
 
@@ -228,6 +232,15 @@ func (p *MinioConfig) initBackupBucketName() {
 func (p *MinioConfig) initBackupRootPath() {
 	rootPath := p.Base.LoadWithDefault("minio.backupRootPath", DefaultMinioBackupRootPath)
 	p.BackupRootPath = rootPath
+}
+
+func (p *MinioConfig) initStorageType() {
+	engine := p.Base.LoadWithDefault("storage.type",
+		p.Base.LoadWithDefault("minio.type", DefaultStorageType))
+	if !supportedCloudProvider[engine] {
+		panic("unsupported storage type:" + engine)
+	}
+	p.StorageType = engine
 }
 
 type HTTPConfig struct {
