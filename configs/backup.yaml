@@ -21,13 +21,14 @@ milvus:
 
 # Related configuration of minio, which is responsible for data persistence for Milvus.
 minio:
+  cloudProvider: "minio" # remote cloud storage provider: s3, gcp, aliyun, azure
+  
   address: localhost # Address of MinIO/S3
   port: 9000   # Port of MinIO/S3
-  accessKeyID: minioadmin # accessKeyID of MinIO/S3
+  accessKeyID: minioadmin  # accessKeyID of MinIO/S3
   secretAccessKey: minioadmin # MinIO/S3 encryption string
   useSSL: false # Access to MinIO/S3 with SSL
   useIAM: false
-  cloudProvider: "aws"
   iamEndpoint: ""
   
   bucketName: "a-bucket" # Milvus Bucket name in MinIO/S3, make it the same as your milvus instance

@@ -10,8 +10,10 @@ type config struct {
 	createBucket      bool
 	rootPath          string
 	useIAM            bool
-	cloudProvider     string
 	iamEndpoint       string
+	
+	cloudProvider string
+	storageEngine string
 }
 
 func newDefaultConfig() *config {
@@ -65,12 +67,6 @@ func RootPath(rootPath string) Option {
 func UseIAM(useIAM bool) Option {
 	return func(c *config) {
 		c.useIAM = useIAM
-	}
-}
-
-func CloudProvider(cloudProvider string) Option {
-	return func(c *config) {
-		c.cloudProvider = cloudProvider
 	}
 }
 

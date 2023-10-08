@@ -36,6 +36,7 @@ type ChunkManager interface {
 	ListWithPrefix(ctx context.Context, bucketName string, prefix string, recursive bool) ([]string, []int64, error)
 	// ReadWithPrefix reads files with same @prefix and returns contents.
 	ReadWithPrefix(ctx context.Context, bucketName string, prefix string) ([]string, [][]byte, error)
+	// Not use
 	Mmap(ctx context.Context, bucketName string, filePath string) (*mmap.ReaderAt, error)
 	// ReadAt reads @filePath by offset @off, content stored in @p, return @n as the number of bytes read.
 	// if all bytes are read, @err is io.EOF.

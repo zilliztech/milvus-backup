@@ -291,10 +291,9 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 				if strings.Contains(err.Error(), "index not found") ||
 					strings.HasPrefix(err.Error(), "index doesn't exist") {
 					// todo
-					log.Warn("field has no index",
+					log.Info("field has no index",
 						zap.String("collection_name", completeCollection.Name),
-						zap.String("field_name", field.Name),
-						zap.Error(err))
+						zap.String("field_name", field.Name))
 					continue
 				} else {
 					log.Error("fail in DescribeIndex", zap.Error(err))
@@ -729,10 +728,10 @@ func (b *BackupContext) copySegments(ctx context.Context, segments []*backuppb.S
 	return nil
 }
 
-func (b *BackupContext) readSegmentInfo(ctx context.Context, collecitonID int64, partitionID int64, segmentID int64, numOfRows int64) (*backuppb.SegmentBackupInfo, error) {
+func (b *BackupContext) readSegmentInfo(ctx context.Context, collectionID int64, partitionID int64, segmentID int64, numOfRows int64) (*backuppb.SegmentBackupInfo, error) {
 	segmentBackupInfo := backuppb.SegmentBackupInfo{
 		SegmentId:    segmentID,
-		CollectionId: collecitonID,
+		CollectionId: collectionID,
 		PartitionId:  partitionID,
 		NumOfRows:    numOfRows,
 	}
@@ -740,19 +739,20 @@ func (b *BackupContext) readSegmentInfo(ctx context.Context, collecitonID int64,
 	var rootPath string
 
 	if b.params.MinioCfg.RootPath != "" {
+		log.Debug("params.MinioCfg.RootPath", zap.String("params.MinioCfg.RootPath", b.params.MinioCfg.RootPath))
 		rootPath = fmt.Sprintf("%s/", b.params.MinioCfg.RootPath)
 	} else {
 		rootPath = ""
 	}
 
-	insertPath := fmt.Sprintf("%s%s/%v/%v/%v/", rootPath, "insert_log", collecitonID, partitionID, segmentID)
-	log.Debug("insertPath", zap.String("insertPath", insertPath))
+	insertPath := fmt.Sprintf("%s%s/%v/%v/%v/", rootPath, "insert_log", collectionID, partitionID, segmentID)
+	log.Debug("insertPath", zap.String("bucket", b.milvusBucketName), zap.String("insertPath", insertPath))
 	fieldsLogDir, _, err := b.getStorageClient().ListWithPrefix(ctx, b.milvusBucketName, insertPath, false)
 	if err != nil {
 		log.Error("Fail to list segment path", zap.String("insertPath", insertPath), zap.Error(err))
 		return &segmentBackupInfo, err
 	}
-	log.Debug("fieldsLogDir", zap.Any("fieldsLogDir", fieldsLogDir))
+	log.Debug("fieldsLogDir", zap.String("bucket", b.milvusBucketName), zap.Any("fieldsLogDir", fieldsLogDir))
 	insertLogs := make([]*backuppb.FieldBinlog, 0)
 	for _, fieldLogDir := range fieldsLogDir {
 		binlogPaths, sizes, _ := b.getStorageClient().ListWithPrefix(ctx, b.milvusBucketName, fieldLogDir, false)
@@ -772,7 +772,7 @@ func (b *BackupContext) readSegmentInfo(ctx context.Context, collecitonID int64,
 		})
 	}
 
-	deltaLogPath := fmt.Sprintf("%s%s/%v/%v/%v/", rootPath, "delta_log", collecitonID, partitionID, segmentID)
+	deltaLogPath := fmt.Sprintf("%s%s/%v/%v/%v/", rootPath, "delta_log", collectionID, partitionID, segmentID)
 	deltaFieldsLogDir, _, _ := b.getStorageClient().ListWithPrefix(ctx, b.milvusBucketName, deltaLogPath, false)
 	deltaLogs := make([]*backuppb.FieldBinlog, 0)
 	for _, deltaFieldLogDir := range deltaFieldsLogDir {
@@ -798,7 +798,7 @@ func (b *BackupContext) readSegmentInfo(ctx context.Context, collecitonID int64,
 		})
 	}
 
-	//statsLogPath := fmt.Sprintf("%s/%s/%v/%v/%v/", b.params.MinioCfg.RootPath, "stats_log", collecitonID, partitionID, segmentID)
+	//statsLogPath := fmt.Sprintf("%s/%s/%v/%v/%v/", b.params.MinioCfg.RootPath, "stats_log", collectionID, partitionID, segmentID)
 	//statsFieldsLogDir, _, _ := b.storageClient.ListWithPrefix(ctx, b.milvusBucketName, statsLogPath, false)
 	//statsLogs := make([]*backuppb.FieldBinlog, 0)
 	//for _, statsFieldLogDir := range statsFieldsLogDir {
