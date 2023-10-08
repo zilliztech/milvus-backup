@@ -79,6 +79,7 @@ class TestRestoreBackup(TestcaseBase):
         for name in restore_collections:
             self.compare_collections(name, name+suffix)
 
+    @pytest.mark.tags(CaseLabel.L1)
     def test_milvus_restore_back_with_db_support(self):
         # prepare data
         self._connect()
@@ -128,6 +129,7 @@ class TestRestoreBackup(TestcaseBase):
     @pytest.mark.parametrize("include_partition_key", [True, False])
     @pytest.mark.parametrize("include_dynamic", [True, False])
     @pytest.mark.parametrize("include_json", [True, False])
+    @pytest.mark.tags(CaseLabel.L1)
     def test_milvus_restore_back_with_new_feature_support(self, include_json, include_dynamic, include_partition_key):
         self._connect()
         name_origin = cf.gen_unique_str(prefix)
@@ -201,6 +203,7 @@ class TestRestoreBackup(TestcaseBase):
 
     @pytest.mark.parametrize("drop_db", [True, False])
     @pytest.mark.parametrize("str_json", [True, False])
+    @pytest.mark.tags(CaseLabel.L1)
     def test_milvus_restore_with_db_collections(self, drop_db, str_json):
         # prepare data
         self._connect()
