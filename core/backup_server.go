@@ -8,6 +8,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"go.uber.org/zap"
 	"net/http"
 	"net/http/pprof"
 )
@@ -57,7 +58,11 @@ func (s *Server) Init() {
 
 func (s *Server) Start() {
 	s.registerProfilePort()
-	s.engine.Run(s.config.port)
+	err := s.engine.Run(s.config.port)
+	if err != nil {
+		log.Error("Failed to start server", zap.Error(err))
+		panic(err)
+	}
 	log.Info("Start backup server backend")
 }
 
