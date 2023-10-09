@@ -30,7 +30,7 @@ var deleteBackupCmd = &cobra.Command{
 			BackupName: deleteBackName,
 		})
 
-		fmt.Println(resp.GetCode(), "\n", resp.GetMsg())
+		fmt.Println(resp.GetMsg())
 	},
 }
 

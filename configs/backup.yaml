@@ -39,3 +39,15 @@ minio:
 
 backup:
   maxSegmentGroupSize: 2G
+  parallelism: 2 # collection level parallelism to backup
+  copydata:
+    # thread pool to copy data for each collection backup, default 100. 
+    # which means if you set backup.parallelism = 2 backup.copydata.parallelism = 100, there will be 200 copy executing at the same time.
+    # reduce it if blocks your storage's network bandwidth
+    parallelism: 100
+
+restore:
+  # Collection level parallelism to restore
+  # Only change it > 1 when you have more than one datanode.
+  # Because the max parallelism of Milvus bulkinsert is equal to datanodes' number.
+  parallelism: 2

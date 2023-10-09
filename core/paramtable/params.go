@@ -33,12 +33,19 @@ type BackupConfig struct {
 	Base *BaseTable
 
 	MaxSegmentGroupSize int64
+
+	BackupParallelism         int
+	RestoreParallelism        int
+	BackupCopyDataParallelism int
 }
 
 func (p *BackupConfig) init(base *BaseTable) {
 	p.Base = base
 
 	p.initMaxSegmentGroupSize()
+	p.initBackupParallelism()
+	p.initRestoreParallelism()
+	p.initBackupCopyDataParallelism()
 }
 
 func (p *BackupConfig) initMaxSegmentGroupSize() {
@@ -47,6 +54,21 @@ func (p *BackupConfig) initMaxSegmentGroupSize() {
 		panic(err)
 	}
 	p.MaxSegmentGroupSize = size
+}
+
+func (p *BackupConfig) initBackupParallelism() {
+	size := p.Base.ParseIntWithDefault("backup.parallelism", 1)
+	p.BackupParallelism = size
+}
+
+func (p *BackupConfig) initRestoreParallelism() {
+	size := p.Base.ParseIntWithDefault("restore.parallelism", 1)
+	p.RestoreParallelism = size
+}
+
+func (p *BackupConfig) initBackupCopyDataParallelism() {
+	size := p.Base.ParseIntWithDefault("backup.copydata.parallelism", 10)
+	p.BackupCopyDataParallelism = size
 }
 
 type MilvusConfig struct {
