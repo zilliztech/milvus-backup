@@ -23,6 +23,8 @@ var (
 	renameCollectionNames      string
 	restoreDatabases           string
 	restoreDatabaseCollections string
+	restoreMetaOnly            bool
+	restoreIndex               bool
 )
 
 var restoreBackupCmd = &cobra.Command{
@@ -78,6 +80,8 @@ var restoreBackupCmd = &cobra.Command{
 			CollectionSuffix:  renameSuffix,
 			CollectionRenames: renameMap,
 			DbCollections:     utils.WrapDBCollections(restoreDatabaseCollections),
+			MetaOnly:          restoreMetaOnly,
+			RestoreIndex:      restoreIndex,
 		})
 
 		fmt.Println(resp.GetCode(), "\n", resp.GetMsg())
@@ -91,6 +95,9 @@ func init() {
 	restoreBackupCmd.Flags().StringVarP(&renameCollectionNames, "rename", "r", "", "rename collections to new names, format: db1.collection1:db2.collection1_new,db1.collection2:db2.collection2_new")
 	restoreBackupCmd.Flags().StringVarP(&restoreDatabases, "databases", "d", "", "databases to restore, if not set, restore all databases")
 	restoreBackupCmd.Flags().StringVarP(&restoreDatabaseCollections, "database_collections", "a", "", "databases and collections to restore, json format: {\"db1\":[\"c1\", \"c2\"],\"db2\":[]}")
+
+	restoreBackupCmd.Flags().BoolVarP(&restoreMetaOnly, "meta_only", "", false, "if set true, will restore meta only")
+	restoreBackupCmd.Flags().BoolVarP(&restoreIndex, "restore_index", "", false, "if set true, will restore index")
 
 	rootCmd.AddCommand(restoreBackupCmd)
 }
