@@ -40,15 +40,15 @@ default_fields = [
     FieldSchema(name="embeddings", dtype=DataType.FLOAT_VECTOR, dim=dim)
 ]
 default_schema = CollectionSchema(fields=default_fields, description="test partition-key collection", partition_key_field="key")
-hello_milvus = Collection(name="hello_milvus_pk", schema=default_schema, shard_num=1, num_partitions=100)
+hello_milvus = Collection(name="hello_milvus_pk", schema=default_schema, shard_num=1, num_partitions=20)
 
-nb = 100
+nb = 20
 
 rng = np.random.default_rng(seed=19530)
 random_data = rng.random(nb).tolist()
 
 vec_data = [[random.random() for _ in range(dim)] for _ in range(nb)]
-_len = int(100)
+_len = int(20)
 _str = string.ascii_letters + string.digits
 _s = _str
 print("_str size ", len(_str))

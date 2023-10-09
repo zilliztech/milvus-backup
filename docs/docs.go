@@ -499,6 +499,10 @@ const docTemplate = `{
                     "description": "database and collections to backup. A json string. To support database. 2023.7.7",
                     "type": "string"
                 },
+                "force": {
+                    "description": "force backup skip flush, Should make sure data has been stored into disk when using it",
+                    "type": "boolean"
+                },
                 "requestId": {
                     "description": "uuid of request, will generate one if not set",
                     "type": "string"
@@ -778,6 +782,10 @@ const docTemplate = `{
                     "description": "database and collections to restore. A json string. To support database. 2023.7.7",
                     "type": "string"
                 },
+                "metaOnly": {
+                    "description": "if true only restore meta",
+                    "type": "boolean"
+                },
                 "path": {
                     "description": "if bucket_name and path is set. will override bucket/path in config.",
                     "type": "string"
@@ -785,6 +793,10 @@ const docTemplate = `{
                 "requestId": {
                     "description": "uuid of request, will generate one if not set",
                     "type": "string"
+                },
+                "restoreIndex": {
+                    "description": "if true restore index info",
+                    "type": "boolean"
                 }
             }
         },
@@ -867,6 +879,10 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "metaOnly": {
+                    "description": "if true only restore meta",
+                    "type": "boolean"
+                },
                 "partition_restore_tasks": {
                     "type": "array",
                     "items": {
@@ -875,6 +891,10 @@ const docTemplate = `{
                 },
                 "progress": {
                     "type": "integer"
+                },
+                "restoreIndex": {
+                    "description": "if true restore index info",
+                    "type": "boolean"
                 },
                 "restored_size": {
                     "type": "integer"

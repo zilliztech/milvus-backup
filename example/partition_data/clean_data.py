@@ -13,8 +13,8 @@ if host == None:
 print(fmt.format(f"Milvus host: {host}"))
 connections.connect("default", host=host, port="19530")
 
-print(fmt.format("Drop collection `hello_milvus_pk`"))
-utility.drop_collection("hello_milvus_pk")
+print(fmt.format("Drop collection `hello_milvus_part`"))
+utility.drop_collection("hello_milvus_part")
 
-print(fmt.format(f"Drop collection `hello_milvus_pk_recover`"))
-utility.drop_collection("hello_milvus_pk_recover")
+print(fmt.format(f"Drop collection `hello_milvus_part_recover`"))
+utility.drop_collection("hello_milvus_part_recover")
