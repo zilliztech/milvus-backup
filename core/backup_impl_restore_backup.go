@@ -25,6 +25,8 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 	log.Info("receive RestoreBackupRequest",
 		zap.String("requestId", request.GetRequestId()),
 		zap.String("backupName", request.GetBackupName()),
+		zap.Bool("onlyMeta", request.GetMetaOnly()),
+		zap.Bool("restoreIndex", request.GetRestoreIndex()),
 		zap.Strings("collections", request.GetCollectionNames()),
 		zap.String("CollectionSuffix", request.GetCollectionSuffix()),
 		zap.Any("CollectionRenames", request.GetCollectionRenames()),
@@ -277,6 +279,8 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 			ToRestoreSize:         toRestoreSize,
 			RestoredSize:          0,
 			Progress:              0,
+			MetaOnly:              request.GetMetaOnly(),
+			RestoreIndex:          request.GetRestoreIndex(),
 		}
 		restoreCollectionTasks = append(restoreCollectionTasks, restoreCollectionTask)
 		task.CollectionRestoreTasks = restoreCollectionTasks
@@ -424,6 +428,18 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 		zap.String("collectionName", targetCollectionName),
 		zap.Bool("hasPartitionKey", hasPartitionKey))
 
+	if task.GetRestoreIndex() {
+		indexes := task.GetCollBackup().GetIndexInfos()
+		for _, index := range indexes {
+			idx := entity.NewGenericIndex(index.GetIndexName(), entity.IndexType(index.GetIndexType()), index.GetFieldName(), index.GetParams())
+			err := b.getMilvusClient().CreateIndex(ctx, targetCollectionName, index.GetFieldName(), idx, true)
+			if err != nil {
+				log.Warn("Fail to restore index", zap.Error(err))
+				return task, err
+			}
+		}
+	}
+
 	tempDir := "restore-temp-" + parentTaskID + SEPERATOR
 	isSameBucket := b.milvusBucketName == backupBucketName
 	// clean the temporary file
@@ -491,31 +507,13 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 			return nil
 		}
 
-		groupIds := collectGroupIdsFromSegments(partitionBackup.GetSegmentBackups())
-		if len(groupIds) == 1 && groupIds[0] == 0 {
-			// backward compatible old backup without group id
-			files, err := b.getBackupPartitionPaths(ctx, backupBucketName, backupPath, partitionBackup)
-			if err != nil {
-				log.Error("fail to get partition backup binlog files",
-					zap.Error(err),
-					zap.String("backupCollectionName", task.GetCollBackup().GetCollectionName()),
-					zap.String("targetCollectionName", targetCollectionName),
-					zap.String("partition", partitionBackup.GetPartitionName()))
-				return task, err
-			}
-			err = copyAndBulkInsert(files)
-			if err != nil {
-				log.Error("fail to (copy and) bulkinsert data",
-					zap.Error(err),
-					zap.String("backupCollectionName", task.GetCollBackup().GetCollectionName()),
-					zap.String("targetCollectionName", targetCollectionName),
-					zap.String("partition", partitionBackup.GetPartitionName()))
-				return task, err
-			}
+		if task.GetMetaOnly() {
+			task.Progress = 100
 		} else {
-			// bulk insert by segment groups
-			for _, groupId := range groupIds {
-				files, err := b.getBackupPartitionPathsWithGroupID(ctx, backupBucketName, backupPath, partitionBackup, groupId)
+			groupIds := collectGroupIdsFromSegments(partitionBackup.GetSegmentBackups())
+			if len(groupIds) == 1 && groupIds[0] == 0 {
+				// backward compatible old backup without group id
+				files, err := b.getBackupPartitionPaths(ctx, backupBucketName, backupPath, partitionBackup)
 				if err != nil {
 					log.Error("fail to get partition backup binlog files",
 						zap.Error(err),
@@ -533,13 +531,35 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 						zap.String("partition", partitionBackup.GetPartitionName()))
 					return task, err
 				}
+			} else {
+				// bulk insert by segment groups
+				for _, groupId := range groupIds {
+					files, err := b.getBackupPartitionPathsWithGroupID(ctx, backupBucketName, backupPath, partitionBackup, groupId)
+					if err != nil {
+						log.Error("fail to get partition backup binlog files",
+							zap.Error(err),
+							zap.String("backupCollectionName", task.GetCollBackup().GetCollectionName()),
+							zap.String("targetCollectionName", targetCollectionName),
+							zap.String("partition", partitionBackup.GetPartitionName()))
+						return task, err
+					}
+					err = copyAndBulkInsert(files)
+					if err != nil {
+						log.Error("fail to (copy and) bulkinsert data",
+							zap.Error(err),
+							zap.String("backupCollectionName", task.GetCollBackup().GetCollectionName()),
+							zap.String("targetCollectionName", targetCollectionName),
+							zap.String("partition", partitionBackup.GetPartitionName()))
+						return task, err
+					}
+				}
 			}
-		}
-		task.RestoredSize = task.RestoredSize + partitionBackup.GetSize()
-		if task.ToRestoreSize == 0 {
-			task.Progress = 100
-		} else {
-			task.Progress = int32(100 * task.RestoredSize / task.ToRestoreSize)
+			task.RestoredSize = task.RestoredSize + partitionBackup.GetSize()
+			if task.ToRestoreSize == 0 {
+				task.Progress = 100
+			} else {
+				task.Progress = int32(100 * task.RestoredSize / task.ToRestoreSize)
+			}
 		}
 	}
 

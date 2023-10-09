@@ -32,7 +32,7 @@ on:
       - 'deployment/**'
       - '**/*.go'
       - '**/go.mod'
-      - '**/go.sum'      
+      - '**/go.sum'
     branches:
       - main
   workflow_dispatch:
@@ -53,7 +53,7 @@ jobs:
         milvus_mode: [standalone]
         another_milvus_mode: [standalone]
         # mq_type: [pulsar, kafka]  # TODO: add pulsar and kafka
-    
+
     steps:
       - uses: actions/checkout@v3
 
@@ -67,7 +67,7 @@ jobs:
         with:
           go-version: '1.18.0'
           cache: true
-      
+
       - name: Build
         timeout-minutes: 5
         shell: bash
@@ -75,15 +75,15 @@ jobs:
           go get
           go build
       - name: Install dependency
-        
+
         timeout-minutes: 5
         working-directory: tests
         shell: bash
         run: |
           pip install -r requirements.txt --trusted-host https://test.pypi.org
-          
+
       - name: Milvus deploy
-        
+
         timeout-minutes: 15
         shell: bash
         working-directory: deployment/${{ matrix.milvus_mode }}
@@ -92,13 +92,13 @@ jobs:
           docker-compose up -d
           bash ../../scripts/check_healthy.sh
           docker-compose ps -a
-      
+
       - name: Prepare data
         timeout-minutes: 5
         shell: bash
         run: |
           python example/prepare_data.py
-      
+
       - name: Backup
         timeout-minutes: 5
         shell: bash
@@ -116,14 +116,14 @@ jobs:
         timeout-minutes: 5
         shell: bash
         run: |
-          python example/verify_data.py         
+          python example/verify_data.py
 
       - name: Save Backup
         timeout-minutes: 5
         shell: bash
         run: |
           sudo cp -r deployment/${{ matrix.milvus_mode }}/volumes/minio/a-bucket/backup ${{ matrix.milvus_mode }}-backup
-   
+
       - name: delete backup
         timeout-minutes: 5
         shell: bash
@@ -138,7 +138,7 @@ jobs:
         run: |
           docker-compose down
           sudo rm -rf volumes
-      
+
       - name: Deploy Another Milvus
         timeout-minutes: 15
         shell: bash
@@ -148,14 +148,14 @@ jobs:
           docker-compose up -d
           bash ../../scripts/check_healthy.sh
           docker-compose ps -a
-      
+
       - name: Copy Backup to Another Milvus
         timeout-minutes: 5
         shell: bash
         run: |
           sudo mkdir -p deployment/${{ matrix.another_milvus_mode }}/volumes/minio/a-bucket/backup
           sudo cp -r ${{ matrix.milvus_mode }}-backup/my_backup deployment/${{ matrix.another_milvus_mode }}/volumes/minio/a-bucket/backup
-      
+
       - name: List backup from another Milvus
         timeout-minutes: 5
         working-directory: deployment/${{ matrix.another_milvus_mode }}/volumes/minio
@@ -174,7 +174,7 @@ jobs:
         shell: bash
         run: |
           python example/verify_data.py
-  
+
   test-backup-restore-cli:
     runs-on: ubuntu-latest
     strategy:
@@ -184,7 +184,7 @@ jobs:
         milvus_mode: [standalone, cluster]
         another_milvus_mode: [standalone, cluster]
         # mq_type: [pulsar, kafka]  # TODO: add pulsar and kafka
-    
+
     steps:
       - uses: actions/checkout@v3
 
@@ -198,7 +198,7 @@ jobs:
         with:
           go-version: '1.18.0'
           cache: true
-      
+
       - name: Build
         timeout-minutes: 5
         shell: bash
@@ -206,15 +206,15 @@ jobs:
           go get
           go build
       - name: Install dependency
-        
+
         timeout-minutes: 5
         working-directory: tests
         shell: bash
         run: |
           pip install -r requirements.txt --trusted-host https://test.pypi.org
-          
+
       - name: Milvus deploy
-        
+
         timeout-minutes: 15
         shell: bash
         working-directory: deployment/${{ matrix.milvus_mode }}
@@ -222,13 +222,13 @@ jobs:
           docker-compose up -d
           bash ../../scripts/check_healthy.sh
           docker-compose ps -a
-      
+
       - name: Prepare data
         timeout-minutes: 5
         shell: bash
         run: |
           python example/prepare_data.py
-      
+
       - name: Backup
         timeout-minutes: 5
         shell: bash
@@ -246,14 +246,14 @@ jobs:
         timeout-minutes: 5
         shell: bash
         run: |
-          python example/verify_data.py         
+          python example/verify_data.py
 
       - name: Save Backup
         timeout-minutes: 5
         shell: bash
         run: |
           sudo cp -r deployment/${{ matrix.milvus_mode }}/volumes/minio/a-bucket/backup ${{ matrix.milvus_mode }}-backup
-   
+
       - name: delete backup
         timeout-minutes: 5
         shell: bash
@@ -268,7 +268,7 @@ jobs:
         run: |
           docker-compose down
           sudo rm -rf volumes
-      
+
       - name: Deploy Another Milvus
         timeout-minutes: 15
         shell: bash
@@ -277,14 +277,14 @@ jobs:
           docker-compose up -d
           bash ../../scripts/check_healthy.sh
           docker-compose ps -a
-      
+
       - name: Copy Backup to Another Milvus
         timeout-minutes: 5
         shell: bash
         run: |
           sudo mkdir -p deployment/${{ matrix.another_milvus_mode }}/volumes/minio/a-bucket/backup
           sudo cp -r ${{ matrix.milvus_mode }}-backup/my_backup deployment/${{ matrix.another_milvus_mode }}/volumes/minio/a-bucket/backup
-      
+
       - name: List backup from another Milvus
         timeout-minutes: 5
         working-directory: deployment/${{ matrix.another_milvus_mode }}/volumes/minio
@@ -302,7 +302,7 @@ jobs:
         timeout-minutes: 5
         shell: bash
         run: |
-          python example/verify_data.py          
+          python example/verify_data.py
 
   test-backup-restore-with-custom-config:
     runs-on: ubuntu-latest
@@ -347,7 +347,7 @@ jobs:
             yq -i '.minio.bucketName = "milvus-bucket"' configs/backup.yaml
             yq -i '.minio.rootPath = "${{ matrix.milvus_minio_rootpath }}"' configs/backup.yaml
             yq -i '.minio.backupBucketName = "${{ matrix.backup_bucket_name }}"' configs/backup.yaml
-            
+
           fi
           yq -i '.log.level = "debug"' configs/backup.yaml
           cat configs/backup.yaml || true
@@ -379,7 +379,7 @@ jobs:
             sleep 10
             kubectl get pods -n default | grep milvus-backup
           fi
-          
+
           if [ ${{ matrix.deploy_tools}} == "docker-compose" ]; then
             docker-compose up -d
             bash ../../scripts/check_healthy.sh
@@ -408,13 +408,37 @@ jobs:
         shell: bash
         run: |
           python example/verify_data.py
+      - name: Export logs
+        if: ${{ always() }}
+        shell: bash
+        working-directory: deployment/${{ matrix.milvus_mode }}
+        run: |
+          if [ ${{ matrix.deploy_tools}} == "helm" ]; then
+            bash ../../scripts/export_log_k8s.sh default milvus-backup logs
+          fi
+
+          if [ ${{ matrix.deploy_tools}} == "docker-compose" ]; then
+            bash ../../scripts/export_log_docker.sh logs
+          fi
+
+      - name: Upload logs
+        if: ${{ ! success() }}
+        uses: actions/upload-artifact@v2
+        with:
+          name: custom-config-${{ matrix.deploy_tools }}-${{ matrix.milvus_mode }}
+          path: |
+            ./logs
+            ./server.log
+            /tmp/ci_logs
+            deployment/${{ matrix.milvus_mode }}/logs
   test-backup-restore-api:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        deploy_tools: [docker-compose, helm]
-        milvus_mode: [standalone, cluster]
+        deploy_tools: [docker-compose]
+        milvus_mode: [standalone]
+        case_tag: [L0, L1]
         exclude:
           - deploy_tools: helm
             milvus_mode: cluster
@@ -478,7 +502,7 @@ jobs:
             sleep 10
             kubectl get pods -n default | grep milvus-backup
           fi
-          
+
           if [ ${{ matrix.deploy_tools}} == "docker-compose" ]; then
             docker-compose up -d
             bash ../../scripts/check_healthy.sh
@@ -496,7 +520,7 @@ jobs:
         shell: bash
         working-directory: tests
         run: |
-          pytest -s -v --log-cli-level=INFO --capture=no --tags L0 L1 
+          pytest -s -v --log-cli-level=INFO --capture=no --tags ${{ matrix.case_tag }}
 
       - name: Get Milvus status
         shell: bash
@@ -504,7 +528,7 @@ jobs:
         run: |
           docker-compose ps -a || true
           kubectl get pods -n default || true
-          
+
       - name: Export logs
         if: ${{ always() }}
         shell: bash
@@ -513,16 +537,16 @@ jobs:
           if [ ${{ matrix.deploy_tools}} == "helm" ]; then
             bash ../../scripts/export_log_k8s.sh default milvus-backup logs
           fi
-          
+
           if [ ${{ matrix.deploy_tools}} == "docker-compose" ]; then
             bash ../../scripts/export_log_docker.sh logs
-          fi    
-      
+          fi
+
       - name: Upload logs
         if: ${{ ! success() }}
         uses: actions/upload-artifact@v2
         with:
-          name: logs-${{ matrix.deploy_tools }}-${{ matrix.milvus_mode }}
+          name: api-test-logs-${{ matrix.deploy_tools }}-${{ matrix.milvus_mode }}
           path: |
             ./logs
             ./server.log

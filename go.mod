@@ -3,13 +3,16 @@ module github.com/zilliztech/milvus-backup
 go 1.18
 
 require (
+	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.7.0
+	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.3.0
+	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.1.0
 	github.com/aliyun/credentials-go v1.3.0
 	github.com/blang/semver/v4 v4.0.0
 	github.com/cockroachdb/errors v1.9.1
 	github.com/gin-gonic/gin v1.8.1
 	github.com/golang/protobuf v1.5.2
 	github.com/google/btree v1.0.1
-	github.com/google/uuid v1.1.2
+	github.com/google/uuid v1.3.0
 	github.com/json-iterator/go v1.1.12
 	github.com/lingdor/stackerror v0.0.0-20191119040541-976d8885ed76
 	github.com/milvus-io/milvus-sdk-go/v2 v2.3.0
@@ -38,6 +41,8 @@ require (
 
 require (
 	cloud.google.com/go v0.81.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/internal v1.3.0 // indirect
+	github.com/AzureAD/microsoft-authentication-library-for-go v1.1.1 // indirect
 	github.com/KyleBanks/depth v1.2.1 // indirect
 	github.com/alibabacloud-go/debug v0.0.0-20190504072949-9472017b5c68 // indirect
 	github.com/alibabacloud-go/tea v1.1.8 // indirect
@@ -59,6 +64,7 @@ require (
 	github.com/go-playground/validator/v10 v10.10.0 // indirect
 	github.com/goccy/go-json v0.9.7 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
+	github.com/golang-jwt/jwt/v5 v5.0.0 // indirect
 	github.com/grpc-ecosystem/go-grpc-middleware v1.3.0 // indirect
 	github.com/hashicorp/hcl v1.0.0 // indirect
 	github.com/inconshreveable/mousetrap v1.0.0 // indirect
@@ -67,6 +73,7 @@ require (
 	github.com/klauspost/cpuid v1.3.1 // indirect
 	github.com/kr/pretty v0.3.1 // indirect
 	github.com/kr/text v0.2.0 // indirect
+	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/leodido/go-urn v1.2.1 // indirect
 	github.com/magiconair/properties v1.8.5 // indirect
 	github.com/mailru/easyjson v0.7.7 // indirect
@@ -80,6 +87,7 @@ require (
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/pelletier/go-toml v1.9.3 // indirect
 	github.com/pelletier/go-toml/v2 v2.0.1 // indirect
+	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rogpeppe/go-internal v1.9.0 // indirect
 	github.com/rs/xid v1.2.1 // indirect
@@ -95,10 +103,10 @@ require (
 	go.etcd.io/etcd/api/v3 v3.5.0 // indirect
 	go.etcd.io/etcd/client/pkg/v3 v3.5.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
-	golang.org/x/crypto v0.11.0 // indirect
-	golang.org/x/net v0.12.0 // indirect
-	golang.org/x/sys v0.10.0 // indirect
-	golang.org/x/text v0.11.0 // indirect
+	golang.org/x/crypto v0.12.0 // indirect
+	golang.org/x/net v0.14.0 // indirect
+	golang.org/x/sys v0.11.0 // indirect
+	golang.org/x/text v0.12.0 // indirect
 	golang.org/x/tools v0.11.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/genproto v0.0.0-20220503193339-ba3ae3f07e29 // indirect

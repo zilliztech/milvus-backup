@@ -166,6 +166,10 @@ definitions:
         description: database and collections to backup. A json string. To support
           database. 2023.7.7
         type: string
+      force:
+        description: force backup skip flush, Should make sure data has been stored
+          into disk when using it
+        type: boolean
       requestId:
         description: uuid of request, will generate one if not set
         type: string
@@ -370,6 +374,9 @@ definitions:
         description: database and collections to restore. A json string. To support
           database. 2023.7.7
         type: string
+      metaOnly:
+        description: if true only restore meta
+        type: boolean
       path:
         description: if bucket_name and path is set. will override bucket/path in
           config.
@@ -377,6 +384,9 @@ definitions:
       requestId:
         description: uuid of request, will generate one if not set
         type: string
+      restoreIndex:
+        description: if true restore index info
+        type: boolean
     type: object
   backuppb.RestoreBackupResponse:
     properties:
@@ -428,12 +438,18 @@ definitions:
         type: string
       id:
         type: string
+      metaOnly:
+        description: if true only restore meta
+        type: boolean
       partition_restore_tasks:
         items:
           $ref: '#/definitions/backuppb.RestorePartitionTask'
         type: array
       progress:
         type: integer
+      restoreIndex:
+        description: if true restore index info
+        type: boolean
       restored_size:
         type: integer
       start_time:
