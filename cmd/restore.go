@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/spf13/cobra"
@@ -39,6 +40,7 @@ var restoreBackupCmd = &cobra.Command{
 		context := context.Background()
 		backupContext := core.CreateBackupContext(context, params)
 		log.Info("restore cmd input args", zap.Strings("args", args))
+		start := time.Now().Unix()
 		var collectionNameArr []string
 		if restoreCollectionNames == "" {
 			collectionNameArr = []string{}
@@ -84,7 +86,9 @@ var restoreBackupCmd = &cobra.Command{
 			RestoreIndex:      restoreIndex,
 		})
 
-		fmt.Println(resp.GetCode(), "\n", resp.GetMsg())
+		fmt.Println(resp.GetMsg())
+		duration := time.Now().Unix() - start
+		fmt.Println(fmt.Sprintf("duration:%d s", duration))
 	},
 }
 

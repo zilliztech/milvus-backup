@@ -8,11 +8,13 @@ import (
 
 	gomilvus "github.com/milvus-io/milvus-sdk-go/v2/client"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/storage"
 	"github.com/zilliztech/milvus-backup/core/utils"
+	"github.com/zilliztech/milvus-backup/internal/common"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
@@ -36,7 +38,7 @@ type BackupContext struct {
 	params  paramtable.BackupParams
 
 	// milvus client
-	milvusClient *gomilvus.Client
+	milvusClient *MilvusClient
 
 	// data storage client
 	storageClient    *storage.ChunkManager
@@ -50,7 +52,7 @@ type BackupContext struct {
 
 	restoreTasks map[string]*backuppb.RestoreBackupTask
 
-	//copyWorkerPool *common.WorkerPool
+	bulkinsertWorkerPool *common.WorkerPool
 }
 
 func CreateMilvusClient(ctx context.Context, params paramtable.BackupParams) (gomilvus.Client, error) {
@@ -88,35 +90,9 @@ func CreateStorageClient(ctx context.Context, params paramtable.BackupParams) (s
 }
 
 func (b *BackupContext) Start() error {
-	// start milvus go SDK client
-	//milvusClient, err := CreateMilvusClient(b.ctx, b.params)
-	//if err != nil {
-	//	log.Error("failed to initial milvus client", zap.Error(err))
-	//	return err
-	//}
-	//b.milvusClient = milvusClient
-
-	// start milvus storage client
-	//minioClient, err := CreateStorageClient(b.ctx, b.params)
-	//if err != nil {
-	//	log.Error("failed to initial storage client", zap.Error(err))
-	//	return err
-	//}
-	//b.storageClient = minioClient
-
 	b.backupTasks = sync.Map{}
 	b.backupNameIdDict = sync.Map{}
 	b.restoreTasks = make(map[string]*backuppb.RestoreBackupTask)
-
-	// init worker pool
-	//wp, err := common.NewWorkerPool(b.ctx, WORKER_NUM, RPS)
-	//if err != nil {
-	//	log.Error("failed to initial copy data woker pool", zap.Error(err))
-	//	return err
-	//}
-	//b.copyWorkerPool = wp
-	//b.copyWorkerPool.Start()
-
 	b.started = true
 	return nil
 }
@@ -141,16 +117,18 @@ func CreateBackupContext(ctx context.Context, params paramtable.BackupParams) *B
 	}
 }
 
-func (b *BackupContext) getMilvusClient() gomilvus.Client {
+func (b *BackupContext) getMilvusClient() *MilvusClient {
 	if b.milvusClient == nil {
 		milvusClient, err := CreateMilvusClient(b.ctx, b.params)
 		if err != nil {
 			log.Error("failed to initial milvus client", zap.Error(err))
 			panic(err)
 		}
-		b.milvusClient = &milvusClient
+		b.milvusClient = &MilvusClient{
+			client: milvusClient,
+		}
 	}
-	return *b.milvusClient
+	return b.milvusClient
 }
 
 func (b *BackupContext) getStorageClient() storage.ChunkManager {
@@ -163,6 +141,19 @@ func (b *BackupContext) getStorageClient() storage.ChunkManager {
 		b.storageClient = &storageClient
 	}
 	return *b.storageClient
+}
+
+func (b *BackupContext) getRestoreWorkerPool() *common.WorkerPool {
+	if b.bulkinsertWorkerPool == nil {
+		wp, err := common.NewWorkerPool(b.ctx, b.params.BackupCfg.RestoreParallelism, RPS)
+		if err != nil {
+			log.Error("failed to initial copy data woker pool", zap.Error(err))
+			panic(err)
+		}
+		b.bulkinsertWorkerPool = wp
+		b.bulkinsertWorkerPool.Start()
+	}
+	return b.bulkinsertWorkerPool
 }
 
 func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBackupRequest) *backuppb.BackupInfoResponse {
@@ -240,13 +231,23 @@ func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBack
 		resp = SimpleBackupResponse(resp)
 	}
 
-	log.Info("finish GetBackupRequest",
-		zap.String("requestId", request.GetRequestId()),
-		zap.String("backupName", request.GetBackupName()),
-		zap.String("backupId", request.GetBackupId()),
-		zap.String("bucketName", request.GetBucketName()),
-		zap.String("path", request.GetPath()),
-		zap.Any("resp", resp))
+	if log.GetLevel() == zapcore.DebugLevel {
+		log.Debug("finish GetBackupRequest",
+			zap.String("requestId", request.GetRequestId()),
+			zap.String("backupName", request.GetBackupName()),
+			zap.String("backupId", request.GetBackupId()),
+			zap.String("bucketName", request.GetBucketName()),
+			zap.String("path", request.GetPath()),
+			zap.Any("resp", resp))
+	} else {
+		log.Info("finish GetBackupRequest",
+			zap.String("requestId", request.GetRequestId()),
+			zap.String("backupName", request.GetBackupName()),
+			zap.String("backupId", request.GetBackupId()),
+			zap.String("bucketName", request.GetBucketName()),
+			zap.String("path", request.GetPath()))
+	}
+
 	return resp
 }
 
