@@ -8,6 +8,7 @@ import (
 
 	gomilvus "github.com/milvus-io/milvus-sdk-go/v2/client"
 	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
 
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
@@ -240,13 +241,23 @@ func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBack
 		resp = SimpleBackupResponse(resp)
 	}
 
-	log.Info("finish GetBackupRequest",
-		zap.String("requestId", request.GetRequestId()),
-		zap.String("backupName", request.GetBackupName()),
-		zap.String("backupId", request.GetBackupId()),
-		zap.String("bucketName", request.GetBucketName()),
-		zap.String("path", request.GetPath()),
-		zap.Any("resp", resp))
+	if log.GetLevel() == zapcore.DebugLevel {
+		log.Debug("finish GetBackupRequest",
+			zap.String("requestId", request.GetRequestId()),
+			zap.String("backupName", request.GetBackupName()),
+			zap.String("backupId", request.GetBackupId()),
+			zap.String("bucketName", request.GetBucketName()),
+			zap.String("path", request.GetPath()),
+			zap.Any("resp", resp))
+	} else {
+		log.Info("finish GetBackupRequest",
+			zap.String("requestId", request.GetRequestId()),
+			zap.String("backupName", request.GetBackupName()),
+			zap.String("backupId", request.GetBackupId()),
+			zap.String("bucketName", request.GetBucketName()),
+			zap.String("path", request.GetPath()))
+	}
+
 	return resp
 }
 
