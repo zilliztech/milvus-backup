@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"go.uber.org/atomic"
@@ -47,4 +48,31 @@ func TestRunTaskReturnErr(t *testing.T) {
 
 	wp.Done()
 	assert.NotNil(t, wp.Wait())
+}
+
+func TestWaitJobs(t *testing.T) {
+	wp, err := NewWorkerPool(context.Background(), 3, 10)
+	assert.Nil(t, err)
+
+	wp.Start()
+	start := time.Now().Unix()
+	jobs := make([]int64, 0)
+	for i := 0; i < 10; i++ {
+		job := func(ctx context.Context) error {
+			//return errors.New("some err")
+			time.Sleep(2 * time.Second)
+			//return errors.New("some err")
+			return nil
+		}
+		id := wp.SubmitWithId(job)
+		jobs = append(jobs, id)
+	}
+
+	//time.Sleep(15 * time.Second)
+	err = wp.WaitJobs(jobs)
+
+	assert.NoError(t, err)
+	duration := time.Now().Unix() - start
+	assert.True(t, duration >= 8)
+	//wp.Done()
 }
