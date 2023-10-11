@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/spf13/cobra"
@@ -34,6 +35,7 @@ var createBackupCmd = &cobra.Command{
 		context := context.Background()
 		backupContext := core.CreateBackupContext(context, params)
 
+		start := time.Now().Unix()
 		var collectionNameArr []string
 		if collectionNames == "" {
 			collectionNameArr = []string{}
@@ -60,7 +62,10 @@ var createBackupCmd = &cobra.Command{
 			DbCollections:   utils.WrapDBCollections(dbCollections),
 			Force:           force,
 		})
-		fmt.Println(resp.GetCode(), "\n", resp.GetMsg())
+
+		fmt.Println(resp.GetMsg())
+		duration := time.Now().Unix() - start
+		fmt.Println(fmt.Sprintf("duration:%d s", duration))
 	},
 }
 
