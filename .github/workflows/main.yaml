@@ -520,7 +520,7 @@ jobs:
         shell: bash
         working-directory: tests
         run: |
-          pytest -s -v --log-cli-level=INFO --capture=no --tags ${{ matrix.case_tag }}
+          pytest -s -v --tags ${{ matrix.case_tag }} -n 4
 
       - name: Get Milvus status
         shell: bash

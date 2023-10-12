@@ -242,5 +242,4 @@ class CaseLabel:
     L1 = "L1"
     L2 = "L2"
     L3 = "L3"
-    Loadbalance = "Loadbalance"  # loadbalance testcases which need to be run in multi query nodes
-    ClusterOnly = "ClusterOnly"  # For functions only suitable to cluster mode
+    Perf = "Perf"
