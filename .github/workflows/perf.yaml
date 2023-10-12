@@ -1,4 +1,4 @@
-name: Nightly Test
+name: Perf Test
 
 on:
   workflow_dispatch:
@@ -75,8 +75,6 @@ jobs:
           fi
 
           if [ ${{ matrix.deploy_tools}} == "docker-compose" ]; then
-            yq -i '.services.standalone.image= "milvusdb/milvus:${{ matrix.milvus_version }}"' docker-compose.yml
-            cat docker-compose.yml
             docker-compose up -d
             bash ../../scripts/check_healthy.sh
             docker-compose ps -a
@@ -93,7 +91,7 @@ jobs:
         shell: bash
         working-directory: tests
         run: |
-          pytest -s -v --tags L0, L1, L2, L3
+          pytest -s -v --tags Perf
 
       - name: Get Milvus status
         shell: bash
