@@ -17,7 +17,7 @@ client = MilvusBackupClient("http://localhost:8080/api/v1")
 class TestE2e(TestcaseBase):
     """ Test case of end to end"""
 
-    @pytest.mark.tags(CaseLabel.L1)
+    @pytest.mark.tags(CaseLabel.L0)
     def test_milvus_backup_default(self):
         # prepare data
         name_origin = cf.gen_unique_str(c_name_prefix)
