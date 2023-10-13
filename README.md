@@ -7,6 +7,7 @@ The Milvus-backup process has negligible impact on the performance of Milvus. Mi
 ## Compatibility
 |      Milvus      |  Milvus-backup   |
 |:----------------:|:----------------:|
+| v2.3.0 and above | v0.4.0 and above | 
 | v2.2.9 and above | v0.3.0 and above |
 | v2.2.0 to v2.2.8 | v0.1.0 to v0.2.2 |
 
