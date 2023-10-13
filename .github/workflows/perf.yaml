@@ -1,9 +1,18 @@
 name: Perf Test
 
 on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
   schedule:
-    - cron: '0 2 * * *'
+    - cron: '0 4 * * *'
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test-backup-restore-api:
@@ -91,7 +100,7 @@ jobs:
         shell: bash
         working-directory: tests
         run: |
-          pytest -s -v --tags Perf
+          pytest -s -v --tags Perf --log-cli-level=INFO --capture=no
 
       - name: Get Milvus status
         shell: bash
