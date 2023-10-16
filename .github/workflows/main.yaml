@@ -2,37 +2,9 @@ name: Test
 
 on:
   push:
-    paths:
-      - 'build/**'
-      - 'cmd/**'
-      - 'configs/**'
-      - 'core/**'
-      - 'example/**'
-      - 'internal/**'
-      - 'tests/**'
-      - '!**.md'
-      - '.github/workflows/main.yaml'
-      - 'deployment/**'
-      - '**/*.go'
-      - '**/go.mod'
-      - '**/go.sum'
     branches:
       - main
   pull_request:
-    paths:
-      - 'build/**'
-      - 'cmd/**'
-      - 'configs/**'
-      - 'core/**'
-      - 'example/**'
-      - 'internal/**'
-      - 'tests/**'
-      - '!**.md'
-      - '.github/workflows/main.yaml'
-      - 'deployment/**'
-      - '**/*.go'
-      - '**/go.mod'
-      - '**/go.sum'
     branches:
       - main
   workflow_dispatch:
