@@ -130,7 +130,7 @@ func initFileLog(cfg *FileLogConfig) (*lumberjack.Logger, error) {
 }
 
 func newStdLogger() (*zap.Logger, *ZapProperties) {
-	conf := &Config{Level: "debug", File: FileLogConfig{}}
+	conf := &Config{Level: "info", File: FileLogConfig{}}
 	lg, r, _ := InitLogger(conf, zap.AddCallerSkip(1))
 	return lg, r
 }

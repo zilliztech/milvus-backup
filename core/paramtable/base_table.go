@@ -370,7 +370,7 @@ func (gp *BaseTable) InitLogCfg() {
 	gp.Log = log.Config{}
 	format := gp.LoadWithDefault("log.format", "text")
 	gp.Log.Format = format
-	level := gp.LoadWithDefault("log.level", "debug")
+	level := gp.LoadWithDefault("log.level", "info")
 	gp.Log.Level = level
 	gp.Log.Console = gp.ParseBool("log.console", false)
 	gp.Log.File.Filename = gp.LoadWithDefault("log.file.rootPath", "backup.log")
