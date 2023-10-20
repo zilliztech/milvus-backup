@@ -93,7 +93,7 @@ jobs:
         shell: bash
         working-directory: tests
         run: |
-          pytest -s -v --tags L0, L1, L2, L3
+          pytest -s -v --tags L0 L1 L2 L3
 
       - name: Get Milvus status
         shell: bash

@@ -43,3 +43,5 @@ minio==7.1.5
 
 # for benchmark
 h5py==3.1.0
+pytest-benchmark==4.0.0
+
