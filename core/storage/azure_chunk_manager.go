@@ -37,18 +37,18 @@ import (
 
 // AzureChunkManager is responsible for read and write data stored in minio.
 type AzureChunkManager struct {
-	client *AzureObjectStorage
+	aos *AzureObjectStorage
 
 	//cli *azblob.Client
 	//	ctx        context.Context
-	bucketName string
-	rootPath   string
+	//bucketName string
+	//rootPath   string
 }
 
 var _ ChunkManager = (*AzureChunkManager)(nil)
 
 func NewAzureChunkManager(ctx context.Context, c *config) (*AzureChunkManager, error) {
-	client, err := newAzureObjectStorageWithConfig(ctx, c)
+	aos, err := newAzureObjectStorageWithConfig(ctx, c)
 	if err != nil {
 		return nil, err
 	}
@@ -58,19 +58,19 @@ func NewAzureChunkManager(ctx context.Context, c *config) (*AzureChunkManager, e
 	//	return nil, err
 	//}
 	mcm := &AzureChunkManager{
-		client: client,
+		aos: aos,
 		//cli:        cli,
-		bucketName: c.bucketName,
-		rootPath:   strings.TrimLeft(c.rootPath, "/"),
+		//bucketName: c.bucketName,
+		//rootPath:   strings.TrimLeft(c.rootPath, "/"),
 	}
-	log.Info("Azure chunk manager init success.", zap.String("bucketname", c.bucketName), zap.String("root", mcm.RootPath()))
+	log.Info("Azure chunk manager init success.")
 	return mcm, nil
 }
 
 // RootPath returns minio root path.
-func (mcm *AzureChunkManager) RootPath() string {
-	return mcm.rootPath
-}
+//func (mcm *AzureChunkManager) RootPath() string {
+//	return mcm.rootPath
+//}
 
 func (mcm *AzureChunkManager) Copy(ctx context.Context, fromBucketName string, toBucketName string, fromPath string, toPath string) error {
 	objectkeys, _, err := mcm.ListWithPrefix(ctx, fromBucketName, fromPath, true)
@@ -80,7 +80,7 @@ func (mcm *AzureChunkManager) Copy(ctx context.Context, fromBucketName string, t
 	}
 	for _, objectkey := range objectkeys {
 		dstObjectKey := strings.Replace(objectkey, fromPath, toPath, 1)
-		err := mcm.client.CopyObject(ctx, fromBucketName, toBucketName, objectkey, dstObjectKey)
+		err := mcm.aos.CopyObject(ctx, fromBucketName, toBucketName, objectkey, dstObjectKey)
 		if err != nil {
 			log.Error("copyObject error", zap.String("srcObjectKey", objectkey), zap.String("dstObjectKey", dstObjectKey), zap.Error(err))
 			return err
@@ -148,12 +148,12 @@ func (mcm *AzureChunkManager) MultiWrite(ctx context.Context, bucketName string,
 
 // Exist checks whether chunk is saved to minio storage.
 func (mcm *AzureChunkManager) Exist(ctx context.Context, bucketName string, filePath string) (bool, error) {
-	_, err := mcm.getObjectSize(ctx, mcm.bucketName, filePath)
+	_, err := mcm.getObjectSize(ctx, bucketName, filePath)
 	if err != nil {
 		if IsErrNoSuchKey(err) {
 			return false, nil
 		}
-		log.Warn("failed to stat object", zap.String("bucket", mcm.bucketName), zap.String("path", filePath), zap.Error(err))
+		log.Warn("failed to stat object", zap.String("bucket", bucketName), zap.String("path", filePath), zap.Error(err))
 		return false, err
 	}
 	return true, nil
@@ -163,7 +163,7 @@ func (mcm *AzureChunkManager) Exist(ctx context.Context, bucketName string, file
 func (mcm *AzureChunkManager) Read(ctx context.Context, bucketName string, filePath string) ([]byte, error) {
 	object, err := mcm.getObject(ctx, bucketName, filePath, int64(0), int64(0))
 	if err != nil {
-		log.Warn("failed to get object", zap.String("bucket", mcm.bucketName), zap.String("path", filePath), zap.Error(err))
+		log.Warn("failed to get object", zap.String("bucket", bucketName), zap.String("path", filePath), zap.Error(err))
 		return nil, err
 	}
 	defer object.Close()
@@ -179,7 +179,7 @@ func (mcm *AzureChunkManager) Read(ctx context.Context, bucketName string, fileP
 		log.Warn("failed to read object", zap.String("path", filePath), zap.Error(err))
 		return nil, err
 	}
-	size, err := mcm.getObjectSize(ctx, mcm.bucketName, filePath)
+	size, err := mcm.getObjectSize(ctx, bucketName, filePath)
 	if err != nil {
 		log.Warn("failed to stat object", zap.String("bucket", bucketName), zap.String("path", filePath), zap.Error(err))
 		return nil, err
@@ -395,7 +395,7 @@ func (mcm *AzureChunkManager) getObject(ctx context.Context, bucketName, objectN
 	//}
 	//return resp.Body, nil
 
-	reader, err := mcm.client.GetObject(ctx, bucketName, objectName, offset, size)
+	reader, err := mcm.aos.GetObject(ctx, bucketName, objectName, offset, size)
 	switch err := err.(type) {
 	case *azcore.ResponseError:
 		if err.ErrorCode == string(bloberror.BlobNotFound) {
@@ -410,12 +410,12 @@ func (mcm *AzureChunkManager) getObject(ctx context.Context, bucketName, objectN
 }
 
 func (mcm *AzureChunkManager) putObject(ctx context.Context, bucketName, objectName string, reader io.Reader, objectSize int64) error {
-	err := mcm.client.PutObject(ctx, bucketName, objectName, reader, objectSize)
+	err := mcm.aos.PutObject(ctx, bucketName, objectName, reader, objectSize)
 	return err
 }
 
 func (mcm *AzureChunkManager) getObjectSize(ctx context.Context, bucketName, objectName string) (int64, error) {
-	info, err := mcm.client.StatObject(ctx, bucketName, objectName)
+	info, err := mcm.aos.StatObject(ctx, bucketName, objectName)
 
 	switch err := err.(type) {
 	case *azcore.ResponseError:
@@ -432,11 +432,11 @@ func (mcm *AzureChunkManager) getObjectSize(ctx context.Context, bucketName, obj
 }
 
 func (mcm *AzureChunkManager) listObjects(ctx context.Context, bucketName string, prefix string, recursive bool) (map[string]int64, error) {
-	res, err := mcm.client.ListObjects(ctx, bucketName, prefix, recursive)
+	res, err := mcm.aos.ListObjects(ctx, bucketName, prefix, recursive)
 	return res, err
 }
 
 func (mcm *AzureChunkManager) removeObject(ctx context.Context, bucketName, objectName string) error {
-	err := mcm.client.RemoveObject(ctx, bucketName, objectName)
+	err := mcm.aos.RemoveObject(ctx, bucketName, objectName)
 	return err
 }

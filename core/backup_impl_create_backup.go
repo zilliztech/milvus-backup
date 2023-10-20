@@ -521,6 +521,9 @@ func (b *BackupContext) backupCollection(ctx context.Context, backupInfo *backup
 	}
 
 	err = b.copySegments(ctx, segmentBackupInfos, BackupBinlogDirPath(b.backupRootPath, backupInfo.GetName()))
+	if err != nil {
+		return err
+	}
 	b.refreshBackupCache(backupInfo)
 
 	collectionBackup.Size = collectionBackupSize

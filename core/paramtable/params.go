@@ -165,8 +165,10 @@ type MinioConfig struct {
 	CloudProvider   string
 	IAMEndpoint     string
 
-	BackupBucketName string
-	BackupRootPath   string
+	BackupAccessKeyID     string
+	BackupSecretAccessKey string
+	BackupBucketName      string
+	BackupRootPath        string
 
 	StorageType string
 }
@@ -186,6 +188,8 @@ func (p *MinioConfig) init(base *BaseTable) {
 	p.initCloudProvider()
 	p.initIAMEndpoint()
 
+	p.initBackupAccessKeyID()
+	p.initBackupSecretAccessKey()
 	p.initBackupBucketName()
 	p.initBackupRootPath()
 }
@@ -244,6 +248,16 @@ func (p *MinioConfig) initCloudProvider() {
 func (p *MinioConfig) initIAMEndpoint() {
 	iamEndpoint := p.Base.LoadWithDefault("minio.iamEndpoint", DefaultMinioIAMEndpoint)
 	p.IAMEndpoint = iamEndpoint
+}
+
+func (p *MinioConfig) initBackupAccessKeyID() {
+	keyID := p.Base.LoadWithDefault("minio.backupAccessKeyID", DefaultMinioAccessKey)
+	p.BackupAccessKeyID = keyID
+}
+
+func (p *MinioConfig) initBackupSecretAccessKey() {
+	key := p.Base.LoadWithDefault("minio.backupSecretAccessKey", DefaultMinioSecretAccessKey)
+	p.BackupSecretAccessKey = key
 }
 
 func (p *MinioConfig) initBackupBucketName() {
