@@ -16,7 +16,8 @@ type FileReader interface {
 type ChunkManager interface {
 	// RootPath returns current root path.
 	// Useless in backup tool
-	RootPath() string
+	// RootPath() string
+
 	// Path returns path of @filePath.
 	Path(ctx context.Context, bucketName string, filePath string) (string, error)
 	// Size returns path of @filePath.

@@ -11,9 +11,14 @@ type config struct {
 	rootPath          string
 	useIAM            bool
 	iamEndpoint       string
-	
+
 	cloudProvider string
 	storageEngine string
+
+	backupAccessKeyID       string
+	backupSecretAccessKeyID string
+	backupBucketName        string
+	backupRootPath          string
 }
 
 func newDefaultConfig() *config {

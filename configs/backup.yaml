@@ -34,6 +34,10 @@ minio:
   bucketName: "a-bucket" # Milvus Bucket name in MinIO/S3, make it the same as your milvus instance
   rootPath: "files" # Milvus storage root path in MinIO/S3, make it the same as your milvus instance
 
+  # only for azure
+  backupAccessKeyID: minioadmin  # accessKeyID of MinIO/S3
+  backupSecretAccessKey: minioadmin # MinIO/S3 encryption string
+  
   backupBucketName: "a-bucket" # Bucket name to store backup data. Backup data will store to backupBucketName/backupRootPath
   backupRootPath: "backup" # Rootpath to store backup data. Backup data will store to backupBucketName/backupRootPath
 

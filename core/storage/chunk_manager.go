@@ -51,12 +51,18 @@ func newAzureChunkManagerWithParams(ctx context.Context, params paramtable.Backu
 	c.accessKeyID = params.MinioCfg.AccessKeyID
 	c.secretAccessKeyID = params.MinioCfg.SecretAccessKey
 	c.useSSL = params.MinioCfg.UseSSL
-	c.bucketName = params.MinioCfg.BackupBucketName
+	c.bucketName = params.MinioCfg.BucketName
 	c.rootPath = params.MinioCfg.RootPath
 	c.cloudProvider = params.MinioCfg.CloudProvider
 	c.storageEngine = params.MinioCfg.StorageType
 	c.useIAM = params.MinioCfg.UseIAM
 	c.iamEndpoint = params.MinioCfg.IAMEndpoint
 	c.createBucket = true
+
+	c.backupAccessKeyID = params.MinioCfg.BackupAccessKeyID
+	c.backupSecretAccessKeyID = params.MinioCfg.BackupSecretAccessKey
+	c.backupBucketName = params.MinioCfg.BackupBucketName
+	c.backupRootPath = params.MinioCfg.BackupRootPath
+
 	return NewAzureChunkManager(ctx, c)
 }
