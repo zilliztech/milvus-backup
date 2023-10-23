@@ -449,7 +449,7 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 		}
 	}
 
-	tempDir := "restore-temp-" + parentTaskID + SEPERATOR
+	tempDir := fmt.Sprintf("restore-temp-%s-%s-%s%s", parentTaskID, task.TargetDbName, task.TargetCollectionName, SEPERATOR)
 	isSameBucket := b.milvusBucketName == backupBucketName
 	// clean the temporary file
 	defer func() {

@@ -1123,7 +1123,6 @@ func (b *BackupContext) readSegmentInfo(ctx context.Context, collectionID int64,
 	var rootPath string
 
 	if b.params.MinioCfg.RootPath != "" {
-		log.Debug("params.MinioCfg.RootPath", zap.String("params.MinioCfg.RootPath", b.params.MinioCfg.RootPath))
 		rootPath = fmt.Sprintf("%s/", b.params.MinioCfg.RootPath)
 	} else {
 		rootPath = ""

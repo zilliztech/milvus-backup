@@ -21,17 +21,22 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/blob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
 
 	"github.com/zilliztech/milvus-backup/internal/util/retry"
 )
+
+const sasSignMinute = 60
 
 type innerAzureClient struct {
 	client *service.Client
@@ -195,7 +200,44 @@ func (aos *AzureObjectStorage) RemoveObject(ctx context.Context, bucketName, obj
 }
 
 func (aos *AzureObjectStorage) CopyObject(ctx context.Context, fromBucketName, toBucketName, fromPath, toPath string) error {
-	fromPathUrl := fmt.Sprintf("https://%s.blob.core.windows.net/%s/%s", aos.clients[fromBucketName].accessKeyID, fromBucketName, fromPath)
-	_, err := aos.clients[toBucketName].client.NewContainerClient(toBucketName).NewBlockBlobClient(toPath).StartCopyFromURL(ctx, fromPathUrl, nil)
-	return err
+	if aos.clients[fromBucketName].accessKeyID == aos.clients[toBucketName].accessKeyID {
+		fromPathUrl := fmt.Sprintf("https://%s.blob.core.windows.net/%s/%s", aos.clients[fromBucketName].accessKeyID, fromBucketName, fromPath)
+		_, err := aos.clients[toBucketName].client.NewContainerClient(toBucketName).NewBlockBlobClient(toPath).StartCopyFromURL(ctx, fromPathUrl, nil)
+		return err
+	} else {
+		srcSAS, err := aos.getSAS(fromBucketName)
+		if err != nil {
+			return err
+		}
+		fromPathUrl := fmt.Sprintf("https://%s.blob.core.windows.net/%s/%s?%s", aos.clients[fromBucketName].accessKeyID, fromBucketName, fromPath, srcSAS.Encode())
+		_, err = aos.clients[toBucketName].client.NewContainerClient(toBucketName).NewBlockBlobClient(toPath).StartCopyFromURL(ctx, fromPathUrl, nil)
+		return err
+	}
+}
+
+func (aos *AzureObjectStorage) getSAS(bucket string) (*sas.QueryParameters, error) {
+	srcSvcCli := aos.clients[bucket].client
+	// Set current and past time and create key
+	now := time.Now().UTC().Add(-10 * time.Second)
+	expiry := now.Add(48 * time.Hour)
+	info := service.KeyInfo{
+		Start:  to.Ptr(now.UTC().Format(sas.TimeFormat)),
+		Expiry: to.Ptr(expiry.UTC().Format(sas.TimeFormat)),
+	}
+	udc, err := srcSvcCli.GetUserDelegationCredential(context.Background(), info, nil)
+	if err != nil {
+		return nil, err
+	}
+	// Create Blob Signature Values with desired permissions and sign with user delegation credential
+	sasQueryParams, err := sas.BlobSignatureValues{
+		Protocol:      sas.ProtocolHTTPS,
+		StartTime:     time.Now().UTC().Add(time.Second * -10),
+		ExpiryTime:    time.Now().UTC().Add(time.Duration(sasSignMinute * time.Minute)),
+		Permissions:   to.Ptr(sas.ContainerPermissions{Read: true, List: true}).String(),
+		ContainerName: bucket,
+	}.SignWithUserDelegation(udc)
+	if err != nil {
+		return nil, err
+	}
+	return &sasQueryParams, nil
 }

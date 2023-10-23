@@ -148,7 +148,7 @@ func (mcm *AzureChunkManager) MultiWrite(ctx context.Context, bucketName string,
 
 // Exist checks whether chunk is saved to minio storage.
 func (mcm *AzureChunkManager) Exist(ctx context.Context, bucketName string, filePath string) (bool, error) {
-	_, err := mcm.getObjectSize(ctx, bucketName, filePath)
+	objs, err := mcm.aos.ListObjects(ctx, bucketName, filePath, true)
 	if err != nil {
 		if IsErrNoSuchKey(err) {
 			return false, nil
@@ -156,7 +156,11 @@ func (mcm *AzureChunkManager) Exist(ctx context.Context, bucketName string, file
 		log.Warn("failed to stat object", zap.String("bucket", bucketName), zap.String("path", filePath), zap.Error(err))
 		return false, err
 	}
-	return true, nil
+	if len(objs) > 0 {
+		return true, nil
+	} else {
+		return false, nil
+	}
 }
 
 // Read reads the minio storage data if exists.
@@ -313,7 +317,7 @@ func (mcm *AzureChunkManager) RemoveWithPrefix(ctx context.Context, bucketName s
 
 // ListWithPrefix returns objects with provided prefix.
 func (mcm *AzureChunkManager) ListWithPrefix(ctx context.Context, bucketName string, prefix string, recursive bool) ([]string, []int64, error) {
-	objects, err := mcm.listObjects(ctx, bucketName, prefix, false)
+	objects, err := mcm.listObjects(ctx, bucketName, prefix, true)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -327,9 +331,9 @@ func (mcm *AzureChunkManager) ListWithPrefix(ctx context.Context, bucketName str
 		return objectsKeys, sizes, nil
 	} else {
 		var objectsKeys []string
-		var sizes []int64
+		sizesDict := make(map[string]int64, 0)
 		objectsKeysDict := make(map[string]bool, 0)
-		for object, _ := range objects {
+		for object, size := range objects {
 			keyWithoutPrefix := strings.Replace(object, prefix, "", 1)
 			if strings.Contains(keyWithoutPrefix, "/") {
 				var key string
@@ -340,52 +344,29 @@ func (mcm *AzureChunkManager) ListWithPrefix(ctx context.Context, bucketName str
 				}
 				if _, exist := objectsKeysDict[key]; !exist {
 					objectsKeys = append(objectsKeys, key)
-					sizes = append(sizes, 0)
+					sizesDict[key] = size
 					objectsKeysDict[key] = true
+				} else {
+					sizesDict[key] = size + sizesDict[key]
 				}
 			} else {
 				key := prefix + keyWithoutPrefix
 				if _, exist := objectsKeysDict[key]; !exist {
 					objectsKeys = append(objectsKeys, key)
-					sizes = append(sizes, 0)
+					sizesDict[key] = size
 					objectsKeysDict[key] = true
+				} else {
+					sizesDict[key] = size + sizesDict[key]
 				}
 			}
 		}
+		var sizes []int64
+		for _, objectKey := range objectsKeys {
+			sizes = append(sizes, sizesDict[objectKey])
+		}
+
 		return objectsKeys, sizes, nil
 	}
-
-	//var objectsKeys []string
-	//var sizes []int64
-	//tasks := list.New()
-	//tasks.PushBack(prefix)
-	//for tasks.Len() > 0 {
-	//	e := tasks.Front()
-	//	pre := e.Value.(string)
-	//	tasks.Remove(e)
-	//
-	//	// TODO add concurrent call if performance matters
-	//	// only return current level per call
-	//	objects, err := mcm.listObjects(ctx, bucketName, pre, false)
-	//	if err != nil {
-	//		return nil, nil, err
-	//	}
-	//
-	//	for object, contentLength := range objects {
-	//		// with tailing "/", object is a "directory"
-	//		if strings.HasSuffix(object, "/") && recursive {
-	//			// enqueue when recursive is true
-	//			if object != pre {
-	//				tasks.PushBack(object)
-	//			}
-	//			continue
-	//		}
-	//		objectsKeys = append(objectsKeys, object)
-	//		sizes = append(sizes, contentLength)
-	//	}
-	//}
-	//
-	//return objectsKeys, sizes, nil
 }
 
 func (mcm *AzureChunkManager) getObject(ctx context.Context, bucketName, objectName string, offset int64, size int64) (FileReader, error) {
