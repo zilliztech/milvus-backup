@@ -521,6 +521,9 @@ func (b *BackupContext) backupCollection(ctx context.Context, backupInfo *backup
 	}
 
 	err = b.copySegments(ctx, segmentBackupInfos, BackupBinlogDirPath(b.backupRootPath, backupInfo.GetName()))
+	if err != nil {
+		return err
+	}
 	b.refreshBackupCache(backupInfo)
 
 	collectionBackup.Size = collectionBackupSize
@@ -1120,7 +1123,6 @@ func (b *BackupContext) readSegmentInfo(ctx context.Context, collectionID int64,
 	var rootPath string
 
 	if b.params.MinioCfg.RootPath != "" {
-		log.Debug("params.MinioCfg.RootPath", zap.String("params.MinioCfg.RootPath", b.params.MinioCfg.RootPath))
 		rootPath = fmt.Sprintf("%s/", b.params.MinioCfg.RootPath)
 	} else {
 		rootPath = ""
