@@ -481,6 +481,11 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 					zap.Error(err))
 				return err
 			}
+			log.Info("finish restore partition",
+				zap.String("backupCollectionName", task.GetCollBackup().GetCollectionName()),
+				zap.String("targetDBName", targetDBName),
+				zap.String("targetCollectionName", targetCollectionName),
+				zap.String("partition", partitionBackup2.GetPartitionName()))
 			return err
 		}
 		jobId := b.getRestoreWorkerPool().SubmitWithId(job)
