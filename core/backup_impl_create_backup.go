@@ -242,6 +242,7 @@ func (b *BackupContext) backupCollection(ctx context.Context, backupInfo *backup
 			IndexParams:    utils.MapToKVPair(field.IndexParams),
 			IsDynamic:      field.IsDynamic,
 			IsPartitionKey: field.IsPartitionKey,
+			ElementType:    backuppb.DataType(field.ElementType),
 		})
 	}
 	schema := &backuppb.CollectionSchema{

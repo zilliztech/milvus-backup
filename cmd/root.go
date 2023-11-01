@@ -5,6 +5,8 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+
+	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
 var (
@@ -28,4 +30,6 @@ func Execute() {
 
 func SetVersionInfo(version, commit, date string) {
 	rootCmd.Version = fmt.Sprintf("%s (Built on %s from Git SHA %s)", version, date, commit)
+	println(rootCmd.Version)
+	log.Info(fmt.Sprintf("Milvus backup version: %s", rootCmd.Version))
 }
