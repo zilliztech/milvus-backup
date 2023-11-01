@@ -736,7 +736,7 @@ func (b *BackupContext) copySegments(ctx context.Context, segments []*backuppb.S
 							zap.String("to", targetPath))
 						return err
 					} else {
-						log.Info("Successfully copy file",
+						log.Debug("Successfully copy file",
 							zap.String("from", binlog.GetLogPath()),
 							zap.String("to", targetPath))
 					}
