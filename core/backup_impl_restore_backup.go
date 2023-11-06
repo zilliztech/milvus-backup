@@ -391,6 +391,7 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 			IndexParams:    utils.KvPairsMap(field.GetIndexParams()),
 			IsDynamic:      field.GetIsDynamic(),
 			IsPartitionKey: field.GetIsPartitionKey(),
+			ElementType:    entity.FieldType(field.GetElementType()),
 		})
 		if field.GetIsPartitionKey() {
 			hasPartitionKey = true
