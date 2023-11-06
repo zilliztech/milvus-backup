@@ -453,7 +453,7 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 	isSameBucket := b.milvusBucketName == backupBucketName
 	// clean the temporary file
 	defer func() {
-		if !isSameBucket {
+		if !isSameBucket && !b.params.BackupCfg.KeepTempFiles {
 			log.Info("Delete temporary file", zap.String("dir", tempDir))
 			err := b.getStorageClient().RemoveWithPrefix(ctx, b.milvusBucketName, tempDir)
 			if err != nil {
@@ -527,6 +527,7 @@ func (b *BackupContext) restorePartition(ctx context.Context, targetDBName, targ
 				if file == "" {
 					realFiles[i] = file
 				} else {
+					log.Debug("Copy temporary restore file", zap.String("from", file), zap.String("to", tempDir+file))
 					err := b.getStorageClient().Copy(ctx, backupBucketName, b.milvusBucketName, file, tempDir+file)
 					if err != nil {
 						log.Error("fail to copy backup date from backup bucket to restore target milvus bucket", zap.Error(err))
