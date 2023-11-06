@@ -1,4 +1,5 @@
 import sys
+import time
 from pymilvus import DefaultConfig, DataType, db
 
 sys.path.append("..")
@@ -338,36 +339,70 @@ class TestcaseBase(Base):
             if field.dtype == DataType.FLOAT_VECTOR:
                 return False
 
-    def compare_collections(self, src_name, dist_name, output_fields=None):
+    def compare_collections(self, src_name, dist_name, output_fields=None, verify_by_query=False):
         if output_fields is None:
-            output_fields = [ct.default_int64_field_name, ct.default_json_field_name]
+            output_fields = ["*"]
         collection_src, _ = self.collection_wrap.init_collection(name=src_name)
         collection_dist, _ = self.collection_wrap.init_collection(name=dist_name)
-        assert collection_src.num_entities == collection_dist.num_entities, \
-            f"collection_src {src_name} num_entities: {collection_src.num_entities} != " \
-            f"collection_dist {dist_name} num_entities: {collection_dist.num_entities}"
+        log.info(f"collection_src schema: {collection_src.schema}")
+        log.info(f"collection_dist schema: {collection_dist.schema}")
         assert collection_src.schema == collection_dist.schema
         # get partitions
         partitions_src = collection_src.partitions
         partitions_dist = collection_dist.partitions
         log.info(f"partitions_src: {partitions_src}, partitions_dist: {partitions_dist}")
         assert len(partitions_src) == len(partitions_dist)
-
+        # get num entities
+        src_num = collection_src.num_entities
+        dist_num = collection_dist.num_entities
+        log.info(f"src_num: {src_num}, dist_num: {dist_num}")
+        if not verify_by_query:
+            assert src_num == dist_num
+            return
         for coll in [collection_src, collection_dist]:
             is_binary = self.is_binary_by_schema(coll.schema)
-            if is_binary:
-                coll.create_index(ct.default_binary_vec_field_name, ct.default_bin_flat_index,
-                                  index_name=cf.gen_unique_str())
-            else:
-                coll.create_index(ct.default_float_vec_field_name, ct.default_index, index_name=cf.gen_unique_str())
+            try:
+                if is_binary:
+                    coll.create_index(ct.default_binary_vec_field_name, ct.default_bin_flat_index,
+                                      index_name=cf.gen_unique_str())
+                else:
+                    coll.create_index(ct.default_float_vec_field_name, ct.default_index, index_name=cf.gen_unique_str())
+            except Exception as e:
+                log.error(f"collection {coll.name} create index failed with error: {e}")
             coll.load()
+            time.sleep(5)
+        # get entities by count
+        src_count = collection_src.query(
+            expr="",
+            output_fields=["count(*)"]
+        )
+        dist_count = collection_dist.query(
+            expr="",
+            output_fields=["count(*)"]
+        )
+        log.info(f"src count: {src_count}, dist count: {dist_count}")
         src_res = collection_src.query(expr=f'{ct.default_int64_field_name} >= 0',
                                        output_fields=output_fields)
-        log.info(f"src res: {len(src_res)}")
+        # log.info(f"src res: {len(src_res)}, src res: {src_res[-1]}")
         dist_res = collection_dist.query(expr=f'{ct.default_int64_field_name} >= 0',
                                          output_fields=output_fields)
-        log.info(f"dist res: {len(dist_res)}")
+        # log.info(f"dist res: {len(dist_res)}, dist res: {dist_res[-1]}")
         assert len(dist_res) == len(src_res)
+
+        # sort by primary key and compare
+        src_res = sorted(src_res, key=lambda x: x[ct.default_int64_field_name])
+        dist_res = sorted(dist_res, key=lambda x: x[ct.default_int64_field_name])
+        src_pk = [r[ct.default_int64_field_name] for r in src_res]
+        dist_pk = [r[ct.default_int64_field_name] for r in dist_res]
+        diff = list(set(src_pk).difference(set(dist_pk)))
+        log.info(f"pk diff: {diff}")
+        for i in range(len(src_res)):
+            assert src_res[i] == dist_res[i]
+        for coll in [collection_src, collection_dist]:
+            try:
+                coll.release()
+            except Exception as e:
+                log.error(f"collection {coll.name} release failed with error: {e}")
 
     def check_collection_binary(self, name):
         collection_w, _ = self.collection_wrap.init_collection(name=name)

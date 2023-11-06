@@ -34,6 +34,7 @@ default_float_field_name = "float"
 default_double_field_name = "double"
 default_string_field_name = "varchar"
 default_json_field_name = "json"
+default_array_field_name = "array"
 default_float_vec_field_name = "float_vector"
 another_float_vec_field_name = "float_vector1"
 default_binary_vec_field_name = "binary_vector"
@@ -73,8 +74,8 @@ err_code = "err_code"
 err_msg = "err_msg"
 in_cluster_env = "IN_CLUSTER"
 
-default_flat_index = {"index_type": "FLAT", "params": {}, "metric_type": "L2"}
-default_bin_flat_index = {"index_type": "BIN_FLAT", "params": {}, "metric_type": "JACCARD"}
+default_flat_index = {"index_type": "IVF_SQ8", "metric_type": "COSINE", "params": {"nlist": 64}}
+default_bin_flat_index = {"index_type": "BIN_IVF_FLAT", "params": {"nlist": 128}, "metric_type": "JACCARD"}
 
 """" List of parameters used to pass """
 get_invalid_strs = [

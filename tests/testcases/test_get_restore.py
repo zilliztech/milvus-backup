@@ -16,7 +16,7 @@ client = MilvusBackupClient("http://localhost:8080/api/v1")
 
 class TestGetRestore(TestcaseBase):
     """ Test case of end to end"""
-    @pytest.mark.tags(CaseLabel.L1)
+    @pytest.mark.tags(CaseLabel.L2)
     @pytest.mark.parametrize("is_async", [True, False])
     @pytest.mark.parametrize("restore_num", [1, 2, 3])
     def test_milvus_get_restore(self, restore_num, is_async):

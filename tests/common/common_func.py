@@ -106,6 +106,11 @@ def gen_json_field(name=ct.default_json_field_name, is_primary=False, descriptio
                                                                 description=description, is_primary=is_primary)
     return json_field
 
+def gen_array_field(name=ct.default_array_field_name, is_primary=False, element_type=DataType.VARCHAR ,description=ct.default_desc):
+    array_field, _ = ApiFieldSchemaWrapper().init_field_schema(name=name, dtype=DataType.ARRAY,
+                                                                description=description, is_primary=is_primary, element_type=element_type, max_capacity=2000, max_length=1500)
+    return array_field
+
 
 def gen_float_vec_field(name=ct.default_float_vec_field_name, is_primary=False, dim=ct.default_dim,
                         description=ct.default_desc):
