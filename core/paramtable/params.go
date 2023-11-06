@@ -37,6 +37,7 @@ type BackupConfig struct {
 	BackupParallelism         int
 	RestoreParallelism        int
 	BackupCopyDataParallelism int
+	KeepTempFiles             bool
 }
 
 func (p *BackupConfig) init(base *BaseTable) {
@@ -46,6 +47,7 @@ func (p *BackupConfig) init(base *BaseTable) {
 	p.initBackupParallelism()
 	p.initRestoreParallelism()
 	p.initBackupCopyDataParallelism()
+	p.initKeepTempFiles()
 }
 
 func (p *BackupConfig) initMaxSegmentGroupSize() {
@@ -69,6 +71,11 @@ func (p *BackupConfig) initRestoreParallelism() {
 func (p *BackupConfig) initBackupCopyDataParallelism() {
 	size := p.Base.ParseIntWithDefault("backup.copydata.parallelism", 10)
 	p.BackupCopyDataParallelism = size
+}
+
+func (p *BackupConfig) initKeepTempFiles() {
+	keepTempFiles := p.Base.LoadWithDefault("backup.keepTempFiles", "false")
+	p.KeepTempFiles, _ = strconv.ParseBool(keepTempFiles)
 }
 
 type MilvusConfig struct {
