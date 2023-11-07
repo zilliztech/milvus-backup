@@ -94,6 +94,8 @@ func (b *BackupContext) Start() error {
 	b.backupNameIdDict = sync.Map{}
 	b.restoreTasks = make(map[string]*backuppb.RestoreBackupTask)
 	b.started = true
+	log.Info(fmt.Sprintf("%+v", b.params.BackupCfg))
+	log.Info(fmt.Sprintf("%+v", b.params.HTTPCfg))
 	return nil
 }
 

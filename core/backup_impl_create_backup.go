@@ -434,6 +434,8 @@ func (b *BackupContext) backupCollection(ctx context.Context, backupInfo *backup
 	log.Info("Finished fill segment",
 		zap.String("collectionName", collectionBackup.GetCollectionName()))
 
+	log.Info("reading SegmentInfos from storage, this may cost several minutes if data is large",
+		zap.String("collectionName", collectionBackup.GetCollectionName()))
 	segmentBackupInfos := make([]*backuppb.SegmentBackupInfo, 0)
 	partSegInfoMap := make(map[int64][]*backuppb.SegmentBackupInfo)
 	mu := sync.Mutex{}
@@ -727,7 +729,7 @@ func (b *BackupContext) copySegments(ctx context.Context, segments []*backuppb.S
 						log.Error("Binlog file not exist",
 							zap.Error(err),
 							zap.String("file", binlog.GetLogPath()))
-						return err
+						return errors.New("Binlog file not exist " + binlog.GetLogPath())
 					}
 					err = b.getStorageClient().Copy(ctx, b.milvusBucketName, b.backupBucketName, binlog.GetLogPath(), targetPath)
 					if err != nil {
