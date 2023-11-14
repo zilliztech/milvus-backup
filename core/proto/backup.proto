@@ -364,6 +364,9 @@ enum DataType {
   String = 20;
   VarChar = 21; // variable-length strings with a specified maximum length
 
+  Array = 22;
+  Json = 23;
+  
   BinaryVector = 100;
   FloatVector = 101;
 }

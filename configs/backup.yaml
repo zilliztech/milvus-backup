@@ -48,7 +48,8 @@ backup:
     # thread pool to copy data for each collection backup, default 100. 
     # which means if you set backup.parallelism = 2 backup.copydata.parallelism = 100, there will be 200 copy executing at the same time.
     # reduce it if blocks your storage's network bandwidth
-    parallelism: 100
+    parallelism: 128
+  keepTempFiles: false
 
 restore:
   # Collection level parallelism to restore

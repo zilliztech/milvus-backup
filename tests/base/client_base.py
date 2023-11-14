@@ -344,8 +344,8 @@ class TestcaseBase(Base):
         collection_src, _ = self.collection_wrap.init_collection(name=src_name)
         collection_dist, _ = self.collection_wrap.init_collection(name=dist_name)
         assert collection_src.num_entities == collection_dist.num_entities, \
-            f"collection_src num_entities: {collection_src.num_entities} != " \
-            f"collection_dist num_entities: {collection_dist.num_entities}"
+            f"collection_src {src_name} num_entities: {collection_src.num_entities} != " \
+            f"collection_dist {dist_name} num_entities: {collection_dist.num_entities}"
         assert collection_src.schema == collection_dist.schema
         # get partitions
         partitions_src = collection_src.partitions

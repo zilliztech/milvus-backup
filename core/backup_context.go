@@ -94,6 +94,8 @@ func (b *BackupContext) Start() error {
 	b.backupNameIdDict = sync.Map{}
 	b.restoreTasks = make(map[string]*backuppb.RestoreBackupTask)
 	b.started = true
+	log.Info(fmt.Sprintf("%+v", b.params.BackupCfg))
+	log.Info(fmt.Sprintf("%+v", b.params.HTTPCfg))
 	return nil
 }
 
@@ -504,7 +506,7 @@ func (b *BackupContext) Check(ctx context.Context) string {
 	}
 
 	if len(paths) == 0 {
-		return "Milvus storage root path is empty, please verify config if your cluster has is not empty\n" + info
+		return "Milvus storage is empty. Please verify whether your cluster is really empty. If not, the configs(minio address, port, bucket, rootPath) may be wrong\n" + info
 	}
 
 	paths, _, err = b.getStorageClient().ListWithPrefix(ctx, b.backupBucketName, b.backupRootPath+SEPERATOR, false)

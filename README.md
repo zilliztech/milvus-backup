@@ -4,6 +4,15 @@ Milvus-Backup is a tool that allows users to backup and restore Milvus data. Thi
 
 The Milvus-backup process has negligible impact on the performance of Milvus. Milvus cluster is fully functional and can operate normally while backup and restoration are in progress.
 
+## Installation
+* Download binary from [release page](https://github.com/zilliztech/milvus-backup/releases)
+
+* Use [homebrew](https://brew.sh/) to install
+  ```shell
+  brew install zilliztech/tap/milvus-backup
+  ```
+
+
 ## Compatibility
 |      Milvus      |  Milvus-backup   |
 |:----------------:|:----------------:|
@@ -19,7 +28,7 @@ In order to use Milvus-Backup, access to Milvus proxy and Minio cluster is requi
 > Please ensure that the configuration settings for Minio are accurate. There may be variations in the default value of Minio's configuration depending on how Milvus is deployed, either by docker-compose or k8s.
 >
 > Please be advised that it is not possible to backup data to a local path. Backup data is stored in Minio or another object storage solution used by your Milvus instance.
-> |field|docker-compose |k8s|
+> |field|docker-compose |helm|
 > |---|---|---|
 > |bucketName|a-bucket|milvus-bucket|
 > |rootPath|files|file|
