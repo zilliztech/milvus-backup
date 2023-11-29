@@ -81,12 +81,12 @@ func (m *MilvusClient) GetPersistentSegmentInfo(ctx context.Context, db, collNam
 	return m.client.GetPersistentSegmentInfo(ctx, collName)
 }
 
-func (m *MilvusClient) FlushV2(ctx context.Context, db, collName string, async bool) ([]int64, []int64, int64, error) {
+func (m *MilvusClient) FlushV2(ctx context.Context, db, collName string, async bool) ([]int64, []int64, int64, map[string]string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	err := m.client.UsingDatabase(ctx, db)
 	if err != nil {
-		return nil, nil, 0, err
+		return nil, nil, 0, nil, err
 	}
 	return m.client.FlushV2(ctx, collName, async)
 }

@@ -63,6 +63,7 @@ func treeToLevel(backup *backuppb.BackupInfo) (LeveledBackupInfo, error) {
 			IndexInfos:              collectionBack.GetIndexInfos(),
 			LoadState:               collectionBack.GetLoadState(),
 			BackupPhysicalTimestamp: collectionBack.GetBackupPhysicalTimestamp(),
+			ChannelCheckpoints:      collectionBack.GetChannelCheckpoints(),
 		}
 		collections = append(collections, cloneCollectionBackup)
 
