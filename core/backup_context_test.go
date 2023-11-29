@@ -28,6 +28,16 @@ func TestCreateBackup(t *testing.T) {
 	backup.CreateBackup(context, req)
 }
 
+func TestCheck(t *testing.T) {
+	var params paramtable.BackupParams
+	params.Init()
+	context := context.Background()
+	backup := CreateBackupContext(context, params)
+
+	res := backup.Check(context)
+	println(res)
+}
+
 func TestListBackups(t *testing.T) {
 	var params paramtable.BackupParams
 	params.Init()
