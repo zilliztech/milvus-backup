@@ -28,7 +28,6 @@ import (
 	"github.com/cockroachdb/errors"
 	"github.com/minio/minio-go/v7"
 	"go.uber.org/zap"
-	"golang.org/x/exp/mmap"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/zilliztech/milvus-backup/internal/log"
@@ -225,36 +224,6 @@ func (mcm *AzureChunkManager) ReadWithPrefix(ctx context.Context, bucketName str
 	}
 
 	return objectsKeys, objectsValues, nil
-}
-
-func (mcm *AzureChunkManager) Mmap(ctx context.Context, bucketName string, filePath string) (*mmap.ReaderAt, error) {
-	return nil, errors.New("this method has not been implemented")
-}
-
-// ReadAt reads specific position data of minio storage if exists.
-func (mcm *AzureChunkManager) ReadAt(ctx context.Context, bucketName string, filePath string, off int64, length int64) ([]byte, error) {
-	return nil, errors.New("this method has not been implemented")
-	//if off < 0 || length < 0 {
-	//	return nil, io.EOF
-	//}
-	//
-	//object, err := mcm.getObject(ctx, bucketName, filePath, off, length)
-	//if err != nil {
-	//	log.Warn("failed to get object", zap.String("bucket", bucketName), zap.String("path", filePath), zap.Error(err))
-	//	return nil, err
-	//}
-	//defer object.Close()
-	//
-	//data, err := Read(object, length)
-	//if err != nil {
-	//	errResponse := minio.ToErrorResponse(err)
-	//	if errResponse.Code == "NoSuchKey" {
-	//		return nil, WrapErrNoSuchKey(filePath)
-	//	}
-	//	log.Warn("failed to read object", zap.String("bucket", bucketName), zap.String("path", filePath), zap.Error(err))
-	//	return nil, err
-	//}
-	//return data, nil
 }
 
 // Remove deletes an object with @key.

@@ -5,12 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/zilliztech/milvus-backup/core/paramtable"
-	"github.com/zilliztech/milvus-backup/core/storage/aliyun"
-	"github.com/zilliztech/milvus-backup/core/storage/gcp"
-	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/util/errorutil"
-	"github.com/zilliztech/milvus-backup/internal/util/retry"
 	"golang.org/x/sync/errgroup"
 	"io"
 	"strings"
@@ -18,7 +12,13 @@ import (
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"go.uber.org/zap"
-	"golang.org/x/exp/mmap"
+
+	"github.com/zilliztech/milvus-backup/core/paramtable"
+	"github.com/zilliztech/milvus-backup/core/storage/aliyun"
+	"github.com/zilliztech/milvus-backup/core/storage/gcp"
+	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/util/errorutil"
+	"github.com/zilliztech/milvus-backup/internal/util/retry"
 )
 
 const NoSuchKey = "NoSuchKey"
@@ -155,7 +155,7 @@ func (mcm *MinioChunkManager) Path(ctx context.Context, bucketName string, fileP
 		return "", err
 	}
 	if !exist {
-		return "", errors.New("minio file manage cannot be found with filePath:" + filePath)
+		return "", errors.New("minio file cannot be found with filePath:" + filePath)
 	}
 	return filePath, nil
 }
@@ -281,10 +281,6 @@ func (mcm *MinioChunkManager) ReadWithPrefix(ctx context.Context, bucketName str
 	}
 
 	return objectsKeys, objectsValues, nil
-}
-
-func (mcm *MinioChunkManager) Mmap(ctx context.Context, bucketName string, filePath string) (*mmap.ReaderAt, error) {
-	return nil, errors.New("this method has not been implemented")
 }
 
 // ReadAt reads specific position data of minio storage if exists.
