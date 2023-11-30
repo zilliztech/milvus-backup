@@ -143,6 +143,7 @@ func (p *MilvusConfig) initTLSMode() {
 // /////////////////////////////////////////////////////////////////////////////
 // --- minio ---
 const (
+	Local               = "local"
 	Minio               = "minio"
 	CloudProviderAWS    = "aws"
 	CloudProviderGCP    = "gcp"
@@ -151,6 +152,7 @@ const (
 )
 
 var supportedCloudProvider = map[string]bool{
+	Local:               true,
 	Minio:               true,
 	CloudProviderAWS:    true,
 	CloudProviderGCP:    true,

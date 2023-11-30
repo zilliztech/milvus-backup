@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"sync"
+	"time"
 
 	gomilvus "github.com/milvus-io/milvus-sdk-go/v2/client"
 	"go.uber.org/zap"
@@ -514,7 +515,7 @@ func (b *BackupContext) Check(ctx context.Context) string {
 		return "Failed to connect to storage backup path " + info + err.Error()
 	}
 
-	CHECK_PATH := ".milvus_backup_check"
+	CHECK_PATH := "milvus_backup_check_" + time.Now().String()
 
 	err = b.getStorageClient().Write(ctx, b.milvusBucketName, b.milvusRootPath+SEPERATOR+CHECK_PATH, []byte{1})
 	if err != nil {

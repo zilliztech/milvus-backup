@@ -558,6 +558,8 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 
 	wp, err := common.NewWorkerPool(ctx, b.params.BackupCfg.BackupParallelism, RPS)
 	if err != nil {
+		backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
+		backupInfo.ErrorMessage = err.Error()
 		return backupInfo, err
 	}
 	wp.Start()
@@ -572,6 +574,8 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 	toBackupCollections, err := b.parseBackupCollections(request)
 	if err != nil {
 		log.Error("parse backup collections from request failed", zap.Error(err))
+		backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
+		backupInfo.ErrorMessage = err.Error()
 		return backupInfo, err
 	}
 	collectionNames := make([]string, len(toBackupCollections))
@@ -590,12 +594,16 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 	}
 	wp.Done()
 	if err := wp.Wait(); err != nil {
+		backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
+		backupInfo.ErrorMessage = err.Error()
 		return backupInfo, err
 	}
 
 	var backupSize int64 = 0
 	leveledBackupInfo, err := treeToLevel(backupInfo)
 	if err != nil {
+		backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
+		backupInfo.ErrorMessage = err.Error()
 		return backupInfo, err
 	}
 	for _, coll := range leveledBackupInfo.collectionLevel.GetInfos() {

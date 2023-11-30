@@ -10,6 +10,8 @@ func NewChunkManager(ctx context.Context, params paramtable.BackupParams) (Chunk
 	engine := params.MinioCfg.CloudProvider
 	if engine == "azure" {
 		return newAzureChunkManagerWithParams(ctx, params)
+	} else if engine == "local" {
+		return newLocalChunkManagerWithParams(ctx, params)
 	} else {
 		return newMinioChunkManagerWithParams(ctx, params)
 	}
@@ -65,4 +67,14 @@ func newAzureChunkManagerWithParams(ctx context.Context, params paramtable.Backu
 	c.backupRootPath = params.MinioCfg.BackupRootPath
 
 	return NewAzureChunkManager(ctx, c)
+}
+
+func newLocalChunkManagerWithParams(ctx context.Context, params paramtable.BackupParams) (*LocalChunkManager, error) {
+	c := newDefaultConfig()
+	c.rootPath = params.MinioCfg.RootPath
+	c.cloudProvider = params.MinioCfg.CloudProvider
+	c.storageEngine = params.MinioCfg.StorageType
+	c.backupRootPath = params.MinioCfg.BackupRootPath
+
+	return NewLocalChunkManager(ctx, c)
 }
