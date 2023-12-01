@@ -371,19 +371,27 @@ func (b *BackupContext) backupCollection(ctx context.Context, backupInfo *backup
 			log.Error(fmt.Sprintf("fail to flush the collection: %s", collectionBackup.GetCollectionName()))
 			return err
 		}
+		//collectionBackup.BackupTimestamp = utils.ComposeTS(timeOfSeal, 0)
+		collectionBackup.BackupPhysicalTimestamp = uint64(timeOfSeal)
+		channelCheckpoints := make(map[string]string, 0)
+		var minChannelBackupTimeStamp uint64 = 0
+		for vch, checkpoint := range channelCPs {
+			channelCheckpoints[vch] = utils.Base64MsgPosition(&checkpoint)
+			if minChannelBackupTimeStamp == 0 {
+				minChannelBackupTimeStamp = checkpoint.GetTimestamp()
+			} else if minChannelBackupTimeStamp > checkpoint.GetTimestamp() {
+				minChannelBackupTimeStamp = checkpoint.GetTimestamp()
+			}
+		}
+		collectionBackup.ChannelCheckpoints = channelCheckpoints
+		collectionBackup.BackupTimestamp = minChannelBackupTimeStamp
 		log.Info("flush segments",
 			zap.String("collectionName", collectionBackup.GetCollectionName()),
 			zap.Int64s("newSealedSegmentIDs", newSealedSegmentIDs),
 			zap.Int64s("flushedSegmentIDs", flushedSegmentIDs),
 			zap.Int64("timeOfSeal", timeOfSeal),
+			zap.Uint64("BackupTimestamp", collectionBackup.BackupTimestamp),
 			zap.Any("channelCPs", channelCPs))
-		collectionBackup.BackupTimestamp = utils.ComposeTS(timeOfSeal, 0)
-		collectionBackup.BackupPhysicalTimestamp = uint64(timeOfSeal)
-		channelCheckpoints := make(map[string]string, 0)
-		for vch, checkpoint := range channelCPs {
-			channelCheckpoints[vch] = checkpoint
-		}
-		collectionBackup.ChannelCheckpoints = channelCheckpoints
 
 		flushSegmentIDs := append(newSealedSegmentIDs, flushedSegmentIDs...)
 		segmentEntitiesAfterFlush, err := b.getMilvusClient().GetPersistentSegmentInfo(ctx, collectionBackup.GetDbName(), collectionBackup.GetCollectionName())
