@@ -49,6 +49,8 @@ backup:
     # which means if you set backup.parallelism = 2 backup.copydata.parallelism = 100, there will be 200 copy executing at the same time.
     # reduce it if blocks your storage's network bandwidth
     parallelism: 128
+  listdata:
+    parallelism: 32
   keepTempFiles: false
 
 restore:

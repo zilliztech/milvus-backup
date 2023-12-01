@@ -36,6 +36,7 @@ type BackupConfig struct {
 
 	BackupParallelism         int
 	RestoreParallelism        int
+	BackupListDataParallelism int
 	BackupCopyDataParallelism int
 	KeepTempFiles             bool
 }
@@ -46,6 +47,7 @@ func (p *BackupConfig) init(base *BaseTable) {
 	p.initMaxSegmentGroupSize()
 	p.initBackupParallelism()
 	p.initRestoreParallelism()
+	p.initBackupListDataParallelism()
 	p.initBackupCopyDataParallelism()
 	p.initKeepTempFiles()
 }
@@ -66,6 +68,11 @@ func (p *BackupConfig) initBackupParallelism() {
 func (p *BackupConfig) initRestoreParallelism() {
 	size := p.Base.ParseIntWithDefault("restore.parallelism", 1)
 	p.RestoreParallelism = size
+}
+
+func (p *BackupConfig) initBackupListDataParallelism() {
+	size := p.Base.ParseIntWithDefault("backup.listdata.parallelism", 32)
+	p.BackupListDataParallelism = size
 }
 
 func (p *BackupConfig) initBackupCopyDataParallelism() {

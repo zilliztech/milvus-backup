@@ -439,7 +439,7 @@ func (b *BackupContext) backupCollection(ctx context.Context, backupInfo *backup
 	segmentBackupInfos := make([]*backuppb.SegmentBackupInfo, 0)
 	partSegInfoMap := make(map[int64][]*backuppb.SegmentBackupInfo)
 	mu := sync.Mutex{}
-	wp, err := common.NewWorkerPool(ctx, b.params.BackupCfg.BackupCopyDataParallelism, RPS)
+	wp, err := common.NewWorkerPool(ctx, b.params.BackupCfg.BackupListDataParallelism, RPS)
 	if err != nil {
 		return err
 	}
