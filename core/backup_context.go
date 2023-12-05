@@ -53,6 +53,7 @@ type BackupContext struct {
 
 	restoreTasks map[string]*backuppb.RestoreBackupTask
 
+	restoreWorkerPool    *common.WorkerPool
 	bulkinsertWorkerPool *common.WorkerPool
 }
 
@@ -147,10 +148,23 @@ func (b *BackupContext) getStorageClient() storage.ChunkManager {
 }
 
 func (b *BackupContext) getRestoreWorkerPool() *common.WorkerPool {
-	if b.bulkinsertWorkerPool == nil {
+	if b.restoreWorkerPool == nil {
 		wp, err := common.NewWorkerPool(b.ctx, b.params.BackupCfg.RestoreParallelism, RPS)
 		if err != nil {
-			log.Error("failed to initial copy data woker pool", zap.Error(err))
+			log.Error("failed to initial restore collection worker pool", zap.Error(err))
+			panic(err)
+		}
+		b.restoreWorkerPool = wp
+		b.restoreWorkerPool.Start()
+	}
+	return b.restoreWorkerPool
+}
+
+func (b *BackupContext) getBulkinsertWorkerPool() *common.WorkerPool {
+	if b.bulkinsertWorkerPool == nil {
+		wp, err := common.NewWorkerPool(b.ctx, b.params.BackupCfg.BulkinsertParallelism, RPS)
+		if err != nil {
+			log.Error("failed to initial bulkinsert worker pool", zap.Error(err))
 			panic(err)
 		}
 		b.bulkinsertWorkerPool = wp
