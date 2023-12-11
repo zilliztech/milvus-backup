@@ -624,7 +624,7 @@ func collectGroupIdsFromSegments(segments []*backuppb.SegmentBackupInfo) []int64
 }
 
 func (b *BackupContext) executeBulkInsert(ctx context.Context, db, coll string, partition string, files []string, endTime int64) error {
-	log.Debug("execute bulk insert",
+	log.Info("execute bulk insert",
 		zap.String("db", db),
 		zap.String("collection", coll),
 		zap.String("partition", partition),
@@ -712,6 +712,10 @@ func (b *BackupContext) getBackupPartitionPaths(ctx context.Context, bucketName 
 		log.Warn("check binlog exist fail", zap.Error(err))
 		return []string{}, err
 	}
+	log.Debug("check delta log exist",
+		zap.Int64("partitionID", partition.PartitionId),
+		zap.String("deltaPath", deltaPath),
+		zap.Bool("exist", exist))
 	if !exist {
 		return []string{insertPath, ""}, nil
 	}
