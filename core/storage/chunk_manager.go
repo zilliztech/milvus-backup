@@ -7,28 +7,15 @@ import (
 )
 
 func NewChunkManager(ctx context.Context, params paramtable.BackupParams) (ChunkManager, error) {
-	engine := params.MinioCfg.CloudProvider
-	if engine == "azure" {
-		return newAzureChunkManagerWithParams(ctx, params)
-	} else if engine == "local" {
+	engine := params.MinioCfg.StorageType
+	switch engine {
+	case paramtable.Local:
 		return newLocalChunkManagerWithParams(ctx, params)
-	} else {
+	case paramtable.CloudProviderAzure:
+		return newAzureChunkManagerWithParams(ctx, params)
+	default:
 		return newMinioChunkManagerWithParams(ctx, params)
 	}
-	//switch engine {
-	//case "local":
-	//	return newMinioChunkManagerWithParams(ctx, params)
-	//	//return NewLocalChunkManager(RootPath(f.config.rootPath)), nil
-	//case "minio":
-	//case "s3":
-	//case "gcp":
-	//case "aliyun":
-	//	return newMinioChunkManagerWithParams(ctx, params)
-	//case "azure":
-	//	return newAzureChunkManagerWithParams(ctx, params)
-	//default:
-	//	return nil, errors.New("no chunk manager implemented with engine: " + engine)
-	//}
 }
 
 func newMinioChunkManagerWithParams(ctx context.Context, params paramtable.BackupParams) (*MinioChunkManager, error) {
@@ -39,8 +26,8 @@ func newMinioChunkManagerWithParams(ctx context.Context, params paramtable.Backu
 	c.useSSL = params.MinioCfg.UseSSL
 	c.bucketName = params.MinioCfg.BackupBucketName
 	c.rootPath = params.MinioCfg.RootPath
-	c.cloudProvider = params.MinioCfg.CloudProvider
-	c.storageEngine = params.MinioCfg.StorageType
+	//c.cloudProvider = params.MinioCfg.CloudProvider
+	c.storageType = params.MinioCfg.StorageType
 	c.useIAM = params.MinioCfg.UseIAM
 	c.iamEndpoint = params.MinioCfg.IAMEndpoint
 	c.createBucket = true
@@ -55,8 +42,8 @@ func newAzureChunkManagerWithParams(ctx context.Context, params paramtable.Backu
 	c.useSSL = params.MinioCfg.UseSSL
 	c.bucketName = params.MinioCfg.BucketName
 	c.rootPath = params.MinioCfg.RootPath
-	c.cloudProvider = params.MinioCfg.CloudProvider
-	c.storageEngine = params.MinioCfg.StorageType
+	//c.cloudProvider = params.MinioCfg.CloudProvider
+	c.storageType = params.MinioCfg.StorageType
 	c.useIAM = params.MinioCfg.UseIAM
 	c.iamEndpoint = params.MinioCfg.IAMEndpoint
 	c.createBucket = true
@@ -72,8 +59,8 @@ func newAzureChunkManagerWithParams(ctx context.Context, params paramtable.Backu
 func newLocalChunkManagerWithParams(ctx context.Context, params paramtable.BackupParams) (*LocalChunkManager, error) {
 	c := newDefaultConfig()
 	c.rootPath = params.MinioCfg.RootPath
-	c.cloudProvider = params.MinioCfg.CloudProvider
-	c.storageEngine = params.MinioCfg.StorageType
+	//c.cloudProvider = params.MinioCfg.CloudProvider
+	c.storageType = params.MinioCfg.StorageType
 	c.backupRootPath = params.MinioCfg.BackupRootPath
 
 	return NewLocalChunkManager(ctx, c)

@@ -21,7 +21,8 @@ milvus:
 
 # Related configuration of minio, which is responsible for data persistence for Milvus.
 minio:
-  cloudProvider: "minio" # remote cloud storage provider: s3, gcp, aliyun, azure
+  # cloudProvider: "minio" # deprecated use storageType instead
+  storageType: "minio" # support storage type: local, minio, s3, aws, gcp, ali(aliyun), azure
   
   address: localhost # Address of MinIO/S3
   port: 9000   # Port of MinIO/S3
