@@ -410,7 +410,7 @@ jobs:
       matrix:
         deploy_tools: [docker-compose]
         milvus_mode: [standalone]
-        case_tag: [L0, L1]
+        case_tag: [L0, L1, L2]
         exclude:
           - deploy_tools: helm
             milvus_mode: cluster
@@ -518,7 +518,7 @@ jobs:
         if: ${{ ! success() }}
         uses: actions/upload-artifact@v2
         with:
-          name: api-test-logs-${{ matrix.deploy_tools }}-${{ matrix.milvus_mode }}
+          name: api-test-logs-${{ matrix.deploy_tools }}-${{ matrix.milvus_mode }}-${{ matrix.case_tag }}
           path: |
             ./logs
             ./server.log
