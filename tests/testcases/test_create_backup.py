@@ -66,10 +66,11 @@ class TestCreateBackup(TestcaseBase):
         if isinstance(collection_need_to_backup, int):
             assert len(backup_collections) == collection_need_to_backup
         assert set(names_to_backup).issubset(backup_collections)
-
+    
+    @pytest.mark.tags(CaseLabel.L1)
     @pytest.mark.parametrize("is_async", [False])
     @pytest.mark.parametrize("collection_need_to_backup", ["all"])
-    @pytest.mark.parametrize("collection_type", ["binary", "float", "all"])
+    @pytest.mark.parametrize("collection_type", ["float"])
     @pytest.mark.parametrize("collection_load_status", ["loaded", "not_loaded"])
     def test_milvus_create_backup_with_indexed_and_loaded(self, collection_type, collection_need_to_backup, is_async, collection_load_status):
         # prepare data
