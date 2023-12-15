@@ -67,7 +67,6 @@ class TestCreateBackup(TestcaseBase):
             assert len(backup_collections) == collection_need_to_backup
         assert set(names_to_backup).issubset(backup_collections)
     
-    @pytest.mark.tags(CaseLabel.L1)
     @pytest.mark.parametrize("is_async", [False])
     @pytest.mark.parametrize("collection_need_to_backup", ["all"])
     @pytest.mark.parametrize("collection_type", ["float"])
