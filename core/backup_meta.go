@@ -254,6 +254,10 @@ func SimpleListBackupsResponse(input *backuppb.ListBackupsResponse) *backuppb.Li
 			StateCode:       backup.GetStateCode(),
 			ErrorMessage:    backup.GetErrorMessage(),
 			BackupTimestamp: backup.GetBackupTimestamp(),
+			Size:            backup.GetSize(),
+			StartTime:       backup.GetStartTime(),
+			EndTime:         backup.GetEndTime(),
+			MilvusVersion:   backup.GetMilvusVersion(),
 		})
 	}
 	return &backuppb.ListBackupsResponse{
