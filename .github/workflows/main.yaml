@@ -410,6 +410,7 @@ jobs:
       matrix:
         deploy_tools: [docker-compose]
         milvus_mode: [standalone]
+        image_tag: [master-latest, 2.3-latest]
         case_tag: [L0, L1, L2]
         exclude:
           - deploy_tools: helm
@@ -476,6 +477,7 @@ jobs:
           fi
 
           if [ ${{ matrix.deploy_tools}} == "docker-compose" ]; then
+            yq -i '.services.standalone.image="milvusdb/milvus:${{ matrix.image_tag }}"' docker-compose.yml
             docker-compose up -d
             bash ../../scripts/check_healthy.sh
             docker-compose ps -a
@@ -524,5 +526,3 @@ jobs:
             ./server.log
             /tmp/ci_logs
             deployment/${{ matrix.milvus_mode }}/logs
-
-
