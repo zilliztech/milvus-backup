@@ -227,7 +227,7 @@ Restore the backup using the following command:
 
 This will create a new collection called `hello_milvus_recover` which contains the data from the original collection.
 
-**Note:** if you want to restore index as well, add `--restore_index`, like:
+**Note:** if you want to restore index as well, add `--restore_index`, like this:
 
 ```
 ./milvus-backup restore --restore_index -n my_backup -s _recover
