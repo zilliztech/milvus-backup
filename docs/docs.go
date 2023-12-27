@@ -503,6 +503,10 @@ const docTemplate = `{
                     "description": "force backup skip flush, Should make sure data has been stored into disk when using it",
                     "type": "boolean"
                 },
+                "meta_only": {
+                    "description": "only backup meta, including collection schema and index info",
+                    "type": "boolean"
+                },
                 "requestId": {
                     "description": "uuid of request, will generate one if not set",
                     "type": "string"
@@ -522,6 +526,8 @@ const docTemplate = `{
                 11,
                 20,
                 21,
+                22,
+                23,
                 100,
                 101
             ],
@@ -536,6 +542,8 @@ const docTemplate = `{
                 "DataType_Double",
                 "DataType_String",
                 "DataType_VarChar",
+                "DataType_Array",
+                "DataType_Json",
                 "DataType_BinaryVector",
                 "DataType_FloatVector"
             ]
@@ -782,6 +790,14 @@ const docTemplate = `{
                     "description": "database and collections to restore. A json string. To support database. 2023.7.7",
                     "type": "string"
                 },
+                "dropExistCollection": {
+                    "description": "if true drop the collections",
+                    "type": "boolean"
+                },
+                "dropExistIndex": {
+                    "description": "if true drop index info",
+                    "type": "boolean"
+                },
                 "metaOnly": {
                     "description": "if true only restore meta",
                     "type": "boolean"
@@ -796,6 +812,14 @@ const docTemplate = `{
                 },
                 "restoreIndex": {
                     "description": "if true restore index info",
+                    "type": "boolean"
+                },
+                "skipCreateCollection": {
+                    "description": "if true will skip create collections",
+                    "type": "boolean"
+                },
+                "useAutoIndex": {
+                    "description": "if true use autoindex when restore vector index",
                     "type": "boolean"
                 }
             }
@@ -870,6 +894,14 @@ const docTemplate = `{
                 "coll_backup": {
                     "$ref": "#/definitions/backuppb.CollectionBackupInfo"
                 },
+                "dropExistCollection": {
+                    "description": "if true drop the collections",
+                    "type": "boolean"
+                },
+                "dropExistIndex": {
+                    "description": "if true drop index info",
+                    "type": "boolean"
+                },
                 "end_time": {
                     "type": "integer"
                 },
@@ -899,6 +931,10 @@ const docTemplate = `{
                 "restored_size": {
                     "type": "integer"
                 },
+                "skipCreateCollection": {
+                    "description": "if true will skip create collections",
+                    "type": "boolean"
+                },
                 "start_time": {
                     "type": "integer"
                 },
@@ -913,6 +949,10 @@ const docTemplate = `{
                 },
                 "to_restore_size": {
                     "type": "integer"
+                },
+                "useAutoIndex": {
+                    "description": "if true use autoindex when restore vector index",
+                    "type": "boolean"
                 }
             }
         },

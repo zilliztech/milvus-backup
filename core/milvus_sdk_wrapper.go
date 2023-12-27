@@ -138,6 +138,19 @@ func (m *MilvusClient) CreateCollection(ctx context.Context, db string, schema *
 	}, retry.Sleep(2*time.Second), retry.Attempts(10))
 }
 
+func (m *MilvusClient) DropCollection(ctx context.Context, db string, collectionName string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	err := m.client.UsingDatabase(ctx, db)
+	if err != nil {
+		return err
+	}
+	// add retry to make sure won't be block by rate control
+	return retry.Do(ctx, func() error {
+		return m.client.DropCollection(ctx, collectionName)
+	}, retry.Sleep(2*time.Second), retry.Attempts(10))
+}
+
 func (m *MilvusClient) CreatePartition(ctx context.Context, db, collName string, partitionName string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -168,4 +181,14 @@ func (m *MilvusClient) CreateIndex(ctx context.Context, db, collName string, fie
 		return err
 	}
 	return m.client.CreateIndex(ctx, collName, fieldName, idx, async, gomilvus.WithIndexName(idx.Name()))
+}
+
+func (m *MilvusClient) DropIndex(ctx context.Context, db, collName string, indexName string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	err := m.client.UsingDatabase(ctx, db)
+	if err != nil {
+		return err
+	}
+	return m.client.DropIndex(ctx, collName, "", gomilvus.WithIndexName(indexName))
 }

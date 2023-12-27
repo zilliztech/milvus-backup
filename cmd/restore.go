@@ -18,14 +18,18 @@ import (
 )
 
 var (
-	restoreBackupName          string
-	restoreCollectionNames     string
-	renameSuffix               string
-	renameCollectionNames      string
-	restoreDatabases           string
-	restoreDatabaseCollections string
-	restoreMetaOnly            bool
-	restoreIndex               bool
+	restoreBackupName           string
+	restoreCollectionNames      string
+	renameSuffix                string
+	renameCollectionNames       string
+	restoreDatabases            string
+	restoreDatabaseCollections  string
+	restoreMetaOnly             bool
+	restoreRestoreIndex         bool
+	restoreUseAutoIndex         bool
+	restoreDropExistCollection  bool
+	restoreDropExistIndex       bool
+	restoreSkipCreateCollection bool
 )
 
 var restoreBackupCmd = &cobra.Command{
@@ -77,13 +81,17 @@ var restoreBackupCmd = &cobra.Command{
 			}
 		}
 		resp := backupContext.RestoreBackup(context, &backuppb.RestoreBackupRequest{
-			BackupName:        restoreBackupName,
-			CollectionNames:   collectionNameArr,
-			CollectionSuffix:  renameSuffix,
-			CollectionRenames: renameMap,
-			DbCollections:     utils.WrapDBCollections(restoreDatabaseCollections),
-			MetaOnly:          restoreMetaOnly,
-			RestoreIndex:      restoreIndex,
+			BackupName:           restoreBackupName,
+			CollectionNames:      collectionNameArr,
+			CollectionSuffix:     renameSuffix,
+			CollectionRenames:    renameMap,
+			DbCollections:        utils.WrapDBCollections(restoreDatabaseCollections),
+			MetaOnly:             restoreMetaOnly,
+			RestoreIndex:         restoreRestoreIndex,
+			UseAutoIndex:         restoreUseAutoIndex,
+			DropExistCollection:  restoreDropExistIndex,
+			DropExistIndex:       restoreDropExistIndex,
+			SkipCreateCollection: restoreSkipCreateCollection,
 		})
 
 		fmt.Println(resp.GetMsg())
@@ -100,8 +108,15 @@ func init() {
 	restoreBackupCmd.Flags().StringVarP(&restoreDatabases, "databases", "d", "", "databases to restore, if not set, restore all databases")
 	restoreBackupCmd.Flags().StringVarP(&restoreDatabaseCollections, "database_collections", "a", "", "databases and collections to restore, json format: {\"db1\":[\"c1\", \"c2\"],\"db2\":[]}")
 
-	restoreBackupCmd.Flags().BoolVarP(&restoreMetaOnly, "meta_only", "", false, "if set true, will restore meta only")
-	restoreBackupCmd.Flags().BoolVarP(&restoreIndex, "restore_index", "", false, "if set true, will restore index")
+	restoreBackupCmd.Flags().BoolVarP(&restoreMetaOnly, "meta_only", "", false, "if true, restore meta only")
+	restoreBackupCmd.Flags().BoolVarP(&restoreRestoreIndex, "restore_index", "", false, "if true, restore index")
+	restoreBackupCmd.Flags().BoolVarP(&restoreUseAutoIndex, "use_auto_index", "", false, "if true, replace vector index with autoindex")
+	restoreBackupCmd.Flags().BoolVarP(&restoreDropExistCollection, "drop_exist_collection", "", false, "if true, drop existing target collection before create")
+	restoreBackupCmd.Flags().BoolVarP(&restoreDropExistIndex, "drop_exist_index", "", false, "if true, drop existing index of target collection before create")
+	restoreBackupCmd.Flags().BoolVarP(&restoreSkipCreateCollection, "skip_create_collection", "", false, "if true, will skip collection, use when collection exist, restore index or data")
+
+	// won't print flags in character order
+	restoreBackupCmd.Flags().SortFlags = false
 
 	rootCmd.AddCommand(restoreBackupCmd)
 }

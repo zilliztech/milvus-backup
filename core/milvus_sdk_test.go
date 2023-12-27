@@ -208,6 +208,21 @@ func TestBulkInsert(t *testing.T) {
 	client.DropCollection(ctx, _COLLECTION_NAME)
 }
 
+func TestGetBulkInsertState(t *testing.T) {
+	ctx := context.Background()
+	milvusAddr := "10.102.9.123:19530"
+	//c, err := proxy.NewClient(context, milvusAddr)
+	//assert.NoError(t, err)
+
+	client, err := gomilvus.NewGrpcClient(ctx, milvusAddr)
+	assert.NoError(t, err)
+
+	state, err := client.GetBulkInsertState(ctx, 446469603780484268)
+
+	println(state.State)
+	log.Info("bulk insert task state", zap.Any("state", state))
+}
+
 func TestGetIndex(t *testing.T) {
 	ctx := context.Background()
 	milvusAddr := "localhost:19530"

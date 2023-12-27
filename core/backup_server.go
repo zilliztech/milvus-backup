@@ -227,7 +227,10 @@ func (h *Handlers) handleDeleteBackup(c *gin.Context) (interface{}, error) {
 // @Success 200 {object} backuppb.RestoreBackupResponse
 // @Router /restore [post]
 func (h *Handlers) handleRestoreBackup(c *gin.Context) (interface{}, error) {
-	requestBody := backuppb.RestoreBackupRequest{}
+	requestBody := backuppb.RestoreBackupRequest{
+		// default setting
+		MetaOnly: false,
+	}
 	//c.BindJSON(&json)
 	if err := c.ShouldBindJSON(&requestBody); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})

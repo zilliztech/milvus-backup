@@ -27,7 +27,9 @@ func (b *BackupContext) CreateBackup(ctx context.Context, request *backuppb.Crea
 		zap.String("backupName", request.GetBackupName()),
 		zap.Strings("collections", request.GetCollectionNames()),
 		zap.String("databaseCollections", utils.GetCreateDBCollections(request)),
-		zap.Bool("async", request.GetAsync()))
+		zap.Bool("async", request.GetAsync()),
+		zap.Bool("force", request.GetForce()),
+		zap.Bool("metaOnly", request.GetMetaOnly()))
 
 	resp := &backuppb.BackupInfoResponse{
 		RequestId: request.GetRequestId(),
@@ -446,26 +448,6 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 		partSegInfoMap[segment.ParititionID] = append(partSegInfoMap[segment.ParititionID], segmentInfo)
 	}
 
-	log.Info("Begin copy data",
-		zap.String("collectionName", collectionBackup.GetCollectionName()),
-		zap.Int("segmentNum", len(unfilledSegments)))
-	start := time.Now()
-	// sort by segment rows, so that smaller segment will be copied earlier.
-	// smaller segments are likely to be compacted.
-	// this logic will reduce the possibility of segment deleted because of compaction
-	sort.SliceStable(segmentBackupInfos, func(i, j int) bool {
-		return segmentBackupInfos[i].GetNumOfRows() < segmentBackupInfos[j].GetNumOfRows()
-	})
-	err = b.copySegments(ctx, segmentBackupInfos, backupInfo)
-	if err != nil {
-		return err
-	}
-	b.refreshBackupCache(backupInfo)
-	duration := time.Since(start).Seconds()
-	log.Info("Finish copy data",
-		zap.String("collectionName", collectionBackup.GetCollectionName()),
-		zap.Float64("duration", duration))
-
 	for _, partition := range partitions {
 		partitionSegments := partSegInfoMap[partition.ID]
 		var size int64 = 0
@@ -500,7 +482,7 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 	return nil
 }
 
-func (b *BackupContext) backupCollectionExecute(ctx context.Context, backupInfo *backuppb.BackupInfo, collection collectionStruct, force bool) error {
+func (b *BackupContext) backupCollectionExecute(ctx context.Context, backupInfo *backuppb.BackupInfo, collection collectionStruct) error {
 	var collectionBackup *backuppb.CollectionBackupInfo
 	for _, coll := range backupInfo.GetCollectionBackups() {
 		if coll.GetCollectionName() == collection.collectionName && coll.DbName == collection.db {
@@ -578,36 +560,40 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 
 	log.Info("Finish flush all collections")
 
-	for _, collection := range toBackupCollections {
-		collectionClone := collection
-		job := func(ctx context.Context) error {
-			err := b.backupCollectionExecute(ctx, backupInfo, collectionClone, request.GetForce())
-			return err
+	if !request.GetMetaOnly() {
+		for _, collection := range toBackupCollections {
+			collectionClone := collection
+			job := func(ctx context.Context) error {
+				err := b.backupCollectionExecute(ctx, backupInfo, collectionClone)
+				return err
+			}
+			jobId := b.getBackupCollectionWorkerPool().SubmitWithId(job)
+			jobIds = append(jobIds, jobId)
 		}
-		jobId := b.getBackupCollectionWorkerPool().SubmitWithId(job)
-		jobIds = append(jobIds, jobId)
-	}
 
-	err = b.getBackupCollectionWorkerPool().WaitJobs(jobIds)
-	if err != nil {
-		backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
-		backupInfo.ErrorMessage = err.Error()
-		return backupInfo, err
-	}
+		err = b.getBackupCollectionWorkerPool().WaitJobs(jobIds)
+		if err != nil {
+			backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
+			backupInfo.ErrorMessage = err.Error()
+			return backupInfo, err
+		}
 
-	var backupSize int64 = 0
-	leveledBackupInfo, err := treeToLevel(backupInfo)
-	if err != nil {
-		backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
-		backupInfo.ErrorMessage = err.Error()
-		return backupInfo, err
+		var backupSize int64 = 0
+		leveledBackupInfo, err := treeToLevel(backupInfo)
+		if err != nil {
+			backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
+			backupInfo.ErrorMessage = err.Error()
+			return backupInfo, err
+		}
+		for _, coll := range leveledBackupInfo.collectionLevel.GetInfos() {
+			backupSize += coll.GetSize()
+		}
+		backupInfo.Size = backupSize
+		backupInfo.EndTime = time.Now().UnixNano() / int64(time.Millisecond)
+		backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_SUCCESS
+	} else {
+		log.Info("skip copy data because it is a metaOnly backup request")
 	}
-	for _, coll := range leveledBackupInfo.collectionLevel.GetInfos() {
-		backupSize += coll.GetSize()
-	}
-	backupInfo.Size = backupSize
-	backupInfo.EndTime = time.Now().UnixNano() / int64(time.Millisecond)
-	backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_SUCCESS
 	b.refreshBackupCache(backupInfo)
 
 	// 7, write meta data

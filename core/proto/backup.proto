@@ -149,6 +149,8 @@ message CreateBackupRequest {
   google.protobuf.Value db_collections = 5;
   // force backup skip flush, Should make sure data has been stored into disk when using it
   bool force = 6;
+  // only backup meta, including collection schema and index info
+  bool meta_only = 7;
 }
 
 /**
@@ -254,7 +256,15 @@ message RestoreBackupRequest {
   // if true only restore meta
   bool metaOnly = 10;
   // if true restore index info
-  bool restoreIndex = 11; 
+  bool restoreIndex = 11;
+  // if true use autoindex when restore vector index
+  bool useAutoIndex = 12;
+  // if true drop the collections
+  bool dropExistCollection = 13;
+  // if true drop index info
+  bool dropExistIndex = 14;
+  // if true will skip create collections
+  bool skipCreateCollection = 15;
 }
 
 message RestorePartitionTask {
@@ -284,6 +294,14 @@ message RestoreCollectionTask {
   bool metaOnly = 13;
   // if true restore index info
   bool restoreIndex = 14;
+  // if true use autoindex when restore vector index
+  bool useAutoIndex = 15;
+  // if true drop the collections
+  bool dropExistCollection = 16;
+  // if true drop index info
+  bool dropExistIndex = 17;
+  // if true will skip create collections
+  bool skipCreateCollection = 18;
 }
 
 message RestoreBackupTask {
