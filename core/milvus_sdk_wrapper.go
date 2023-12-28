@@ -160,12 +160,12 @@ func (m *MilvusClient) HasPartition(ctx context.Context, db, collName string, pa
 	return m.client.HasPartition(ctx, collName, partitionName)
 }
 
-func (m *MilvusClient) CreateIndex(ctx context.Context, db, collName string, fieldName string, idx entity.Index, async bool, opts ...gomilvus.IndexOption) error {
+func (m *MilvusClient) CreateIndex(ctx context.Context, db, collName string, fieldName string, idx entity.Index, async bool) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	err := m.client.UsingDatabase(ctx, db)
 	if err != nil {
 		return err
 	}
-	return m.client.CreateIndex(ctx, collName, fieldName, idx, async, opts...)
+	return m.client.CreateIndex(ctx, collName, fieldName, idx, async, gomilvus.WithIndexName(idx.Name()))
 }
