@@ -28,6 +28,10 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 		zap.String("backupName", request.GetBackupName()),
 		zap.Bool("onlyMeta", request.GetMetaOnly()),
 		zap.Bool("restoreIndex", request.GetRestoreIndex()),
+		zap.Bool("useAutoIndex", request.GetUseAutoIndex()),
+		zap.Bool("dropExistCollection", request.GetDropExistCollection()),
+		zap.Bool("dropExistIndex", request.GetDropExistIndex()),
+		zap.Bool("skipCreateCollection", request.GetSkipCreateCollection()),
 		zap.Strings("collections", request.GetCollectionNames()),
 		zap.String("CollectionSuffix", request.GetCollectionSuffix()),
 		zap.Any("CollectionRenames", request.GetCollectionRenames()),
@@ -239,20 +243,24 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 		}
 
 		// check if the collection exist, if exist, will not restore
-		exist, err := b.getMilvusClient().HasCollection(ctx, targetDBName, targetCollectionName)
-		if err != nil {
-			errorMsg := fmt.Sprintf("fail to check whether the collection is exist, collection_name: %s, err: %s", targetDBCollectionName, err)
-			log.Error(errorMsg)
-			resp.Code = backuppb.ResponseCode_Fail
-			resp.Msg = errorMsg
-			return resp
-		}
-		if exist {
-			errorMsg := fmt.Sprintf("The collection to restore already exists, backupCollectName: %s, targetCollectionName: %s", backupDBCollectionName, targetDBCollectionName)
-			log.Error(errorMsg)
-			resp.Code = backuppb.ResponseCode_Fail
-			resp.Msg = errorMsg
-			return resp
+		if !request.GetSkipCreateCollection() {
+			exist, err := b.getMilvusClient().HasCollection(ctx, targetDBName, targetCollectionName)
+			if err != nil {
+				errorMsg := fmt.Sprintf("fail to check whether the collection is exist, collection_name: %s, err: %s", targetDBCollectionName, err)
+				log.Error(errorMsg)
+				resp.Code = backuppb.ResponseCode_Fail
+				resp.Msg = errorMsg
+				return resp
+			}
+			if exist {
+				errorMsg := fmt.Sprintf("The collection to restore already exists, backupCollectName: %s, targetCollectionName: %s", backupDBCollectionName, targetDBCollectionName)
+				log.Error(errorMsg)
+				resp.Code = backuppb.ResponseCode_Fail
+				resp.Msg = errorMsg
+				return resp
+			}
+		} else {
+			log.Info("skip check collection exist")
 		}
 
 		var toRestoreSize int64 = 0
@@ -274,6 +282,10 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 			Progress:              0,
 			MetaOnly:              request.GetMetaOnly(),
 			RestoreIndex:          request.GetRestoreIndex(),
+			UseAutoIndex:          request.GetUseAutoIndex(),
+			DropExistCollection:   request.GetDropExistCollection(),
+			DropExistIndex:        request.GetDropExistIndex(),
+			SkipCreateCollection:  request.GetSkipCreateCollection(),
 		}
 		restoreCollectionTasks = append(restoreCollectionTasks, restoreCollectionTask)
 		task.CollectionRestoreTasks = restoreCollectionTasks
@@ -408,40 +420,119 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 		EnableDynamicField: task.GetCollBackup().GetSchema().GetEnableDynamicField(),
 	}
 
-	err := retry.Do(ctx, func() error {
-		if hasPartitionKey {
-			partitionNum := len(task.GetCollBackup().GetPartitionBackups())
+	if task.GetDropExistCollection() {
+		err := b.milvusClient.DropCollection(ctx, targetDBName, targetCollectionName)
+		if err != nil {
+			errorMsg := fmt.Sprintf("fail to drop collection, CollectionName: %s.%s err: %s", targetDBName, targetCollectionName, err)
+			log.Error(errorMsg)
+			task.StateCode = backuppb.RestoreTaskStateCode_FAIL
+			task.ErrorMessage = errorMsg
+			return task, err
+		}
+	}
+	if !task.GetSkipCreateCollection() {
+		err := retry.Do(ctx, func() error {
+			if hasPartitionKey {
+				partitionNum := len(task.GetCollBackup().GetPartitionBackups())
+				return b.getMilvusClient().CreateCollection(
+					ctx,
+					targetDBName,
+					collectionSchema,
+					task.GetCollBackup().GetShardsNum(),
+					gomilvus.WithConsistencyLevel(entity.ConsistencyLevel(task.GetCollBackup().GetConsistencyLevel())),
+					gomilvus.WithPartitionNum(int64(partitionNum)))
+			}
 			return b.getMilvusClient().CreateCollection(
 				ctx,
 				targetDBName,
 				collectionSchema,
 				task.GetCollBackup().GetShardsNum(),
-				gomilvus.WithConsistencyLevel(entity.ConsistencyLevel(task.GetCollBackup().GetConsistencyLevel())),
-				gomilvus.WithPartitionNum(int64(partitionNum)))
+				gomilvus.WithConsistencyLevel(entity.ConsistencyLevel(task.GetCollBackup().GetConsistencyLevel())))
+		}, retry.Attempts(10), retry.Sleep(1*time.Second))
+		if err != nil {
+			errorMsg := fmt.Sprintf("fail to create collection, targetCollectionName: %s err: %s", targetCollectionName, err)
+			log.Error(errorMsg)
+			task.StateCode = backuppb.RestoreTaskStateCode_FAIL
+			task.ErrorMessage = errorMsg
+			return task, err
 		}
-		return b.getMilvusClient().CreateCollection(
-			ctx,
-			targetDBName,
-			collectionSchema,
-			task.GetCollBackup().GetShardsNum(),
-			gomilvus.WithConsistencyLevel(entity.ConsistencyLevel(task.GetCollBackup().GetConsistencyLevel())))
-	}, retry.Attempts(10), retry.Sleep(1*time.Second))
-	if err != nil {
-		errorMsg := fmt.Sprintf("fail to create collection, targetCollectionName: %s err: %s", targetCollectionName, err)
-		log.Error(errorMsg)
-		task.StateCode = backuppb.RestoreTaskStateCode_FAIL
-		task.ErrorMessage = errorMsg
-		return task, err
+		log.Info("create collection",
+			zap.String("database", targetDBName),
+			zap.String("collectionName", targetCollectionName),
+			zap.Bool("hasPartitionKey", hasPartitionKey))
+	} else {
+		log.Info("skip create collection",
+			zap.String("database", targetDBName),
+			zap.String("collectionName", targetCollectionName),
+			zap.Bool("hasPartitionKey", hasPartitionKey))
 	}
-	log.Info("create collection",
-		zap.String("database", targetDBName),
-		zap.String("collectionName", targetCollectionName),
-		zap.Bool("hasPartitionKey", hasPartitionKey))
+
+	if task.GetDropExistIndex() {
+		for _, field := range task.CollBackup.Schema.Fields {
+			fieldIndexs, err := b.getMilvusClient().DescribeIndex(b.ctx, targetDBName, targetCollectionName, field.Name)
+			if err != nil {
+				if strings.Contains(err.Error(), "index not found") ||
+					strings.HasPrefix(err.Error(), "index doesn't exist") {
+					// todo
+					log.Info("field has no index",
+						zap.String("collection_name", targetCollectionName),
+						zap.String("field_name", field.Name))
+					continue
+				} else {
+					log.Error("fail in DescribeIndex", zap.Error(err))
+					return task, err
+				}
+			}
+			for _, fieldIndex := range fieldIndexs {
+				err = b.milvusClient.DropIndex(ctx, targetDBName, targetCollectionName, fieldIndex.Name())
+				if err != nil {
+					log.Warn("Fail to drop index",
+						zap.String("db", targetDBName),
+						zap.String("collection", targetCollectionName),
+						zap.Error(err))
+					return task, err
+				}
+				log.Info("drop index",
+					zap.String("collection_name", targetCollectionName),
+					zap.String("field_name", field.Name),
+					zap.String("index_name", fieldIndex.Name()))
+			}
+		}
+	}
 
 	if task.GetRestoreIndex() {
+		vectorFields := make(map[string]bool, 0)
+		for _, field := range collectionSchema.Fields {
+			if strings.HasSuffix(strings.ToLower(field.DataType.Name()), "vector") {
+				vectorFields[field.Name] = true
+			}
+		}
 		indexes := task.GetCollBackup().GetIndexInfos()
 		for _, index := range indexes {
-			idx := entity.NewGenericIndex(index.GetIndexName(), entity.IndexType(index.GetIndexType()), index.GetFieldName(), index.GetParams())
+			var idx entity.Index
+			log.Info("source index",
+				zap.String("indexName", index.GetIndexName()),
+				zap.String("indexType", index.GetIndexType()),
+				zap.Any("params", index.GetParams()))
+			if _, ok := vectorFields[index.GetFieldName()]; ok && task.GetUseAutoIndex() {
+				log.Info("use auto index")
+				params := make(map[string]string, 0)
+				// auto index only support index_type and metric_type in params
+				params["index_type"] = "AUTOINDEX"
+				params["metric_type"] = index.GetParams()["metric_type"]
+				idx = entity.NewGenericIndex(index.GetIndexName(), entity.AUTOINDEX, index.GetFieldName(), params)
+			} else {
+				log.Info("not auto index")
+				indexType := index.GetIndexType()
+				if indexType == "marisa-trie" {
+					indexType = "Trie"
+				}
+				params := index.GetParams()
+				if params["index_type"] == "marisa-trie" {
+					params["index_type"] = "Trie"
+				}
+				idx = entity.NewGenericIndex(index.GetIndexName(), entity.IndexType(indexType), index.GetFieldName(), index.GetParams())
+			}
 			err := b.getMilvusClient().CreateIndex(ctx, targetDBName, targetCollectionName, index.GetFieldName(), idx, true)
 			if err != nil {
 				log.Warn("Fail to restore index", zap.Error(err))
@@ -493,7 +584,7 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 		jobIds = append(jobIds, jobId)
 	}
 
-	err = b.getRestoreWorkerPool().WaitJobs(jobIds)
+	err := b.getRestoreWorkerPool().WaitJobs(jobIds)
 	return task, err
 }
 

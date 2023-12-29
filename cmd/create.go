@@ -20,6 +20,7 @@ var (
 	databases       string
 	dbCollections   string
 	force           bool
+	metaOnly        bool
 )
 
 var createBackupCmd = &cobra.Command{
@@ -61,6 +62,7 @@ var createBackupCmd = &cobra.Command{
 			CollectionNames: collectionNameArr,
 			DbCollections:   utils.WrapDBCollections(dbCollections),
 			Force:           force,
+			MetaOnly:        metaOnly,
 		})
 
 		fmt.Println(resp.GetMsg())
@@ -74,7 +76,10 @@ func init() {
 	createBackupCmd.Flags().StringVarP(&collectionNames, "colls", "c", "", "collectionNames to backup, use ',' to connect multiple collections")
 	createBackupCmd.Flags().StringVarP(&databases, "databases", "d", "", "databases to backup")
 	createBackupCmd.Flags().StringVarP(&dbCollections, "database_collections", "a", "", "databases and collections to backup, json format: {\"db1\":[\"c1\", \"c2\"],\"db2\":[]}")
-	createBackupCmd.Flags().BoolVarP(&force, "force", "f", false, "force backup skip flush, should make sure data has been stored into disk when using it")
+	createBackupCmd.Flags().BoolVarP(&force, "force", "f", false, "force backup, will skip flush, should make sure data has been stored into disk when using it")
+	createBackupCmd.Flags().BoolVarP(&metaOnly, "meta_only", "", false, "only backup collection meta instead of data")
+
+	createBackupCmd.Flags().SortFlags = false
 
 	rootCmd.AddCommand(createBackupCmd)
 }
