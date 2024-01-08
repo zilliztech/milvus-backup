@@ -7,7 +7,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
@@ -16,7 +15,6 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/utils"
-	"github.com/zilliztech/milvus-backup/internal/common"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
@@ -29,7 +27,9 @@ func (b *BackupContext) CreateBackup(ctx context.Context, request *backuppb.Crea
 		zap.String("backupName", request.GetBackupName()),
 		zap.Strings("collections", request.GetCollectionNames()),
 		zap.String("databaseCollections", utils.GetCreateDBCollections(request)),
-		zap.Bool("async", request.GetAsync()))
+		zap.Bool("async", request.GetAsync()),
+		zap.Bool("force", request.GetForce()),
+		zap.Bool("metaOnly", request.GetMetaOnly()))
 
 	resp := &backuppb.BackupInfoResponse{
 		RequestId: request.GetRequestId(),
@@ -221,7 +221,7 @@ func (b *BackupContext) parseBackupCollections(request *backuppb.CreateBackupReq
 	return toBackupCollections, nil
 }
 
-func (b *BackupContext) backupCollection(ctx context.Context, backupInfo *backuppb.BackupInfo, collection collectionStruct, force bool) error {
+func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo *backuppb.BackupInfo, collection collectionStruct, force bool) error {
 	log.Info("start backup collection", zap.String("db", collection.db), zap.String("collection", collection.collectionName))
 	// list collection result is not complete
 	completeCollection, err := b.getMilvusClient().DescribeCollection(b.ctx, collection.db, collection.collectionName)
@@ -356,7 +356,7 @@ func (b *BackupContext) backupCollection(ctx context.Context, backupInfo *backup
 	}
 
 	// fill segments
-	filledSegments := make([]*entity.Segment, 0)
+	unfilledSegments := make([]*entity.Segment, 0)
 	if !force {
 		// Flush
 		segmentEntitiesBeforeFlush, err := b.getMilvusClient().GetPersistentSegmentInfo(ctx, collectionBackup.GetDbName(), collectionBackup.GetCollectionName())
@@ -393,7 +393,7 @@ func (b *BackupContext) backupCollection(ctx context.Context, backupInfo *backup
 			sid := seg.ID
 			if _, ok := segmentDict[sid]; ok {
 				delete(segmentDict, sid)
-				filledSegments = append(filledSegments, seg)
+				unfilledSegments = append(unfilledSegments, seg)
 			} else {
 				log.Debug("this may be new segments after flush, skip it", zap.Int64("id", sid))
 			}
@@ -402,7 +402,7 @@ func (b *BackupContext) backupCollection(ctx context.Context, backupInfo *backup
 			sid := seg.ID
 			if _, ok := segmentDict[sid]; ok {
 				delete(segmentDict, sid)
-				filledSegments = append(filledSegments, seg)
+				unfilledSegments = append(unfilledSegments, seg)
 			} else {
 				log.Debug("this may be old segments before flush, skip it", zap.Int64("id", sid))
 			}
@@ -422,7 +422,7 @@ func (b *BackupContext) backupCollection(ctx context.Context, backupInfo *backup
 			zap.String("collectionName", collectionBackup.GetCollectionName()),
 			zap.Int("segmentNum", len(segmentEntitiesBeforeFlush)))
 		for _, seg := range segmentEntitiesBeforeFlush {
-			filledSegments = append(filledSegments, seg)
+			unfilledSegments = append(unfilledSegments, seg)
 		}
 	}
 
@@ -434,41 +434,19 @@ func (b *BackupContext) backupCollection(ctx context.Context, backupInfo *backup
 	log.Info("Finished fill segment",
 		zap.String("collectionName", collectionBackup.GetCollectionName()))
 
-	log.Info("reading SegmentInfos from storage, this may cost several minutes if data is large",
-		zap.String("collectionName", collectionBackup.GetCollectionName()))
 	segmentBackupInfos := make([]*backuppb.SegmentBackupInfo, 0)
 	partSegInfoMap := make(map[int64][]*backuppb.SegmentBackupInfo)
-	mu := sync.Mutex{}
-	wp, err := common.NewWorkerPool(ctx, b.params.BackupCfg.BackupCopyDataParallelism, RPS)
-	if err != nil {
-		return err
-	}
-	wp.Start()
-	for _, v := range filledSegments {
+	for _, v := range unfilledSegments {
 		segment := v
-		job := func(ctx context.Context) error {
-			segmentInfo, err := b.readSegmentInfo(ctx, segment.CollectionID, segment.ParititionID, segment.ID, segment.NumRows)
-			if err != nil {
-				return err
-			}
-			if len(segmentInfo.Binlogs) == 0 {
-				log.Warn("this segment has no insert binlog", zap.Int64("id", segment.ID))
-			}
-			mu.Lock()
-			partSegInfoMap[segment.ParititionID] = append(partSegInfoMap[segment.ParititionID], segmentInfo)
-			segmentBackupInfos = append(segmentBackupInfos, segmentInfo)
-			mu.Unlock()
-			return nil
+		segmentInfo := &backuppb.SegmentBackupInfo{
+			SegmentId:    segment.ID,
+			CollectionId: segment.CollectionID,
+			PartitionId:  segment.ParititionID,
+			NumOfRows:    segment.NumRows,
 		}
-		wp.Submit(job)
+		segmentBackupInfos = append(segmentBackupInfos, segmentInfo)
+		partSegInfoMap[segment.ParititionID] = append(partSegInfoMap[segment.ParititionID], segmentInfo)
 	}
-	wp.Done()
-	if err := wp.Wait(); err != nil {
-		return err
-	}
-	log.Info("readSegmentInfo from storage",
-		zap.String("collectionName", collectionBackup.GetCollectionName()),
-		zap.Int("segmentNum", len(filledSegments)))
 
 	for _, partition := range partitions {
 		partitionSegments := partSegInfoMap[partition.ID]
@@ -485,12 +463,8 @@ func (b *BackupContext) backupCollection(ctx context.Context, backupInfo *backup
 			LoadState:      partitionLoadStates[partition.Name],
 		}
 		partitionBackupInfos = append(partitionBackupInfos, partitionBackupInfo)
-		//partitionLevelBackupInfos = append(partitionLevelBackupInfos, partitionBackupInfo)
 	}
 
-	//leveledBackupInfo.partitionLevel = &backuppb.PartitionLevelBackupInfo{
-	//	Infos: partitionLevelBackupInfos,
-	//}
 	collectionBackup.PartitionBackups = partitionBackupInfos
 	collectionBackup.LoadState = collectionLoadState
 	b.refreshBackupCache(backupInfo)
@@ -498,72 +472,54 @@ func (b *BackupContext) backupCollection(ctx context.Context, backupInfo *backup
 		zap.String("collectionName", collectionBackup.GetCollectionName()),
 		zap.Int("partitionNum", len(partitionBackupInfos)))
 
+	var collectionBackupSize int64 = 0
+	for _, part := range partitionBackupInfos {
+		collectionBackupSize += part.GetSize()
+	}
+
+	collectionBackup.Size = collectionBackupSize
+	b.refreshBackupCache(backupInfo)
+	return nil
+}
+
+func (b *BackupContext) backupCollectionExecute(ctx context.Context, backupInfo *backuppb.BackupInfo, collection collectionStruct) error {
+	var collectionBackup *backuppb.CollectionBackupInfo
+	for _, coll := range backupInfo.GetCollectionBackups() {
+		if coll.GetCollectionName() == collection.collectionName && coll.DbName == collection.db {
+			collectionBackup = coll
+			break
+		}
+	}
+
+	var segmentBackupInfos []*backuppb.SegmentBackupInfo
+	for _, part := range collectionBackup.GetPartitionBackups() {
+		segmentBackupInfos = append(segmentBackupInfos, part.GetSegmentBackups()...)
+	}
+
 	log.Info("Begin copy data",
 		zap.String("collectionName", collectionBackup.GetCollectionName()),
 		zap.Int("segmentNum", len(segmentBackupInfos)))
 
-	var collectionBackupSize int64 = 0
-	for _, part := range partitionBackupInfos {
-		collectionBackupSize += part.GetSize()
-		if part.GetSize() > b.params.BackupCfg.MaxSegmentGroupSize {
-			log.Info("partition size is larger than MaxSegmentGroupSize, will separate segments into groups in backup files",
-				zap.Int64("collectionId", part.GetCollectionId()),
-				zap.Int64("partitionId", part.GetPartitionId()),
-				zap.Int64("partitionSize", part.GetSize()),
-				zap.Int64("MaxSegmentGroupSize", b.params.BackupCfg.MaxSegmentGroupSize))
-			segments := partSegInfoMap[part.GetPartitionId()]
-			var bufferSize int64 = 0
-			// 0 is illegal value, start from 1
-			var segGroupID int64 = 1
-			for _, seg := range segments {
-				if seg.Size > b.params.BackupCfg.MaxSegmentGroupSize && bufferSize == 0 {
-					seg.GroupId = segGroupID
-					segGroupID = segGroupID + 1
-				} else if bufferSize+seg.Size > b.params.BackupCfg.MaxSegmentGroupSize {
-					segGroupID = segGroupID + 1
-					seg.GroupId = segGroupID
-					bufferSize = 0
-					bufferSize = bufferSize + seg.Size
-				} else {
-					seg.GroupId = segGroupID
-					bufferSize = bufferSize + seg.Size
-				}
-			}
-		} else {
-			log.Info("partition size is smaller than MaxSegmentGroupSize, won't separate segments into groups in backup files",
-				zap.Int64("collectionId", part.GetCollectionId()),
-				zap.Int64("partitionId", part.GetPartitionId()),
-				zap.Int64("partitionSize", part.GetSize()),
-				zap.Int64("MaxSegmentGroupSize", b.params.BackupCfg.MaxSegmentGroupSize))
-		}
-	}
-
 	sort.SliceStable(segmentBackupInfos, func(i, j int) bool {
 		return segmentBackupInfos[i].Size < segmentBackupInfos[j].Size
 	})
-	err = b.copySegments(ctx, segmentBackupInfos, BackupBinlogDirPath(b.backupRootPath, backupInfo.GetName()))
+	err := b.copySegments(ctx, segmentBackupInfos, backupInfo)
 	if err != nil {
 		return err
 	}
+
+	collectionBackup.EndTime = time.Now().Unix()
 	b.refreshBackupCache(backupInfo)
 
-	collectionBackup.Size = collectionBackupSize
-	collectionBackup.EndTime = time.Now().Unix()
+	log.Info("Finish copy data",
+		zap.String("collectionName", collectionBackup.GetCollectionName()),
+		zap.Int("segmentNum", len(segmentBackupInfos)))
 	return nil
 }
 
 func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backuppb.CreateBackupRequest, backupInfo *backuppb.BackupInfo) (*backuppb.BackupInfo, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-
-	wp, err := common.NewWorkerPool(ctx, b.params.BackupCfg.BackupParallelism, RPS)
-	if err != nil {
-		backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
-		backupInfo.ErrorMessage = err.Error()
-		return backupInfo, err
-	}
-	wp.Start()
-	log.Info("Start collection level backup pool", zap.Int("parallelism", b.params.BackupCfg.BackupParallelism))
 
 	backupInfo.BackupTimestamp = uint64(time.Now().UnixNano() / int64(time.Millisecond))
 	backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_EXECUTING
@@ -584,34 +540,60 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 	}
 	log.Info("collections to backup", zap.Strings("collections", collectionNames))
 
+	jobIds := make([]int64, 0)
 	for _, collection := range toBackupCollections {
 		collectionClone := collection
 		job := func(ctx context.Context) error {
-			err := b.backupCollection(ctx, backupInfo, collectionClone, request.GetForce())
+			err := b.backupCollectionPrepare(ctx, backupInfo, collectionClone, request.GetForce())
 			return err
 		}
-		wp.Submit(job)
+		jobId := b.getBackupCollectionWorkerPool().SubmitWithId(job)
+		jobIds = append(jobIds, jobId)
 	}
-	wp.Done()
-	if err := wp.Wait(); err != nil {
-		backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
-		backupInfo.ErrorMessage = err.Error()
-		return backupInfo, err
-	}
+	err = b.getBackupCollectionWorkerPool().WaitJobs(jobIds)
 
-	var backupSize int64 = 0
-	leveledBackupInfo, err := treeToLevel(backupInfo)
 	if err != nil {
 		backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
 		backupInfo.ErrorMessage = err.Error()
 		return backupInfo, err
 	}
-	for _, coll := range leveledBackupInfo.collectionLevel.GetInfos() {
-		backupSize += coll.GetSize()
+
+	log.Info("Finish flush all collections")
+
+	if !request.GetMetaOnly() {
+		for _, collection := range toBackupCollections {
+			collectionClone := collection
+			job := func(ctx context.Context) error {
+				err := b.backupCollectionExecute(ctx, backupInfo, collectionClone)
+				return err
+			}
+			jobId := b.getBackupCollectionWorkerPool().SubmitWithId(job)
+			jobIds = append(jobIds, jobId)
+		}
+
+		err = b.getBackupCollectionWorkerPool().WaitJobs(jobIds)
+		if err != nil {
+			backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
+			backupInfo.ErrorMessage = err.Error()
+			return backupInfo, err
+		}
+
+		var backupSize int64 = 0
+		leveledBackupInfo, err := treeToLevel(backupInfo)
+		if err != nil {
+			backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
+			backupInfo.ErrorMessage = err.Error()
+			return backupInfo, err
+		}
+		for _, coll := range leveledBackupInfo.collectionLevel.GetInfos() {
+			backupSize += coll.GetSize()
+		}
+		backupInfo.Size = backupSize
+		backupInfo.EndTime = time.Now().UnixNano() / int64(time.Millisecond)
+		backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_SUCCESS
+	} else {
+		log.Info("skip copy data because it is a metaOnly backup request")
 	}
-	backupInfo.Size = backupSize
-	backupInfo.EndTime = time.Now().UnixNano() / int64(time.Millisecond)
-	backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_SUCCESS
 	b.refreshBackupCache(backupInfo)
 
 	// 7, write meta data
@@ -636,12 +618,8 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 	return backupInfo, nil
 }
 
-func (b *BackupContext) copySegments(ctx context.Context, segments []*backuppb.SegmentBackupInfo, dstPath string) error {
-	wp, err := common.NewWorkerPool(ctx, b.params.BackupCfg.BackupCopyDataParallelism, RPS)
-	if err != nil {
-		return err
-	}
-	wp.Start()
+func (b *BackupContext) copySegments(ctx context.Context, segments []*backuppb.SegmentBackupInfo, backupInfo *backuppb.BackupInfo) error {
+	dstPath := BackupBinlogDirPath(b.backupRootPath, backupInfo.GetName())
 
 	// generate target path
 	// milvus_rootpath/insert_log/collection_id/partition_id/segment_id/ =>
@@ -654,18 +632,24 @@ func (b *BackupContext) copySegments(ctx context.Context, segments []*backuppb.S
 		}
 	}
 
+	jobIds := make([]int64, 0)
 	for _, segment := range segments {
-		start := time.Now().Unix()
-		log.Debug("copy segment",
-			zap.Int64("collection_id", segment.GetCollectionId()),
+		log := log.With(zap.Int64("collection_id", segment.GetCollectionId()),
 			zap.Int64("partition_id", segment.GetPartitionId()),
 			zap.Int64("segment_id", segment.GetSegmentId()),
-			zap.Int64("group_id", segment.GetGroupId()),
-			zap.Int64("size", segment.GetSize()))
+			zap.Int64("group_id", segment.GetGroupId()))
+		log.Debug("copy segment")
+		_, err := b.fillSegmentBackupInfo(ctx, segment)
+		if err != nil {
+			log.Error("Fail to fill segment backup info", zap.Error(err))
+			return err
+		}
 		// insert log
 		for _, binlogs := range segment.GetBinlogs() {
 			for _, binlog := range binlogs.GetBinlogs() {
 				targetPath := backupPathFunc(binlog.GetLogPath(), b.milvusRootPath, dstPath)
+				// use segmentID as group id
+				segment.GroupId = segment.SegmentId
 				if segment.GetGroupId() != 0 {
 					targetPath = strings.Replace(targetPath,
 						strconv.FormatInt(segment.GetPartitionId(), 10),
@@ -707,7 +691,8 @@ func (b *BackupContext) copySegments(ctx context.Context, segments []*backuppb.S
 
 					return nil
 				}
-				wp.Submit(job)
+				jobId := b.getCopyDataWorkerPool().SubmitWithId(job)
+				jobIds = append(jobIds, jobId)
 			}
 		}
 		// delta log
@@ -753,30 +738,17 @@ func (b *BackupContext) copySegments(ctx context.Context, segments []*backuppb.S
 					}
 					return err
 				}
-				wp.Submit(job)
+				jobId := b.getCopyDataWorkerPool().SubmitWithId(job)
+				jobIds = append(jobIds, jobId)
 			}
 		}
-		duration := time.Now().Unix() - start
-		log.Debug("copy segment finished",
-			zap.Int64("collection_id", segment.GetCollectionId()),
-			zap.Int64("partition_id", segment.GetPartitionId()),
-			zap.Int64("segment_id", segment.GetSegmentId()),
-			zap.Int64("cost_time", duration))
 	}
-	wp.Done()
-	if err := wp.Wait(); err != nil {
-		return err
-	}
-	return nil
+
+	err := b.getCopyDataWorkerPool().WaitJobs(jobIds)
+	return err
 }
 
-func (b *BackupContext) readSegmentInfo(ctx context.Context, collectionID int64, partitionID int64, segmentID int64, numOfRows int64) (*backuppb.SegmentBackupInfo, error) {
-	segmentBackupInfo := backuppb.SegmentBackupInfo{
-		SegmentId:    segmentID,
-		CollectionId: collectionID,
-		PartitionId:  partitionID,
-		NumOfRows:    numOfRows,
-	}
+func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackupInfo *backuppb.SegmentBackupInfo) (*backuppb.SegmentBackupInfo, error) {
 	var size int64 = 0
 	var rootPath string
 
@@ -786,12 +758,16 @@ func (b *BackupContext) readSegmentInfo(ctx context.Context, collectionID int64,
 		rootPath = ""
 	}
 
-	insertPath := fmt.Sprintf("%s%s/%v/%v/%v/", rootPath, "insert_log", collectionID, partitionID, segmentID)
+	insertPath := fmt.Sprintf("%s%s/%v/%v/%v/", rootPath, "insert_log", segmentBackupInfo.GetCollectionId(), segmentBackupInfo.GetPartitionId(), segmentBackupInfo.GetSegmentId())
 	log.Debug("insertPath", zap.String("bucket", b.milvusBucketName), zap.String("insertPath", insertPath))
 	fieldsLogDir, _, err := b.getStorageClient().ListWithPrefix(ctx, b.milvusBucketName, insertPath, false)
+	if len(fieldsLogDir) == 0 {
+		msg := fmt.Sprint("Get empty input path, but segment should not be empty, %s", insertPath)
+		return segmentBackupInfo, errors.New(msg)
+	}
 	if err != nil {
 		log.Error("Fail to list segment path", zap.String("insertPath", insertPath), zap.Error(err))
-		return &segmentBackupInfo, err
+		return segmentBackupInfo, err
 	}
 	log.Debug("fieldsLogDir", zap.String("bucket", b.milvusBucketName), zap.Any("fieldsLogDir", fieldsLogDir))
 	insertLogs := make([]*backuppb.FieldBinlog, 0)
@@ -813,7 +789,7 @@ func (b *BackupContext) readSegmentInfo(ctx context.Context, collectionID int64,
 		})
 	}
 
-	deltaLogPath := fmt.Sprintf("%s%s/%v/%v/%v/", rootPath, "delta_log", collectionID, partitionID, segmentID)
+	deltaLogPath := fmt.Sprintf("%s%s/%v/%v/%v/", rootPath, "delta_log", segmentBackupInfo.GetCollectionId(), segmentBackupInfo.GetPartitionId(), segmentBackupInfo.GetSegmentId())
 	deltaFieldsLogDir, _, _ := b.getStorageClient().ListWithPrefix(ctx, b.milvusBucketName, deltaLogPath, false)
 	deltaLogs := make([]*backuppb.FieldBinlog, 0)
 	for _, deltaFieldLogDir := range deltaFieldsLogDir {
@@ -862,7 +838,6 @@ func (b *BackupContext) readSegmentInfo(ctx context.Context, collectionID int64,
 	segmentBackupInfo.Binlogs = insertLogs
 	segmentBackupInfo.Deltalogs = deltaLogs
 	//segmentBackupInfo.Statslogs = statsLogs
-
 	segmentBackupInfo.Size = size
-	return &segmentBackupInfo, nil
+	return segmentBackupInfo, nil
 }

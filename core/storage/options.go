@@ -12,8 +12,9 @@ type config struct {
 	useIAM            bool
 	iamEndpoint       string
 
+	// deprecated
 	cloudProvider string
-	storageEngine string
+	storageType   string
 
 	backupAccessKeyID       string
 	backupSecretAccessKeyID string

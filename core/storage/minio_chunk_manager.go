@@ -64,8 +64,9 @@ func newMinioChunkManagerWithConfig(ctx context.Context, c *config) (*MinioChunk
 	var newMinioFn = minio.New
 	var bucketLookupType = minio.BucketLookupAuto
 
-	switch c.cloudProvider {
+	switch c.storageType {
 	case paramtable.CloudProviderAliyun:
+	case paramtable.CloudProviderAli:
 		// auto doesn't work for aliyun, so we set to dns deliberately
 		bucketLookupType = minio.BucketLookupDNS
 		if c.useIAM {
@@ -210,16 +211,25 @@ func (mcm *MinioChunkManager) MultiWrite(ctx context.Context, bucketName string,
 
 // Exist checks whether chunk is saved to minio storage.
 func (mcm *MinioChunkManager) Exist(ctx context.Context, bucketName string, filePath string) (bool, error) {
-	_, err := mcm.Client.StatObject(ctx, bucketName, filePath, minio.StatObjectOptions{})
+	//_, err := mcm.Client.StatObject(ctx, bucketName, filePath, minio.StatObjectOptions{})
+	paths, _, err := mcm.ListWithPrefix(ctx, bucketName, filePath, false)
 	if err != nil {
 		errResponse := minio.ToErrorResponse(err)
+		log.Warn("MinioChunkManager Exist errResponse",
+			zap.String("bucket", bucketName),
+			zap.String("filePath", filePath),
+			zap.Any("errResponse", errResponse),
+		)
 		if errResponse.Code == "NoSuchKey" {
 			return false, nil
 		}
 		log.Warn("failed to stat object", zap.String("path", filePath), zap.Error(err))
 		return false, err
 	}
-	return true, nil
+	if len(paths) > 0 {
+		return true, nil
+	}
+	return false, nil
 }
 
 // Read reads the minio storage data if exists.

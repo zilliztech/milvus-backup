@@ -34,17 +34,18 @@ type BackupConfig struct {
 
 	MaxSegmentGroupSize int64
 
-	BackupParallelism         int
-	RestoreParallelism        int
-	BackupCopyDataParallelism int
-	KeepTempFiles             bool
+	BackupCollectionParallelism int
+	BackupCopyDataParallelism   int
+	RestoreParallelism          int
+
+	KeepTempFiles bool
 }
 
 func (p *BackupConfig) init(base *BaseTable) {
 	p.Base = base
 
 	p.initMaxSegmentGroupSize()
-	p.initBackupParallelism()
+	p.initBackupCollectionParallelism()
 	p.initRestoreParallelism()
 	p.initBackupCopyDataParallelism()
 	p.initKeepTempFiles()
@@ -58,18 +59,18 @@ func (p *BackupConfig) initMaxSegmentGroupSize() {
 	p.MaxSegmentGroupSize = size
 }
 
-func (p *BackupConfig) initBackupParallelism() {
-	size := p.Base.ParseIntWithDefault("backup.parallelism", 1)
-	p.BackupParallelism = size
+func (p *BackupConfig) initBackupCollectionParallelism() {
+	size := p.Base.ParseIntWithDefault("backup.parallelism.backupCollection", 1)
+	p.BackupCollectionParallelism = size
 }
 
 func (p *BackupConfig) initRestoreParallelism() {
-	size := p.Base.ParseIntWithDefault("restore.parallelism", 1)
+	size := p.Base.ParseIntWithDefault("backup.parallelism.restoreCollection", 1)
 	p.RestoreParallelism = size
 }
 
 func (p *BackupConfig) initBackupCopyDataParallelism() {
-	size := p.Base.ParseIntWithDefault("backup.copydata.parallelism", 128)
+	size := p.Base.ParseIntWithDefault("backup.parallelism.copydata", 128)
 	p.BackupCopyDataParallelism = size
 }
 
@@ -145,17 +146,21 @@ func (p *MilvusConfig) initTLSMode() {
 const (
 	Local               = "local"
 	Minio               = "minio"
+	S3                  = "s3"
 	CloudProviderAWS    = "aws"
 	CloudProviderGCP    = "gcp"
-	CloudProviderAliyun = "ali"
+	CloudProviderAli    = "ali"
+	CloudProviderAliyun = "aliyun"
 	CloudProviderAzure  = "azure"
 )
 
-var supportedCloudProvider = map[string]bool{
+var supportedStorageType = map[string]bool{
 	Local:               true,
 	Minio:               true,
+	S3:                  true,
 	CloudProviderAWS:    true,
 	CloudProviderGCP:    true,
+	CloudProviderAli:    true,
 	CloudProviderAliyun: true,
 	CloudProviderAzure:  true,
 }
@@ -249,7 +254,7 @@ func (p *MinioConfig) initUseIAM() {
 
 func (p *MinioConfig) initCloudProvider() {
 	p.CloudProvider = p.Base.LoadWithDefault("minio.cloudProvider", DefaultMinioCloudProvider)
-	if !supportedCloudProvider[p.CloudProvider] {
+	if !supportedStorageType[p.CloudProvider] {
 		panic("unsupported cloudProvider:" + p.CloudProvider)
 	}
 }
@@ -280,9 +285,10 @@ func (p *MinioConfig) initBackupRootPath() {
 }
 
 func (p *MinioConfig) initStorageType() {
-	engine := p.Base.LoadWithDefault("storage.type",
-		p.Base.LoadWithDefault("minio.type", DefaultStorageType))
-	if !supportedCloudProvider[engine] {
+	engine := p.Base.LoadWithDefault("storage.storageType",
+		p.Base.LoadWithDefault("minio.storageType",
+			p.Base.LoadWithDefault("minio.cloudProvider", DefaultStorageType)))
+	if !supportedStorageType[engine] {
 		panic("unsupported storage type:" + engine)
 	}
 	p.StorageType = engine

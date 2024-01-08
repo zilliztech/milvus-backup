@@ -53,7 +53,9 @@ type BackupContext struct {
 
 	restoreTasks map[string]*backuppb.RestoreBackupTask
 
-	bulkinsertWorkerPool *common.WorkerPool
+	backupCollectionWorkerPool *common.WorkerPool
+	backupCopyDataWorkerPool   *common.WorkerPool
+	bulkinsertWorkerPool       *common.WorkerPool
 }
 
 func CreateMilvusClient(ctx context.Context, params paramtable.BackupParams) (gomilvus.Client, error) {
@@ -146,11 +148,37 @@ func (b *BackupContext) getStorageClient() storage.ChunkManager {
 	return *b.storageClient
 }
 
+func (b *BackupContext) getBackupCollectionWorkerPool() *common.WorkerPool {
+	if b.backupCollectionWorkerPool == nil {
+		wp, err := common.NewWorkerPool(b.ctx, b.params.BackupCfg.BackupCollectionParallelism, RPS)
+		if err != nil {
+			log.Error("failed to initial collection backup worker pool", zap.Error(err))
+			panic(err)
+		}
+		b.backupCollectionWorkerPool = wp
+		b.backupCollectionWorkerPool.Start()
+	}
+	return b.backupCollectionWorkerPool
+}
+
+func (b *BackupContext) getCopyDataWorkerPool() *common.WorkerPool {
+	if b.backupCopyDataWorkerPool == nil {
+		wp, err := common.NewWorkerPool(b.ctx, b.params.BackupCfg.BackupCopyDataParallelism, RPS)
+		if err != nil {
+			log.Error("failed to initial copy data worker pool", zap.Error(err))
+			panic(err)
+		}
+		b.backupCopyDataWorkerPool = wp
+		b.backupCopyDataWorkerPool.Start()
+	}
+	return b.backupCopyDataWorkerPool
+}
+
 func (b *BackupContext) getRestoreWorkerPool() *common.WorkerPool {
 	if b.bulkinsertWorkerPool == nil {
 		wp, err := common.NewWorkerPool(b.ctx, b.params.BackupCfg.RestoreParallelism, RPS)
 		if err != nil {
-			log.Error("failed to initial copy data woker pool", zap.Error(err))
+			log.Error("failed to initial copy data worker pool", zap.Error(err))
 			panic(err)
 		}
 		b.bulkinsertWorkerPool = wp
