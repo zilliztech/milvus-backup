@@ -132,7 +132,7 @@ func wrapHandler(handle handlerFunc) gin.HandlerFunc {
 // @Tags Backup
 // @Accept application/json
 // @Produce application/json
-// @Param request_id header string true "request_id"
+// @Param request_id header string false "request_id"
 // @Param object body backuppb.CreateBackupRequest   true  "CreateBackupRequest JSON"
 // @Success 200 {object} backuppb.BackupInfoResponse
 // @Router /create [post]
@@ -156,7 +156,7 @@ func (h *Handlers) handleCreateBackup(c *gin.Context) (interface{}, error) {
 // @Description List all backups in current storage
 // @Tags Backup
 // @Produce application/json
-// @Param request_id header string true "request_id"
+// @Param request_id header string false "request_id"
 // @Param collection_name query string true "collection_name"
 // @Success 200 {object} backuppb.ListBackupsResponse
 // @Router /list [get]
@@ -178,7 +178,7 @@ func (h *Handlers) handleListBackups(c *gin.Context) (interface{}, error) {
 // @Description Get the backup with the given name or id
 // @Tags Backup
 // @Produce application/json
-// @Param request_id header string true "request_id"
+// @Param request_id header string false "request_id"
 // @Param backup_name query string true "backup_name"
 // @Param backup_id query string true "backup_id"
 // @Success 200 {object} backuppb.BackupInfoResponse
@@ -202,7 +202,7 @@ func (h *Handlers) handleGetBackup(c *gin.Context) (interface{}, error) {
 // @Description Delete a backup with the given name
 // @Tags Backup
 // @Produce application/json
-// @Param request_id header string true "request_id"
+// @Param request_id header string false "request_id"
 // @Param backup_name query string true "backup_name"
 // @Success 200 {object} backuppb.DeleteBackupResponse
 // @Router /delete [delete]
@@ -222,7 +222,7 @@ func (h *Handlers) handleDeleteBackup(c *gin.Context) (interface{}, error) {
 // @Tags Restore
 // @Accept application/json
 // @Produce application/json
-// @Param request_id header string true "request_id"
+// @Param request_id header string false "request_id"
 // @Param object body backuppb.RestoreBackupRequest   true  "RestoreBackupRequest JSON"
 // @Success 200 {object} backuppb.RestoreBackupResponse
 // @Router /restore [post]
@@ -251,7 +251,7 @@ func (h *Handlers) handleRestoreBackup(c *gin.Context) (interface{}, error) {
 // @Description Get restore task state with the given id
 // @Tags Restore
 // @Produce application/json
-// @Param request_id header string true "request_id"
+// @Param request_id header string false "request_id"
 // @param id query string true "id"
 // @Success 200 {object} backuppb.RestoreBackupResponse
 // @Router /get_restore [get]

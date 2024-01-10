@@ -382,13 +382,13 @@ definitions:
           database. 2023.7.7
         type: string
       dropExistCollection:
-        description: if true drop the collections
+        description: if true, drop existing target collection before create
         type: boolean
       dropExistIndex:
-        description: if true drop index info
+        description: if true, drop existing index of target collection before create
         type: boolean
       metaOnly:
-        description: if true only restore meta
+        description: if true only restore meta, not restore data
         type: boolean
       path:
         description: if bucket_name and path is set. will override bucket/path in
@@ -401,7 +401,8 @@ definitions:
         description: if true restore index info
         type: boolean
       skipCreateCollection:
-        description: if true will skip create collections
+        description: if true, will skip collection, use when collection exist, restore
+          index or data
         type: boolean
       useAutoIndex:
         description: if true use autoindex when restore vector index
@@ -709,7 +710,6 @@ paths:
       - description: request_id
         in: header
         name: request_id
-        required: true
         type: string
       - description: RestoreBackupRequest JSON
         in: body
