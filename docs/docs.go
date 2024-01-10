@@ -233,8 +233,7 @@ const docTemplate = `{
                         "type": "string",
                         "description": "request_id",
                         "name": "request_id",
-                        "in": "header",
-                        "required": true
+                        "in": "header"
                     },
                     {
                         "description": "RestoreBackupRequest JSON",
@@ -791,15 +790,15 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "dropExistCollection": {
-                    "description": "if true drop the collections",
+                    "description": "if true, drop existing target collection before create",
                     "type": "boolean"
                 },
                 "dropExistIndex": {
-                    "description": "if true drop index info",
+                    "description": "if true, drop existing index of target collection before create",
                     "type": "boolean"
                 },
                 "metaOnly": {
-                    "description": "if true only restore meta",
+                    "description": "if true only restore meta, not restore data",
                     "type": "boolean"
                 },
                 "path": {
@@ -815,7 +814,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "skipCreateCollection": {
-                    "description": "if true will skip create collections",
+                    "description": "if true, will skip collection, use when collection exist, restore index or data",
                     "type": "boolean"
                 },
                 "useAutoIndex": {

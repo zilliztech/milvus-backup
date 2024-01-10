@@ -1,7 +1,7 @@
 syntax = "proto3";
 package milvus.proto.backup;
 
-import "google/protobuf/struct.proto";
+import "google/protobuf/struct.proto"; // proto define
 
 option go_package="github.com/zilliztech/milvus-backup/core/proto/backuppb";
 
@@ -253,17 +253,17 @@ message RestoreBackupRequest {
   string path = 8;
   // database and collections to restore. A json string. To support database. 2023.7.7
   google.protobuf.Value db_collections = 9;
-  // if true only restore meta
+  // if true only restore meta, not restore data
   bool metaOnly = 10;
   // if true restore index info
   bool restoreIndex = 11;
   // if true use autoindex when restore vector index
   bool useAutoIndex = 12;
-  // if true drop the collections
+  // if true, drop existing target collection before create
   bool dropExistCollection = 13;
-  // if true drop index info
+  // if true, drop existing index of target collection before create
   bool dropExistIndex = 14;
-  // if true will skip create collections
+  // if true, will skip collection, use when collection exist, restore index or data
   bool skipCreateCollection = 15;
 }
 
