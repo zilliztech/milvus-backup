@@ -234,14 +234,24 @@ func (mcm *MinioChunkManager) Exist(ctx context.Context, bucketName string, file
 
 // Read reads the minio storage data if exists.
 func (mcm *MinioChunkManager) Read(ctx context.Context, bucketName string, filePath string) ([]byte, error) {
-	object, err := mcm.Client.GetObject(ctx, bucketName, filePath, minio.GetObjectOptions{})
-	if err != nil {
-		log.Warn("failed to get object", zap.String("path", filePath), zap.Error(err))
-		return nil, err
-	}
-	defer object.Close()
+	//object, err := mcm.Client.GetObject(ctx, bucketName, filePath, minio.GetObjectOptions{})
+	//if err != nil {
+	//	log.Warn("failed to get object", zap.String("path", filePath), zap.Error(err))
+	//	return nil, err
+	//}
+	//defer object.Close()
+	//
+	//objectInfo, err := object.Stat()
+	//if err != nil {
+	//	log.Warn("failed to stat object", zap.String("path", filePath), zap.Error(err))
+	//	errResponse := minio.ToErrorResponse(err)
+	//	if errResponse.Code == "NoSuchKey" {
+	//		return nil, WrapErrNoSuchKey(filePath)
+	//	}
+	//	return nil, err
+	//}
 
-	objectInfo, err := object.Stat()
+	objectInfo, err := mcm.Client.StatObject(ctx, bucketName, filePath, minio.StatObjectOptions{})
 	if err != nil {
 		log.Warn("failed to stat object", zap.String("path", filePath), zap.Error(err))
 		errResponse := minio.ToErrorResponse(err)
@@ -250,7 +260,12 @@ func (mcm *MinioChunkManager) Read(ctx context.Context, bucketName string, fileP
 		}
 		return nil, err
 	}
-
+	object, err := mcm.Client.GetObject(ctx, bucketName, filePath, minio.GetObjectOptions{})
+	if err != nil {
+		log.Warn("failed to get object", zap.String("path", filePath), zap.Error(err))
+		return nil, err
+	}
+	defer object.Close()
 	data, err := Read(object, objectInfo.Size)
 	if err != nil {
 		errResponse := minio.ToErrorResponse(err)
