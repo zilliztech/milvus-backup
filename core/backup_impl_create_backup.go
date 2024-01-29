@@ -582,17 +582,12 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 			return backupInfo, err
 		}
 
-		var backupSize int64 = 0
-		leveledBackupInfo, err := treeToLevel(backupInfo)
+		_, err := treeToLevel(backupInfo)
 		if err != nil {
 			backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
 			backupInfo.ErrorMessage = err.Error()
 			return backupInfo, err
 		}
-		for _, coll := range leveledBackupInfo.collectionLevel.GetInfos() {
-			backupSize += coll.GetSize()
-		}
-		backupInfo.Size = backupSize
 		backupInfo.EndTime = time.Now().UnixNano() / int64(time.Millisecond)
 		backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_SUCCESS
 	} else {
@@ -766,7 +761,7 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackup
 	log.Debug("insertPath", zap.String("bucket", b.milvusBucketName), zap.String("insertPath", insertPath))
 	fieldsLogDir, _, err := b.getStorageClient().ListWithPrefix(ctx, b.milvusBucketName, insertPath, false)
 	if len(fieldsLogDir) == 0 {
-		msg := fmt.Sprint("Get empty input path, but segment should not be empty, %s", insertPath)
+		msg := fmt.Sprintf("Get empty input path, but segment should not be empty, %s", insertPath)
 		return segmentBackupInfo, errors.New(msg)
 	}
 	if err != nil {
