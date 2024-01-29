@@ -300,7 +300,7 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 		StateCode:        backuppb.BackupTaskStateCode_BACKUP_INITIAL,
 		StartTime:        time.Now().Unix(),
 		CollectionId:     completeCollection.ID,
-		DbName:           collection.db, // todo currently db_name is not used in many places
+		DbName:           collection.db,
 		CollectionName:   completeCollection.Name,
 		Schema:           schema,
 		ShardsNum:        completeCollection.ShardNum,
@@ -368,7 +368,7 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 			zap.Int("segmentNumBeforeFlush", len(segmentEntitiesBeforeFlush)))
 		newSealedSegmentIDs, flushedSegmentIDs, timeOfSeal, err := b.getMilvusClient().FlushV2(ctx, collectionBackup.GetDbName(), collectionBackup.GetCollectionName(), false)
 		if err != nil {
-			log.Error(fmt.Sprintf("fail to flush the collection: %s", collectionBackup.GetCollectionName()))
+			log.Error(fmt.Sprintf("fail to flush the collection: %s", collectionBackup.GetCollectionName()), zap.Error(err))
 			return err
 		}
 		log.Info("flush segments",
@@ -416,6 +416,7 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 		// Flush
 		segmentEntitiesBeforeFlush, err := b.getMilvusClient().GetPersistentSegmentInfo(ctx, collectionBackup.GetDbName(), collectionBackup.GetCollectionName())
 		if err != nil {
+			log.Error(fmt.Sprintf("fail to flush the collection: %s", collectionBackup.GetCollectionName()), zap.Error(err))
 			return err
 		}
 		log.Info("GetPersistentSegmentInfo from milvus",
