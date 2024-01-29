@@ -16,6 +16,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/util/retry"
 )
 
 func (b *BackupContext) CreateBackup(ctx context.Context, request *backuppb.CreateBackupRequest) *backuppb.BackupInfoResponse {
@@ -545,7 +546,9 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 	for _, collection := range toBackupCollections {
 		collectionClone := collection
 		job := func(ctx context.Context) error {
-			err := b.backupCollectionPrepare(ctx, backupInfo, collectionClone, request.GetForce())
+			err := retry.Do(ctx, func() error {
+				return b.backupCollectionPrepare(ctx, backupInfo, collectionClone, request.GetForce())
+			}, retry.Sleep(120*time.Second), retry.Attempts(128))
 			return err
 		}
 		jobId := b.getBackupCollectionWorkerPool().SubmitWithId(job)
