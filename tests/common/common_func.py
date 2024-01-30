@@ -119,6 +119,19 @@ def gen_float_vec_field(name=ct.default_float_vec_field_name, is_primary=False, 
                                                                    is_primary=is_primary)
     return float_vec_field
 
+def gen_float16_vec_field(name=ct.default_float_vec_field_name, is_primary=False, dim=ct.default_dim,
+                        description=ct.default_desc):
+    float_vec_field, _ = ApiFieldSchemaWrapper().init_field_schema(name=name, dtype=DataType.FLOAT16_VECTOR,
+                                                                   description=description, dim=dim,
+                                                                   is_primary=is_primary)
+    return float_vec_field
+
+def gen_brain_float16_vec_field(name=ct.default_float_vec_field_name, is_primary=False, dim=ct.default_dim,
+                        description=ct.default_desc):
+    float_vec_field, _ = ApiFieldSchemaWrapper().init_field_schema(name=name, dtype=DataType.BFLOAT16_VECTOR,
+                                                                   description=description, dim=dim,
+                                                                   is_primary=is_primary)
+    return float_vec_field
 
 def gen_binary_vec_field(name=ct.default_binary_vec_field_name, is_primary=False, dim=ct.default_dim,
                          description=ct.default_desc):
