@@ -496,7 +496,7 @@ class TestRestoreBackup(TestcaseBase):
                     cf.gen_array_field(name="var_array", element_type=DataType.VARCHAR),
                     cf.gen_array_field(name="int_array", element_type=DataType.INT64),
                     cf.gen_float_vec_field(name="float_vector", dim=128),
-                    cf.gen_float16_vec_field()(name="float16_vector", dim=128),
+                    cf.gen_float16_vec_field(name="float16_vector", dim=128),
                     cf.gen_brain_float16_vec_field(name="brain_float16_vector", dim=128),
                     ]
         if include_partition_key:
