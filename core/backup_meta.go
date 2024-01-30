@@ -48,8 +48,31 @@ func treeToLevel(backup *backuppb.BackupInfo) (LeveledBackupInfo, error) {
 	collections := make([]*backuppb.CollectionBackupInfo, 0)
 	partitions := make([]*backuppb.PartitionBackupInfo, 0)
 	segments := make([]*backuppb.SegmentBackupInfo, 0)
-
+	// recalculate backup size
+	var backupSize int64 = 0
 	for _, collectionBack := range backup.GetCollectionBackups() {
+		// recalculate backup size
+		var collectionSize int64 = 0
+		for _, partitionBack := range collectionBack.GetPartitionBackups() {
+			// recalculate backup size
+			var partitionSize int64 = 0
+			for _, segmentBack := range partitionBack.GetSegmentBackups() {
+				segments = append(segments, segmentBack)
+				partitionSize = partitionSize + segmentBack.GetSize()
+			}
+			partitionBack.Size = partitionSize
+			clonePartitionBackupInfo := &backuppb.PartitionBackupInfo{
+				PartitionId:   partitionBack.GetPartitionId(),
+				PartitionName: partitionBack.GetPartitionName(),
+				CollectionId:  partitionBack.GetCollectionId(),
+				Size:          partitionBack.GetSize(),
+				LoadState:     partitionBack.GetLoadState(),
+			}
+			partitions = append(partitions, clonePartitionBackupInfo)
+			collectionSize = collectionSize + partitionSize
+		}
+
+		collectionBack.Size = collectionSize
 		cloneCollectionBackup := &backuppb.CollectionBackupInfo{
 			CollectionId:            collectionBack.GetCollectionId(),
 			DbName:                  collectionBack.GetDbName(),
@@ -65,21 +88,7 @@ func treeToLevel(backup *backuppb.BackupInfo) (LeveledBackupInfo, error) {
 			BackupPhysicalTimestamp: collectionBack.GetBackupPhysicalTimestamp(),
 		}
 		collections = append(collections, cloneCollectionBackup)
-
-		for _, partitionBack := range collectionBack.GetPartitionBackups() {
-			clonePartitionBackupInfo := &backuppb.PartitionBackupInfo{
-				PartitionId:   partitionBack.GetPartitionId(),
-				PartitionName: partitionBack.GetPartitionName(),
-				CollectionId:  partitionBack.GetCollectionId(),
-				Size:          partitionBack.GetSize(),
-				LoadState:     partitionBack.GetLoadState(),
-			}
-			partitions = append(partitions, clonePartitionBackupInfo)
-
-			for _, segmentBack := range partitionBack.GetSegmentBackups() {
-				segments = append(segments, segmentBack)
-			}
-		}
+		backupSize = backupSize + collectionSize
 	}
 
 	collectionLevel := &backuppb.CollectionLevelBackupInfo{
@@ -91,6 +100,7 @@ func treeToLevel(backup *backuppb.BackupInfo) (LeveledBackupInfo, error) {
 	segmentLevel := &backuppb.SegmentLevelBackupInfo{
 		Infos: segments,
 	}
+	backup.Size = backupSize
 	backupLevel := &backuppb.BackupInfo{
 		Id:              backup.GetId(),
 		StateCode:       backup.GetStateCode(),

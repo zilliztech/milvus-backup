@@ -16,6 +16,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/util/retry"
 )
 
 func (b *BackupContext) CreateBackup(ctx context.Context, request *backuppb.CreateBackupRequest) *backuppb.BackupInfoResponse {
@@ -300,7 +301,7 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 		StateCode:        backuppb.BackupTaskStateCode_BACKUP_INITIAL,
 		StartTime:        time.Now().Unix(),
 		CollectionId:     completeCollection.ID,
-		DbName:           collection.db, // todo currently db_name is not used in many places
+		DbName:           collection.db,
 		CollectionName:   completeCollection.Name,
 		Schema:           schema,
 		ShardsNum:        completeCollection.ShardNum,
@@ -368,7 +369,7 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 			zap.Int("segmentNumBeforeFlush", len(segmentEntitiesBeforeFlush)))
 		newSealedSegmentIDs, flushedSegmentIDs, timeOfSeal, err := b.getMilvusClient().FlushV2(ctx, collectionBackup.GetDbName(), collectionBackup.GetCollectionName(), false)
 		if err != nil {
-			log.Error(fmt.Sprintf("fail to flush the collection: %s", collectionBackup.GetCollectionName()))
+			log.Error(fmt.Sprintf("fail to flush the collection: %s", collectionBackup.GetCollectionName()), zap.Error(err))
 			return err
 		}
 		log.Info("flush segments",
@@ -416,6 +417,7 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 		// Flush
 		segmentEntitiesBeforeFlush, err := b.getMilvusClient().GetPersistentSegmentInfo(ctx, collectionBackup.GetDbName(), collectionBackup.GetCollectionName())
 		if err != nil {
+			log.Error(fmt.Sprintf("fail to flush the collection: %s", collectionBackup.GetCollectionName()), zap.Error(err))
 			return err
 		}
 		log.Info("GetPersistentSegmentInfo from milvus",
@@ -544,7 +546,9 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 	for _, collection := range toBackupCollections {
 		collectionClone := collection
 		job := func(ctx context.Context) error {
-			err := b.backupCollectionPrepare(ctx, backupInfo, collectionClone, request.GetForce())
+			err := retry.Do(ctx, func() error {
+				return b.backupCollectionPrepare(ctx, backupInfo, collectionClone, request.GetForce())
+			}, retry.Sleep(120*time.Second), retry.Attempts(128))
 			return err
 		}
 		jobId := b.getBackupCollectionWorkerPool().SubmitWithId(job)
@@ -578,17 +582,12 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 			return backupInfo, err
 		}
 
-		var backupSize int64 = 0
-		leveledBackupInfo, err := treeToLevel(backupInfo)
+		_, err := treeToLevel(backupInfo)
 		if err != nil {
 			backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
 			backupInfo.ErrorMessage = err.Error()
 			return backupInfo, err
 		}
-		for _, coll := range leveledBackupInfo.collectionLevel.GetInfos() {
-			backupSize += coll.GetSize()
-		}
-		backupInfo.Size = backupSize
 		backupInfo.EndTime = time.Now().UnixNano() / int64(time.Millisecond)
 		backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_SUCCESS
 	} else {
@@ -762,7 +761,7 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackup
 	log.Debug("insertPath", zap.String("bucket", b.milvusBucketName), zap.String("insertPath", insertPath))
 	fieldsLogDir, _, err := b.getStorageClient().ListWithPrefix(ctx, b.milvusBucketName, insertPath, false)
 	if len(fieldsLogDir) == 0 {
-		msg := fmt.Sprint("Get empty input path, but segment should not be empty, %s", insertPath)
+		msg := fmt.Sprintf("Get empty input path, but segment should not be empty, %s", insertPath)
 		return segmentBackupInfo, errors.New(msg)
 	}
 	if err != nil {
