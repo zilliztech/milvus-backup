@@ -401,7 +401,7 @@ class TestRestoreBackup(TestcaseBase):
 
     @pytest.mark.parametrize("include_partition_key", [True, False])
     @pytest.mark.parametrize("include_dynamic", [True, False])
-    @pytest.mark.tags(CaseLabel.L0)
+    @pytest.mark.tags(CaseLabel.MASTER)
     def test_milvus_restore_back_with_multi_vector_datatype(self, include_dynamic, include_partition_key):
         self._connect()
         name_origin = cf.gen_unique_str(prefix)
