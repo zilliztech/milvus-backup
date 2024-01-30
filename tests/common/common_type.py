@@ -244,3 +244,5 @@ class CaseLabel:
     L2 = "L2"
     L3 = "L3"
     Perf = "Perf"
+    MASTER = "MASTER"
+    RELEASE = "RELEASE"

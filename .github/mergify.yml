@@ -27,15 +27,7 @@ pull_request_rules:
   - name: Test passed for code changed-main
     conditions:
       - base=main
-      - "status-success=test-backup-restore-cli (docker-compose, standalone, standalone)"
-      - "status-success=test-backup-restore-cli (docker-compose, standalone, cluster)"
-      - "status-success=test-backup-restore-cli (docker-compose, cluster, standalone)"
-      - "status-success=test-backup-restore-cli (docker-compose, cluster, cluster)"
-      - "status-success=test-backup-restore-api (docker-compose, standalone)"
-      - "status-success=test-backup-restore-api (docker-compose, cluster)"
-      - "status-success=test-backup-restore-api (helm, standalone)"
-      # - "status-success=codecov/patch"
-      # - "status-success=codecov/project"
+      - check-success=Test  
     actions:
       label:
         add:
@@ -108,13 +100,7 @@ pull_request_rules:
       - base=main
       - files~=^(?=.*((\.(go|h|cpp)|CMakeLists.txt))).*$
       - or:
-        - "status-success!=test-backup-restore-cli (docker-compose, standalone, standalone)"
-        - "status-success!=test-backup-restore-cli (docker-compose, standalone, cluster)"
-        - "status-success!=test-backup-restore-cli (docker-compose, cluster, standalone)"
-        - "status-success!=test-backup-restore-cli (docker-compose, cluster, cluster)"
-        - "status-success!=test-backup-restore-api (docker-compose, standalone)"
-        - "status-success!=test-backup-restore-api (docker-compose, cluster)"
-        - "status-success!=test-backup-restore-api (helm, standalone)"
+        - check-failure=CI
     actions:
       label:
         remove:
