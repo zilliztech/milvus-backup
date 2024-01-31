@@ -517,7 +517,7 @@ class TestRestoreBackup(TestcaseBase):
             [[str(x) for x in range(10)] for i in range(nb)],
             [[int(x) for x in range(10)] for i in range(nb)],
             [[np.float32(i) for i in range(128)] for _ in range(nb)],
-            [[np.float16(i) for i in range(128)] for _ in range(nb)],
+            [bytes(np.array([random.random() for _ in range(128)], dtype=np.float16).view(np.uint8).tolist()) for _ in range(nb)],
             [bytes(np.array(jnp.array([random.random() for _ in range(128)], dtype=jnp.bfloat16)).view(np.uint8).tolist()) for _ in range(nb)]
         ]
         collection_w.insert(data=data)
@@ -530,7 +530,7 @@ class TestRestoreBackup(TestcaseBase):
                     "var_array": [str(x) for x in range(10)],
                     "int_array": [int(x) for x in range(10)],
                     "float_vector": [np.float32(i) for i in range(128)],
-                    "float16_vector": [np.float16(i) for i in range(128)],
+                    "float16_vector": bytes(np.array([random.random() for _ in range(128)], dtype=np.float16).view(np.uint8).tolist()),
                     "brain_float16_vector": bytes(np.array(jnp.array([random.random() for _ in range(128)], dtype=jnp.bfloat16)).view(np.uint8).tolist()),
                     f"dynamic_{str(i)}": i
                 } for i in range(nb, nb*2)
