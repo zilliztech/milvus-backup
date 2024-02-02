@@ -18,6 +18,7 @@ require (
 	github.com/milvus-io/milvus-sdk-go/v2 v2.3.0
 	github.com/minio/minio-go/v7 v7.0.17
 	github.com/pkg/errors v0.9.1
+	github.com/samber/lo v1.39.0
 	github.com/sony/sonyflake v1.1.0
 	github.com/spf13/cast v1.3.1
 	github.com/spf13/cobra v1.5.0
@@ -30,7 +31,6 @@ require (
 	go.etcd.io/etcd/client/v3 v3.5.0
 	go.uber.org/atomic v1.10.0
 	go.uber.org/zap v1.17.0
-	golang.org/x/exp v0.0.0-20200224162631-6cc2880d07d6
 	golang.org/x/oauth2 v0.0.0-20210402161424-2e8d93401602
 	golang.org/x/sync v0.3.0
 	golang.org/x/time v0.0.0-20201208040808-7e3f01d25324
@@ -103,6 +103,7 @@ require (
 	go.etcd.io/etcd/client/pkg/v3 v3.5.0 // indirect
 	go.uber.org/multierr v1.6.0 // indirect
 	golang.org/x/crypto v0.14.0 // indirect
+	golang.org/x/exp v0.0.0-20220303212507-bbda1eaf7a17 // indirect
 	golang.org/x/net v0.17.0 // indirect
 	golang.org/x/sys v0.13.0 // indirect
 	golang.org/x/text v0.13.0 // indirect
