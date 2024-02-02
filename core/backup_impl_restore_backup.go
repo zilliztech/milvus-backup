@@ -98,13 +98,16 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 	backup := getResp.GetData()
 
 	id := utils.UUID()
-
 	task := &backuppb.RestoreBackupTask{
 		Id:        id,
 		StateCode: backuppb.RestoreTaskStateCode_INITIAL,
 		StartTime: time.Now().Unix(),
 		Progress:  0,
 	}
+	// clean thread pool
+	defer func() {
+		b.cleanRestoreWorkerPool(id)
+	}()
 
 	// 2, initial restoreCollectionTasks
 	toRestoreCollectionBackups := make([]*backuppb.CollectionBackupInfo, 0)
@@ -580,11 +583,11 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 				zap.String("partition", partitionBackup2.GetPartitionName()))
 			return err
 		}
-		jobId := b.getRestoreWorkerPool().SubmitWithId(job)
+		jobId := b.getRestoreWorkerPool(parentTaskID).SubmitWithId(job)
 		jobIds = append(jobIds, jobId)
 	}
 
-	err := b.getRestoreWorkerPool().WaitJobs(jobIds)
+	err := b.getRestoreWorkerPool(parentTaskID).WaitJobs(jobIds)
 	return task, err
 }
 

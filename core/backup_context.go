@@ -55,7 +55,8 @@ type BackupContext struct {
 
 	backupCollectionWorkerPool *common.WorkerPool
 	backupCopyDataWorkerPool   *common.WorkerPool
-	bulkinsertWorkerPool       *common.WorkerPool
+	//bulkinsertWorkerPool       *common.WorkerPool
+	bulkinsertWorkerPools map[string]*common.WorkerPool
 }
 
 func CreateMilvusClient(ctx context.Context, params paramtable.BackupParams) (gomilvus.Client, error) {
@@ -113,12 +114,13 @@ func (b *BackupContext) Close() error {
 
 func CreateBackupContext(ctx context.Context, params paramtable.BackupParams) *BackupContext {
 	return &BackupContext{
-		ctx:              ctx,
-		params:           params,
-		milvusBucketName: params.MinioCfg.BucketName,
-		backupBucketName: params.MinioCfg.BackupBucketName,
-		milvusRootPath:   params.MinioCfg.RootPath,
-		backupRootPath:   params.MinioCfg.BackupRootPath,
+		ctx:                   ctx,
+		params:                params,
+		milvusBucketName:      params.MinioCfg.BucketName,
+		backupBucketName:      params.MinioCfg.BackupBucketName,
+		milvusRootPath:        params.MinioCfg.RootPath,
+		backupRootPath:        params.MinioCfg.BackupRootPath,
+		bulkinsertWorkerPools: make(map[string]*common.WorkerPool),
 	}
 }
 
@@ -174,17 +176,25 @@ func (b *BackupContext) getCopyDataWorkerPool() *common.WorkerPool {
 	return b.backupCopyDataWorkerPool
 }
 
-func (b *BackupContext) getRestoreWorkerPool() *common.WorkerPool {
-	if b.bulkinsertWorkerPool == nil {
+func (b *BackupContext) getRestoreWorkerPool(id string) *common.WorkerPool {
+	if pool, exist := b.bulkinsertWorkerPools[id]; exist {
+		return pool
+	} else {
 		wp, err := common.NewWorkerPool(b.ctx, b.params.BackupCfg.RestoreParallelism, RPS)
 		if err != nil {
 			log.Error("failed to initial copy data worker pool", zap.Error(err))
 			panic(err)
 		}
-		b.bulkinsertWorkerPool = wp
-		b.bulkinsertWorkerPool.Start()
+		b.bulkinsertWorkerPools[id] = wp
+		b.bulkinsertWorkerPools[id].Start()
+		return b.bulkinsertWorkerPools[id]
 	}
-	return b.bulkinsertWorkerPool
+}
+
+func (b *BackupContext) cleanRestoreWorkerPool(id string) {
+	if _, exist := b.bulkinsertWorkerPools[id]; exist {
+		delete(b.bulkinsertWorkerPools, id)
+	}
 }
 
 func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBackupRequest) *backuppb.BackupInfoResponse {
