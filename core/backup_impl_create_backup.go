@@ -11,6 +11,7 @@ import (
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
+	"github.com/samber/lo"
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
@@ -365,14 +366,19 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 			return err
 		}
 		log.Info("GetPersistentSegmentInfo before flush from milvus",
+			zap.String("databaseName", collectionBackup.GetDbName()),
 			zap.String("collectionName", collectionBackup.GetCollectionName()),
 			zap.Int("segmentNumBeforeFlush", len(segmentEntitiesBeforeFlush)))
 		newSealedSegmentIDs, flushedSegmentIDs, timeOfSeal, err := b.getMilvusClient().FlushV2(ctx, collectionBackup.GetDbName(), collectionBackup.GetCollectionName(), false)
 		if err != nil {
-			log.Error(fmt.Sprintf("fail to flush the collection: %s", collectionBackup.GetCollectionName()), zap.Error(err))
+			log.Error("fail to flush the collection",
+				zap.String("databaseName", collectionBackup.GetDbName()),
+				zap.String("collectionName", collectionBackup.GetCollectionName()),
+				zap.Error(err))
 			return err
 		}
 		log.Info("flush segments",
+			zap.String("databaseName", collectionBackup.GetDbName()),
 			zap.String("collectionName", collectionBackup.GetCollectionName()),
 			zap.Int64s("newSealedSegmentIDs", newSealedSegmentIDs),
 			zap.Int64s("flushedSegmentIDs", flushedSegmentIDs),
@@ -385,10 +391,16 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 		if err != nil {
 			return err
 		}
+
+		segmentIDsEntitiesBeforeFlush := lo.Map(segmentEntitiesBeforeFlush, func(segment *entity.Segment, _ int) int64 { return segment.ID })
+		segmentIDsEntitiesAfterFlush := lo.Map(segmentEntitiesAfterFlush, func(segment *entity.Segment, _ int) int64 { return segment.ID })
 		log.Info("GetPersistentSegmentInfo after flush from milvus",
+			zap.String("databaseName", collectionBackup.GetDbName()),
 			zap.String("collectionName", collectionBackup.GetCollectionName()),
 			zap.Int("segmentNumBeforeFlush", len(segmentEntitiesBeforeFlush)),
-			zap.Int("segmentNumAfterFlush", len(segmentEntitiesAfterFlush)))
+			zap.Int("segmentNumAfterFlush", len(segmentEntitiesAfterFlush)),
+			zap.Int64s("segmentsBeforeFlush", segmentIDsEntitiesBeforeFlush),
+			zap.Int64s("segmentsAfterFlush", segmentIDsEntitiesAfterFlush))
 		segmentDict := utils.ArrayToMap(flushSegmentIDs)
 		for _, seg := range segmentEntitiesAfterFlush {
 			sid := seg.ID
@@ -396,7 +408,7 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 				delete(segmentDict, sid)
 				unfilledSegments = append(unfilledSegments, seg)
 			} else {
-				log.Debug("this may be new segments after flush, skip it", zap.Int64("id", sid))
+				log.Info("this may be new segments after flush, skip it", zap.Int64("id", sid))
 			}
 		}
 		for _, seg := range segmentEntitiesBeforeFlush {
@@ -405,7 +417,7 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 				delete(segmentDict, sid)
 				unfilledSegments = append(unfilledSegments, seg)
 			} else {
-				log.Debug("this may be old segments before flush, skip it", zap.Int64("id", sid))
+				log.Info("this may be old segments before flush, skip it", zap.Int64("id", sid))
 			}
 		}
 		if len(segmentDict) > 0 {
@@ -421,6 +433,7 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 			return err
 		}
 		log.Info("GetPersistentSegmentInfo from milvus",
+			zap.String("databaseName", collectionBackup.GetDbName()),
 			zap.String("collectionName", collectionBackup.GetCollectionName()),
 			zap.Int("segmentNum", len(segmentEntitiesBeforeFlush)))
 		for _, seg := range segmentEntitiesBeforeFlush {
@@ -433,8 +446,12 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 		collectionBackup.ErrorMessage = err.Error()
 		return err
 	}
+
+	newSegIDs := lo.Map(unfilledSegments, func(segment *entity.Segment, _ int) int64 { return segment.ID })
 	log.Info("Finished fill segment",
-		zap.String("collectionName", collectionBackup.GetCollectionName()))
+		zap.String("databaseName", collectionBackup.GetDbName()),
+		zap.String("collectionName", collectionBackup.GetCollectionName()),
+		zap.Int64s("segments", newSegIDs))
 
 	segmentBackupInfos := make([]*backuppb.SegmentBackupInfo, 0)
 	partSegInfoMap := make(map[int64][]*backuppb.SegmentBackupInfo)
