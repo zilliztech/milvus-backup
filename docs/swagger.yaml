@@ -170,12 +170,19 @@ definitions:
         description: force backup skip flush, Should make sure data has been stored
           into disk when using it
         type: boolean
+      gc_pause:
+        description: gc pause seconds, set it larger than the time cost of backup
+        type: integer
       meta_only:
         description: only backup meta, including collection schema and index info
         type: boolean
       requestId:
         description: uuid of request, will generate one if not set
         type: string
+      stop_gc:
+        description: if true, stop GC to avoid the data compacted and GCed during
+          backup, use it when the data to backup is very large.
+        type: boolean
     type: object
   backuppb.DataType:
     enum:
@@ -582,7 +589,6 @@ paths:
       - description: request_id
         in: header
         name: request_id
-        required: true
         type: string
       - description: CreateBackupRequest JSON
         in: body
@@ -607,7 +613,6 @@ paths:
       - description: request_id
         in: header
         name: request_id
-        required: true
         type: string
       - description: backup_name
         in: query
@@ -631,7 +636,6 @@ paths:
       - description: request_id
         in: header
         name: request_id
-        required: true
         type: string
       - description: backup_name
         in: query
@@ -660,7 +664,6 @@ paths:
       - description: request_id
         in: header
         name: request_id
-        required: true
         type: string
       - description: id
         in: query
@@ -684,7 +687,6 @@ paths:
       - description: request_id
         in: header
         name: request_id
-        required: true
         type: string
       - description: collection_name
         in: query

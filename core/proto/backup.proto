@@ -151,6 +151,10 @@ message CreateBackupRequest {
   bool force = 6;
   // only backup meta, including collection schema and index info
   bool meta_only = 7;
+  // if true, stop GC to avoid the data compacted and GCed during backup, use it when the data to backup is very large.
+  bool stop_gc = 8;
+  // gc pause seconds, set it larger than the time cost of backup
+  int64 gc_pause = 9;
 }
 
 /**
