@@ -41,8 +41,7 @@ const docTemplate = `{
                         "type": "string",
                         "description": "request_id",
                         "name": "request_id",
-                        "in": "header",
-                        "required": true
+                        "in": "header"
                     },
                     {
                         "description": "CreateBackupRequest JSON",
@@ -79,8 +78,7 @@ const docTemplate = `{
                         "type": "string",
                         "description": "request_id",
                         "name": "request_id",
-                        "in": "header",
-                        "required": true
+                        "in": "header"
                     },
                     {
                         "type": "string",
@@ -115,8 +113,7 @@ const docTemplate = `{
                         "type": "string",
                         "description": "request_id",
                         "name": "request_id",
-                        "in": "header",
-                        "required": true
+                        "in": "header"
                     },
                     {
                         "type": "string",
@@ -158,8 +155,7 @@ const docTemplate = `{
                         "type": "string",
                         "description": "request_id",
                         "name": "request_id",
-                        "in": "header",
-                        "required": true
+                        "in": "header"
                     },
                     {
                         "type": "string",
@@ -194,8 +190,7 @@ const docTemplate = `{
                         "type": "string",
                         "description": "request_id",
                         "name": "request_id",
-                        "in": "header",
-                        "required": true
+                        "in": "header"
                     },
                     {
                         "type": "string",
@@ -502,6 +497,10 @@ const docTemplate = `{
                     "description": "force backup skip flush, Should make sure data has been stored into disk when using it",
                     "type": "boolean"
                 },
+                "gc_pause": {
+                    "description": "gc pause seconds, set it larger than the time cost of backup",
+                    "type": "integer"
+                },
                 "meta_only": {
                     "description": "only backup meta, including collection schema and index info",
                     "type": "boolean"
@@ -509,6 +508,10 @@ const docTemplate = `{
                 "requestId": {
                     "description": "uuid of request, will generate one if not set",
                     "type": "string"
+                },
+                "stop_gc": {
+                    "description": "if true, stop GC to avoid the data compacted and GCed during backup, use it when the data to backup is very large.",
+                    "type": "boolean"
                 }
             }
         },

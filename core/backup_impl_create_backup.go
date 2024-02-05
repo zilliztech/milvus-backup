@@ -4,6 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"net/http"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
@@ -536,9 +539,64 @@ func (b *BackupContext) backupCollectionExecute(ctx context.Context, backupInfo 
 	return nil
 }
 
+func (b *BackupContext) pauseMilvusGC(ctx context.Context) {
+	httpAddress := b.params.MilvusCfg.Address + ":" + b.params.MilvusCfg.HttpPort
+	if b.params.MilvusCfg.EnableSSL {
+		httpAddress = "https://" + httpAddress
+	} else {
+		httpAddress = "http://" + httpAddress
+	}
+	pauseAPI := "/management/datacoord/garbage_collection/pause"
+	params := url.Values{}
+	params.Add("pause_seconds", strconv.Itoa(b.params.BackupCfg.PauseGcSeconds))
+	fullURL := fmt.Sprintf("%s?%s", httpAddress+pauseAPI, params.Encode())
+	response, err := http.Get(fullURL)
+	if err != nil {
+		log.Error("Pause Milvus GC Error:", zap.Error(err))
+		return
+	}
+	defer response.Body.Close()
+	// Read the response body
+	body, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		log.Error("Read response Error:", zap.Error(err))
+		return
+	}
+	log.Info("Pause Milvus GC response", zap.String("response", string(body)))
+}
+
+func (b *BackupContext) resumeMilvusGC(ctx context.Context) {
+	httpAddress := b.params.MilvusCfg.Address + ":" + b.params.MilvusCfg.HttpPort
+	if b.params.MilvusCfg.EnableSSL {
+		httpAddress = "https://" + httpAddress
+	} else {
+		httpAddress = "http://" + httpAddress
+	}
+	pauseAPI := "/management/datacoord/garbage_collection/resume"
+	fullURL := httpAddress + pauseAPI
+	response, err := http.Get(fullURL)
+	if err != nil {
+		log.Error("Resume Milvus GC Error:", zap.Error(err))
+		return
+	}
+	// Read the response body
+	body, err := ioutil.ReadAll(response.Body)
+	if err != nil {
+		log.Error("Read response Error:", zap.Error(err))
+		return
+	}
+	log.Info("Resume Milvus GC response", zap.String("response", string(body)))
+}
+
 func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backuppb.CreateBackupRequest, backupInfo *backuppb.BackupInfo) (*backuppb.BackupInfo, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+
+	// pause GC
+	if b.params.BackupCfg.PauseGcWhenBackup {
+		b.pauseMilvusGC(ctx)
+		defer b.resumeMilvusGC(ctx)
+	}
 
 	backupInfo.BackupTimestamp = uint64(time.Now().UnixNano() / int64(time.Millisecond))
 	backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_EXECUTING

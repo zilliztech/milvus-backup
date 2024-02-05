@@ -38,7 +38,9 @@ type BackupConfig struct {
 	BackupCopyDataParallelism   int
 	RestoreParallelism          int
 
-	KeepTempFiles bool
+	KeepTempFiles     bool
+	PauseGcWhenBackup bool
+	PauseGcSeconds    int
 }
 
 func (p *BackupConfig) init(base *BaseTable) {
@@ -49,6 +51,8 @@ func (p *BackupConfig) init(base *BaseTable) {
 	p.initRestoreParallelism()
 	p.initBackupCopyDataParallelism()
 	p.initKeepTempFiles()
+	p.initPauseGcWhenBackup()
+	p.initPauseGcSeconds()
 }
 
 func (p *BackupConfig) initMaxSegmentGroupSize() {
@@ -79,6 +83,16 @@ func (p *BackupConfig) initKeepTempFiles() {
 	p.KeepTempFiles, _ = strconv.ParseBool(keepTempFiles)
 }
 
+func (p *BackupConfig) initPauseGcWhenBackup() {
+	pauseGcWhenBackup := p.Base.LoadWithDefault("backup.pauseGcWhenBackup", "false")
+	p.PauseGcWhenBackup, _ = strconv.ParseBool(pauseGcWhenBackup)
+}
+
+func (p *BackupConfig) initPauseGcSeconds() {
+	size := p.Base.ParseIntWithDefault("backup.pauseGcSeconds", 7200)
+	p.PauseGcSeconds = size
+}
+
 type MilvusConfig struct {
 	Base *BaseTable
 
@@ -88,6 +102,8 @@ type MilvusConfig struct {
 	Password             string
 	AuthorizationEnabled bool
 	TLSMode              int
+	HttpPort             string
+	EnableSSL            bool
 }
 
 func (p *MilvusConfig) init(base *BaseTable) {
@@ -99,6 +115,8 @@ func (p *MilvusConfig) init(base *BaseTable) {
 	p.initPassword()
 	p.initAuthorizationEnabled()
 	p.initTLSMode()
+	p.initHttpPort()
+	p.initSSLEnabled()
 }
 
 func (p *MilvusConfig) initAddress() {
@@ -139,6 +157,18 @@ func (p *MilvusConfig) initAuthorizationEnabled() {
 
 func (p *MilvusConfig) initTLSMode() {
 	p.TLSMode = p.Base.ParseIntWithDefault("milvus.tlsMode", 0)
+}
+
+func (p *MilvusConfig) initHttpPort() {
+	port, err := p.Base.Load("milvus.httpPort")
+	if err != nil {
+		panic(err)
+	}
+	p.HttpPort = port
+}
+
+func (p *MilvusConfig) initSSLEnabled() {
+	p.EnableSSL = p.Base.ParseBool("milvus.useSSL", false)
 }
 
 // /////////////////////////////////////////////////////////////////////////////
