@@ -497,7 +497,15 @@ const docTemplate = `{
                     "description": "force backup skip flush, Should make sure data has been stored into disk when using it",
                     "type": "boolean"
                 },
-                "gc_pause": {
+                "gc_pause_address": {
+                    "description": "gc pause API address",
+                    "type": "string"
+                },
+                "gc_pause_enable": {
+                    "description": "if true, stop GC to avoid the data compacted and GCed during backup, use it when the data to backup is very large.",
+                    "type": "boolean"
+                },
+                "gc_pause_seconds": {
                     "description": "gc pause seconds, set it larger than the time cost of backup",
                     "type": "integer"
                 },
@@ -508,10 +516,6 @@ const docTemplate = `{
                 "requestId": {
                     "description": "uuid of request, will generate one if not set",
                     "type": "string"
-                },
-                "stop_gc": {
-                    "description": "if true, stop GC to avoid the data compacted and GCed during backup, use it when the data to backup is very large.",
-                    "type": "boolean"
                 }
             }
         },

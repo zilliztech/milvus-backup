@@ -18,9 +18,6 @@ milvus:
   tlsMode: 0
   user: "root"
   password: "Milvus"
-  
-  useSSL: false # Optional, http API protocol, used to pause/resume GC of the Milvus cluster
-  httpPort: 9091 # Optional, http API port, used to pause/resume GC of the Milvus cluster
 
 # Related configuration of minio, which is responsible for data persistence for Milvus.
 minio:
@@ -60,5 +57,7 @@ backup:
   keepTempFiles: false
   
   # Pause GC during backup through Milvus Http API. 
-  pauseGcWhenBackup: true
-  pauseGcSeconds: 7200
+  gcPause:
+    enable: true
+    seconds: 7200
+    address: http://localhost:9091

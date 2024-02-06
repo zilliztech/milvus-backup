@@ -1,4 +1,4 @@
 go get
-./gen_proto.sh
 ./gen_swag.sh
+./gen_proto.sh
 go build
