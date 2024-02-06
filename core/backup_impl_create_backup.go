@@ -504,22 +504,17 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 	return nil
 }
 
-func (b *BackupContext) backupCollectionExecute(ctx context.Context, backupInfo *backuppb.BackupInfo, collection collectionStruct) error {
-	var collectionBackup *backuppb.CollectionBackupInfo
-	for _, coll := range backupInfo.GetCollectionBackups() {
-		if coll.GetCollectionName() == collection.collectionName && coll.DbName == collection.db {
-			collectionBackup = coll
-			break
-		}
-	}
+func (b *BackupContext) backupCollectionExecute(ctx context.Context, backupInfo *backuppb.BackupInfo, collectionBackup *backuppb.CollectionBackupInfo) error {
+	log.Info("backupCollectionExecute", zap.Any("collectionMeta", collectionBackup.String()))
 
 	var segmentBackupInfos []*backuppb.SegmentBackupInfo
 	for _, part := range collectionBackup.GetPartitionBackups() {
 		segmentBackupInfos = append(segmentBackupInfos, part.GetSegmentBackups()...)
 	}
-
 	log.Info("Begin copy data",
+		zap.String("dbName", collectionBackup.GetDbName()),
 		zap.String("collectionName", collectionBackup.GetCollectionName()),
+		zap.Int("partitionNum", len(collectionBackup.GetPartitionBackups())),
 		zap.Int("segmentNum", len(segmentBackupInfos)))
 
 	sort.SliceStable(segmentBackupInfos, func(i, j int) bool {
@@ -534,7 +529,9 @@ func (b *BackupContext) backupCollectionExecute(ctx context.Context, backupInfo 
 	b.refreshBackupCache(backupInfo)
 
 	log.Info("Finish copy data",
+		zap.String("dbName", collectionBackup.GetDbName()),
 		zap.String("collectionName", collectionBackup.GetCollectionName()),
+		zap.Int("partitionNum", len(collectionBackup.GetPartitionBackups())),
 		zap.Int("segmentNum", len(segmentBackupInfos)))
 	return nil
 }
@@ -641,9 +638,16 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 
 	if !request.GetMetaOnly() {
 		for _, collection := range toBackupCollections {
-			collectionClone := collection
+			var collectionBackup *backuppb.CollectionBackupInfo
+			for _, coll := range backupInfo.GetCollectionBackups() {
+				if coll.GetCollectionName() == collection.collectionName && coll.DbName == collection.db {
+					collectionBackup = coll
+					break
+				}
+			}
+			log.Info("before backupCollectionExecute", zap.String("collection", collectionBackup.String()))
 			job := func(ctx context.Context) error {
-				err := b.backupCollectionExecute(ctx, backupInfo, collectionClone)
+				err := b.backupCollectionExecute(ctx, backupInfo, collectionBackup)
 				return err
 			}
 			jobId := b.getBackupCollectionWorkerPool().SubmitWithId(job)
