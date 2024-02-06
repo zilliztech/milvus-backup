@@ -539,17 +539,11 @@ func (b *BackupContext) backupCollectionExecute(ctx context.Context, backupInfo 
 	return nil
 }
 
-func (b *BackupContext) pauseMilvusGC(ctx context.Context) {
-	httpAddress := b.params.MilvusCfg.Address + ":" + b.params.MilvusCfg.HttpPort
-	if b.params.MilvusCfg.EnableSSL {
-		httpAddress = "https://" + httpAddress
-	} else {
-		httpAddress = "http://" + httpAddress
-	}
+func (b *BackupContext) pauseMilvusGC(ctx context.Context, gcAddress string, pauseSeconds int) {
 	pauseAPI := "/management/datacoord/garbage_collection/pause"
 	params := url.Values{}
-	params.Add("pause_seconds", strconv.Itoa(b.params.BackupCfg.PauseGcSeconds))
-	fullURL := fmt.Sprintf("%s?%s", httpAddress+pauseAPI, params.Encode())
+	params.Add("pause_seconds", strconv.Itoa(pauseSeconds))
+	fullURL := fmt.Sprintf("%s?%s", gcAddress+pauseAPI, params.Encode())
 	response, err := http.Get(fullURL)
 	if err != nil {
 		log.Error("Pause Milvus GC Error:", zap.Error(err))
@@ -562,18 +556,12 @@ func (b *BackupContext) pauseMilvusGC(ctx context.Context) {
 		log.Error("Read response Error:", zap.Error(err))
 		return
 	}
-	log.Info("Pause Milvus GC response", zap.String("response", string(body)))
+	log.Info("Pause Milvus GC response", zap.String("response", string(body)), zap.String("address", gcAddress), zap.Int("pauseSeconds", pauseSeconds))
 }
 
-func (b *BackupContext) resumeMilvusGC(ctx context.Context) {
-	httpAddress := b.params.MilvusCfg.Address + ":" + b.params.MilvusCfg.HttpPort
-	if b.params.MilvusCfg.EnableSSL {
-		httpAddress = "https://" + httpAddress
-	} else {
-		httpAddress = "http://" + httpAddress
-	}
+func (b *BackupContext) resumeMilvusGC(ctx context.Context, gcAddress string) {
 	pauseAPI := "/management/datacoord/garbage_collection/resume"
-	fullURL := httpAddress + pauseAPI
+	fullURL := gcAddress + pauseAPI
 	response, err := http.Get(fullURL)
 	if err != nil {
 		log.Error("Resume Milvus GC Error:", zap.Error(err))
@@ -585,7 +573,7 @@ func (b *BackupContext) resumeMilvusGC(ctx context.Context) {
 		log.Error("Read response Error:", zap.Error(err))
 		return
 	}
-	log.Info("Resume Milvus GC response", zap.String("response", string(body)))
+	log.Info("Resume Milvus GC response", zap.String("response", string(body)), zap.String("address", gcAddress))
 }
 
 func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backuppb.CreateBackupRequest, backupInfo *backuppb.BackupInfo) (*backuppb.BackupInfo, error) {
@@ -593,9 +581,21 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 	defer b.mu.Unlock()
 
 	// pause GC
-	if b.params.BackupCfg.PauseGcWhenBackup {
-		b.pauseMilvusGC(ctx)
-		defer b.resumeMilvusGC(ctx)
+	if request.GetGcPauseEnable() || b.params.BackupCfg.GcPauseEnable {
+		var pause = 0
+		if request.GetGcPauseSeconds() == 0 {
+			pause = b.params.BackupCfg.GcPauseSeconds
+		} else {
+			pause = int(request.GetGcPauseSeconds())
+		}
+		var gcAddress string = ""
+		if request.GetGcPauseAddress() == "" {
+			gcAddress = b.params.BackupCfg.GcPauseAddress
+		} else {
+			gcAddress = request.GetGcPauseAddress()
+		}
+		b.pauseMilvusGC(ctx, gcAddress, pause)
+		defer b.resumeMilvusGC(ctx, gcAddress)
 	}
 
 	backupInfo.BackupTimestamp = uint64(time.Now().UnixNano() / int64(time.Millisecond))

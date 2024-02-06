@@ -38,9 +38,11 @@ type BackupConfig struct {
 	BackupCopyDataParallelism   int
 	RestoreParallelism          int
 
-	KeepTempFiles     bool
-	PauseGcWhenBackup bool
-	PauseGcSeconds    int
+	KeepTempFiles bool
+
+	GcPauseEnable  bool
+	GcPauseSeconds int
+	GcPauseAddress string
 }
 
 func (p *BackupConfig) init(base *BaseTable) {
@@ -51,8 +53,9 @@ func (p *BackupConfig) init(base *BaseTable) {
 	p.initRestoreParallelism()
 	p.initBackupCopyDataParallelism()
 	p.initKeepTempFiles()
-	p.initPauseGcWhenBackup()
-	p.initPauseGcSeconds()
+	p.initGcPauseEnable()
+	p.initGcPauseSeconds()
+	p.initGcPauseAddress()
 }
 
 func (p *BackupConfig) initMaxSegmentGroupSize() {
@@ -83,14 +86,19 @@ func (p *BackupConfig) initKeepTempFiles() {
 	p.KeepTempFiles, _ = strconv.ParseBool(keepTempFiles)
 }
 
-func (p *BackupConfig) initPauseGcWhenBackup() {
-	pauseGcWhenBackup := p.Base.LoadWithDefault("backup.pauseGcWhenBackup", "false")
-	p.PauseGcWhenBackup, _ = strconv.ParseBool(pauseGcWhenBackup)
+func (p *BackupConfig) initGcPauseEnable() {
+	enable := p.Base.LoadWithDefault("backup.gcPause.enable", "false")
+	p.GcPauseEnable, _ = strconv.ParseBool(enable)
 }
 
-func (p *BackupConfig) initPauseGcSeconds() {
-	size := p.Base.ParseIntWithDefault("backup.pauseGcSeconds", 7200)
-	p.PauseGcSeconds = size
+func (p *BackupConfig) initGcPauseSeconds() {
+	seconds := p.Base.ParseIntWithDefault("backup.gcPause.seconds", 7200)
+	p.GcPauseSeconds = seconds
+}
+
+func (p *BackupConfig) initGcPauseAddress() {
+	address := p.Base.LoadWithDefault("backup.gcPause.address", "http://localhost:9091")
+	p.GcPauseAddress = address
 }
 
 type MilvusConfig struct {
@@ -102,8 +110,6 @@ type MilvusConfig struct {
 	Password             string
 	AuthorizationEnabled bool
 	TLSMode              int
-	HttpPort             string
-	EnableSSL            bool
 }
 
 func (p *MilvusConfig) init(base *BaseTable) {
@@ -115,8 +121,6 @@ func (p *MilvusConfig) init(base *BaseTable) {
 	p.initPassword()
 	p.initAuthorizationEnabled()
 	p.initTLSMode()
-	p.initHttpPort()
-	p.initSSLEnabled()
 }
 
 func (p *MilvusConfig) initAddress() {
@@ -157,18 +161,6 @@ func (p *MilvusConfig) initAuthorizationEnabled() {
 
 func (p *MilvusConfig) initTLSMode() {
 	p.TLSMode = p.Base.ParseIntWithDefault("milvus.tlsMode", 0)
-}
-
-func (p *MilvusConfig) initHttpPort() {
-	port, err := p.Base.Load("milvus.httpPort")
-	if err != nil {
-		panic(err)
-	}
-	p.HttpPort = port
-}
-
-func (p *MilvusConfig) initSSLEnabled() {
-	p.EnableSSL = p.Base.ParseBool("milvus.useSSL", false)
 }
 
 // /////////////////////////////////////////////////////////////////////////////
