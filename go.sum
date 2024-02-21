@@ -402,8 +402,8 @@ github.com/matttproud/golang_protobuf_extensions v1.0.1/go.mod h1:D8He9yQNgCq6Z5
 github.com/mediocregopher/radix/v3 v3.4.2/go.mod h1:8FL3F6UQRXHXIBSPUs5h0RybMF8i4n7wVopoX3x7Bv8=
 github.com/microcosm-cc/bluemonday v1.0.2/go.mod h1:iVP4YcDBq+n/5fb23BhYFvIMq/leAFZyRl6bYmGDlGc=
 github.com/miekg/dns v1.0.14/go.mod h1:W1PPwlIAgtquWBMBEV9nkV9Cazfe8ScdGz/Lj7v3Nrg=
-github.com/milvus-io/milvus-proto/go-api/v2 v2.3.5 h1:4XDy6ATB2Z0fl4Jn0hS6BT6/8YaE0d+ZUf4uBH+Z0Do=
-github.com/milvus-io/milvus-proto/go-api/v2 v2.3.5/go.mod h1:1OIl0v5PQeNxIJhCvY+K55CBUOYDZevw9g9380u1Wek=
+github.com/milvus-io/milvus-proto/go-api/v2 v2.3.6 h1:dvjukoX5NvoX4Q3oHWXb8gi+l1/WuxQ8BaqazqzlCHg=
+github.com/milvus-io/milvus-proto/go-api/v2 v2.3.6/go.mod h1:1OIl0v5PQeNxIJhCvY+K55CBUOYDZevw9g9380u1Wek=
 github.com/minio/md5-simd v1.1.0 h1:QPfiOqlZH+Cj9teu0t9b1nTBfPbyTl16Of5MeuShdK4=
 github.com/minio/md5-simd v1.1.0/go.mod h1:XpBqgZULrMYD3R+M28PcmP0CkI7PEMzB3U77ZrKZ0Gw=
 github.com/minio/minio-go/v7 v7.0.17 h1:5SiS3pqiQDbNhmXMxtqn2HzAInbN5cbHT7ip9F0F07E=
@@ -577,8 +577,8 @@ github.com/valyala/fasthttp v1.6.0/go.mod h1:FstJa9V+Pj9vQ7OJie2qMHdwemEDaDiSdBn
 github.com/valyala/fasttemplate v1.0.1/go.mod h1:UQGH1tvbgY+Nz5t2n7tXsz52dQxojPUpymEIMZ47gx8=
 github.com/valyala/fasttemplate v1.2.1/go.mod h1:KHLXt3tVN2HBp8eijSv/kGJopbvo7S+qRAEEKiv+SiQ=
 github.com/valyala/tcplisten v0.0.0-20161114210144-ceec8f93295a/go.mod h1:v3UYOV9WzVtRmSR+PDvWpU/qWl4Wa5LApYYX4ZtKbio=
-github.com/wayblink/milvus-sdk-go/v2 v2.3.5-beta1 h1:MmqFqF6svgR36iGXeS/pLnSnlzO8f8y24yFKHqAzkkU=
-github.com/wayblink/milvus-sdk-go/v2 v2.3.5-beta1/go.mod h1:bYFSXVxEj6A/T8BfiR+xkofKbAVZpWiDvKr3SzYUWiA=
+github.com/wayblink/milvus-sdk-go/v2 v2.3.6-beta3 h1:Lu8A/KGpOzyyD1aHX4TzHfXcEfyFZAG8XxV+PxQbRYU=
+github.com/wayblink/milvus-sdk-go/v2 v2.3.6-beta3/go.mod h1:QimM7ujrxHPhKgKkpgRA0zdRTRAe+AIJb79E6NO7Hqo=
 github.com/xeipuuv/gojsonpointer v0.0.0-20180127040702-4e3ac2762d5f/go.mod h1:N2zxlSyiKSe5eX1tZViRH5QA0qijqEDrYZiPEAiq3wU=
 github.com/xeipuuv/gojsonreference v0.0.0-20180127040603-bd5ef7bd5415/go.mod h1:GwrjFmJcFw6At/Gs6z4yjiIwzuJ1/+UwLxMQDVQXShQ=
 github.com/xeipuuv/gojsonschema v1.2.0/go.mod h1:anYRn/JVcOK2ZgGU+IjEV4nwlhoK5sQluxsYJ78Id3Y=
