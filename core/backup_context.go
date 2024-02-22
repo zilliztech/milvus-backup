@@ -222,7 +222,7 @@ func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBack
 
 	if request.GetBackupId() == "" && request.GetBackupName() == "" {
 		resp.Code = backuppb.ResponseCode_Parameter_Error
-		resp.Msg = "empty backup name and backup id"
+		resp.Msg = "empty backup name and backup id, please set a backup name or id"
 	} else if request.GetBackupId() != "" {
 		if value, ok := b.backupTasks.Load(request.GetBackupId()); ok {
 			resp.Code = backuppb.ResponseCode_Success
