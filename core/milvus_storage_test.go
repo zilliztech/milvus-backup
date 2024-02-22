@@ -7,8 +7,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/minio/minio-go/v7"
+	"github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/zilliztech/milvus-backup/core/storage/tencent"
 
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/storage"
@@ -112,4 +115,19 @@ func TestReadMilvusData(t *testing.T) {
 		//log.Info(path)
 	}
 
+}
+
+func TestTencentOSS(t *testing.T) {
+	var creds *credentials.Credentials
+	bucketLookupType := minio.BucketLookupDNS
+	minioOpts := &minio.Options{
+		BucketLookup: bucketLookupType,
+		Creds:        creds,
+		Secure:       true,
+	}
+	client, err := tencent.NewMinioClient("cos.ap-nanjing.myqcloud.com", minioOpts)
+	assert.NoError(t, err)
+	exist, err := client.BucketExists(context.Background(), "")
+	assert.NoError(t, err)
+	assert.True(t, exist)
 }

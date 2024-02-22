@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/zilliztech/milvus-backup/core/storage/tencent"
 	"golang.org/x/sync/errgroup"
 	"io"
 	"strings"
@@ -66,6 +67,13 @@ func newMinioChunkManagerWithConfig(ctx context.Context, c *config) (*MinioChunk
 
 	switch c.storageType {
 	case paramtable.CloudProviderAliyun:
+		// auto doesn't work for aliyun, so we set to dns deliberately
+		bucketLookupType = minio.BucketLookupDNS
+		if c.useIAM {
+			newMinioFn = aliyun.NewMinioClient
+		} else {
+			creds = credentials.NewStaticV4(c.accessKeyID, c.secretAccessKeyID, "")
+		}
 	case paramtable.CloudProviderAli:
 		// auto doesn't work for aliyun, so we set to dns deliberately
 		bucketLookupType = minio.BucketLookupDNS
@@ -78,6 +86,18 @@ func newMinioChunkManagerWithConfig(ctx context.Context, c *config) (*MinioChunk
 		newMinioFn = gcp.NewMinioClient
 		if !c.useIAM {
 			creds = credentials.NewStaticV2(c.accessKeyID, c.secretAccessKeyID, "")
+		}
+	case paramtable.CloudProviderTencentShort:
+		bucketLookupType = minio.BucketLookupDNS
+		newMinioFn = tencent.NewMinioClient
+		if !c.useIAM {
+			creds = credentials.NewStaticV4(c.accessKeyID, c.secretAccessKeyID, "")
+		}
+	case paramtable.CloudProviderTencent:
+		bucketLookupType = minio.BucketLookupDNS
+		newMinioFn = tencent.NewMinioClient
+		if !c.useIAM {
+			creds = credentials.NewStaticV4(c.accessKeyID, c.secretAccessKeyID, "")
 		}
 	default: // aws, minio
 		if c.useIAM {
