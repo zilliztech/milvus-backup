@@ -166,25 +166,29 @@ func (p *MilvusConfig) initTLSMode() {
 // /////////////////////////////////////////////////////////////////////////////
 // --- minio ---
 const (
-	Local               = "local"
-	Minio               = "minio"
-	S3                  = "s3"
-	CloudProviderAWS    = "aws"
-	CloudProviderGCP    = "gcp"
-	CloudProviderAli    = "ali"
-	CloudProviderAliyun = "aliyun"
-	CloudProviderAzure  = "azure"
+	Local                     = "local"
+	Minio                     = "minio"
+	S3                        = "s3"
+	CloudProviderAWS          = "aws"
+	CloudProviderGCP          = "gcp"
+	CloudProviderAli          = "ali"
+	CloudProviderAliyun       = "aliyun"
+	CloudProviderAzure        = "azure"
+	CloudProviderTencent      = "tencent"
+	CloudProviderTencentShort = "tc"
 )
 
 var supportedStorageType = map[string]bool{
-	Local:               true,
-	Minio:               true,
-	S3:                  true,
-	CloudProviderAWS:    true,
-	CloudProviderGCP:    true,
-	CloudProviderAli:    true,
-	CloudProviderAliyun: true,
-	CloudProviderAzure:  true,
+	Local:                     true,
+	Minio:                     true,
+	S3:                        true,
+	CloudProviderAWS:          true,
+	CloudProviderGCP:          true,
+	CloudProviderAli:          true,
+	CloudProviderAliyun:       true,
+	CloudProviderAzure:        true,
+	CloudProviderTencent:      true,
+	CloudProviderTencentShort: true,
 }
 
 type MinioConfig struct {
