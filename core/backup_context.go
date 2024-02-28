@@ -51,6 +51,9 @@ type BackupContext struct {
 	backupNameIdDict sync.Map //map[string]string
 	backupTasks      sync.Map //map[string]*backuppb.BackupInfo
 
+	backupTasksCache sync.Map //map[string]*LeveledBackupInfo
+	updateMu         sync.Mutex
+
 	restoreTasks map[string]*backuppb.RestoreBackupTask
 
 	backupCollectionWorkerPool *common.WorkerPool
@@ -94,10 +97,12 @@ func CreateStorageClient(ctx context.Context, params paramtable.BackupParams) (s
 }
 
 func (b *BackupContext) Start() error {
-	b.backupTasks = sync.Map{}
+	//b.backupTasks = sync.Map{}
+	b.backupTasksCache = sync.Map{}
 	b.backupNameIdDict = sync.Map{}
 	b.restoreTasks = make(map[string]*backuppb.RestoreBackupTask)
 	b.started = true
+	b.updateMu = sync.Mutex{}
 	log.Info(fmt.Sprintf("%+v", b.params.BackupCfg))
 	log.Info(fmt.Sprintf("%+v", b.params.HTTPCfg))
 	return nil
@@ -224,18 +229,30 @@ func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBack
 		resp.Code = backuppb.ResponseCode_Parameter_Error
 		resp.Msg = "empty backup name and backup id, please set a backup name or id"
 	} else if request.GetBackupId() != "" {
-		if value, ok := b.backupTasks.Load(request.GetBackupId()); ok {
-			resp.Code = backuppb.ResponseCode_Success
-			resp.Msg = "success"
-			resp.Data = value.(*backuppb.BackupInfo)
+		if value, ok := b.backupTasksCache.Load(request.GetBackupId()); ok {
+			backupInfo, err := levelToTree(value.(*LeveledBackupInfo))
+			if err != nil {
+				resp.Code = backuppb.ResponseCode_Fail
+				resp.Msg = err.Error()
+			} else {
+				resp.Code = backuppb.ResponseCode_Success
+				resp.Msg = "success"
+				resp.Data = backupInfo
+			}
 		}
 	} else if request.GetBackupName() != "" {
 		if id, ok := b.backupNameIdDict.Load(request.GetBackupName()); ok {
 			resp.Code = backuppb.ResponseCode_Success
 			resp.Msg = "success"
-			backup, ok := b.backupTasks.Load(id)
+			backup, ok := b.backupTasksCache.Load(id)
 			if ok {
-				resp.Data = backup.(*backuppb.BackupInfo)
+				backupInfo, err := levelToTree(backup.(*LeveledBackupInfo))
+				if err != nil {
+					resp.Code = backuppb.ResponseCode_Fail
+					resp.Msg = err.Error()
+				} else {
+					resp.Data = backupInfo
+				}
 			}
 		} else {
 			var backupBucketName string
