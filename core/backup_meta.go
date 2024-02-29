@@ -385,7 +385,11 @@ func UpdateRestoreBackupTask(input *backuppb.RestoreBackupTask) *backuppb.Restor
 		storedSize += coll.GetRestoredSize()
 	}
 	if input.ToRestoreSize == 0 {
-		input.Progress = 100
+		if input.StateCode == backuppb.RestoreTaskStateCode_SUCCESS {
+			input.Progress = 100
+		} else {
+			input.Progress = 0
+		}
 	} else {
 		input.Progress = int32(storedSize * 100 / input.ToRestoreSize)
 	}
