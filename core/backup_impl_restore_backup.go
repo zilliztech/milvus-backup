@@ -623,9 +623,11 @@ func (b *BackupContext) restorePartition(ctx context.Context, targetDBName, targ
 					realFiles[i] = file
 				} else {
 					log.Debug("Copy temporary restore file", zap.String("from", file), zap.String("to", tempDir+file))
-					err := b.getStorageClient().Copy(ctx, backupBucketName, b.milvusBucketName, file, tempDir+file)
+					err = retry.Do(ctx, func() error {
+						return b.getStorageClient().Copy(ctx, backupBucketName, b.milvusBucketName, file, tempDir+file)
+					}, retry.Sleep(2*time.Second), retry.Attempts(5))
 					if err != nil {
-						log.Error("fail to copy backup date from backup bucket to restore target milvus bucket", zap.Error(err))
+						log.Error("fail to copy backup date from backup bucket to restore target milvus bucket after retry", zap.Error(err))
 						return err
 					}
 					realFiles[i] = tempDir + file
