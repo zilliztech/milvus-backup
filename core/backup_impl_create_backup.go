@@ -747,9 +747,11 @@ func (b *BackupContext) copySegments(ctx context.Context, segments []*backuppb.S
 						return err
 					}
 
-					err = b.getStorageClient().Copy(ctx, b.milvusBucketName, b.backupBucketName, binlog.GetLogPath(), targetPath)
+					err = retry.Do(ctx, func() error {
+						return b.getStorageClient().Copy(ctx, b.milvusBucketName, b.backupBucketName, binlog.GetLogPath(), targetPath)
+					}, retry.Sleep(2*time.Second), retry.Attempts(5))
 					if err != nil {
-						log.Info("Fail to copy file",
+						log.Info("Fail to copy file after retry",
 							zap.Error(err),
 							zap.String("from", binlog.GetLogPath()),
 							zap.String("to", targetPath))
@@ -795,9 +797,11 @@ func (b *BackupContext) copySegments(ctx context.Context, segments []*backuppb.S
 							zap.String("file", binlog.GetLogPath()))
 						return errors.New("Binlog file not exist " + binlog.GetLogPath())
 					}
-					err = b.getStorageClient().Copy(ctx, b.milvusBucketName, b.backupBucketName, binlog.GetLogPath(), targetPath)
+					err = retry.Do(ctx, func() error {
+						return b.getStorageClient().Copy(ctx, b.milvusBucketName, b.backupBucketName, binlog.GetLogPath(), targetPath)
+					}, retry.Sleep(2*time.Second), retry.Attempts(5))
 					if err != nil {
-						log.Info("Fail to copy file",
+						log.Info("Fail to copy file after retry",
 							zap.Error(err),
 							zap.String("from", binlog.GetLogPath()),
 							zap.String("to", targetPath))
