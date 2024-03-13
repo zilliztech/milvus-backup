@@ -130,8 +130,9 @@ type collectionStruct struct {
 
 // parse collections to backup
 // For backward compatibility：
-//   1，parse dbCollections first,
-//   2，if dbCollections not set, use collectionNames
+//
+//	1，parse dbCollections first,
+//	2，if dbCollections not set, use collectionNames
 func (b *BackupContext) parseBackupCollections(request *backuppb.CreateBackupRequest) ([]collectionStruct, error) {
 	log.Debug("Request collection names",
 		zap.Strings("request_collection_names", request.GetCollectionNames()),
@@ -493,7 +494,9 @@ func (b *BackupContext) backupCollectionExecute(ctx context.Context, levelInfo *
 	log.Info("backupCollectionExecute", zap.Any("collectionMeta", collectionBackup.String()))
 	var segmentBackupInfos []*backuppb.SegmentBackupInfo
 	for _, seg := range levelInfo.segmentLevel.Infos {
-		segmentBackupInfos = append(segmentBackupInfos, seg)
+		if seg.CollectionId == collectionBackup.GetCollectionId() {
+			segmentBackupInfos = append(segmentBackupInfos, seg)
+		}
 	}
 	log.Info("Begin copy data",
 		zap.String("dbName", collectionBackup.GetDbName()),
@@ -629,9 +632,10 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 
 	if !request.GetMetaOnly() {
 		for _, collection := range toBackupCollectionInfos {
+			collectionClone := collection
 			log.Info("before backupCollectionExecute", zap.String("collection", collection.CollectionName))
 			job := func(ctx context.Context) error {
-				err := b.backupCollectionExecute(ctx, levelInfo, collection)
+				err := b.backupCollectionExecute(ctx, levelInfo, collectionClone)
 				return err
 			}
 			jobId := b.getBackupCollectionWorkerPool().SubmitWithId(job)
@@ -709,7 +713,7 @@ func (b *BackupContext) copySegments(ctx context.Context, segments []*backuppb.S
 			zap.Int64("partition_id", segment.GetPartitionId()),
 			zap.Int64("segment_id", segment.GetSegmentId()),
 			zap.Int64("group_id", segment.GetGroupId()))
-		log.Debug("copy segment")
+		log.Info("copy segment")
 		_, err := b.fillSegmentBackupInfo(ctx, levelInfo, segment)
 		if err != nil {
 			log.Error("Fail to fill segment backup info", zap.Error(err))
