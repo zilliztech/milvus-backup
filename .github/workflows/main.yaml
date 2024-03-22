@@ -607,7 +607,7 @@ jobs:
         if: ${{ ! success() }}
         uses: actions/upload-artifact@v2
         with:
-          name: api-test-logs-${{ matrix.deploy_tools }}-${{ matrix.milvus_mode }}-${{ matrix.case_tag }}
+          name: api-test-logs-${{ matrix.deploy_tools }}-${{ matrix.milvus_mode }}-${{ matrix.image_tag }}-${{ matrix.case_tag }}
           path: |
             ./logs
             ./server.log
