@@ -44,4 +44,6 @@ minio==7.1.5
 # for benchmark
 h5py==3.1.0
 pytest-benchmark==4.0.0
-
+# for brain float16 datatype
+jax==0.4.13
+jaxlib==0.4.13
