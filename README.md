@@ -246,3 +246,6 @@ python example/verify_data.py
 This will perform a search on the `hello_milvus_recover` collection and verify that the restored data is correct.
 
 That's it! You have successfully backed up and restored your Milvus collection.
+
+## License
+milvus-backup is licensed under the Apache License, Version 2.0.
