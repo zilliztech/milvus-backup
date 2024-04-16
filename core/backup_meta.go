@@ -15,6 +15,7 @@ const (
 	PARTITION_META_FILE  = "partition_meta.json"
 	SEGMENT_META_FILE    = "segment_meta.json"
 	FULL_META_FILE       = "full_meta.json"
+	CP_META_FILE         = "channel_cp_meta.json"
 	SEPERATOR            = "/"
 
 	BINGLOG_DIR    = "binlogs"
@@ -101,6 +102,7 @@ func treeToLevel(backup *backuppb.BackupInfo) (LeveledBackupInfo, error) {
 			IndexInfos:              collectionBack.GetIndexInfos(),
 			LoadState:               collectionBack.GetLoadState(),
 			BackupPhysicalTimestamp: collectionBack.GetBackupPhysicalTimestamp(),
+			ChannelCheckpoints:      collectionBack.GetChannelCheckpoints(),
 		}
 		collections = append(collections, cloneCollectionBackup)
 		backupSize = backupSize + collectionSize
@@ -271,6 +273,10 @@ func SegmentMetaPath(backupRootPath, backupName string) string {
 
 func FullMetaPath(backupRootPath, backupName string) string {
 	return BackupMetaDirPath(backupRootPath, backupName) + SEPERATOR + FULL_META_FILE
+}
+
+func ChannelCPMetaPath(backupRootPath, backupName string) string {
+	return BackupMetaDirPath(backupRootPath, backupName) + SEPERATOR + CP_META_FILE
 }
 
 func BackupBinlogDirPath(backupRootPath, backupName string) string {

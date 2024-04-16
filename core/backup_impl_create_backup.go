@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -357,7 +358,7 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, levelInfo *
 			zap.String("databaseName", collectionBackup.GetDbName()),
 			zap.String("collectionName", collectionBackup.GetCollectionName()),
 			zap.Int("segmentNumBeforeFlush", len(segmentEntitiesBeforeFlush)))
-		newSealedSegmentIDs, flushedSegmentIDs, timeOfSeal, err := b.getMilvusClient().FlushV2(ctx, collectionBackup.GetDbName(), collectionBackup.GetCollectionName(), false)
+		newSealedSegmentIDs, flushedSegmentIDs, timeOfSeal, channelCPs, err := b.getMilvusClient().FlushV2(ctx, collectionBackup.GetDbName(), collectionBackup.GetCollectionName(), false)
 		if err != nil {
 			log.Error("fail to flush the collection",
 				zap.String("databaseName", collectionBackup.GetDbName()),
@@ -365,14 +366,29 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, levelInfo *
 				zap.Error(err))
 			return nil, err
 		}
+
+		//collectionBackup.BackupTimestamp = utils.ComposeTS(timeOfSeal, 0)
+		collectionBackup.BackupPhysicalTimestamp = uint64(timeOfSeal)
+		channelCheckpoints := make(map[string]string, 0)
+		var maxChannelBackupTimeStamp uint64 = 0
+		for vch, checkpoint := range channelCPs {
+			channelCheckpoints[vch] = utils.Base64MsgPosition(&checkpoint)
+			if maxChannelBackupTimeStamp == 0 {
+				maxChannelBackupTimeStamp = checkpoint.GetTimestamp()
+			} else if maxChannelBackupTimeStamp < checkpoint.GetTimestamp() {
+				maxChannelBackupTimeStamp = checkpoint.GetTimestamp()
+			}
+		}
+		collectionBackup.ChannelCheckpoints = channelCheckpoints
+		collectionBackup.BackupTimestamp = maxChannelBackupTimeStamp
 		log.Info("flush segments",
 			zap.String("databaseName", collectionBackup.GetDbName()),
 			zap.String("collectionName", collectionBackup.GetCollectionName()),
 			zap.Int64s("newSealedSegmentIDs", newSealedSegmentIDs),
 			zap.Int64s("flushedSegmentIDs", flushedSegmentIDs),
-			zap.Int64("timeOfSeal", timeOfSeal))
-		collectionBackup.BackupTimestamp = utils.ComposeTS(timeOfSeal, 0)
-		collectionBackup.BackupPhysicalTimestamp = uint64(timeOfSeal)
+			zap.Int64("timeOfSeal", timeOfSeal),
+			zap.Uint64("BackupTimestamp", collectionBackup.BackupTimestamp),
+			zap.Any("channelCPs", channelCPs))
 
 		flushSegmentIDs := append(newSealedSegmentIDs, flushedSegmentIDs...)
 		segmentEntitiesAfterFlush, err := b.getMilvusClient().GetPersistentSegmentInfo(ctx, collectionBackup.GetDbName(), collectionBackup.GetCollectionName())
@@ -666,7 +682,12 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 	b.updateBackup(levelInfo, backupInfo)
 
 	// 7, write meta data
-	b.writeBackupInfoMeta(ctx, levelInfo, backupInfo.GetName())
+	err = b.writeBackupInfoMeta(ctx, levelInfo, backupInfo.GetName())
+	if err != nil {
+		backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
+		backupInfo.ErrorMessage = err.Error()
+		return backupInfo, err
+	}
 	log.Info("finish executeCreateBackup",
 		zap.String("requestId", request.GetRequestId()),
 		zap.String("backupName", request.GetBackupName()),
@@ -675,7 +696,7 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 	return backupInfo, nil
 }
 
-func (b *BackupContext) writeBackupInfoMeta(ctx context.Context, levelBackupInfo *LeveledBackupInfo, path string) {
+func (b *BackupContext) writeBackupInfoMeta(ctx context.Context, levelBackupInfo *LeveledBackupInfo, path string) error {
 	backupInfo, _ := levelToTree(levelBackupInfo)
 	log.Info("Final backupInfo", zap.String("backupInfo", backupInfo.String()))
 	output, _ := serialize(backupInfo)
@@ -684,16 +705,37 @@ func (b *BackupContext) writeBackupInfoMeta(ctx context.Context, levelBackupInfo
 	log.Debug("partition meta", zap.String("value", string(output.PartitionMetaBytes)))
 	log.Debug("segment meta", zap.String("value", string(output.SegmentMetaBytes)))
 
+	collectionBackups := backupInfo.GetCollectionBackups()
+	collectionPositions := make(map[string][]*backuppb.ChannelPosition, 0)
+	for _, collectionBackup := range collectionBackups {
+		collectionCPs := make([]*backuppb.ChannelPosition, 0)
+		for vCh, position := range collectionBackup.GetChannelCheckpoints() {
+			pCh := strings.Split(vCh, "_")[0] + "_" + strings.Split(vCh, "_")[1]
+			collectionCPs = append(collectionCPs, &backuppb.ChannelPosition{
+				Name:     pCh,
+				Position: position,
+			})
+		}
+		collectionPositions[collectionBackup.GetCollectionName()] = collectionCPs
+	}
+	channelCPsBytes, err := json.Marshal(collectionPositions)
+	if err != nil {
+		return err
+	}
+	log.Debug("channel cp meta", zap.String("value", string(channelCPsBytes)))
+
 	b.getStorageClient().Write(ctx, b.backupBucketName, BackupMetaPath(b.backupRootPath, path), output.BackupMetaBytes)
 	b.getStorageClient().Write(ctx, b.backupBucketName, CollectionMetaPath(b.backupRootPath, path), output.CollectionMetaBytes)
 	b.getStorageClient().Write(ctx, b.backupBucketName, PartitionMetaPath(b.backupRootPath, path), output.PartitionMetaBytes)
 	b.getStorageClient().Write(ctx, b.backupBucketName, SegmentMetaPath(b.backupRootPath, path), output.SegmentMetaBytes)
 	b.getStorageClient().Write(ctx, b.backupBucketName, FullMetaPath(b.backupRootPath, path), output.FullMetaBytes)
+	b.getStorageClient().Write(ctx, b.backupBucketName, ChannelCPMetaPath(b.backupRootPath, backupInfo.GetName()), channelCPsBytes)
 
 	log.Info("finish writeBackupInfoMeta",
 		zap.String("path", path),
 		zap.String("backupName", backupInfo.GetName()),
 		zap.String("backup meta", string(output.BackupMetaBytes)))
+	return nil
 }
 
 func (b *BackupContext) copySegments(ctx context.Context, segments []*backuppb.SegmentBackupInfo, levelInfo *LeveledBackupInfo) error {
