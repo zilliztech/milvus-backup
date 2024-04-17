@@ -77,7 +77,7 @@ class TestRestoreBackup(TestcaseBase):
         for name in restore_collections:
             assert name + suffix in res
         for name in restore_collections:
-            self.compare_collections(name, name+suffix)
+            self.compare_collections(name, name+suffix, verify_by_query=True)
 
     @pytest.mark.tags(CaseLabel.L1)
     @pytest.mark.parametrize("nb", [3000])
