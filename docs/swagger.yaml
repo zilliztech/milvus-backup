@@ -203,6 +203,9 @@ definitions:
     - 23
     - 100
     - 101
+    - 102
+    - 103
+    - 104
     type: integer
     x-enum-varnames:
     - DataType_None
@@ -219,6 +222,9 @@ definitions:
     - DataType_Json
     - DataType_BinaryVector
     - DataType_FloatVector
+    - DataType_Float16Vector
+    - DataType_BFloat16Vector
+    - DataType_SparseFloatVector
   backuppb.DeleteBackupResponse:
     properties:
       code:
@@ -570,7 +576,7 @@ definitions:
   backuppb.ValueField:
     properties:
       data:
-        description: "Types that are valid to be assigned to Data:\n\t*ValueField_BoolData\n\t*ValueField_IntData\n\t*ValueField_LongData\n\t*ValueField_FloatData\n\t*ValueField_DoubleData\n\t*ValueField_StringData\n\t*ValueField_BytesData"
+        description: "Types that are valid to be assigned to Data:\n\n\t*ValueField_BoolData\n\t*ValueField_IntData\n\t*ValueField_LongData\n\t*ValueField_FloatData\n\t*ValueField_DoubleData\n\t*ValueField_StringData\n\t*ValueField_BytesData"
     type: object
 info:
   contact:

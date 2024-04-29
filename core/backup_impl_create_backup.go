@@ -130,8 +130,9 @@ type collectionStruct struct {
 
 // parse collections to backup
 // For backward compatibility：
-//   1，parse dbCollections first,
-//   2，if dbCollections not set, use collectionNames
+//
+//	1，parse dbCollections first,
+//	2，if dbCollections not set, use collectionNames
 func (b *BackupContext) parseBackupCollections(request *backuppb.CreateBackupRequest) ([]collectionStruct, error) {
 	log.Debug("Request collection names",
 		zap.Strings("request_collection_names", request.GetCollectionNames()),
@@ -275,7 +276,7 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, levelInfo *
 				continue
 			} else {
 				indexInfo := &backuppb.IndexInfo{
-					FieldName: index.FieldName(),
+					FieldName: field.Name,
 					IndexName: index.Name(),
 					IndexType: string(index.IndexType()),
 					Params:    index.Params(),
