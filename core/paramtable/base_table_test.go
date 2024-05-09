@@ -1,9 +1,11 @@
 package paramtable
 
 import (
+	"os"
+	"testing"
+
 	"github.com/stretchr/testify/assert"
 	memkv "github.com/zilliztech/milvus-backup/internal/kv/mem"
-	"testing"
 )
 
 func TestParseDataSizeWithDefault(t *testing.T) {
@@ -36,4 +38,14 @@ func TestParseDataSizeWithDefault(t *testing.T) {
 	size1024000, err := base.ParseDataSizeWithDefault(sizeKey, "1024000")
 	assert.NoError(t, err)
 	assert.Equal(t, size1024000, int64(1024000))
+}
+
+func TestTryLoadFromEnv(t *testing.T) {
+	base := &BaseTable{
+		params: memkv.NewMemoryKV(),
+	}
+	os.Setenv("MILVUS_USER", "Marco")
+	base.tryLoadFromEnv()
+
+	assert.Equal(t, "Marco", base.params.LoadWithDefault("milvus.user", ""))
 }
