@@ -261,6 +261,91 @@ class TestRestoreBackup(TestcaseBase):
             all_backup = []
         assert back_up_name not in all_backup
 
+    @pytest.mark.parametrize("include_partition_key", [True])
+    @pytest.mark.parametrize("include_dynamic", [True])
+    @pytest.mark.parametrize("include_json", [True])
+    @pytest.mark.tags(CaseLabel.MASTER)
+    def test_milvus_restore_back_with_multi_json_datatype(self, include_json, include_dynamic, include_partition_key):
+        self._connect()
+        name_origin = cf.gen_unique_str(prefix)
+        back_up_name = cf.gen_unique_str(backup_prefix)
+        if include_json:
+            fields = [cf.gen_int64_field(name="int64", is_primary=True),
+                      cf.gen_int64_field(name="key"),
+                      cf.gen_json_field(name="json"),
+                      cf.gen_float_vec_field(name="float_vector", dim=128),
+                      ]
+        else:
+            fields = [cf.gen_int64_field(name="int64", is_primary=True),
+                      cf.gen_int64_field(name="key"),
+                      cf.gen_float_vec_field(name="float_vector", dim=128),
+                      ]
+        if include_partition_key:
+            partition_key = "key"
+            default_schema = cf.gen_collection_schema(fields,
+                                                      enable_dynamic_field=include_dynamic,
+                                                      partition_key_field=partition_key)
+        else:
+            default_schema = cf.gen_collection_schema(fields,
+                                                      enable_dynamic_field=include_dynamic)
+
+        collection_w = self.init_collection_wrap(name=name_origin, schema=default_schema, active_trace=True)
+        nb = 3000
+        json_value = [
+                    1,
+                    1.0,
+                    "1",
+                    [1, 2, 3],
+                    ["1", "2", "3"],
+                    [1, 2, "3"],
+                    {"key": "value"},
+                ]        
+        if include_json:
+            data = [
+                [i for i in range(nb)],
+                [i % 3 for i in range(nb)],
+                [json_value[i%len(json_value)] for i in range(nb)],
+                [[np.float32(i) for i in range(128)] for _ in range(nb)],
+            ]
+        else:
+            data = [
+                [i for i in range(nb)],
+                [i % 3 for i in range(nb)],
+                [[np.float32(i) for i in range(128)] for _ in range(nb)],
+            ]
+        collection_w.insert(data=data)
+
+        res = client.create_backup({"async": False, "backup_name": back_up_name, "collection_names": [name_origin]})
+        log.info(f"create_backup {res}")
+        res = client.list_backup()
+        log.info(f"list_backup {res}")
+        if "data" in res:
+            all_backup = [r["name"] for r in res["data"]]
+        else:
+            all_backup = []
+        assert back_up_name in all_backup
+        backup = client.get_backup(back_up_name)
+        assert backup["data"]["name"] == back_up_name
+        backup_collections = [backup["collection_name"]for backup in backup["data"]["collection_backups"]]
+        assert name_origin in backup_collections
+        res = client.restore_backup({"async": False, "backup_name": back_up_name, "collection_names": [name_origin],
+                                     "collection_suffix": suffix})
+        log.info(f"restore_backup: {res}")
+        res, _ = self.utility_wrap.list_collections()
+        assert name_origin + suffix in res
+        output_fields = None
+        if not include_json:
+            output_fields = [ct.default_int64_field_name]
+        self.compare_collections(name_origin, name_origin + suffix, output_fields=output_fields)
+        res = client.delete_backup(back_up_name)
+        res = client.list_backup()
+        if "data" in res:
+            all_backup = [r["name"] for r in res["data"]]
+        else:
+            all_backup = []
+        assert back_up_name not in all_backup
+
+
     @pytest.mark.parametrize("drop_db", [True, False])
     @pytest.mark.parametrize("str_json", [True, False])
     @pytest.mark.tags(CaseLabel.L0)
