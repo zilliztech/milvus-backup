@@ -535,7 +535,10 @@ const docTemplate = `{
                 22,
                 23,
                 100,
-                101
+                101,
+                102,
+                103,
+                104
             ],
             "x-enum-varnames": [
                 "DataType_None",
@@ -551,7 +554,10 @@ const docTemplate = `{
                 "DataType_Array",
                 "DataType_Json",
                 "DataType_BinaryVector",
-                "DataType_FloatVector"
+                "DataType_FloatVector",
+                "DataType_Float16Vector",
+                "DataType_BFloat16Vector",
+                "DataType_SparseFloatVector"
             ]
         },
         "backuppb.DeleteBackupResponse": {
@@ -1051,7 +1057,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "data": {
-                    "description": "Types that are valid to be assigned to Data:\n\t*ValueField_BoolData\n\t*ValueField_IntData\n\t*ValueField_LongData\n\t*ValueField_FloatData\n\t*ValueField_DoubleData\n\t*ValueField_StringData\n\t*ValueField_BytesData"
+                    "description": "Types that are valid to be assigned to Data:\n\n\t*ValueField_BoolData\n\t*ValueField_IntData\n\t*ValueField_LongData\n\t*ValueField_FloatData\n\t*ValueField_DoubleData\n\t*ValueField_StringData\n\t*ValueField_BytesData"
                 }
             }
         }
