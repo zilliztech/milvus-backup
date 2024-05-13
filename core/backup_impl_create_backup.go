@@ -521,21 +521,24 @@ func (b *BackupContext) backupCollectionExecute(ctx context.Context, levelInfo *
 	return nil
 }
 
+const GC_Warn_Message = "This warn won't fail the backup process. Pause GC can protect data not to be GCed during backup, it is necessary to backup very large data(cost more than a hour)."
+
 func (b *BackupContext) pauseMilvusGC(ctx context.Context, gcAddress string, pauseSeconds int) {
 	pauseAPI := "/management/datacoord/garbage_collection/pause"
 	params := url.Values{}
 	params.Add("pause_seconds", strconv.Itoa(pauseSeconds))
 	fullURL := fmt.Sprintf("%s?%s", gcAddress+pauseAPI, params.Encode())
 	response, err := http.Get(fullURL)
+
 	if err != nil {
-		log.Error("Pause Milvus GC Error:", zap.Error(err))
+		log.Warn("Pause Milvus GC Error:"+GC_Warn_Message, zap.Error(err))
 		return
 	}
 	defer response.Body.Close()
 	// Read the response body
 	body, err := ioutil.ReadAll(response.Body)
 	if err != nil {
-		log.Error("Read response Error:", zap.Error(err))
+		log.Warn("Read response Error:"+GC_Warn_Message, zap.Error(err))
 		return
 	}
 	log.Info("Pause Milvus GC response", zap.String("response", string(body)), zap.String("address", gcAddress), zap.Int("pauseSeconds", pauseSeconds))
@@ -546,13 +549,13 @@ func (b *BackupContext) resumeMilvusGC(ctx context.Context, gcAddress string) {
 	fullURL := gcAddress + pauseAPI
 	response, err := http.Get(fullURL)
 	if err != nil {
-		log.Error("Resume Milvus GC Error:", zap.Error(err))
+		log.Warn("Resume Milvus GC Error:"+GC_Warn_Message, zap.Error(err))
 		return
 	}
 	// Read the response body
 	body, err := ioutil.ReadAll(response.Body)
 	if err != nil {
-		log.Error("Read response Error:", zap.Error(err))
+		log.Warn("Read response Error:"+GC_Warn_Message, zap.Error(err))
 		return
 	}
 	log.Info("Resume Milvus GC response", zap.String("response", string(body)), zap.String("address", gcAddress))
