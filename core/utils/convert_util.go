@@ -1,11 +1,14 @@
 package utils
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
 
+	"github.com/golang/protobuf/proto"
+	"github.com/milvus-io/milvus-proto/go-api/v2/msgpb"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 )
 
@@ -97,4 +100,12 @@ func MapKeyArray(dict map[int64]bool) []int64 {
 		arr = append(arr, k)
 	}
 	return arr
+}
+
+func Base64MsgPosition(position *msgpb.MsgPosition) string {
+	positionByte, err := proto.Marshal(position)
+	if err != nil {
+		return ""
+	}
+	return base64.StdEncoding.EncodeToString(positionByte)
 }

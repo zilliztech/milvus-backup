@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"github.com/milvus-io/milvus-proto/go-api/v2/msgpb"
 	gomilvus "github.com/milvus-io/milvus-sdk-go/v2/client"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 	"github.com/zilliztech/milvus-backup/internal/util/retry"
@@ -81,12 +82,12 @@ func (m *MilvusClient) GetPersistentSegmentInfo(ctx context.Context, db, collNam
 	return m.client.GetPersistentSegmentInfo(ctx, collName)
 }
 
-func (m *MilvusClient) FlushV2(ctx context.Context, db, collName string, async bool) ([]int64, []int64, int64, error) {
+func (m *MilvusClient) FlushV2(ctx context.Context, db, collName string, async bool) ([]int64, []int64, int64, map[string]msgpb.MsgPosition, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	err := m.client.UsingDatabase(ctx, db)
 	if err != nil {
-		return nil, nil, 0, err
+		return nil, nil, 0, nil, err
 	}
 	return m.client.FlushV2(ctx, collName, async)
 }
