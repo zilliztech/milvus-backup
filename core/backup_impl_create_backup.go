@@ -921,6 +921,6 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, levelInfo *Le
 	segmentBackupInfo.Deltalogs = deltaLogs
 	segmentBackupInfo.Size = size
 	b.updateSegment(levelInfo, segmentBackupInfo)
-	log.Info("fill segment info", zap.Int64("segId", segmentBackupInfo.GetSegmentId()), zap.Int64("size", segmentBackupInfo.GetSize()))
+	log.Debug("fill segment info", zap.Int64("segId", segmentBackupInfo.GetSegmentId()), zap.Int64("size", segmentBackupInfo.GetSize()))
 	return segmentBackupInfo, nil
 }

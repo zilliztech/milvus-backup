@@ -21,6 +21,7 @@ type WorkerPool struct {
 	workerNum int
 	lim       *rate.Limiter
 
+	jobNum     atomic.Int32
 	nextId     atomic.Int64
 	jobsStatus sync.Map
 	jobsError  sync.Map
@@ -66,12 +67,13 @@ func (p *WorkerPool) work() error {
 					return fmt.Errorf("workerpool: wait token %w", err)
 				}
 			}
-
 			if err := jobWithId.job(p.subCtx); err != nil {
 				p.jobsError.Store(jobWithId.id, err)
 				p.jobsStatus.Store(jobWithId.id, "done")
+				p.jobNum.Dec()
 				return fmt.Errorf("workerpool: execute job %w", err)
 			}
+			p.jobNum.Dec()
 			p.jobsStatus.Store(jobWithId.id, "done")
 			return nil
 		})
@@ -81,14 +83,17 @@ func (p *WorkerPool) work() error {
 
 func (p *WorkerPool) Submit(job Job) {
 	jobId := p.nextId.Inc()
+	p.jobNum.Inc()
 	p.job <- JobWithId{job: job, id: jobId}
 	//p.jobsStatus.Store(jobId, "started")
 }
+
 func (p *WorkerPool) Done()       { close(p.job) }
 func (p *WorkerPool) Wait() error { return p.g.Wait() }
 
 func (p *WorkerPool) SubmitWithId(job Job) int64 {
 	jobId := p.nextId.Inc()
+	p.jobNum.Inc()
 	p.job <- JobWithId{job: job, id: jobId}
 	return jobId
 }
@@ -117,4 +122,8 @@ func (p *WorkerPool) WaitJobs(jobIds []int64) error {
 			return nil
 		}
 	}
+}
+
+func (p *WorkerPool) JobNum() int32 {
+	return p.jobNum.Load()
 }
