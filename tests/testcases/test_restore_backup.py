@@ -482,6 +482,7 @@ class TestRestoreBackup(TestcaseBase):
 
 
     @pytest.mark.tags(CaseLabel.L1)
+    @pytest.mark.xfail(reason="https://github.com/zilliztech/milvus-backup/issues/316")
     def test_milvus_restore_back_with_delete(self):
         self._connect()
         name_origin = cf.gen_unique_str(prefix)
@@ -531,6 +532,7 @@ class TestRestoreBackup(TestcaseBase):
         self.compare_collections(name_origin, name_origin + suffix, output_fields=output_fields, verify_by_query=True)
 
     @pytest.mark.tags(CaseLabel.L1)
+    @pytest.mark.xfail(reason="https://github.com/zilliztech/milvus-backup/issues/316")
     def test_milvus_restore_back_with_upsert(self):
         self._connect()
         name_origin = cf.gen_unique_str(prefix)
