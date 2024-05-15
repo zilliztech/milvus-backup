@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/golang/protobuf/proto"
+
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 )
 
@@ -311,21 +313,10 @@ func SimpleBackupResponse(input *backuppb.BackupInfoResponse) *backuppb.BackupIn
 
 	collections := make([]*backuppb.CollectionBackupInfo, 0)
 	for _, coll := range backup.GetCollectionBackups() {
-		collections = append(collections, &backuppb.CollectionBackupInfo{
-			StateCode:               coll.GetStateCode(),
-			ErrorMessage:            coll.GetErrorMessage(),
-			DbName:                  coll.GetDbName(),
-			CollectionName:          coll.GetCollectionName(),
-			CollectionId:            coll.GetCollectionId(),
-			BackupTimestamp:         coll.GetBackupTimestamp(),
-			HasIndex:                coll.GetHasIndex(),
-			IndexInfos:              coll.GetIndexInfos(),
-			LoadState:               coll.GetLoadState(),
-			Schema:                  coll.GetSchema(),
-			Size:                    coll.GetSize(),
-			Progress:                coll.GetProgress(),
-			BackupPhysicalTimestamp: coll.GetBackupPhysicalTimestamp(),
-		})
+		// clone and remove PartitionBackups, avoid updating here every time we add a field in CollectionBackupInfo
+		clonedCollectionBackup := proto.Clone(coll).(*backuppb.CollectionBackupInfo)
+		clonedCollectionBackup.PartitionBackups = nil
+		collections = append(collections, clonedCollectionBackup)
 	}
 	simpleBackupInfo := &backuppb.BackupInfo{
 		Id:                backup.GetId(),
