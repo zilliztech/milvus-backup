@@ -24,6 +24,8 @@ jobs:
         deploy_tools: [docker-compose]
         milvus_mode: [standalone]
         another_milvus_mode: [standalone]
+        source_image_tag: [2.2.0-latest, 2.3-latest]
+        target_image_tag: [master-latest, 2.4-latest]
         # mq_type: [pulsar, kafka]  # TODO: add pulsar and kafka
 
     steps:
@@ -60,7 +62,7 @@ jobs:
         shell: bash
         working-directory: deployment/${{ matrix.milvus_mode }}
         run: |
-          yq -i '.services.standalone.image="milvusdb/milvus:latest"' docker-compose.yml
+          yq -i '.services.standalone.image="milvusdb/milvus:${{ matrix.source_image_tag }}"' docker-compose.yml
           docker-compose up -d
           bash ../../scripts/check_healthy.sh
           docker-compose ps -a
@@ -116,7 +118,7 @@ jobs:
         shell: bash
         working-directory: deployment/${{ matrix.another_milvus_mode }}
         run: |
-          yq -i '.services.standalone.image="milvusdb/milvus:2.2.0-latest"' docker-compose.yml
+          yq -i '.services.standalone.image="milvusdb/milvus:${{ matrix.target_image_tag }}"' docker-compose.yml
           docker-compose up -d
           bash ../../scripts/check_healthy.sh
           docker-compose ps -a
