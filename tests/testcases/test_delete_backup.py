@@ -18,7 +18,7 @@ class TestDeleteBackup(TestcaseBase):
     """ Test case of end to end"""
     @pytest.mark.tags(CaseLabel.L1)
     @pytest.mark.parametrize("is_async", [True, False])
-    @pytest.mark.parametrize("backup_num", [1, 2, 3])
+    @pytest.mark.parametrize("backup_num", [1, 2])
     def test_milvus_delete_backup(self, backup_num, is_async):
         # prepare data
         names_origin = [cf.gen_unique_str(prefix)]

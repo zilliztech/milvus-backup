@@ -45,3 +45,4 @@ minio==7.1.5
 h5py==3.1.0
 pytest-benchmark==4.0.0
 
+tenacity==8.1.0
