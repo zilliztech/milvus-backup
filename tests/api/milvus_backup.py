@@ -165,6 +165,28 @@ class MilvusBackupClient(Requests):
         log.info(f"backup {backup_name} is timeout in {end_time - start_time} seconds")
         return False
 
+    def wait_restore_complete(self, id, timeout=120):
+        """wait restore complete"""
+        start_time = time.time()
+        end_time = time.time()
+        ready = False
+        res = self.get_restore(id)
+        while not ready and end_time - start_time < timeout:
+            state_code = res["data"].get("state_code", 1)
+            if state_code == 1:
+                time.sleep(5)
+                res = self.get_restore(id)
+                end_time = time.time()
+            elif state_code == 2:
+                log.info(f"restore {id} is ready in {end_time - start_time} seconds")
+                return True
+            else:
+                log.error(f"get restore {id} failed in unknown state {state_code}")
+                return False
+        end_time = time.time()
+        log.info(f"get restore {id} is timeout in {end_time - start_time} seconds")
+        return False
+
 
 if __name__ == "__main__":
     client = MilvusBackupClient("http://localhost:8080/api/v1")
