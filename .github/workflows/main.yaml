@@ -149,6 +149,92 @@ jobs:
         run: |
           python example/verify_data.py
 
+  test-backup-restore-after-upgrade:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        deploy_tools: [docker-compose]
+        milvus_mode: [standalone]
+        another_milvus_mode: [standalone]
+        source_image_tag: [v2.3.12, 2.3-latest]
+        target_image_tag: [master-latest, 2.3-latest]
+        # mq_type: [pulsar, kafka]  # TODO: add pulsar and kafka
+
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Set up Python 3.8
+        uses: actions/setup-python@v2
+        with:
+          python-version: 3.8
+          cache: pip
+
+      - uses: actions/setup-go@v3
+        with:
+          go-version: '1.18.0'
+          cache: true
+
+      - name: Build
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          go get
+          go build
+      - name: Install dependency
+
+        timeout-minutes: 5
+        working-directory: tests
+        shell: bash
+        run: |
+          pip install -r requirements.txt --trusted-host https://test.pypi.org
+
+      - name: Milvus deploy
+
+        timeout-minutes: 15
+        shell: bash
+        working-directory: deployment/${{ matrix.milvus_mode }}
+        run: |
+          yq -i '.services.standalone.image="milvusdb/milvus:${{ matrix.source_image_tag }}"' docker-compose.yml
+          docker-compose up -d
+          bash ../../scripts/check_healthy.sh
+          docker-compose ps -a
+
+      - name: Prepare data
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python example/prepare_data.py
+      
+      - name: Upgrade Milvus
+        timeout-minutes: 15
+        shell: bash
+        working-directory: deployment/${{ matrix.another_milvus_mode }}
+        run: |
+          yq -i '.services.standalone.image="milvusdb/milvus:${{ matrix.target_image_tag }}"' docker-compose.yml
+          docker-compose up -d
+          bash ../../scripts/check_healthy.sh
+          docker-compose ps -a
+      - name: Backup
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          ./milvus-backup check
+          ./milvus-backup list
+          ./milvus-backup create -n my_backup
+          ./milvus-backup list
+      - name: Restore backup
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          ./milvus-backup restore -n my_backup -s _recover
+      - name: Verify data
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python example/verify_data.py
+
+
   test-backup-restore-cli:
     runs-on: ubuntu-latest
     strategy:
