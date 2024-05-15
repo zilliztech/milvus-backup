@@ -119,6 +119,12 @@ def gen_float_vec_field(name=ct.default_float_vec_field_name, is_primary=False, 
                                                                    is_primary=is_primary)
     return float_vec_field
 
+def gen_sparse_vec_field(name=ct.default_sparse_vec_field_name, is_primary=False, dim=ct.default_dim,
+                        description=ct.default_desc):
+    float_vec_field, _ = ApiFieldSchemaWrapper().init_field_schema(name=name, dtype=DataType.SPARSE_FLOAT_VECTOR,
+                                                                   description=description,
+                                                                   is_primary=is_primary)
+    return float_vec_field
 
 def gen_binary_vec_field(name=ct.default_binary_vec_field_name, is_primary=False, dim=ct.default_dim,
                          description=ct.default_desc):
@@ -814,7 +820,7 @@ def install_milvus_operator_specific_config(namespace, milvus_mode, release_name
 
     if milvus_mode not in ["standalone", "cluster"]:
         log.error("[milvus_mode] is not 'standalone' or 'cluster'")
-    
+
     if rate_limit_enable not in ["true", "false"]:
         log.error("[rate_limit_enable] is not 'true' or 'false'")
 
@@ -835,5 +841,5 @@ def install_milvus_operator_specific_config(namespace, milvus_mode, release_name
         host = mic.endpoint(release_name, NAMESPACE).split(':')[0]
     else:
         raise MilvusException(message=f'Milvus healthy timeout 1800s')
-    
+
     return host
