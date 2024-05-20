@@ -396,6 +396,7 @@ class TestcaseBase(Base):
         dist_pk = [r[ct.default_int64_field_name] for r in dist_res]
         diff = list(set(src_pk).difference(set(dist_pk)))
         log.info(f"pk diff: {diff}")
+        assert len(diff) == 0
         for i in range(len(src_res)):
             assert src_res[i] == dist_res[i]
         for coll in [collection_src, collection_dist]:
