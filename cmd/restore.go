@@ -89,7 +89,7 @@ var restoreBackupCmd = &cobra.Command{
 			MetaOnly:             restoreMetaOnly,
 			RestoreIndex:         restoreRestoreIndex,
 			UseAutoIndex:         restoreUseAutoIndex,
-			DropExistCollection:  restoreDropExistIndex,
+			DropExistCollection:  restoreDropExistCollection,
 			DropExistIndex:       restoreDropExistIndex,
 			SkipCreateCollection: restoreSkipCreateCollection,
 		})
