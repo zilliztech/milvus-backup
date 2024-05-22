@@ -438,16 +438,27 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 	}
 
 	if task.GetDropExistCollection() {
-		err := b.milvusClient.DropCollection(ctx, targetDBName, targetCollectionName)
+		//check if the collection exist, if collection exist, will drop it
+		exist, err := b.milvusClient.HasCollection(ctx, targetDBName, targetCollectionName)
 		if err != nil {
-			errorMsg := fmt.Sprintf("fail to drop collection, CollectionName: %s.%s err: %s", targetDBName, targetCollectionName, err)
+			errorMsg := fmt.Sprintf("fail to check whether the collection is exist, collection_name: %s, err: %s", targetCollectionName, err)
 			log.Error(errorMsg)
-			task.StateCode = backuppb.RestoreTaskStateCode_FAIL
-			task.ErrorMessage = errorMsg
-			return task, err
+		}
+		if exist {
+			err := b.milvusClient.DropCollection(ctx, targetDBName, targetCollectionName)
+			if err != nil {
+				errorMsg := fmt.Sprintf("fail to drop collection, CollectionName: %s.%s err: %s", targetDBName, targetCollectionName, err)
+				log.Error(errorMsg)
+				task.StateCode = backuppb.RestoreTaskStateCode_FAIL
+				task.ErrorMessage = errorMsg
+				return task, err
+			}
 		}
 	}
-	if !task.GetSkipCreateCollection() {
+	//in function RestoreBackup, before executing the restore,
+	//the SkipCreateCollection has been checked,
+	//so here it is necessary to be compatible with the situation where SkipCreateCollection and DropExistCollection are enabled at the same time.
+	if !task.GetSkipCreateCollection() || task.GetDropExistCollection() {
 		err := retry.Do(ctx, func() error {
 			if hasPartitionKey {
 				partitionNum := len(task.GetCollBackup().GetPartitionBackups())
