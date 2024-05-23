@@ -273,6 +273,7 @@ message RestoreBackupRequest {
   bool dropExistIndex = 14;
   // if true, will skip collection, use when collection exist, restore index or data
   bool skipCreateCollection = 15;
+  string id = 16;
 }
 
 message RestorePartitionTask {
