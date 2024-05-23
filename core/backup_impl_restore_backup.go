@@ -345,7 +345,7 @@ func (b *BackupContext) executeRestoreBackupTask(ctx context.Context, backupBuck
 	log.Info("Start collection level restore pool", zap.Int("parallelism", b.params.BackupCfg.RestoreParallelism))
 
 	id := task.GetId()
-	b.restoreTasks[id] = task
+	b.meta.AddRestoreTask(task)
 	task.StateCode = backuppb.RestoreTaskStateCode_EXECUTING
 
 	log.Info("executeRestoreBackupTask start",
@@ -353,7 +353,7 @@ func (b *BackupContext) executeRestoreBackupTask(ctx context.Context, backupBuck
 		zap.String("backupBucketName", backupBucketName),
 		zap.String("backupPath", backupPath))
 	updateRestoreTaskFunc := func(id string, task *backuppb.RestoreBackupTask) {
-		b.restoreTasks[id] = task
+		b.meta.AddRestoreTask(task)
 	}
 	defer updateRestoreTaskFunc(id, task)
 

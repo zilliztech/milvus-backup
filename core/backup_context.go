@@ -24,7 +24,6 @@ const (
 	BULKINSERT_SLEEP_INTERVAL = 5
 	BACKUP_NAME               = "BACKUP_NAME"
 	COLLECTION_RENAME_SUFFIX  = "COLLECTION_RENAME_SUFFIX"
-	WORKER_NUM                = 100
 	RPS                       = 1000
 )
 
@@ -48,18 +47,11 @@ type BackupContext struct {
 	milvusRootPath   string
 	backupRootPath   string
 
-	backupNameIdDict sync.Map //map[string]string
-	backupTasks      sync.Map //map[string]*backuppb.BackupInfo
-
-	backupTasksCache sync.Map //map[string]*LeveledBackupInfo
-	updateMu         sync.Mutex
-
-	restoreTasks map[string]*backuppb.RestoreBackupTask
+	meta *MetaManager
 
 	backupCollectionWorkerPool *common.WorkerPool
 	backupCopyDataWorkerPool   *common.WorkerPool
-	//bulkinsertWorkerPool       *common.WorkerPool
-	bulkinsertWorkerPools map[string]*common.WorkerPool
+	bulkinsertWorkerPools      map[string]*common.WorkerPool
 }
 
 func CreateMilvusClient(ctx context.Context, params paramtable.BackupParams) (gomilvus.Client, error) {
@@ -97,12 +89,7 @@ func CreateStorageClient(ctx context.Context, params paramtable.BackupParams) (s
 }
 
 func (b *BackupContext) Start() error {
-	//b.backupTasks = sync.Map{}
-	b.backupTasksCache = sync.Map{}
-	b.backupNameIdDict = sync.Map{}
-	b.restoreTasks = make(map[string]*backuppb.RestoreBackupTask)
 	b.started = true
-	b.updateMu = sync.Mutex{}
 	log.Info(fmt.Sprintf("%+v", b.params.BackupCfg))
 	log.Info(fmt.Sprintf("%+v", b.params.HTTPCfg))
 	return nil
@@ -126,6 +113,7 @@ func CreateBackupContext(ctx context.Context, params paramtable.BackupParams) *B
 		milvusRootPath:        params.MinioCfg.RootPath,
 		backupRootPath:        params.MinioCfg.BackupRootPath,
 		bulkinsertWorkerPools: make(map[string]*common.WorkerPool),
+		meta:                  newMetaManager(),
 	}
 }
 
@@ -229,31 +217,17 @@ func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBack
 		resp.Code = backuppb.ResponseCode_Parameter_Error
 		resp.Msg = "empty backup name and backup id, please set a backup name or id"
 	} else if request.GetBackupId() != "" {
-		if value, ok := b.backupTasksCache.Load(request.GetBackupId()); ok {
-			backupInfo, err := levelToTree(value.(*LeveledBackupInfo))
-			if err != nil {
-				resp.Code = backuppb.ResponseCode_Fail
-				resp.Msg = err.Error()
-			} else {
-				resp.Code = backuppb.ResponseCode_Success
-				resp.Msg = "success"
-				resp.Data = backupInfo
-			}
-		}
+		backupInfo := b.meta.GetFullMeta(request.GetBackupId())
+		resp.Code = backuppb.ResponseCode_Success
+		resp.Msg = "success"
+		resp.Data = backupInfo
 	} else if request.GetBackupName() != "" {
-		if id, ok := b.backupNameIdDict.Load(request.GetBackupName()); ok {
+		backupInfo := b.meta.GetBackupByName(request.GetBackupName())
+		if backupInfo != nil {
+			fullBackupInfo := b.meta.GetFullMeta(backupInfo.Id)
 			resp.Code = backuppb.ResponseCode_Success
 			resp.Msg = "success"
-			backup, ok := b.backupTasksCache.Load(id)
-			if ok {
-				backupInfo, err := levelToTree(backup.(*LeveledBackupInfo))
-				if err != nil {
-					resp.Code = backuppb.ResponseCode_Fail
-					resp.Msg = err.Error()
-				} else {
-					resp.Data = backupInfo
-				}
-			}
+			resp.Data = fullBackupInfo
 		} else {
 			var backupBucketName string
 			var backupPath string
@@ -529,10 +503,11 @@ func (b *BackupContext) GetRestore(ctx context.Context, request *backuppb.GetRes
 		return resp
 	}
 
-	if value, ok := b.restoreTasks[request.GetId()]; ok {
+	task := b.meta.GetRestoreTask(request.GetId())
+	if task != nil {
 		resp.Code = backuppb.ResponseCode_Success
 		resp.Msg = "success"
-		resp.Data = UpdateRestoreBackupTask(value)
+		resp.Data = UpdateRestoreBackupTask(task)
 		return resp
 	} else {
 		resp.Code = backuppb.ResponseCode_Fail

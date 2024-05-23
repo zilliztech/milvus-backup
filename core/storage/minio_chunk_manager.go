@@ -425,7 +425,7 @@ func (mcm *MinioChunkManager) ListWithPrefix(ctx context.Context, bucketName str
 
 	for object := range objects {
 		if object.Err != nil {
-			log.Warn("failed to list with prefix", zap.String("prefix", prefix), zap.Error(object.Err))
+			log.Warn("failed to list with prefix", zap.String("bucket", bucketName), zap.String("prefix", prefix), zap.Error(object.Err))
 			return nil, nil, object.Err
 		}
 		objectsKeys = append(objectsKeys, object.Key)
@@ -437,7 +437,7 @@ func (mcm *MinioChunkManager) ListWithPrefix(ctx context.Context, bucketName str
 func (mcm *MinioChunkManager) Copy(ctx context.Context, fromBucketName string, toBucketName string, fromPath string, toPath string) error {
 	objectkeys, _, err := mcm.ListWithPrefix(ctx, fromBucketName, fromPath, true)
 	if err != nil {
-		log.Warn("listWithPrefix error", zap.String("prefix", fromPath), zap.Error(err))
+		log.Warn("listWithPrefix error", zap.String("bucket", fromBucketName), zap.String("prefix", fromPath), zap.Error(err))
 		return err
 	}
 	for _, objectkey := range objectkeys {
