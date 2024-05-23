@@ -46,21 +46,6 @@ type LeveledBackupInfo struct {
 	segmentLevel    *backuppb.SegmentLevelBackupInfo
 }
 
-func NewLeveledBackupInfo(backupInfo *backuppb.BackupInfo) *LeveledBackupInfo {
-	return &LeveledBackupInfo{
-		backupLevel: backupInfo,
-		collectionLevel: &backuppb.CollectionLevelBackupInfo{
-			Infos: make([]*backuppb.CollectionBackupInfo, 0),
-		},
-		partitionLevel: &backuppb.PartitionLevelBackupInfo{
-			Infos: make([]*backuppb.PartitionBackupInfo, 0),
-		},
-		segmentLevel: &backuppb.SegmentLevelBackupInfo{
-			Infos: make([]*backuppb.SegmentBackupInfo, 0),
-		},
-	}
-}
-
 // treeToLevel parse BackupInfo into backup-collection-partition-segment 4-level structure
 func treeToLevel(backup *backuppb.BackupInfo) (LeveledBackupInfo, error) {
 	collections := make([]*backuppb.CollectionBackupInfo, 0)
@@ -394,60 +379,3 @@ func UpdateRestoreBackupTask(input *backuppb.RestoreBackupTask) *backuppb.Restor
 }
 
 type DbCollections = map[string][]string
-
-func (b *BackupContext) updateBackup(leveledBackupInfo *LeveledBackupInfo, backupInfo *backuppb.BackupInfo) {
-	b.updateMu.Lock()
-	defer b.updateMu.Unlock()
-	leveledBackupInfo.backupLevel = backupInfo
-}
-
-func (b *BackupContext) updateCollection(leveledBackupInfo *LeveledBackupInfo, collection *backuppb.CollectionBackupInfo) {
-	b.updateMu.Lock()
-	defer b.updateMu.Unlock()
-
-	newCollectionLevel := make([]*backuppb.CollectionBackupInfo, 0)
-	newCollectionLevel = append(newCollectionLevel, collection)
-	for _, collectionInfo := range leveledBackupInfo.collectionLevel.Infos {
-		if collectionInfo.GetDbName() == collection.GetDbName() && collectionInfo.GetCollectionName() == collection.GetCollectionName() {
-			//newCollectionLevel = append(newCollectionLevel, collection)
-		} else {
-			newCollectionLevel = append(newCollectionLevel, collectionInfo)
-		}
-	}
-	leveledBackupInfo.collectionLevel = &backuppb.CollectionLevelBackupInfo{
-		Infos: newCollectionLevel,
-	}
-}
-
-func (b *BackupContext) updatePartition(leveledBackupInfo *LeveledBackupInfo, partition *backuppb.PartitionBackupInfo) {
-	b.updateMu.Lock()
-	defer b.updateMu.Unlock()
-
-	newPartitionLevel := make([]*backuppb.PartitionBackupInfo, 0)
-	newPartitionLevel = append(newPartitionLevel, partition)
-	for _, partitionInfo := range leveledBackupInfo.partitionLevel.Infos {
-		if partitionInfo.GetPartitionId() != partition.GetPartitionId() {
-			newPartitionLevel = append(newPartitionLevel, partitionInfo)
-		}
-	}
-
-	leveledBackupInfo.partitionLevel = &backuppb.PartitionLevelBackupInfo{
-		Infos: newPartitionLevel,
-	}
-}
-
-func (b *BackupContext) updateSegment(leveledBackupInfo *LeveledBackupInfo, segment *backuppb.SegmentBackupInfo) {
-	b.updateMu.Lock()
-	defer b.updateMu.Unlock()
-
-	newSegmentLevel := make([]*backuppb.SegmentBackupInfo, 0)
-	newSegmentLevel = append(newSegmentLevel, segment)
-	for _, segmentInfo := range leveledBackupInfo.segmentLevel.Infos {
-		if segmentInfo.GetSegmentId() != segment.GetSegmentId() {
-			newSegmentLevel = append(newSegmentLevel, segmentInfo)
-		}
-	}
-	leveledBackupInfo.segmentLevel = &backuppb.SegmentLevelBackupInfo{
-		Infos: newSegmentLevel,
-	}
-}

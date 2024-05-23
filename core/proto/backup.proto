@@ -91,7 +91,8 @@ message SegmentBackupInfo {
   // separate segments into multi groups by size, 
   // segments in one group will be copied into one directory during backup
   // and will bulkinsert in one call during restore
-  int64 group_id = 9; 
+  int64 group_id = 9;
+  bool backuped = 10;
 }
 
 /**

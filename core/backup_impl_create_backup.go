@@ -11,7 +11,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	jsoniter "github.com/json-iterator/go"
@@ -80,8 +79,6 @@ func (b *BackupContext) CreateBackup(ctx context.Context, request *backuppb.Crea
 		return resp
 	}
 
-	var name string = request.BackupName
-
 	milvusVersion, err := b.getMilvusClient().GetVersion(b.ctx)
 	if err != nil {
 		log.Error("fail to get milvus version", zap.Error(err))
@@ -94,15 +91,16 @@ func (b *BackupContext) CreateBackup(ctx context.Context, request *backuppb.Crea
 		Id:            request.GetRequestId(),
 		StateCode:     backuppb.BackupTaskStateCode_BACKUP_INITIAL,
 		StartTime:     time.Now().UnixNano() / int64(time.Millisecond),
-		Name:          name,
+		Name:          request.BackupName,
 		MilvusVersion: milvusVersion,
 	}
-	levelBackupInfo := NewLeveledBackupInfo(backup)
-	b.backupTasksCache.Store(request.GetRequestId(), levelBackupInfo)
-	b.backupNameIdDict.Store(name, request.GetRequestId())
+	b.meta.AddBackup(backup)
+	//levelBackupInfo := NewLeveledBackupInfo(backup)
+	//b.backupTasksCache.Store(request.GetRequestId(), levelBackupInfo)
+	//b.backupNameIdDict.Store(name, request.GetRequestId())
 
 	if request.Async {
-		go b.executeCreateBackup(ctx, request, levelBackupInfo)
+		go b.executeCreateBackup(ctx, request, backup)
 		asyncResp := &backuppb.BackupInfoResponse{
 			RequestId: request.GetRequestId(),
 			Code:      backuppb.ResponseCode_Success,
@@ -111,8 +109,8 @@ func (b *BackupContext) CreateBackup(ctx context.Context, request *backuppb.Crea
 		}
 		return asyncResp
 	} else {
-		task, err := b.executeCreateBackup(ctx, request, levelBackupInfo)
-		resp.Data = task
+		err := b.executeCreateBackup(ctx, request, backup)
+		resp.Data = b.meta.GetBackup(backup.GetId())
 		if err != nil {
 			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = err.Error()
@@ -214,13 +212,13 @@ func (b *BackupContext) parseBackupCollections(request *backuppb.CreateBackupReq
 	return toBackupCollections, nil
 }
 
-func (b *BackupContext) backupCollectionPrepare(ctx context.Context, levelInfo *LeveledBackupInfo, collection collectionStruct, force bool) (*backuppb.CollectionBackupInfo, error) {
+func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo *backuppb.BackupInfo, collection collectionStruct, force bool) error {
 	log.Info("start backup collection", zap.String("db", collection.db), zap.String("collection", collection.collectionName))
 	// list collection result is not complete
 	completeCollection, err := b.getMilvusClient().DescribeCollection(b.ctx, collection.db, collection.collectionName)
 	if err != nil {
 		log.Error("fail in DescribeCollection", zap.Error(err))
-		return nil, err
+		return err
 	}
 	fields := make([]*backuppb.FieldSchema, 0)
 	for _, field := range completeCollection.Schema.Fields {
@@ -265,7 +263,7 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, levelInfo *
 				continue
 			} else {
 				log.Error("fail in DescribeIndex", zap.Error(err))
-				return nil, err
+				return err
 			}
 		}
 		log.Info("field index",
@@ -289,7 +287,7 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, levelInfo *
 	}
 
 	collectionBackup := &backuppb.CollectionBackupInfo{
-		Id:               utils.UUID(),
+		Id:               backupInfo.Id,
 		StateCode:        backuppb.BackupTaskStateCode_BACKUP_INITIAL,
 		StartTime:        time.Now().Unix(),
 		CollectionId:     completeCollection.ID,
@@ -301,19 +299,21 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, levelInfo *
 		HasIndex:         len(indexInfos) > 0,
 		IndexInfos:       indexInfos,
 	}
-	b.updateCollection(levelInfo, collectionBackup)
+	b.meta.AddCollection(collectionBackup)
+
+	//b.updateCollection(levelInfo, collectionBackup)
 	partitionBackupInfos := make([]*backuppb.PartitionBackupInfo, 0)
 	partitions, err := b.getMilvusClient().ShowPartitions(b.ctx, collectionBackup.GetDbName(), collectionBackup.GetCollectionName())
 	if err != nil {
 		log.Error("fail to ShowPartitions", zap.Error(err))
-		return nil, err
+		return err
 	}
 
 	// use GetLoadingProgress currently, GetLoadState is a new interface @20230104  milvus pr#21515
 	collectionLoadProgress, err := b.getMilvusClient().GetLoadingProgress(ctx, collectionBackup.GetDbName(), collectionBackup.GetCollectionName(), []string{})
 	if err != nil {
 		log.Error("fail to GetLoadingProgress of collection", zap.Error(err))
-		return nil, err
+		return err
 	}
 
 	var collectionLoadState string
@@ -334,7 +334,7 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, levelInfo *
 			loadProgress, err := b.getMilvusClient().GetLoadingProgress(ctx, collectionBackup.GetDbName(), collectionBackup.GetCollectionName(), []string{partition.Name})
 			if err != nil {
 				log.Error("fail to GetLoadingProgress of partition", zap.Error(err))
-				return nil, err
+				return err
 			}
 			if loadProgress == 0 {
 				partitionLoadStates[partition.Name] = LoadState_NotLoad
@@ -352,7 +352,7 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, levelInfo *
 		// Flush
 		segmentEntitiesBeforeFlush, err := b.getMilvusClient().GetPersistentSegmentInfo(ctx, collectionBackup.GetDbName(), collectionBackup.GetCollectionName())
 		if err != nil {
-			return nil, err
+			return err
 		}
 		log.Info("GetPersistentSegmentInfo before flush from milvus",
 			zap.String("databaseName", collectionBackup.GetDbName()),
@@ -364,11 +364,10 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, levelInfo *
 				zap.String("databaseName", collectionBackup.GetDbName()),
 				zap.String("collectionName", collectionBackup.GetCollectionName()),
 				zap.Error(err))
-			return nil, err
+			return err
 		}
 
 		//collectionBackup.BackupTimestamp = utils.ComposeTS(timeOfSeal, 0)
-		collectionBackup.BackupPhysicalTimestamp = uint64(timeOfSeal)
 		channelCheckpoints := make(map[string]string, 0)
 		var maxChannelBackupTimeStamp uint64 = 0
 		for vch, checkpoint := range channelCPs {
@@ -379,8 +378,13 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, levelInfo *
 				maxChannelBackupTimeStamp = checkpoint.GetTimestamp()
 			}
 		}
-		collectionBackup.ChannelCheckpoints = channelCheckpoints
-		collectionBackup.BackupTimestamp = maxChannelBackupTimeStamp
+		//collectionBackup.ChannelCheckpoints = channelCheckpoints
+		//collectionBackup.BackupTimestamp = maxChannelBackupTimeStamp
+		//collectionBackup.BackupPhysicalTimestamp = uint64(timeOfSeal)
+		b.meta.UpdateCollection(collectionBackup.Id, collectionBackup.CollectionId,
+			setCollectionChannelCheckpoints(channelCheckpoints),
+			setCollectionBackupTimestamp(maxChannelBackupTimeStamp),
+			setCollectionBackupPhysicalTimestamp(uint64(timeOfSeal)))
 		log.Info("flush segments",
 			zap.String("databaseName", collectionBackup.GetDbName()),
 			zap.String("collectionName", collectionBackup.GetCollectionName()),
@@ -393,7 +397,7 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, levelInfo *
 		flushSegmentIDs := append(newSealedSegmentIDs, flushedSegmentIDs...)
 		segmentEntitiesAfterFlush, err := b.getMilvusClient().GetPersistentSegmentInfo(ctx, collectionBackup.GetDbName(), collectionBackup.GetCollectionName())
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		segmentIDsEntitiesBeforeFlush := lo.Map(segmentEntitiesBeforeFlush, func(segment *entity.Segment, _ int) int64 { return segment.ID })
@@ -434,7 +438,7 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, levelInfo *
 		segmentEntitiesBeforeFlush, err := b.getMilvusClient().GetPersistentSegmentInfo(ctx, collectionBackup.GetDbName(), collectionBackup.GetCollectionName())
 		if err != nil {
 			log.Error(fmt.Sprintf("fail to flush the collection: %s", collectionBackup.GetCollectionName()), zap.Error(err))
-			return nil, err
+			return err
 		}
 		log.Info("GetPersistentSegmentInfo from milvus",
 			zap.String("databaseName", collectionBackup.GetDbName()),
@@ -446,9 +450,7 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, levelInfo *
 	}
 
 	if err != nil {
-		collectionBackup.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
-		collectionBackup.ErrorMessage = err.Error()
-		return nil, err
+		return err
 	}
 
 	newSegIDs := lo.Map(unfilledSegments, func(segment *entity.Segment, _ int) int64 { return segment.ID })
@@ -466,7 +468,8 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, levelInfo *
 			PartitionId:  segment.ParititionID,
 			NumOfRows:    segment.NumRows,
 		}
-		b.updateSegment(levelInfo, segmentInfo)
+		b.meta.AddSegment(segmentInfo)
+		//b.updateSegment(levelInfo, segmentInfo)
 		partSegInfoMap[segment.ParititionID] = append(partSegInfoMap[segment.ParititionID], segmentInfo)
 	}
 
@@ -484,13 +487,15 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, levelInfo *
 			Size:           size,
 			LoadState:      partitionLoadStates[partition.Name],
 		}
-		b.updatePartition(levelInfo, partitionBackupInfo)
+		b.meta.AddPartition(partitionBackupInfo)
+		//b.updatePartition(levelInfo, partitionBackupInfo)
 		//partitionBackupInfos = append(partitionBackupInfos, partitionBackupInfo)
 	}
 
-	collectionBackup.PartitionBackups = partitionBackupInfos
-	collectionBackup.LoadState = collectionLoadState
-	b.updateCollection(levelInfo, collectionBackup)
+	//collectionBackup.PartitionBackups = partitionBackupInfos
+	//collectionBackup.LoadState = collectionLoadState
+	b.meta.UpdateCollection(collectionBackup.Id, collectionBackup.CollectionId, setCollectionLoadState(collectionLoadState))
+	//b.updateCollection(levelInfo, collectionBackup)
 
 	log.Info("finish build partition info",
 		zap.String("collectionName", collectionBackup.GetCollectionName()),
@@ -501,17 +506,18 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, levelInfo *
 		collectionBackupSize += part.GetSize()
 	}
 
-	collectionBackup.Size = collectionBackupSize
-	b.updateCollection(levelInfo, collectionBackup)
-	return collectionBackup, nil
+	b.meta.UpdateCollection(collectionBackup.Id, collectionBackup.CollectionId, setCollectionSize(collectionBackupSize))
+	//collectionBackup.Size = collectionBackupSize
+	//b.updateCollection(levelInfo, collectionBackup)
+	return nil
 }
 
-func (b *BackupContext) backupCollectionExecute(ctx context.Context, levelInfo *LeveledBackupInfo, collectionBackup *backuppb.CollectionBackupInfo) error {
+func (b *BackupContext) backupCollectionExecute(ctx context.Context, collectionBackup *backuppb.CollectionBackupInfo) error {
 	log.Info("backupCollectionExecute", zap.Any("collectionMeta", collectionBackup.String()))
 	var segmentBackupInfos []*backuppb.SegmentBackupInfo
-	for _, seg := range levelInfo.segmentLevel.Infos {
-		if seg.CollectionId == collectionBackup.GetCollectionId() {
-			segmentBackupInfos = append(segmentBackupInfos, seg)
+	for _, partition := range b.meta.GetPartitions(collectionBackup.CollectionId) {
+		for _, segment := range b.meta.GetSegments(partition.GetPartitionId()) {
+			segmentBackupInfos = append(segmentBackupInfos, segment)
 		}
 	}
 	log.Info("Begin copy data",
@@ -522,13 +528,13 @@ func (b *BackupContext) backupCollectionExecute(ctx context.Context, levelInfo *
 	sort.SliceStable(segmentBackupInfos, func(i, j int) bool {
 		return segmentBackupInfos[i].Size < segmentBackupInfos[j].Size
 	})
-	err := b.copySegments(ctx, segmentBackupInfos, levelInfo)
+	err := b.copySegments(ctx, segmentBackupInfos)
 	if err != nil {
 		return err
 	}
 
-	collectionBackup.EndTime = time.Now().Unix()
-	b.updateCollection(levelInfo, collectionBackup)
+	//collectionBackup.EndTime = time.Now().Unix()
+	b.meta.UpdateCollection(collectionBackup.Id, collectionBackup.CollectionId, setCollectionEndTime(time.Now().Unix()))
 
 	log.Info("Finish copy data",
 		zap.String("dbName", collectionBackup.GetDbName()),
@@ -577,7 +583,7 @@ func (b *BackupContext) resumeMilvusGC(ctx context.Context, gcAddress string) {
 	log.Info("Resume Milvus GC response", zap.String("response", string(body)), zap.String("address", gcAddress))
 }
 
-func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backuppb.CreateBackupRequest, levelInfo *LeveledBackupInfo) (*backuppb.BackupInfo, error) {
+func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backuppb.CreateBackupRequest, backupInfo *backuppb.BackupInfo) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -599,19 +605,18 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 		defer b.resumeMilvusGC(ctx, gcAddress)
 	}
 
-	backupInfo := levelInfo.backupLevel
-	backupInfo.BackupTimestamp = uint64(time.Now().UnixNano() / int64(time.Millisecond))
-	backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_EXECUTING
-
-	defer b.updateBackup(levelInfo, backupInfo)
+	// not important
+	//backupInfo.BackupTimestamp = uint64(time.Now().UnixNano() / int64(time.Millisecond))
+	//backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_EXECUTING
+	//b.meta.UpdateBackup(backupInfo.Id, setStateCode(backuppb.BackupTaskStateCode_BACKUP_EXECUTING))
+	//defer b.updateBackup(levelInfo, backupInfo)
 
 	// 1, get collection level meta
 	toBackupCollections, err := b.parseBackupCollections(request)
 	if err != nil {
 		log.Error("parse backup collections from request failed", zap.Error(err))
-		backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
-		backupInfo.ErrorMessage = err.Error()
-		return backupInfo, err
+		b.meta.UpdateBackup(backupInfo.Id, setStateCode(backuppb.BackupTaskStateCode_BACKUP_FAIL), setErrorMessage(err.Error()))
+		return err
 	}
 	collectionNames := make([]string, len(toBackupCollections))
 	for i, coll := range toBackupCollections {
@@ -620,19 +625,19 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 	log.Info("collections to backup", zap.Strings("collections", collectionNames))
 
 	jobIds := make([]int64, 0)
-	toBackupCollectionInfos := make([]*backuppb.CollectionBackupInfo, 0)
-	toBackupCollectionInfosMutex := sync.Mutex{}
+	//toBackupCollectionInfos := make([]*backuppb.CollectionBackupInfo, 0)
+	//toBackupCollectionInfosMutex := sync.Mutex{}
 	for _, collection := range toBackupCollections {
 		collectionClone := collection
 		job := func(ctx context.Context) error {
 			err := retry.Do(ctx, func() error {
-				coll, err := b.backupCollectionPrepare(ctx, levelInfo, collectionClone, request.GetForce())
+				err := b.backupCollectionPrepare(ctx, backupInfo, collectionClone, request.GetForce())
 				if err != nil {
 					return err
 				}
-				toBackupCollectionInfosMutex.Lock()
-				defer toBackupCollectionInfosMutex.Unlock()
-				toBackupCollectionInfos = append(toBackupCollectionInfos, coll)
+				//toBackupCollectionInfosMutex.Lock()
+				//defer toBackupCollectionInfosMutex.Unlock()
+				//toBackupCollectionInfos = append(toBackupCollectionInfos, coll)
 				return nil
 			}, retry.Sleep(120*time.Second), retry.Attempts(128))
 			return err
@@ -641,20 +646,20 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 		jobIds = append(jobIds, jobId)
 	}
 	err = b.getBackupCollectionWorkerPool().WaitJobs(jobIds)
-
 	if err != nil {
-		backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
-		backupInfo.ErrorMessage = err.Error()
-		return backupInfo, err
+		//backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
+		//backupInfo.ErrorMessage = err.Error()
+		b.meta.UpdateBackup(backupInfo.Id, setStateCode(backuppb.BackupTaskStateCode_BACKUP_FAIL), setErrorMessage(err.Error()))
+		return err
 	}
-	log.Info("Finish flush all collections")
+	log.Info("Finish prepare all collections meta")
 
 	if !request.GetMetaOnly() {
-		for _, collection := range toBackupCollectionInfos {
+		for collectionID, collection := range b.meta.GetCollections(backupInfo.GetId()) {
 			collectionClone := collection
-			log.Info("before backupCollectionExecute", zap.String("collection", collection.CollectionName))
+			log.Info("before backupCollectionExecute", zap.Int64("collectionID", collectionID), zap.String("collection", collection.CollectionName))
 			job := func(ctx context.Context) error {
-				err := b.backupCollectionExecute(ctx, levelInfo, collectionClone)
+				err := b.backupCollectionExecute(ctx, collectionClone)
 				return err
 			}
 			jobId := b.getBackupCollectionWorkerPool().SubmitWithId(job)
@@ -663,41 +668,38 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 
 		err = b.getBackupCollectionWorkerPool().WaitJobs(jobIds)
 		if err != nil {
-			backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
-			backupInfo.ErrorMessage = err.Error()
-			return backupInfo, err
+			b.meta.UpdateBackup(backupInfo.Id, setStateCode(backuppb.BackupTaskStateCode_BACKUP_FAIL), setErrorMessage(err.Error()))
+			return err
 		}
 
-		_, err := treeToLevel(backupInfo)
-		if err != nil {
-			backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
-			backupInfo.ErrorMessage = err.Error()
-			return backupInfo, err
-		}
-		backupInfo.EndTime = time.Now().UnixNano() / int64(time.Millisecond)
-		backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_SUCCESS
+		//_, err := treeToLevel(backupInfo)
+		//if err != nil {
+		//	b.meta.UpdateBackup(backupInfo.Id, setStateCode(backuppb.BackupTaskStateCode_BACKUP_FAIL), setErrorMessage(err.Error()))
+		//	return err
+		//}
 	} else {
 		log.Info("skip copy data because it is a metaOnly backup request")
 	}
-	b.updateBackup(levelInfo, backupInfo)
+	backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_SUCCESS
+	b.meta.UpdateBackup(backupInfo.Id, setStateCode(backuppb.BackupTaskStateCode_BACKUP_SUCCESS), setEndTime(time.Now().UnixNano()/int64(time.Millisecond)))
 
 	// 7, write meta data
-	err = b.writeBackupInfoMeta(ctx, levelInfo, backupInfo.GetName())
+	err = b.writeBackupInfoMeta(ctx, backupInfo.GetId())
 	if err != nil {
 		backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
 		backupInfo.ErrorMessage = err.Error()
-		return backupInfo, err
+		return err
 	}
 	log.Info("finish executeCreateBackup",
 		zap.String("requestId", request.GetRequestId()),
 		zap.String("backupName", request.GetBackupName()),
 		zap.Strings("collections", request.GetCollectionNames()),
 		zap.Bool("async", request.GetAsync()))
-	return backupInfo, nil
+	return nil
 }
 
-func (b *BackupContext) writeBackupInfoMeta(ctx context.Context, levelBackupInfo *LeveledBackupInfo, path string) error {
-	backupInfo, _ := levelToTree(levelBackupInfo)
+func (b *BackupContext) writeBackupInfoMeta(ctx context.Context, id string) error {
+	backupInfo := b.meta.GetFullMeta(id)
 	log.Info("Final backupInfo", zap.String("backupInfo", backupInfo.String()))
 	output, _ := serialize(backupInfo)
 	log.Debug("backup meta", zap.String("value", string(output.BackupMetaBytes)))
@@ -724,23 +726,49 @@ func (b *BackupContext) writeBackupInfoMeta(ctx context.Context, levelBackupInfo
 	}
 	log.Debug("channel cp meta", zap.String("value", string(channelCPsBytes)))
 
-	b.getStorageClient().Write(ctx, b.backupBucketName, BackupMetaPath(b.backupRootPath, path), output.BackupMetaBytes)
-	b.getStorageClient().Write(ctx, b.backupBucketName, CollectionMetaPath(b.backupRootPath, path), output.CollectionMetaBytes)
-	b.getStorageClient().Write(ctx, b.backupBucketName, PartitionMetaPath(b.backupRootPath, path), output.PartitionMetaBytes)
-	b.getStorageClient().Write(ctx, b.backupBucketName, SegmentMetaPath(b.backupRootPath, path), output.SegmentMetaBytes)
-	b.getStorageClient().Write(ctx, b.backupBucketName, FullMetaPath(b.backupRootPath, path), output.FullMetaBytes)
+	b.getStorageClient().Write(ctx, b.backupBucketName, BackupMetaPath(b.backupRootPath, backupInfo.GetName()), output.BackupMetaBytes)
+	b.getStorageClient().Write(ctx, b.backupBucketName, CollectionMetaPath(b.backupRootPath, backupInfo.GetName()), output.CollectionMetaBytes)
+	b.getStorageClient().Write(ctx, b.backupBucketName, PartitionMetaPath(b.backupRootPath, backupInfo.GetName()), output.PartitionMetaBytes)
+	b.getStorageClient().Write(ctx, b.backupBucketName, SegmentMetaPath(b.backupRootPath, backupInfo.GetName()), output.SegmentMetaBytes)
+	b.getStorageClient().Write(ctx, b.backupBucketName, FullMetaPath(b.backupRootPath, backupInfo.GetName()), output.FullMetaBytes)
 	b.getStorageClient().Write(ctx, b.backupBucketName, ChannelCPMetaPath(b.backupRootPath, backupInfo.GetName()), channelCPsBytes)
 
 	log.Info("finish writeBackupInfoMeta",
-		zap.String("path", path),
+		zap.String("path", BackupDirPath(b.backupRootPath, backupInfo.GetName())),
 		zap.String("backupName", backupInfo.GetName()),
 		zap.String("backup meta", string(output.BackupMetaBytes)))
 	return nil
 }
 
-func (b *BackupContext) copySegments(ctx context.Context, segments []*backuppb.SegmentBackupInfo, levelInfo *LeveledBackupInfo) error {
-	dstPath := BackupBinlogDirPath(b.backupRootPath, levelInfo.backupLevel.GetName())
+func (b *BackupContext) copySegments(ctx context.Context, segments []*backuppb.SegmentBackupInfo) error {
+	jobIds := make([]int64, 0)
+	for _, v := range segments {
+		segment := v
+		log := log.With(zap.Int64("collection_id", segment.GetCollectionId()),
+			zap.Int64("partition_id", segment.GetPartitionId()),
+			zap.Int64("segment_id", segment.GetSegmentId()),
+			zap.Int64("group_id", segment.GetGroupId()))
+		log.Debug("copy segment")
+		err := b.fillSegmentBackupInfo(ctx, segment)
+		if err != nil {
+			log.Error("Fail to fill segment backup info", zap.Error(err))
+			return err
+		}
+		job := func(ctx context.Context) error {
+			return b.copySegment(ctx, segment.GetSegmentId())
+		}
+		jobId := b.getCopyDataWorkerPool().SubmitWithId(job)
+		jobIds = append(jobIds, jobId)
+	}
 
+	err := b.getCopyDataWorkerPool().WaitJobs(jobIds)
+	return err
+}
+
+func (b *BackupContext) copySegment(ctx context.Context, segmentID int64) error {
+	segment := b.meta.GetSegment(segmentID)
+	backupInfo := b.meta.GetBackupBySegmentID(segmentID)
+	dstPath := BackupBinlogDirPath(b.backupRootPath, backupInfo.GetName())
 	// generate target path
 	// milvus_rootpath/insert_log/collection_id/partition_id/segment_id/ =>
 	// backup_rootpath/backup_name/binlog/insert_log/collection_id/partition_id/group_id/segment_id
@@ -751,128 +779,102 @@ func (b *BackupContext) copySegments(ctx context.Context, segments []*backuppb.S
 			return strings.Replace(binlogPath, rootPath, dstPath, 1)
 		}
 	}
-
-	jobIds := make([]int64, 0)
-	for _, segment := range segments {
-		log := log.With(zap.Int64("collection_id", segment.GetCollectionId()),
-			zap.Int64("partition_id", segment.GetPartitionId()),
-			zap.Int64("segment_id", segment.GetSegmentId()),
-			zap.Int64("group_id", segment.GetGroupId()))
-		log.Debug("copy segment")
-		_, err := b.fillSegmentBackupInfo(ctx, levelInfo, segment)
-		if err != nil {
-			log.Error("Fail to fill segment backup info", zap.Error(err))
-			return err
-		}
-		// insert log
-		for _, binlogs := range segment.GetBinlogs() {
-			for _, binlog := range binlogs.GetBinlogs() {
-				targetPath := backupPathFunc(binlog.GetLogPath(), b.milvusRootPath, dstPath)
-				// use segmentID as group id
-				segment.GroupId = segment.SegmentId
-				if segment.GetGroupId() != 0 {
-					targetPath = strings.Replace(targetPath,
-						strconv.FormatInt(segment.GetPartitionId(), 10),
-						strconv.FormatInt(segment.GetPartitionId(), 10)+"/"+strconv.FormatInt(segment.GetGroupId(), 10),
-						1)
-				}
-				if targetPath == binlog.GetLogPath() {
-					return errors.New(fmt.Sprintf("copy src path and dst path can not be the same, src: %s dst: %s", binlog.GetLogPath(), targetPath))
-				}
-
-				binlog := binlog
-				job := func(ctx context.Context) error {
-					exist, err := b.getStorageClient().Exist(ctx, b.milvusBucketName, binlog.GetLogPath())
-					if err != nil {
-						log.Info("Fail to check file exist",
-							zap.Error(err),
-							zap.String("file", binlog.GetLogPath()))
-						return err
-					}
-					if !exist {
-						log.Error("Binlog file not exist",
-							zap.Error(err),
-							zap.String("file", binlog.GetLogPath()))
-						return err
-					}
-
-					err = retry.Do(ctx, func() error {
-						return b.getStorageClient().Copy(ctx, b.milvusBucketName, b.backupBucketName, binlog.GetLogPath(), targetPath)
-					}, retry.Sleep(2*time.Second), retry.Attempts(5))
-					if err != nil {
-						log.Info("Fail to copy file after retry",
-							zap.Error(err),
-							zap.String("from", binlog.GetLogPath()),
-							zap.String("to", targetPath))
-						return err
-					} else {
-						log.Debug("Successfully copy file",
-							zap.String("from", binlog.GetLogPath()),
-							zap.String("to", targetPath))
-					}
-
-					return nil
-				}
-				jobId := b.getCopyDataWorkerPool().SubmitWithId(job)
-				jobIds = append(jobIds, jobId)
+	// insert log
+	for _, binlogs := range segment.GetBinlogs() {
+		for _, binlog := range binlogs.GetBinlogs() {
+			targetPath := backupPathFunc(binlog.GetLogPath(), b.milvusRootPath, dstPath)
+			// use segmentID as group id
+			segment.GroupId = segment.SegmentId
+			if segment.GetGroupId() != 0 {
+				targetPath = strings.Replace(targetPath,
+					strconv.FormatInt(segment.GetPartitionId(), 10),
+					strconv.FormatInt(segment.GetPartitionId(), 10)+"/"+strconv.FormatInt(segment.GetGroupId(), 10),
+					1)
 			}
-		}
-		// delta log
-		for _, binlogs := range segment.GetDeltalogs() {
-			for _, binlog := range binlogs.GetBinlogs() {
-				targetPath := backupPathFunc(binlog.GetLogPath(), b.milvusRootPath, dstPath)
-				if segment.GetGroupId() != 0 {
-					targetPath = strings.Replace(targetPath,
-						strconv.FormatInt(segment.GetPartitionId(), 10),
-						strconv.FormatInt(segment.GetPartitionId(), 10)+"/"+strconv.FormatInt(segment.GetGroupId(), 10),
-						1)
-				}
-				if targetPath == binlog.GetLogPath() {
-					return errors.New(fmt.Sprintf("copy src path and dst path can not be the same, src: %s dst: %s", binlog.GetLogPath(), targetPath))
-				}
+			if targetPath == binlog.GetLogPath() {
+				return errors.New(fmt.Sprintf("copy src path and dst path can not be the same, src: %s dst: %s", binlog.GetLogPath(), targetPath))
+			}
 
-				binlog := binlog
-				job := func(ctx context.Context) error {
-					exist, err := b.getStorageClient().Exist(ctx, b.milvusBucketName, binlog.GetLogPath())
-					if err != nil {
-						log.Info("Fail to check file exist",
-							zap.Error(err),
-							zap.String("file", binlog.GetLogPath()))
-						return err
-					}
-					if !exist {
-						log.Error("Binlog file not exist",
-							zap.Error(err),
-							zap.String("file", binlog.GetLogPath()))
-						return errors.New("Binlog file not exist " + binlog.GetLogPath())
-					}
-					err = retry.Do(ctx, func() error {
-						return b.getStorageClient().Copy(ctx, b.milvusBucketName, b.backupBucketName, binlog.GetLogPath(), targetPath)
-					}, retry.Sleep(2*time.Second), retry.Attempts(5))
-					if err != nil {
-						log.Info("Fail to copy file after retry",
-							zap.Error(err),
-							zap.String("from", binlog.GetLogPath()),
-							zap.String("to", targetPath))
-						return err
-					} else {
-						log.Debug("Successfully copy file",
-							zap.String("from", binlog.GetLogPath()),
-							zap.String("to", targetPath))
-					}
-					return err
-				}
-				jobId := b.getCopyDataWorkerPool().SubmitWithId(job)
-				jobIds = append(jobIds, jobId)
+			//binlog := binlog
+			exist, err := b.getStorageClient().Exist(ctx, b.milvusBucketName, binlog.GetLogPath())
+			if err != nil {
+				log.Info("Fail to check file exist",
+					zap.Error(err),
+					zap.String("file", binlog.GetLogPath()))
+				return err
+			}
+			if !exist {
+				log.Error("Binlog file not exist",
+					zap.Error(err),
+					zap.String("file", binlog.GetLogPath()))
+				return err
+			}
+
+			err = retry.Do(ctx, func() error {
+				return b.getStorageClient().Copy(ctx, b.milvusBucketName, b.backupBucketName, binlog.GetLogPath(), targetPath)
+			}, retry.Sleep(2*time.Second), retry.Attempts(5))
+			if err != nil {
+				log.Info("Fail to copy file after retry",
+					zap.Error(err),
+					zap.String("from", binlog.GetLogPath()),
+					zap.String("to", targetPath))
+				return err
+			} else {
+				log.Debug("Successfully copy file",
+					zap.String("from", binlog.GetLogPath()),
+					zap.String("to", targetPath))
 			}
 		}
 	}
+	// delta log
+	for _, binlogs := range segment.GetDeltalogs() {
+		for _, binlog := range binlogs.GetBinlogs() {
+			targetPath := backupPathFunc(binlog.GetLogPath(), b.milvusRootPath, dstPath)
+			if segment.GetGroupId() != 0 {
+				targetPath = strings.Replace(targetPath,
+					strconv.FormatInt(segment.GetPartitionId(), 10),
+					strconv.FormatInt(segment.GetPartitionId(), 10)+"/"+strconv.FormatInt(segment.GetGroupId(), 10),
+					1)
+			}
+			if targetPath == binlog.GetLogPath() {
+				return errors.New(fmt.Sprintf("copy src path and dst path can not be the same, src: %s dst: %s", binlog.GetLogPath(), targetPath))
+			}
 
-	err := b.getCopyDataWorkerPool().WaitJobs(jobIds)
-	return err
+			//binlog := binlog
+			exist, err := b.getStorageClient().Exist(ctx, b.milvusBucketName, binlog.GetLogPath())
+			if err != nil {
+				log.Info("Fail to check file exist",
+					zap.Error(err),
+					zap.String("file", binlog.GetLogPath()))
+				return err
+			}
+			if !exist {
+				log.Error("Binlog file not exist",
+					zap.Error(err),
+					zap.String("file", binlog.GetLogPath()))
+				return errors.New("Binlog file not exist " + binlog.GetLogPath())
+			}
+			err = retry.Do(ctx, func() error {
+				return b.getStorageClient().Copy(ctx, b.milvusBucketName, b.backupBucketName, binlog.GetLogPath(), targetPath)
+			}, retry.Sleep(2*time.Second), retry.Attempts(5))
+			if err != nil {
+				log.Info("Fail to copy file after retry",
+					zap.Error(err),
+					zap.String("from", binlog.GetLogPath()),
+					zap.String("to", targetPath))
+				return err
+			} else {
+				log.Debug("Successfully copy file",
+					zap.String("from", binlog.GetLogPath()),
+					zap.String("to", targetPath))
+			}
+		}
+	}
+	segment.Backuped = true
+	return nil
 }
 
-func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, levelInfo *LeveledBackupInfo, segmentBackupInfo *backuppb.SegmentBackupInfo) (*backuppb.SegmentBackupInfo, error) {
+func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackupInfo *backuppb.SegmentBackupInfo) error {
 	var size int64 = 0
 	var rootPath string
 
@@ -887,11 +889,11 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, levelInfo *Le
 	fieldsLogDir, _, err := b.getStorageClient().ListWithPrefix(ctx, b.milvusBucketName, insertPath, false)
 	if len(fieldsLogDir) == 0 {
 		msg := fmt.Sprintf("Get empty input path, but segment should not be empty, %s", insertPath)
-		return segmentBackupInfo, errors.New(msg)
+		return errors.New(msg)
 	}
 	if err != nil {
 		log.Error("Fail to list segment path", zap.String("insertPath", insertPath), zap.Error(err))
-		return segmentBackupInfo, err
+		return err
 	}
 	log.Debug("fieldsLogDir", zap.String("bucket", b.milvusBucketName), zap.Any("fieldsLogDir", fieldsLogDir))
 	insertLogs := make([]*backuppb.FieldBinlog, 0)
@@ -959,10 +961,10 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, levelInfo *Le
 	//	})
 	//}
 
-	segmentBackupInfo.Binlogs = insertLogs
-	segmentBackupInfo.Deltalogs = deltaLogs
-	segmentBackupInfo.Size = size
-	b.updateSegment(levelInfo, segmentBackupInfo)
-	log.Debug("fill segment info", zap.Int64("segId", segmentBackupInfo.GetSegmentId()), zap.Int64("size", segmentBackupInfo.GetSize()))
-	return segmentBackupInfo, nil
+	//segmentBackupInfo.Binlogs = insertLogs
+	//segmentBackupInfo.Deltalogs = deltaLogs
+	//segmentBackupInfo.Size = size
+	b.meta.UpdateSegment(segmentBackupInfo.GetPartitionId(), segmentBackupInfo.GetSegmentId(), setSegmentBinlogs(insertLogs), setSegmentDeltaBinlogs(deltaLogs), setSegmentSize(size))
+	log.Debug("fill segment info", zap.Int64("segId", segmentBackupInfo.GetSegmentId()), zap.Int64("size", size))
+	return nil
 }
