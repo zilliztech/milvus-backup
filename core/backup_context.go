@@ -504,10 +504,16 @@ func (b *BackupContext) GetRestore(ctx context.Context, request *backuppb.GetRes
 	}
 
 	task := b.meta.GetRestoreTask(request.GetId())
+	progress := int32(float32(task.GetRestoredSize()) * 100 / float32(task.GetToRestoreSize()))
+	// don't return zero
+	if progress == 0 {
+		progress = 1
+	}
+	task.Progress = progress
 	if task != nil {
 		resp.Code = backuppb.ResponseCode_Success
 		resp.Msg = "success"
-		resp.Data = UpdateRestoreBackupTask(task)
+		resp.Data = task
 		return resp
 	} else {
 		resp.Code = backuppb.ResponseCode_Fail

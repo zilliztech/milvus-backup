@@ -327,6 +327,8 @@ func SimpleBackupResponse(input *backuppb.BackupInfoResponse) *backuppb.BackupIn
 func SimpleRestoreResponse(input *backuppb.RestoreBackupResponse) *backuppb.RestoreBackupResponse {
 	restore := input.GetData()
 
+	simpleRestore := proto.Clone(restore).(*backuppb.RestoreBackupTask)
+
 	collectionRestores := make([]*backuppb.RestoreCollectionTask, 0)
 	for _, coll := range restore.GetCollectionRestoreTasks() {
 		collectionRestores = append(collectionRestores, &backuppb.RestoreCollectionTask{
@@ -343,15 +345,7 @@ func SimpleRestoreResponse(input *backuppb.RestoreBackupResponse) *backuppb.Rest
 		})
 	}
 
-	simpleRestore := &backuppb.RestoreBackupTask{
-		Id:                     restore.GetId(),
-		StateCode:              restore.GetStateCode(),
-		ErrorMessage:           restore.GetErrorMessage(),
-		StartTime:              restore.GetStartTime(),
-		EndTime:                restore.GetEndTime(),
-		CollectionRestoreTasks: collectionRestores,
-		Progress:               restore.GetProgress(),
-	}
+	simpleRestore.CollectionRestoreTasks = collectionRestores
 
 	return &backuppb.RestoreBackupResponse{
 		RequestId: input.GetRequestId(),
@@ -359,23 +353,6 @@ func SimpleRestoreResponse(input *backuppb.RestoreBackupResponse) *backuppb.Rest
 		Msg:       input.GetMsg(),
 		Data:      simpleRestore,
 	}
-}
-
-func UpdateRestoreBackupTask(input *backuppb.RestoreBackupTask) *backuppb.RestoreBackupTask {
-	var storedSize int64 = 0
-	for _, coll := range input.GetCollectionRestoreTasks() {
-		storedSize += coll.GetRestoredSize()
-	}
-	if input.ToRestoreSize == 0 {
-		if input.StateCode == backuppb.RestoreTaskStateCode_SUCCESS {
-			input.Progress = 100
-		} else {
-			input.Progress = 0
-		}
-	} else {
-		input.Progress = int32(storedSize * 100 / input.ToRestoreSize)
-	}
-	return input
 }
 
 type DbCollections = map[string][]string

@@ -449,6 +449,62 @@ func (meta *MetaManager) GetFullMeta(id string) *backuppb.BackupInfo {
 	return cloneBackup
 }
 
+type RestoreTaskOpt func(task *backuppb.RestoreBackupTask)
+
+func setRestoreStateCode(stateCode backuppb.RestoreTaskStateCode) RestoreTaskOpt {
+	return func(task *backuppb.RestoreBackupTask) {
+		task.StateCode = stateCode
+	}
+}
+
+func setRestoreErrorMessage(errorMessage string) RestoreTaskOpt {
+	return func(task *backuppb.RestoreBackupTask) {
+		task.ErrorMessage = errorMessage
+	}
+}
+
+func setRestoreStartTime(startTime int64) RestoreTaskOpt {
+	return func(task *backuppb.RestoreBackupTask) {
+		task.StartTime = startTime
+	}
+}
+
+func setRestoreEndTime(endTime int64) RestoreTaskOpt {
+	return func(task *backuppb.RestoreBackupTask) {
+		task.EndTime = endTime
+	}
+}
+
+func addRestoreRestoredSize(restoredSize int64) RestoreTaskOpt {
+	return func(task *backuppb.RestoreBackupTask) {
+		task.RestoredSize = task.RestoredSize + restoredSize
+	}
+}
+
+func addCollectionRestoredSize(collectionID, restoredSize int64) RestoreTaskOpt {
+	return func(task *backuppb.RestoreBackupTask) {
+		task.RestoredSize = task.RestoredSize + restoredSize
+		for _, coll := range task.GetCollectionRestoreTasks() {
+			if coll.CollBackup.CollectionId == collectionID {
+				coll.RestoredSize = coll.RestoredSize + restoredSize
+			}
+		}
+	}
+}
+
+func (meta *MetaManager) UpdateRestoreTask(restoreID string, opts ...RestoreTaskOpt) {
+	meta.mu.Lock()
+	defer meta.mu.Unlock()
+	backup := meta.restoreTasks[restoreID]
+	cBackup := proto.Clone(backup).(*backuppb.RestoreBackupTask)
+	for _, opt := range opts {
+		opt(cBackup)
+	}
+	meta.restoreTasks[backup.Id] = cBackup
+}
+
+//CollectionRestoreTasks []*RestoreCollectionTask `protobuf:"bytes,6,rep,name=collection_restore_tasks,json=collectionRestoreTasks,proto3" json:"collection_restore_tasks,omitempty"`
+
 func (meta *MetaManager) AddRestoreTask(task *backuppb.RestoreBackupTask) {
 	meta.mu.Lock()
 	defer meta.mu.Unlock()

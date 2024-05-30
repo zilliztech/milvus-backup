@@ -10,6 +10,7 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	gomilvus "github.com/milvus-io/milvus-sdk-go/v2/client"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
+	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
@@ -97,31 +98,23 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 
 	backup := getResp.GetData()
 
-	id := utils.UUID()
+	var taskID string
+	if request.GetId() != "" {
+		taskID = request.GetId()
+	} else {
+		taskID = "restore_" + fmt.Sprint(time.Now().UTC().Format("2006_01_02_15_04_05_")) + fmt.Sprint(time.Now().Nanosecond())
+	}
+
 	task := &backuppb.RestoreBackupTask{
-		Id:        id,
+		Id:        taskID,
 		StateCode: backuppb.RestoreTaskStateCode_INITIAL,
 		StartTime: time.Now().Unix(),
 		Progress:  0,
 	}
 	// clean thread pool
 	defer func() {
-		b.cleanRestoreWorkerPool(id)
+		b.cleanRestoreWorkerPool(taskID)
 	}()
-
-	//go func() {
-	//	ticker := time.NewTicker(5 * time.Second)
-	//	defer ticker.Stop()
-	//	for {
-	//		select {
-	//		case <-ctx.Done():
-	//			log.Info("background checking channels loop quit")
-	//			return
-	//		case <-ticker.C:
-	//			log.Info("restore worker pool", zap.Int32("jobs_num", b.getRestoreWorkerPool(id).JobNum()))
-	//		}
-	//	}
-	//}()
 
 	// 2, initial restoreCollectionTasks
 	toRestoreCollectionBackups := make([]*backuppb.CollectionBackupInfo, 0)
@@ -308,6 +301,7 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 		task.CollectionRestoreTasks = restoreCollectionTasks
 		task.ToRestoreSize = task.GetToRestoreSize() + toRestoreSize
 	}
+	b.meta.AddRestoreTask(task)
 
 	if request.Async {
 		go b.executeRestoreBackupTask(ctx, backupBucketName, backupPath, backup, task)
@@ -345,17 +339,11 @@ func (b *BackupContext) executeRestoreBackupTask(ctx context.Context, backupBuck
 	log.Info("Start collection level restore pool", zap.Int("parallelism", b.params.BackupCfg.RestoreParallelism))
 
 	id := task.GetId()
-	b.meta.AddRestoreTask(task)
-	task.StateCode = backuppb.RestoreTaskStateCode_EXECUTING
-
+	b.meta.UpdateRestoreTask(id, setRestoreStateCode(backuppb.RestoreTaskStateCode_EXECUTING))
 	log.Info("executeRestoreBackupTask start",
 		zap.String("backup_name", backup.GetName()),
 		zap.String("backupBucketName", backupBucketName),
 		zap.String("backupPath", backupPath))
-	updateRestoreTaskFunc := func(id string, task *backuppb.RestoreBackupTask) {
-		b.meta.AddRestoreTask(task)
-	}
-	defer updateRestoreTaskFunc(id, task)
 
 	restoreCollectionTasks := task.GetCollectionRestoreTasks()
 
@@ -371,17 +359,11 @@ func (b *BackupContext) executeRestoreBackupTask(ctx context.Context, backupBuck
 					zap.Error(err))
 				return err
 			}
+			restoreCollectionTaskClone.StateCode = backuppb.RestoreTaskStateCode_SUCCESS
 			log.Info("finish restore collection",
 				zap.String("db_name", restoreCollectionTaskClone.GetTargetDbName()),
-				zap.String("collection_name", restoreCollectionTaskClone.GetTargetCollectionName()))
-			restoreCollectionTaskClone.StateCode = backuppb.RestoreTaskStateCode_SUCCESS
-			task.RestoredSize += endTask.RestoredSize
-			if task.GetToRestoreSize() == 0 {
-				task.Progress = 100
-			} else {
-				task.Progress = int32(100 * task.GetRestoredSize() / task.GetToRestoreSize())
-			}
-			updateRestoreTaskFunc(id, task)
+				zap.String("collection_name", restoreCollectionTaskClone.GetTargetCollectionName()),
+				zap.Int64("size", endTask.RestoredSize))
 			return nil
 		}
 		wp.Submit(job)
@@ -391,8 +373,7 @@ func (b *BackupContext) executeRestoreBackupTask(ctx context.Context, backupBuck
 		return task, err
 	}
 
-	task.StateCode = backuppb.RestoreTaskStateCode_SUCCESS
-	task.EndTime = time.Now().Unix()
+	b.meta.UpdateRestoreTask(id, setRestoreStateCode(backuppb.RestoreTaskStateCode_SUCCESS), setRestoreEndTime(time.Now().Unix()))
 	return task, nil
 }
 
@@ -572,6 +553,7 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 	}()
 
 	jobIds := make([]int64, 0)
+	restoredSize := atomic.Int64{}
 	for _, v := range task.GetCollBackup().GetPartitionBackups() {
 		partitionBackup := v
 		log.Info("start restore partition",
@@ -598,11 +580,15 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 				zap.String("partitionName", partitionBackup.GetPartitionName()))
 		}
 
-		restoreFileGroups := make([][]string, 0)
+		type restoreGroup struct {
+			files []string
+			size  int64
+		}
+		restoreFileGroups := make([]restoreGroup, 0)
 		groupIds := collectGroupIdsFromSegments(partitionBackup.GetSegmentBackups())
 		if len(groupIds) == 1 && groupIds[0] == 0 {
 			// backward compatible old backup without group id
-			files, err := b.getBackupPartitionPaths(ctx, backupBucketName, backupPath, partitionBackup)
+			files, size, err := b.getBackupPartitionPaths(ctx, backupBucketName, backupPath, partitionBackup)
 			if err != nil {
 				log.Error("fail to get partition backup binlog files",
 					zap.Error(err),
@@ -611,11 +597,11 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 					zap.String("partition", partitionBackup.GetPartitionName()))
 				return task, err
 			}
-			restoreFileGroups = append(restoreFileGroups, files)
+			restoreFileGroups = append(restoreFileGroups, restoreGroup{files: files, size: size})
 		} else {
 			// bulk insert by segment groups
 			for _, groupId := range groupIds {
-				files, err := b.getBackupPartitionPathsWithGroupID(ctx, backupBucketName, backupPath, partitionBackup, groupId)
+				files, size, err := b.getBackupPartitionPathsWithGroupID(ctx, backupBucketName, backupPath, partitionBackup, groupId)
 				if err != nil {
 					log.Error("fail to get partition backup binlog files",
 						zap.Error(err),
@@ -624,7 +610,7 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 						zap.String("partition", partitionBackup.GetPartitionName()))
 					return task, err
 				}
-				restoreFileGroups = append(restoreFileGroups, files)
+				restoreFileGroups = append(restoreFileGroups, restoreGroup{files: files, size: size})
 			}
 		}
 
@@ -668,10 +654,17 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 		}
 
 		for _, value := range restoreFileGroups {
-			files := value
+			group := value
 			job := func(ctx context.Context) error {
-				// todo: progress
-				return copyAndBulkInsert(files)
+				err := copyAndBulkInsert(group.files)
+				if err != nil {
+					return err
+				} else {
+					b.meta.UpdateRestoreTask(parentTaskID, addCollectionRestoredSize(task.GetCollBackup().GetCollectionId(), group.size))
+					restoredSize.Add(group.size)
+					task.RestoredSize = restoredSize.Load()
+					return nil
+				}
 			}
 			jobId := b.getRestoreWorkerPool(parentTaskID).SubmitWithId(job)
 			jobIds = append(jobIds, jobId)
@@ -681,23 +674,6 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 	err := b.getRestoreWorkerPool(parentTaskID).WaitJobs(jobIds)
 	return task, err
 }
-
-//func (b *BackupContext) restorePartition(ctx context.Context, targetDBName, targetCollectionName string,
-//	partitionBackup *backuppb.PartitionBackupInfo, task *backuppb.RestoreCollectionTask, isSameBucket bool, backupBucketName string, backupPath string, tempDir string) (*backuppb.RestoreCollectionTask, error) {
-//
-//	if task.GetMetaOnly() {
-//		task.Progress = 100
-//	} else {
-//
-//		task.RestoredSize = task.RestoredSize + partitionBackup.GetSize()
-//		if task.ToRestoreSize == 0 {
-//			task.Progress = 100
-//		} else {
-//			task.Progress = int32(100 * task.RestoredSize / task.ToRestoreSize)
-//		}
-//	}
-//	return task, nil
-//}
 
 func collectGroupIdsFromSegments(segments []*backuppb.SegmentBackupInfo) []int64 {
 	dict := make(map[int64]bool)
@@ -786,7 +762,7 @@ func (b *BackupContext) watchBulkInsertState(ctx context.Context, taskId int64, 
 	return errors.New("import task timeout")
 }
 
-func (b *BackupContext) getBackupPartitionPaths(ctx context.Context, bucketName string, backupPath string, partition *backuppb.PartitionBackupInfo) ([]string, error) {
+func (b *BackupContext) getBackupPartitionPaths(ctx context.Context, bucketName string, backupPath string, partition *backuppb.PartitionBackupInfo) ([]string, int64, error) {
 	log.Info("getBackupPartitionPaths",
 		zap.String("bucketName", bucketName),
 		zap.String("backupPath", backupPath),
@@ -798,19 +774,19 @@ func (b *BackupContext) getBackupPartitionPaths(ctx context.Context, bucketName 
 	exist, err := b.getStorageClient().Exist(ctx, bucketName, deltaPath)
 	if err != nil {
 		log.Warn("check binlog exist fail", zap.Error(err))
-		return []string{}, err
+		return []string{}, 0, err
 	}
 	log.Debug("check delta log exist",
 		zap.Int64("partitionID", partition.PartitionId),
 		zap.String("deltaPath", deltaPath),
 		zap.Bool("exist", exist))
 	if !exist {
-		return []string{insertPath, ""}, nil
+		return []string{insertPath, ""}, partition.GetSize(), nil
 	}
-	return []string{insertPath, deltaPath}, nil
+	return []string{insertPath, deltaPath}, partition.GetSize(), nil
 }
 
-func (b *BackupContext) getBackupPartitionPathsWithGroupID(ctx context.Context, bucketName string, backupPath string, partition *backuppb.PartitionBackupInfo, groupId int64) ([]string, error) {
+func (b *BackupContext) getBackupPartitionPathsWithGroupID(ctx context.Context, bucketName string, backupPath string, partition *backuppb.PartitionBackupInfo, groupId int64) ([]string, int64, error) {
 	log.Info("getBackupPartitionPaths",
 		zap.String("bucketName", bucketName),
 		zap.String("backupPath", backupPath),
@@ -820,13 +796,21 @@ func (b *BackupContext) getBackupPartitionPathsWithGroupID(ctx context.Context, 
 	insertPath := fmt.Sprintf("%s/%s/%s/%v/%v/%d/", backupPath, BINGLOG_DIR, INSERT_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId(), groupId)
 	deltaPath := fmt.Sprintf("%s/%s/%s/%v/%v/%d/", backupPath, BINGLOG_DIR, DELTA_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId(), groupId)
 
+	var totalSize int64
+	for _, seg := range partition.GetSegmentBackups() {
+		if seg.GetGroupId() == groupId {
+			totalSize += seg.GetSize()
+		}
+	}
+
 	exist, err := b.getStorageClient().Exist(ctx, bucketName, deltaPath)
 	if err != nil {
 		log.Warn("check binlog exist fail", zap.Error(err))
-		return []string{}, err
+		return []string{}, 0, err
 	}
 	if !exist {
-		return []string{insertPath, ""}, nil
+		return []string{insertPath, ""}, totalSize, nil
 	}
-	return []string{insertPath, deltaPath}, nil
+
+	return []string{insertPath, deltaPath}, totalSize, nil
 }
