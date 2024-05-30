@@ -121,8 +121,21 @@ def gen_float_vec_field(name=ct.default_float_vec_field_name, is_primary=False, 
 
 def gen_sparse_vec_field(name=ct.default_sparse_vec_field_name, is_primary=False, dim=ct.default_dim,
                         description=ct.default_desc):
-    float_vec_field, _ = ApiFieldSchemaWrapper().init_field_schema(name=name, dtype=DataType.SPARSE_FLOAT_VECTOR,
-                                                                   description=description,
+    sparse_vec_field, _ = ApiFieldSchemaWrapper().init_field_schema(name=name, dtype=DataType.SPARSE_FLOAT_VECTOR,
+                                                                   description=description)
+    return sparse_vec_field
+
+def gen_float16_vec_field(name=ct.default_float_vec_field_name, is_primary=False, dim=ct.default_dim,
+                        description=ct.default_desc):
+    float_vec_field, _ = ApiFieldSchemaWrapper().init_field_schema(name=name, dtype=DataType.FLOAT16_VECTOR,
+                                                                   description=description, dim=dim,
+                                                                   is_primary=is_primary)
+    return float_vec_field
+
+def gen_brain_float16_vec_field(name=ct.default_float_vec_field_name, is_primary=False, dim=ct.default_dim,
+                        description=ct.default_desc):
+    float_vec_field, _ = ApiFieldSchemaWrapper().init_field_schema(name=name, dtype=DataType.BFLOAT16_VECTOR,
+                                                                   description=description, dim=dim,
                                                                    is_primary=is_primary)
     return float_vec_field
 
@@ -787,59 +800,3 @@ def gen_grant_list(collection_name):
                   {"object": "User", "object_name": "*", "privilege": "SelectUser"}]
     return grant_list
 
-def install_milvus_operator_specific_config(namespace, milvus_mode, release_name, image,
-                                            rate_limit_enable, collection_rate_limit):
-    """
-    namespace : str
-    milvus_mode : str -> standalone or cluster
-    release_name : str
-    image: str -> image tag including repository
-    rate_limit_enable: str -> true or false, switch for rate limit
-    collection_rate_limit: int -> collection rate limit numbers
-    input_content ：the content that need to insert to the file
-    return: milvus host name
-    """
-
-    if not isinstance(namespace, str):
-        log.error("[namespace] is not a string.")
-
-    if not isinstance(milvus_mode, str):
-        log.error("[milvus_mode] is not a string.")
-
-    if not isinstance(release_name, str):
-        log.error("[release_name] is not a string.")
-
-    if not isinstance(image, str):
-        log.error("[image] is not a string.")
-
-    if not isinstance(rate_limit_enable, str):
-        log.error("[rate_limit_enable] is not a string.")
-
-    if not isinstance(collection_rate_limit, int):
-        log.error("[collection_rate_limit] is not an integer.")
-
-    if milvus_mode not in ["standalone", "cluster"]:
-        log.error("[milvus_mode] is not 'standalone' or 'cluster'")
-
-    if rate_limit_enable not in ["true", "false"]:
-        log.error("[rate_limit_enable] is not 'true' or 'false'")
-
-    data_config = {
-        'metadata.namespace': namespace,
-        'spec.mode': milvus_mode,
-        'metadata.name': release_name,
-        'spec.components.image': image,
-        'spec.components.proxy.serviceType': 'LoadBalancer',
-        'spec.components.dataNode.replicas': 2,
-        'spec.config.common.retentionDuration': 60,
-        'spec.config.quotaAndLimits.enable': rate_limit_enable,
-        'spec.config.quotaAndLimits.ddl.collectionRate': collection_rate_limit,
-    }
-    mil = MilvusOperator()
-    mil.install(data_config)
-    if mil.wait_for_healthy(release_name, NAMESPACE, timeout=TIMEOUT):
-        host = mic.endpoint(release_name, NAMESPACE).split(':')[0]
-    else:
-        raise MilvusException(message=f'Milvus healthy timeout 1800s')
-
-    return host
