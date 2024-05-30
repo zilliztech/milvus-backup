@@ -535,6 +535,8 @@ jobs:
           cat configs/backup.yaml || true
           go get
           go build
+          bash build_image.sh
+
       - name: Install dependency
 
         timeout-minutes: 5
@@ -573,8 +575,11 @@ jobs:
       - name: Start server
         timeout-minutes: 5
         shell: bash
+        working-directory: build/deployment
         run: |
-          ./milvus-backup server > server.log 2>&1 &
+          docker-compose up -d
+          sleep 10
+          docker-compose ps -a
 
       - name: Run test
         timeout-minutes: 120

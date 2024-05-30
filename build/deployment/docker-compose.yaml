@@ -1,0 +1,12 @@
+version: '3.5'
+
+services:
+  milvus-backup:
+    container_name: milvus-backup
+    image: milvusdb/milvus-backup:latest
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/api/v1/hello"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+    network_mode: "host"

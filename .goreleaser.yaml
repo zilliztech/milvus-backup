@@ -30,30 +30,27 @@ archives:
       {{- else }}{{ .Arch }}{{ end }}
       {{- if .Arm }}v{{ .Arm }}{{ end }}
 checksum:
-  name_template: 'checksums.txt'
+  name_template: "checksums.txt"
 snapshot:
   name_template: "{{ incpatch .Version }}-next"
 
 brews:
-  -
-    name: milvus-backup
+  - name: milvus-backup
     folder: Formula
     homepage: "https://github.com/zilliztech/milvus-backup"
     repository:
       owner: zilliztech
       name: homebrew-tap
       token: "{{ .Env.GITHUB_HOMEBREW_TOKEN }}"
-    
 
 changelog:
   sort: asc
   use: github
   filters:
     exclude:
-      - '^docs:'
-      - '^test:'
+      - "^docs:"
+      - "^test:"
       - Merge pull request
-
 # The lines beneath this are called `modelines`. See `:help modeline`
 # Feel free to remove those if you don't want/use them.
 # yaml-language-server: $schema=https://goreleaser.com/static/schema.json
