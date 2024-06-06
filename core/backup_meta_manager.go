@@ -361,6 +361,12 @@ func setSegmentSize(size int64) SegmentOpt {
 	}
 }
 
+func setGroupID(groupID int64) SegmentOpt {
+	return func(segment *backuppb.SegmentBackupInfo) {
+		segment.GroupId = groupID
+	}
+}
+
 func setSegmentBinlogs(binlogs []*backuppb.FieldBinlog) SegmentOpt {
 	return func(segment *backuppb.SegmentBackupInfo) {
 		segment.Binlogs = binlogs

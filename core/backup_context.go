@@ -20,11 +20,12 @@ import (
 )
 
 const (
-	BULKINSERT_TIMEOUT        = 60 * 60
-	BULKINSERT_SLEEP_INTERVAL = 5
-	BACKUP_NAME               = "BACKUP_NAME"
-	COLLECTION_RENAME_SUFFIX  = "COLLECTION_RENAME_SUFFIX"
-	RPS                       = 1000
+	BULKINSERT_TIMEOUT            = 60 * 60
+	BULKINSERT_SLEEP_INTERVAL     = 5
+	BACKUP_NAME                   = "BACKUP_NAME"
+	COLLECTION_RENAME_SUFFIX      = "COLLECTION_RENAME_SUFFIX"
+	RPS                           = 1000
+	BackupSegmentGroupMaxSizeInMB = 256
 )
 
 // makes sure BackupContext implements `Backup`
