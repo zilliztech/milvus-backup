@@ -563,6 +563,45 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 		}
 	}()
 
+	// bulk insert
+	copyAndBulkInsert := func(dbName, collectionName, partitionName string, files []string, isL0 bool) error {
+		realFiles := make([]string, len(files))
+		// if milvus bucket and backup bucket are not the same, should copy the data first
+		if !isSameBucket {
+			log.Info("milvus bucket and backup bucket are not the same, copy the data first", zap.Strings("files", files))
+			for i, file := range files {
+				// empty delta file, no need to copy
+				if file == "" {
+					realFiles[i] = file
+				} else {
+					log.Debug("Copy temporary restore file", zap.String("from", file), zap.String("to", tempDir+file))
+					err := retry.Do(ctx, func() error {
+						return b.getStorageClient().Copy(ctx, backupBucketName, b.milvusBucketName, file, tempDir+file)
+					}, retry.Sleep(2*time.Second), retry.Attempts(5))
+					if err != nil {
+						log.Error("fail to copy backup date from backup bucket to restore target milvus bucket after retry", zap.Error(err))
+						return err
+					}
+					realFiles[i] = tempDir + file
+				}
+			}
+		} else {
+			realFiles = files
+		}
+
+		err := b.executeBulkInsert(ctx, dbName, collectionName, partitionName, realFiles, int64(task.GetCollBackup().BackupTimestamp), isL0)
+		if err != nil {
+			log.Error("fail to bulk insert to partition",
+				zap.String("backupCollectionName", task.GetCollBackup().GetCollectionName()),
+				zap.String("targetDBName", targetDBName),
+				zap.String("targetCollectionName", targetCollectionName),
+				zap.String("partition", partitionName),
+				zap.Error(err))
+			return err
+		}
+		return nil
+	}
+
 	jobIds := make([]int64, 0)
 	restoredSize := atomic.Int64{}
 	for _, v := range task.GetCollBackup().GetPartitionBackups() {
@@ -625,49 +664,10 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 			}
 		}
 
-		// bulk insert
-		copyAndBulkInsert := func(files []string) error {
-			realFiles := make([]string, len(files))
-			// if milvus bucket and backup bucket are not the same, should copy the data first
-			if !isSameBucket {
-				log.Info("milvus bucket and backup bucket are not the same, copy the data first", zap.Strings("files", files))
-				for i, file := range files {
-					// empty delta file, no need to copy
-					if file == "" {
-						realFiles[i] = file
-					} else {
-						log.Debug("Copy temporary restore file", zap.String("from", file), zap.String("to", tempDir+file))
-						err := retry.Do(ctx, func() error {
-							return b.getStorageClient().Copy(ctx, backupBucketName, b.milvusBucketName, file, tempDir+file)
-						}, retry.Sleep(2*time.Second), retry.Attempts(5))
-						if err != nil {
-							log.Error("fail to copy backup date from backup bucket to restore target milvus bucket after retry", zap.Error(err))
-							return err
-						}
-						realFiles[i] = tempDir + file
-					}
-				}
-			} else {
-				realFiles = files
-			}
-
-			err := b.executeBulkInsert(ctx, targetDBName, targetCollectionName, partitionBackup.GetPartitionName(), realFiles, int64(task.GetCollBackup().BackupTimestamp))
-			if err != nil {
-				log.Error("fail to bulk insert to partition",
-					zap.String("backupCollectionName", task.GetCollBackup().GetCollectionName()),
-					zap.String("targetDBName", targetDBName),
-					zap.String("targetCollectionName", targetCollectionName),
-					zap.String("partition", partitionBackup.GetPartitionName()),
-					zap.Error(err))
-				return err
-			}
-			return nil
-		}
-
 		for _, value := range restoreFileGroups {
 			group := value
 			job := func(ctx context.Context) error {
-				err := copyAndBulkInsert(group.files)
+				err := copyAndBulkInsert(targetDBName, targetCollectionName, partitionBackup.GetPartitionName(), group.files, false)
 				if err != nil {
 					return err
 				} else {
@@ -680,6 +680,16 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 			jobId := b.getRestoreWorkerPool(parentTaskID).SubmitWithId(job)
 			jobIds = append(jobIds, jobId)
 		}
+	}
+
+	log.Info("l0segmentsNum", zap.Int("l0segmentsNum", len(task.GetCollBackup().GetL0Segments())))
+	if len(task.GetCollBackup().GetL0Segments()) > 0 {
+		job := func(ctx context.Context) error {
+			l0Files := fmt.Sprintf("%s/%s/%s/%v/%d/", backupPath, BINGLOG_DIR, DELTA_LOG_DIR, task.CollBackup.CollectionId, -1)
+			return copyAndBulkInsert(targetDBName, targetCollectionName, "", []string{l0Files}, true)
+		}
+		jobId := b.getRestoreWorkerPool(parentTaskID).SubmitWithId(job)
+		jobIds = append(jobIds, jobId)
 	}
 
 	err := b.getRestoreWorkerPool(parentTaskID).WaitJobs(jobIds)
@@ -698,7 +708,7 @@ func collectGroupIdsFromSegments(segments []*backuppb.SegmentBackupInfo) []int64
 	return res
 }
 
-func (b *BackupContext) executeBulkInsert(ctx context.Context, db, coll string, partition string, files []string, endTime int64) error {
+func (b *BackupContext) executeBulkInsert(ctx context.Context, db, coll string, partition string, files []string, endTime int64, isL0 bool) error {
 	log.Info("execute bulk insert",
 		zap.String("db", db),
 		zap.String("collection", coll),
@@ -707,10 +717,18 @@ func (b *BackupContext) executeBulkInsert(ctx context.Context, db, coll string, 
 		zap.Int64("endTime", endTime))
 	var taskId int64
 	var err error
-	if endTime == 0 {
-		taskId, err = b.getMilvusClient().BulkInsert(ctx, db, coll, partition, files, gomilvus.IsBackup())
+	if isL0 {
+		if endTime == 0 {
+			taskId, err = b.getMilvusClient().BulkInsert(ctx, db, coll, partition, files, gomilvus.IsL0())
+		} else {
+			taskId, err = b.getMilvusClient().BulkInsert(ctx, db, coll, partition, files, gomilvus.IsL0(), gomilvus.WithEndTs(endTime))
+		}
 	} else {
-		taskId, err = b.getMilvusClient().BulkInsert(ctx, db, coll, partition, files, gomilvus.IsBackup(), gomilvus.WithEndTs(endTime))
+		if endTime == 0 {
+			taskId, err = b.getMilvusClient().BulkInsert(ctx, db, coll, partition, files, gomilvus.IsBackup())
+		} else {
+			taskId, err = b.getMilvusClient().BulkInsert(ctx, db, coll, partition, files, gomilvus.IsBackup(), gomilvus.WithEndTs(endTime))
+		}
 	}
 	if err != nil {
 		log.Error("fail to bulk insert",

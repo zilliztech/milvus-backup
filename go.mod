@@ -15,7 +15,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/json-iterator/go v1.1.12
 	github.com/lingdor/stackerror v0.0.0-20191119040541-976d8885ed76
-	github.com/milvus-io/milvus-proto/go-api/v2 v2.4.2
+	github.com/milvus-io/milvus-proto/go-api/v2 v2.4.3
 	github.com/milvus-io/milvus-sdk-go/v2 v2.4.0
 	github.com/minio/minio-go/v7 v7.0.61
 	github.com/pkg/errors v0.9.1
@@ -116,4 +116,4 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 )
 
-replace github.com/milvus-io/milvus-sdk-go/v2 => github.com/wayblink/milvus-sdk-go/v2 v2.4.2-cdc-rc1
+replace github.com/milvus-io/milvus-sdk-go/v2 => github.com/wayblink/milvus-sdk-go/v2 v2.3.0-beta4.0.20240607085051-1ac5aaf24c6d

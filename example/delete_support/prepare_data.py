@@ -6,7 +6,6 @@
 # 5. search, query, and hybrid search on entities
 # 6. delete entities by PK
 # 7. drop collection
-import time
 import os
 import numpy as np
 from pymilvus import (
@@ -90,48 +89,3 @@ hello_milvus.delete("pk in [0,1,2,3,4]")
 hello_milvus.flush()
 
 print(f"Number of entities in hello_milvus: {hello_milvus.num_entities}")  # check the num_entites
-
-# create another collection
-fields2 = [
-    FieldSchema(name="pk", dtype=DataType.INT64, is_primary=True, auto_id=False),
-    FieldSchema(name="random", dtype=DataType.DOUBLE),
-    FieldSchema(name="var", dtype=DataType.VARCHAR, max_length=65535),
-    FieldSchema(name="embeddings", dtype=DataType.FLOAT_VECTOR, dim=dim)
-]
-
-schema2 = CollectionSchema(fields2, "hello_milvus2")
-
-print(fmt.format("Create collection `hello_milvus2`"))
-hello_milvus2 = Collection("hello_milvus2", schema2, consistency_level="Strong")
-
-entities2 = [
-    [i for i in range(num_entities)],
-    rng.random(num_entities).tolist(),  # field random, only supports list
-    [str(i) for i in range(num_entities)],
-    rng.random((num_entities, dim)),    # field embeddings, supports numpy.ndarray and list
-]
-
-insert_result2 = hello_milvus2.insert(entities2)
-hello_milvus.delete("pk in [0,1,2,3,4]")
-hello_milvus2.flush()
-
-entities3 = [
-    [i + num_entities for i in range(num_entities)],
-    rng.random(num_entities).tolist(),  # field random, only supports list
-    [str(i) for i in range(num_entities)],
-    rng.random((num_entities, dim)),    # field embeddings, supports numpy.ndarray and list
-]
-
-insert_result2 = hello_milvus2.insert(entities3)
-hello_milvus.delete("pk in [5,6,7,8,9]")
-hello_milvus.delete("pk in [3000,3001,3002,3003,3004]")
-hello_milvus2.flush()
-
-index_params = {"index_type": "IVF_FLAT", "params": {"nlist": 128}, "metric_type": "L2"}
-hello_milvus.create_index("embeddings", index_params)
-
-index_params2 = {"index_type": "Trie"}
-hello_milvus2.create_index("var", index_params2)
-
-print(f"Number of entities in hello_milvus2: {hello_milvus2.num_entities}")  # check the num_entites
-

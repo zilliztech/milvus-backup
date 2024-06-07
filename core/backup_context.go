@@ -270,15 +270,15 @@ func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBack
 			zap.String("backupName", request.GetBackupName()),
 			zap.String("backupId", request.GetBackupId()),
 			zap.String("bucketName", request.GetBucketName()),
-			zap.String("path", request.GetPath()),
-			zap.Any("resp", resp))
+			zap.String("path", request.GetPath()))
 	} else {
 		log.Info("finish GetBackupRequest",
 			zap.String("requestId", request.GetRequestId()),
 			zap.String("backupName", request.GetBackupName()),
 			zap.String("backupId", request.GetBackupId()),
 			zap.String("bucketName", request.GetBucketName()),
-			zap.String("path", request.GetPath()))
+			zap.String("path", request.GetPath()),
+			zap.Any("resp", resp))
 	}
 
 	return resp

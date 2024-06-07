@@ -217,6 +217,12 @@ func setCollectionSize(size int64) CollectionOpt {
 	}
 }
 
+func setL0Segments(segments []*backuppb.SegmentBackupInfo) CollectionOpt {
+	return func(collection *backuppb.CollectionBackupInfo) {
+		collection.L0Segments = segments
+	}
+}
+
 func incCollectionSize(size int64) CollectionOpt {
 	return func(collection *backuppb.CollectionBackupInfo) {
 		collection.Size = collection.Size + size
@@ -419,6 +425,16 @@ func (meta *MetaManager) GetBackupBySegmentID(segmentID int64) *backuppb.BackupI
 	if !exist {
 		return nil
 	}
+	backupID, exist := meta.collectionBackupReverse[collectionID]
+	if !exist {
+		return nil
+	}
+	return meta.backups[backupID]
+}
+
+func (meta *MetaManager) GetBackupByCollectionID(collectionID int64) *backuppb.BackupInfo {
+	meta.mu.Lock()
+	defer meta.mu.Unlock()
 	backupID, exist := meta.collectionBackupReverse[collectionID]
 	if !exist {
 		return nil
