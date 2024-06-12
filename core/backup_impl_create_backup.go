@@ -504,6 +504,9 @@ func (b *BackupContext) backupCollectionExecute(ctx context.Context, collectionB
 		segmentBackupInfos := make([]*backuppb.SegmentBackupInfo, 0)
 		var currentSize int64 = 0
 		var groupID int64 = 1
+		// currently not group l0 segments
+		//var currentL0Size int64 = 0
+		//var l0GroupID int64 = 1
 		segments := b.meta.GetSegments(partition.GetPartitionId())
 		for _, v := range segments {
 			segment := v
@@ -512,12 +515,21 @@ func (b *BackupContext) backupCollectionExecute(ctx context.Context, collectionB
 				log.Error("Fail to fill segment backup info", zap.Error(err))
 				return err
 			}
-			if currentSize > BackupSegmentGroupMaxSizeInMB*1024*1024 { // 256MB
-				groupID++
-				currentSize = 0
+			if !segment.IsL0 {
+				if currentSize > BackupSegmentGroupMaxSizeInMB*1024*1024 { // 256MB
+					groupID++
+					currentSize = 0
+				}
+				currentSize = currentSize + segment.GetSize()
+				b.meta.UpdateSegment(segment.GetPartitionId(), segment.GetSegmentId(), setGroupID(groupID))
+			} else {
+				//if currentSize > BackupSegmentGroupMaxSizeInMB*1024*1024 { // 256MB
+				//	l0GroupID++
+				//	currentL0Size = 0
+				//}
+				//currentL0Size = currentL0Size + segment.GetSize()
+				b.meta.UpdateSegment(segment.GetPartitionId(), segment.GetSegmentId(), setGroupID(segment.GetSegmentId()))
 			}
-			currentSize = currentSize + segment.GetSize()
-			b.meta.UpdateSegment(segment.GetPartitionId(), segment.GetSegmentId(), setGroupID(groupID))
 			segmentBackupInfos = append(segmentBackupInfos, segment)
 		}
 		log.Info("Begin copy data",
@@ -565,8 +577,6 @@ func (b *BackupContext) backupCollectionExecute(ctx context.Context, collectionB
 		zap.String("collectionName", collectionBackup.GetCollectionName()))
 	return nil
 }
-
-const GC_Warn_Message = "This warn won't fail the backup process. Pause GC can protect data not to be GCed during backup, it is necessary to backup very large data(cost more than a hour)."
 
 func (b *BackupContext) pauseMilvusGC(ctx context.Context, gcAddress string, pauseSeconds int) {
 	pauseAPI := "/management/datacoord/garbage_collection/pause"
@@ -637,7 +647,7 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 	}
 	collectionNames := make([]string, len(toBackupCollections))
 	for i, coll := range toBackupCollections {
-		collectionNames[i] = coll.collectionName
+		collectionNames[i] = coll.db + "." + coll.collectionName
 	}
 	log.Info("collections to backup", zap.Strings("collections", collectionNames))
 
@@ -880,10 +890,10 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackup
 	insertPath := fmt.Sprintf("%s%s/%v/%v/%v/", rootPath, "insert_log", segmentBackupInfo.GetCollectionId(), segmentBackupInfo.GetPartitionId(), segmentBackupInfo.GetSegmentId())
 	log.Debug("insertPath", zap.String("bucket", b.milvusBucketName), zap.String("insertPath", insertPath))
 	fieldsLogDir, _, err := b.getStorageClient().ListWithPrefix(ctx, b.milvusBucketName, insertPath, false)
-	// levelZero segment's partitionID is -1
-	if len(fieldsLogDir) == 0 && segmentBackupInfo.PartitionId != -1 {
-		msg := fmt.Sprintf("Get empty input path, but segment should not be empty, %s", insertPath)
-		return errors.New(msg)
+	// handle segment level
+	isL0 := false
+	if len(fieldsLogDir) == 0 {
+		isL0 = true
 	}
 	if err != nil {
 		log.Error("Fail to list segment path", zap.String("insertPath", insertPath), zap.Error(err))
@@ -958,7 +968,8 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackup
 	//segmentBackupInfo.Binlogs = insertLogs
 	//segmentBackupInfo.Deltalogs = deltaLogs
 	segmentBackupInfo.Size = size
-	b.meta.UpdateSegment(segmentBackupInfo.GetPartitionId(), segmentBackupInfo.GetSegmentId(), setSegmentBinlogs(insertLogs), setSegmentDeltaBinlogs(deltaLogs), setSegmentSize(size))
+	segmentBackupInfo.IsL0 = isL0
+	b.meta.UpdateSegment(segmentBackupInfo.GetPartitionId(), segmentBackupInfo.GetSegmentId(), setSegmentBinlogs(insertLogs), setSegmentDeltaBinlogs(deltaLogs), setSegmentSize(size), setSegmentL0(isL0))
 	log.Debug("fill segment info", zap.Int64("segId", segmentBackupInfo.GetSegmentId()), zap.Int64("size", size))
 	return nil
 }

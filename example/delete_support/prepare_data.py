@@ -63,15 +63,6 @@ schema = CollectionSchema(fields, "hello_milvus")
 print(fmt.format("Create collection `hello_milvus`"))
 hello_milvus = Collection("hello_milvus", schema, consistency_level="Strong")
 
-################################################################################
-# 3. insert data
-# We are going to insert 3000 rows of data into `hello_milvus`
-# Data to be inserted must be organized in fields.
-#
-# The insert() method returns:
-# - either automatically generated primary keys by Milvus if auto_id=True in the schema;
-# - or the existing primary key field from the entities if auto_id=False in the schema.
-
 print(fmt.format("Start inserting entities"))
 rng = np.random.default_rng(seed=19530)
 entities = [
@@ -89,3 +80,22 @@ hello_milvus.delete("pk in [0,1,2,3,4]")
 hello_milvus.flush()
 
 print(f"Number of entities in hello_milvus: {hello_milvus.num_entities}")  # check the num_entites
+
+hello_milvus2 = Collection("hello_milvus2", schema, consistency_level="Strong")
+hello_milvus2.create_partition("p1")
+hello_milvus2.create_partition("p2")
+
+entities2 = [
+    # provide the pk field because `auto_id` is set to False
+    [i + num_entities for i in range(num_entities)],
+    rng.random(num_entities).tolist(),  # field random, only supports list
+    [str(i) for i in range(num_entities)],
+    rng.random((num_entities, dim)),    # field embeddings, supports numpy.ndarray and list
+]
+
+insert_result2 = hello_milvus2.insert(partition_name="p1", data=entities)
+insert_result3 = hello_milvus2.insert(partition_name="p2", data=entities2)
+
+hello_milvus2.delete(expr="pk in [0,1,2,3,4]", partition_name="p1")
+hello_milvus2.delete(expr="pk in [3001,3002,3003,3004]", partition_name="p2")
+hello_milvus2.flush()

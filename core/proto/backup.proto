@@ -94,6 +94,7 @@ message SegmentBackupInfo {
   // and will bulkinsert in one call during restore
   int64 group_id = 9;
   bool backuped = 10;
+  bool is_l0 = 11;
 }
 
 /**

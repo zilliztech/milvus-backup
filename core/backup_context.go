@@ -26,6 +26,8 @@ const (
 	COLLECTION_RENAME_SUFFIX      = "COLLECTION_RENAME_SUFFIX"
 	RPS                           = 1000
 	BackupSegmentGroupMaxSizeInMB = 256
+
+	GC_Warn_Message = "This warn won't fail the backup process. Pause GC can protect data not to be GCed during backup, it is necessary to backup very large data(cost more than a hour)."
 )
 
 // makes sure BackupContext implements `Backup`
