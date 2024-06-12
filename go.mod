@@ -15,7 +15,7 @@ require (
 	github.com/google/uuid v1.3.0
 	github.com/json-iterator/go v1.1.12
 	github.com/lingdor/stackerror v0.0.0-20191119040541-976d8885ed76
-	github.com/milvus-io/milvus-proto/go-api/v2 v2.4.3
+	//github.com/milvus-io/milvus-proto/go-api/v2 v2.4.3
 	github.com/milvus-io/milvus-sdk-go/v2 v2.4.0
 	github.com/minio/minio-go/v7 v7.0.61
 	github.com/pkg/errors v0.9.1
@@ -40,6 +40,8 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 	gopkg.in/yaml.v3 v3.0.1
 )
+
+require github.com/milvus-io/milvus-proto/go-api/v2 v2.3.4-0.20240430025921-135167be0694
 
 require (
 	cloud.google.com/go v0.81.0 // indirect

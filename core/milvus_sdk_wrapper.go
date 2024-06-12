@@ -2,12 +2,14 @@ package core
 
 import (
 	"context"
+	"sync"
+	"time"
+
 	"github.com/milvus-io/milvus-proto/go-api/v2/msgpb"
 	gomilvus "github.com/milvus-io/milvus-sdk-go/v2/client"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
+
 	"github.com/zilliztech/milvus-backup/internal/util/retry"
-	"sync"
-	"time"
 )
 
 // MilvusClient wrap db into milvus API to make it thread safe
