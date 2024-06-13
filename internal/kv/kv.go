@@ -16,11 +16,6 @@
 
 package kv
 
-import (
-	"github.com/zilliztech/milvus-backup/internal/util/typeutil"
-	clientv3 "go.etcd.io/etcd/client/v3"
-)
-
 // CompareFailedError is a helper type for checking MetaKv CompareAndSwap series func error type
 type CompareFailedError struct {
 	internalError error
@@ -48,40 +43,4 @@ type BaseKV interface {
 	RemoveWithPrefix(key string) error
 
 	Close()
-}
-
-// TxnKV contains extra txn operations of kv. The extra operations is transactional.
-type TxnKV interface {
-	BaseKV
-	MultiSaveAndRemove(saves map[string]string, removals []string) error
-	MultiRemoveWithPrefix(keys []string) error
-	MultiSaveAndRemoveWithPrefix(saves map[string]string, removals []string) error
-}
-
-// MetaKv is TxnKV for metadata. It should save data with lease.
-type MetaKv interface {
-	TxnKV
-	GetPath(key string) string
-	LoadWithPrefix(key string) ([]string, []string, error)
-	LoadWithPrefix2(key string) ([]string, []string, []int64, error)
-	LoadWithRevisionAndVersions(key string) ([]string, []string, []int64, int64, error)
-	LoadWithRevision(key string) ([]string, []string, int64, error)
-	Watch(key string) clientv3.WatchChan
-	WatchWithPrefix(key string) clientv3.WatchChan
-	WatchWithRevision(key string, revision int64) clientv3.WatchChan
-	SaveWithLease(key, value string, id clientv3.LeaseID) error
-	SaveWithIgnoreLease(key, value string) error
-	Grant(ttl int64) (id clientv3.LeaseID, err error)
-	KeepAlive(id clientv3.LeaseID) (<-chan *clientv3.LeaseKeepAliveResponse, error)
-	CompareValueAndSwap(key, value, target string, opts ...clientv3.OpOption) (bool, error)
-	CompareVersionAndSwap(key string, version int64, target string, opts ...clientv3.OpOption) (bool, error)
-}
-
-// SnapShotKV is TxnKV for snapshot data. It must save timestamp.
-type SnapShotKV interface {
-	Save(key string, value string, ts typeutil.Timestamp) error
-	Load(key string, ts typeutil.Timestamp) (string, error)
-	MultiSave(kvs map[string]string, ts typeutil.Timestamp) error
-	LoadWithPrefix(key string, ts typeutil.Timestamp) ([]string, []string, error)
-	MultiSaveAndRemoveWithPrefix(saves map[string]string, removals []string, ts typeutil.Timestamp) error
 }

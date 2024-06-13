@@ -10,6 +10,7 @@ import (
 	jsoniter "github.com/json-iterator/go"
 	gomilvus "github.com/milvus-io/milvus-sdk-go/v2/client"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
+	"github.com/samber/lo"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
 
@@ -381,9 +382,12 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 	targetDBName := task.GetTargetDbName()
 	targetCollectionName := task.GetTargetCollectionName()
 	task.StateCode = backuppb.RestoreTaskStateCode_EXECUTING
+	log := log.With(
+		zap.String("backup_db_name", task.GetCollBackup().DbName),
+		zap.String("backup_collection_name", task.GetCollBackup().DbName),
+		zap.String("target_db_name", targetDBName),
+		zap.String("target_collection_name", targetCollectionName))
 	log.Info("start restore",
-		zap.String("db_name", targetDBName),
-		zap.String("collection_name", targetCollectionName),
 		zap.String("backupBucketName", backupBucketName),
 		zap.String("backupPath", backupPath))
 	// create collection
@@ -466,13 +470,9 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 			return task, err
 		}
 		log.Info("create collection",
-			zap.String("database", targetDBName),
-			zap.String("collectionName", targetCollectionName),
 			zap.Bool("hasPartitionKey", hasPartitionKey))
 	} else {
 		log.Info("skip create collection",
-			zap.String("database", targetDBName),
-			zap.String("collectionName", targetCollectionName),
 			zap.Bool("hasPartitionKey", hasPartitionKey))
 	}
 
@@ -484,7 +484,6 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 					strings.HasPrefix(err.Error(), "index doesn't exist") {
 					// todo
 					log.Info("field has no index",
-						zap.String("collection_name", targetCollectionName),
 						zap.String("field_name", field.Name))
 					continue
 				} else {
@@ -496,13 +495,10 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 				err = b.milvusClient.DropIndex(ctx, targetDBName, targetCollectionName, fieldIndex.Name())
 				if err != nil {
 					log.Warn("Fail to drop index",
-						zap.String("db", targetDBName),
-						zap.String("collection", targetCollectionName),
 						zap.Error(err))
 					return task, err
 				}
 				log.Info("drop index",
-					zap.String("collection_name", targetCollectionName),
 					zap.String("field_name", field.Name),
 					zap.String("index_name", fieldIndex.Name()))
 			}
@@ -563,15 +559,55 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 		}
 	}()
 
+	// bulk insert
+	copyAndBulkInsert := func(dbName, collectionName, partitionName string, files []string, isL0 bool) error {
+		realFiles := make([]string, len(files))
+		// if milvus bucket and backup bucket are not the same, should copy the data first
+		if !isSameBucket {
+			log.Info("milvus bucket and backup bucket are not the same, copy the data first", zap.Strings("files", files))
+			for i, file := range files {
+				// empty delta file, no need to copy
+				if file == "" {
+					realFiles[i] = file
+				} else {
+					log.Debug("Copy temporary restore file", zap.String("from", file), zap.String("to", tempDir+file))
+					err := retry.Do(ctx, func() error {
+						return b.getStorageClient().Copy(ctx, backupBucketName, b.milvusBucketName, file, tempDir+file)
+					}, retry.Sleep(2*time.Second), retry.Attempts(5))
+					if err != nil {
+						log.Error("fail to copy backup date from backup bucket to restore target milvus bucket after retry", zap.Error(err))
+						return err
+					}
+					realFiles[i] = tempDir + file
+				}
+			}
+		} else {
+			realFiles = files
+		}
+
+		err := b.executeBulkInsert(ctx, dbName, collectionName, partitionName, realFiles, int64(task.GetCollBackup().BackupTimestamp), isL0)
+		if err != nil {
+			log.Error("fail to bulk insert to partition",
+				zap.String("partition", partitionName),
+				zap.Error(err))
+			return err
+		}
+		return nil
+	}
+
 	jobIds := make([]int64, 0)
 	restoredSize := atomic.Int64{}
+
+	type partitionL0Segment struct {
+		collectionID  int64
+		partitionName string
+		partitionID   int64
+		segmentID     int64
+	}
+	partitionL0Segments := make([]partitionL0Segment, 0)
 	for _, v := range task.GetCollBackup().GetPartitionBackups() {
 		partitionBackup := v
-		log.Info("start restore partition",
-			zap.String("backupCollectionName", task.GetCollBackup().GetCollectionName()),
-			zap.String("targetDBName", targetDBName),
-			zap.String("targetCollectionName", targetCollectionName),
-			zap.String("partition", partitionBackup.GetPartitionName()))
+		log.Info("start restore partition", zap.String("partition", partitionBackup.GetPartitionName()))
 		// pre-check whether partition exist, if not create it
 		exist, err := b.getMilvusClient().HasPartition(ctx, targetDBName, targetCollectionName, partitionBackup.GetPartitionName())
 		if err != nil {
@@ -586,9 +622,7 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 				log.Error("fail to create partition", zap.Error(err))
 				return task, err
 			}
-			log.Info("create partition",
-				zap.String("collectionName", targetCollectionName),
-				zap.String("partitionName", partitionBackup.GetPartitionName()))
+			log.Info("create partition", zap.String("partitionName", partitionBackup.GetPartitionName()))
 		}
 
 		type restoreGroup struct {
@@ -596,15 +630,20 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 			size  int64
 		}
 		restoreFileGroups := make([]restoreGroup, 0)
-		groupIds := collectGroupIdsFromSegments(partitionBackup.GetSegmentBackups())
+
+		var l0Segments []*backuppb.SegmentBackupInfo = lo.Filter(partitionBackup.GetSegmentBackups(), func(segment *backuppb.SegmentBackupInfo, _ int) bool {
+			return segment.IsL0
+		})
+		notl0Segments := lo.Filter(partitionBackup.GetSegmentBackups(), func(segment *backuppb.SegmentBackupInfo, _ int) bool {
+			return !segment.IsL0
+		})
+		groupIds := collectGroupIdsFromSegments(notl0Segments)
 		if len(groupIds) == 1 && groupIds[0] == 0 {
 			// backward compatible old backup without group id
 			files, size, err := b.getBackupPartitionPaths(ctx, backupBucketName, backupPath, partitionBackup)
 			if err != nil {
 				log.Error("fail to get partition backup binlog files",
 					zap.Error(err),
-					zap.String("backupCollectionName", task.GetCollBackup().GetCollectionName()),
-					zap.String("targetCollectionName", targetCollectionName),
 					zap.String("partition", partitionBackup.GetPartitionName()))
 				return task, err
 			}
@@ -616,8 +655,6 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 				if err != nil {
 					log.Error("fail to get partition backup binlog files",
 						zap.Error(err),
-						zap.String("backupCollectionName", task.GetCollBackup().GetCollectionName()),
-						zap.String("targetCollectionName", targetCollectionName),
 						zap.String("partition", partitionBackup.GetPartitionName()))
 					return task, err
 				}
@@ -625,49 +662,10 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 			}
 		}
 
-		// bulk insert
-		copyAndBulkInsert := func(files []string) error {
-			realFiles := make([]string, len(files))
-			// if milvus bucket and backup bucket are not the same, should copy the data first
-			if !isSameBucket {
-				log.Info("milvus bucket and backup bucket are not the same, copy the data first", zap.Strings("files", files))
-				for i, file := range files {
-					// empty delta file, no need to copy
-					if file == "" {
-						realFiles[i] = file
-					} else {
-						log.Debug("Copy temporary restore file", zap.String("from", file), zap.String("to", tempDir+file))
-						err := retry.Do(ctx, func() error {
-							return b.getStorageClient().Copy(ctx, backupBucketName, b.milvusBucketName, file, tempDir+file)
-						}, retry.Sleep(2*time.Second), retry.Attempts(5))
-						if err != nil {
-							log.Error("fail to copy backup date from backup bucket to restore target milvus bucket after retry", zap.Error(err))
-							return err
-						}
-						realFiles[i] = tempDir + file
-					}
-				}
-			} else {
-				realFiles = files
-			}
-
-			err := b.executeBulkInsert(ctx, targetDBName, targetCollectionName, partitionBackup.GetPartitionName(), realFiles, int64(task.GetCollBackup().BackupTimestamp))
-			if err != nil {
-				log.Error("fail to bulk insert to partition",
-					zap.String("backupCollectionName", task.GetCollBackup().GetCollectionName()),
-					zap.String("targetDBName", targetDBName),
-					zap.String("targetCollectionName", targetCollectionName),
-					zap.String("partition", partitionBackup.GetPartitionName()),
-					zap.Error(err))
-				return err
-			}
-			return nil
-		}
-
 		for _, value := range restoreFileGroups {
 			group := value
 			job := func(ctx context.Context) error {
-				err := copyAndBulkInsert(group.files)
+				err := copyAndBulkInsert(targetDBName, targetCollectionName, partitionBackup.GetPartitionName(), group.files, false)
 				if err != nil {
 					return err
 				} else {
@@ -680,9 +678,52 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 			jobId := b.getRestoreWorkerPool(parentTaskID).SubmitWithId(job)
 			jobIds = append(jobIds, jobId)
 		}
+
+		if len(l0Segments) > 0 {
+			for _, segment := range l0Segments {
+				partitionL0Segments = append(partitionL0Segments, partitionL0Segment{
+					collectionID:  segment.CollectionId,
+					partitionName: partitionBackup.GetPartitionName(),
+					partitionID:   segment.GetPartitionId(),
+					segmentID:     segment.GetSegmentId(),
+				})
+			}
+		}
 	}
 
 	err := b.getRestoreWorkerPool(parentTaskID).WaitJobs(jobIds)
+	if err != nil {
+		return task, err
+	}
+
+	// restore l0 segments
+	l0JobIds := make([]int64, 0)
+	log.Info("start restore l0 segments", zap.Int("global_l0_segment_num", len(task.GetCollBackup().GetL0Segments())), zap.Int("partition_l0_segment_num", len(partitionL0Segments)))
+	for _, v := range partitionL0Segments {
+		segmentBackup := v
+		job := func(ctx context.Context) error {
+			l0Files := fmt.Sprintf("%s/%s/%s/%d/%d/%d", backupPath, BINGLOG_DIR, DELTA_LOG_DIR, segmentBackup.collectionID, segmentBackup.partitionID, segmentBackup.segmentID)
+			log.Info("restore l0 segment ", zap.String("files", l0Files))
+			return copyAndBulkInsert(targetDBName, targetCollectionName, segmentBackup.partitionName, []string{l0Files}, true)
+		}
+		jobId := b.getRestoreWorkerPool(parentTaskID).SubmitWithId(job)
+		l0JobIds = append(l0JobIds, jobId)
+	}
+
+	if len(task.GetCollBackup().GetL0Segments()) > 0 {
+		for _, v := range task.GetCollBackup().GetL0Segments() {
+			segment := v
+			job := func(ctx context.Context) error {
+				l0Files := fmt.Sprintf("%s/%s/%s/%d/%d/%d", backupPath, BINGLOG_DIR, DELTA_LOG_DIR, task.CollBackup.CollectionId, -1, segment.GetSegmentId())
+				log.Info("restore l0 segment ", zap.String("files", l0Files))
+				return copyAndBulkInsert(targetDBName, targetCollectionName, "", []string{l0Files}, true)
+			}
+			jobId := b.getRestoreWorkerPool(parentTaskID).SubmitWithId(job)
+			l0JobIds = append(l0JobIds, jobId)
+		}
+	}
+	err = b.getRestoreWorkerPool(parentTaskID).WaitJobs(l0JobIds)
+
 	return task, err
 }
 
@@ -698,7 +739,7 @@ func collectGroupIdsFromSegments(segments []*backuppb.SegmentBackupInfo) []int64
 	return res
 }
 
-func (b *BackupContext) executeBulkInsert(ctx context.Context, db, coll string, partition string, files []string, endTime int64) error {
+func (b *BackupContext) executeBulkInsert(ctx context.Context, db, coll string, partition string, files []string, endTime int64, isL0 bool) error {
 	log.Info("execute bulk insert",
 		zap.String("db", db),
 		zap.String("collection", coll),
@@ -707,10 +748,18 @@ func (b *BackupContext) executeBulkInsert(ctx context.Context, db, coll string, 
 		zap.Int64("endTime", endTime))
 	var taskId int64
 	var err error
-	if endTime == 0 {
-		taskId, err = b.getMilvusClient().BulkInsert(ctx, db, coll, partition, files, gomilvus.IsBackup())
+	if isL0 {
+		if endTime == 0 {
+			taskId, err = b.getMilvusClient().BulkInsert(ctx, db, coll, partition, files, gomilvus.IsL0())
+		} else {
+			taskId, err = b.getMilvusClient().BulkInsert(ctx, db, coll, partition, files, gomilvus.IsL0(), gomilvus.WithEndTs(endTime))
+		}
 	} else {
-		taskId, err = b.getMilvusClient().BulkInsert(ctx, db, coll, partition, files, gomilvus.IsBackup(), gomilvus.WithEndTs(endTime))
+		if endTime == 0 {
+			taskId, err = b.getMilvusClient().BulkInsert(ctx, db, coll, partition, files, gomilvus.IsBackup())
+		} else {
+			taskId, err = b.getMilvusClient().BulkInsert(ctx, db, coll, partition, files, gomilvus.IsBackup(), gomilvus.WithEndTs(endTime))
+		}
 	}
 	if err != nil {
 		log.Error("fail to bulk insert",

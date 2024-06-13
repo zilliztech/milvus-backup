@@ -26,6 +26,8 @@ const (
 	COLLECTION_RENAME_SUFFIX      = "COLLECTION_RENAME_SUFFIX"
 	RPS                           = 1000
 	BackupSegmentGroupMaxSizeInMB = 256
+
+	GC_Warn_Message = "This warn won't fail the backup process. Pause GC can protect data not to be GCed during backup, it is necessary to backup very large data(cost more than a hour)."
 )
 
 // makes sure BackupContext implements `Backup`
@@ -270,15 +272,15 @@ func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBack
 			zap.String("backupName", request.GetBackupName()),
 			zap.String("backupId", request.GetBackupId()),
 			zap.String("bucketName", request.GetBucketName()),
-			zap.String("path", request.GetPath()),
-			zap.Any("resp", resp))
+			zap.String("path", request.GetPath()))
 	} else {
 		log.Info("finish GetBackupRequest",
 			zap.String("requestId", request.GetRequestId()),
 			zap.String("backupName", request.GetBackupName()),
 			zap.String("backupId", request.GetBackupId()),
 			zap.String("bucketName", request.GetBucketName()),
-			zap.String("path", request.GetPath()))
+			zap.String("path", request.GetPath()),
+			zap.Any("resp", resp))
 	}
 
 	return resp

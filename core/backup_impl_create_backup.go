@@ -395,38 +395,45 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 			return err
 		}
 
-		segmentIDsEntitiesBeforeFlush := lo.Map(segmentEntitiesBeforeFlush, func(segment *entity.Segment, _ int) int64 { return segment.ID })
-		segmentIDsEntitiesAfterFlush := lo.Map(segmentEntitiesAfterFlush, func(segment *entity.Segment, _ int) int64 { return segment.ID })
+		segmentIDsBeforeFlush := lo.Map(segmentEntitiesBeforeFlush, func(segment *entity.Segment, _ int) int64 { return segment.ID })
+		segmentIDsAfterFlush := lo.Map(segmentEntitiesAfterFlush, func(segment *entity.Segment, _ int) int64 { return segment.ID })
+		newL0Segments := lo.Filter(segmentEntitiesAfterFlush, func(segment *entity.Segment, _ int) bool {
+			return !lo.Contains(segmentIDsBeforeFlush, segment.ID) && segment.NumRows == 0
+		})
+		newL0SegmentsIDs := lo.Map(newL0Segments, func(segment *entity.Segment, _ int) int64 { return segment.ID })
+
 		log.Info("GetPersistentSegmentInfo after flush from milvus",
 			zap.String("databaseName", collectionBackup.GetDbName()),
 			zap.String("collectionName", collectionBackup.GetCollectionName()),
-			zap.Int("segmentNumBeforeFlush", len(segmentEntitiesBeforeFlush)),
-			zap.Int("segmentNumAfterFlush", len(segmentEntitiesAfterFlush)),
-			zap.Int64s("segmentsBeforeFlush", segmentIDsEntitiesBeforeFlush),
-			zap.Int64s("segmentsAfterFlush", segmentIDsEntitiesAfterFlush))
-		segmentDict := utils.ArrayToMap(flushSegmentIDs)
+			zap.Int64s("segmentIDsBeforeFlush", segmentIDsBeforeFlush),
+			zap.Int64s("segmentIDsAfterFlush", segmentIDsAfterFlush),
+			zap.Int64s("newL0SegmentsIDs", newL0SegmentsIDs))
+
+		segmentEntities := segmentEntitiesBeforeFlush
 		for _, seg := range segmentEntitiesAfterFlush {
-			sid := seg.ID
-			if _, ok := segmentDict[sid]; ok {
-				delete(segmentDict, sid)
-				unfilledSegments = append(unfilledSegments, seg)
-			} else {
-				log.Info("this may be new segments after flush, skip it", zap.Int64("id", sid))
+			if !lo.Contains(segmentIDsBeforeFlush, seg.ID) {
+				segmentEntities = append(segmentEntities, seg)
 			}
 		}
-		for _, seg := range segmentEntitiesBeforeFlush {
-			sid := seg.ID
-			if _, ok := segmentDict[sid]; ok {
-				delete(segmentDict, sid)
-				unfilledSegments = append(unfilledSegments, seg)
-				//} else {
-				//	log.Info("this may be old segments before flush, skip it", zap.Int64("id", sid))
+
+		// segmentIDs
+		unfilledSegmentIDs := make([]int64, 0)
+		// union of (intersection of BeforeFlushIDs and AfterFlushIDs) and flushSegmentIDs
+		for _, seg := range segmentEntitiesAfterFlush {
+			if lo.Contains(segmentIDsBeforeFlush, seg.ID) {
+				unfilledSegmentIDs = append(unfilledSegmentIDs, seg.ID)
 			}
 		}
-		if len(segmentDict) > 0 {
-			// very rare situation, segments return in flush doesn't exist in either segmentEntitiesBeforeFlush and segmentEntitiesAfterFlush
-			errorMsg := "Segment return in Flush not exist in GetPersistentSegmentInfo. segment ids: " + fmt.Sprint(utils.MapKeyArray(segmentDict))
-			log.Warn(errorMsg)
+		for _, segID := range flushSegmentIDs {
+			if !lo.Contains(unfilledSegmentIDs, segID) {
+				unfilledSegmentIDs = append(unfilledSegmentIDs, segID)
+			}
+		}
+		unfilledSegmentIDs = append(unfilledSegmentIDs, newL0SegmentsIDs...)
+		for _, seg := range segmentEntities {
+			if lo.Contains(unfilledSegmentIDs, seg.ID) {
+				unfilledSegments = append(unfilledSegments, seg)
+			}
 		}
 	} else {
 		// Flush
@@ -483,29 +490,38 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 		}
 		b.meta.AddPartition(partitionBackupInfo)
 	}
-	b.meta.UpdateCollection(collectionBackup.Id, collectionBackup.CollectionId, setCollectionLoadState(collectionLoadState))
+
+	l0segments, exist := partSegInfoMap[-1]
+	if exist {
+		b.meta.UpdateCollection(collectionBackup.Id, collectionBackup.CollectionId, setL0Segments(l0segments))
+	}
 
 	partitionBackupInfos := b.meta.GetPartitions(collectionBackup.CollectionId)
 	log.Info("finish build partition info",
 		zap.String("collectionName", collectionBackup.GetCollectionName()),
-		zap.Int("partitionNum", len(partitionBackupInfos)))
+		zap.Int("partitionNum", len(partitionBackupInfos)),
+		zap.Int("l0SegmentsNum", len(l0segments)))
 
 	var collectionBackupSize int64 = 0
 	for _, part := range partitionBackupInfos {
 		collectionBackupSize += part.GetSize()
 	}
 
-	b.meta.UpdateCollection(collectionBackup.Id, collectionBackup.CollectionId, setCollectionSize(collectionBackupSize))
+	b.meta.UpdateCollection(collectionBackup.Id, collectionBackup.CollectionId, setCollectionLoadState(collectionLoadState), setCollectionSize(collectionBackupSize))
 	return nil
 }
 
 func (b *BackupContext) backupCollectionExecute(ctx context.Context, collectionBackup *backuppb.CollectionBackupInfo) error {
 	log.Info("backupCollectionExecute", zap.Any("collectionMeta", collectionBackup.String()))
-
+	backupInfo := b.meta.GetBackupByCollectionID(collectionBackup.GetCollectionId())
+	backupBinlogPath := BackupBinlogDirPath(b.backupRootPath, backupInfo.GetName())
 	for _, partition := range b.meta.GetPartitions(collectionBackup.CollectionId) {
-		var segmentBackupInfos []*backuppb.SegmentBackupInfo
+		segmentBackupInfos := make([]*backuppb.SegmentBackupInfo, 0)
 		var currentSize int64 = 0
 		var groupID int64 = 1
+		// currently not group l0 segments
+		//var currentL0Size int64 = 0
+		//var l0GroupID int64 = 1
 		segments := b.meta.GetSegments(partition.GetPartitionId())
 		for _, v := range segments {
 			segment := v
@@ -514,20 +530,28 @@ func (b *BackupContext) backupCollectionExecute(ctx context.Context, collectionB
 				log.Error("Fail to fill segment backup info", zap.Error(err))
 				return err
 			}
-			if currentSize > BackupSegmentGroupMaxSizeInMB*1024*1024 { // 256MB
-				groupID++
-				currentSize = 0
+			if !segment.IsL0 {
+				if currentSize > BackupSegmentGroupMaxSizeInMB*1024*1024 { // 256MB
+					groupID++
+					currentSize = 0
+				}
+				currentSize = currentSize + segment.GetSize()
+				b.meta.UpdateSegment(segment.GetPartitionId(), segment.GetSegmentId(), setGroupID(groupID))
+			} else {
+				//if currentSize > BackupSegmentGroupMaxSizeInMB*1024*1024 { // 256MB
+				//	l0GroupID++
+				//	currentL0Size = 0
+				//}
+				//currentL0Size = currentL0Size + segment.GetSize()
+				b.meta.UpdateSegment(segment.GetPartitionId(), segment.GetSegmentId(), setGroupID(segment.GetSegmentId()))
 			}
-			currentSize = currentSize + segment.GetSize()
-			b.meta.UpdateSegment(segment.GetPartitionId(), segment.GetSegmentId(), setGroupID(groupID))
 			segmentBackupInfos = append(segmentBackupInfos, segment)
 		}
 		log.Info("Begin copy data",
 			zap.String("dbName", collectionBackup.GetDbName()),
 			zap.String("collectionName", collectionBackup.GetCollectionName()),
 			zap.Int64("collectionID", partition.GetCollectionId()),
-			zap.Int64("partitionID", partition.GetPartitionId()),
-			zap.Int("segmentNum", len(segmentBackupInfos)))
+			zap.Int64("partitionID", partition.GetPartitionId()))
 
 		sort.SliceStable(segmentBackupInfos, func(i, j int) bool {
 			return segmentBackupInfos[i].Size < segmentBackupInfos[j].Size
@@ -536,22 +560,38 @@ func (b *BackupContext) backupCollectionExecute(ctx context.Context, collectionB
 		segmentIDs := lo.Map(segmentBackupInfos, func(segment *backuppb.SegmentBackupInfo, _ int) int64 {
 			return segment.GetSegmentId()
 		})
-		err := b.copySegments(ctx, segmentIDs)
+		err := b.copySegments(ctx, backupBinlogPath, segmentIDs)
 		if err != nil {
 			return err
 		}
 	}
 
-	//collectionBackup.EndTime = time.Now().Unix()
-	b.meta.UpdateCollection(collectionBackup.Id, collectionBackup.CollectionId, setCollectionEndTime(time.Now().Unix()))
+	l0Segments := collectionBackup.GetL0Segments()
+	segmentBackupInfos := make([]*backuppb.SegmentBackupInfo, 0)
+	segmentIDs := make([]int64, 0)
+	for _, v := range l0Segments {
+		segment := v
+		err := b.fillSegmentBackupInfo(ctx, segment)
+		if err != nil {
+			log.Error("Fail to fill segment backup info", zap.Error(err))
+			return err
+		}
+		segmentIDs = append(segmentIDs, segment.GetSegmentId())
+		segmentBackupInfos = append(segmentBackupInfos, b.meta.GetSegment(segment.GetSegmentId()))
+	}
+	err := b.copySegments(ctx, backupBinlogPath, segmentIDs)
+	if err != nil {
+		log.Error("Fail to fill segment backup info", zap.Error(err))
+		return err
+	}
+	b.meta.UpdateCollection(collectionBackup.Id, collectionBackup.CollectionId, setL0Segments(segmentBackupInfos))
 
+	b.meta.UpdateCollection(collectionBackup.Id, collectionBackup.CollectionId, setCollectionEndTime(time.Now().Unix()))
 	log.Info("Finish copy data",
 		zap.String("dbName", collectionBackup.GetDbName()),
 		zap.String("collectionName", collectionBackup.GetCollectionName()))
 	return nil
 }
-
-const GC_Warn_Message = "This warn won't fail the backup process. Pause GC can protect data not to be GCed during backup, it is necessary to backup very large data(cost more than a hour)."
 
 func (b *BackupContext) pauseMilvusGC(ctx context.Context, gcAddress string, pauseSeconds int) {
 	pauseAPI := "/management/datacoord/garbage_collection/pause"
@@ -613,12 +653,6 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 		defer b.resumeMilvusGC(ctx, gcAddress)
 	}
 
-	// not important
-	//backupInfo.BackupTimestamp = uint64(time.Now().UnixNano() / int64(time.Millisecond))
-	//backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_EXECUTING
-	//b.meta.UpdateBackup(backupInfo.Id, setStateCode(backuppb.BackupTaskStateCode_BACKUP_EXECUTING))
-	//defer b.updateBackup(levelInfo, backupInfo)
-
 	// 1, get collection level meta
 	toBackupCollections, err := b.parseBackupCollections(request)
 	if err != nil {
@@ -628,25 +662,16 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 	}
 	collectionNames := make([]string, len(toBackupCollections))
 	for i, coll := range toBackupCollections {
-		collectionNames[i] = coll.collectionName
+		collectionNames[i] = coll.db + "." + coll.collectionName
 	}
 	log.Info("collections to backup", zap.Strings("collections", collectionNames))
 
 	jobIds := make([]int64, 0)
-	//toBackupCollectionInfos := make([]*backuppb.CollectionBackupInfo, 0)
-	//toBackupCollectionInfosMutex := sync.Mutex{}
 	for _, collection := range toBackupCollections {
 		collectionClone := collection
 		job := func(ctx context.Context) error {
 			err := retry.Do(ctx, func() error {
-				err := b.backupCollectionPrepare(ctx, backupInfo, collectionClone, request.GetForce())
-				if err != nil {
-					return err
-				}
-				//toBackupCollectionInfosMutex.Lock()
-				//defer toBackupCollectionInfosMutex.Unlock()
-				//toBackupCollectionInfos = append(toBackupCollectionInfos, coll)
-				return nil
+				return b.backupCollectionPrepare(ctx, backupInfo, collectionClone, request.GetForce())
 			}, retry.Sleep(120*time.Second), retry.Attempts(128))
 			return err
 		}
@@ -655,8 +680,6 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 	}
 	err = b.getBackupCollectionWorkerPool().WaitJobs(jobIds)
 	if err != nil {
-		//backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
-		//backupInfo.ErrorMessage = err.Error()
 		b.meta.UpdateBackup(backupInfo.Id, setStateCode(backuppb.BackupTaskStateCode_BACKUP_FAIL), setErrorMessage(err.Error()))
 		return err
 	}
@@ -679,12 +702,6 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 			b.meta.UpdateBackup(backupInfo.Id, setStateCode(backuppb.BackupTaskStateCode_BACKUP_FAIL), setErrorMessage(err.Error()))
 			return err
 		}
-
-		//_, err := treeToLevel(backupInfo)
-		//if err != nil {
-		//	b.meta.UpdateBackup(backupInfo.Id, setStateCode(backuppb.BackupTaskStateCode_BACKUP_FAIL), setErrorMessage(err.Error()))
-		//	return err
-		//}
 	} else {
 		log.Info("skip copy data because it is a metaOnly backup request")
 	}
@@ -711,7 +728,7 @@ func (b *BackupContext) writeBackupInfoMeta(ctx context.Context, id string) erro
 	log.Info("Final backupInfo", zap.String("backupInfo", backupInfo.String()))
 	output, _ := serialize(backupInfo)
 	log.Debug("backup meta", zap.String("value", string(output.BackupMetaBytes)))
-	log.Debug("collection meta", zap.String("value", string(output.CollectionMetaBytes)))
+	log.Info("collection meta", zap.String("value", string(output.CollectionMetaBytes)))
 	log.Debug("partition meta", zap.String("value", string(output.PartitionMetaBytes)))
 	log.Debug("segment meta", zap.String("value", string(output.SegmentMetaBytes)))
 
@@ -748,12 +765,13 @@ func (b *BackupContext) writeBackupInfoMeta(ctx context.Context, id string) erro
 	return nil
 }
 
-func (b *BackupContext) copySegments(ctx context.Context, segmentIDs []int64) error {
+func (b *BackupContext) copySegments(ctx context.Context, backupBinlogPath string, segmentIDs []int64) error {
 	jobIds := make([]int64, 0)
-	for _, segmentID := range segmentIDs {
-		segment := segmentID
+	for _, v := range segmentIDs {
+		segmentID := v
+		segment := b.meta.GetSegment(segmentID)
 		job := func(ctx context.Context) error {
-			return b.copySegment(ctx, segment)
+			return b.copySegment(ctx, backupBinlogPath, segment)
 		}
 		jobId := b.getCopyDataWorkerPool().SubmitWithId(job)
 		jobIds = append(jobIds, jobId)
@@ -763,29 +781,26 @@ func (b *BackupContext) copySegments(ctx context.Context, segmentIDs []int64) er
 	return err
 }
 
-func (b *BackupContext) copySegment(ctx context.Context, segmentID int64) error {
-	segment := b.meta.GetSegment(segmentID)
+func (b *BackupContext) copySegment(ctx context.Context, backupBinlogPath string, segment *backuppb.SegmentBackupInfo) error {
 	log := log.With(zap.Int64("collection_id", segment.GetCollectionId()),
 		zap.Int64("partition_id", segment.GetPartitionId()),
 		zap.Int64("segment_id", segment.GetSegmentId()),
 		zap.Int64("group_id", segment.GetGroupId()))
-	log.Info("copy segment")
-	backupInfo := b.meta.GetBackupBySegmentID(segmentID)
-	dstPath := BackupBinlogDirPath(b.backupRootPath, backupInfo.GetName())
+	log.Info("copy segment", zap.String("backupBinlogPath", backupBinlogPath))
 	// generate target path
 	// milvus_rootpath/insert_log/collection_id/partition_id/segment_id/ =>
 	// backup_rootpath/backup_name/binlog/insert_log/collection_id/partition_id/group_id/segment_id
 	backupPathFunc := func(binlogPath, rootPath, backupBinlogPath string) string {
 		if rootPath == "" {
-			return dstPath + SEPERATOR + binlogPath
+			return backupBinlogPath + SEPERATOR + binlogPath
 		} else {
-			return strings.Replace(binlogPath, rootPath, dstPath, 1)
+			return strings.Replace(binlogPath, rootPath, backupBinlogPath, 1)
 		}
 	}
 	// insert log
 	for _, binlogs := range segment.GetBinlogs() {
 		for _, binlog := range binlogs.GetBinlogs() {
-			targetPath := backupPathFunc(binlog.GetLogPath(), b.milvusRootPath, dstPath)
+			targetPath := backupPathFunc(binlog.GetLogPath(), b.milvusRootPath, backupBinlogPath)
 			// use segmentID as group id
 			segment.GroupId = segment.SegmentId
 			if segment.GetGroupId() != 0 {
@@ -832,7 +847,7 @@ func (b *BackupContext) copySegment(ctx context.Context, segmentID int64) error 
 	// delta log
 	for _, binlogs := range segment.GetDeltalogs() {
 		for _, binlog := range binlogs.GetBinlogs() {
-			targetPath := backupPathFunc(binlog.GetLogPath(), b.milvusRootPath, dstPath)
+			targetPath := backupPathFunc(binlog.GetLogPath(), b.milvusRootPath, backupBinlogPath)
 			if segment.GetGroupId() != 0 {
 				targetPath = strings.Replace(targetPath,
 					strconv.FormatInt(segment.GetPartitionId(), 10),
@@ -890,9 +905,10 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackup
 	insertPath := fmt.Sprintf("%s%s/%v/%v/%v/", rootPath, "insert_log", segmentBackupInfo.GetCollectionId(), segmentBackupInfo.GetPartitionId(), segmentBackupInfo.GetSegmentId())
 	log.Debug("insertPath", zap.String("bucket", b.milvusBucketName), zap.String("insertPath", insertPath))
 	fieldsLogDir, _, err := b.getStorageClient().ListWithPrefix(ctx, b.milvusBucketName, insertPath, false)
+	// handle segment level
+	isL0 := false
 	if len(fieldsLogDir) == 0 {
-		msg := fmt.Sprintf("Get empty input path, but segment should not be empty, %s", insertPath)
-		return errors.New(msg)
+		isL0 = true
 	}
 	if err != nil {
 		log.Error("Fail to list segment path", zap.String("insertPath", insertPath), zap.Error(err))
@@ -967,7 +983,8 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackup
 	//segmentBackupInfo.Binlogs = insertLogs
 	//segmentBackupInfo.Deltalogs = deltaLogs
 	segmentBackupInfo.Size = size
-	b.meta.UpdateSegment(segmentBackupInfo.GetPartitionId(), segmentBackupInfo.GetSegmentId(), setSegmentBinlogs(insertLogs), setSegmentDeltaBinlogs(deltaLogs), setSegmentSize(size))
+	segmentBackupInfo.IsL0 = isL0
+	b.meta.UpdateSegment(segmentBackupInfo.GetPartitionId(), segmentBackupInfo.GetSegmentId(), setSegmentBinlogs(insertLogs), setSegmentDeltaBinlogs(deltaLogs), setSegmentSize(size), setSegmentL0(isL0))
 	log.Debug("fill segment info", zap.Int64("segId", segmentBackupInfo.GetSegmentId()), zap.Int64("size", size))
 	return nil
 }

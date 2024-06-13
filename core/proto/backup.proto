@@ -64,6 +64,7 @@ message CollectionBackupInfo {
   // physical unix time of backup 
   uint64 backup_physical_timestamp = 19;
   map<string, string> channel_checkpoints = 20;
+  repeated SegmentBackupInfo l0_segments = 21;
 }
 
 message PartitionBackupInfo {
@@ -93,6 +94,7 @@ message SegmentBackupInfo {
   // and will bulkinsert in one call during restore
   int64 group_id = 9;
   bool backuped = 10;
+  bool is_l0 = 11;
 }
 
 /**

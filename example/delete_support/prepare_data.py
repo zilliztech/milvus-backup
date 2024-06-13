@@ -6,7 +6,6 @@
 # 5. search, query, and hybrid search on entities
 # 6. delete entities by PK
 # 7. drop collection
-import time
 import os
 import numpy as np
 from pymilvus import (
@@ -64,15 +63,6 @@ schema = CollectionSchema(fields, "hello_milvus")
 print(fmt.format("Create collection `hello_milvus`"))
 hello_milvus = Collection("hello_milvus", schema, consistency_level="Strong")
 
-################################################################################
-# 3. insert data
-# We are going to insert 3000 rows of data into `hello_milvus`
-# Data to be inserted must be organized in fields.
-#
-# The insert() method returns:
-# - either automatically generated primary keys by Milvus if auto_id=True in the schema;
-# - or the existing primary key field from the entities if auto_id=False in the schema.
-
 print(fmt.format("Start inserting entities"))
 rng = np.random.default_rng(seed=19530)
 entities = [
@@ -84,54 +74,29 @@ entities = [
 ]
 
 insert_result = hello_milvus.insert(entities)
-hello_milvus.flush()
+# hello_milvus.flush()
 
 hello_milvus.delete("pk in [0,1,2,3,4]")
-hello_milvus.flush()
+# both flush and not flush should be tested
+# hello_milvus.flush()
 
 print(f"Number of entities in hello_milvus: {hello_milvus.num_entities}")  # check the num_entites
 
-# create another collection
-fields2 = [
-    FieldSchema(name="pk", dtype=DataType.INT64, is_primary=True, auto_id=False),
-    FieldSchema(name="random", dtype=DataType.DOUBLE),
-    FieldSchema(name="var", dtype=DataType.VARCHAR, max_length=65535),
-    FieldSchema(name="embeddings", dtype=DataType.FLOAT_VECTOR, dim=dim)
-]
-
-schema2 = CollectionSchema(fields2, "hello_milvus2")
-
-print(fmt.format("Create collection `hello_milvus2`"))
-hello_milvus2 = Collection("hello_milvus2", schema2, consistency_level="Strong")
+hello_milvus2 = Collection("hello_milvus2", schema, consistency_level="Strong")
+hello_milvus2.create_partition("p1")
+hello_milvus2.create_partition("p2")
 
 entities2 = [
-    [i for i in range(num_entities)],
-    rng.random(num_entities).tolist(),  # field random, only supports list
-    [str(i) for i in range(num_entities)],
-    rng.random((num_entities, dim)),    # field embeddings, supports numpy.ndarray and list
-]
-
-insert_result2 = hello_milvus2.insert(entities2)
-hello_milvus.delete("pk in [0,1,2,3,4]")
-hello_milvus2.flush()
-
-entities3 = [
+    # provide the pk field because `auto_id` is set to False
     [i + num_entities for i in range(num_entities)],
     rng.random(num_entities).tolist(),  # field random, only supports list
     [str(i) for i in range(num_entities)],
     rng.random((num_entities, dim)),    # field embeddings, supports numpy.ndarray and list
 ]
 
-insert_result2 = hello_milvus2.insert(entities3)
-hello_milvus.delete("pk in [5,6,7,8,9]")
-hello_milvus.delete("pk in [3000,3001,3002,3003,3004]")
+insert_result2 = hello_milvus2.insert(partition_name="p1", data=entities)
+insert_result3 = hello_milvus2.insert(partition_name="p2", data=entities2)
+
+hello_milvus2.delete(expr="pk in [0,1,2,3,4]", partition_name="p1")
+hello_milvus2.delete(expr="pk in [3001,3002,3003,3004]", partition_name="p2")
 hello_milvus2.flush()
-
-index_params = {"index_type": "IVF_FLAT", "params": {"nlist": 128}, "metric_type": "L2"}
-hello_milvus.create_index("embeddings", index_params)
-
-index_params2 = {"index_type": "Trie"}
-hello_milvus2.create_index("var", index_params2)
-
-print(f"Number of entities in hello_milvus2: {hello_milvus2.num_entities}")  # check the num_entites
-

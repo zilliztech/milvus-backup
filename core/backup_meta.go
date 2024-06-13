@@ -76,21 +76,7 @@ func treeToLevel(backup *backuppb.BackupInfo) (LeveledBackupInfo, error) {
 		}
 
 		collectionBack.Size = collectionSize
-		cloneCollectionBackup := &backuppb.CollectionBackupInfo{
-			CollectionId:            collectionBack.GetCollectionId(),
-			DbName:                  collectionBack.GetDbName(),
-			CollectionName:          collectionBack.GetCollectionName(),
-			Schema:                  collectionBack.GetSchema(),
-			ShardsNum:               collectionBack.GetShardsNum(),
-			ConsistencyLevel:        collectionBack.GetConsistencyLevel(),
-			BackupTimestamp:         collectionBack.GetBackupTimestamp(),
-			Size:                    collectionBack.GetSize(),
-			HasIndex:                collectionBack.GetHasIndex(),
-			IndexInfos:              collectionBack.GetIndexInfos(),
-			LoadState:               collectionBack.GetLoadState(),
-			BackupPhysicalTimestamp: collectionBack.GetBackupPhysicalTimestamp(),
-			ChannelCheckpoints:      collectionBack.GetChannelCheckpoints(),
-		}
+		cloneCollectionBackup := proto.Clone(collectionBack).(*backuppb.CollectionBackupInfo)
 		collections = append(collections, cloneCollectionBackup)
 		backupSize = backupSize + collectionSize
 	}

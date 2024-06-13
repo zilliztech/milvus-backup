@@ -28,11 +28,7 @@ import (
 	memkv "github.com/zilliztech/milvus-backup/internal/kv/mem"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/util/logutil"
-	"github.com/zilliztech/milvus-backup/internal/util/typeutil"
 )
-
-// UniqueID is type alias of typeutil.UniqueID
-type UniqueID = typeutil.UniqueID
 
 const (
 	DefaultBackupYaml = "backup.yaml"
