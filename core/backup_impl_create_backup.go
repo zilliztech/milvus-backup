@@ -396,12 +396,26 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 		}
 
 		segmentIDsBeforeFlush := lo.Map(segmentEntitiesBeforeFlush, func(segment *entity.Segment, _ int) int64 { return segment.ID })
-		segmentCandidates := segmentEntitiesBeforeFlush
+		segmentIDsAfterFlush := lo.Map(segmentEntitiesAfterFlush, func(segment *entity.Segment, _ int) int64 { return segment.ID })
+		newL0Segments := lo.Filter(segmentEntitiesAfterFlush, func(segment *entity.Segment, _ int) bool {
+			return !lo.Contains(segmentIDsBeforeFlush, segment.ID) && segment.NumRows == 0
+		})
+		newL0SegmentsIDs := lo.Map(newL0Segments, func(segment *entity.Segment, _ int) int64 { return segment.ID })
+
+		log.Info("GetPersistentSegmentInfo after flush from milvus",
+			zap.String("databaseName", collectionBackup.GetDbName()),
+			zap.String("collectionName", collectionBackup.GetCollectionName()),
+			zap.Int64s("segmentIDsBeforeFlush", segmentIDsBeforeFlush),
+			zap.Int64s("segmentIDsAfterFlush", segmentIDsAfterFlush),
+			zap.Int64s("newL0SegmentsIDs", newL0SegmentsIDs))
+
+		segmentEntities := segmentEntitiesBeforeFlush
 		for _, seg := range segmentEntitiesAfterFlush {
 			if !lo.Contains(segmentIDsBeforeFlush, seg.ID) {
-				segmentCandidates = append(segmentCandidates, seg)
+				segmentEntities = append(segmentEntities, seg)
 			}
 		}
+
 		// segmentIDs
 		unfilledSegmentIDs := make([]int64, 0)
 		// union of (intersection of BeforeFlushIDs and AfterFlushIDs) and flushSegmentIDs
@@ -415,7 +429,8 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 				unfilledSegmentIDs = append(unfilledSegmentIDs, segID)
 			}
 		}
-		for _, seg := range segmentCandidates {
+		unfilledSegmentIDs = append(unfilledSegmentIDs, newL0SegmentsIDs...)
+		for _, seg := range segmentEntities {
 			if lo.Contains(unfilledSegmentIDs, seg.ID) {
 				unfilledSegments = append(unfilledSegments, seg)
 			}

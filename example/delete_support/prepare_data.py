@@ -74,10 +74,11 @@ entities = [
 ]
 
 insert_result = hello_milvus.insert(entities)
-hello_milvus.flush()
+# hello_milvus.flush()
 
 hello_milvus.delete("pk in [0,1,2,3,4]")
-hello_milvus.flush()
+# both flush and not flush should be tested
+# hello_milvus.flush()
 
 print(f"Number of entities in hello_milvus: {hello_milvus.num_entities}")  # check the num_entites
 
