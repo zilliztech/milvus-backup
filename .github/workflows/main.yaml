@@ -211,6 +211,7 @@ jobs:
         shell: bash
         working-directory: deployment/${{ matrix.another_milvus_mode }}
         run: |
+          docker-compose down
           yq -i '.services.standalone.image="milvusdb/milvus:${{ matrix.target_image_tag }}"' docker-compose.yml
           docker-compose up -d
           bash ../../scripts/check_healthy.sh
