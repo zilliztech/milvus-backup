@@ -1,5 +1,6 @@
 # This is an example .goreleaser.yml file with some sensible defaults.
 # Make sure to check the documentation at https://goreleaser.com
+version: 2
 before:
   hooks:
     # You may remove this if you don't use go modules.
@@ -36,7 +37,7 @@ snapshot:
 
 brews:
   - name: milvus-backup
-    folder: Formula
+    directory: Formula
     homepage: "https://github.com/zilliztech/milvus-backup"
     repository:
       owner: zilliztech
