@@ -372,6 +372,12 @@ const docTemplate = `{
                     "description": "logical time of backup, used for restore",
                     "type": "integer"
                 },
+                "channel_checkpoints": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
                 "collection_id": {
                     "type": "integer"
                 },
@@ -400,6 +406,12 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/backuppb.IndexInfo"
+                    }
+                },
+                "l0_segments": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/backuppb.SegmentBackupInfo"
                     }
                 },
                 "load_state": {
@@ -799,7 +811,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "db_collections": {
-                    "description": "database and collections to restore. A json string. To support database. 2023.7.7",
+                    "description": "database and collections to restore. A json string. for example: {\"db1\":[\"collection1\"],\"db2\":[\"collection2\",\"collection3\"]}",
                     "type": "string"
                 },
                 "dropExistCollection": {
@@ -809,6 +821,9 @@ const docTemplate = `{
                 "dropExistIndex": {
                     "description": "if true, drop existing index of target collection before create",
                     "type": "boolean"
+                },
+                "id": {
+                    "type": "string"
                 },
                 "metaOnly": {
                     "description": "if true only restore meta, not restore data",
@@ -1014,6 +1029,9 @@ const docTemplate = `{
         "backuppb.SegmentBackupInfo": {
             "type": "object",
             "properties": {
+                "backuped": {
+                    "type": "boolean"
+                },
                 "binlogs": {
                     "type": "array",
                     "items": {
@@ -1032,6 +1050,9 @@ const docTemplate = `{
                 "group_id": {
                     "description": "separate segments into multi groups by size,\nsegments in one group will be copied into one directory during backup\nand will bulkinsert in one call during restore",
                     "type": "integer"
+                },
+                "is_l0": {
+                    "type": "boolean"
                 },
                 "num_of_rows": {
                     "type": "integer"

@@ -1502,7 +1502,7 @@ type RestoreBackupRequest struct {
 	BucketName string `protobuf:"bytes,7,opt,name=bucket_name,json=bucketName,proto3" json:"bucket_name,omitempty"`
 	// if bucket_name and path is set. will override bucket/path in config.
 	Path string `protobuf:"bytes,8,opt,name=path,proto3" json:"path,omitempty"`
-	// database and collections to restore. A json string. To support database. 2023.7.7
+	// database and collections to restore. A json string. for example: {"db1":["collection1"],"db2":["collection2","collection3"]}
 	DbCollections *_struct.Value `protobuf:"bytes,9,opt,name=db_collections,json=dbCollections,proto3" json:"db_collections,omitempty"`
 	// if true only restore meta, not restore data
 	MetaOnly bool `protobuf:"varint,10,opt,name=metaOnly,proto3" json:"metaOnly,omitempty"`

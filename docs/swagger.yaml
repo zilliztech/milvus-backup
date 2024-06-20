@@ -81,6 +81,10 @@ definitions:
       backup_timestamp:
         description: logical time of backup, used for restore
         type: integer
+      channel_checkpoints:
+        additionalProperties:
+          type: string
+        type: object
       collection_id:
         type: integer
       collection_name:
@@ -100,6 +104,10 @@ definitions:
       index_infos:
         items:
           $ref: '#/definitions/backuppb.IndexInfo'
+        type: array
+      l0_segments:
+        items:
+          $ref: '#/definitions/backuppb.SegmentBackupInfo'
         type: array
       load_state:
         type: string
@@ -394,8 +402,8 @@ definitions:
           1, set a suffix
         type: string
       db_collections:
-        description: database and collections to restore. A json string. To support
-          database. 2023.7.7
+        description: 'database and collections to restore. A json string. for example:
+          {"db1":["collection1"],"db2":["collection2","collection3"]}'
         type: string
       dropExistCollection:
         description: if true, drop existing target collection before create
@@ -403,6 +411,8 @@ definitions:
       dropExistIndex:
         description: if true, drop existing index of target collection before create
         type: boolean
+      id:
+        type: string
       metaOnly:
         description: if true only restore meta, not restore data
         type: boolean
@@ -544,6 +554,8 @@ definitions:
     - RestoreTaskStateCode_TIMEOUT
   backuppb.SegmentBackupInfo:
     properties:
+      backuped:
+        type: boolean
       binlogs:
         items:
           $ref: '#/definitions/backuppb.FieldBinlog'
@@ -560,6 +572,8 @@ definitions:
           segments in one group will be copied into one directory during backup
           and will bulkinsert in one call during restore
         type: integer
+      is_l0:
+        type: boolean
       num_of_rows:
         type: integer
       partition_id:

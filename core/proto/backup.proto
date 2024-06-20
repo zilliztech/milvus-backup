@@ -261,7 +261,7 @@ message RestoreBackupRequest {
   string bucket_name = 7;
   // if bucket_name and path is set. will override bucket/path in config.
   string path = 8;
-  // database and collections to restore. A json string. To support database. 2023.7.7
+  // database and collections to restore. A json string. for example: {"db1":["collection1"],"db2":["collection2","collection3"]}
   google.protobuf.Value db_collections = 9;
   // if true only restore meta, not restore data
   bool metaOnly = 10;
