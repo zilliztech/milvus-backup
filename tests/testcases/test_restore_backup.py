@@ -837,3 +837,57 @@ class TestRestoreBackup(TestcaseBase):
         assert name_origin + suffix in res
         output_fields = None
         self.compare_collections(name_origin, name_origin + suffix, output_fields=output_fields, verify_by_query=True)
+
+    @pytest.mark.tags(CaseLabel.L1)
+    def test_milvus_restore_back_with_dup_pk(self):
+        self._connect()
+        name_origin = cf.gen_unique_str(prefix)
+        back_up_name = cf.gen_unique_str(backup_prefix)
+        fields = [cf.gen_int64_field(name="int64", is_primary=True),
+                    cf.gen_int64_field(name="key"),
+                    cf.gen_json_field(name="json"),
+                    cf.gen_array_field(name="var_array", element_type=DataType.VARCHAR),
+                    cf.gen_array_field(name="int_array", element_type=DataType.INT64),
+                    cf.gen_float_vec_field(name="float_vector", dim=128),
+                    ]
+        default_schema = cf.gen_collection_schema(fields)
+        collection_w = self.init_collection_wrap(name=name_origin, schema=default_schema, active_trace=True)
+        nb = 3000
+        data = [
+            [i for i in range(nb)],
+            [i % 3 for i in range(nb)],
+            [{f"key_{str(i)}": i} for i in range(nb)],
+            [[str(x) for x in range(10)] for i in range(nb)],
+            [[int(x) for x in range(10)] for i in range(nb)],
+            [[np.float32(i) for i in range(128)] for _ in range(nb)],
+        ]
+        res, result = collection_w.insert(data=data)
+        data = [
+            [i for i in range(nb)],
+            [i % 3 for i in range(nb, nb*2)],
+            [{f"key_{str(i)}": i} for i in range(nb, nb*2)],
+            [[str(x) for x in range(10)] for i in range(nb, nb*2)],
+            [[int(x) for x in range(10)] for i in range(nb, nb*2)],
+            [[np.float32(i) for i in range(128)] for _ in range(nb)],
+        ]
+        res, result = collection_w.insert(data=data)
+        res = client.create_backup({"async": False, "backup_name": back_up_name, "collection_names": [name_origin]})
+        log.info(f"create_backup {res}")
+        res = client.list_backup()
+        log.info(f"list_backup {res}")
+        if "data" in res:
+            all_backup = [r["name"] for r in res["data"]]
+        else:
+            all_backup = []
+        assert back_up_name in all_backup
+        backup = client.get_backup(back_up_name)
+        assert backup["data"]["name"] == back_up_name
+        backup_collections = [backup["collection_name"]for backup in backup["data"]["collection_backups"]]
+        assert name_origin in backup_collections
+        res = client.restore_backup({"async": False, "backup_name": back_up_name, "collection_names": [name_origin],
+                                     "collection_suffix": suffix})
+        log.info(f"restore_backup: {res}")
+        res, _ = self.utility_wrap.list_collections()
+        assert name_origin + suffix in res
+        output_fields = None
+        self.compare_collections(name_origin, name_origin + suffix, output_fields=output_fields, verify_by_query=True)
