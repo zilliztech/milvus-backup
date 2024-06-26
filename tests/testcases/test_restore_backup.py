@@ -870,7 +870,7 @@ class TestRestoreBackup(TestcaseBase):
             [[int(x) for x in range(10)] for i in range(nb, nb*2)],
             [[np.float32(i) for i in range(128)] for _ in range(nb)],
         ]
-        res, result = collection_w.inset(data=data)
+        res, result = collection_w.insert(data=data)
         res = client.create_backup({"async": False, "backup_name": back_up_name, "collection_names": [name_origin]})
         log.info(f"create_backup {res}")
         res = client.list_backup()
