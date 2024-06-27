@@ -888,7 +888,7 @@ func (b *BackupContext) copySegment(ctx context.Context, backupBinlogPath string
 			}
 		}
 	}
-	segment.Backuped = true
+	b.meta.UpdateSegment(segment.GetPartitionId(), segment.GetSegmentId(), setSegmentBackuped(true))
 	return nil
 }
 

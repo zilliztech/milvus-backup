@@ -4,8 +4,10 @@ import (
 	"sync"
 
 	"github.com/golang/protobuf/proto"
+	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
 type MetaManager struct {
@@ -64,6 +66,7 @@ func (meta *MetaManager) AddBackup(backup *backuppb.BackupInfo) {
 	meta.mu.Lock()
 	defer meta.mu.Unlock()
 	meta.backups[backup.Id] = backup
+	meta.backupNameToIdDict[backup.Name] = backup.Id
 }
 
 func (meta *MetaManager) AddCollection(collection *backuppb.CollectionBackupInfo) {
@@ -456,24 +459,42 @@ func (meta *MetaManager) GetFullMeta(id string) *backuppb.BackupInfo {
 		return nil
 	}
 	collections := meta.collections[id]
+	var backupedSize int64 = 0
+	var totalSize int64 = 0
+	cloneBackup := proto.Clone(backup).(*backuppb.BackupInfo)
+
 	collectionBackups := make([]*backuppb.CollectionBackupInfo, 0)
 	for collectionID, collection := range collections {
+		collectionBackup := proto.Clone(collection).(*backuppb.CollectionBackupInfo)
 		partitionBackups := make([]*backuppb.PartitionBackupInfo, 0)
 		for partitionID, partition := range meta.partitions[collectionID] {
 			segmentBackups := make([]*backuppb.SegmentBackupInfo, 0)
+			partitionBackup := proto.Clone(partition).(*backuppb.PartitionBackupInfo)
 			for _, segment := range meta.segments[partitionID] {
 				segmentBackups = append(segmentBackups, proto.Clone(segment).(*backuppb.SegmentBackupInfo))
+				if segment.Backuped {
+					backupedSize += segment.GetSize()
+				}
+				totalSize += segment.GetSize()
+				partitionBackup.Size = partitionBackup.Size + segment.GetSize()
 			}
-			partitionBackup := proto.Clone(partition).(*backuppb.PartitionBackupInfo)
 			partitionBackup.SegmentBackups = segmentBackups
 			partitionBackups = append(partitionBackups, partitionBackup)
+			collectionBackup.Size = collectionBackup.Size + partitionBackup.Size
 		}
-		collectionBackup := proto.Clone(collection).(*backuppb.CollectionBackupInfo)
 		collectionBackup.PartitionBackups = partitionBackups
 		collectionBackups = append(collectionBackups, collectionBackup)
+		cloneBackup.Size = cloneBackup.Size + collectionBackup.Size
 	}
-	cloneBackup := proto.Clone(backup).(*backuppb.BackupInfo)
 	cloneBackup.CollectionBackups = collectionBackups
+	cloneBackup.Progress = 1
+	if totalSize != 0 {
+		cloneBackup.Progress = int32(backupedSize * 100 / (totalSize))
+	} else {
+		cloneBackup.Progress = 100
+	}
+	log.Info("backup progress", zap.Int64("backupedSize", backupedSize), zap.Int64("totalSize", totalSize), zap.Int32("progress", cloneBackup.Progress))
+
 	return cloneBackup
 }
 
