@@ -279,8 +279,7 @@ func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBack
 			zap.String("backupName", request.GetBackupName()),
 			zap.String("backupId", request.GetBackupId()),
 			zap.String("bucketName", request.GetBucketName()),
-			zap.String("path", request.GetPath()),
-			zap.Any("resp", resp))
+			zap.String("path", request.GetPath()))
 	}
 
 	return resp
