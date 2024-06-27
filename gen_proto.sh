@@ -33,6 +33,8 @@ sed -i "" -e "s/has_index,omitempty/has_index/g" ./backuppb/backup.pb.go
 sed -i "" -e "s/data,omitempty/data/g" ./backuppb/backup.pb.go
 # remove size omitempty
 sed -i "" -e "s/size,omitempty/size/g" ./backuppb/backup.pb.go
+# remove size omitempty
+sed -i "" -e "s/code,omitempty/code/g" ./backuppb/backup.pb.go
 
 # to make db_collections field compatible to both json and string
 #sed -i "" -e "s/*_struct.Value/interface{}/g" ./backuppb/backup.pb.go
