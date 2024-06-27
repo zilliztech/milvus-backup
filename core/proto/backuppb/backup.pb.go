@@ -334,7 +334,7 @@ func (m *IndexInfo) GetParams() map[string]string {
 // lite version of Collection info
 type CollectionBackupInfo struct {
 	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	StateCode        BackupTaskStateCode    `protobuf:"varint,2,opt,name=state_code,json=stateCode,proto3,enum=milvus.proto.backup.BackupTaskStateCode" json:"state_code,omitempty"`
+	StateCode        BackupTaskStateCode    `protobuf:"varint,2,opt,name=state_code,json=stateCode,proto3,enum=milvus.proto.backup.BackupTaskStateCode" json:"state_code"`
 	ErrorMessage     string                 `protobuf:"bytes,3,opt,name=errorMessage,proto3" json:"errorMessage,omitempty"`
 	StartTime        int64                  `protobuf:"varint,4,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
 	EndTime          int64                  `protobuf:"varint,5,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
@@ -741,7 +741,7 @@ func (m *SegmentBackupInfo) GetIsL0() bool {
 // root of backup
 type BackupInfo struct {
 	Id           string              `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	StateCode    BackupTaskStateCode `protobuf:"varint,2,opt,name=state_code,json=stateCode,proto3,enum=milvus.proto.backup.BackupTaskStateCode" json:"state_code,omitempty"`
+	StateCode    BackupTaskStateCode `protobuf:"varint,2,opt,name=state_code,json=stateCode,proto3,enum=milvus.proto.backup.BackupTaskStateCode" json:"state_code"`
 	ErrorMessage string              `protobuf:"bytes,3,opt,name=errorMessage,proto3" json:"errorMessage,omitempty"`
 	StartTime    int64               `protobuf:"varint,4,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
 	EndTime      int64               `protobuf:"varint,5,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
@@ -1112,7 +1112,7 @@ type BackupInfoResponse struct {
 	// uuid of the request to response
 	RequestId string `protobuf:"bytes,1,opt,name=requestId,proto3" json:"requestId,omitempty"`
 	// response code. 0 means success. others are fail
-	Code ResponseCode `protobuf:"varint,2,opt,name=code,proto3,enum=milvus.proto.backup.ResponseCode" json:"code,omitempty"`
+	Code ResponseCode `protobuf:"varint,2,opt,name=code,proto3,enum=milvus.proto.backup.ResponseCode" json:"code"`
 	// error msg if fail
 	Msg string `protobuf:"bytes,3,opt,name=msg,proto3" json:"msg,omitempty"`
 	// backup info entity
@@ -1313,7 +1313,7 @@ type ListBackupsResponse struct {
 	// uuid of the request to response
 	RequestId string `protobuf:"bytes,1,opt,name=requestId,proto3" json:"requestId,omitempty"`
 	// response code. 0 means success. others are fail
-	Code ResponseCode `protobuf:"varint,2,opt,name=code,proto3,enum=milvus.proto.backup.ResponseCode" json:"code,omitempty"`
+	Code ResponseCode `protobuf:"varint,2,opt,name=code,proto3,enum=milvus.proto.backup.ResponseCode" json:"code"`
 	// error msg if fail
 	Msg string `protobuf:"bytes,3,opt,name=msg,proto3" json:"msg,omitempty"`
 	// backup info entities
@@ -1429,7 +1429,7 @@ type DeleteBackupResponse struct {
 	// uuid of the request to response
 	RequestId string `protobuf:"bytes,1,opt,name=requestId,proto3" json:"requestId,omitempty"`
 	// response code. 0 means success. others are fail
-	Code ResponseCode `protobuf:"varint,2,opt,name=code,proto3,enum=milvus.proto.backup.ResponseCode" json:"code,omitempty"`
+	Code ResponseCode `protobuf:"varint,2,opt,name=code,proto3,enum=milvus.proto.backup.ResponseCode" json:"code"`
 	// error msg if fail
 	Msg                  string   `protobuf:"bytes,3,opt,name=msg,proto3" json:"msg,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
@@ -1661,7 +1661,7 @@ func (m *RestoreBackupRequest) GetId() string {
 
 type RestorePartitionTask struct {
 	Id                   string               `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	StateCode            RestoreTaskStateCode `protobuf:"varint,2,opt,name=state_code,json=stateCode,proto3,enum=milvus.proto.backup.RestoreTaskStateCode" json:"state_code,omitempty"`
+	StateCode            RestoreTaskStateCode `protobuf:"varint,2,opt,name=state_code,json=stateCode,proto3,enum=milvus.proto.backup.RestoreTaskStateCode" json:"state_code"`
 	ErrorMessage         string               `protobuf:"bytes,3,opt,name=errorMessage,proto3" json:"errorMessage,omitempty"`
 	StartTime            int64                `protobuf:"varint,4,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
 	EndTime              int64                `protobuf:"varint,5,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
@@ -1748,7 +1748,7 @@ func (m *RestorePartitionTask) GetPartBackup() *PartitionBackupInfo {
 
 type RestoreCollectionTask struct {
 	Id                    string                  `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	StateCode             RestoreTaskStateCode    `protobuf:"varint,2,opt,name=state_code,json=stateCode,proto3,enum=milvus.proto.backup.RestoreTaskStateCode" json:"state_code,omitempty"`
+	StateCode             RestoreTaskStateCode    `protobuf:"varint,2,opt,name=state_code,json=stateCode,proto3,enum=milvus.proto.backup.RestoreTaskStateCode" json:"state_code"`
 	ErrorMessage          string                  `protobuf:"bytes,3,opt,name=errorMessage,proto3" json:"errorMessage,omitempty"`
 	StartTime             int64                   `protobuf:"varint,4,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
 	EndTime               int64                   `protobuf:"varint,5,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
@@ -1929,7 +1929,7 @@ func (m *RestoreCollectionTask) GetSkipCreateCollection() bool {
 
 type RestoreBackupTask struct {
 	Id                     string                   `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	StateCode              RestoreTaskStateCode     `protobuf:"varint,2,opt,name=state_code,json=stateCode,proto3,enum=milvus.proto.backup.RestoreTaskStateCode" json:"state_code,omitempty"`
+	StateCode              RestoreTaskStateCode     `protobuf:"varint,2,opt,name=state_code,json=stateCode,proto3,enum=milvus.proto.backup.RestoreTaskStateCode" json:"state_code"`
 	ErrorMessage           string                   `protobuf:"bytes,3,opt,name=errorMessage,proto3" json:"errorMessage,omitempty"`
 	StartTime              int64                    `protobuf:"varint,4,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
 	EndTime                int64                    `protobuf:"varint,5,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
@@ -2034,7 +2034,7 @@ type RestoreBackupResponse struct {
 	// uuid of the request to response
 	RequestId string `protobuf:"bytes,1,opt,name=requestId,proto3" json:"requestId,omitempty"`
 	// response code. 0 means success. others are fail
-	Code ResponseCode `protobuf:"varint,2,opt,name=code,proto3,enum=milvus.proto.backup.ResponseCode" json:"code,omitempty"`
+	Code ResponseCode `protobuf:"varint,2,opt,name=code,proto3,enum=milvus.proto.backup.ResponseCode" json:"code"`
 	// error msg if fail
 	Msg string `protobuf:"bytes,3,opt,name=msg,proto3" json:"msg,omitempty"`
 	// restore task info entity
@@ -2712,7 +2712,7 @@ var xxx_messageInfo_CheckRequest proto.InternalMessageInfo
 
 type CheckResponse struct {
 	// response code. 0 means success. others are fail
-	Code ResponseCode `protobuf:"varint,1,opt,name=code,proto3,enum=milvus.proto.backup.ResponseCode" json:"code,omitempty"`
+	Code ResponseCode `protobuf:"varint,1,opt,name=code,proto3,enum=milvus.proto.backup.ResponseCode" json:"code"`
 	// error msg if fail
 	Msg                  string   `protobuf:"bytes,2,opt,name=msg,proto3" json:"msg,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`

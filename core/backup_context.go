@@ -390,38 +390,36 @@ func (b *BackupContext) DeleteBackup(ctx context.Context, request *backuppb.Dele
 		return resp
 	}
 
-	getResp := b.GetBackup(b.ctx, &backuppb.GetBackupRequest{
-		BackupName: request.GetBackupName(),
-	})
-	if getResp.GetCode() == backuppb.ResponseCode_Request_Object_Not_Found {
-		resp.Code = backuppb.ResponseCode_Request_Object_Not_Found
-		resp.Msg = getResp.GetMsg()
-		return resp
-	} else if getResp.GetCode() != backuppb.ResponseCode_Success {
-		log.Error("fail in GetBackup", zap.String("msg", getResp.GetMsg()))
-		resp.Code = backuppb.ResponseCode_Fail
-		resp.Msg = getResp.GetMsg()
-		return resp
-	} else if getResp.GetData() == nil {
-		errMsg := fmt.Sprintf("backup does not exist: %s", request.GetBackupName())
-		log.Warn(errMsg)
-		resp.Code = backuppb.ResponseCode_Request_Object_Not_Found
-		resp.Msg = errMsg
+	paths, _, _ := b.getStorageClient().ListWithPrefix(ctx, b.backupBucketName, BackupDirPath(b.backupRootPath, request.GetBackupName()), false)
+	if len(paths) == 0 {
+		log.Warn("Required backup does not exist", zap.String("backupName", request.GetBackupName()))
+		resp.Code = backuppb.ResponseCode_Success
+		resp.Msg = "Required backup not exist"
+		log.Info("return DeleteBackupResponse",
+			zap.String("requestId", resp.GetRequestId()),
+			zap.Int32("code", int32(resp.GetCode())),
+			zap.String("msg", resp.GetMsg()))
 		return resp
 	}
-
+	// remove anyway
 	err := b.getStorageClient().RemoveWithPrefix(ctx, b.backupBucketName, BackupDirPath(b.backupRootPath, request.GetBackupName()))
 
 	if err != nil {
-		log.Error("Fail to delete backup", zap.String("backupName", request.GetBackupName()), zap.Error(err))
-		return nil
+		log.Warn("Fail to delete backup", zap.String("backupName", request.GetBackupName()), zap.Error(err))
+		resp.Code = backuppb.ResponseCode_Fail
+		resp.Msg = err.Error()
+		log.Info("return DeleteBackupResponse",
+			zap.String("requestId", resp.GetRequestId()),
+			zap.Int32("code", int32(resp.GetCode())),
+			zap.String("msg", resp.GetMsg()))
+		return resp
 	}
-
 	resp.Code = backuppb.ResponseCode_Success
 	resp.Msg = "success"
 	log.Info("return DeleteBackupResponse",
 		zap.String("requestId", resp.GetRequestId()),
-		zap.Int32("code", int32(resp.GetCode())))
+		zap.Int32("code", int32(resp.GetCode())),
+		zap.String("msg", resp.GetMsg()))
 	return resp
 }
 
