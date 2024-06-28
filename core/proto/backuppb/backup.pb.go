@@ -334,11 +334,11 @@ func (m *IndexInfo) GetParams() map[string]string {
 // lite version of Collection info
 type CollectionBackupInfo struct {
 	Id               string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	StateCode        BackupTaskStateCode    `protobuf:"varint,2,opt,name=state_code,json=stateCode,proto3,enum=milvus.proto.backup.BackupTaskStateCode" json:"state_code,omitempty"`
+	StateCode        BackupTaskStateCode    `protobuf:"varint,2,opt,name=state_code,json=stateCode,proto3,enum=milvus.proto.backup.BackupTaskStateCode" json:"state_code"`
 	ErrorMessage     string                 `protobuf:"bytes,3,opt,name=errorMessage,proto3" json:"errorMessage,omitempty"`
 	StartTime        int64                  `protobuf:"varint,4,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
 	EndTime          int64                  `protobuf:"varint,5,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
-	Progress         int32                  `protobuf:"varint,6,opt,name=progress,proto3" json:"progress,omitempty"`
+	Progress         int32                  `protobuf:"varint,6,opt,name=progress,proto3" json:"progress"`
 	CollectionId     int64                  `protobuf:"varint,7,opt,name=collection_id,json=collectionId,proto3" json:"collection_id,omitempty"`
 	DbName           string                 `protobuf:"bytes,8,opt,name=db_name,json=dbName,proto3" json:"db_name,omitempty"`
 	CollectionName   string                 `protobuf:"bytes,9,opt,name=collection_name,json=collectionName,proto3" json:"collection_name,omitempty"`
@@ -741,11 +741,11 @@ func (m *SegmentBackupInfo) GetIsL0() bool {
 // root of backup
 type BackupInfo struct {
 	Id           string              `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	StateCode    BackupTaskStateCode `protobuf:"varint,2,opt,name=state_code,json=stateCode,proto3,enum=milvus.proto.backup.BackupTaskStateCode" json:"state_code,omitempty"`
+	StateCode    BackupTaskStateCode `protobuf:"varint,2,opt,name=state_code,json=stateCode,proto3,enum=milvus.proto.backup.BackupTaskStateCode" json:"state_code"`
 	ErrorMessage string              `protobuf:"bytes,3,opt,name=errorMessage,proto3" json:"errorMessage,omitempty"`
 	StartTime    int64               `protobuf:"varint,4,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
 	EndTime      int64               `protobuf:"varint,5,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
-	Progress     int32               `protobuf:"varint,6,opt,name=progress,proto3" json:"progress,omitempty"`
+	Progress     int32               `protobuf:"varint,6,opt,name=progress,proto3" json:"progress"`
 	Name         string              `protobuf:"bytes,7,opt,name=name,proto3" json:"name,omitempty"`
 	// backup timestamp
 	BackupTimestamp uint64 `protobuf:"varint,8,opt,name=backup_timestamp,json=backupTimestamp,proto3" json:"backup_timestamp,omitempty"`
@@ -1661,11 +1661,11 @@ func (m *RestoreBackupRequest) GetId() string {
 
 type RestorePartitionTask struct {
 	Id                   string               `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	StateCode            RestoreTaskStateCode `protobuf:"varint,2,opt,name=state_code,json=stateCode,proto3,enum=milvus.proto.backup.RestoreTaskStateCode" json:"state_code,omitempty"`
+	StateCode            RestoreTaskStateCode `protobuf:"varint,2,opt,name=state_code,json=stateCode,proto3,enum=milvus.proto.backup.RestoreTaskStateCode" json:"state_code"`
 	ErrorMessage         string               `protobuf:"bytes,3,opt,name=errorMessage,proto3" json:"errorMessage,omitempty"`
 	StartTime            int64                `protobuf:"varint,4,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
 	EndTime              int64                `protobuf:"varint,5,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
-	Progress             int32                `protobuf:"varint,6,opt,name=progress,proto3" json:"progress,omitempty"`
+	Progress             int32                `protobuf:"varint,6,opt,name=progress,proto3" json:"progress"`
 	PartBackup           *PartitionBackupInfo `protobuf:"bytes,7,opt,name=part_backup,json=partBackup,proto3" json:"part_backup,omitempty"`
 	XXX_NoUnkeyedLiteral struct{}             `json:"-"`
 	XXX_unrecognized     []byte               `json:"-"`
@@ -1748,7 +1748,7 @@ func (m *RestorePartitionTask) GetPartBackup() *PartitionBackupInfo {
 
 type RestoreCollectionTask struct {
 	Id                    string                  `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	StateCode             RestoreTaskStateCode    `protobuf:"varint,2,opt,name=state_code,json=stateCode,proto3,enum=milvus.proto.backup.RestoreTaskStateCode" json:"state_code,omitempty"`
+	StateCode             RestoreTaskStateCode    `protobuf:"varint,2,opt,name=state_code,json=stateCode,proto3,enum=milvus.proto.backup.RestoreTaskStateCode" json:"state_code"`
 	ErrorMessage          string                  `protobuf:"bytes,3,opt,name=errorMessage,proto3" json:"errorMessage,omitempty"`
 	StartTime             int64                   `protobuf:"varint,4,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
 	EndTime               int64                   `protobuf:"varint,5,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
@@ -1757,7 +1757,7 @@ type RestoreCollectionTask struct {
 	PartitionRestoreTasks []*RestorePartitionTask `protobuf:"bytes,8,rep,name=partition_restore_tasks,json=partitionRestoreTasks,proto3" json:"partition_restore_tasks,omitempty"`
 	RestoredSize          int64                   `protobuf:"varint,9,opt,name=restored_size,json=restoredSize,proto3" json:"restored_size"`
 	ToRestoreSize         int64                   `protobuf:"varint,10,opt,name=to_restore_size,json=toRestoreSize,proto3" json:"to_restore_size"`
-	Progress              int32                   `protobuf:"varint,11,opt,name=progress,proto3" json:"progress,omitempty"`
+	Progress              int32                   `protobuf:"varint,11,opt,name=progress,proto3" json:"progress"`
 	TargetDbName          string                  `protobuf:"bytes,12,opt,name=target_db_name,json=targetDbName,proto3" json:"target_db_name,omitempty"`
 	// if true only restore meta
 	MetaOnly bool `protobuf:"varint,13,opt,name=metaOnly,proto3" json:"metaOnly,omitempty"`
@@ -1929,14 +1929,14 @@ func (m *RestoreCollectionTask) GetSkipCreateCollection() bool {
 
 type RestoreBackupTask struct {
 	Id                     string                   `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	StateCode              RestoreTaskStateCode     `protobuf:"varint,2,opt,name=state_code,json=stateCode,proto3,enum=milvus.proto.backup.RestoreTaskStateCode" json:"state_code,omitempty"`
+	StateCode              RestoreTaskStateCode     `protobuf:"varint,2,opt,name=state_code,json=stateCode,proto3,enum=milvus.proto.backup.RestoreTaskStateCode" json:"state_code"`
 	ErrorMessage           string                   `protobuf:"bytes,3,opt,name=errorMessage,proto3" json:"errorMessage,omitempty"`
 	StartTime              int64                    `protobuf:"varint,4,opt,name=start_time,json=startTime,proto3" json:"start_time,omitempty"`
 	EndTime                int64                    `protobuf:"varint,5,opt,name=end_time,json=endTime,proto3" json:"end_time,omitempty"`
 	CollectionRestoreTasks []*RestoreCollectionTask `protobuf:"bytes,6,rep,name=collection_restore_tasks,json=collectionRestoreTasks,proto3" json:"collection_restore_tasks,omitempty"`
 	RestoredSize           int64                    `protobuf:"varint,7,opt,name=restored_size,json=restoredSize,proto3" json:"restored_size"`
 	ToRestoreSize          int64                    `protobuf:"varint,8,opt,name=to_restore_size,json=toRestoreSize,proto3" json:"to_restore_size"`
-	Progress               int32                    `protobuf:"varint,9,opt,name=progress,proto3" json:"progress,omitempty"`
+	Progress               int32                    `protobuf:"varint,9,opt,name=progress,proto3" json:"progress"`
 	XXX_NoUnkeyedLiteral   struct{}                 `json:"-"`
 	XXX_unrecognized       []byte                   `json:"-"`
 	XXX_sizecache          int32                    `json:"-"`

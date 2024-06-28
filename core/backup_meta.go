@@ -286,7 +286,7 @@ func SimpleBackupResponse(input *backuppb.BackupInfoResponse) *backuppb.BackupIn
 		// clone and remove PartitionBackups, avoid updating here every time we add a field in CollectionBackupInfo
 		clonedCollectionBackup := proto.Clone(coll).(*backuppb.CollectionBackupInfo)
 		clonedCollectionBackup.PartitionBackups = nil
-		clonedCollectionBackup.Schema = nil
+		// clonedCollectionBackup.Schema = nil // schema is needed by cloud
 		collections = append(collections, clonedCollectionBackup)
 	}
 	simpleBackupInfo := proto.Clone(backup).(*backuppb.BackupInfo)

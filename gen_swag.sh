@@ -36,6 +36,10 @@ sed -i "" -e "s/has_index,omitempty/has_index/g" ./backuppb/backup.pb.go
 sed -i "" -e "s/data,omitempty/data/g" ./backuppb/backup.pb.go
 # remove size omitempty
 sed -i "" -e "s/size,omitempty/size/g" ./backuppb/backup.pb.go
+# remove progress omitempty
+sed -i "" -e "s/progress,omitempty/progress/g" ./backuppb/backup.pb.go
+# remove state_code omitempty
+sed -i "" -e "s/state_code,omitempty/state_code/g" ./backuppb/backup.pb.go
 
 popd
 
