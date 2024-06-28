@@ -151,7 +151,7 @@ class MilvusBackupClient(Requests):
         res = self.get_backup(backup_name)
         while not ready and (end_time - start_time < timeout):
             state_code = res["data"].get("state_code", 1)
-            if state_code == 1:
+            if state_code == 1 or state_code == 0:
                 time.sleep(5)
                 res = self.get_backup(backup_name)
                 end_time = time.time()
@@ -173,7 +173,7 @@ class MilvusBackupClient(Requests):
         res = self.get_restore(id)
         while not ready and end_time - start_time < timeout:
             state_code = res["data"].get("state_code", 1)
-            if state_code == 1:
+            if state_code == 1 or state_code == 0:
                 time.sleep(5)
                 res = self.get_restore(id)
                 end_time = time.time()
