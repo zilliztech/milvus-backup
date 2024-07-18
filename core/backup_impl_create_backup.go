@@ -172,17 +172,31 @@ func (b *BackupContext) parseBackupCollections(request *backuppb.CreateBackupReq
 	if request.GetCollectionNames() == nil || len(request.GetCollectionNames()) == 0 {
 		dbs, err := b.getMilvusClient().ListDatabases(b.ctx)
 		if err != nil {
-			log.Error("fail in ListDatabases", zap.Error(err))
-			return nil, err
-		}
-		for _, db := range dbs {
-			collections, err := b.getMilvusClient().ListCollections(b.ctx, db.Name)
-			if err != nil {
-				log.Error("fail in ListCollections", zap.Error(err))
+			// compatible to milvus under v2.2.8 without database support
+			if strings.Contains(err.Error(), "feature not supported") {
+				// default database only
+				collections, err := b.getMilvusClient().ListCollections(b.ctx, "default")
+				if err != nil {
+					log.Error("fail in ListCollections", zap.Error(err))
+					return nil, err
+				}
+				for _, coll := range collections {
+					toBackupCollections = append(toBackupCollections, collectionStruct{"default", coll.Name})
+				}
+			} else {
+				log.Error("fail in ListDatabases", zap.Error(err))
 				return nil, err
 			}
-			for _, coll := range collections {
-				toBackupCollections = append(toBackupCollections, collectionStruct{db.Name, coll.Name})
+		} else {
+			for _, db := range dbs {
+				collections, err := b.getMilvusClient().ListCollections(b.ctx, db.Name)
+				if err != nil {
+					log.Error("fail in ListCollections", zap.Error(err))
+					return nil, err
+				}
+				for _, coll := range collections {
+					toBackupCollections = append(toBackupCollections, collectionStruct{db.Name, coll.Name})
+				}
 			}
 		}
 		log.Debug(fmt.Sprintf("List %v collections", len(toBackupCollections)))
