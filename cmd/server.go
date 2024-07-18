@@ -3,10 +3,17 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"os"
+	"strconv"
 
 	"github.com/spf13/cobra"
 	"github.com/zilliztech/milvus-backup/core"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
+)
+
+const (
+	DefaultServerPort = "8080"
+	ServerPortEnvKey  = "SERVER_PORT"
 )
 
 var (
@@ -34,7 +41,12 @@ var serverCmd = &cobra.Command{
 }
 
 func init() {
-	serverCmd.Flags().StringVarP(&port, "port", "p", "8080", "Port to listen")
+	serverPort := os.Getenv(ServerPortEnvKey)
+	_, err := strconv.Atoi(serverPort)
+	if err != nil {
+		serverPort = DefaultServerPort
+	}
+	serverCmd.Flags().StringVarP(&port, "port", "p", serverPort, "Port to listen")
 
 	rootCmd.AddCommand(serverCmd)
 }
