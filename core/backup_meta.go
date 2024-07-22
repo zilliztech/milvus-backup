@@ -280,6 +280,9 @@ func SimpleListBackupsResponse(input *backuppb.ListBackupsResponse) *backuppb.Li
 
 func SimpleBackupResponse(input *backuppb.BackupInfoResponse) *backuppb.BackupInfoResponse {
 	backup := input.GetData()
+	if backup == nil {
+		return input
+	}
 
 	collections := make([]*backuppb.CollectionBackupInfo, 0)
 	for _, coll := range backup.GetCollectionBackups() {
@@ -301,6 +304,9 @@ func SimpleBackupResponse(input *backuppb.BackupInfoResponse) *backuppb.BackupIn
 
 func SimpleRestoreResponse(input *backuppb.RestoreBackupResponse) *backuppb.RestoreBackupResponse {
 	restore := input.GetData()
+	if restore == nil {
+		return input
+	}
 
 	simpleRestore := proto.Clone(restore).(*backuppb.RestoreBackupTask)
 

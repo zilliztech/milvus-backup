@@ -231,3 +231,31 @@ func TestReadBackupFile(t *testing.T) {
 	fmt.Sprintf(segmentMetaStr)
 	//log.Info("segment meta", zap.String("value", string(output.SegmentMetaBytes)))
 }
+
+func TestSimpleBackupResponse(t *testing.T) {
+	info := &backuppb.BackupInfoResponse{
+		RequestId: "abc",
+		Code:      backuppb.ResponseCode_Success,
+		Msg:       "not found",
+		Data:      nil,
+	}
+	simpleInfo := SimpleBackupResponse(info)
+	assert.Nil(t, simpleInfo.Data)
+	assert.Equal(t, info.Code, simpleInfo.Code)
+	assert.Equal(t, info.Msg, simpleInfo.Msg)
+	assert.Equal(t, info.RequestId, simpleInfo.RequestId)
+}
+
+func TestSimpleRestoreResponse(t *testing.T) {
+	info := &backuppb.RestoreBackupResponse{
+		RequestId: "abc",
+		Code:      backuppb.ResponseCode_Success,
+		Msg:       "not found",
+		Data:      nil,
+	}
+	simpleInfo := SimpleRestoreResponse(info)
+	assert.Nil(t, simpleInfo.Data)
+	assert.Equal(t, info.Code, simpleInfo.Code)
+	assert.Equal(t, info.Msg, simpleInfo.Msg)
+	assert.Equal(t, info.RequestId, simpleInfo.RequestId)
+}
