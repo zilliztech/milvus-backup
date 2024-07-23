@@ -649,6 +649,9 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
+	// set backup state
+	b.meta.UpdateBackup(backupInfo.Id, setStateCode(backuppb.BackupTaskStateCode_BACKUP_EXECUTING))
+
 	// pause GC
 	if request.GetGcPauseEnable() || b.params.BackupCfg.GcPauseEnable {
 		var pause = 0
