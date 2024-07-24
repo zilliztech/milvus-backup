@@ -238,6 +238,20 @@ func CopyDir(source string, dest string) (err error) {
 }
 
 func CopyFile(source string, dest string) (err error) {
+	
+	// get properties of source parent dir
+	sourceParentDir := filepath.Dir(source)
+	sourceParentDirInfo, err := os.Stat(sourceParentDir)
+	if err != nil {
+		return err
+	}
+	// create dest parent dir
+	destParentDir := filepath.Dir(dest)
+	err = os.MkdirAll(destParentDir, sourceParentDirInfo.Mode())
+	if err != nil {
+		return err
+	}
+
 	sourcefile, err := os.Open(source)
 	if err != nil {
 		return err
