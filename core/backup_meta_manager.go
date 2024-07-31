@@ -492,7 +492,7 @@ func (meta *MetaManager) GetFullMeta(id string) *backuppb.BackupInfo {
 	} else {
 		cloneBackup.Progress = 100
 	}
-	log.Info("Get backup progress", zap.Int64("backupedSize", backupedSize), zap.Int64("totalSize", totalSize), zap.Int32("progress", cloneBackup.Progress))
+	log.Info("Get backup", zap.String("state", cloneBackup.StateCode.String()), zap.Int64("backupedSize", backupedSize), zap.Int64("totalSize", totalSize), zap.Int32("progress", cloneBackup.Progress))
 	return cloneBackup
 }
 
