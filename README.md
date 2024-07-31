@@ -5,23 +5,18 @@ Milvus-Backup is a tool that allows users to backup and restore Milvus data. Thi
 The Milvus-backup process has negligible impact on the performance of Milvus. Milvus cluster is fully functional and can operate normally while backup and restoration are in progress.
 
 ## Installation
-* Download binary from [release page](https://github.com/zilliztech/milvus-backup/releases)
 
+* Download binary from [release page](https://github.com/zilliztech/milvus-backup/releases). Usually the latest is recommended.
+
+
+For Mac: 
 * Use [homebrew](https://brew.sh/) to install
   ```shell
   brew install zilliztech/tap/milvus-backup
   ```
 
-
-## Compatibility
-|      Milvus      |  Milvus-backup   |
-|:----------------:|:----------------:|
-| v2.3.0 and above | v0.4.0 and above | 
-| v2.2.9 and above | v0.3.0 and above |
-| v2.2.0 to v2.2.8 | v0.1.0 to v0.2.2 |
-
 ## Config
-In order to use Milvus-Backup, access to Milvus proxy and Minio cluster is required. Configuration settings related to this access can be edited in `configs/backup.yaml`.
+In order to use Milvus-Backup, access to Milvus proxy and Minio cluster is required. Configuration settings related to this access can be edited in `backup.yaml`.
 
 > **Note**
 >
@@ -107,7 +102,7 @@ curl --location --request GET 'http://localhost:8080/api/v1/list' \
 Retrieves a backup by name.
 
 ```
-curl --location --request GET 'http://localhost:8080/api/v1/get_backup?backup_id=test_backup_id&backup_name=test_backup' \
+curl --location --request GET 'http://localhost:8080/api/v1/get_backup?backup_name=test_backup' \
 --header 'Content-Type: application/json'
 ```
 
