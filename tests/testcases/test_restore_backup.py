@@ -838,7 +838,7 @@ class TestRestoreBackup(TestcaseBase):
         output_fields = None
         self.compare_collections(name_origin, name_origin + suffix, output_fields=output_fields, verify_by_query=True)
 
-    @pytest.mark.tags(CaseLabel.L1)
+    @pytest.mark.tags(CaseLabel.MASTER)
     def test_milvus_restore_back_with_dup_pk(self):
         self._connect()
         name_origin = cf.gen_unique_str(prefix)

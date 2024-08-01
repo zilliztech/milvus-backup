@@ -398,7 +398,7 @@ class TestcaseBase(Base):
         log.info(f"pk diff: {diff}")
         assert len(diff) == 0
         for i in range(len(src_res)):
-            assert src_res[i] == dist_res[i]
+            assert src_res[i] == dist_res[i], f"src: {src_res[i]}, dist: {dist_res[i]}"
         for coll in [collection_src, collection_dist]:
             try:
                 coll.release()
