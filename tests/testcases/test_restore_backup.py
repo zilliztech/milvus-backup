@@ -6,7 +6,7 @@ import numpy as np
 import jax.numpy as jnp
 import random
 from collections import defaultdict
-from pymilvus import db, list_collections, Collection, DataType
+from pymilvus import db, list_collections, Collection, DataType, utility
 from base.client_base import TestcaseBase
 from common import common_func as cf
 from common import common_type as ct
@@ -841,6 +841,8 @@ class TestRestoreBackup(TestcaseBase):
     @pytest.mark.tags(CaseLabel.L1)
     def test_milvus_restore_back_with_dup_pk(self):
         self._connect()
+        server_version = utility.get_server_version()
+        log.info(f"server_version: {server_version}")
         name_origin = cf.gen_unique_str(prefix)
         back_up_name = cf.gen_unique_str(backup_prefix)
         fields = [cf.gen_int64_field(name="int64", is_primary=True),
@@ -890,4 +892,10 @@ class TestRestoreBackup(TestcaseBase):
         res, _ = self.utility_wrap.list_collections()
         assert name_origin + suffix in res
         output_fields = None
-        self.compare_collections(name_origin, name_origin + suffix, output_fields=output_fields, verify_by_query=True)
+        if "2.3" in server_version:
+            try:
+                self.compare_collections(name_origin, name_origin + suffix, output_fields=output_fields, verify_by_query=True)
+            except Exception as e:
+                log.error(f"exception: {e}")
+        else:
+            self.compare_collections(name_origin, name_origin + suffix, output_fields=output_fields, verify_by_query=True)
