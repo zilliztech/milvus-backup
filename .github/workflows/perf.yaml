@@ -27,10 +27,10 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      - name: Set up Python 3.8
-        uses: actions/setup-python@v2
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
         with:
-          python-version: 3.8
+          python-version: '3.10'
           cache: pip
 
       - uses: actions/setup-go@v3
@@ -62,6 +62,8 @@ jobs:
         shell: bash
         run: |
           pip install -r requirements.txt --trusted-host https://test.pypi.org
+          sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.3/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
 
       - name: Milvus deploy
 
