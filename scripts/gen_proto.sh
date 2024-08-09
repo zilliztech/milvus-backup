@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-PWD 	  := $(shell pwd)
-
 PROGRAM=${PWD}
 GOPATH=$(go env GOPATH)
 BACK_PROTO_DIR=$PROGRAM/core/proto/
