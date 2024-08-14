@@ -21,9 +21,8 @@ milvus:
 
 # Related configuration of minio, which is responsible for data persistence for Milvus.
 minio:
-  # cloudProvider: "minio" # deprecated use storageType instead
+  # Milvus storage configs, make them the same with milvus config
   storageType: "minio" # support storage type: local, minio, s3, aws, gcp, ali(aliyun), azure, tc(tencent)
-  
   address: localhost # Address of MinIO/S3
   port: 9000   # Port of MinIO/S3
   accessKeyID: minioadmin  # accessKeyID of MinIO/S3
@@ -31,14 +30,15 @@ minio:
   useSSL: false # Access to MinIO/S3 with SSL
   useIAM: false
   iamEndpoint: ""
-  
   bucketName: "a-bucket" # Milvus Bucket name in MinIO/S3, make it the same as your milvus instance
   rootPath: "files" # Milvus storage root path in MinIO/S3, make it the same as your milvus instance
 
-  # only for azure
+  # Backup storage configs, the storage you want to put the backup data
+  backupStorageType: "minio" # support storage type: local, minio, s3, aws, gcp, ali(aliyun), azure, tc(tencent)
+  backupAddress: localhost # Address of MinIO/S3
+  backupPort: 9000   # Port of MinIO/S3
   backupAccessKeyID: minioadmin  # accessKeyID of MinIO/S3
   backupSecretAccessKey: minioadmin # MinIO/S3 encryption string
-  
   backupBucketName: "a-bucket" # Bucket name to store backup data. Backup data will store to backupBucketName/backupRootPath
   backupRootPath: "backup" # Rootpath to store backup data. Backup data will store to backupBucketName/backupRootPath
 
@@ -61,3 +61,8 @@ backup:
     enable: true
     seconds: 7200
     address: http://localhost:9091
+    
+  # If you need to backup or restore data between two different storage systems, 
+  # direct client-side copying is not supported. 
+  # Set this option to true to enable data transfer through Milvus Backup.
+  copyByServer: "false" 

@@ -19,6 +19,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/core/storage"
 	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/util/retry"
@@ -55,7 +56,7 @@ func (b *BackupContext) CreateBackup(ctx context.Context, request *backuppb.Crea
 		request.BackupName = "backup_" + fmt.Sprint(time.Now().UTC().Format("2006_01_02_15_04_05_")) + fmt.Sprint(time.Now().Nanosecond())
 	}
 	if request.GetBackupName() != "" {
-		exist, err := b.getStorageClient().Exist(b.ctx, b.backupBucketName, b.backupRootPath+SEPERATOR+request.GetBackupName())
+		exist, err := b.getBackupStorageClient().Exist(b.ctx, b.backupBucketName, b.backupRootPath+SEPERATOR+request.GetBackupName())
 		if err != nil {
 			errMsg := fmt.Sprintf("fail to check whether exist backup with name: %s", request.GetBackupName())
 			log.Error(errMsg, zap.Error(err))
@@ -768,12 +769,12 @@ func (b *BackupContext) writeBackupInfoMeta(ctx context.Context, id string) erro
 	}
 	log.Debug("channel cp meta", zap.String("value", string(channelCPsBytes)))
 
-	b.getStorageClient().Write(ctx, b.backupBucketName, BackupMetaPath(b.backupRootPath, backupInfo.GetName()), output.BackupMetaBytes)
-	b.getStorageClient().Write(ctx, b.backupBucketName, CollectionMetaPath(b.backupRootPath, backupInfo.GetName()), output.CollectionMetaBytes)
-	b.getStorageClient().Write(ctx, b.backupBucketName, PartitionMetaPath(b.backupRootPath, backupInfo.GetName()), output.PartitionMetaBytes)
-	b.getStorageClient().Write(ctx, b.backupBucketName, SegmentMetaPath(b.backupRootPath, backupInfo.GetName()), output.SegmentMetaBytes)
-	b.getStorageClient().Write(ctx, b.backupBucketName, FullMetaPath(b.backupRootPath, backupInfo.GetName()), output.FullMetaBytes)
-	b.getStorageClient().Write(ctx, b.backupBucketName, ChannelCPMetaPath(b.backupRootPath, backupInfo.GetName()), channelCPsBytes)
+	b.getBackupStorageClient().Write(ctx, b.backupBucketName, BackupMetaPath(b.backupRootPath, backupInfo.GetName()), output.BackupMetaBytes)
+	b.getBackupStorageClient().Write(ctx, b.backupBucketName, CollectionMetaPath(b.backupRootPath, backupInfo.GetName()), output.CollectionMetaBytes)
+	b.getBackupStorageClient().Write(ctx, b.backupBucketName, PartitionMetaPath(b.backupRootPath, backupInfo.GetName()), output.PartitionMetaBytes)
+	b.getBackupStorageClient().Write(ctx, b.backupBucketName, SegmentMetaPath(b.backupRootPath, backupInfo.GetName()), output.SegmentMetaBytes)
+	b.getBackupStorageClient().Write(ctx, b.backupBucketName, FullMetaPath(b.backupRootPath, backupInfo.GetName()), output.FullMetaBytes)
+	b.getBackupStorageClient().Write(ctx, b.backupBucketName, ChannelCPMetaPath(b.backupRootPath, backupInfo.GetName()), channelCPsBytes)
 
 	log.Info("finish writeBackupInfoMeta",
 		zap.String("path", BackupDirPath(b.backupRootPath, backupInfo.GetName())),
@@ -831,7 +832,7 @@ func (b *BackupContext) copySegment(ctx context.Context, backupBinlogPath string
 			}
 
 			//binlog := binlog
-			exist, err := b.getStorageClient().Exist(ctx, b.milvusBucketName, binlog.GetLogPath())
+			exist, err := b.getMilvusStorageClient().Exist(ctx, b.milvusBucketName, binlog.GetLogPath())
 			if err != nil {
 				log.Info("Fail to check file exist",
 					zap.Error(err),
@@ -846,7 +847,8 @@ func (b *BackupContext) copySegment(ctx context.Context, backupBinlogPath string
 			}
 
 			err = retry.Do(ctx, func() error {
-				return b.getStorageClient().Copy(ctx, b.milvusBucketName, b.backupBucketName, binlog.GetLogPath(), targetPath)
+				attr := storage.ObjectAttr{Key: binlog.GetLogPath()}
+				return b.getBackupCopier().Copy(ctx, attr, targetPath, b.milvusBucketName, b.backupBucketName)
 			}, retry.Sleep(2*time.Second), retry.Attempts(5))
 			if err != nil {
 				log.Info("Fail to copy file after retry",
@@ -876,7 +878,7 @@ func (b *BackupContext) copySegment(ctx context.Context, backupBinlogPath string
 			}
 
 			//binlog := binlog
-			exist, err := b.getStorageClient().Exist(ctx, b.milvusBucketName, binlog.GetLogPath())
+			exist, err := b.getMilvusStorageClient().Exist(ctx, b.milvusBucketName, binlog.GetLogPath())
 			if err != nil {
 				log.Info("Fail to check file exist",
 					zap.Error(err),
@@ -890,7 +892,8 @@ func (b *BackupContext) copySegment(ctx context.Context, backupBinlogPath string
 				return errors.New("Binlog file not exist " + binlog.GetLogPath())
 			}
 			err = retry.Do(ctx, func() error {
-				return b.getStorageClient().Copy(ctx, b.milvusBucketName, b.backupBucketName, binlog.GetLogPath(), targetPath)
+				attr := storage.ObjectAttr{Key: binlog.GetLogPath()}
+				return b.getBackupCopier().Copy(ctx, attr, targetPath, b.milvusBucketName, b.backupBucketName)
 			}, retry.Sleep(2*time.Second), retry.Attempts(5))
 			if err != nil {
 				log.Info("Fail to copy file after retry",
@@ -921,7 +924,7 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackup
 
 	insertPath := fmt.Sprintf("%s%s/%v/%v/%v/", rootPath, "insert_log", segmentBackupInfo.GetCollectionId(), segmentBackupInfo.GetPartitionId(), segmentBackupInfo.GetSegmentId())
 	log.Debug("insertPath", zap.String("bucket", b.milvusBucketName), zap.String("insertPath", insertPath))
-	fieldsLogDir, _, err := b.getStorageClient().ListWithPrefix(ctx, b.milvusBucketName, insertPath, false)
+	fieldsLogDir, _, err := b.getMilvusStorageClient().ListWithPrefix(ctx, b.milvusBucketName, insertPath, false)
 	// handle segment level
 	isL0 := false
 	if len(fieldsLogDir) == 0 {
@@ -934,7 +937,7 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackup
 	log.Debug("fieldsLogDir", zap.String("bucket", b.milvusBucketName), zap.Any("fieldsLogDir", fieldsLogDir))
 	insertLogs := make([]*backuppb.FieldBinlog, 0)
 	for _, fieldLogDir := range fieldsLogDir {
-		binlogPaths, sizes, _ := b.getStorageClient().ListWithPrefix(ctx, b.milvusBucketName, fieldLogDir, false)
+		binlogPaths, sizes, _ := b.getMilvusStorageClient().ListWithPrefix(ctx, b.milvusBucketName, fieldLogDir, false)
 		fieldIdStr := strings.Replace(strings.Replace(fieldLogDir, insertPath, "", 1), SEPERATOR, "", -1)
 		fieldId, _ := strconv.ParseInt(fieldIdStr, 10, 64)
 		binlogs := make([]*backuppb.Binlog, 0)
@@ -952,10 +955,10 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackup
 	}
 
 	deltaLogPath := fmt.Sprintf("%s%s/%v/%v/%v/", rootPath, "delta_log", segmentBackupInfo.GetCollectionId(), segmentBackupInfo.GetPartitionId(), segmentBackupInfo.GetSegmentId())
-	deltaFieldsLogDir, _, _ := b.getStorageClient().ListWithPrefix(ctx, b.milvusBucketName, deltaLogPath, false)
+	deltaFieldsLogDir, _, _ := b.getMilvusStorageClient().ListWithPrefix(ctx, b.milvusBucketName, deltaLogPath, false)
 	deltaLogs := make([]*backuppb.FieldBinlog, 0)
 	for _, deltaFieldLogDir := range deltaFieldsLogDir {
-		binlogPaths, sizes, _ := b.getStorageClient().ListWithPrefix(ctx, b.milvusBucketName, deltaFieldLogDir, false)
+		binlogPaths, sizes, _ := b.getMilvusStorageClient().ListWithPrefix(ctx, b.milvusBucketName, deltaFieldLogDir, false)
 		fieldIdStr := strings.Replace(strings.Replace(deltaFieldLogDir, deltaLogPath, "", 1), SEPERATOR, "", -1)
 		fieldId, _ := strconv.ParseInt(fieldIdStr, 10, 64)
 		binlogs := make([]*backuppb.Binlog, 0)
@@ -978,10 +981,10 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackup
 	}
 
 	//statsLogPath := fmt.Sprintf("%s/%s/%v/%v/%v/", b.params.MinioCfg.RootPath, "stats_log", collectionID, partitionID, segmentID)
-	//statsFieldsLogDir, _, _ := b.storageClient.ListWithPrefix(ctx, b.milvusBucketName, statsLogPath, false)
+	//statsFieldsLogDir, _, _ := b.milvusStorageClient.ListWithPrefix(ctx, b.milvusBucketName, statsLogPath, false)
 	//statsLogs := make([]*backuppb.FieldBinlog, 0)
 	//for _, statsFieldLogDir := range statsFieldsLogDir {
-	//	binlogPaths, sizes, _ := b.storageClient.ListWithPrefix(ctx, b.milvusBucketName, statsFieldLogDir, false)
+	//	binlogPaths, sizes, _ := b.milvusStorageClient.ListWithPrefix(ctx, b.milvusBucketName, statsFieldLogDir, false)
 	//	fieldIdStr := strings.Replace(strings.Replace(statsFieldLogDir, statsLogPath, "", 1), SEPERATOR, "", -1)
 	//	fieldId, _ := strconv.ParseInt(fieldIdStr, 10, 64)
 	//	binlogs := make([]*backuppb.Binlog, 0)

@@ -43,6 +43,8 @@ type BackupConfig struct {
 	GcPauseEnable  bool
 	GcPauseSeconds int
 	GcPauseAddress string
+
+	CopyByServer bool
 }
 
 func (p *BackupConfig) init(base *BaseTable) {
@@ -56,6 +58,7 @@ func (p *BackupConfig) init(base *BaseTable) {
 	p.initGcPauseEnable()
 	p.initGcPauseSeconds()
 	p.initGcPauseAddress()
+	p.initCopyByServer()
 }
 
 func (p *BackupConfig) initMaxSegmentGroupSize() {
@@ -99,6 +102,15 @@ func (p *BackupConfig) initGcPauseSeconds() {
 func (p *BackupConfig) initGcPauseAddress() {
 	address := p.Base.LoadWithDefault("backup.gcPause.address", "http://localhost:9091")
 	p.GcPauseAddress = address
+}
+
+func (p *BackupConfig) initCopyByServer() {
+	copyByServer := p.Base.LoadWithDefault("backup.copyByServer", "false")
+	var err error
+	p.CopyByServer, err = strconv.ParseBool(copyByServer)
+	if err != nil {
+		panic("parse bool CopyByServer:" + err.Error())
+	}
 }
 
 type MilvusConfig struct {
@@ -194,6 +206,9 @@ var supportedStorageType = map[string]bool{
 type MinioConfig struct {
 	Base *BaseTable
 
+	StorageType string
+	// Deprecated
+	CloudProvider   string
 	Address         string
 	Port            string
 	AccessKeyID     string
@@ -202,15 +217,18 @@ type MinioConfig struct {
 	BucketName      string
 	RootPath        string
 	UseIAM          bool
-	CloudProvider   string
 	IAMEndpoint     string
 
+	BackupStorageType     string
+	BackupAddress         string
+	BackupPort            string
 	BackupAccessKeyID     string
 	BackupSecretAccessKey string
+	BackupUseSSL          bool
 	BackupBucketName      string
 	BackupRootPath        string
-
-	StorageType string
+	BackupUseIAM          bool
+	BackupIAMEndpoint     string
 }
 
 func (p *MinioConfig) init(base *BaseTable) {
@@ -228,10 +246,16 @@ func (p *MinioConfig) init(base *BaseTable) {
 	p.initCloudProvider()
 	p.initIAMEndpoint()
 
+	p.initBackupStorageType()
+	p.initBackupAddress()
+	p.initBackupPort()
 	p.initBackupAccessKeyID()
 	p.initBackupSecretAccessKey()
+	p.initBackupUseSSL()
 	p.initBackupBucketName()
 	p.initBackupRootPath()
+	p.initBackupUseIAM()
+	p.initBackupIAMEndpoint()
 }
 
 func (p *MinioConfig) initAddress() {
@@ -256,7 +280,11 @@ func (p *MinioConfig) initSecretAccessKey() {
 
 func (p *MinioConfig) initUseSSL() {
 	usessl := p.Base.LoadWithDefault("minio.useSSL", DefaultMinioUseSSL)
-	p.UseSSL, _ = strconv.ParseBool(usessl)
+	var err error
+	p.UseSSL, err = strconv.ParseBool(usessl)
+	if err != nil {
+		panic("parse bool useIAM:" + err.Error())
+	}
 }
 
 func (p *MinioConfig) initBucketName() {
@@ -290,26 +318,6 @@ func (p *MinioConfig) initIAMEndpoint() {
 	p.IAMEndpoint = iamEndpoint
 }
 
-func (p *MinioConfig) initBackupAccessKeyID() {
-	keyID := p.Base.LoadWithDefault("minio.backupAccessKeyID", DefaultMinioAccessKey)
-	p.BackupAccessKeyID = keyID
-}
-
-func (p *MinioConfig) initBackupSecretAccessKey() {
-	key := p.Base.LoadWithDefault("minio.backupSecretAccessKey", DefaultMinioSecretAccessKey)
-	p.BackupSecretAccessKey = key
-}
-
-func (p *MinioConfig) initBackupBucketName() {
-	bucketName := p.Base.LoadWithDefault("minio.backupBucketName", DefaultMinioBackupBucketName)
-	p.BackupBucketName = bucketName
-}
-
-func (p *MinioConfig) initBackupRootPath() {
-	rootPath := p.Base.LoadWithDefault("minio.backupRootPath", DefaultMinioBackupRootPath)
-	p.BackupRootPath = rootPath
-}
-
 func (p *MinioConfig) initStorageType() {
 	engine := p.Base.LoadWithDefault("storage.storageType",
 		p.Base.LoadWithDefault("minio.storageType",
@@ -318,6 +326,78 @@ func (p *MinioConfig) initStorageType() {
 		panic("unsupported storage type:" + engine)
 	}
 	p.StorageType = engine
+}
+
+func (p *MinioConfig) initBackupStorageType() {
+	engine := p.Base.LoadWithDefault("storage.backupStorageType",
+		p.Base.LoadWithDefault("minio.backupStorageType",
+			p.StorageType))
+	if !supportedStorageType[engine] {
+		panic("unsupported storage type:" + engine)
+	}
+	p.BackupStorageType = engine
+}
+
+func (p *MinioConfig) initBackupAddress() {
+	endpoint := p.Base.LoadWithDefault("minio.backupAddress",
+		p.Base.LoadWithDefault("minio.address", DefaultMinioAddress))
+	p.BackupAddress = endpoint
+}
+
+func (p *MinioConfig) initBackupPort() {
+	port := p.Base.LoadWithDefault("minio.backupPort",
+		p.Base.LoadWithDefault("minio.port", DefaultMinioPort))
+	p.BackupPort = port
+}
+
+func (p *MinioConfig) initBackupUseSSL() {
+	usessl := p.Base.LoadWithDefault("minio.backupUseSSL",
+		p.Base.LoadWithDefault("minio.useSSL", DefaultMinioUseSSL))
+	var err error
+	p.BackupUseSSL, err = strconv.ParseBool(usessl)
+	if err != nil {
+		panic("parse bool backupUseSSL:" + err.Error())
+	}
+}
+
+func (p *MinioConfig) initBackupUseIAM() {
+	useIAM := p.Base.LoadWithDefault("minio.backupUseIAM",
+		p.Base.LoadWithDefault("minio.useIAM", DefaultMinioUseIAM))
+	var err error
+	p.BackupUseIAM, err = strconv.ParseBool(useIAM)
+	if err != nil {
+		panic("parse bool backupUseIAM:" + err.Error())
+	}
+}
+
+func (p *MinioConfig) initBackupIAMEndpoint() {
+	iamEndpoint := p.Base.LoadWithDefault("minio.backupIamEndpoint",
+		p.Base.LoadWithDefault("minio.iamEndpoint", DefaultMinioIAMEndpoint))
+	p.BackupIAMEndpoint = iamEndpoint
+}
+
+func (p *MinioConfig) initBackupAccessKeyID() {
+	keyID := p.Base.LoadWithDefault("minio.backupAccessKeyID",
+		p.Base.LoadWithDefault("minio.accessKeyID", DefaultMinioAccessKey))
+	p.BackupAccessKeyID = keyID
+}
+
+func (p *MinioConfig) initBackupSecretAccessKey() {
+	key := p.Base.LoadWithDefault("minio.secretAccessKey",
+		p.Base.LoadWithDefault("minio.backupSecretAccessKey", DefaultMinioSecretAccessKey))
+	p.BackupSecretAccessKey = key
+}
+
+func (p *MinioConfig) initBackupBucketName() {
+	bucketName := p.Base.LoadWithDefault("minio.backupBucketName",
+		p.Base.LoadWithDefault("minio.bucketName", DefaultMinioBackupBucketName))
+	p.BackupBucketName = bucketName
+}
+
+func (p *MinioConfig) initBackupRootPath() {
+	rootPath := p.Base.LoadWithDefault("minio.backupRootPath",
+		p.Base.LoadWithDefault("minio.rootPath", DefaultMinioBackupRootPath))
+	p.BackupRootPath = rootPath
 }
 
 type HTTPConfig struct {

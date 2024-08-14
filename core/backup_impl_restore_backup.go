@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"path"
 	"strings"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/core/storage"
 	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/common"
 	"github.com/zilliztech/milvus-backup/internal/log"
@@ -551,11 +553,12 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 
 	tempDir := fmt.Sprintf("restore-temp-%s-%s-%s%s", parentTaskID, task.TargetDbName, task.TargetCollectionName, SEPERATOR)
 	isSameBucket := b.milvusBucketName == backupBucketName
+	isSameStorage := b.getMilvusStorageClient().Config().StorageType == b.getBackupStorageClient().Config().StorageType
 	// clean the temporary file
 	defer func() {
 		if !isSameBucket && !b.params.BackupCfg.KeepTempFiles {
 			log.Info("Delete temporary file", zap.String("dir", tempDir))
-			err := b.getStorageClient().RemoveWithPrefix(ctx, b.milvusBucketName, tempDir)
+			err := b.getMilvusStorageClient().RemoveWithPrefix(ctx, b.milvusBucketName, tempDir)
 			if err != nil {
 				log.Warn("Delete temporary file failed", zap.Error(err))
 			}
@@ -566,22 +569,24 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 	copyAndBulkInsert := func(dbName, collectionName, partitionName string, files []string, isL0 bool, skipDiskQuotaCheck bool) error {
 		realFiles := make([]string, len(files))
 		// if milvus bucket and backup bucket are not the same, should copy the data first
-		if !isSameBucket {
-			log.Info("milvus bucket and backup bucket are not the same, copy the data first", zap.Strings("files", files))
+		if !isSameBucket || !isSameStorage {
+			log.Info("milvus and backup store in different bucket, copy the data first", zap.Strings("files", files), zap.String("copyDataPath", tempDir))
 			for i, file := range files {
 				// empty delta file, no need to copy
 				if file == "" {
 					realFiles[i] = file
 				} else {
-					log.Debug("Copy temporary restore file", zap.String("from", file), zap.String("to", tempDir+file))
+					tempFilekey := path.Join(tempDir, strings.Replace(file, b.params.MinioCfg.BackupRootPath, "", 1))
+					log.Debug("Copy temporary restore file", zap.String("from", file), zap.String("to", tempFilekey))
 					err := retry.Do(ctx, func() error {
-						return b.getStorageClient().Copy(ctx, backupBucketName, b.milvusBucketName, file, tempDir+file)
+						attr := storage.ObjectAttr{Key: file}
+						return b.getRestoreCopier().Copy(ctx, attr, tempFilekey, backupBucketName, b.milvusBucketName)
 					}, retry.Sleep(2*time.Second), retry.Attempts(5))
 					if err != nil {
 						log.Error("fail to copy backup date from backup bucket to restore target milvus bucket after retry", zap.Error(err))
 						return err
 					}
-					realFiles[i] = tempDir + file
+					realFiles[i] = tempFilekey
 				}
 			}
 		} else {
@@ -834,7 +839,7 @@ func (b *BackupContext) getBackupPartitionPaths(ctx context.Context, bucketName 
 	insertPath := fmt.Sprintf("%s/%s/%s/%v/%v/", backupPath, BINGLOG_DIR, INSERT_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId())
 	deltaPath := fmt.Sprintf("%s/%s/%s/%v/%v/", backupPath, BINGLOG_DIR, DELTA_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId())
 
-	exist, err := b.getStorageClient().Exist(ctx, bucketName, deltaPath)
+	exist, err := b.getBackupStorageClient().Exist(ctx, bucketName, deltaPath)
 	if err != nil {
 		log.Warn("check binlog exist fail", zap.Error(err))
 		return []string{}, 0, err
@@ -866,7 +871,7 @@ func (b *BackupContext) getBackupPartitionPathsWithGroupID(ctx context.Context, 
 		}
 	}
 
-	exist, err := b.getStorageClient().Exist(ctx, bucketName, deltaPath)
+	exist, err := b.getBackupStorageClient().Exist(ctx, bucketName, deltaPath)
 	if err != nil {
 		log.Warn("check binlog exist fail", zap.Error(err))
 		return []string{}, 0, err
