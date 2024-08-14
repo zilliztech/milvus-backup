@@ -845,6 +845,10 @@ const docTemplate = `{
                     "description": "if true, will skip collection, use when collection exist, restore index or data",
                     "type": "boolean"
                 },
+                "skipImportDiskQuotaCheck": {
+                    "description": "if true, skip the diskQuota in Import",
+                    "type": "boolean"
+                },
                 "useAutoIndex": {
                     "description": "if true use autoindex when restore vector index",
                     "type": "boolean"
@@ -960,6 +964,9 @@ const docTemplate = `{
                 },
                 "skipCreateCollection": {
                     "description": "if true will skip create collections",
+                    "type": "boolean"
+                },
+                "skipDiskQuotaCheck": {
                     "type": "boolean"
                 },
                 "start_time": {
