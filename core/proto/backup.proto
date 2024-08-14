@@ -276,6 +276,8 @@ message RestoreBackupRequest {
   // if true, will skip collection, use when collection exist, restore index or data
   bool skipCreateCollection = 15;
   string id = 16;
+  // if true, skip the diskQuota in Import
+  bool skipImportDiskQuotaCheck = 17;
 }
 
 message RestorePartitionTask {
@@ -313,6 +315,7 @@ message RestoreCollectionTask {
   bool dropExistIndex = 17;
   // if true will skip create collections
   bool skipCreateCollection = 18;
+  bool skipDiskQuotaCheck = 19;
 }
 
 message RestoreBackupTask {
