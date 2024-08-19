@@ -752,9 +752,17 @@ func (b *BackupContext) executeBulkInsert(ctx context.Context, db, coll string, 
 	var taskId int64
 	var err error
 	if endTime == 0 {
-		taskId, err = b.getMilvusClient().BulkInsert(ctx, db, coll, partition, files, gomilvus.IsBackup(), gomilvus.IsL0(isL0), gomilvus.SkipDiskQuotaCheck(skipDiskQuotaCheck))
+		if isL0 {
+			taskId, err = b.getMilvusClient().BulkInsert(ctx, db, coll, partition, files, gomilvus.IsL0(isL0), gomilvus.SkipDiskQuotaCheck(skipDiskQuotaCheck))
+		} else {
+			taskId, err = b.getMilvusClient().BulkInsert(ctx, db, coll, partition, files, gomilvus.IsBackup(), gomilvus.SkipDiskQuotaCheck(skipDiskQuotaCheck))
+		}
 	} else {
-		taskId, err = b.getMilvusClient().BulkInsert(ctx, db, coll, partition, files, gomilvus.IsBackup(), gomilvus.IsL0(isL0), gomilvus.SkipDiskQuotaCheck(skipDiskQuotaCheck), gomilvus.WithEndTs(endTime))
+		if isL0 {
+			taskId, err = b.getMilvusClient().BulkInsert(ctx, db, coll, partition, files, gomilvus.IsL0(isL0), gomilvus.SkipDiskQuotaCheck(skipDiskQuotaCheck), gomilvus.WithEndTs(endTime))
+		} else {
+			taskId, err = b.getMilvusClient().BulkInsert(ctx, db, coll, partition, files, gomilvus.IsBackup(), gomilvus.SkipDiskQuotaCheck(skipDiskQuotaCheck), gomilvus.WithEndTs(endTime))
+		}
 	}
 	if err != nil {
 		log.Error("fail to bulk insert",
