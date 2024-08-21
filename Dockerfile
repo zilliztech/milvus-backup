@@ -17,7 +17,10 @@ RUN go build -ldflags="-X 'main.version=$VERSION' -X 'main.commit=$COMMIT' -X 'm
 FROM alpine:3.17
 
 WORKDIR /app
-RUN apk add --no-cache curl
+RUN apt-get update && apt-get install -y \
+    ca-certificates \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /app/milvus-backup .
 COPY --from=builder /app/configs ./configs
