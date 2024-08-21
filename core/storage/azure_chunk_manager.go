@@ -38,16 +38,37 @@ import (
 type AzureChunkManager struct {
 	aos *AzureObjectStorage
 
+	config *StorageConfig
 	//cli *azblob.Client
 	//	ctx        context.Context
-	//bucketName string
-	//rootPath   string
+	//BucketName string
+	//RootPath   string
+}
+
+func (mcm *AzureChunkManager) UploadObject(ctx context.Context, i UploadObjectInput) error {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (mcm *AzureChunkManager) GetObject(ctx context.Context, bucket, key string) (*Object, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (mcm *AzureChunkManager) HeadObject(ctx context.Context, bucket, key string) (ObjectAttr, error) {
+	//TODO implement me
+	panic("implement me")
+}
+
+func (mcm *AzureChunkManager) ListObjectsPage(ctx context.Context, bucket, prefix string) (ListObjectsPaginator, error) {
+	//TODO implement me
+	panic("implement me")
 }
 
 var _ ChunkManager = (*AzureChunkManager)(nil)
 
-func NewAzureChunkManager(ctx context.Context, c *config) (*AzureChunkManager, error) {
-	aos, err := newAzureObjectStorageWithConfig(ctx, c)
+func NewAzureChunkManager(ctx context.Context, config *StorageConfig) (*AzureChunkManager, error) {
+	aos, err := newAzureObjectStorageWithConfig(ctx, config)
 	if err != nil {
 		return nil, err
 	}
@@ -57,19 +78,19 @@ func NewAzureChunkManager(ctx context.Context, c *config) (*AzureChunkManager, e
 	//	return nil, err
 	//}
 	mcm := &AzureChunkManager{
-		aos: aos,
+		aos:    aos,
+		config: config,
 		//cli:        cli,
-		//bucketName: c.bucketName,
-		//rootPath:   strings.TrimLeft(c.rootPath, "/"),
+		//BucketName: c.BucketName,
+		//RootPath:   strings.TrimLeft(c.RootPath, "/"),
 	}
 	log.Info("Azure chunk manager init success.")
 	return mcm, nil
 }
 
-// RootPath returns minio root path.
-//func (mcm *AzureChunkManager) RootPath() string {
-//	return mcm.rootPath
-//}
+func (mcm *AzureChunkManager) Config() *StorageConfig {
+	return mcm.config
+}
 
 func (mcm *AzureChunkManager) Copy(ctx context.Context, fromBucketName string, toBucketName string, fromPath string, toPath string) error {
 	objectkeys, _, err := mcm.ListWithPrefix(ctx, fromBucketName, fromPath, true)
@@ -120,7 +141,6 @@ func (mcm *AzureChunkManager) Size(ctx context.Context, bucketName string, fileP
 	return objectInfo, nil
 }
 
-//
 // Write writes the data to minio storage.
 func (mcm *AzureChunkManager) Write(ctx context.Context, bucketName string, filePath string, content []byte) error {
 	err := mcm.putObject(ctx, bucketName, filePath, bytes.NewReader(content), int64(len(content)))
@@ -339,7 +359,7 @@ func (mcm *AzureChunkManager) ListWithPrefix(ctx context.Context, bucketName str
 }
 
 func (mcm *AzureChunkManager) getObject(ctx context.Context, bucketName, objectName string, offset int64, size int64) (FileReader, error) {
-	//resp, err := mcm.cli.DownloadStream(ctx, bucketName, objectName, nil)
+	//resp, err := mcm.cli.DownloadStream(ctx, BucketName, objectName, nil)
 	//if err != nil {
 	//	return nil, fmt.Errorf("storage: azure download stream %w", err)
 	//}

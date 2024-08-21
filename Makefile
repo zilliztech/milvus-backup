@@ -1,6 +1,6 @@
 # Variables
 BINARY_NAME=milvus-backup
-VERSION=$(shell git describe --tags --always --dirty)
+VERSION=$(shell git describe --tags --always)
 COMMIT=$(shell git rev-parse --short HEAD)
 DATE=$(shell date -u '+%Y-%m-%dT%H:%M:%SZ')
 

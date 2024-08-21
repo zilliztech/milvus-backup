@@ -51,15 +51,15 @@ type innerAzureClient struct {
 type AzureObjectStorage struct {
 	//Client *service.Client
 	clients map[string]*innerAzureClient
-	//config *config
+	//StorageConfig *StorageConfig
 }
 
-//func NewAzureClient(ctx context.Context, cfg *config) (*azblob.Client, error) {
-//	cred, err := azblob.NewSharedKeyCredential(cfg.accessKeyID, cfg.secretAccessKeyID)
+//func NewAzureClient(ctx context.Context, cfg *StorageConfig) (*azblob.Client, error) {
+//	cred, err := azblob.NewSharedKeyCredential(cfg.AccessKeyID, cfg.SecretAccessKeyID)
 //	if err != nil {
 //		return nil, fmt.Errorf("storage: new azure shared key credential %w", err)
 //	}
-//	endpoint := fmt.Sprintf("https://%s.blob.core.windows.net", cfg.accessKeyID)
+//	endpoint := fmt.Sprintf("https://%s.blob.core.windows.net", cfg.AccessKeyID)
 //	cli, err := azblob.NewClientWithSharedKeyCredential(endpoint, cred, nil)
 //	if err != nil {
 //		return nil, fmt.Errorf("storage: new azure aos %w", err)
@@ -68,22 +68,22 @@ type AzureObjectStorage struct {
 //	return cli, nil
 //}
 
-func newAzureObjectStorageWithConfig(ctx context.Context, c *config) (*AzureObjectStorage, error) {
-	client, err := newAzureObjectClient(ctx, c.address, c.accessKeyID, c.secretAccessKeyID, c.bucketName, c.useIAM, c.createBucket)
+func newAzureObjectStorageWithConfig(ctx context.Context, c *StorageConfig) (*AzureObjectStorage, error) {
+	client, err := newAzureObjectClient(ctx, c.Address, c.AccessKeyID, c.SecretAccessKeyID, c.BucketName, c.UseIAM, c.CreateBucket)
 	if err != nil {
 		return nil, err
 	}
-	backupClient, err := newAzureObjectClient(ctx, c.address, c.backupAccessKeyID, c.backupSecretAccessKeyID, c.backupBucketName, c.useIAM, c.createBucket)
+	backupClient, err := newAzureObjectClient(ctx, c.Address, c.backupAccessKeyID, c.backupSecretAccessKeyID, c.backupBucketName, c.UseIAM, c.CreateBucket)
 	if err != nil {
 		return nil, err
 	}
 	clients := map[string]*innerAzureClient{
-		c.bucketName:       client,
+		c.BucketName:       client,
 		c.backupBucketName: backupClient,
 	}
 	return &AzureObjectStorage{
 		clients: clients,
-		//config: c,
+		//StorageConfig: c,
 	}, nil
 }
 
@@ -178,7 +178,7 @@ func (aos *AzureObjectStorage) ListObjects(ctx context.Context, bucketName strin
 	pager := aos.clients[bucketName].client.NewContainerClient(bucketName).NewListBlobsFlatPager(&azblob.ListBlobsFlatOptions{
 		Prefix: &prefix,
 	})
-	// pager := aos.Client.NewContainerClient(bucketName).NewListBlobsHierarchyPager("/", &container.ListBlobsHierarchyOptions{
+	// pager := aos.Client.NewContainerClient(BucketName).NewListBlobsHierarchyPager("/", &container.ListBlobsHierarchyOptions{
 	// 	Prefix: &prefix,
 	// })
 

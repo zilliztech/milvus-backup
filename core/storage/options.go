@@ -1,20 +1,17 @@
 package storage
 
 // Option for setting params used by chunk manager client.
-type config struct {
-	address           string
-	bucketName        string
-	accessKeyID       string
-	secretAccessKeyID string
-	useSSL            bool
-	createBucket      bool
-	rootPath          string
-	useIAM            bool
-	iamEndpoint       string
-
-	// deprecated
-	cloudProvider string
-	storageType   string
+type StorageConfig struct {
+	StorageType       string
+	Address           string
+	BucketName        string
+	AccessKeyID       string
+	SecretAccessKeyID string
+	UseSSL            bool
+	CreateBucket      bool
+	RootPath          string
+	UseIAM            bool
+	IAMEndpoint       string
 
 	backupAccessKeyID       string
 	backupSecretAccessKeyID string
@@ -22,62 +19,56 @@ type config struct {
 	backupRootPath          string
 }
 
-func newDefaultConfig() *config {
-	return &config{}
+func newDefaultConfig() *StorageConfig {
+	return &StorageConfig{}
 }
 
-// Option is used to config the retry function.
-type Option func(*config)
+// Option is used to StorageConfig the retry function.
+type Option func(*StorageConfig)
 
 func Address(addr string) Option {
-	return func(c *config) {
-		c.address = addr
+	return func(c *StorageConfig) {
+		c.Address = addr
 	}
 }
 
 func BucketName(bucketName string) Option {
-	return func(c *config) {
-		c.bucketName = bucketName
+	return func(c *StorageConfig) {
+		c.BucketName = bucketName
 	}
 }
 
 func AccessKeyID(accessKeyID string) Option {
-	return func(c *config) {
-		c.accessKeyID = accessKeyID
+	return func(c *StorageConfig) {
+		c.AccessKeyID = accessKeyID
 	}
 }
 func SecretAccessKeyID(secretAccessKeyID string) Option {
-	return func(c *config) {
-		c.secretAccessKeyID = secretAccessKeyID
+	return func(c *StorageConfig) {
+		c.SecretAccessKeyID = secretAccessKeyID
 	}
 }
 
 func UseSSL(useSSL bool) Option {
-	return func(c *config) {
-		c.useSSL = useSSL
+	return func(c *StorageConfig) {
+		c.UseSSL = useSSL
 	}
 }
 
 func CreateBucket(createBucket bool) Option {
-	return func(c *config) {
-		c.createBucket = createBucket
-	}
-}
-
-func RootPath(rootPath string) Option {
-	return func(c *config) {
-		c.rootPath = rootPath
+	return func(c *StorageConfig) {
+		c.CreateBucket = createBucket
 	}
 }
 
 func UseIAM(useIAM bool) Option {
-	return func(c *config) {
-		c.useIAM = useIAM
+	return func(c *StorageConfig) {
+		c.UseIAM = useIAM
 	}
 }
 
 func IAMEndpoint(iamEndpoint string) Option {
-	return func(c *config) {
-		c.iamEndpoint = iamEndpoint
+	return func(c *StorageConfig) {
+		c.IAMEndpoint = iamEndpoint
 	}
 }

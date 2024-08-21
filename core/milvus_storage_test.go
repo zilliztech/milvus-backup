@@ -27,16 +27,19 @@ func newMinioChunkManager(ctx context.Context, bucketName string) (*storage.Mini
 	secretAccessKey, _ := Params.Load("minio.secretAccessKey")
 	useSSLStr, _ := Params.Load("minio.useSSL")
 	useSSL, _ := strconv.ParseBool(useSSLStr)
-	client, err := storage.NewMinioChunkManager(ctx,
-		storage.Address(endPoint),
-		storage.AccessKeyID(accessKeyID),
-		storage.SecretAccessKeyID(secretAccessKey),
-		storage.UseSSL(useSSL),
-		storage.BucketName(bucketName),
-		storage.UseIAM(false),
-		storage.IAMEndpoint(""),
-		storage.CreateBucket(true),
-	)
+
+	storageConfig := &storage.StorageConfig{
+		StorageType:       "minio",
+		Address:           endPoint,
+		AccessKeyID:       accessKeyID,
+		SecretAccessKeyID: secretAccessKey,
+		UseSSL:            useSSL,
+		CreateBucket:      true,
+		UseIAM:            false,
+		IAMEndpoint:       "",
+	}
+
+	client, err := storage.NewMinioChunkManagerWithConfig(ctx, storageConfig)
 	return client, err
 }
 
@@ -90,7 +93,7 @@ func TestReadMilvusData(t *testing.T) {
 	context := context.Background()
 	//backupContext := CreateBackupContext(context, params)
 
-	client, err := CreateStorageClient(context, params)
+	client, err := createStorageClient(context, params)
 	assert.NoError(t, err)
 	paths, _, err := client.ListWithPrefix(context, params.MinioCfg.BucketName, "file/insert_log/437296492118216229/437296492118216230/", true)
 	assert.NoError(t, err)

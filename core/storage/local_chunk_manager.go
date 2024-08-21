@@ -27,7 +27,6 @@ import (
 	"strings"
 
 	"github.com/cockroachdb/errors"
-
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
@@ -39,16 +38,22 @@ func WrapErrFileNotFound(key string) error {
 type LocalChunkManager struct {
 	rootPath       string
 	backupRootPath string
+	config         *StorageConfig
 }
 
 var _ ChunkManager = (*LocalChunkManager)(nil)
 
 // NewLocalChunkManager create a new local manager object.
-func NewLocalChunkManager(ctx context.Context, c *config) (*LocalChunkManager, error) {
+func NewLocalChunkManager(ctx context.Context, config *StorageConfig) (*LocalChunkManager, error) {
 	return &LocalChunkManager{
-		rootPath:       c.rootPath,
-		backupRootPath: c.backupRootPath,
+		rootPath:       config.RootPath,
+		backupRootPath: config.backupRootPath,
+		config:         config,
 	}, nil
+}
+
+func (mcm *LocalChunkManager) Config() *StorageConfig {
+	return mcm.config
 }
 
 // RootPath returns lcm root path.
@@ -199,6 +204,119 @@ func (lcm *LocalChunkManager) Copy(ctx context.Context, fromBucketName string, t
 	} else {
 		return CopyFile(fromPath, toPath)
 	}
+}
+
+func (lcm *LocalChunkManager) UploadObject(ctx context.Context, i UploadObjectInput) error {
+	dir := path.Dir(i.Key)
+	exist, err := lcm.Exist(ctx, i.Bucket, dir)
+	if err != nil {
+		return err
+	}
+	if !exist {
+		err := os.MkdirAll(dir, os.ModePerm)
+		if err != nil {
+			return WrapErrFileNotFound(i.Key)
+		}
+	}
+
+	// Open or create a local file
+	file, err := os.Create(i.Key)
+	if err != nil {
+		fmt.Println("Error creating file:", err)
+		return err
+	}
+	//defer file.Close()
+
+	// Write the contents of the reader to the file using io.Copy
+	_, err = io.Copy(file, i.Body)
+	if err != nil {
+		fmt.Println("Error writing to file:", err)
+		return err
+	}
+
+	fmt.Println("Successfully written to file!")
+	return nil
+}
+
+type fileReader struct {
+	*os.File
+}
+
+type FileObject struct {
+	Key  string
+	Size int64
+}
+
+type LocalListObjectsPaginator struct {
+	Files []ObjectAttr
+	//PageSize    int
+	//TotalPages  int
+	//CurrentPage int
+	currentFile int
+}
+
+func (p *LocalListObjectsPaginator) HasMorePages() bool {
+	return p.currentFile < len(p.Files)
+}
+
+func (p *LocalListObjectsPaginator) NextPage(_ context.Context) (*Page, error) {
+	if p.currentFile >= len(p.Files) {
+		return nil, errors.New("storage: no more pages")
+	}
+
+	contents := make([]ObjectAttr, 0)
+	obj := p.Files[p.currentFile]
+	contents = append(contents, obj)
+	p.currentFile = p.currentFile + 1
+
+	return &Page{Contents: contents}, nil
+}
+
+func (lcm *LocalChunkManager) GetObject(ctx context.Context, bucket, key string) (*Object, error) {
+	// Open the local file
+	f, err := os.Open(key)
+	if err != nil {
+		return nil, err
+	}
+	size, err := lcm.Size(ctx, bucket, key)
+	if err != nil {
+		return nil, err
+	}
+
+	// Wrap the file in the SeekableReadCloser interface
+	var src SeekableReadCloser = &fileReader{f}
+	return &Object{Length: size, Body: src}, nil
+}
+
+func (lcm *LocalChunkManager) HeadObject(ctx context.Context, bucket, key string) (ObjectAttr, error) {
+	size, err := lcm.Size(ctx, bucket, key)
+	if err != nil {
+		return ObjectAttr{}, err
+	}
+	return ObjectAttr{Key: key, Length: size}, nil
+}
+
+func (lcm *LocalChunkManager) ListObjectsPage(ctx context.Context, bucket, prefix string) (ListObjectsPaginator, error) {
+	files, sizes, err := lcm.ListWithPrefix(ctx, bucket, prefix, true)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create file objects to simulate S3 objects
+	fileObjects := []ObjectAttr{}
+	for i, fileKey := range files {
+		fileObjects = append(fileObjects, ObjectAttr{
+			Key:    fileKey,
+			Length: sizes[i],
+		})
+	}
+
+	paginator := &LocalListObjectsPaginator{
+		Files:       fileObjects,
+		currentFile: 0,
+	}
+
+	return paginator, nil
 }
 
 func CopyDir(source string, dest string) (err error) {

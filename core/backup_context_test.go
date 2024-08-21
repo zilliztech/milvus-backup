@@ -228,7 +228,7 @@ func TestGetBackupFaultBackup(t *testing.T) {
 	resp := backupContext.CreateBackup(context, req)
 	assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
 
-	backupContext.getStorageClient().RemoveWithPrefix(context, params.MinioCfg.BackupBucketName, BackupMetaPath(params.MinioCfg.BackupRootPath, resp.GetData().GetName()))
+	backupContext.getMilvusStorageClient().RemoveWithPrefix(context, params.MinioCfg.BackupBucketName, BackupMetaPath(params.MinioCfg.BackupRootPath, resp.GetData().GetName()))
 
 	backup := backupContext.GetBackup(context, &backuppb.GetBackupRequest{
 		BackupName: randBackupName,
