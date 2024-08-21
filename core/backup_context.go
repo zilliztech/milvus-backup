@@ -531,13 +531,13 @@ func (b *BackupContext) DeleteBackup(ctx context.Context, request *backuppb.Dele
 func (b *BackupContext) readBackupV2(ctx context.Context, bucketName string, backupPath string) (*backuppb.BackupInfo, error) {
 	backupMetaDirPath := backupPath + SEPERATOR + META_PREFIX
 	fullMetaPath := backupMetaDirPath + SEPERATOR + FULL_META_FILE
-	exist, err := b.getStorageClient().Exist(ctx, bucketName, fullMetaPath)
+	exist, err := b.getBackupStorageClient().Exist(ctx, bucketName, fullMetaPath)
 	if err != nil {
 		log.Error("check full meta file failed", zap.String("path", fullMetaPath), zap.Error(err))
 		return nil, err
 	}
 	if exist {
-		backupMetaBytes, err := b.getStorageClient().Read(ctx, bucketName, fullMetaPath)
+		backupMetaBytes, err := b.getBackupStorageClient().Read(ctx, bucketName, fullMetaPath)
 		if err != nil {
 			log.Error("Read backup meta failed", zap.String("path", fullMetaPath), zap.Error(err))
 			return nil, err
