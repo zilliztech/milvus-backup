@@ -30,6 +30,7 @@ var (
 	restoreDropExistCollection  bool
 	restoreDropExistIndex       bool
 	restoreSkipCreateCollection bool
+	restoreRBAC                 bool
 )
 
 var restoreBackupCmd = &cobra.Command{
@@ -92,6 +93,7 @@ var restoreBackupCmd = &cobra.Command{
 			DropExistCollection:  restoreDropExistCollection,
 			DropExistIndex:       restoreDropExistIndex,
 			SkipCreateCollection: restoreSkipCreateCollection,
+			Rbac:                 restoreRBAC,
 		})
 
 		fmt.Println(resp.GetMsg())
@@ -114,6 +116,7 @@ func init() {
 	restoreBackupCmd.Flags().BoolVarP(&restoreDropExistCollection, "drop_exist_collection", "", false, "if true, drop existing target collection before create")
 	restoreBackupCmd.Flags().BoolVarP(&restoreDropExistIndex, "drop_exist_index", "", false, "if true, drop existing index of target collection before create")
 	restoreBackupCmd.Flags().BoolVarP(&restoreSkipCreateCollection, "skip_create_collection", "", false, "if true, will skip collection, use when collection exist, restore index or data")
+	restoreBackupCmd.Flags().BoolVarP(&restoreRBAC, "rbac", "", false, "whether restore RBAC meta")
 
 	// won't print flags in character order
 	restoreBackupCmd.Flags().SortFlags = false

@@ -118,6 +118,17 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 		b.cleanRestoreWorkerPool(taskID)
 	}()
 
+	// restore rbac
+	if request.GetRbac() {
+		err := b.restoreRBAC(ctx, backup)
+		if err != nil {
+			log.Error("fail to restore RBAC", zap.Error(err))
+			resp.Code = backuppb.ResponseCode_Fail
+			resp.Msg = fmt.Sprintf("fail to restore RBAC, err: %s", err)
+			return resp
+		}
+	}
+
 	// 2, initial restoreCollectionTasks
 	toRestoreCollectionBackups := make([]*backuppb.CollectionBackupInfo, 0)
 
@@ -876,4 +887,56 @@ func (b *BackupContext) getBackupPartitionPathsWithGroupID(ctx context.Context, 
 	}
 
 	return []string{insertPath, deltaPath}, totalSize, nil
+}
+
+func (b *BackupContext) restoreRBAC(ctx context.Context, backupInfo *backuppb.BackupInfo) error {
+	log.Info("restore RBAC")
+
+	rbacBackup := backupInfo.GetRbacMeta()
+	users := make([]*entity.UserInfo, 0)
+	roles := make([]*entity.Role, 0)
+	grants := make([]*entity.RoleGrants, 0)
+
+	for _, user := range rbacBackup.GetUsers() {
+		roles := lo.Map(user.GetRoles(), func(role *backuppb.RoleEntity, index int) string {
+			return role.Name
+		})
+		userEntity := &entity.UserInfo{
+			UserDescription: entity.UserDescription{
+				Name:  user.GetUser(),
+				Roles: roles,
+			},
+			Password: user.Password,
+		}
+		users = append(users, userEntity)
+	}
+
+	for _, role := range rbacBackup.GetRoles() {
+		roleEntity := &entity.Role{
+			Name: role.GetName(),
+		}
+		roles = append(roles, roleEntity)
+	}
+
+	for _, roleGrant := range rbacBackup.GetGrants() {
+		roleGrantEntity := &entity.RoleGrants{
+			Object:        roleGrant.Object.GetName(),
+			ObjectName:    roleGrant.GetObjectName(),
+			RoleName:      roleGrant.GetRole().GetName(),
+			GrantorName:   roleGrant.GetGrantor().GetUser().GetName(),
+			PrivilegeName: roleGrant.GetGrantor().GetPrivilege().GetName(),
+			DbName:        roleGrant.GetDbName(),
+		}
+		grants = append(grants, roleGrantEntity)
+	}
+
+	rbacMeta := &entity.RBACMeta{
+		Users:      users,
+		Roles:      roles,
+		RoleGrants: grants,
+	}
+
+	log.Info("restore RBAC", zap.Int("users", len(users)), zap.Int("roles", len(roles)), zap.Int("grants", len(grants)))
+	err := b.getMilvusClient().RestoreRBAC(ctx, rbacMeta)
+	return err
 }

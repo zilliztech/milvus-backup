@@ -22,6 +22,8 @@ definitions:
         type: string
       progress:
         type: integer
+      rbac_meta:
+        $ref: '#/definitions/backuppb.RBACMeta'
       size:
         type: integer
       start_time:
@@ -191,6 +193,9 @@ definitions:
       meta_only:
         description: only backup meta, including collection schema and index info
         type: boolean
+      rbac:
+        description: whether backup RBAC
+        type: boolean
       requestId:
         description: uuid of request, will generate one if not set
         type: string
@@ -300,6 +305,34 @@ definitions:
     - FieldState_FieldCreating
     - FieldState_FieldDropping
     - FieldState_FieldDropped
+  backuppb.GrantEntity:
+    properties:
+      db_name:
+        description: db name
+        type: string
+      grantor:
+        allOf:
+        - $ref: '#/definitions/backuppb.GrantorEntity'
+        description: privilege
+      object:
+        allOf:
+        - $ref: '#/definitions/backuppb.ObjectEntity'
+        description: object
+      object_name:
+        description: object name
+        type: string
+      role:
+        allOf:
+        - $ref: '#/definitions/backuppb.RoleEntity'
+        description: role
+    type: object
+  backuppb.GrantorEntity:
+    properties:
+      privilege:
+        $ref: '#/definitions/backuppb.PrivilegeEntity'
+      user:
+        $ref: '#/definitions/backuppb.UserEntity'
+    type: object
   backuppb.IndexInfo:
     properties:
       field_name:
@@ -338,6 +371,11 @@ definitions:
         description: uuid of the request to response
         type: string
     type: object
+  backuppb.ObjectEntity:
+    properties:
+      name:
+        type: string
+    type: object
   backuppb.PartitionBackupInfo:
     properties:
       collection_id:
@@ -355,6 +393,29 @@ definitions:
         type: array
       size:
         type: integer
+    type: object
+  backuppb.PrivilegeEntity:
+    properties:
+      name:
+        type: string
+    type: object
+  backuppb.RBACMeta:
+    properties:
+      grants:
+        description: (role, object, previledge)
+        items:
+          $ref: '#/definitions/backuppb.GrantEntity'
+        type: array
+      roles:
+        description: role
+        items:
+          $ref: '#/definitions/backuppb.RoleEntity'
+        type: array
+      users:
+        description: user
+        items:
+          $ref: '#/definitions/backuppb.UserInfo'
+        type: array
     type: object
   backuppb.ResponseCode:
     enum:
@@ -420,6 +481,9 @@ definitions:
         description: if bucket_name and path is set. will override bucket/path in
           config.
         type: string
+      rbac:
+        description: whether restore RBAC
+        type: boolean
       requestId:
         description: uuid of request, will generate one if not set
         type: string
@@ -557,6 +621,11 @@ definitions:
     - RestoreTaskStateCode_SUCCESS
     - RestoreTaskStateCode_FAIL
     - RestoreTaskStateCode_TIMEOUT
+  backuppb.RoleEntity:
+    properties:
+      name:
+        type: string
+    type: object
   backuppb.SegmentBackupInfo:
     properties:
       backuped:
@@ -591,6 +660,22 @@ definitions:
         items:
           $ref: '#/definitions/backuppb.FieldBinlog'
         type: array
+    type: object
+  backuppb.UserEntity:
+    properties:
+      name:
+        type: string
+    type: object
+  backuppb.UserInfo:
+    properties:
+      password:
+        type: string
+      roles:
+        items:
+          $ref: '#/definitions/backuppb.RoleEntity'
+        type: array
+      user:
+        type: string
     type: object
   backuppb.ValueField:
     properties:

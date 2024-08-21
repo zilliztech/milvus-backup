@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -241,7 +242,7 @@ func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBack
 				backupBucketName = request.GetBucketName()
 				backupPath = request.GetPath() + SEPERATOR + request.GetBackupName()
 			}
-			backup, err := b.readBackup(ctx, backupBucketName, backupPath)
+			backup, err := b.readBackupV2(ctx, backupBucketName, backupPath)
 			if err != nil {
 				log.Warn("Fail to read backup",
 					zap.String("backupBucketName", backupBucketName),
@@ -427,6 +428,36 @@ func (b *BackupContext) DeleteBackup(ctx context.Context, request *backuppb.Dele
 	return resp
 }
 
+// read backup
+// 1. first read backup from full meta
+// 2. if full meta not exist, which means backup is a very old version, read from seperate files
+func (b *BackupContext) readBackupV2(ctx context.Context, bucketName string, backupPath string) (*backuppb.BackupInfo, error) {
+	backupMetaDirPath := backupPath + SEPERATOR + META_PREFIX
+	fullMetaPath := backupMetaDirPath + SEPERATOR + FULL_META_FILE
+	exist, err := b.getStorageClient().Exist(ctx, bucketName, fullMetaPath)
+	if err != nil {
+		log.Error("check full meta file failed", zap.String("path", fullMetaPath), zap.Error(err))
+		return nil, err
+	}
+	if exist {
+		backupMetaBytes, err := b.getStorageClient().Read(ctx, bucketName, fullMetaPath)
+		if err != nil {
+			log.Error("Read backup meta failed", zap.String("path", fullMetaPath), zap.Error(err))
+			return nil, err
+		}
+		backupInfo := &backuppb.BackupInfo{}
+		err = json.Unmarshal(backupMetaBytes, backupInfo)
+		if err != nil {
+			log.Error("Read backup meta failed", zap.String("path", fullMetaPath), zap.Error(err))
+			return nil, err
+		}
+		return backupInfo, nil
+	} else {
+		return b.readBackup(ctx, bucketName, backupPath)
+	}
+}
+
+// read backup from seperated meta files
 func (b *BackupContext) readBackup(ctx context.Context, bucketName string, backupPath string) (*backuppb.BackupInfo, error) {
 	backupMetaDirPath := backupPath + SEPERATOR + META_PREFIX
 	backupMetaPath := backupMetaDirPath + SEPERATOR + BACKUP_META_FILE
