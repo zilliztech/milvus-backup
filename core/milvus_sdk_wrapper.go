@@ -195,3 +195,15 @@ func (m *MilvusClient) DropIndex(ctx context.Context, db, collName string, index
 	}
 	return m.client.DropIndex(ctx, collName, "", gomilvus.WithIndexName(indexName))
 }
+
+func (m *MilvusClient) BackupRBAC(ctx context.Context) (*entity.RBACMeta, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.client.BackupRBAC(ctx)
+}
+
+func (m *MilvusClient) RestoreRBAC(ctx context.Context, rbacMeta *entity.RBACMeta) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.client.RestoreRBAC(ctx, rbacMeta)
+}

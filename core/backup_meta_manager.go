@@ -164,6 +164,12 @@ func setMilvusVersion(milvusVersion string) BackupOpt {
 	}
 }
 
+func setRBACMeta(rbacMeta *backuppb.RBACMeta) BackupOpt {
+	return func(backup *backuppb.BackupInfo) {
+		backup.RbacMeta = rbacMeta
+	}
+}
+
 func (meta *MetaManager) UpdateBackup(backupID string, opts ...BackupOpt) {
 	meta.mu.Lock()
 	defer meta.mu.Unlock()

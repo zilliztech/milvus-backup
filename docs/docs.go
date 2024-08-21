@@ -284,6 +284,9 @@ const docTemplate = `{
                 "progress": {
                     "type": "integer"
                 },
+                "rbac_meta": {
+                    "$ref": "#/definitions/backuppb.RBACMeta"
+                },
                 "size": {
                     "type": "integer"
                 },
@@ -525,6 +528,10 @@ const docTemplate = `{
                     "description": "only backup meta, including collection schema and index info",
                     "type": "boolean"
                 },
+                "rbac": {
+                    "description": "whether backup RBAC",
+                    "type": "boolean"
+                },
                 "requestId": {
                     "description": "uuid of request, will generate one if not set",
                     "type": "string"
@@ -672,6 +679,54 @@ const docTemplate = `{
                 "FieldState_FieldDropped"
             ]
         },
+        "backuppb.GrantEntity": {
+            "type": "object",
+            "properties": {
+                "db_name": {
+                    "description": "db name",
+                    "type": "string"
+                },
+                "grantor": {
+                    "description": "privilege",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/backuppb.GrantorEntity"
+                        }
+                    ]
+                },
+                "object": {
+                    "description": "object",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/backuppb.ObjectEntity"
+                        }
+                    ]
+                },
+                "object_name": {
+                    "description": "object name",
+                    "type": "string"
+                },
+                "role": {
+                    "description": "role",
+                    "allOf": [
+                        {
+                            "$ref": "#/definitions/backuppb.RoleEntity"
+                        }
+                    ]
+                }
+            }
+        },
+        "backuppb.GrantorEntity": {
+            "type": "object",
+            "properties": {
+                "privilege": {
+                    "$ref": "#/definitions/backuppb.PrivilegeEntity"
+                },
+                "user": {
+                    "$ref": "#/definitions/backuppb.UserEntity"
+                }
+            }
+        },
         "backuppb.IndexInfo": {
             "type": "object",
             "properties": {
@@ -731,6 +786,14 @@ const docTemplate = `{
                 }
             }
         },
+        "backuppb.ObjectEntity": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "backuppb.PartitionBackupInfo": {
             "type": "object",
             "properties": {
@@ -755,6 +818,40 @@ const docTemplate = `{
                 },
                 "size": {
                     "type": "integer"
+                }
+            }
+        },
+        "backuppb.PrivilegeEntity": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "backuppb.RBACMeta": {
+            "type": "object",
+            "properties": {
+                "grants": {
+                    "description": "(role, object, previledge)",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/backuppb.GrantEntity"
+                    }
+                },
+                "roles": {
+                    "description": "role",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/backuppb.RoleEntity"
+                    }
+                },
+                "users": {
+                    "description": "user",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/backuppb.UserInfo"
+                    }
                 }
             }
         },
@@ -832,6 +929,10 @@ const docTemplate = `{
                 "path": {
                     "description": "if bucket_name and path is set. will override bucket/path in config.",
                     "type": "string"
+                },
+                "rbac": {
+                    "description": "whether restore RBAC",
+                    "type": "boolean"
                 },
                 "requestId": {
                     "description": "uuid of request, will generate one if not set",
@@ -1033,6 +1134,14 @@ const docTemplate = `{
                 "RestoreTaskStateCode_TIMEOUT"
             ]
         },
+        "backuppb.RoleEntity": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "backuppb.SegmentBackupInfo": {
             "type": "object",
             "properties": {
@@ -1078,6 +1187,31 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/backuppb.FieldBinlog"
                     }
+                }
+            }
+        },
+        "backuppb.UserEntity": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
+        "backuppb.UserInfo": {
+            "type": "object",
+            "properties": {
+                "password": {
+                    "type": "string"
+                },
+                "roles": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/backuppb.RoleEntity"
+                    }
+                },
+                "user": {
+                    "type": "string"
                 }
             }
         },

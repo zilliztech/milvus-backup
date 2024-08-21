@@ -725,6 +725,15 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 	backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_SUCCESS
 	b.meta.UpdateBackup(backupInfo.Id, setStateCode(backuppb.BackupTaskStateCode_BACKUP_SUCCESS), setEndTime(time.Now().UnixNano()/int64(time.Millisecond)))
 
+	if request.GetRbac() {
+		err = b.backupRBAC(ctx, backupInfo)
+		if err != nil {
+			backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
+			backupInfo.ErrorMessage = err.Error()
+			return err
+		}
+	}
+
 	// 7, write meta data
 	err = b.writeBackupInfoMeta(ctx, backupInfo.GetId())
 	if err != nil {
@@ -1003,5 +1012,69 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackup
 	segmentBackupInfo.IsL0 = isL0
 	b.meta.UpdateSegment(segmentBackupInfo.GetPartitionId(), segmentBackupInfo.GetSegmentId(), setSegmentBinlogs(insertLogs), setSegmentDeltaBinlogs(deltaLogs), setSegmentSize(size), setSegmentL0(isL0))
 	log.Debug("fill segment info", zap.Int64("segId", segmentBackupInfo.GetSegmentId()), zap.Int64("size", size))
+	return nil
+}
+
+func (b *BackupContext) backupRBAC(ctx context.Context, backupInfo *backuppb.BackupInfo) error {
+	log.Info("backup RBAC")
+	rbacMeta, err := b.getMilvusClient().BackupRBAC(ctx)
+	if err != nil {
+		log.Error("fail in BackupMeta", zap.Error(err))
+		return err
+	}
+
+	users := make([]*backuppb.UserInfo, 0)
+	roles := make([]*backuppb.RoleEntity, 0)
+	grants := make([]*backuppb.GrantEntity, 0)
+
+	for _, user := range rbacMeta.Users {
+		roles := lo.Map(user.Roles, func(role string, index int) *backuppb.RoleEntity {
+			return &backuppb.RoleEntity{Name: role}
+		})
+		userP := &backuppb.UserInfo{
+			User:     user.Name,
+			Password: user.Password,
+			Roles:    roles,
+		}
+		users = append(users, userP)
+	}
+
+	for _, role := range rbacMeta.Roles {
+		roleP := &backuppb.RoleEntity{
+			Name: role.Name,
+		}
+		roles = append(roles, roleP)
+	}
+
+	for _, roleGrant := range rbacMeta.RoleGrants {
+		roleGrantP := &backuppb.GrantEntity{
+			Role: &backuppb.RoleEntity{
+				Name: roleGrant.RoleName,
+			},
+			Object: &backuppb.ObjectEntity{
+				Name: roleGrant.Object,
+			},
+			ObjectName: roleGrant.ObjectName,
+			Grantor: &backuppb.GrantorEntity{
+				User: &backuppb.UserEntity{
+					Name: roleGrant.GrantorName,
+				},
+				Privilege: &backuppb.PrivilegeEntity{
+					Name: roleGrant.PrivilegeName,
+				},
+			},
+			DbName: roleGrant.DbName,
+		}
+		grants = append(grants, roleGrantP)
+	}
+
+	rbacPb := &backuppb.RBACMeta{
+		Users:  users,
+		Roles:  roles,
+		Grants: grants,
+	}
+	
+	log.Info("backup RBAC", zap.Int("users", len(users)), zap.Int("roles", len(roles)), zap.Int("grants", len(grants)))
+	b.meta.UpdateBackup(backupInfo.Id, setRBACMeta(rbacPb))
 	return nil
 }

@@ -114,6 +114,7 @@ message BackupInfo {
   repeated CollectionBackupInfo collection_backups = 9;
   int64 size = 10;
   string milvus_version = 11;
+  RBACMeta rbac_meta = 12;
 }
 
 /**
@@ -161,6 +162,8 @@ message CreateBackupRequest {
   int32 gc_pause_seconds = 9;
   // gc pause API address
   string gc_pause_address = 10;
+  // whether backup RBAC
+  bool rbac = 11;
 }
 
 /**
@@ -278,6 +281,8 @@ message RestoreBackupRequest {
   string id = 16;
   // if true, skip the diskQuota in Import
   bool skipImportDiskQuotaCheck = 17;
+  // whether restore RBAC
+  bool rbac = 18;
 }
 
 message RestorePartitionTask {
@@ -475,4 +480,57 @@ message MsgPosition {
 message ChannelPosition {
   string name = 1;
   string position = 2;
+}
+
+message RoleEntity {
+  string name = 1;
+}
+
+message UserEntity {
+  string name = 1;
+}
+
+message ObjectEntity {
+  string name = 1;
+}
+
+message PrivilegeEntity {
+  string name = 1;
+}
+
+message GrantorEntity {
+  UserEntity user = 1;
+  PrivilegeEntity privilege = 2;
+}
+
+message GrantPrivilegeEntity {
+  repeated GrantorEntity entities = 1;
+}
+
+message GrantEntity {
+  // role
+  RoleEntity role = 1;
+  // object
+  ObjectEntity object = 2;
+  // object name
+  string object_name = 3;
+  // privilege
+  GrantorEntity grantor = 4;
+  // db name
+  string db_name = 5;
+}
+
+message UserInfo {
+  string user = 1;
+  string password = 2;
+  repeated RoleEntity roles = 3;
+}
+
+message RBACMeta {
+  // user
+  repeated UserInfo users = 1;
+  // role
+  repeated RoleEntity roles = 2;
+  // (role, object, previledge)
+  repeated GrantEntity grants = 3;
 }
