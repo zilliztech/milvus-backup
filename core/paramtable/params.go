@@ -43,8 +43,6 @@ type BackupConfig struct {
 	GcPauseEnable  bool
 	GcPauseSeconds int
 	GcPauseAddress string
-
-	CopyByServer bool
 }
 
 func (p *BackupConfig) init(base *BaseTable) {
@@ -58,7 +56,6 @@ func (p *BackupConfig) init(base *BaseTable) {
 	p.initGcPauseEnable()
 	p.initGcPauseSeconds()
 	p.initGcPauseAddress()
-	p.initCopyByServer()
 }
 
 func (p *BackupConfig) initMaxSegmentGroupSize() {
@@ -102,15 +99,6 @@ func (p *BackupConfig) initGcPauseSeconds() {
 func (p *BackupConfig) initGcPauseAddress() {
 	address := p.Base.LoadWithDefault("backup.gcPause.address", "http://localhost:9091")
 	p.GcPauseAddress = address
-}
-
-func (p *BackupConfig) initCopyByServer() {
-	copyByServer := p.Base.LoadWithDefault("backup.copyByServer", "false")
-	var err error
-	p.CopyByServer, err = strconv.ParseBool(copyByServer)
-	if err != nil {
-		panic("parse bool CopyByServer:" + err.Error())
-	}
 }
 
 type MilvusConfig struct {
@@ -229,6 +217,8 @@ type MinioConfig struct {
 	BackupRootPath        string
 	BackupUseIAM          bool
 	BackupIAMEndpoint     string
+
+	CrossStorage bool
 }
 
 func (p *MinioConfig) init(base *BaseTable) {
@@ -256,6 +246,8 @@ func (p *MinioConfig) init(base *BaseTable) {
 	p.initBackupRootPath()
 	p.initBackupUseIAM()
 	p.initBackupIAMEndpoint()
+
+	p.initCrossStorage()
 }
 
 func (p *MinioConfig) initAddress() {
@@ -398,6 +390,15 @@ func (p *MinioConfig) initBackupRootPath() {
 	rootPath := p.Base.LoadWithDefault("minio.backupRootPath",
 		p.Base.LoadWithDefault("minio.rootPath", DefaultMinioBackupRootPath))
 	p.BackupRootPath = rootPath
+}
+
+func (p *MinioConfig) initCrossStorage() {
+	crossStorage := p.Base.LoadWithDefault("backup.crossStorage", "false")
+	var err error
+	p.CrossStorage, err = strconv.ParseBool(crossStorage)
+	if err != nil {
+		panic("parse bool CrossStorage:" + err.Error())
+	}
 }
 
 type HTTPConfig struct {

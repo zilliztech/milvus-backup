@@ -42,6 +42,12 @@ minio:
   backupBucketName: "a-bucket" # Bucket name to store backup data. Backup data will store to backupBucketName/backupRootPath
   backupRootPath: "backup" # Rootpath to store backup data. Backup data will store to backupBucketName/backupRootPath
 
+  # If you need to back up or restore data between two different storage systems, direct client-side copying is not supported. 
+  # Set this option to true to enable data transfer through Milvus Backup.
+  # Note: This option will be automatically set to true if `minio.storageType` and `minio.backupStorageType` differ.
+  # However, if they are the same but belong to different services, you must manually set this option to `true`.
+  crossStorage: "false"
+  
 backup:
   maxSegmentGroupSize: 2G
 
@@ -61,8 +67,3 @@ backup:
     enable: true
     seconds: 7200
     address: http://localhost:9091
-    
-  # If you need to backup or restore data between two different storage systems, 
-  # direct client-side copying is not supported. 
-  # Set this option to true to enable data transfer through Milvus Backup.
-  copyByServer: "false" 

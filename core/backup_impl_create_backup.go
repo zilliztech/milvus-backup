@@ -19,7 +19,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/core/storage"
 	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/util/retry"
@@ -856,8 +855,8 @@ func (b *BackupContext) copySegment(ctx context.Context, backupBinlogPath string
 			}
 
 			err = retry.Do(ctx, func() error {
-				attr := storage.ObjectAttr{Key: binlog.GetLogPath()}
-				return b.getBackupCopier().Copy(ctx, attr, targetPath, b.milvusBucketName, b.backupBucketName)
+				path := binlog.GetLogPath()
+				return b.getBackupCopier().Copy(ctx, path, targetPath, b.milvusBucketName, b.backupBucketName)
 			}, retry.Sleep(2*time.Second), retry.Attempts(5))
 			if err != nil {
 				log.Info("Fail to copy file after retry",
@@ -901,8 +900,8 @@ func (b *BackupContext) copySegment(ctx context.Context, backupBinlogPath string
 				return errors.New("Binlog file not exist " + binlog.GetLogPath())
 			}
 			err = retry.Do(ctx, func() error {
-				attr := storage.ObjectAttr{Key: binlog.GetLogPath()}
-				return b.getBackupCopier().Copy(ctx, attr, targetPath, b.milvusBucketName, b.backupBucketName)
+				path := binlog.GetLogPath()
+				return b.getBackupCopier().Copy(ctx, path, targetPath, b.milvusBucketName, b.backupBucketName)
 			}, retry.Sleep(2*time.Second), retry.Attempts(5))
 			if err != nil {
 				log.Info("Fail to copy file after retry",
@@ -1076,7 +1075,7 @@ func (b *BackupContext) backupRBAC(ctx context.Context, backupInfo *backuppb.Bac
 		Roles:  roles,
 		Grants: grants,
 	}
-	
+
 	log.Info("backup RBAC", zap.Int("users", len(users)), zap.Int("roles", len(roles)), zap.Int("grants", len(grants)))
 	b.meta.UpdateBackup(backupInfo.Id, setRBACMeta(rbacPb))
 	return nil
