@@ -136,6 +136,23 @@ type CopyPathInput struct {
 func (c *Copier) getAttrs(ctx context.Context, bucket, prefix string, copySuffix string) ([]ObjectAttr, error) {
 	var attrs []ObjectAttr
 
+	paths, sizes, err := c.src.ListWithPrefix(ctx, bucket, prefix, true)
+	if err != nil {
+		return nil, err
+	}
+
+	for i, path := range paths {
+		attrs = append(attrs, ObjectAttr{Key: path, Length: sizes[i]})
+		c.totalSize.Add(uint64(sizes[i]))
+		c.cnt.Add(1)
+	}
+
+	return attrs, nil
+}
+
+func (c *Copier) getAttrs2(ctx context.Context, bucket, prefix string, copySuffix string) ([]ObjectAttr, error) {
+	var attrs []ObjectAttr
+
 	p, err := c.src.ListObjectsPage(ctx, bucket, prefix)
 	if err != nil {
 		return nil, err
