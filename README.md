@@ -18,7 +18,7 @@ For Mac:
 ## Config
 In order to use Milvus-Backup, access to Milvus proxy and Minio cluster is required. Configuration settings related to this access can be edited in `backup.yaml`.
 
-> **Note**
+> [!NOTE]
 >
 > Please ensure that the configuration settings for Minio are accurate. There may be variations in the default value of Minio's configuration depending on how Milvus is deployed, either by docker-compose or k8s.
 >
