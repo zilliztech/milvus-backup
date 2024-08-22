@@ -16,7 +16,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/core/storage"
 	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/common"
 	"github.com/zilliztech/milvus-backup/internal/log"
@@ -590,8 +589,7 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 					tempFilekey := path.Join(tempDir, strings.Replace(file, b.params.MinioCfg.BackupRootPath, "", 1))
 					log.Debug("Copy temporary restore file", zap.String("from", file), zap.String("to", tempFilekey))
 					err := retry.Do(ctx, func() error {
-						attr := storage.ObjectAttr{Key: file}
-						return b.getRestoreCopier().Copy(ctx, attr, tempFilekey, backupBucketName, b.milvusBucketName)
+						return b.getRestoreCopier().Copy(ctx, file, tempFilekey, backupBucketName, b.milvusBucketName)
 					}, retry.Sleep(2*time.Second), retry.Attempts(5))
 					if err != nil {
 						log.Error("fail to copy backup date from backup bucket to restore target milvus bucket after retry", zap.Error(err))

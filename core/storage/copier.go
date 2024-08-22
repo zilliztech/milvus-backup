@@ -214,14 +214,14 @@ func (c *Copier) CopyPrefix(ctx context.Context, i CopyPathInput) error {
 	return nil
 }
 
-func (c *Copier) Copy(ctx context.Context, attr ObjectAttr, destPrefix, srcBucket, destBucket string) error {
+func (c *Copier) Copy(ctx context.Context, srcPrefix, destPrefix, srcBucket, destBucket string) error {
 	fn := c.selectCopyFn()
-	srcAttrs, err := c.getAttrs(ctx, srcBucket, attr.Key, "")
+	srcAttrs, err := c.getAttrs(ctx, srcBucket, srcPrefix, "")
 	if err != nil {
 		return fmt.Errorf("storage: copier get src attrs %w", err)
 	}
 	for _, srcAttr := range srcAttrs {
-		destKey := strings.Replace(srcAttr.Key, attr.Key, destPrefix, 1)
+		destKey := strings.Replace(srcAttr.Key, srcPrefix, destPrefix, 1)
 		err := fn(ctx, srcAttr, destKey, srcBucket, destBucket)
 		if err != nil {
 			return err

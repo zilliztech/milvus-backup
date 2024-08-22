@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path"
 	"sync"
 	"time"
 
@@ -217,6 +218,10 @@ func (b *BackupContext) getBackupStorageClient() storage.ChunkManager {
 }
 
 func (b *BackupContext) getBackupCopier() *storage.Copier {
+	crossStorage := b.params.MinioCfg.CrossStorage
+	if b.getBackupStorageClient().Config().StorageType != b.getMilvusStorageClient().Config().StorageType {
+		crossStorage = true
+	}
 	if b.backupCopier == nil {
 		b.backupCopier = storage.NewCopier(
 			b.getMilvusStorageClient(),
@@ -224,13 +229,18 @@ func (b *BackupContext) getBackupCopier() *storage.Copier {
 			storage.CopyOption{
 				WorkerNum:    b.params.BackupCfg.BackupCopyDataParallelism,
 				RPS:          RPS,
-				CopyByServer: b.params.BackupCfg.CopyByServer,
+				CopyByServer: crossStorage,
 			})
 	}
 	return b.backupCopier
 }
 
 func (b *BackupContext) getRestoreCopier() *storage.Copier {
+	crossStorage := b.params.MinioCfg.CrossStorage
+	// force set copyByServer is true if two storage type is different
+	if b.getBackupStorageClient().Config().StorageType != b.getMilvusStorageClient().Config().StorageType {
+		crossStorage = true
+	}
 	if b.restoreCopier == nil {
 		b.restoreCopier = storage.NewCopier(
 			b.getBackupStorageClient(),
@@ -238,7 +248,7 @@ func (b *BackupContext) getRestoreCopier() *storage.Copier {
 			storage.CopyOption{
 				WorkerNum:    b.params.BackupCfg.BackupCopyDataParallelism,
 				RPS:          RPS,
-				CopyByServer: b.params.BackupCfg.CopyByServer,
+				CopyByServer: crossStorage,
 			})
 	}
 	return b.restoreCopier
@@ -670,36 +680,38 @@ func (b *BackupContext) Check(ctx context.Context) string {
 			"backup-rootpath: %s\n",
 		version, b.milvusBucketName, b.milvusRootPath, b.backupBucketName, b.backupRootPath)
 
-	paths, _, err := b.getMilvusStorageClient().ListWithPrefix(ctx, b.milvusBucketName, b.milvusRootPath+SEPERATOR, false)
+	milvusFiles, _, err := b.getMilvusStorageClient().ListWithPrefix(ctx, b.milvusBucketName, b.milvusRootPath+SEPERATOR, false)
 	if err != nil {
 		return "Failed to connect to storage milvus path\n" + info + err.Error()
 	}
 
-	if len(paths) == 0 {
+	if len(milvusFiles) == 0 {
 		return "Milvus storage is empty. Please verify whether your cluster is really empty. If not, the configs(minio address, port, bucket, rootPath) may be wrong\n" + info
 	}
 
-	paths, _, err = b.getBackupStorageClient().ListWithPrefix(ctx, b.backupBucketName, b.backupRootPath+SEPERATOR, false)
+	_, _, err = b.getBackupStorageClient().ListWithPrefix(ctx, b.backupBucketName, b.backupRootPath+SEPERATOR, false)
 	if err != nil {
 		return "Failed to connect to storage backup path " + info + err.Error()
 	}
 
-	CHECK_PATH := "milvus_backup_check_" + time.Now().String()
+	checkSrcPath := path.Join(b.milvusRootPath, "milvus_backup_check_src_"+string(time.Now().Unix()))
+	checkDstPath := path.Join(b.backupRootPath, "milvus_backup_check_dst_"+string(time.Now().Unix()))
 
-	err = b.getMilvusStorageClient().Write(ctx, b.milvusBucketName, b.milvusRootPath+SEPERATOR+CHECK_PATH, []byte{1})
+	err = b.getMilvusStorageClient().Write(ctx, b.milvusBucketName, checkSrcPath, []byte{1})
 	if err != nil {
 		return "Failed to connect to storage milvus path\n" + info + err.Error()
 	}
 	defer func() {
-		b.getMilvusStorageClient().Remove(ctx, b.milvusBucketName, b.milvusRootPath+SEPERATOR+CHECK_PATH)
+		b.getMilvusStorageClient().Remove(ctx, b.milvusBucketName, checkSrcPath)
 	}()
 
-	err = b.getMilvusStorageClient().Copy(ctx, b.milvusBucketName, b.backupBucketName, b.milvusRootPath+SEPERATOR+CHECK_PATH, b.backupRootPath+SEPERATOR+CHECK_PATH)
+	log.Debug("check copy", zap.String("srcBucket", b.milvusBucketName), zap.String("destBucket", b.backupBucketName), zap.String("key", checkSrcPath), zap.String("destKey", checkDstPath))
+	err = b.getBackupCopier().Copy(ctx, checkSrcPath, checkDstPath, b.milvusBucketName, b.backupBucketName)
 	if err != nil {
 		return "Failed to copy file from milvus storage to backup storage\n" + info + err.Error()
 	}
 	defer func() {
-		b.getBackupStorageClient().Remove(ctx, b.backupBucketName, b.backupRootPath+SEPERATOR+CHECK_PATH)
+		b.getBackupStorageClient().Remove(ctx, b.backupBucketName, checkDstPath)
 	}()
 
 	return "Succeed to connect to milvus and storage.\n" + info
