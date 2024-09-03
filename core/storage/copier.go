@@ -237,9 +237,9 @@ func (c *Copier) Copy(ctx context.Context, srcPrefix, destPrefix, srcBucket, des
 	if err != nil {
 		return fmt.Errorf("storage: copier get src attrs %w", err)
 	}
+	srcPrefix = strings.TrimSuffix(srcPrefix, "/")
+	destPrefix = strings.TrimSuffix(destPrefix, "/")
 	for _, srcAttr := range srcAttrs {
-		srcPrefix = strings.TrimSuffix(srcPrefix, "/")
-		destPrefix = strings.TrimSuffix(destPrefix, "/")
 		destKey := strings.Replace(srcAttr.Key, srcPrefix, destPrefix, 1)
 		err := fn(ctx, srcAttr, destKey, srcBucket, destBucket)
 		if err != nil {
