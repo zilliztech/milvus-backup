@@ -393,7 +393,7 @@ func (p *MinioConfig) initBackupRootPath() {
 }
 
 func (p *MinioConfig) initCrossStorage() {
-	crossStorage := p.Base.LoadWithDefault("backup.crossStorage", "false")
+	crossStorage := p.Base.LoadWithDefault("minio.crossStorage", "false")
 	var err error
 	p.CrossStorage, err = strconv.ParseBool(crossStorage)
 	if err != nil {
