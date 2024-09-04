@@ -462,6 +462,41 @@ func (gp *BaseTable) loadMinioConfig() {
 	if minioBackupRootPath != "" {
 		_ = gp.Save("minio.backupRootPath", minioBackupRootPath)
 	}
+
+	minioBackupAddress := os.Getenv("MINIO_BACKUP_ADDRESS")
+	if minioBackupAddress != "" {
+		_ = gp.Save("minio.backupAddress", minioBackupAddress)
+	}
+
+	minioBackupPort := os.Getenv("MINIO_BACKUP_PORT")
+	if minioBackupPort != "" {
+		_ = gp.Save("minio.backupPort", minioBackupPort)
+	}
+
+	minioBackupAccessKey := os.Getenv("MINIO_BACKUP_ACCESS_KEY")
+	if minioBackupAccessKey != "" {
+		_ = gp.Save("minio.backupAccessKeyID", minioBackupAccessKey)
+	}
+
+	minioBackupSecretKey := os.Getenv("MINIO_BACKUP_SECRET_KEY")
+	if minioBackupSecretKey != "" {
+		_ = gp.Save("minio.backupSecretAccessKey", minioBackupSecretKey)
+	}
+
+	minioBackupUseSSL := os.Getenv("MINIO_BACKUP_USE_SSL")
+	if minioBackupUseSSL != "" {
+		_ = gp.Save("minio.backupUseSSL", minioBackupUseSSL)
+	}
+
+	minioBackupUseIAM := os.Getenv("MINIO_BACKUP_USE_IAM")
+	if minioBackupUseIAM != "" {
+		_ = gp.Save("minio.backupUseIAM", minioBackupUseIAM)
+	}
+
+	minioBackupIAMEndpoint := os.Getenv("MINIO_BACKUP_IAM_ENDPOINT")
+	if minioBackupIAMEndpoint != "" {
+		_ = gp.Save("minio.backupIamEndpoint", minioBackupIAMEndpoint)
+	}
 }
 
 func (gp *BaseTable) loadMilvusConfig() {
