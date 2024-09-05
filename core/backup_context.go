@@ -694,8 +694,8 @@ func (b *BackupContext) Check(ctx context.Context) string {
 		return "Failed to connect to storage backup path " + info + err.Error()
 	}
 
-	checkSrcPath := path.Join(b.milvusRootPath, "milvus_backup_check_src_"+string(time.Now().Unix()))
-	checkDstPath := path.Join(b.backupRootPath, "milvus_backup_check_dst_"+string(time.Now().Unix()))
+	checkSrcPath := path.Join(b.milvusRootPath, "milvus_backup_check_src_"+fmt.Sprint(time.Now().Unix()))
+	checkDstPath := path.Join(b.backupRootPath, "milvus_backup_check_dst_"+fmt.Sprint(time.Now().Unix()))
 
 	err = b.getMilvusStorageClient().Write(ctx, b.milvusBucketName, checkSrcPath, []byte{1})
 	if err != nil {

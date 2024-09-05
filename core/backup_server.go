@@ -157,7 +157,7 @@ func (h *Handlers) handleCreateBackup(c *gin.Context) (interface{}, error) {
 // @Tags Backup
 // @Produce application/json
 // @Param request_id header string false "request_id"
-// @Param collection_name query string true "collection_name"
+// @Param collection_name query string false "collection_name"
 // @Success 200 {object} backuppb.ListBackupsResponse
 // @Router /list [get]
 func (h *Handlers) handleListBackups(c *gin.Context) (interface{}, error) {

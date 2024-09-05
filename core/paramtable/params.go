@@ -375,8 +375,8 @@ func (p *MinioConfig) initBackupAccessKeyID() {
 }
 
 func (p *MinioConfig) initBackupSecretAccessKey() {
-	key := p.Base.LoadWithDefault("minio.secretAccessKey",
-		p.Base.LoadWithDefault("minio.backupSecretAccessKey", DefaultMinioSecretAccessKey))
+	key := p.Base.LoadWithDefault("minio.backupSecretAccessKey",
+		p.Base.LoadWithDefault("minio.secretAccessKey", DefaultMinioSecretAccessKey))
 	p.BackupSecretAccessKey = key
 }
 
