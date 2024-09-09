@@ -586,16 +586,16 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 				if file == "" {
 					realFiles[i] = file
 				} else {
-					tempFilekey := path.Join(tempDir, strings.Replace(file, b.params.MinioCfg.BackupRootPath, "", 1))
-					log.Debug("Copy temporary restore file", zap.String("from", file), zap.String("to", tempFilekey))
+					tempFileKey := path.Join(tempDir, strings.Replace(file, b.params.MinioCfg.BackupRootPath, "", 1)) + SEPERATOR
+					log.Debug("Copy temporary restore file", zap.String("from", file), zap.String("to", tempFileKey))
 					err := retry.Do(ctx, func() error {
-						return b.getRestoreCopier().Copy(ctx, file, tempFilekey, backupBucketName, b.milvusBucketName)
+						return b.getRestoreCopier().Copy(ctx, file, tempFileKey, backupBucketName, b.milvusBucketName)
 					}, retry.Sleep(2*time.Second), retry.Attempts(5))
 					if err != nil {
 						log.Error("fail to copy backup date from backup bucket to restore target milvus bucket after retry", zap.Error(err))
 						return err
 					}
-					realFiles[i] = tempFilekey
+					realFiles[i] = tempFileKey
 				}
 			}
 		} else {
