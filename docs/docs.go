@@ -196,8 +196,7 @@ const docTemplate = `{
                         "type": "string",
                         "description": "collection_name",
                         "name": "collection_name",
-                        "in": "query",
-                        "required": true
+                        "in": "query"
                     }
                 ],
                 "responses": {

@@ -804,7 +804,6 @@ paths:
       - description: collection_name
         in: query
         name: collection_name
-        required: true
         type: string
       produces:
       - application/json
