@@ -397,8 +397,8 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 	targetCollectionName := task.GetTargetCollectionName()
 	task.StateCode = backuppb.RestoreTaskStateCode_EXECUTING
 	log := log.With(
-		zap.String("backup_db_name", task.GetCollBackup().DbName),
-		zap.String("backup_collection_name", task.GetCollBackup().DbName),
+		zap.String("backup_db_name", task.GetCollBackup().GetDbName()),
+		zap.String("backup_collection_name", task.GetCollBackup().GetCollectionName()),
 		zap.String("target_db_name", targetDBName),
 		zap.String("target_collection_name", targetCollectionName),
 		zap.Bool("skipDiskQuotaCheck", task.GetSkipDiskQuotaCheck()))
