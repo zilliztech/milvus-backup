@@ -397,8 +397,8 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 	targetCollectionName := task.GetTargetCollectionName()
 	task.StateCode = backuppb.RestoreTaskStateCode_EXECUTING
 	log := log.With(
-		zap.String("backup_db_name", task.GetCollBackup().DbName),
-		zap.String("backup_collection_name", task.GetCollBackup().DbName),
+		zap.String("backup_db_name", task.GetCollBackup().GetDbName()),
+		zap.String("backup_collection_name", task.GetCollBackup().GetCollectionName()),
 		zap.String("target_db_name", targetDBName),
 		zap.String("target_collection_name", targetCollectionName),
 		zap.Bool("skipDiskQuotaCheck", task.GetSkipDiskQuotaCheck()))
@@ -602,7 +602,32 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 			realFiles = files
 		}
 
-		err := b.executeBulkInsert(ctx, dbName, collectionName, partitionName, realFiles, int64(task.GetCollBackup().BackupTimestamp), isL0, skipDiskQuotaCheck)
+		// TODO: The current implementation may not guarantee perfect data accuracy,
+		// especially concerning timestamps.
+		//
+		// Details:
+		// - `task.GetCollBackup().PhysicalTimestamp` is a 10-bit timestamp obtained from the flush response (e.g., 1726045510).
+		// - `task.GetCollBackup().BackupTimestamp` represents the max checkpoint across all channels in a collection (e.g., 452472464411983874).
+		// - The `endTime` parameter of `bulkinsert` expects a 13-bit timestamp and applies `tsoutil.ComposeTS` to it.
+		//
+		// Issue:
+		// We incorrectly used `task.GetCollBackup().BackupTimestamp` as the `endTime`. Since it is already a composed value, applying `tsoutil.ComposeTS` again results in a timestamp that is out of range. This causes the restored collection to be empty because the filtered data has timestamps greater than the composed timestamp.
+		//
+		// Example:
+		// - `BackupTimestamp`:  452472464411983874
+		// - After `tsoutil.ComposeTS`: 377316862683774976
+		// - The resulting timestamp (377316862683774976) is smaller than most data timestamps, leading to all data being filtered out during `bulkinsert`.
+		//
+		// Current Fix:
+		// For now, we're using `task.GetCollBackup().PhysicalTimestamp * 1000`. While this isn't fully accurate, it’s sufficient for current use cases where precision is not critical.
+		//
+		// Future Improvements:
+		// 1. Remove the `tsoutil.ComposeTS` operation inside Milvus `bulkinsert`.
+		// 2. Use channel-level checkpoints for `endTime` and restore by channel instead of by collection.
+		//
+		// These improvements will be necessary for critical use cases like Milvus backup and CDC (Change Data Capture).
+		err := b.executeBulkInsert(ctx, dbName, collectionName, partitionName, realFiles, int64(task.GetCollBackup().GetBackupPhysicalTimestamp()*1000), isL0, skipDiskQuotaCheck)
+		//err := b.executeBulkInsert(ctx, dbName, collectionName, partitionName, realFiles, int64(task.GetCollBackup().BackupTimestamp), isL0, skipDiskQuotaCheck)
 		if err != nil {
 			log.Error("fail to bulk insert to partition",
 				zap.String("partition", partitionName),

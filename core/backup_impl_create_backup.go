@@ -400,7 +400,7 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 			zap.Int64s("newSealedSegmentIDs", newSealedSegmentIDs),
 			zap.Int64s("flushedSegmentIDs", flushedSegmentIDs),
 			zap.Int64("timeOfSeal", timeOfSeal),
-			zap.Uint64("BackupTimestamp", collectionBackup.BackupTimestamp),
+			zap.Uint64("BackupTimestamp", maxChannelBackupTimeStamp),
 			zap.Any("channelCPs", channelCPs))
 
 		flushSegmentIDs := append(newSealedSegmentIDs, flushedSegmentIDs...)
