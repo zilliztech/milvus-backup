@@ -42,7 +42,8 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 		zap.String("bucketName", request.GetBucketName()),
 		zap.String("path", request.GetPath()),
 		zap.String("databaseCollections", utils.GetRestoreDBCollections(request)),
-		zap.Bool("skipDiskQuotaCheck", request.GetSkipImportDiskQuotaCheck()))
+		zap.Bool("skipDiskQuotaCheck", request.GetSkipImportDiskQuotaCheck()),
+		zap.Int32("maxShardNum", request.GetMaxShardNum()))
 
 	resp := &backuppb.RestoreBackupResponse{
 		RequestId: request.GetRequestId(),
@@ -311,6 +312,7 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 			DropExistIndex:        request.GetDropExistIndex(),
 			SkipCreateCollection:  request.GetSkipCreateCollection(),
 			SkipDiskQuotaCheck:    request.GetSkipImportDiskQuotaCheck(),
+			MaxShardNum:           request.GetMaxShardNum(),
 		}
 		restoreCollectionTasks = append(restoreCollectionTasks, restoreCollectionTask)
 		task.CollectionRestoreTasks = restoreCollectionTasks
@@ -388,7 +390,15 @@ func (b *BackupContext) executeRestoreBackupTask(ctx context.Context, backupBuck
 		return task, err
 	}
 
-	b.meta.UpdateRestoreTask(id, setRestoreStateCode(backuppb.RestoreTaskStateCode_SUCCESS), setRestoreEndTime(time.Now().Unix()))
+	endTime := time.Now().Unix()
+	task.EndTime = endTime
+	b.meta.UpdateRestoreTask(id, setRestoreStateCode(backuppb.RestoreTaskStateCode_SUCCESS), setRestoreEndTime(endTime))
+
+	log.Info("finish restore all collections",
+		zap.String("backupName", backup.GetName()),
+		zap.Int("collections", len(backup.GetCollectionBackups())),
+		zap.String("taskID", task.GetId()),
+		zap.Int64("duration in seconds", task.GetEndTime()-task.GetStartTime()))
 	return task, nil
 }
 
@@ -401,7 +411,8 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 		zap.String("backup_collection_name", task.GetCollBackup().DbName),
 		zap.String("target_db_name", targetDBName),
 		zap.String("target_collection_name", targetCollectionName),
-		zap.Bool("skipDiskQuotaCheck", task.GetSkipDiskQuotaCheck()))
+		zap.Bool("skipDiskQuotaCheck", task.GetSkipDiskQuotaCheck()),
+		zap.Int32("maxShardNum", task.GetMaxShardNum()))
 	log.Info("start restore",
 		zap.String("backupBucketName", backupBucketName),
 		zap.String("backupPath", backupPath))
@@ -460,13 +471,20 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 	//so here it is necessary to be compatible with the situation where SkipCreateCollection and DropExistCollection are enabled at the same time.
 	if !task.GetSkipCreateCollection() || task.GetDropExistCollection() {
 		err := retry.Do(ctx, func() error {
+			// overwrite shardNum by request parameter
+			shardNum := task.GetCollBackup().GetShardsNum()
+			if shardNum > task.GetMaxShardNum() && task.GetMaxShardNum() != 0 {
+				shardNum = task.GetMaxShardNum()
+				log.Info("overwrite shardNum by request parameter", zap.Int32("oldShardNum", task.GetCollBackup().GetShardsNum()), zap.Int32("newShardNum", shardNum))
+
+			}
 			if hasPartitionKey {
 				partitionNum := len(task.GetCollBackup().GetPartitionBackups())
 				return b.getMilvusClient().CreateCollection(
 					ctx,
 					targetDBName,
 					collectionSchema,
-					task.GetCollBackup().GetShardsNum(),
+					shardNum,
 					gomilvus.WithConsistencyLevel(entity.ConsistencyLevel(task.GetCollBackup().GetConsistencyLevel())),
 					gomilvus.WithPartitionNum(int64(partitionNum)))
 			}
@@ -474,7 +492,7 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 				ctx,
 				targetDBName,
 				collectionSchema,
-				task.GetCollBackup().GetShardsNum(),
+				shardNum,
 				gomilvus.WithConsistencyLevel(entity.ConsistencyLevel(task.GetCollBackup().GetConsistencyLevel())))
 		}, retry.Attempts(10), retry.Sleep(1*time.Second))
 		if err != nil {

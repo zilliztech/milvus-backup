@@ -474,6 +474,9 @@ definitions:
         type: boolean
       id:
         type: string
+      maxShardNum:
+        description: target max shard number
+        type: integer
       metaOnly:
         description: if true only restore meta, not restore data
         type: boolean
@@ -557,6 +560,9 @@ definitions:
         type: string
       id:
         type: string
+      maxShardNum:
+        description: target max shard number
+        type: integer
       metaOnly:
         description: if true only restore meta
         type: boolean
