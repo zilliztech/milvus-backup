@@ -21,12 +21,12 @@ pyopenssl
 pyasn1
 pytest-html==3.1.1
 delayed-assert==0.3.5
-kubernetes==17.17.0
+kubernetes==24.2.0
 PyYAML==6.0
 pytest-sugar==0.9.5
 pytest-parallel
 pytest-random-order
-numpy==1.25.0
+numpy==1.24.4
 # for customize config test
 python-benedict==0.24.3
 timeout-decorator==0.5.0
@@ -52,3 +52,7 @@ tenacity==8.1.0
 # for bf16 datatype
 jax==0.4.13
 jaxlib==0.4.13
+
+# for text match
+bm25s==0.2.0
+jieba==0.42.1
