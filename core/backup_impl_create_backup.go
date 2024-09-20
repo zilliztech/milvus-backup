@@ -470,7 +470,7 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 	}
 
 	newSegIDs := lo.Map(unfilledSegments, func(segment *entity.Segment, _ int) int64 { return segment.ID })
-	log.Info("Finished fill segment",
+	log.Debug("Finished fill segment",
 		zap.String("databaseName", collectionBackup.GetDbName()),
 		zap.String("collectionName", collectionBackup.GetCollectionName()),
 		zap.Int64s("segments", newSegIDs))
@@ -741,7 +741,7 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 		backupInfo.ErrorMessage = err.Error()
 		return err
 	}
-	log.Info("finish executeCreateBackup",
+	log.Info("finish backup all collections",
 		zap.String("requestId", request.GetRequestId()),
 		zap.String("backupName", request.GetBackupName()),
 		zap.Strings("collections", request.GetCollectionNames()),

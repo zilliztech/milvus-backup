@@ -921,6 +921,10 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "maxShardNum": {
+                    "description": "target max shard number",
+                    "type": "integer"
+                },
                 "metaOnly": {
                     "description": "if true only restore meta, not restore data",
                     "type": "boolean"
@@ -1041,6 +1045,10 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "string"
+                },
+                "maxShardNum": {
+                    "description": "target max shard number",
+                    "type": "integer"
                 },
                 "metaOnly": {
                     "description": "if true only restore meta",

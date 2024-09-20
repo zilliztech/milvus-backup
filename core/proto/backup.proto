@@ -283,6 +283,8 @@ message RestoreBackupRequest {
   bool skipImportDiskQuotaCheck = 17;
   // whether restore RBAC
   bool rbac = 18;
+  // target max shard number
+  int32 maxShardNum = 19;
 }
 
 message RestorePartitionTask {
@@ -321,6 +323,8 @@ message RestoreCollectionTask {
   // if true will skip create collections
   bool skipCreateCollection = 18;
   bool skipDiskQuotaCheck = 19;
+  // target max shard number
+  int32 maxShardNum = 20;
 }
 
 message RestoreBackupTask {
