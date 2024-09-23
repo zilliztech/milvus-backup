@@ -13,6 +13,8 @@ from common import common_type as ct
 from common.common_type import CaseLabel
 from utils.util_log import test_log as log
 from api.milvus_backup import MilvusBackupClient
+from faker import Faker
+fake_en = Faker("en_US")
 prefix = "restore_backup"
 backup_prefix = "backup"
 suffix = "_bak"
@@ -652,13 +654,15 @@ class TestRestoreBackup(TestcaseBase):
 
     @pytest.mark.parametrize("include_partition_key", [True])
     @pytest.mark.parametrize("include_dynamic", [True])
+    @pytest.mark.parametrize("enable_text_match", [True])
     @pytest.mark.tags(CaseLabel.MASTER)
-    def test_milvus_restore_back_with_sparse_vector_datatype(self, include_dynamic, include_partition_key):
+    def test_milvus_restore_back_with_sparse_vector_datatype(self, include_dynamic, include_partition_key, enable_text_match):
         self._connect()
         name_origin = cf.gen_unique_str(prefix)
         back_up_name = cf.gen_unique_str(backup_prefix)
         fields = [cf.gen_int64_field(name="int64", is_primary=True),
                     cf.gen_int64_field(name="key"),
+                    cf.gen_string_field(name="text", enable_match=enable_text_match),
                     cf.gen_json_field(name="json"),
                     cf.gen_array_field(name="var_array", element_type=DataType.VARCHAR),
                     cf.gen_array_field(name="int_array", element_type=DataType.INT64),
@@ -680,6 +684,7 @@ class TestRestoreBackup(TestcaseBase):
         data = [
             [i for i in range(nb)],
             [i % 3 for i in range(nb)],
+            [fake_en.text() for i in range(nb)],
             [{f"key_{str(i)}": i} for i in range(nb)],
             [[str(x) for x in range(10)] for i in range(nb)],
             [[int(x) for x in range(10)] for i in range(nb)],
@@ -694,6 +699,7 @@ class TestRestoreBackup(TestcaseBase):
                 {
                     "int64": i,
                     "key": i % 3,
+                    "text": fake_en.text(),
                     "json": {f"key_{str(i)}": i},
                     "var_array": [str(x) for x in range(10)],
                     "int_array": [int(x) for x in range(10)],
