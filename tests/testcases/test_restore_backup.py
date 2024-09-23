@@ -684,8 +684,8 @@ class TestRestoreBackup(TestcaseBase):
         data = [
             [i for i in range(nb)],
             [i % 3 for i in range(nb)],
-            [{f"key_{str(i)}": i} for i in range(nb)],
             [fake_en.text() for i in range(nb)],
+            [{f"key_{str(i)}": i} for i in range(nb)],
             [[str(x) for x in range(10)] for i in range(nb)],
             [[int(x) for x in range(10)] for i in range(nb)],
             [[np.float32(i) for i in range(128)] for _ in range(nb)],
@@ -699,6 +699,7 @@ class TestRestoreBackup(TestcaseBase):
                 {
                     "int64": i,
                     "key": i % 3,
+                    "text": fake_en.text(),
                     "json": {f"key_{str(i)}": i},
                     "var_array": [str(x) for x in range(10)],
                     "int_array": [int(x) for x in range(10)],
