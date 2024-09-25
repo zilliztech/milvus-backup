@@ -268,6 +268,8 @@ definitions:
         $ref: '#/definitions/backuppb.DataType'
       default_value:
         $ref: '#/definitions/backuppb.ValueField'
+      default_value_proto:
+        type: string
       description:
         type: string
       element_type:
@@ -286,6 +288,8 @@ definitions:
         type: boolean
       name:
         type: string
+      nullable:
+        type: boolean
       state:
         $ref: '#/definitions/backuppb.FieldState'
       type_params:

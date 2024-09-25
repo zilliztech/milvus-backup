@@ -625,6 +625,9 @@ const docTemplate = `{
                 "default_value": {
                     "$ref": "#/definitions/backuppb.ValueField"
                 },
+                "default_value_proto": {
+                    "type": "string"
+                },
                 "description": {
                     "type": "string"
                 },
@@ -651,6 +654,9 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "nullable": {
+                    "type": "boolean"
                 },
                 "state": {
                     "$ref": "#/definitions/backuppb.FieldState"

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang/protobuf/proto"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 	"github.com/samber/lo"
@@ -236,7 +237,7 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 	}
 	fields := make([]*backuppb.FieldSchema, 0)
 	for _, field := range completeCollection.Schema.Fields {
-		fields = append(fields, &backuppb.FieldSchema{
+		fieldBak := &backuppb.FieldSchema{
 			FieldID:        field.ID,
 			Name:           field.Name,
 			IsPrimaryKey:   field.PrimaryKey,
@@ -247,8 +248,18 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 			IndexParams:    utils.MapToKVPair(field.IndexParams),
 			IsDynamic:      field.IsDynamic,
 			IsPartitionKey: field.IsPartitionKey,
+			Nullable:       field.Nullable,
 			ElementType:    backuppb.DataType(field.ElementType),
-		})
+		}
+		defaultValue := field.DefaultValue
+		if defaultValue != nil {
+			bytes, err := proto.Marshal(field.DefaultValue)
+			if err != nil {
+				return err
+			}
+			fieldBak.DefaultValueProto = string(bytes)
+		}
+		fields = append(fields, fieldBak)
 	}
 	schema := &backuppb.CollectionSchema{
 		Name:               completeCollection.Schema.CollectionName,
