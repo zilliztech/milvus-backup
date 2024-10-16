@@ -451,6 +451,8 @@ message FieldSchema {
   ValueField default_value = 11; // default_value only support scalars except array and json for now
   bool is_dynamic = 12; // mark whether this field is the dynamic field
   bool is_partition_key = 13; // enable logic partitions
+  bool nullable = 14;
+  string default_value_proto = 15; // json not support marshall oneof, so use proto string
 }
 
 /**

@@ -8,7 +8,9 @@ import (
 	"time"
 
 	"github.com/cockroachdb/errors"
+	"github.com/golang/protobuf/proto"
 	jsoniter "github.com/json-iterator/go"
+	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
 	gomilvus "github.com/milvus-io/milvus-sdk-go/v2/client"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 	"github.com/samber/lo"
@@ -420,7 +422,7 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 	fields := make([]*entity.Field, 0)
 	hasPartitionKey := false
 	for _, field := range task.GetCollBackup().GetSchema().GetFields() {
-		fields = append(fields, &entity.Field{
+		fieldRestore := &entity.Field{
 			ID:             field.GetFieldID(),
 			Name:           field.GetName(),
 			PrimaryKey:     field.GetIsPrimaryKey(),
@@ -431,8 +433,19 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 			IndexParams:    utils.KvPairsMap(field.GetIndexParams()),
 			IsDynamic:      field.GetIsDynamic(),
 			IsPartitionKey: field.GetIsPartitionKey(),
+			Nullable:       field.GetNullable(),
 			ElementType:    entity.FieldType(field.GetElementType()),
-		})
+		}
+		if field.DefaultValueProto != "" {
+			defaultValue := &schemapb.ValueField{}
+			err := proto.Unmarshal([]byte(field.DefaultValueProto), defaultValue)
+			if err != nil {
+				return nil, err
+			}
+			fieldRestore.DefaultValue = defaultValue
+		}
+
+		fields = append(fields, fieldRestore)
 		if field.GetIsPartitionKey() {
 			hasPartitionKey = true
 		}
