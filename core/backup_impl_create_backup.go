@@ -698,10 +698,25 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 	for _, collection := range toBackupCollections {
 		collectionClone := collection
 		job := func(ctx context.Context) error {
-			err := retry.Do(ctx, func() error {
-				return b.backupCollectionPrepare(ctx, backupInfo, collectionClone, request.GetForce())
-			}, retry.Sleep(120*time.Second), retry.Attempts(128))
-			return err
+			retryForSpecificError := func(retries int, delay time.Duration) error {
+				for i := 0; i < retries; i++ {
+					err := b.backupCollectionPrepare(ctx, backupInfo, collectionClone, request.GetForce())
+					// If no error, return successfully
+					if err == nil {
+						return nil
+					}
+					// Retry only for the specific error
+					if strings.Contains(err.Error(), "rate limit exceeded") {
+						fmt.Printf("Attempt %d: Temporary error occurred, retrying...\n", i+1)
+						time.Sleep(delay)
+						continue
+					}
+					// Return immediately for any other error
+					return err
+				}
+				return fmt.Errorf("operation failed after %d retries", retries)
+			}
+			return retryForSpecificError(10, 10*time.Second)
 		}
 		jobId := b.getBackupCollectionWorkerPool().SubmitWithId(job)
 		jobIds = append(jobIds, jobId)
