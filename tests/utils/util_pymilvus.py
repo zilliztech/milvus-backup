@@ -8,7 +8,7 @@ import copy
 import numpy as np
 import requests
 from sklearn import preprocessing
-from pymilvus import Milvus, DataType
+from pymilvus import Milvus, DataType, FunctionType
 from utils.util_log import test_log as log
 from utils.util_k8s import init_k8s_client_config
 
@@ -54,6 +54,89 @@ default_index_params = [
     {"nlist": 128},
     {"nlist": 128},
 ]
+
+
+DEFAULT_FLOAT_INDEX_PARAM = {"index_type": "HNSW", "metric_type": "L2", "params": {"M": 48, "efConstruction": 500}}
+DEFAULT_FLOAT_SEARCH_PARAM = {"metric_type": "L2", "params": {"ef": 64}}
+DEFAULT_BINARY_INDEX_PARAM = {"index_type": "BIN_IVF_FLAT", "metric_type": "JACCARD", "params": {"M": 48}}
+DEFAULT_BINARY_SEARCH_PARAM = {"metric_type": "JACCARD", "params": {"nprobe": 10}}
+DEFAULT_SPARSE_INDEX_PARAM = {"index_type": "SPARSE_INVERTED_INDEX", "metric_type": "IP", "params": {}}
+DEFAULT_SPARSE_SEARCH_PARAM = {"metric_type": "IP", "params": {}}
+DEFAULT_BM25_INDEX_PARAM = {"index_type": "SPARSE_INVERTED_INDEX", "metric_type": "BM25", "params": {"bm25_k1": 1.5, "bm25_b": 0.75}}
+DEFAULT_BM25_SEARCH_PARAM = {"metric_type": "BM25", "params": {}}
+
+
+def get_float_vec_field_name_list(schema):
+    vec_fields = []
+    fields = schema.fields
+    for field in fields:
+        if field.dtype in [DataType.FLOAT_VECTOR, DataType.FLOAT16_VECTOR, DataType.BFLOAT16_VECTOR]:
+            vec_fields.append(field.name)
+    return vec_fields
+
+def get_binary_vec_field_name_list(schema):
+    vec_fields = []
+    fields = schema.fields
+    for field in fields:
+        if field.dtype in [DataType.BINARY_VECTOR]:
+            vec_fields.append(field.name)
+    return vec_fields
+
+def get_bm25_vec_field_name_list(schema=None):
+    if not hasattr(schema, "functions"):
+        return []
+    functions = schema.functions
+    bm25_func = [func for func in functions if func.type == FunctionType.BM25]
+    bm25_outputs = []
+    for func in bm25_func:
+        bm25_outputs.extend(func.output_field_names)
+    bm25_outputs = list(set(bm25_outputs))
+
+    return bm25_outputs
+
+def get_sparse_vec_field_name_list(schema):
+    # SPARSE_FLOAT_VECTOR but not in BM25
+    vec_fields = []
+    bm25_fields = get_bm25_vec_field_name_list(schema)
+    fields = schema.fields
+    for field in fields:
+        if field.dtype in [DataType.SPARSE_FLOAT_VECTOR]:
+            vec_fields.append(field.name)
+    return  list(set(vec_fields) - set(bm25_fields))
+
+
+def create_index_for_vector_fields(collection):
+    schema = collection.schema
+    float_vector_fields = get_float_vec_field_name_list(schema)
+    binary_vector_fields = get_binary_vec_field_name_list(schema)
+    sparse_vector_fields = get_sparse_vec_field_name_list(schema)
+    bm25_vector_fields = get_bm25_vec_field_name_list(schema)
+    indexes = [index.to_dict() for index in collection.indexes]
+    indexed_fields = [index['field'] for index in indexes]
+    for field_name in float_vector_fields:
+        if field_name in indexed_fields:
+            continue
+        collection.create_index(field_name, DEFAULT_FLOAT_INDEX_PARAM)
+    for field_name in binary_vector_fields:
+        if field_name in indexed_fields:
+            continue
+        collection.create_index(field_name, DEFAULT_BINARY_INDEX_PARAM)
+    for field_name in sparse_vector_fields:
+        if field_name in indexed_fields:
+            continue
+        collection.create_index(field_name, DEFAULT_SPARSE_INDEX_PARAM)
+    for field_name in bm25_vector_fields:
+        if field_name in indexed_fields:
+            continue
+        collection.create_index(field_name, DEFAULT_BM25_INDEX_PARAM)
+
+
+
+
+
+
+
+
 
 
 def create_target_index(index, field_name):

@@ -5,12 +5,15 @@ import numpy as np
 import jax.numpy as jnp
 import random
 from collections import defaultdict
-from pymilvus import db, list_collections, Collection, DataType
+from pymilvus import db, list_collections, Collection, DataType, Function, FunctionType
 from base.client_base import TestcaseBase
 from common import common_func as cf
 from common import common_type as ct
 from common.common_type import CaseLabel
 from utils.util_log import test_log as log
+from utils.util_common import analyze_documents
+from utils.util_pymilvus import create_index_for_vector_fields
+from api.milvus_backup import MilvusBackupClient
 from faker import Faker
 
 fake_en = Faker("en_US")
@@ -285,9 +288,7 @@ class TestRestoreBackup(TestcaseBase):
     @pytest.mark.parametrize("include_dynamic", [True])
     @pytest.mark.parametrize("include_json", [True])
     @pytest.mark.tags(CaseLabel.L0)
-    def test_milvus_restore_back_with_new_feature_support(
-        self, include_json, include_dynamic, include_partition_key
-    ):
+    def test_milvus_restore_back_with_new_dynamic_schema_and_partition_key(self, include_json, include_dynamic, include_partition_key):
         self._connect()
         name_origin = cf.gen_unique_str(prefix)
         back_up_name = cf.gen_unique_str(backup_prefix)
@@ -887,21 +888,24 @@ class TestRestoreBackup(TestcaseBase):
     @pytest.mark.parametrize("include_partition_key", [True])
     @pytest.mark.parametrize("include_dynamic", [True])
     @pytest.mark.parametrize("enable_text_match", [True])
+    @pytest.mark.parametrize("enable_full_text_search", [True])
     @pytest.mark.tags(CaseLabel.MASTER)
-    def test_milvus_restore_back_with_sparse_vector_text_match_datatype(self, include_dynamic, include_partition_key, enable_text_match):
+    def test_milvus_restore_back_with_sparse_vector_text_match_datatype(self, include_dynamic, include_partition_key, enable_text_match, enable_full_text_search):
         self._connect()
         name_origin = cf.gen_unique_str(prefix)
         back_up_name = cf.gen_unique_str(backup_prefix)
-        fields = [
-            cf.gen_int64_field(name="int64", is_primary=True),
-            cf.gen_int64_field(name="key"),
-            cf.gen_string_field(name="text", enable_match=enable_text_match),
-            cf.gen_json_field(name="json"),
-            cf.gen_array_field(name="var_array", element_type=DataType.VARCHAR),
-            cf.gen_array_field(name="int_array", element_type=DataType.INT64),
-            cf.gen_float_vec_field(name="float_vector", dim=128),
-            cf.gen_sparse_vec_field(name="sparse_vector"),
-        ]
+        fields = [cf.gen_int64_field(name="int64", is_primary=True),
+                  cf.gen_int64_field(name="key"),
+                  cf.gen_string_field(name="text", enable_match=enable_text_match, enable_analyzer=True),
+                  cf.gen_json_field(name="json"),
+                  cf.gen_array_field(name="var_array", element_type=DataType.VARCHAR),
+                  cf.gen_array_field(name="int_array", element_type=DataType.INT64),
+                  cf.gen_float_vec_field(name="float_vector", dim=128),
+                  cf.gen_sparse_vec_field(name="sparse_vector"),
+                  # cf.gen_sparse_vec_field(name="bm25_sparse_vector"),
+                  ]
+        if enable_full_text_search:
+            fields.append(cf.gen_sparse_vec_field(name="bm25_sparse_vector"))
         if include_partition_key:
             partition_key = "key"
             default_schema = cf.gen_collection_schema(
@@ -913,55 +917,41 @@ class TestRestoreBackup(TestcaseBase):
             default_schema = cf.gen_collection_schema(
                 fields, enable_dynamic_field=include_dynamic
             )
-
+        if enable_full_text_search:
+            bm25_function = Function(
+                name="text_bm25_emb",
+                function_type=FunctionType.BM25,
+                input_field_names=["text"],
+                output_field_names=["bm25_sparse_vector"],
+                params={},
+            )
+            default_schema.add_function(bm25_function)
         collection_w = self.init_collection_wrap(
             name=name_origin, schema=default_schema, active_trace=True
         )
         nb = 3000
         rng = np.random.default_rng()
-        data = [
-            [i for i in range(nb)],
-            [i % 3 for i in range(nb)],
-            [fake_en.text() for i in range(nb)],
-            [{f"key_{str(i)}": i} for i in range(nb)],
-            [[str(x) for x in range(10)] for i in range(nb)],
-            [[int(x) for x in range(10)] for i in range(nb)],
-            [[np.float32(i) for i in range(128)] for _ in range(nb)],
-            [
-                {
-                    d: rng.random()
-                    for d in random.sample(range(1000), random.randint(20, 30))
-                }
-                for _ in range(nb)
-            ],
-        ]
-        collection_w.insert(data=data)
-        if include_dynamic:
-            data = [
-                {
-                    "int64": i,
-                    "key": i % 3,
-                    "text": fake_en.text(),
-                    "json": {f"key_{str(i)}": i},
-                    "var_array": [str(x) for x in range(10)],
-                    "int_array": [int(x) for x in range(10)],
-                    "float_vector": [np.float32(i) for i in range(128)],
-                    "sparse_vector": {
-                        d: rng.random()
-                        for d in random.sample(range(1000), random.randint(20, 30))
-                    },
-                    f"dynamic_{str(i)}": i,
-                }
-                for i in range(nb, nb * 2)
-            ]
-            collection_w.insert(data=data)
-        res = self.client.create_backup(
-            {
-                "async": False,
-                "backup_name": back_up_name,
-                "collection_names": [name_origin],
+
+        data = []
+        for i in range(nb):
+            tmp = {
+                "int64": i,
+                "key": i % 3,
+                "text": fake_en.text(),
+                "json": {f"key_{str(i)}": i},
+                "var_array": [str(x) for x in range(10)],
+                "int_array": [int(x) for x in range(10)],
+                "float_vector": [np.float32(i) for i in range(128)],
+                "sparse_vector": {
+                    d: rng.random() for d in random.sample(range(1000), random.randint(20, 30))
+                },
             }
-        )
+            if include_dynamic:
+                tmp[f"dynamic_{str(i)}"] = i
+            data.append(tmp)
+        texts = [d["text"] for d in data]
+        collection_w.insert(data=data)
+        res = self.client.create_backup({"async": False, "backup_name": back_up_name, "collection_names": [name_origin]})
         log.info(f"create_backup {res}")
         res = self.client.list_backup()
         log.info(f"list_backup {res}")
@@ -991,6 +981,31 @@ class TestRestoreBackup(TestcaseBase):
         self.compare_collections(
             name_origin, name_origin + suffix, output_fields=output_fields
         )
+        # check text match and full text search in restored collection
+        word_freq = analyze_documents(texts)
+        token = word_freq.most_common(1)[0][0]
+        c = Collection(name=name_origin + suffix)
+        create_index_for_vector_fields(c)
+        if enable_text_match:
+            res = c.query(
+                expr=f"TextMatch(text, '{token}')",
+                output_fields=["text"],
+                limit=1
+            )
+            assert len(res) == 1
+            for r in res:
+                assert token in r["text"]
+        if enable_full_text_search:
+            search_data = [fake_en.text()+f" {token} "]
+            res = c.search(
+                data=search_data,
+                anns_field="bm25_sparse_vector",
+                output_fields=["text"],
+                limit=1
+            )
+            assert len(res) == 1
+            for r in res:
+                assert len(r) == 1
         res = self.client.delete_backup(back_up_name)
         res = self.client.list_backup()
         if "data" in res:
