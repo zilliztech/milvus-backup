@@ -5,8 +5,6 @@
 </div>
 
 
-<img src="https://github.com/zilliztech/milvus-backup/blob/main/docs/user_guide/figs/log.png" alt="milvus-backup-logo"/>
-
 Milvus-Backup is a tool that allows users to backup and restore Milvus data. This tool can be utilized either through the command line or an API server.
 
 The Milvus-backup process has negligible impact on the performance of Milvus. Milvus cluster is fully functional and can operate normally while backup and restoration are in progress.
