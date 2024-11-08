@@ -2,6 +2,7 @@ package paramtable
 
 import (
 	"strconv"
+	"strings"
 )
 
 // BackupParams
@@ -286,7 +287,7 @@ func (p *MinioConfig) initBucketName() {
 
 func (p *MinioConfig) initRootPath() {
 	rootPath := p.Base.LoadWithDefault("minio.rootPath", DefaultMinioRootPath)
-	p.RootPath = rootPath
+	p.RootPath = strings.TrimLeft(rootPath, "/")
 }
 
 func (p *MinioConfig) initUseIAM() {
