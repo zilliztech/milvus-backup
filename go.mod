@@ -40,6 +40,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
+replace github.com/milvus-io/milvus-sdk-go/v2 => github.com/wayblink/milvus-sdk-go/v2 v2.3.0-beta4.0.20241030091852-d6eb85c1a8ff
+
 require github.com/milvus-io/milvus-proto/go-api/v2 v2.3.4-0.20240909041258-8f8ca67816cd
 
 require (
