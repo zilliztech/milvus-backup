@@ -13,18 +13,17 @@ The Milvus-backup process has negligible impact on the performance of Milvus. Mi
 
 * Download binary from [release page](https://github.com/zilliztech/milvus-backup/releases). Usually the latest is recommended.
 
-For Mac: 
-* Use [homebrew](https://brew.sh/) to install
+* Use [homebrew](https://brew.sh/) to install on Mac
   ```shell
   brew install zilliztech/tap/milvus-backup
   ```
 
-## Get started
+## Usage
 
 Milvus-backup provides command line and API server for usage.
 
-### Config
-In order to use Milvus-Backup, access to Milvus proxy and Minio cluster is required. Configuration settings related to this access can be edited in `backup.yaml`.
+### Configuration
+In order to use Milvus-Backup, access to Milvus proxy and Minio cluster is required. Configuration settings related to this access can be edited in [backup.yaml](configs/backup.yaml).
 
 > [!NOTE]
 >
@@ -80,13 +79,19 @@ The server will listen on port 8080 by default. However, you can change it by us
 
 We offer a [demo](docs/user_guide/api_demo.md) of the key APIs; however, please refer to the Swagger UI for the most up-to-date usage details, as the demo may occasionally become outdated.
 
-### swagger UI
+#### swagger UI
 
 We offer access to our Swagger UI, which displays comprehensive information for our APIs. To view it, simply go to
 
 ```
 http://localhost:8080/api/v1/docs/index.html
 ```
+
+### Advanced feature
+
+1. [Cross Storage Backup](docs/user_guide/cross_storage.md): Data is read from the source storage and written to a different storage through the Milvus-backup service. Such as, S3 -> local, S3 a -> S3 b. 
+
+2. [RBAC Backup&Restore](docs/user_guide/rbac.md): Enable backup and restore RBAC meta with extra parameter.
 
 
 ## Development

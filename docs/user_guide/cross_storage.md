@@ -90,3 +90,23 @@ minio:
   # However, if they are the same but belong to different services, you must manually set this option to `true`.
   crossStorage: "true"
 ```
+
+## FAQ
+
+Q: 
+```
+What is the meaning of the option `crossStorage`. 
+
+Even if the storageType is the same, does it mean we need to set crossStorage to true when minio.address and backupaddress are different? 
+```
+
+A:
+```
+The crossStorage option determines how data is transferred:
+
+When set to True, data is transferred via read and write operations managed by the milvus-backup process.
+
+When set to False, data is directly copied using the storage system’s COPY API, bypassing the milvus-backup process.
+
+Use crossStorage based on whether the two addresses are accessible to each other through the COPY API.
+```
