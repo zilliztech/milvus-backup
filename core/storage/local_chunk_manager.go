@@ -234,7 +234,6 @@ func (lcm *LocalChunkManager) UploadObject(ctx context.Context, i UploadObjectIn
 		return err
 	}
 
-	fmt.Println("Successfully written to file!")
 	return nil
 }
 
@@ -356,7 +355,7 @@ func CopyDir(source string, dest string) (err error) {
 }
 
 func CopyFile(source string, dest string) (err error) {
-	
+
 	// get properties of source parent dir
 	sourceParentDir := filepath.Dir(source)
 	sourceParentDirInfo, err := os.Stat(sourceParentDir)
