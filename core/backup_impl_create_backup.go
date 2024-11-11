@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/golang/protobuf/proto"
 	jsoniter "github.com/json-iterator/go"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 	"github.com/samber/lo"
@@ -237,7 +236,7 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 	}
 	fields := make([]*backuppb.FieldSchema, 0)
 	for _, field := range completeCollection.Schema.Fields {
-		fieldBak := &backuppb.FieldSchema{
+		fields = append(fields, &backuppb.FieldSchema{
 			FieldID:        field.ID,
 			Name:           field.Name,
 			IsPrimaryKey:   field.PrimaryKey,
@@ -248,18 +247,8 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 			IndexParams:    utils.MapToKVPair(field.IndexParams),
 			IsDynamic:      field.IsDynamic,
 			IsPartitionKey: field.IsPartitionKey,
-			Nullable:       field.Nullable,
 			ElementType:    backuppb.DataType(field.ElementType),
-		}
-		defaultValue := field.DefaultValue
-		if defaultValue != nil {
-			bytes, err := proto.Marshal(field.DefaultValue)
-			if err != nil {
-				return err
-			}
-			fieldBak.DefaultValueProto = string(bytes)
-		}
-		fields = append(fields, fieldBak)
+		})
 	}
 	schema := &backuppb.CollectionSchema{
 		Name:               completeCollection.Schema.CollectionName,
@@ -481,7 +470,7 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 	}
 
 	newSegIDs := lo.Map(unfilledSegments, func(segment *entity.Segment, _ int) int64 { return segment.ID })
-	log.Debug("Finished fill segment",
+	log.Info("Finished fill segment",
 		zap.String("databaseName", collectionBackup.GetDbName()),
 		zap.String("collectionName", collectionBackup.GetCollectionName()),
 		zap.Int64s("segments", newSegIDs))
@@ -540,6 +529,7 @@ func (b *BackupContext) backupCollectionExecute(ctx context.Context, collectionB
 	log.Info("backupCollectionExecute", zap.Any("collectionMeta", collectionBackup.String()))
 	backupInfo := b.meta.GetBackupByCollectionID(collectionBackup.GetCollectionId())
 	backupBinlogPath := BackupBinlogDirPath(b.backupRootPath, backupInfo.GetName())
+
 	for _, partition := range b.meta.GetPartitions(collectionBackup.CollectionId) {
 		segmentBackupInfos := make([]*backuppb.SegmentBackupInfo, 0)
 		var currentSize int64 = 0
@@ -698,25 +688,10 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 	for _, collection := range toBackupCollections {
 		collectionClone := collection
 		job := func(ctx context.Context) error {
-			retryForSpecificError := func(retries int, delay time.Duration) error {
-				for i := 0; i < retries; i++ {
-					err := b.backupCollectionPrepare(ctx, backupInfo, collectionClone, request.GetForce())
-					// If no error, return successfully
-					if err == nil {
-						return nil
-					}
-					// Retry only for the specific error
-					if strings.Contains(err.Error(), "rate limit exceeded") {
-						fmt.Printf("Attempt %d: Temporary error occurred, retrying...\n", i+1)
-						time.Sleep(delay)
-						continue
-					}
-					// Return immediately for any other error
-					return err
-				}
-				return fmt.Errorf("operation failed after %d retries", retries)
-			}
-			return retryForSpecificError(10, 10*time.Second)
+			err := retry.Do(ctx, func() error {
+				return b.backupCollectionPrepare(ctx, backupInfo, collectionClone, request.GetForce())
+			}, retry.Sleep(120*time.Second), retry.Attempts(3))
+			return err
 		}
 		jobId := b.getBackupCollectionWorkerPool().SubmitWithId(job)
 		jobIds = append(jobIds, jobId)
@@ -767,7 +742,7 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 		backupInfo.ErrorMessage = err.Error()
 		return err
 	}
-	log.Info("finish backup all collections",
+	log.Info("finish executeCreateBackup",
 		zap.String("requestId", request.GetRequestId()),
 		zap.String("backupName", request.GetBackupName()),
 		zap.Strings("collections", request.GetCollectionNames()),
@@ -819,9 +794,11 @@ func (b *BackupContext) writeBackupInfoMeta(ctx context.Context, id string) erro
 
 func (b *BackupContext) copySegments(ctx context.Context, backupBinlogPath string, segmentIDs []int64) error {
 	jobIds := make([]int64, 0)
+	// log.Debug("GIFI-copySegments before", zap.Any("segmentIDs", segmentIDs))
 	for _, v := range segmentIDs {
 		segmentID := v
 		segment := b.meta.GetSegment(segmentID)
+		// log.Debug("GIFI-copySegments After", zap.Any("segment", segment))
 		job := func(ctx context.Context) error {
 			return b.copySegment(ctx, backupBinlogPath, segment)
 		}
@@ -838,22 +815,30 @@ func (b *BackupContext) copySegment(ctx context.Context, backupBinlogPath string
 		zap.Int64("partition_id", segment.GetPartitionId()),
 		zap.Int64("segment_id", segment.GetSegmentId()),
 		zap.Int64("group_id", segment.GetGroupId()))
-	log.Info("copy segment", zap.String("backupBinlogPath", backupBinlogPath))
+
 	// generate target path
 	// milvus_rootpath/insert_log/collection_id/partition_id/segment_id/ =>
 	// backup_rootpath/backup_name/binlog/insert_log/collection_id/partition_id/group_id/segment_id
 	backupPathFunc := func(binlogPath, rootPath, backupBinlogPath string) string {
+		// log.Debug("GIFI-backupPathFunc", zap.String("binlogPath", binlogPath))
+		// log.Debug("GIFI-backupPathFunc", zap.String("rootPath", rootPath))
+		// log.Debug("GIFI-backupPathFunc", zap.String("backupBinlogPath", backupBinlogPath))
+
 		if rootPath == "" {
 			return backupBinlogPath + SEPERATOR + binlogPath
 		} else {
-			return strings.Replace(binlogPath, rootPath, backupBinlogPath, 1)
+			checkvar := strings.Replace(binlogPath, rootPath, backupBinlogPath, 1)
+			//log.Debug("GIFI-backupPathFunc", zap.String("checkvar", checkvar))
+			return checkvar
 		}
 	}
 	// insert log
 	for _, binlogs := range segment.GetBinlogs() {
+		// log.Debug("GIFI INSIDE copySegment first loop")
 		for _, binlog := range binlogs.GetBinlogs() {
 			targetPath := backupPathFunc(binlog.GetLogPath(), b.milvusRootPath, backupBinlogPath)
-			// use segmentID as group id
+			//log.Debug("GIFI INSIDE copySegment", zap.String("targetPath", targetPath))
+			// B
 			segment.GroupId = segment.SegmentId
 			if segment.GetGroupId() != 0 {
 				targetPath = strings.Replace(targetPath,
@@ -861,10 +846,10 @@ func (b *BackupContext) copySegment(ctx context.Context, backupBinlogPath string
 					strconv.FormatInt(segment.GetPartitionId(), 10)+"/"+strconv.FormatInt(segment.GetGroupId(), 10),
 					1)
 			}
+			//log.Debug("GIFI INSIDE copySegment", zap.String("targetPath", targetPath))
 			if targetPath == binlog.GetLogPath() {
 				return errors.New(fmt.Sprintf("copy src path and dst path can not be the same, src: %s dst: %s", binlog.GetLogPath(), targetPath))
 			}
-
 			//binlog := binlog
 			exist, err := b.getMilvusStorageClient().Exist(ctx, b.milvusBucketName, binlog.GetLogPath())
 			if err != nil {
@@ -879,11 +864,13 @@ func (b *BackupContext) copySegment(ctx context.Context, backupBinlogPath string
 					zap.String("file", binlog.GetLogPath()))
 				return err
 			}
-
 			err = retry.Do(ctx, func() error {
 				path := binlog.GetLogPath()
-				return b.getBackupCopier().Copy(ctx, path, targetPath, b.milvusBucketName, b.backupBucketName)
+				// log.Info("TEST GIFI", zap.String("path", path))
+				erro := b.getBackupCopier().Copy(ctx, path, targetPath, b.milvusBucketName, b.backupBucketName)
+				return erro
 			}, retry.Sleep(2*time.Second), retry.Attempts(5))
+
 			if err != nil {
 				log.Info("Fail to copy file after retry",
 					zap.Error(err),
@@ -949,7 +936,7 @@ func (b *BackupContext) copySegment(ctx context.Context, backupBinlogPath string
 func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackupInfo *backuppb.SegmentBackupInfo) error {
 	var size int64 = 0
 	var rootPath string
-
+	log.Debug("GIFI INSIDE fillSegmentBackupInfo")
 	if b.params.MinioCfg.RootPath != "" {
 		rootPath = fmt.Sprintf("%s/", b.params.MinioCfg.RootPath)
 	} else {
@@ -957,7 +944,7 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackup
 	}
 
 	insertPath := fmt.Sprintf("%s%s/%v/%v/%v/", rootPath, "insert_log", segmentBackupInfo.GetCollectionId(), segmentBackupInfo.GetPartitionId(), segmentBackupInfo.GetSegmentId())
-	log.Debug("insertPath", zap.String("bucket", b.milvusBucketName), zap.String("insertPath", insertPath))
+	log.Debug("GIFI insertPath", zap.String("bucket", b.milvusBucketName), zap.String("insertPath", insertPath))
 	fieldsLogDir, _, err := b.getMilvusStorageClient().ListWithPrefix(ctx, b.milvusBucketName, insertPath, false)
 	// handle segment level
 	isL0 := false
@@ -968,12 +955,16 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackup
 		log.Error("Fail to list segment path", zap.String("insertPath", insertPath), zap.Error(err))
 		return err
 	}
-	log.Debug("fieldsLogDir", zap.String("bucket", b.milvusBucketName), zap.Any("fieldsLogDir", fieldsLogDir))
+	log.Debug("GIFI INSIDE fillSegmentBackupInfo", zap.Any("fieldsLogDir", fieldsLogDir))
 	insertLogs := make([]*backuppb.FieldBinlog, 0)
 	for _, fieldLogDir := range fieldsLogDir {
 		binlogPaths, sizes, _ := b.getMilvusStorageClient().ListWithPrefix(ctx, b.milvusBucketName, fieldLogDir, false)
 		fieldIdStr := strings.Replace(strings.Replace(fieldLogDir, insertPath, "", 1), SEPERATOR, "", -1)
 		fieldId, _ := strconv.ParseInt(fieldIdStr, 10, 64)
+		log.Debug("GIFI fillSegmentBackupInfo", zap.Any("fieldLogDir", fieldLogDir))
+		log.Debug("GIFI fillSegmentBackupInfo", zap.Any("binlogPaths", binlogPaths))
+		log.Debug("GIFI fillSegmentBackupInfo", zap.Any("fieldIdStr", fieldIdStr))
+		log.Debug("GIFI fillSegmentBackupInfo", zap.Any("fieldId", fieldId))
 		binlogs := make([]*backuppb.Binlog, 0)
 		for index, binlogPath := range binlogPaths {
 			binlogs = append(binlogs, &backuppb.Binlog{
@@ -1039,7 +1030,6 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackup
 	segmentBackupInfo.Size = size
 	segmentBackupInfo.IsL0 = isL0
 	b.meta.UpdateSegment(segmentBackupInfo.GetPartitionId(), segmentBackupInfo.GetSegmentId(), setSegmentBinlogs(insertLogs), setSegmentDeltaBinlogs(deltaLogs), setSegmentSize(size), setSegmentL0(isL0))
-	log.Debug("fill segment info", zap.Int64("segId", segmentBackupInfo.GetSegmentId()), zap.Int64("size", size))
 	return nil
 }
 

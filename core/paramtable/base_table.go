@@ -33,16 +33,17 @@ import (
 const (
 	DefaultBackupYaml = "backup.yaml"
 
-	DefaultMinioAddress         = "localhost"
-	DefaultMinioPort            = "9000"
-	DefaultMinioAccessKey       = "minioadmin"
-	DefaultMinioSecretAccessKey = "minioadmin"
-	DefaultMinioUseSSL          = "false"
-	DefaultMinioBucketName      = "a-bucket"
-	DefaultMinioRootPath        = "files"
-	DefaultMinioUseIAM          = "false"
-	DefaultMinioCloudProvider   = "aws"
-	DefaultMinioIAMEndpoint     = ""
+	DefaultMinioAddress           = "localhost"
+	DefaultMinioPort              = "9000"
+	DefaultMinioAccessKey         = "minioadmin"
+	DefaultMinioSecretAccessKey   = "minioadmin"
+	DefaultMinioGcpCredentialJSON = ""
+	DefaultMinioUseSSL            = "false"
+	DefaultMinioBucketName        = "a-bucket"
+	DefaultMinioRootPath          = "files"
+	DefaultMinioUseIAM            = "false"
+	DefaultMinioCloudProvider     = "aws"
+	DefaultMinioIAMEndpoint       = ""
 
 	DefaultLogLevel = "WARNING"
 
@@ -57,6 +58,8 @@ const (
 	DefaultMilvusTlsMode              = "0"
 	DefaultMilvusUser                 = "root"
 	DefaultMilvusPassword             = "Milvus"
+	DefaultMilvusTLSCertPath          = ""
+	DefaultMilvusServerName           = ""
 )
 
 var defaultYaml = DefaultBackupYaml
@@ -428,6 +431,11 @@ func (gp *BaseTable) loadMinioConfig() {
 		_ = gp.Save("minio.secretAccessKey", minioSecretKey)
 	}
 
+	minioGcpCredentialJSON := os.Getenv("MINIO_GCP_KEY_JSON")
+	if minioGcpCredentialJSON != "" {
+		_ = gp.Save("minio.gcpCredentialJSON", minioGcpCredentialJSON)
+	}
+
 	minioUseSSL := os.Getenv("MINIO_USE_SSL")
 	if minioUseSSL != "" {
 		_ = gp.Save("minio.useSSL", minioUseSSL)
@@ -483,6 +491,11 @@ func (gp *BaseTable) loadMinioConfig() {
 		_ = gp.Save("minio.backupSecretAccessKey", minioBackupSecretKey)
 	}
 
+	minioBackupGcpCredentialJSON := os.Getenv("MINIO_BACKUP_GCP_KEY_JSON")
+	if minioBackupGcpCredentialJSON != "" {
+		_ = gp.Save("minio.backupGcpCredentialJSON", minioBackupGcpCredentialJSON)
+	}
+
 	minioBackupUseSSL := os.Getenv("MINIO_BACKUP_USE_SSL")
 	if minioBackupUseSSL != "" {
 		_ = gp.Save("minio.backupUseSSL", minioBackupUseSSL)
@@ -528,5 +541,15 @@ func (gp *BaseTable) loadMilvusConfig() {
 	milvusPassword := os.Getenv("MILVUS_PASSWORD")
 	if milvusPassword != "" {
 		_ = gp.Save("milvus.password", milvusPassword)
+	}
+	// GIFI added
+	milvusTLSCertPath := os.Getenv("MILVUS_TLS_CERTPATH")
+	if milvusTLSCertPath != "" {
+		_ = gp.Save("milvus.tlsCertPath", milvusTLSCertPath)
+	}
+	// GIFI added
+	milvusServerName := os.Getenv("MILVUS_SERVER_NAME")
+	if milvusServerName != "" {
+		_ = gp.Save("milvus.serverName", milvusServerName)
 	}
 }

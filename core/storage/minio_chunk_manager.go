@@ -55,7 +55,7 @@ func NewMinioChunkManagerWithConfig(ctx context.Context, config *StorageConfig) 
 	var creds *credentials.Credentials
 	var newMinioFn = minio.New
 	var bucketLookupType = minio.BucketLookupAuto
-
+	log.Info("GIFI-", zap.String("Address", config.Address))
 	switch config.StorageType {
 	case paramtable.CloudProviderAliyun:
 		// auto doesn't work for aliyun, so we set to dns deliberately
@@ -112,7 +112,7 @@ func NewMinioChunkManagerWithConfig(ctx context.Context, config *StorageConfig) 
 	checkBucketFn := func() error {
 		bucketExists, err = minIOClient.BucketExists(ctx, config.BucketName)
 		if err != nil {
-			log.Warn("failed to check blob bucket exist", zap.String("bucket", config.BucketName), zap.Error(err))
+			log.Warn("failed to check blob bucket exist", zap.String("bucket", config.BucketName), zap.String("Port", config.Address), zap.Error(err))
 			return err
 		}
 		if !bucketExists {

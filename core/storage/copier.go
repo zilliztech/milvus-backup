@@ -135,7 +135,7 @@ type CopyPathInput struct {
 // getAttrs get all attrs under bucket/prefix
 func (c *Copier) getAttrs(ctx context.Context, bucket, prefix string, copySuffix string) ([]ObjectAttr, error) {
 	var attrs []ObjectAttr
-
+	log.Debug("(c *Copier) getAttrs", zap.Any("prefix", prefix))
 	paths, sizes, err := c.src.ListWithPrefix(ctx, bucket, prefix, true)
 	if err != nil {
 		return nil, err
@@ -257,7 +257,7 @@ func (c *Copier) selectCopyFn() copyFn {
 }
 
 func (c *Copier) copyRemote(ctx context.Context, attr ObjectAttr, destKey, srcBucket, destBucket string) error {
-	log.Debug("copyRemote", zap.String("srcBucket", srcBucket), zap.String("destBucket", destBucket), zap.String("key", attr.Key), zap.String("destKey", destKey))
+	// log.Debug("GIFI copyRemote", zap.String("srcBucket", srcBucket), zap.String("destBucket", destBucket), zap.String("key", attr.Key), zap.String("destKey", destKey))
 	if err := c.dest.Copy(ctx, srcBucket, destBucket, attr.Key, destKey); err != nil {
 		return fmt.Errorf("storage: copier copy object %w", err)
 	}

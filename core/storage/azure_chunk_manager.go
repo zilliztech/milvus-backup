@@ -70,8 +70,11 @@ var _ ChunkManager = (*AzureChunkManager)(nil)
 func NewAzureChunkManager(ctx context.Context, config *StorageConfig) (*AzureChunkManager, error) {
 	aos, err := newAzureObjectStorageWithConfig(ctx, config)
 	if err != nil {
+		// log.Debug("GIFI NewAzureChunkManager err")
 		return nil, err
-	}
+	} //else {
+	//log.Debug("GIFI NewAzureChunkManager no err")
+	//}
 
 	//cli, err := NewAzureClient(ctx, c)
 	//if err != nil {
@@ -94,12 +97,16 @@ func (mcm *AzureChunkManager) Config() *StorageConfig {
 
 func (mcm *AzureChunkManager) Copy(ctx context.Context, fromBucketName string, toBucketName string, fromPath string, toPath string) error {
 	objectkeys, _, err := mcm.ListWithPrefix(ctx, fromBucketName, fromPath, true)
+	log.Debug("GIFI AzureChunkManager Copy", zap.Any("objectkeys", objectkeys))
 	if err != nil {
 		log.Warn("listWithPrefix error", zap.String("prefix", fromPath), zap.Error(err))
 		return err
 	}
+	// log.Debug("GIFI AzureChunkManager Copy", zap.String("fromPath", fromPath), zap.String("toPath", toPath))
 	for _, objectkey := range objectkeys {
+		// log.Info("GIFI AzureChunkManager Copy", zap.String("objectkey", objectkey), zap.String("fromPath", fromPath), zap.String("toPath", toPath))
 		dstObjectKey := strings.Replace(objectkey, fromPath, toPath, 1)
+		// log.Info("GIFI AzureChunkManager Copy", zap.String("objectkey", objectkey), zap.String("fromPath", fromPath), zap.String("toPath", toPath))
 		err := mcm.aos.CopyObject(ctx, fromBucketName, toBucketName, objectkey, dstObjectKey)
 		if err != nil {
 			log.Error("copyObject error", zap.String("srcObjectKey", objectkey), zap.String("dstObjectKey", dstObjectKey), zap.Error(err))
@@ -307,6 +314,7 @@ func (mcm *AzureChunkManager) RemoveWithPrefix(ctx context.Context, bucketName s
 // ListWithPrefix returns objects with provided prefix.
 func (mcm *AzureChunkManager) ListWithPrefix(ctx context.Context, bucketName string, prefix string, recursive bool) ([]string, []int64, error) {
 	objects, err := mcm.listObjects(ctx, bucketName, prefix, true)
+
 	if err != nil {
 		return nil, nil, err
 	}
@@ -324,12 +332,15 @@ func (mcm *AzureChunkManager) ListWithPrefix(ctx context.Context, bucketName str
 		objectsKeysDict := make(map[string]bool, 0)
 		for object, size := range objects {
 			keyWithoutPrefix := strings.Replace(object, prefix, "", 1)
+			// log.Info("------", zap.Any("object", object))
+			// log.Info("------", zap.Any("prefix", prefix))
+			// log.Info("------", zap.Any("keyWithoutPrefix", keyWithoutPrefix))
 			if strings.Contains(keyWithoutPrefix, "/") {
 				var key string
 				if strings.HasPrefix(keyWithoutPrefix, "/") {
 					key = prefix + "/" + strings.Split(keyWithoutPrefix, "/")[1] + "/"
 				} else {
-					key = prefix + strings.Split(keyWithoutPrefix, "/")[0] + "/"
+					key = prefix + strings.Split(keyWithoutPrefix, "/")[0] + "/" //GIFI Doubt
 				}
 				if _, exist := objectsKeysDict[key]; !exist {
 					objectsKeys = append(objectsKeys, key)
@@ -353,7 +364,6 @@ func (mcm *AzureChunkManager) ListWithPrefix(ctx context.Context, bucketName str
 		for _, objectKey := range objectsKeys {
 			sizes = append(sizes, sizesDict[objectKey])
 		}
-
 		return objectsKeys, sizes, nil
 	}
 }

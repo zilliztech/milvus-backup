@@ -283,8 +283,6 @@ message RestoreBackupRequest {
   bool skipImportDiskQuotaCheck = 17;
   // whether restore RBAC
   bool rbac = 18;
-  // target max shard number
-  int32 maxShardNum = 19;
 }
 
 message RestorePartitionTask {
@@ -323,8 +321,6 @@ message RestoreCollectionTask {
   // if true will skip create collections
   bool skipCreateCollection = 18;
   bool skipDiskQuotaCheck = 19;
-  // target max shard number
-  int32 maxShardNum = 20;
 }
 
 message RestoreBackupTask {
@@ -451,8 +447,6 @@ message FieldSchema {
   ValueField default_value = 11; // default_value only support scalars except array and json for now
   bool is_dynamic = 12; // mark whether this field is the dynamic field
   bool is_partition_key = 13; // enable logic partitions
-  bool nullable = 14;
-  string default_value_proto = 15; // json not support marshall oneof, so use proto string
 }
 
 /**
