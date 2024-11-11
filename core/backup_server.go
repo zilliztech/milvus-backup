@@ -264,6 +264,7 @@ func (h *Handlers) handleGetRestore(c *gin.Context) (interface{}, error) {
 	if h.backupContext.params.HTTPCfg.SimpleResponse {
 		resp = SimpleRestoreResponse(resp)
 	}
+	log.Info("End to GetRestoreStateRequest", zap.Any("resp", resp))
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
