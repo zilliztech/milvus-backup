@@ -988,6 +988,7 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackup
 		})
 	}
 
+	log.Info("wayblink debug", zap.Int64("collID", segmentBackupInfo.GetCollectionId()), zap.Int64("partID", segmentBackupInfo.GetPartitionId()), zap.Int64("segID", segmentBackupInfo.GetSegmentId()))
 	deltaLogPath := fmt.Sprintf("%s%s/%v/%v/%v/", rootPath, "delta_log", segmentBackupInfo.GetCollectionId(), segmentBackupInfo.GetPartitionId(), segmentBackupInfo.GetSegmentId())
 	deltaFieldsLogDir, _, _ := b.getMilvusStorageClient().ListWithPrefix(ctx, b.milvusBucketName, deltaLogPath, false)
 	deltaLogs := make([]*backuppb.FieldBinlog, 0)
