@@ -151,7 +151,7 @@ func (b *BackupContext) parseBackupCollections(request *backuppb.CreateBackupReq
 		}
 		for db, collections := range dbCollections {
 			if len(collections) == 0 {
-				collections, err := b.getMilvusClient().ListCollections(b.ctx, db)
+				collections, err := b.getMilvusClient().ListCollectionsV2(b.ctx, db)
 				if err != nil {
 					log.Error("fail in ListCollections", zap.Error(err))
 					return nil, err
@@ -176,7 +176,7 @@ func (b *BackupContext) parseBackupCollections(request *backuppb.CreateBackupReq
 			// compatible to milvus under v2.2.8 without database support
 			if strings.Contains(err.Error(), "feature not supported") {
 				// default database only
-				collections, err := b.getMilvusClient().ListCollections(b.ctx, "default")
+				collections, err := b.getMilvusClient().ListCollectionsV2(b.ctx, "default")
 				if err != nil {
 					log.Error("fail in ListCollections", zap.Error(err))
 					return nil, err
@@ -190,7 +190,7 @@ func (b *BackupContext) parseBackupCollections(request *backuppb.CreateBackupReq
 			}
 		} else {
 			for _, db := range dbs {
-				collections, err := b.getMilvusClient().ListCollections(b.ctx, db.Name)
+				collections, err := b.getMilvusClient().ListCollectionsV2(b.ctx, db.Name)
 				if err != nil {
 					log.Error("fail in ListCollections", zap.Error(err))
 					return nil, err

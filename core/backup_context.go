@@ -143,14 +143,12 @@ func CreateBackupContext(ctx context.Context, params paramtable.BackupParams) *B
 
 func (b *BackupContext) getMilvusClient() *MilvusClient {
 	if b.milvusClient == nil {
-		milvusClient, err := CreateMilvusClient(b.ctx, b.params)
+		milvusClient, err := newMilvusClient(b.ctx, b.params)
 		if err != nil {
 			log.Error("failed to initial milvus client", zap.Error(err))
 			panic(err)
 		}
-		b.milvusClient = &MilvusClient{
-			client: milvusClient,
-		}
+		b.milvusClient = milvusClient
 	}
 	return b.milvusClient
 }
