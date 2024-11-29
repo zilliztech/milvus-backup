@@ -86,12 +86,78 @@ We offer access to our Swagger UI, which displays comprehensive information for 
 ```
 http://localhost:8080/api/v1/docs/index.html
 ```
+---
+
+## Backup.yaml Configurations
+
+Below is a summary of the configurations supported in `backup.yaml`:
+
+| **Section**       | **Field**                         | **Description**                                                                                       | **Default/Example**                           |
+|--------------------|-----------------------------------|-------------------------------------------------------------------------------------------------------|-----------------------------------------------|
+| `log`             | `level`                          | Logging level. Supported: `debug`, `info`, `warn`, `error`, `panic`, `fatal`.                         | `info`                                        |
+|                   | `console`                        | Whether to print logs to the console.                                                                | `true`                                        |
+|                   | `file.rootPath`                  | Path to the log file.                                                                                 | `logs/backup.log`                             |
+| `http`            | `simpleResponse`                 | Whether to enable simple HTTP responses.                                                             | `true`                                        |
+| `milvus`          | `address`                        | Milvus proxy address.                                                                                 | `localhost`                                   |
+|                   | `port`                           | Milvus proxy port.                                                                                    | `19530`                                       |
+|                   | `authorizationEnabled`           | Whether to enable authorization.                                                                     | `false`                                       |
+|                   | `tlsMode`                        | TLS mode (0: none, 1: one-way, 2: two-way).                                                          | `0`                                           |
+|                   | `user`                           | Username for Milvus.                                                                                  | `root`                                        |
+|                   | `password`                       | Password for Milvus.                                                                                  | `Milvus`                                      |
+| `minio`           | `storageType`                    | Storage type for Milvus (e.g., `local`, `minio`, `s3`, `aws`, `gcp`, `ali(aliyun)`, `azure`, `tc(tencent)`).                                                 | `minio`                                       |
+|                   | `address`                        | MinIO/S3 address.                                                                                     | `localhost`                                   |
+|                   | `port`                           | MinIO/S3 port.                                                                                        | `9000`                                        |
+|                   | `accessKeyID`                    | MinIO/S3 access key ID.                                                                               | `minioadmin`                                  |
+|                   | `secretAccessKey`                | MinIO/S3 secret access key.                                                                           | `minioadmin`                                  |
+|                   | `useSSL`                         | Whether to use SSL for MinIO/S3.                                                                      | `false`                                       |
+|                   | `bucketName`                     | Bucket name in MinIO/S3.                                                                              | `a-bucket`                                    |
+|                   | `rootPath`                       | Storage root path in MinIO/S3.                                                                        | `files`                                       |
+| `minio (backup)`  | `backupStorageType`              | Backup storage type (e.g., `local`, `minio`, `s3`, `aws`, `gcp`, `ali(aliyun)`, `azure`, `tc(tencent)`).                                                     | `minio`                                       |
+|                   | `backupAddress`                  | Address of backup storage.                                                                            | `localhost`                                   |
+|                   | `backupPort`                     | Port of backup storage.                                                                               | `9000`                                        |
+|                   | `backupUseSSL`                   | Whether to use SSL for backup storage.                                                                | `false`                                       |
+|                   | `backupAccessKeyID`              | Backup storage access key ID.                                                                         | `minioadmin`                                  |
+|                   | `backupSecretAccessKey`          | Backup storage secret access key.                                                                     | `minioadmin`                                  |
+|                   | `backupBucketName`               | Bucket name for backups.                                                                              | `a-bucket`                                    |
+|                   | `backupRootPath`                 | Root path to store backup data.                                                                       | `backup`                                      |
+|                   | `crossStorage`                   | Enable cross-storage backups (e.g., MinIO to AWS S3).                                                 | `false`                                       |
+| `backup`          | `maxSegmentGroupSize`            | Maximum segment group size for backups.                                                               | `2G`                                          |
+|                   | `parallelism.backupCollection`   | Collection-level parallelism for backup.                                                              | `4`                                           |
+|                   | `parallelism.copydata`           | Thread pool size for copying data.                                                                    | `128`                                         |
+|                   | `parallelism.restoreCollection`  | Collection-level parallelism for restore.                                                             | `2`                                           |
+|                   | `keepTempFiles`                  | Whether to keep temporary files during restore (for debugging).                                       | `false`                                       |
+|                   | `gcPause.enable`                 | Pause Milvus garbage collection during backup.                                                        | `true`                                        |
+|                   | `gcPause.seconds`                | Duration to pause garbage collection (in seconds).                                                    | `7200`                                        |
+|                   | `gcPause.address`                | Address for Milvus garbage collection API.                                                            | `http://localhost:9091`                       |
+
+For more details, refer to the [backup.yaml](configs/backup.yaml) configuration file.
 
 ### Advanced feature
 
 1. [Cross Storage Backup](docs/user_guide/cross_storage.md): Data is read from the source storage and written to a different storage through the Milvus-backup service. Such as, S3 -> local, S3 a -> S3 b. 
 
 2. [RBAC Backup&Restore](docs/user_guide/rbac.md): Enable backup and restore RBAC meta with extra parameter.
+
+## Examples
+
+### Syncing Minio Backups to an AWS S3 Bucket
+
+> **NOTE:** The following configuration is an example only. Replace the placeholders with your actual AWS and Minio settings.
+
+To back up Milvus data to an AWS S3 bucket, you need to configure the `backup.yaml` file with the following settings:
+
+```yaml
+# Backup storage configs: Configure the storage where you want to save the backup data
+backupStorageType: "aws"                     # Specifies the storage type as AWS S3
+backupAddress: s3.{your-aws-region}.amazonaws.com  # Address of AWS S3 (replace {your-aws-region} with your bucket's region)
+backupPort: 443                              # Default port for AWS S3
+backupAccessKeyID: <your-access-key-id>      # Access key ID for your AWS S3
+backupSecretAccessKey: <your-secret-key>     # Secret access key for AWS S3
+backupBucketName: "your-bucket-name"         # Bucket name where the backups will be stored
+backupRootPath: "backups"                    # Root path inside the bucket to store backups
+backupUseSSL: true                           # Use SSL for secure connections (Required)
+crossStorage: "true"                         # Required for minio to S3 backups
+```
 
 
 ## Development
