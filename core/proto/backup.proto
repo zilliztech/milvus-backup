@@ -464,6 +464,26 @@ message CollectionSchema {
   bool autoID = 3; // deprecated later, keep compatible with c++ part now
   repeated FieldSchema fields = 4;
   bool enable_dynamic_field = 5; // mark whether this table has the dynamic field function enabled.
+  repeated KeyValuePair properties = 6;
+  repeated FunctionSchema functions = 7;
+}
+
+enum FunctionType{
+  Unknown =0;
+  BM25 =1;
+  TextEmbedding =2;
+}
+
+message FunctionSchema {
+  string name = 1;
+  int64 id =2;
+  string description = 3;
+  FunctionType type = 4;
+  repeated string input_field_names = 5;
+  repeated int64 input_field_ids = 6;
+  repeated string output_field_names = 7;
+  repeated int64 output_field_ids = 8;
+  repeated KeyValuePair params = 9;
 }
 
 message CheckRequest {

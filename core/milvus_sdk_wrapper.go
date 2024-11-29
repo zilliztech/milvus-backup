@@ -12,7 +12,6 @@ import (
 	gomilvus "github.com/milvus-io/milvus-sdk-go/v2/client"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 
-	entityV2 "github.com/milvus-io/milvus/client/v2/entity"
 	milvusClientV2 "github.com/milvus-io/milvus/client/v2/milvusclient"
 
 	"github.com/zilliztech/milvus-backup/core/paramtable"
@@ -151,31 +150,6 @@ func (m *MilvusClient) ListCollections(ctx context.Context, db string) ([]*entit
 		return nil, err
 	}
 	return m.client.ListCollections(ctx)
-}
-
-func (m *MilvusClient) ListCollectionsV2(ctx context.Context, db string) ([]*entityV2.Collection, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	err := m.milvusClientV2.UsingDatabase(ctx, milvusClientV2.NewUsingDatabaseOption(db))
-	if err != nil {
-		return nil, err
-	}
-
-	collections, err := m.milvusClientV2.ListCollections(ctx, milvusClientV2.NewListCollectionOption())
-	if err != nil {
-		return nil, err
-	}
-
-	collectionEntities := make([]*entityV2.Collection, 0)
-	for _, collection := range collections {
-		coll, err := m.milvusClientV2.DescribeCollection(ctx, milvusClientV2.NewDescribeCollectionOption(collection))
-		if err != nil {
-			return nil, err
-		}
-		collectionEntities = append(collectionEntities, coll)
-	}
-
-	return collectionEntities, nil
 }
 
 func (m *MilvusClient) HasCollection(ctx context.Context, db, collName string) (bool, error) {

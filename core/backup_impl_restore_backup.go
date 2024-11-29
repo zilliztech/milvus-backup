@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+
 	"path"
 	"strings"
 	"time"
@@ -13,6 +14,8 @@ import (
 	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
 	gomilvus "github.com/milvus-io/milvus-sdk-go/v2/client"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
+	entityV2 "github.com/milvus-io/milvus/client/v2/entity"
+	indexV2 "github.com/milvus-io/milvus/client/v2/index"
 	"github.com/samber/lo"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
@@ -419,22 +422,22 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 		zap.String("backupBucketName", backupBucketName),
 		zap.String("backupPath", backupPath))
 	// create collection
-	fields := make([]*entity.Field, 0)
+	fields := make([]*entityV2.Field, 0)
 	hasPartitionKey := false
 	for _, field := range task.GetCollBackup().GetSchema().GetFields() {
-		fieldRestore := &entity.Field{
+		fieldRestore := &entityV2.Field{
 			ID:             field.GetFieldID(),
 			Name:           field.GetName(),
 			PrimaryKey:     field.GetIsPrimaryKey(),
 			AutoID:         field.GetAutoID(),
 			Description:    field.GetDescription(),
-			DataType:       entity.FieldType(field.GetDataType()),
+			DataType:       entityV2.FieldType(field.GetDataType()),
 			TypeParams:     utils.KvPairsMap(field.GetTypeParams()),
 			IndexParams:    utils.KvPairsMap(field.GetIndexParams()),
 			IsDynamic:      field.GetIsDynamic(),
 			IsPartitionKey: field.GetIsPartitionKey(),
 			Nullable:       field.GetNullable(),
-			ElementType:    entity.FieldType(field.GetElementType()),
+			ElementType:    entityV2.FieldType(field.GetElementType()),
 		}
 		if field.DefaultValueProto != "" {
 			defaultValue := &schemapb.ValueField{}
@@ -453,7 +456,7 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 
 	log.Info("collection schema", zap.Any("fields", fields))
 
-	collectionSchema := &entity.Schema{
+	collectionSchema := &entityV2.Schema{
 		CollectionName:     targetCollectionName,
 		Description:        task.GetCollBackup().GetSchema().GetDescription(),
 		AutoID:             task.GetCollBackup().GetSchema().GetAutoID(),
@@ -491,22 +494,12 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 				log.Info("overwrite shardNum by request parameter", zap.Int32("oldShardNum", task.GetCollBackup().GetShardsNum()), zap.Int32("newShardNum", shardNum))
 
 			}
+
 			if hasPartitionKey {
 				partitionNum := len(task.GetCollBackup().GetPartitionBackups())
-				return b.getMilvusClient().CreateCollection(
-					ctx,
-					targetDBName,
-					collectionSchema,
-					shardNum,
-					gomilvus.WithConsistencyLevel(entity.ConsistencyLevel(task.GetCollBackup().GetConsistencyLevel())),
-					gomilvus.WithPartitionNum(int64(partitionNum)))
+				return b.getMilvusClient().CreateCollectionV2(ctx, targetDBName, collectionSchema, shardNum, entityV2.ConsistencyLevel(task.GetCollBackup().GetConsistencyLevel()), int64(partitionNum))
 			}
-			return b.getMilvusClient().CreateCollection(
-				ctx,
-				targetDBName,
-				collectionSchema,
-				shardNum,
-				gomilvus.WithConsistencyLevel(entity.ConsistencyLevel(task.GetCollBackup().GetConsistencyLevel())))
+			return b.getMilvusClient().CreateCollectionV2(ctx, targetDBName, collectionSchema, shardNum, entityV2.ConsistencyLevel(task.GetCollBackup().GetConsistencyLevel()), 0)
 		}, retry.Attempts(10), retry.Sleep(1*time.Second))
 		if err != nil {
 			errorMsg := fmt.Sprintf("fail to create collection, targetCollectionName: %s err: %s", targetCollectionName, err)
@@ -560,7 +553,7 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 		}
 		indexes := task.GetCollBackup().GetIndexInfos()
 		for _, index := range indexes {
-			var idx entity.Index
+			var idx indexV2.Index
 			log.Info("source index",
 				zap.String("indexName", index.GetIndexName()),
 				zap.String("indexType", index.GetIndexType()),
@@ -571,7 +564,10 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 				// auto index only support index_type and metric_type in params
 				params["index_type"] = "AUTOINDEX"
 				params["metric_type"] = index.GetParams()["metric_type"]
-				idx = entity.NewGenericIndex(index.GetIndexName(), entity.AUTOINDEX, params)
+				// v1
+				//idx = entity.NewGenericIndex(index.GetIndexName(), entity.AUTOINDEX, params)
+				// v2
+				idx = indexV2.NewGenericIndex(index.GetIndexName(), params)
 			} else {
 				log.Info("not auto index")
 				indexType := index.GetIndexType()
@@ -582,9 +578,12 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 				if params["index_type"] == "marisa-trie" {
 					params["index_type"] = "Trie"
 				}
-				idx = entity.NewGenericIndex(index.GetIndexName(), entity.IndexType(indexType), index.GetParams())
+				// v1
+				//idx = entityV2.NewGenericIndex(index.GetIndexName(), entity.IndexType(indexType), index.GetParams())
+				// v2
+				idx = indexV2.NewGenericIndex(index.GetIndexName(), params)
 			}
-			err := b.getMilvusClient().CreateIndex(ctx, targetDBName, targetCollectionName, index.GetFieldName(), idx, true)
+			err := b.getMilvusClient().CreateIndexV2(ctx, targetDBName, targetCollectionName, index.GetFieldName(), idx, true)
 			if err != nil {
 				log.Warn("Fail to restore index", zap.Error(err))
 				return task, err
@@ -663,6 +662,7 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 			return task, err
 		}
 		if !exist {
+			log.Info("create partition", zap.String("partitionName", partitionBackup.GetPartitionName()))
 			err = retry.Do(ctx, func() error {
 				return b.getMilvusClient().CreatePartition(ctx, targetDBName, targetCollectionName, partitionBackup.GetPartitionName())
 			}, retry.Attempts(10), retry.Sleep(1*time.Second))
@@ -670,7 +670,6 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 				log.Error("fail to create partition", zap.Error(err))
 				return task, err
 			}
-			log.Info("create partition", zap.String("partitionName", partitionBackup.GetPartitionName()))
 		}
 
 		type restoreGroup struct {

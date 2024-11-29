@@ -41,9 +41,11 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-require github.com/milvus-io/milvus-proto/go-api/v2 v2.3.4-0.20241108105827-266fb751b620
+require github.com/milvus-io/milvus-proto/go-api/v2 v2.3.4-0.20241120015424-93892e628c69
 
 replace github.com/milvus-io/milvus-sdk-go/v2 => github.com/wayblink/milvus-sdk-go/v2 v2.3.0-beta4.0.20241030091852-d6eb85c1a8ff
+
+replace github.com/milvus-io/milvus/client/v2 => github.com/wayblink/milvus/client/v2 v2.0.0-20241129040934-6ffc6bcba352
 
 require (
 	cloud.google.com/go/compute/metadata v0.3.0 // indirect
@@ -102,7 +104,7 @@ require (
 	github.com/mailru/easyjson v0.7.7 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
 	github.com/matttproud/golang_protobuf_extensions v1.0.4 // indirect
-	github.com/milvus-io/milvus/pkg v0.0.2-0.20241111021426-5e90f348fcbb // indirect
+	github.com/milvus-io/milvus/pkg v0.0.2-0.20241126032235-cb6542339e84 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
 	github.com/minio/sha256-simd v1.0.1 // indirect
 	github.com/mitchellh/mapstructure v1.4.1 // indirect

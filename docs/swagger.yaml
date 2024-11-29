@@ -142,8 +142,16 @@ definitions:
         items:
           $ref: '#/definitions/backuppb.FieldSchema'
         type: array
+      functions:
+        items:
+          $ref: '#/definitions/backuppb.FunctionSchema'
+        type: array
       name:
         type: string
+      properties:
+        items:
+          $ref: '#/definitions/backuppb.KeyValuePair'
+        type: array
     type: object
   backuppb.ConsistencyLevel:
     enum:
@@ -309,6 +317,47 @@ definitions:
     - FieldState_FieldCreating
     - FieldState_FieldDropping
     - FieldState_FieldDropped
+  backuppb.FunctionSchema:
+    properties:
+      description:
+        type: string
+      id:
+        type: integer
+      input_field_ids:
+        items:
+          type: integer
+        type: array
+      input_field_names:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
+      output_field_ids:
+        items:
+          type: integer
+        type: array
+      output_field_names:
+        items:
+          type: string
+        type: array
+      params:
+        items:
+          $ref: '#/definitions/backuppb.KeyValuePair'
+        type: array
+      type:
+        $ref: '#/definitions/backuppb.FunctionType'
+    type: object
+  backuppb.FunctionType:
+    enum:
+    - 0
+    - 1
+    - 2
+    type: integer
+    x-enum-varnames:
+    - FunctionType_Unknown
+    - FunctionType_BM25
+    - FunctionType_TextEmbedding
   backuppb.GrantEntity:
     properties:
       db_name:
