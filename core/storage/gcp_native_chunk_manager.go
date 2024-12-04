@@ -56,10 +56,11 @@ func newGCPNativeChunkManagerWithConfig(ctx context.Context, config *StorageConf
 	var opts []option.ClientOption
 	var projectId string
 	if config.Address != "" {
-		complete_address := "http://"
-		if config.UseSSL {
-			complete_address = "https://"
-		}
+		// complete_address := "http://" //GIFI OLD
+		complete_address := "https://"
+		// if config.UseSSL {
+		// 	complete_address = "https://"
+		// }
 		complete_address = complete_address + config.Address + "/storage/v1/"
 		opts = append(opts, option.WithEndpoint(complete_address))
 	}

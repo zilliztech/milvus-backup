@@ -313,8 +313,9 @@ func (mcm *AzureChunkManager) RemoveWithPrefix(ctx context.Context, bucketName s
 
 // ListWithPrefix returns objects with provided prefix.
 func (mcm *AzureChunkManager) ListWithPrefix(ctx context.Context, bucketName string, prefix string, recursive bool) ([]string, []int64, error) {
-	objects, err := mcm.listObjects(ctx, bucketName, prefix, true)
-
+	// objects, err := mcm.listObjects(ctx, bucketName, prefix, true) //GIFI
+	objects, err := mcm.listObjects(ctx, bucketName, prefix, false)
+	log.Info("GIFI ListWithPrefix------", zap.Any("prefix", prefix))
 	if err != nil {
 		return nil, nil, err
 	}
@@ -332,9 +333,9 @@ func (mcm *AzureChunkManager) ListWithPrefix(ctx context.Context, bucketName str
 		objectsKeysDict := make(map[string]bool, 0)
 		for object, size := range objects {
 			keyWithoutPrefix := strings.Replace(object, prefix, "", 1)
-			// log.Info("------", zap.Any("object", object))
-			// log.Info("------", zap.Any("prefix", prefix))
-			// log.Info("------", zap.Any("keyWithoutPrefix", keyWithoutPrefix))
+			log.Info("GIFI------", zap.Any("object", object))
+			log.Info("GIFI------", zap.Any("prefix", prefix))
+			log.Info("GIFI------", zap.Any("keyWithoutPrefix", keyWithoutPrefix))
 			if strings.Contains(keyWithoutPrefix, "/") {
 				var key string
 				if strings.HasPrefix(keyWithoutPrefix, "/") {

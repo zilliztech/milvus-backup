@@ -689,16 +689,6 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 			// group.files[0] += "453580537997766901/0/453580537997566904"
 			//group.files[0] = "gs://gcs-nv1/nativemill/BackupMilvus864/flavorBacks15/binlogs/insert_log/453580537997566884/453580537997566885/453580537997766901/"
 			job := func(ctx context.Context) error {
-				// GIFI Start
-				// var slice []string
-				// slice = append(slice, "nativemill/BackupMilvus864/flavorBack5/")
-				// slice = append(slice, "nativemill/BackupMilvus864/flavorBack5/binlogs/insert_log/453580537997566884/453580537997566885/453580537997766901/453580537997766901/1/")
-				// slice = append(slice, "nativemill/BackupMilvus864/flavorBack5/binlogs/insert_log/453580537997566884/453580537997566885/453580537997766901/453580537997766901/100/")
-				// slice = append(slice, "nativemill/BackupMilvus864/flavorBack5/binlogs/insert_log/453580537997566884/453580537997566885/453580537997766901/453580537997766901/101/")
-				// slice = append(slice, "nativemill/BackupMilvus864/flavorBack5/binlogs/insert_log/453580537997566884/453580537997566885/453580537997766901/453580537997766901/102/")
-
-				// err := copyAndBulkInsert(targetDBName, targetCollectionName, partitionBackup.GetPartitionName(), slice, false, task.GetSkipDiskQuotaCheck())
-				// GIFI End
 				err := copyAndBulkInsert(targetDBName, targetCollectionName, partitionBackup.GetPartitionName(), group.files, false, task.GetSkipDiskQuotaCheck())
 				if err != nil {
 					return err
@@ -893,8 +883,8 @@ func (b *BackupContext) getBackupPartitionPathsWithGroupID(ctx context.Context, 
 		zap.Int64("partitionID", partition.GetPartitionId()),
 		zap.Int64("groupId", groupId))
 
-	// insertPath := fmt.Sprintf("%s/%s/%s/%v/%v/%d/", backupPath, BINGLOG_DIR, INSERT_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId(), groupId)
-	insertPath := "nativemill/BackupMilvus864/flavorBack5/binlogs/insert_log/453580537997566884/453580537997566885/453580537997766901/453580537997766901/333/" //GIFI
+	insertPath := fmt.Sprintf("%s/%s/%s/%v/%v/%d/", backupPath, BINGLOG_DIR, INSERT_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId(), groupId)
+	// insertPath := "nativemill/BackupMilvus864/flavorBack5/binlogs/insert_log/453580537997566884/453580537997566885/453580537997766901/453580537997766901/333/" //GIFI
 	deltaPath := fmt.Sprintf("%s/%s/%s/%v/%v/%d/", backupPath, BINGLOG_DIR, DELTA_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId(), groupId)
 	var totalSize int64
 	for _, seg := range partition.GetSegmentBackups() {
