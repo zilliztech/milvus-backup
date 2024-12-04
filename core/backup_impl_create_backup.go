@@ -752,10 +752,10 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 
 func (b *BackupContext) writeBackupInfoMeta(ctx context.Context, id string) error {
 	backupInfo := b.meta.GetFullMeta(id)
-	log.Info("Final backupInfo", zap.String("backupInfo", backupInfo.String()))
+	log.Debug("Final backupInfo", zap.String("backupInfo", backupInfo.String()))
 	output, _ := serialize(backupInfo)
 	log.Debug("backup meta", zap.String("value", string(output.BackupMetaBytes)))
-	log.Info("collection meta", zap.String("value", string(output.CollectionMetaBytes)))
+	log.Debug("collection meta", zap.String("value", string(output.CollectionMetaBytes)))
 	log.Debug("partition meta", zap.String("value", string(output.PartitionMetaBytes)))
 	log.Debug("segment meta", zap.String("value", string(output.SegmentMetaBytes)))
 
