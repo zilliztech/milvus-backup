@@ -1,6 +1,8 @@
 filters:
   "*":
     reviewers:
-      - wayblink
+      - huanghaoyuanhhy
+      - Thomas-HuWei
     approvers:
-      - wayblink
+      - huanghaoyuanhhy
+      - Thomas-HuWei
