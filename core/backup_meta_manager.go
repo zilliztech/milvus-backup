@@ -569,3 +569,33 @@ func (meta *MetaManager) GetRestoreTask(taskID string) *backuppb.RestoreBackupTa
 	defer meta.mu.Unlock()
 	return meta.restoreTasks[taskID]
 }
+
+func (meta *MetaManager) UpdateRestoreCollectionTask(restoreID string, restoreCollectionId string, opts ...RestoreCollectionTaskOpt) {
+	meta.mu.Lock()
+	defer meta.mu.Unlock()
+	restoreBackup := meta.restoreTasks[restoreID]
+	tasks := restoreBackup.GetCollectionRestoreTasks()
+	for i := 0; i < len(tasks); i++ {
+		if tasks[i].Id == restoreCollectionId {
+			cBackup := proto.Clone(tasks[i]).(*backuppb.RestoreCollectionTask)
+			for _, opt := range opts {
+				opt(cBackup)
+			}
+			tasks[i] = cBackup
+		}
+	}
+}
+
+type RestoreCollectionTaskOpt func(task *backuppb.RestoreCollectionTask)
+
+func setRestoreCollectionStateCode(stateCode backuppb.RestoreTaskStateCode) RestoreCollectionTaskOpt {
+	return func(task *backuppb.RestoreCollectionTask) {
+		task.StateCode = stateCode
+	}
+}
+
+func setRestoreCollectionErrorMessage(errorMessage string) RestoreCollectionTaskOpt {
+	return func(task *backuppb.RestoreCollectionTask) {
+		task.ErrorMessage = errorMessage
+	}
+}
