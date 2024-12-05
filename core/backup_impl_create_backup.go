@@ -740,6 +740,8 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 	if err != nil {
 		backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
 		backupInfo.ErrorMessage = err.Error()
+		b.meta.UpdateBackup(backupInfo.Id, setStateCode(backuppb.BackupTaskStateCode_BACKUP_FAIL),
+			setErrorMessage(err.Error()))
 		return err
 	}
 	log.Info("finish executeCreateBackup",
