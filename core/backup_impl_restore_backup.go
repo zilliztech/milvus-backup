@@ -368,12 +368,18 @@ func (b *BackupContext) executeRestoreBackupTask(ctx context.Context, backupBuck
 		job := func(ctx context.Context) error {
 			endTask, err := b.executeRestoreCollectionTask(ctx, backupBucketName, backupPath, restoreCollectionTaskClone, id)
 			if err != nil {
+				b.meta.UpdateRestoreTask(id, setRestoreStateCode(backuppb.RestoreTaskStateCode_FAIL),
+					setRestoreErrorMessage(endTask.ErrorMessage))
+				b.meta.UpdateRestoreCollectionTask(id, endTask.Id,
+					setRestoreCollectionStateCode(backuppb.RestoreTaskStateCode_FAIL),
+					setRestoreCollectionErrorMessage(endTask.ErrorMessage))
 				log.Error("executeRestoreCollectionTask failed",
 					zap.String("TargetDBName", restoreCollectionTaskClone.GetTargetDbName()),
 					zap.String("TargetCollectionName", restoreCollectionTaskClone.GetTargetCollectionName()),
 					zap.Error(err))
 				return err
 			}
+
 			restoreCollectionTaskClone.StateCode = backuppb.RestoreTaskStateCode_SUCCESS
 			log.Info("finish restore collection",
 				zap.String("db_name", restoreCollectionTaskClone.GetTargetDbName()),
