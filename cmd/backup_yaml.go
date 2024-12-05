@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"strings"
+
 	"github.com/spf13/cobra"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"gopkg.in/yaml.v3"
@@ -39,20 +40,24 @@ type YAMLConFig struct {
 		TlsMode              int    `yaml:"tlsMode"`
 		User                 string `yaml:"user"`
 		Password             string `yaml:"password"`
+		tlsCertPath          string `yaml:"tlsCertPath"`
+		serverName           string `yaml:"serverName"`
 	} `yaml:"milvus"`
 	Minio struct {
-		Address          string `yaml:"address"`
-		Port             int    `yaml:"port"`
-		AccessKeyID      string `yaml:"accessKeyID"`
-		secretAccessKey  string `yaml:"secretAccessKey"`
-		UseSSL           bool   `yaml:"useSSL"`
-		UseIAM           bool   `yaml:"useIAM"`
-		CloudProvider    string `yaml:"cloudProvider"`
-		IamEndpoint      string `yaml:"iamEndpoint"`
-		BucketName       string `yaml:"bucketName"`
-		RootPath         string `yaml:"rootPath"`
-		BackupBucketName string `yaml:"backupBucketName"`
-		BackupRootPath   string `yaml:"backupRootPath"`
+		Address                 string `yaml:"address"`
+		Port                    int    `yaml:"port"`
+		AccessKeyID             string `yaml:"accessKeyID"`
+		secretAccessKey         string `yaml:"secretAccessKey"`
+		GcpCredentialJSON       string `yaml:"gcpCredentialJSON"`
+		UseSSL                  bool   `yaml:"useSSL"`
+		UseIAM                  bool   `yaml:"useIAM"`
+		CloudProvider           string `yaml:"cloudProvider"`
+		IamEndpoint             string `yaml:"iamEndpoint"`
+		BucketName              string `yaml:"bucketName"`
+		RootPath                string `yaml:"rootPath"`
+		BackupGcpCredentialJSON string `yaml:"backupGcpCredentialJSON"`
+		BackupBucketName        string `yaml:"backupBucketName"`
+		BackupRootPath          string `yaml:"backupRootPath"`
 	} `yaml:"minio"`
 	Backup struct {
 		MaxSegmentGroupSize string `yaml:"maxSegmentGroupSize"`
@@ -77,17 +82,21 @@ func printParams(base *paramtable.BackupParams) {
 	yml.Milvus.TlsMode = base.ParseIntWithDefault("milvus.tlsMode", 0)
 	yml.Milvus.User = base.BaseTable.LoadWithDefault("milvus.user", "")
 	yml.Milvus.Password = base.BaseTable.LoadWithDefault("milvus.password", "")
+	yml.Milvus.tlsCertPath = base.BaseTable.LoadWithDefault("milvus.tlsCertPath", "")
+	yml.Milvus.serverName = base.BaseTable.LoadWithDefault("milvus.serverName", "localhost")
 
 	yml.Minio.Address = base.LoadWithDefault("minio.address", "localhost")
 	yml.Minio.Port = base.ParseIntWithDefault("minio.port", 9000)
 	yml.Minio.AccessKeyID = base.BaseTable.LoadWithDefault("minio.accessKeyID", "")
 	yml.Minio.secretAccessKey = base.BaseTable.LoadWithDefault("minio.secretAccessKey", "")
+	yml.Minio.GcpCredentialJSON = base.BaseTable.LoadWithDefault("minio.gcpCredentialJSON", "")
 	yml.Minio.UseSSL = base.ParseBool("minio.useSSL", false)
 	yml.Minio.UseIAM = base.ParseBool("minio.useIAM", false)
 	yml.Minio.CloudProvider = base.BaseTable.LoadWithDefault("minio.cloudProvider", "aws")
 	yml.Minio.IamEndpoint = base.BaseTable.LoadWithDefault("minio.iamEndpoint", "")
 	yml.Minio.BucketName = base.BaseTable.LoadWithDefault("minio.bucketName", "")
 	yml.Minio.RootPath = base.LoadWithDefault("minio.rootPath", "")
+	yml.Minio.BackupGcpCredentialJSON = base.BaseTable.LoadWithDefault("minio.backupGcpCredentialJSON", "")
 	yml.Minio.BackupBucketName = base.LoadWithDefault("minio.backupBucketName", "")
 	yml.Minio.BackupRootPath = base.LoadWithDefault("minio.backupRootPath", "")
 
