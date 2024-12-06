@@ -151,7 +151,7 @@ func (b *BackupContext) parseBackupCollections(request *backuppb.CreateBackupReq
 		}
 		for db, collections := range dbCollections {
 			if len(collections) == 0 {
-				collections, err := b.getMilvusClient().ListCollections(b.ctx, db)
+				collections, err := b.getMilvusClient().ListCollectionsV2(b.ctx, db)
 				if err != nil {
 					log.Error("fail in ListCollections", zap.Error(err))
 					return nil, err
@@ -176,7 +176,7 @@ func (b *BackupContext) parseBackupCollections(request *backuppb.CreateBackupReq
 			// compatible to milvus under v2.2.8 without database support
 			if strings.Contains(err.Error(), "feature not supported") {
 				// default database only
-				collections, err := b.getMilvusClient().ListCollections(b.ctx, "default")
+				collections, err := b.getMilvusClient().ListCollectionsV2(b.ctx, "default")
 				if err != nil {
 					log.Error("fail in ListCollections", zap.Error(err))
 					return nil, err
@@ -190,7 +190,7 @@ func (b *BackupContext) parseBackupCollections(request *backuppb.CreateBackupReq
 			}
 		} else {
 			for _, db := range dbs {
-				collections, err := b.getMilvusClient().ListCollections(b.ctx, db.Name)
+				collections, err := b.getMilvusClient().ListCollectionsV2(b.ctx, db.Name)
 				if err != nil {
 					log.Error("fail in ListCollections", zap.Error(err))
 					return nil, err
@@ -235,6 +235,13 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 		log.Error("fail in DescribeCollection", zap.Error(err))
 		return err
 	}
+	// todo temporary solution, migrate to sdk V2
+	completeCollectionV2, err := b.getMilvusClient().DescribeCollectionV2(b.ctx, collection.db, collection.collectionName)
+	if err != nil {
+		log.Error("fail in DescribeCollection v2", zap.Error(err))
+		return err
+	}
+
 	fields := make([]*backuppb.FieldSchema, 0)
 	for _, field := range completeCollection.Schema.Fields {
 		fieldBak := &backuppb.FieldSchema{
@@ -261,12 +268,26 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 		}
 		fields = append(fields, fieldBak)
 	}
+
+	functions := make([]*backuppb.FunctionSchema, 0)
+	for _, function := range completeCollectionV2.Schema.Functions {
+		functionBak := &backuppb.FunctionSchema{
+			Name:             function.Name,
+			Description:      function.Description,
+			Type:             backuppb.FunctionType(function.Type),
+			InputFieldNames:  function.InputFieldNames,
+			OutputFieldNames: function.OutputFieldNames,
+			Params:           utils.MapToKVPair(function.Params),
+		}
+		functions = append(functions, functionBak)
+	}
 	schema := &backuppb.CollectionSchema{
 		Name:               completeCollection.Schema.CollectionName,
 		Description:        completeCollection.Schema.Description,
 		AutoID:             completeCollection.Schema.AutoID,
 		Fields:             fields,
 		EnableDynamicField: completeCollection.Schema.EnableDynamicField,
+		Functions:          functions,
 	}
 
 	indexInfos := make([]*backuppb.IndexInfo, 0)
@@ -274,9 +295,6 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 	log.Info("try to get index",
 		zap.String("collection_name", completeCollection.Name))
 	for _, field := range completeCollection.Schema.Fields {
-		//if field.DataType != entity.FieldTypeBinaryVector && field.DataType != entity.FieldTypeFloatVector {
-		//	continue
-		//}
 		fieldIndex, err := b.getMilvusClient().DescribeIndex(b.ctx, collection.db, completeCollection.Name, field.Name)
 		if err != nil {
 			if strings.Contains(err.Error(), "index not found") ||
@@ -991,6 +1009,7 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackup
 	}
 
 	deltaLogPath := fmt.Sprintf("%s%s/%v/%v/%v/", rootPath, "delta_log", segmentBackupInfo.GetCollectionId(), segmentBackupInfo.GetPartitionId(), segmentBackupInfo.GetSegmentId())
+	log.Debug("deltaPath", zap.String("bucket", b.milvusBucketName), zap.String("deltaPath", deltaLogPath))
 	deltaFieldsLogDir, _, _ := b.getMilvusStorageClient().ListWithPrefix(ctx, b.milvusBucketName, deltaLogPath, false)
 	deltaLogs := make([]*backuppb.FieldBinlog, 0)
 	for _, deltaFieldLogDir := range deltaFieldsLogDir {

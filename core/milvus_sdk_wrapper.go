@@ -5,10 +5,17 @@ import (
 	"sync"
 	"time"
 
+	"github.com/cockroachdb/errors"
+	"go.uber.org/zap"
+
 	"github.com/milvus-io/milvus-proto/go-api/v2/msgpb"
 	gomilvus "github.com/milvus-io/milvus-sdk-go/v2/client"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 
+	milvusClientV2 "github.com/milvus-io/milvus/client/v2/milvusclient"
+
+	"github.com/zilliztech/milvus-backup/core/paramtable"
+	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/util/retry"
 )
 
@@ -16,6 +23,47 @@ import (
 type MilvusClient struct {
 	mu     sync.Mutex
 	client gomilvus.Client
+	// sdk v2
+	milvusClientV2 *milvusClientV2.Client
+}
+
+func newMilvusClient(ctx context.Context, params paramtable.BackupParams) (*MilvusClient, error) {
+	milvusEndpoint := params.MilvusCfg.Address + ":" + params.MilvusCfg.Port
+	log.Debug("Start Milvus client", zap.String("endpoint", milvusEndpoint))
+	var c gomilvus.Client
+	var err error
+	if params.MilvusCfg.AuthorizationEnabled && params.MilvusCfg.User != "" && params.MilvusCfg.Password != "" {
+		if params.MilvusCfg.TLSMode == 0 {
+			c, err = gomilvus.NewDefaultGrpcClientWithAuth(ctx, milvusEndpoint, params.MilvusCfg.User, params.MilvusCfg.Password)
+		} else if params.MilvusCfg.TLSMode == 1 || params.MilvusCfg.TLSMode == 2 {
+			c, err = gomilvus.NewDefaultGrpcClientWithTLSAuth(ctx, milvusEndpoint, params.MilvusCfg.User, params.MilvusCfg.Password)
+		} else {
+			log.Error("milvus.TLSMode is not illegal, support value 0, 1, 2")
+			return nil, errors.New("milvus.TLSMode is not illegal, support value 0, 1, 2")
+		}
+	} else {
+		c, err = gomilvus.NewGrpcClient(ctx, milvusEndpoint)
+	}
+	if err != nil {
+		log.Error("failed to connect to milvus", zap.Error(err))
+		return nil, err
+	}
+
+	milvusClientV2, err := milvusClientV2.New(ctx, &milvusClientV2.ClientConfig{
+		Address:       milvusEndpoint,
+		Username:      params.MilvusCfg.User,
+		Password:      params.MilvusCfg.Password,
+		EnableTLSAuth: params.MilvusCfg.AuthorizationEnabled,
+	})
+	if err != nil {
+		log.Error("failed to initial milvus client v2", zap.Error(err))
+		return nil, err
+	}
+
+	return &MilvusClient{
+		client:         c,
+		milvusClientV2: milvusClientV2,
+	}, nil
 }
 
 func (m *MilvusClient) Close() error {
