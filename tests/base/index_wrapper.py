@@ -12,8 +12,16 @@ INDEX_NAME = ""
 class ApiIndexWrapper:
     index = None
 
-    def init_index(self, collection, field_name, index_params, index_name=None, check_task=None, check_items=None,
-                   **kwargs):
+    def init_index(
+        self,
+        collection,
+        field_name,
+        index_params,
+        index_name=None,
+        check_task=None,
+        check_items=None,
+        **kwargs,
+    ):
         disktimeout = 100
         timeout = kwargs.get("timeout", disktimeout * 2)
         index_name = INDEX_NAME if index_name is None else index_name
@@ -22,11 +30,21 @@ class ApiIndexWrapper:
 
         """ In order to distinguish the same name of index """
         func_name = sys._getframe().f_code.co_name
-        res, is_succ = api_request([Index, collection, field_name, index_params], **kwargs)
+        res, is_succ = api_request(
+            [Index, collection, field_name, index_params], **kwargs
+        )
         self.index = res if is_succ is True else None
-        check_result = ResponseChecker(res, func_name, check_task, check_items, is_succ,
-                                       collection=collection, field_name=field_name,
-                                       index_params=index_params, **kwargs).run()
+        check_result = ResponseChecker(
+            res,
+            func_name,
+            check_task,
+            check_items,
+            is_succ,
+            collection=collection,
+            field_name=field_name,
+            index_params=index_params,
+            **kwargs,
+        ).run()
         return res, check_result
 
     def drop(self, index_name=None, check_task=None, check_items=None, **kwargs):
@@ -37,7 +55,9 @@ class ApiIndexWrapper:
 
         func_name = sys._getframe().f_code.co_name
         res, is_succ = api_request([self.index.drop], **kwargs)
-        check_result = ResponseChecker(res, func_name, check_task, check_items, is_succ, **kwargs).run()
+        check_result = ResponseChecker(
+            res, func_name, check_task, check_items, is_succ, **kwargs
+        ).run()
         return res, check_result
 
     @property
