@@ -10,7 +10,6 @@ from pymilvus import DataType
 from base.schema_wrapper import ApiCollectionSchemaWrapper, ApiFieldSchemaWrapper
 from common import common_type as ct
 from utils.util_log import test_log as log
-from customize.milvus_operator import MilvusOperator
 
 """" Methods of processing data """
 
@@ -25,7 +24,9 @@ class ParamInfo:
         self.param_secure = False
         self.param_replica_num = ct.default_replica_num
 
-    def prepare_param_info(self, host, port, handler, replica_num, user, password, secure):
+    def prepare_param_info(
+        self, host, port, handler, replica_num, user, password, secure
+    ):
         self.param_host = host
         self.param_port = port
         self.param_handler = handler
@@ -39,187 +40,414 @@ param_info = ParamInfo()
 
 
 def gen_unique_str(str_value=None):
-    prefix = "".join(random.choice(string.ascii_letters + string.digits) for _ in range(8))
+    prefix = "".join(
+        random.choice(string.ascii_letters + string.digits) for _ in range(8)
+    )
     return "test_" + prefix if str_value is None else str_value + "_" + prefix
 
 
 def gen_str_by_length(length=8):
-    return "".join(random.choice(string.ascii_letters + string.digits) for _ in range(length))
+    return "".join(
+        random.choice(string.ascii_letters + string.digits) for _ in range(length)
+    )
 
 
 def gen_digits_by_length(length=8):
     return "".join(random.choice(string.digits) for _ in range(length))
 
 
-def gen_bool_field(name=ct.default_bool_field_name, description=ct.default_desc, is_primary=False, **kwargs):
-    bool_field, _ = ApiFieldSchemaWrapper().init_field_schema(name=name, dtype=DataType.BOOL, description=description,
-                                                              is_primary=is_primary, **kwargs)
+def gen_bool_field(
+    name=ct.default_bool_field_name,
+    description=ct.default_desc,
+    is_primary=False,
+    **kwargs,
+):
+    bool_field, _ = ApiFieldSchemaWrapper().init_field_schema(
+        name=name,
+        dtype=DataType.BOOL,
+        description=description,
+        is_primary=is_primary,
+        **kwargs,
+    )
     return bool_field
 
 
-def gen_string_field(name=ct.default_string_field_name, description=ct.default_desc, is_primary=False,
-                     max_length=ct.default_length, **kwargs):
-    string_field, _ = ApiFieldSchemaWrapper().init_field_schema(name=name, dtype=DataType.VARCHAR,
-                                                                description=description, max_length=max_length,
-                                                                is_primary=is_primary, **kwargs)
+def gen_string_field(
+    name=ct.default_string_field_name,
+    description=ct.default_desc,
+    is_primary=False,
+    max_length=ct.default_length,
+    **kwargs,
+):
+    string_field, _ = ApiFieldSchemaWrapper().init_field_schema(
+        name=name,
+        dtype=DataType.VARCHAR,
+        description=description,
+        max_length=max_length,
+        is_primary=is_primary,
+        **kwargs,
+    )
     return string_field
 
 
-def gen_int8_field(name=ct.default_int8_field_name, description=ct.default_desc, is_primary=False, **kwargs):
-    int8_field, _ = ApiFieldSchemaWrapper().init_field_schema(name=name, dtype=DataType.INT8, description=description,
-                                                              is_primary=is_primary, **kwargs)
+def gen_int8_field(
+    name=ct.default_int8_field_name,
+    description=ct.default_desc,
+    is_primary=False,
+    **kwargs,
+):
+    int8_field, _ = ApiFieldSchemaWrapper().init_field_schema(
+        name=name,
+        dtype=DataType.INT8,
+        description=description,
+        is_primary=is_primary,
+        **kwargs,
+    )
     return int8_field
 
 
-def gen_int16_field(name=ct.default_int16_field_name, description=ct.default_desc, is_primary=False, **kwargs):
-    int16_field, _ = ApiFieldSchemaWrapper().init_field_schema(name=name, dtype=DataType.INT16, description=description,
-                                                               is_primary=is_primary, **kwargs)
+def gen_int16_field(
+    name=ct.default_int16_field_name,
+    description=ct.default_desc,
+    is_primary=False,
+    **kwargs,
+):
+    int16_field, _ = ApiFieldSchemaWrapper().init_field_schema(
+        name=name,
+        dtype=DataType.INT16,
+        description=description,
+        is_primary=is_primary,
+        **kwargs,
+    )
     return int16_field
 
 
-def gen_int32_field(name=ct.default_int32_field_name, description=ct.default_desc, is_primary=False, **kwargs):
-    int32_field, _ = ApiFieldSchemaWrapper().init_field_schema(name=name, dtype=DataType.INT32, description=description,
-                                                               is_primary=is_primary, **kwargs)
+def gen_int32_field(
+    name=ct.default_int32_field_name,
+    description=ct.default_desc,
+    is_primary=False,
+    **kwargs,
+):
+    int32_field, _ = ApiFieldSchemaWrapper().init_field_schema(
+        name=name,
+        dtype=DataType.INT32,
+        description=description,
+        is_primary=is_primary,
+        **kwargs,
+    )
     return int32_field
 
 
-def gen_int64_field(name=ct.default_int64_field_name, description=ct.default_desc, is_primary=False, **kwargs):
-    int64_field, _ = ApiFieldSchemaWrapper().init_field_schema(name=name, dtype=DataType.INT64, description=description,
-                                                               is_primary=is_primary, **kwargs)
+def gen_int64_field(
+    name=ct.default_int64_field_name,
+    description=ct.default_desc,
+    is_primary=False,
+    **kwargs,
+):
+    int64_field, _ = ApiFieldSchemaWrapper().init_field_schema(
+        name=name,
+        dtype=DataType.INT64,
+        description=description,
+        is_primary=is_primary,
+        **kwargs,
+    )
     return int64_field
 
 
-def gen_float_field(name=ct.default_float_field_name, is_primary=False, description=ct.default_desc):
-    float_field, _ = ApiFieldSchemaWrapper().init_field_schema(name=name, dtype=DataType.FLOAT, description=description,
-                                                               is_primary=is_primary)
+def gen_float_field(
+    name=ct.default_float_field_name, is_primary=False, description=ct.default_desc
+):
+    float_field, _ = ApiFieldSchemaWrapper().init_field_schema(
+        name=name, dtype=DataType.FLOAT, description=description, is_primary=is_primary
+    )
     return float_field
 
 
-def gen_double_field(name=ct.default_double_field_name, is_primary=False, description=ct.default_desc):
-    double_field, _ = ApiFieldSchemaWrapper().init_field_schema(name=name, dtype=DataType.DOUBLE,
-                                                                description=description, is_primary=is_primary)
+def gen_double_field(
+    name=ct.default_double_field_name, is_primary=False, description=ct.default_desc
+):
+    double_field, _ = ApiFieldSchemaWrapper().init_field_schema(
+        name=name, dtype=DataType.DOUBLE, description=description, is_primary=is_primary
+    )
     return double_field
 
 
-def gen_json_field(name=ct.default_json_field_name, is_primary=False, description=ct.default_desc):
-    json_field, _ = ApiFieldSchemaWrapper().init_field_schema(name=name, dtype=DataType.JSON,
-                                                                description=description, is_primary=is_primary)
+def gen_json_field(
+    name=ct.default_json_field_name, is_primary=False, description=ct.default_desc
+):
+    json_field, _ = ApiFieldSchemaWrapper().init_field_schema(
+        name=name, dtype=DataType.JSON, description=description, is_primary=is_primary
+    )
     return json_field
 
-def gen_array_field(name=ct.default_array_field_name, is_primary=False, element_type=DataType.VARCHAR ,description=ct.default_desc):
-    array_field, _ = ApiFieldSchemaWrapper().init_field_schema(name=name, dtype=DataType.ARRAY,
-                                                                description=description, is_primary=is_primary, element_type=element_type, max_capacity=2000, max_length=1500)
+
+def gen_array_field(
+    name=ct.default_array_field_name,
+    is_primary=False,
+    element_type=DataType.VARCHAR,
+    description=ct.default_desc,
+):
+    array_field, _ = ApiFieldSchemaWrapper().init_field_schema(
+        name=name,
+        dtype=DataType.ARRAY,
+        description=description,
+        is_primary=is_primary,
+        element_type=element_type,
+        max_capacity=2000,
+        max_length=1500,
+    )
     return array_field
 
 
-def gen_float_vec_field(name=ct.default_float_vec_field_name, is_primary=False, dim=ct.default_dim,
-                        description=ct.default_desc):
-    float_vec_field, _ = ApiFieldSchemaWrapper().init_field_schema(name=name, dtype=DataType.FLOAT_VECTOR,
-                                                                   description=description, dim=dim,
-                                                                   is_primary=is_primary)
+def gen_float_vec_field(
+    name=ct.default_float_vec_field_name,
+    is_primary=False,
+    dim=ct.default_dim,
+    description=ct.default_desc,
+):
+    float_vec_field, _ = ApiFieldSchemaWrapper().init_field_schema(
+        name=name,
+        dtype=DataType.FLOAT_VECTOR,
+        description=description,
+        dim=dim,
+        is_primary=is_primary,
+    )
     return float_vec_field
 
-def gen_sparse_vec_field(name=ct.default_sparse_vec_field_name, is_primary=False, dim=ct.default_dim,
-                        description=ct.default_desc):
-    sparse_vec_field, _ = ApiFieldSchemaWrapper().init_field_schema(name=name, dtype=DataType.SPARSE_FLOAT_VECTOR,
-                                                                   description=description)
+
+def gen_sparse_vec_field(
+    name=ct.default_sparse_vec_field_name,
+    is_primary=False,
+    dim=ct.default_dim,
+    description=ct.default_desc,
+):
+    sparse_vec_field, _ = ApiFieldSchemaWrapper().init_field_schema(
+        name=name, dtype=DataType.SPARSE_FLOAT_VECTOR, description=description
+    )
     return sparse_vec_field
 
-def gen_float16_vec_field(name=ct.default_float_vec_field_name, is_primary=False, dim=ct.default_dim,
-                        description=ct.default_desc):
-    float_vec_field, _ = ApiFieldSchemaWrapper().init_field_schema(name=name, dtype=DataType.FLOAT16_VECTOR,
-                                                                   description=description, dim=dim,
-                                                                   is_primary=is_primary)
+
+def gen_float16_vec_field(
+    name=ct.default_float_vec_field_name,
+    is_primary=False,
+    dim=ct.default_dim,
+    description=ct.default_desc,
+):
+    float_vec_field, _ = ApiFieldSchemaWrapper().init_field_schema(
+        name=name,
+        dtype=DataType.FLOAT16_VECTOR,
+        description=description,
+        dim=dim,
+        is_primary=is_primary,
+    )
     return float_vec_field
 
-def gen_brain_float16_vec_field(name=ct.default_float_vec_field_name, is_primary=False, dim=ct.default_dim,
-                        description=ct.default_desc):
-    float_vec_field, _ = ApiFieldSchemaWrapper().init_field_schema(name=name, dtype=DataType.BFLOAT16_VECTOR,
-                                                                   description=description, dim=dim,
-                                                                   is_primary=is_primary)
+
+def gen_brain_float16_vec_field(
+    name=ct.default_float_vec_field_name,
+    is_primary=False,
+    dim=ct.default_dim,
+    description=ct.default_desc,
+):
+    float_vec_field, _ = ApiFieldSchemaWrapper().init_field_schema(
+        name=name,
+        dtype=DataType.BFLOAT16_VECTOR,
+        description=description,
+        dim=dim,
+        is_primary=is_primary,
+    )
     return float_vec_field
 
-def gen_binary_vec_field(name=ct.default_binary_vec_field_name, is_primary=False, dim=ct.default_dim,
-                         description=ct.default_desc):
-    binary_vec_field, _ = ApiFieldSchemaWrapper().init_field_schema(name=name, dtype=DataType.BINARY_VECTOR,
-                                                                    description=description, dim=dim,
-                                                                    is_primary=is_primary)
+
+def gen_binary_vec_field(
+    name=ct.default_binary_vec_field_name,
+    is_primary=False,
+    dim=ct.default_dim,
+    description=ct.default_desc,
+):
+    binary_vec_field, _ = ApiFieldSchemaWrapper().init_field_schema(
+        name=name,
+        dtype=DataType.BINARY_VECTOR,
+        description=description,
+        dim=dim,
+        is_primary=is_primary,
+    )
     return binary_vec_field
 
 
-def gen_default_collection_schema(description=ct.default_desc, primary_field=ct.default_int64_field_name,
-                                  auto_id=False, dim=ct.default_dim):
-    fields = [gen_int64_field(), gen_float_field(), gen_string_field(), gen_json_field(), gen_float_vec_field(dim=dim)]
-    schema, _ = ApiCollectionSchemaWrapper().init_collection_schema(fields=fields, description=description,
-                                                                    primary_field=primary_field, auto_id=auto_id)
+def gen_default_collection_schema(
+    description=ct.default_desc,
+    primary_field=ct.default_int64_field_name,
+    auto_id=False,
+    dim=ct.default_dim,
+):
+    fields = [
+        gen_int64_field(),
+        gen_float_field(),
+        gen_string_field(),
+        gen_json_field(),
+        gen_float_vec_field(dim=dim),
+    ]
+    schema, _ = ApiCollectionSchemaWrapper().init_collection_schema(
+        fields=fields,
+        description=description,
+        primary_field=primary_field,
+        auto_id=auto_id,
+    )
     return schema
 
 
-def gen_general_collection_schema(description=ct.default_desc, primary_field=ct.default_int64_field_name,
-                                  auto_id=False, is_binary=False, dim=ct.default_dim):
+def gen_general_collection_schema(
+    description=ct.default_desc,
+    primary_field=ct.default_int64_field_name,
+    auto_id=False,
+    is_binary=False,
+    dim=ct.default_dim,
+):
     if is_binary:
-        fields = [gen_int64_field(), gen_float_field(), gen_string_field(), gen_binary_vec_field(dim=dim)]
+        fields = [
+            gen_int64_field(),
+            gen_float_field(),
+            gen_string_field(),
+            gen_binary_vec_field(dim=dim),
+        ]
     else:
-        fields = [gen_int64_field(), gen_float_field(), gen_string_field(), gen_float_vec_field(dim=dim)]
-    schema, _ = ApiCollectionSchemaWrapper().init_collection_schema(fields=fields, description=description,
-                                                                    primary_field=primary_field, auto_id=auto_id)
+        fields = [
+            gen_int64_field(),
+            gen_float_field(),
+            gen_string_field(),
+            gen_float_vec_field(dim=dim),
+        ]
+    schema, _ = ApiCollectionSchemaWrapper().init_collection_schema(
+        fields=fields,
+        description=description,
+        primary_field=primary_field,
+        auto_id=auto_id,
+    )
     return schema
 
 
-def gen_string_pk_default_collection_schema(description=ct.default_desc, primary_field=ct.default_string_field_name,
-                                            auto_id=False, dim=ct.default_dim):
-    fields = [gen_int64_field(), gen_float_field(), gen_string_field(), gen_float_vec_field(dim=dim)]
-    schema, _ = ApiCollectionSchemaWrapper().init_collection_schema(fields=fields, description=description,
-                                                                    primary_field=primary_field, auto_id=auto_id)
+def gen_string_pk_default_collection_schema(
+    description=ct.default_desc,
+    primary_field=ct.default_string_field_name,
+    auto_id=False,
+    dim=ct.default_dim,
+):
+    fields = [
+        gen_int64_field(),
+        gen_float_field(),
+        gen_string_field(),
+        gen_float_vec_field(dim=dim),
+    ]
+    schema, _ = ApiCollectionSchemaWrapper().init_collection_schema(
+        fields=fields,
+        description=description,
+        primary_field=primary_field,
+        auto_id=auto_id,
+    )
     return schema
 
 
-def gen_collection_schema_all_datatype(description=ct.default_desc,
-                                       primary_field=ct.default_int64_field_name,
-                                       auto_id=False, dim=ct.default_dim):
-    fields = [gen_int64_field(), gen_int32_field(), gen_int16_field(), gen_int8_field(),
-              gen_bool_field(), gen_float_field(), gen_double_field(), gen_string_field(), gen_float_vec_field(dim=dim)]
-    schema, _ = ApiCollectionSchemaWrapper().init_collection_schema(fields=fields, description=description,
-                                                                    primary_field=primary_field, auto_id=auto_id)
+def gen_collection_schema_all_datatype(
+    description=ct.default_desc,
+    primary_field=ct.default_int64_field_name,
+    auto_id=False,
+    dim=ct.default_dim,
+):
+    fields = [
+        gen_int64_field(),
+        gen_int32_field(),
+        gen_int16_field(),
+        gen_int8_field(),
+        gen_bool_field(),
+        gen_float_field(),
+        gen_double_field(),
+        gen_string_field(),
+        gen_float_vec_field(dim=dim),
+    ]
+    schema, _ = ApiCollectionSchemaWrapper().init_collection_schema(
+        fields=fields,
+        description=description,
+        primary_field=primary_field,
+        auto_id=auto_id,
+    )
     return schema
 
 
-def gen_collection_schema(fields, primary_field=None, description=ct.default_desc, auto_id=False, **kwargs):
-    schema, _ = ApiCollectionSchemaWrapper().init_collection_schema(fields=fields, primary_field=primary_field,
-                                                                    description=description, auto_id=auto_id, **kwargs)
+def gen_collection_schema(
+    fields, primary_field=None, description=ct.default_desc, auto_id=False, **kwargs
+):
+    schema, _ = ApiCollectionSchemaWrapper().init_collection_schema(
+        fields=fields,
+        primary_field=primary_field,
+        description=description,
+        auto_id=auto_id,
+        **kwargs,
+    )
     return schema
 
 
-def gen_default_binary_collection_schema(description=ct.default_desc, primary_field=ct.default_int64_field_name,
-                                         auto_id=False, dim=ct.default_dim):
-    fields = [gen_int64_field(), gen_float_field(), gen_string_field(), gen_json_field(), gen_binary_vec_field(dim=dim)]
-    binary_schema, _ = ApiCollectionSchemaWrapper().init_collection_schema(fields=fields, description=description,
-                                                                           primary_field=primary_field,
-                                                                           auto_id=auto_id)
+def gen_default_binary_collection_schema(
+    description=ct.default_desc,
+    primary_field=ct.default_int64_field_name,
+    auto_id=False,
+    dim=ct.default_dim,
+):
+    fields = [
+        gen_int64_field(),
+        gen_float_field(),
+        gen_string_field(),
+        gen_json_field(),
+        gen_binary_vec_field(dim=dim),
+    ]
+    binary_schema, _ = ApiCollectionSchemaWrapper().init_collection_schema(
+        fields=fields,
+        description=description,
+        primary_field=primary_field,
+        auto_id=auto_id,
+    )
     return binary_schema
 
 
 def gen_schema_multi_vector_fields(vec_fields):
-    fields = [gen_int64_field(), gen_float_field(), gen_string_field(), gen_float_vec_field()]
+    fields = [
+        gen_int64_field(),
+        gen_float_field(),
+        gen_string_field(),
+        gen_float_vec_field(),
+    ]
     fields.extend(vec_fields)
     primary_field = ct.default_int64_field_name
-    schema, _ = ApiCollectionSchemaWrapper().init_collection_schema(fields=fields, description=ct.default_desc,
-                                                                    primary_field=primary_field, auto_id=False)
+    schema, _ = ApiCollectionSchemaWrapper().init_collection_schema(
+        fields=fields,
+        description=ct.default_desc,
+        primary_field=primary_field,
+        auto_id=False,
+    )
     return schema
 
 
 def gen_schema_multi_string_fields(string_fields):
-    fields = [gen_int64_field(), gen_float_field(), gen_string_field(), gen_float_vec_field()]
+    fields = [
+        gen_int64_field(),
+        gen_float_field(),
+        gen_string_field(),
+        gen_float_vec_field(),
+    ]
     fields.extend(string_fields)
     primary_field = ct.default_int64_field_name
-    schema, _ = ApiCollectionSchemaWrapper().init_collection_schema(fields=fields, description=ct.default_desc,
-                                                                    primary_field=primary_field, auto_id=False)
+    schema, _ = ApiCollectionSchemaWrapper().init_collection_schema(
+        fields=fields,
+        description=ct.default_desc,
+        primary_field=primary_field,
+        auto_id=False,
+    )
     return schema
 
 
 def gen_vectors(nb, dim):
     vectors = [[random.random() for _ in range(dim)] for _ in range(nb)]
-    vectors = preprocessing.normalize(vectors, axis=1, norm='l2')
+    vectors = preprocessing.normalize(vectors, axis=1, norm="l2")
     return vectors.tolist()
 
 
@@ -241,17 +469,25 @@ def gen_binary_vectors(num, dim):
 
 def gen_default_dataframe_data(nb=ct.default_nb, dim=ct.default_dim, start=0):
     int_values = pd.Series(data=[i for i in range(start, start + nb)])
-    float_values = pd.Series(data=[np.float32(i) for i in range(start, start + nb)], dtype="float32")
-    string_values = pd.Series(data=[str(i) for i in range(start, start + nb)], dtype="string")
-    json_values = pd.Series(data=[{"key": i} for i in range(start, start + nb)],)
+    float_values = pd.Series(
+        data=[np.float32(i) for i in range(start, start + nb)], dtype="float32"
+    )
+    string_values = pd.Series(
+        data=[str(i) for i in range(start, start + nb)], dtype="string"
+    )
+    json_values = pd.Series(
+        data=[{"key": i} for i in range(start, start + nb)],
+    )
     float_vec_values = gen_vectors(nb, dim)
-    df = pd.DataFrame({
-        ct.default_int64_field_name: int_values,
-        ct.default_float_field_name: float_values,
-        ct.default_string_field_name: string_values,
-        ct.default_json_field_name: json_values,
-        ct.default_float_vec_field_name: float_vec_values
-    })
+    df = pd.DataFrame(
+        {
+            ct.default_int64_field_name: int_values,
+            ct.default_float_field_name: float_values,
+            ct.default_string_field_name: string_values,
+            ct.default_json_field_name: json_values,
+            ct.default_float_vec_field_name: float_vec_values,
+        }
+    )
     return df
 
 
@@ -265,14 +501,16 @@ def gen_dataframe_multi_vec_fields(vec_fields, nb=ct.default_nb):
     int_values = pd.Series(data=[i for i in range(0, nb)])
     float_values = pd.Series(data=[float(i) for i in range(nb)], dtype="float32")
     string_values = pd.Series(data=[str(i) for i in range(nb)], dtype="string")
-    df = pd.DataFrame({
-        ct.default_int64_field_name: int_values,
-        ct.default_float_field_name: float_values,
-        ct.default_string_field_name: string_values,
-        ct.default_float_vec_field_name: gen_vectors(nb, ct.default_dim)
-    })
+    df = pd.DataFrame(
+        {
+            ct.default_int64_field_name: int_values,
+            ct.default_float_field_name: float_values,
+            ct.default_string_field_name: string_values,
+            ct.default_float_vec_field_name: gen_vectors(nb, ct.default_dim),
+        }
+    )
     for field in vec_fields:
-        dim = field.params['dim']
+        dim = field.params["dim"]
         if field.dtype == DataType.FLOAT_VECTOR:
             vec_values = gen_vectors(nb, dim)
         elif field.dtype == DataType.BINARY_VECTOR:
@@ -291,12 +529,14 @@ def gen_dataframe_multi_string_fields(string_fields, nb=ct.default_nb):
     int_values = pd.Series(data=[i for i in range(0, nb)])
     float_values = pd.Series(data=[float(i) for i in range(nb)], dtype="float32")
     string_values = pd.Series(data=[str(i) for i in range(nb)], dtype="string")
-    df = pd.DataFrame({
-        ct.default_int64_field_name: int_values,
-        ct.default_float_field_name: float_values,
-        ct.default_string_field_name: string_values,
-        ct.default_float_vec_field_name: gen_vectors(nb, ct.default_dim)
-    })
+    df = pd.DataFrame(
+        {
+            ct.default_int64_field_name: int_values,
+            ct.default_float_field_name: float_values,
+            ct.default_string_field_name: string_values,
+            ct.default_float_vec_field_name: gen_vectors(nb, ct.default_dim),
+        }
+    )
     for field in string_fields:
         if field.dtype == DataType.VARCHAR:
             string_values = gen_string(nb)
@@ -306,42 +546,67 @@ def gen_dataframe_multi_string_fields(string_fields, nb=ct.default_nb):
 
 def gen_dataframe_all_data_type(nb=ct.default_nb, dim=ct.default_dim, start=0):
     int64_values = pd.Series(data=[i for i in range(start, start + nb)])
-    int32_values = pd.Series(data=[np.int32(i) for i in range(start, start + nb)], dtype="int32")
-    int16_values = pd.Series(data=[np.int16(i) for i in range(start, start + nb)], dtype="int16")
-    int8_values = pd.Series(data=[np.int8(i) for i in range(start, start + nb)], dtype="int8")
-    bool_values = pd.Series(data=[np.bool(i) for i in range(start, start + nb)], dtype="bool")
-    float_values = pd.Series(data=[np.float32(i) for i in range(start, start + nb)], dtype="float32")
-    double_values = pd.Series(data=[np.double(i) for i in range(start, start + nb)], dtype="double")
-    string_values = pd.Series(data=[str(i) for i in range(start, start + nb)], dtype="string")
+    int32_values = pd.Series(
+        data=[np.int32(i) for i in range(start, start + nb)], dtype="int32"
+    )
+    int16_values = pd.Series(
+        data=[np.int16(i) for i in range(start, start + nb)], dtype="int16"
+    )
+    int8_values = pd.Series(
+        data=[np.int8(i) for i in range(start, start + nb)], dtype="int8"
+    )
+    bool_values = pd.Series(
+        data=[np.bool(i) for i in range(start, start + nb)], dtype="bool"
+    )
+    float_values = pd.Series(
+        data=[np.float32(i) for i in range(start, start + nb)], dtype="float32"
+    )
+    double_values = pd.Series(
+        data=[np.double(i) for i in range(start, start + nb)], dtype="double"
+    )
+    string_values = pd.Series(
+        data=[str(i) for i in range(start, start + nb)], dtype="string"
+    )
     float_vec_values = gen_vectors(nb, dim)
-    df = pd.DataFrame({
-        ct.default_int64_field_name: int64_values,
-        ct.default_int32_field_name: int32_values,
-        ct.default_int16_field_name: int16_values,
-        ct.default_int8_field_name: int8_values,
-        ct.default_bool_field_name: bool_values,
-        ct.default_float_field_name: float_values,
-        ct.default_double_field_name: double_values,
-        ct.default_string_field_name: string_values,
-        ct.default_float_vec_field_name: float_vec_values
-    })
+    df = pd.DataFrame(
+        {
+            ct.default_int64_field_name: int64_values,
+            ct.default_int32_field_name: int32_values,
+            ct.default_int16_field_name: int16_values,
+            ct.default_int8_field_name: int8_values,
+            ct.default_bool_field_name: bool_values,
+            ct.default_float_field_name: float_values,
+            ct.default_double_field_name: double_values,
+            ct.default_string_field_name: string_values,
+            ct.default_float_vec_field_name: float_vec_values,
+        }
+    )
     return df
 
 
 def gen_default_binary_dataframe_data(nb=ct.default_nb, dim=ct.default_dim, start=0):
     int_values = pd.Series(data=[i for i in range(start, start + nb)])
-    float_values = pd.Series(data=[np.float32(i) for i in range(start, start + nb)], dtype="float32")
-    string_values = pd.Series(data=[str(i) for i in range(start, start + nb)], dtype="string")
-    json_values = pd.Series(data=[{"key": i} for i in range(start, start + nb)],)
+    float_values = pd.Series(
+        data=[np.float32(i) for i in range(start, start + nb)], dtype="float32"
+    )
+    string_values = pd.Series(
+        data=[str(i) for i in range(start, start + nb)], dtype="string"
+    )
+    json_values = pd.Series(
+        data=[{"key": i} for i in range(start, start + nb)],
+    )
     binary_raw_values, binary_vec_values = gen_binary_vectors(nb, dim)
-    df = pd.DataFrame({
-        ct.default_int64_field_name: int_values,
-        ct.default_float_field_name: float_values,
-        ct.default_string_field_name: string_values,
-        ct.default_json_field_name: json_values,
-        ct.default_binary_vec_field_name: binary_vec_values
-    })
+    df = pd.DataFrame(
+        {
+            ct.default_int64_field_name: int_values,
+            ct.default_float_field_name: float_values,
+            ct.default_string_field_name: string_values,
+            ct.default_json_field_name: json_values,
+            ct.default_binary_vec_field_name: binary_vec_values,
+        }
+    )
     return df, binary_raw_values
+
 
 def gen_default_list_data(nb=ct.default_nb, dim=ct.default_dim):
     int_values = [i for i in range(nb)]
@@ -371,8 +636,8 @@ def gen_default_tuple_data(nb=ct.default_nb, dim=ct.default_dim):
 
 
 def gen_numpy_data(nb=ct.default_nb, dim=ct.default_dim):
-    int_values = np.arange(nb, dtype='int64')
-    float_values = np.arange(nb, dtype='float32')
+    int_values = np.arange(nb, dtype="int64")
+    float_values = np.arange(nb, dtype="float32")
     string_values = [np.str(i) for i in range(nb)]
     float_vec_values = gen_vectors(nb, dim)
     data = [int_values, float_values, string_values, float_vec_values]
@@ -400,15 +665,7 @@ def gen_simple_index():
 
 
 def gen_invalid_field_types():
-    field_types = [
-        6,
-        1.0,
-        [[]],
-        {},
-        (),
-        "",
-        "a"
-    ]
+    field_types = [6, 1.0, [[]], {}, (), "", "a"]
     return field_types
 
 
@@ -418,20 +675,34 @@ def gen_invaild_search_params_type():
     for index_type in ct.all_index_types:
         if index_type == "FLAT":
             continue
-        search_params.append({"index_type": index_type, "search_params": {"invalid_key": invalid_search_key}})
+        search_params.append(
+            {
+                "index_type": index_type,
+                "search_params": {"invalid_key": invalid_search_key},
+            }
+        )
         if index_type in ["IVF_FLAT", "IVF_SQ8", "IVF_PQ"]:
             for nprobe in ct.get_invalid_ints:
-                ivf_search_params = {"index_type": index_type, "search_params": {"nprobe": nprobe}}
+                ivf_search_params = {
+                    "index_type": index_type,
+                    "search_params": {"nprobe": nprobe},
+                }
                 search_params.append(ivf_search_params)
         elif index_type in ["HNSW"]:
             for ef in ct.get_invalid_ints:
-                hnsw_search_param = {"index_type": index_type, "search_params": {"ef": ef}}
+                hnsw_search_param = {
+                    "index_type": index_type,
+                    "search_params": {"ef": ef},
+                }
                 search_params.append(hnsw_search_param)
         elif index_type == "ANNOY":
             for search_k in ct.get_invalid_ints:
                 if isinstance(search_k, int):
                     continue
-                annoy_search_param = {"index_type": index_type, "search_params": {"search_k": search_k}}
+                annoy_search_param = {
+                    "index_type": index_type,
+                    "search_params": {"search_k": search_k},
+                }
                 search_params.append(annoy_search_param)
     return search_params
 
@@ -440,15 +711,24 @@ def gen_search_param(index_type, metric_type="L2"):
     search_params = []
     if index_type in ["FLAT", "IVF_FLAT", "IVF_SQ8", "IVF_PQ"]:
         for nprobe in [64, 128]:
-            ivf_search_params = {"metric_type": metric_type, "params": {"nprobe": nprobe}}
+            ivf_search_params = {
+                "metric_type": metric_type,
+                "params": {"nprobe": nprobe},
+            }
             search_params.append(ivf_search_params)
     elif index_type in ["BIN_FLAT", "BIN_IVF_FLAT"]:
         if metric_type not in ct.binary_metrics:
-            log.error("Metric type error: binary index only supports distance type in (%s)" % ct.binary_metrics)
+            log.error(
+                "Metric type error: binary index only supports distance type in (%s)"
+                % ct.binary_metrics
+            )
             # default metric type for binary index
             metric_type = "JACCARD"
         for nprobe in [64, 128]:
-            binary_search_params = {"metric_type": metric_type, "params": {"nprobe": nprobe}}
+            binary_search_params = {
+                "metric_type": metric_type,
+                "params": {"nprobe": nprobe},
+            }
             search_params.append(binary_search_params)
     elif index_type in ["HNSW"]:
         for ef in [64, 32768]:
@@ -456,7 +736,10 @@ def gen_search_param(index_type, metric_type="L2"):
             search_params.append(hnsw_search_param)
     elif index_type == "ANNOY":
         for search_k in [1000, 5000]:
-            annoy_search_param = {"metric_type": metric_type, "params": {"search_k": search_k}}
+            annoy_search_param = {
+                "metric_type": metric_type,
+                "params": {"search_k": search_k},
+            }
             search_params.append(annoy_search_param)
     else:
         log.error("Invalid index_type.")
@@ -466,10 +749,15 @@ def gen_search_param(index_type, metric_type="L2"):
 
 def gen_invalid_search_param(index_type, metric_type="L2"):
     search_params = []
-    if index_type in ["FLAT", "IVF_FLAT", "IVF_SQ8", "IVF_PQ"] \
-            or index_type in ["BIN_FLAT", "BIN_IVF_FLAT"]:
+    if index_type in ["FLAT", "IVF_FLAT", "IVF_SQ8", "IVF_PQ"] or index_type in [
+        "BIN_FLAT",
+        "BIN_IVF_FLAT",
+    ]:
         for nprobe in [-1]:
-            ivf_search_params = {"metric_type": metric_type, "params": {"nprobe": nprobe}}
+            ivf_search_params = {
+                "metric_type": metric_type,
+                "params": {"nprobe": nprobe},
+            }
             search_params.append(ivf_search_params)
     elif index_type in ["HNSW"]:
         for ef in [-1]:
@@ -477,7 +765,10 @@ def gen_invalid_search_param(index_type, metric_type="L2"):
             search_params.append(hnsw_search_param)
     elif index_type == "ANNOY":
         for search_k in ["-1"]:
-            annoy_search_param = {"metric_type": metric_type, "params": {"search_k": search_k}}
+            annoy_search_param = {
+                "metric_type": metric_type,
+                "params": {"search_k": search_k},
+            }
             search_params.append(annoy_search_param)
     else:
         log.error("Invalid index_type.")
@@ -489,7 +780,9 @@ def gen_all_type_fields():
     fields = []
     for k, v in DataType.__members__.items():
         if v != DataType.UNKNOWN:
-            field, _ = ApiFieldSchemaWrapper().init_field_schema(name=k.lower(), dtype=v)
+            field, _ = ApiFieldSchemaWrapper().init_field_schema(
+                name=k.lower(), dtype=v
+            )
             fields.append(field)
     return fields
 
@@ -511,9 +804,10 @@ def gen_normal_expressions():
         "float <= 4**5/2 && float > 500-1 && float != 500/2+260",
         "int64 > 400 && int64 < 200",
         "float < -2**8",
-        "(int64 + 1) == 3 || int64 * 2 == 64 || float == 10**2"
+        "(int64 + 1) == 3 || int64 * 2 == 64 || float == 10**2",
     ]
     return expressions
+
 
 def gen_field_compare_expressions():
     expressions = [
@@ -526,29 +820,27 @@ def gen_field_compare_expressions():
         "int64_1 ** int64_2 == 4",
         "int64_1 % int64_2 == 0",
         "int64_1 in int64_2",
-        "int64_1 + int64_2 >= 10"
+        "int64_1 + int64_2 >= 10",
     ]
     return expressions
 
+
 def gen_normal_string_expressions(field):
     expressions = [
-        f"\"0\"< {field} < \"3\"",
-        f"{field} >= \"0\"",
-        f"({field} > \"0\" && {field} < \"100\") or ({field} > \"200\" && {field} < \"300\")",
-        f"\"0\" <= {field} <= \"100\"",
-        f"{field} == \"0\"|| {field} == \"1\"|| {field} ==\"2\"",
-        f"{field} != \"0\"",
-        f"{field} not in [\"0\", \"1\", \"2\"]",
-        f"{field} in [\"0\", \"1\", \"2\"]"
+        f'"0"< {field} < "3"',
+        f'{field} >= "0"',
+        f'({field} > "0" && {field} < "100") or ({field} > "200" && {field} < "300")',
+        f'"0" <= {field} <= "100"',
+        f'{field} == "0"|| {field} == "1"|| {field} =="2"',
+        f'{field} != "0"',
+        f'{field} not in ["0", "1", "2"]',
+        f'{field} in ["0", "1", "2"]',
     ]
     return expressions
 
 
 def gen_invaild_string_expressions():
-    expressions = [
-        "varchar in [0,  \"1\"]",
-        "varchar not in [\"0\", 1, 2]"
-    ]
+    expressions = ['varchar in [0,  "1"]', 'varchar not in ["0", 1, 2]']
     return expressions
 
 
@@ -568,7 +860,7 @@ def gen_normal_expressions_field(field):
         f"{field} <= 4**5/2 && {field} > 500-1 && {field} != 500/2+260",
         f"{field} > 400 && {field} < 200",
         f"{field} < -2**8",
-        f"({field} + 1) == 3 || {field} * 2 == 64 || {field} == 10**2"
+        f"({field} + 1) == 3 || {field} * 2 == 64 || {field} == 10**2",
     ]
     return expressions
 
@@ -584,7 +876,9 @@ def ip(x, y):
 def jaccard(x, y):
     x = np.asarray(x, np.bool)
     y = np.asarray(y, np.bool)
-    return 1 - np.double(np.bitwise_and(x, y).sum()) / np.double(np.bitwise_or(x, y).sum())
+    return 1 - np.double(np.bitwise_and(x, y).sum()) / np.double(
+        np.bitwise_or(x, y).sum()
+    )
 
 
 def hamming(x, y):
@@ -607,7 +901,9 @@ def tanimoto(x, y):
 def tanimoto_calc(x, y):
     x = np.asarray(x, np.bool)
     y = np.asarray(y, np.bool)
-    return np.double((len(x) - np.bitwise_xor(x, y).sum())) / (len(y) + np.bitwise_xor(x, y).sum())
+    return np.double((len(x) - np.bitwise_xor(x, y).sum())) / (
+        len(y) + np.bitwise_xor(x, y).sum()
+    )
 
 
 def substructure(x, y):
@@ -669,7 +965,9 @@ def modify_file(file_path_list, is_modify=False, input_content=""):
                     f.truncate()
                     f.write(input_content)
                     f.close()
-                log.info("[modify_file] file(%s) modification is complete." % file_path_list)
+                log.info(
+                    "[modify_file] file(%s) modification is complete." % file_path_list
+                )
 
 
 def index_to_dict(index):
@@ -677,7 +975,7 @@ def index_to_dict(index):
         "collection_name": index.collection_name,
         "field_name": index.field_name,
         # "name": index.name,
-        "params": index.params
+        "params": index.params,
     }
 
 
@@ -694,15 +992,23 @@ def gen_partitions(collection_w, partition_num=1):
     log.info("gen_partitions: creating partitions")
     for i in range(partition_num):
         partition_name = "search_partition_" + str(i)
-        collection_w.create_partition(partition_name=partition_name,
-                                      description="search partition")
+        collection_w.create_partition(
+            partition_name=partition_name, description="search partition"
+        )
     par = collection_w.partitions
     assert len(par) == (partition_num + 1)
     log.info("gen_partitions: created partitions %s" % par)
 
 
-def insert_data(collection_w, nb=3000, is_binary=False, is_all_data_type=False,
-                auto_id=False, dim=ct.default_dim, insert_offset=0):
+def insert_data(
+    collection_w,
+    nb=3000,
+    is_binary=False,
+    is_all_data_type=False,
+    auto_id=False,
+    dim=ct.default_dim,
+    insert_offset=0,
+):
     """
     target: insert non-binary/binary data
     method: insert non-binary/binary data into partitions if any
@@ -718,7 +1024,9 @@ def insert_data(collection_w, nb=3000, is_binary=False, is_all_data_type=False,
     for i in range(num):
         default_data = gen_default_dataframe_data(nb // num, dim=dim, start=start)
         if is_binary:
-            default_data, binary_raw_data = gen_default_binary_dataframe_data(nb // num, dim=dim, start=start)
+            default_data, binary_raw_data = gen_default_binary_dataframe_data(
+                nb // num, dim=dim, start=start
+            )
             binary_raw_vectors.extend(binary_raw_data)
         if is_all_data_type:
             default_data = gen_dataframe_all_data_type(nb // num, dim=dim, start=start)
@@ -747,6 +1055,7 @@ def get_segment_distribution(res):
     Get segment distribution
     """
     from collections import defaultdict
+
     segment_distribution = defaultdict(lambda: {"sealed": []})
     for r in res:
         for node_id in r.nodeIds:
@@ -774,29 +1083,58 @@ def percent_to_int(string):
 
 
 def gen_grant_list(collection_name):
-    grant_list = [{"object": "Collection", "object_name": collection_name, "privilege": "Load"},
-                  {"object": "Collection", "object_name": collection_name, "privilege": "Release"},
-                  {"object": "Collection", "object_name": collection_name, "privilege": "Compaction"},
-                  {"object": "Collection", "object_name": collection_name, "privilege": "Delete"},
-                  {"object": "Collection", "object_name": collection_name, "privilege": "GetStatistics"},
-                  {"object": "Collection", "object_name": collection_name, "privilege": "CreateIndex"},
-                  {"object": "Collection", "object_name": collection_name, "privilege": "IndexDetail"},
-                  {"object": "Collection", "object_name": collection_name, "privilege": "DropIndex"},
-                  {"object": "Collection", "object_name": collection_name, "privilege": "Search"},
-                  {"object": "Collection", "object_name": collection_name, "privilege": "Flush"},
-                  {"object": "Collection", "object_name": collection_name, "privilege": "Query"},
-                  {"object": "Collection", "object_name": collection_name, "privilege": "LoadBalance"},
-                  {"object": "Collection", "object_name": collection_name, "privilege": "Import"},
-                  {"object": "Global", "object_name": "*", "privilege": "All"},
-                  {"object": "Global", "object_name": "*", "privilege": "CreateCollection"},
-                  {"object": "Global", "object_name": "*", "privilege": "DropCollection"},
-                  {"object": "Global", "object_name": "*", "privilege": "DescribeCollection"},
-                  {"object": "Global", "object_name": "*", "privilege": "ShowCollections"},
-                  {"object": "Global", "object_name": "*", "privilege": "CreateOwnership"},
-                  {"object": "Global", "object_name": "*", "privilege": "DropOwnership"},
-                  {"object": "Global", "object_name": "*", "privilege": "SelectOwnership"},
-                  {"object": "Global", "object_name": "*", "privilege": "ManageOwnership"},
-                  {"object": "User", "object_name": "*", "privilege": "UpdateUser"},
-                  {"object": "User", "object_name": "*", "privilege": "SelectUser"}]
+    grant_list = [
+        {"object": "Collection", "object_name": collection_name, "privilege": "Load"},
+        {
+            "object": "Collection",
+            "object_name": collection_name,
+            "privilege": "Release",
+        },
+        {
+            "object": "Collection",
+            "object_name": collection_name,
+            "privilege": "Compaction",
+        },
+        {"object": "Collection", "object_name": collection_name, "privilege": "Delete"},
+        {
+            "object": "Collection",
+            "object_name": collection_name,
+            "privilege": "GetStatistics",
+        },
+        {
+            "object": "Collection",
+            "object_name": collection_name,
+            "privilege": "CreateIndex",
+        },
+        {
+            "object": "Collection",
+            "object_name": collection_name,
+            "privilege": "IndexDetail",
+        },
+        {
+            "object": "Collection",
+            "object_name": collection_name,
+            "privilege": "DropIndex",
+        },
+        {"object": "Collection", "object_name": collection_name, "privilege": "Search"},
+        {"object": "Collection", "object_name": collection_name, "privilege": "Flush"},
+        {"object": "Collection", "object_name": collection_name, "privilege": "Query"},
+        {
+            "object": "Collection",
+            "object_name": collection_name,
+            "privilege": "LoadBalance",
+        },
+        {"object": "Collection", "object_name": collection_name, "privilege": "Import"},
+        {"object": "Global", "object_name": "*", "privilege": "All"},
+        {"object": "Global", "object_name": "*", "privilege": "CreateCollection"},
+        {"object": "Global", "object_name": "*", "privilege": "DropCollection"},
+        {"object": "Global", "object_name": "*", "privilege": "DescribeCollection"},
+        {"object": "Global", "object_name": "*", "privilege": "ShowCollections"},
+        {"object": "Global", "object_name": "*", "privilege": "CreateOwnership"},
+        {"object": "Global", "object_name": "*", "privilege": "DropOwnership"},
+        {"object": "Global", "object_name": "*", "privilege": "SelectOwnership"},
+        {"object": "Global", "object_name": "*", "privilege": "ManageOwnership"},
+        {"object": "User", "object_name": "*", "privilege": "UpdateUser"},
+        {"object": "User", "object_name": "*", "privilege": "SelectUser"},
+    ]
     return grant_list
-

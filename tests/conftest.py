@@ -1,9 +1,6 @@
-
-
 import logging
 
 import pytest
-import functools
 import socket
 
 import common.common_type as ct
@@ -12,7 +9,12 @@ from utils.util_log import test_log as log
 from common.common_func import param_info
 from check.param_check import ip_check, number_check
 from config.log_config import log_config
-from utils.util_pymilvus import get_milvus, gen_unique_str, gen_default_fields, gen_binary_default_fields
+from utils.util_pymilvus import (
+    get_milvus,
+    gen_unique_str,
+    gen_default_fields,
+    gen_binary_default_fields,
+)
 from pymilvus.orm.types import CONSISTENCY_STRONG
 
 timeout = 60
@@ -21,31 +23,109 @@ delete_timeout = 60
 
 
 def pytest_addoption(parser):
+    parser.addoption(
+        "--backup_uri",
+        action="store",
+        default="http://localhost:8080",
+        help="backup server uri",
+    )
     parser.addoption("--host", action="store", default="localhost", help="service's ip")
     parser.addoption("--service", action="store", default="", help="service address")
     parser.addoption("--port", action="store", default=19530, help="service's port")
-    parser.addoption("--user", action="store", default="", help="user name for connection")
-    parser.addoption("--password", action="store", default="", help="password for connection")
-    parser.addoption("--secure", type=bool, action="store", default=True, help="secure for connection")
-    parser.addoption("--milvus_ns", action="store", default="chaos-testing", help="milvus_ns")
+    parser.addoption(
+        "--user", action="store", default="", help="user name for connection"
+    )
+    parser.addoption(
+        "--password", action="store", default="", help="password for connection"
+    )
+    parser.addoption(
+        "--secure",
+        type=bool,
+        action="store",
+        default=True,
+        help="secure for connection",
+    )
+    parser.addoption(
+        "--milvus_ns", action="store", default="chaos-testing", help="milvus_ns"
+    )
     parser.addoption("--http_port", action="store", default=19121, help="http's port")
-    parser.addoption("--handler", action="store", default="GRPC", help="handler of request")
-    parser.addoption("--tag", action="store", default="all", help="only run tests matching the tag.")
-    parser.addoption('--dry_run', action='store_true', default=False, help="")
-    parser.addoption('--partition_name', action='store', default="partition_name", help="name of partition")
-    parser.addoption('--connect_name', action='store', default="connect_name", help="name of connect")
-    parser.addoption('--descriptions', action='store', default="partition_des", help="descriptions of partition")
-    parser.addoption('--collection_name', action='store', default="collection_name", help="name of collection")
-    parser.addoption('--search_vectors', action='store', default="search_vectors", help="vectors of search")
-    parser.addoption('--index_param', action='store', default="index_param", help="index_param of index")
-    parser.addoption('--data', action='store', default="data", help="data of request")
-    parser.addoption('--clean_log', action='store_true', default=False, help="clean log before testing")
-    parser.addoption('--schema', action='store', default="schema", help="schema of test interface")
-    parser.addoption('--err_msg', action='store', default="err_msg", help="error message of test")
-    parser.addoption('--term_expr', action='store', default="term_expr", help="expr of query quest")
-    parser.addoption('--check_content', action='store', default="check_content", help="content of check")
-    parser.addoption('--field_name', action='store', default="field_name", help="field_name of index")
-    parser.addoption('--replica_num', type='int', action='store', default=ct.default_replica_num, help="memory replica number")
+    parser.addoption(
+        "--handler", action="store", default="GRPC", help="handler of request"
+    )
+    parser.addoption(
+        "--tag", action="store", default="all", help="only run tests matching the tag."
+    )
+    parser.addoption("--dry_run", action="store_true", default=False, help="")
+    parser.addoption(
+        "--partition_name",
+        action="store",
+        default="partition_name",
+        help="name of partition",
+    )
+    parser.addoption(
+        "--connect_name", action="store", default="connect_name", help="name of connect"
+    )
+    parser.addoption(
+        "--descriptions",
+        action="store",
+        default="partition_des",
+        help="descriptions of partition",
+    )
+    parser.addoption(
+        "--collection_name",
+        action="store",
+        default="collection_name",
+        help="name of collection",
+    )
+    parser.addoption(
+        "--search_vectors",
+        action="store",
+        default="search_vectors",
+        help="vectors of search",
+    )
+    parser.addoption(
+        "--index_param",
+        action="store",
+        default="index_param",
+        help="index_param of index",
+    )
+    parser.addoption("--data", action="store", default="data", help="data of request")
+    parser.addoption(
+        "--clean_log",
+        action="store_true",
+        default=False,
+        help="clean log before testing",
+    )
+    parser.addoption(
+        "--schema", action="store", default="schema", help="schema of test interface"
+    )
+    parser.addoption(
+        "--err_msg", action="store", default="err_msg", help="error message of test"
+    )
+    parser.addoption(
+        "--term_expr", action="store", default="term_expr", help="expr of query quest"
+    )
+    parser.addoption(
+        "--check_content",
+        action="store",
+        default="check_content",
+        help="content of check",
+    )
+    parser.addoption(
+        "--field_name", action="store", default="field_name", help="field_name of index"
+    )
+    parser.addoption(
+        "--replica_num",
+        type="int",
+        action="store",
+        default=ct.default_replica_num,
+        help="memory replica number",
+    )
+
+
+@pytest.fixture
+def backup_uri(request):
+    return request.config.getoption("--backup_uri")
 
 
 @pytest.fixture
@@ -80,7 +160,7 @@ def secure(request):
 
 @pytest.fixture
 def milvus_ns(request):
-    return request.config.getoption("--milvus_ns") 
+    return request.config.getoption("--milvus_ns")
 
 
 @pytest.fixture
@@ -175,7 +255,7 @@ def field_name(request):
 
 @pytest.fixture(scope="session", autouse=True)
 def initialize_env(request):
-    """ clean log before testing """
+    """clean log before testing"""
     host = request.config.getoption("--host")
     port = request.config.getoption("--port")
     handler = request.config.getoption("--handler")
@@ -196,7 +276,9 @@ def initialize_env(request):
 
     log.info("#" * 80)
     log.info("[initialize_milvus] Log cleaned up, start testing...")
-    param_info.prepare_param_info(host, port, handler, replica_num, user, password, secure)
+    param_info.prepare_param_info(
+        host, port, handler, replica_num, user, password, secure
+    )
 
 
 @pytest.fixture(params=ct.get_invalid_strs)
@@ -225,9 +307,13 @@ def get_invalid_index_type(request):
 
 
 # TODO: construct invalid index params for all index types
-@pytest.fixture(params=[{"metric_type": "L3", "index_type": "IVF_FLAT"},
-                        {"metric_type": "L2", "index_type": "IVF_FLAT", "err_params": {"nlist": 10}},
-                        {"metric_type": "L2", "index_type": "IVF_FLAT", "params": {"nlist": -1}}])
+@pytest.fixture(
+    params=[
+        {"metric_type": "L3", "index_type": "IVF_FLAT"},
+        {"metric_type": "L2", "index_type": "IVF_FLAT", "err_params": {"nlist": 10}},
+        {"metric_type": "L2", "index_type": "IVF_FLAT", "params": {"nlist": -1}},
+    ]
+)
 def get_invalid_index_params(request):
     yield request.param
 
@@ -261,9 +347,8 @@ def pytest_runtest_setup(item):
 
 
 def pytest_runtestloop(session):
-    if session.config.getoption('--dry_run'):
+    if session.config.getoption("--dry_run"):
         total_num = 0
-        file_num = 0
         tags_num = 0
         res = {"total_num": total_num, "tags_num": tags_num}
         for item in session.items:
@@ -286,7 +371,7 @@ def check_server_connection(request):
     port = request.config.getoption("--port")
 
     connected = True
-    if host and (host not in ['localhost', '127.0.0.1']):
+    if host and (host not in ["localhost", "127.0.0.1"]):
         try:
             socket.getaddrinfo(host, port, 0, 0, socket.IPPROTO_TCP)
         except Exception as e:
@@ -326,7 +411,6 @@ def check_server_connection(request):
 @pytest.fixture(scope="module")
 def connect(request):
     host = request.config.getoption("--host")
-    service_name = request.config.getoption("--service")
     port = request.config.getoption("--port")
     http_port = request.config.getoption("--http_port")
     handler = request.config.getoption("--handler")
@@ -353,7 +437,6 @@ def connect(request):
 @pytest.fixture(scope="module")
 def dis_connect(request):
     host = request.config.getoption("--host")
-    service_name = request.config.getoption("--service")
     port = request.config.getoption("--port")
     http_port = request.config.getoption("--http_port")
     handler = request.config.getoption("--handler")
@@ -392,10 +475,12 @@ def milvus(request):
 def collection(request, connect):
     ori_collection_name = getattr(request.module, "collection_id", "test")
     collection_name = gen_unique_str(ori_collection_name)
-    log.debug(f'collection_name: {collection_name}')
+    log.debug(f"collection_name: {collection_name}")
     try:
         default_fields = gen_default_fields()
-        connect.create_collection(collection_name, default_fields, consistency_level=CONSISTENCY_STRONG)
+        connect.create_collection(
+            collection_name, default_fields, consistency_level=CONSISTENCY_STRONG
+        )
     except Exception as e:
         pytest.exit(str(e))
 
@@ -413,10 +498,12 @@ def collection(request, connect):
 def id_collection(request, connect):
     ori_collection_name = getattr(request.module, "collection_id", "test")
     collection_name = gen_unique_str(ori_collection_name)
-    log.debug(f'id_collection_name: {collection_name}')
+    log.debug(f"id_collection_name: {collection_name}")
     try:
         fields = gen_default_fields(auto_id=False)
-        connect.create_collection(collection_name, fields, consistency_level=CONSISTENCY_STRONG)
+        connect.create_collection(
+            collection_name, fields, consistency_level=CONSISTENCY_STRONG
+        )
     except Exception as e:
         pytest.exit(str(e))
 
@@ -435,12 +522,13 @@ def binary_collection(request, connect):
     collection_name = gen_unique_str(ori_collection_name)
     try:
         fields = gen_binary_default_fields()
-        connect.create_collection(collection_name, fields, consistency_level=CONSISTENCY_STRONG)
+        connect.create_collection(
+            collection_name, fields, consistency_level=CONSISTENCY_STRONG
+        )
     except Exception as e:
         pytest.exit(str(e))
 
     def teardown():
-        collection_names = connect.list_collections()
         if connect.has_collection(collection_name):
             connect.drop_collection(collection_name, timeout=delete_timeout)
 
@@ -456,7 +544,9 @@ def binary_id_collection(request, connect):
     collection_name = gen_unique_str(ori_collection_name)
     try:
         fields = gen_binary_default_fields(auto_id=False)
-        connect.create_collection(collection_name, fields, consistency_level=CONSISTENCY_STRONG)
+        connect.create_collection(
+            collection_name, fields, consistency_level=CONSISTENCY_STRONG
+        )
     except Exception as e:
         pytest.exit(str(e))
 
@@ -467,6 +557,7 @@ def binary_id_collection(request, connect):
     request.addfinalizer(teardown)
     assert connect.has_collection(collection_name)
     return collection_name
+
 
 # for test exit in the future
 # @pytest.hookimpl(hookwrapper=True, tryfirst=True)
