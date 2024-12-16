@@ -79,12 +79,12 @@ class Base:
         except Exception as e:
             log.debug(str(e))
 
-        # delete backups after test
-        try:
-            for backup_name in self.client.backup_list:
-                self.client.delete_backup(backup_name)
-        except Exception as e:
-            log.error(f"delete backup failed with error: {e}")
+        # # delete backups after test
+        # try:
+        #     for backup_name in self.client.backup_list:
+        #         self.client.delete_backup(backup_name)
+        # except Exception as e:
+        #     log.error(f"delete backup failed with error: {e}")
 
 
 class TestcaseBase(Base):
