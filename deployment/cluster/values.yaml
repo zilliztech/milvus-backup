@@ -7,10 +7,13 @@ image:
     pullPolicy: IfNotPresent
 
 etcd:
-  replicaCount: 3
+  replicaCount: 1
   image:
     repository: milvusdb/etcd
     tag: 3.5.0-r7
+
+dataNode:
+  replicas: 4
 
 minio:
   resources:

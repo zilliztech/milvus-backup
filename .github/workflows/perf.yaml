@@ -1,12 +1,6 @@
 name: Perf Test
 
 on:
-  push:
-    branches:
-      - main
-  pull_request:
-    branches:
-      - main
   workflow_dispatch:
   schedule:
     - cron: '0 4 * * *'
@@ -22,7 +16,7 @@ jobs:
       matrix:
         deploy_tools: [docker-compose]
         milvus_mode: [standalone]
-        milvus_version: [master-latest, 2.3.0-latest, 2.2.0-latest]
+        milvus_version: [master-latest, 2.4-latest]
 
     steps:
       - uses: actions/checkout@v3

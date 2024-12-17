@@ -265,8 +265,8 @@ class TestcaseBase(Base):
         collection_w = self.init_collection_wrap(name=name, schema=default_schema, active_trace=True)
         # create partitions
         if enable_partition:
-            for i in range(5):
-                partition_w = self.init_partition_wrap(collection_wrap=collection_w)
+            for i in range(3):
+                self.init_partition_wrap(collection_wrap=collection_w)
         assert collection_w.name == name
         if nb > 0:
             cf.insert_data(collection_w, nb=nb, is_binary=is_binary, auto_id=auto_id, dim=dim)
