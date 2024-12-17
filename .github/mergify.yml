@@ -26,8 +26,10 @@ pull_request_rules:
 
   - name: Test passed for code changed-main
     conditions:
-      - base=main
-      - check-success=Test  
+      - check-success=test-backup-restore-cross-version
+      - check-success=test-backup-restore-after-upgrade
+      - check-success=test-backup-restore-cli
+      - check-success=test-backup-restore-api
     actions:
       label:
         add:

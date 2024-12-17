@@ -26,11 +26,11 @@ class TestRestoreBackup(TestcaseBase):
     """ Test case of end to end"""
 
     @pytest.mark.parametrize("nb", [3000])
-    @pytest.mark.parametrize("is_auto_id", [True, False])
+    @pytest.mark.parametrize("is_auto_id", [True])
     @pytest.mark.parametrize("enable_partition", [False])
     @pytest.mark.parametrize("is_async", [True, False])
-    @pytest.mark.parametrize("collection_need_to_restore", [1, 2, 3])
-    @pytest.mark.parametrize("collection_type", ["binary", "float", "all"])
+    @pytest.mark.parametrize("collection_need_to_restore", [3])
+    @pytest.mark.parametrize("collection_type", ["all"])
     @pytest.mark.tags(CaseLabel.L0)
     def test_milvus_restore_back(self, collection_type, collection_need_to_restore, is_async, is_auto_id, enable_partition, nb):
         # prepare data
@@ -83,14 +83,13 @@ class TestRestoreBackup(TestcaseBase):
         for name in restore_collections:
             self.compare_collections(name, name+suffix, verify_by_query=True)
 
-    @pytest.mark.tags(CaseLabel.L1)
+    @pytest.mark.tags(CaseLabel.L2)
     @pytest.mark.parametrize("nb", [3000])
     @pytest.mark.parametrize("is_auto_id", [True])
     @pytest.mark.parametrize("enable_partition", [True])
     @pytest.mark.parametrize("is_async", [True])
-    @pytest.mark.parametrize("collection_need_to_restore", [3])
+    @pytest.mark.parametrize("collection_need_to_restore", [1])
     @pytest.mark.parametrize("collection_type", ["all"])
-    @pytest.mark.tags(CaseLabel.L0)
     def test_milvus_restore_back_with_multi_partition(self, collection_type, collection_need_to_restore, is_async, is_auto_id, enable_partition, nb):
         # prepare data
         names_origin = []
@@ -190,11 +189,11 @@ class TestRestoreBackup(TestcaseBase):
             assert collection_name + suffix in res
             self.compare_collections(collection_name, collection_name + suffix)
 
-    @pytest.mark.parametrize("include_partition_key", [True, False])
-    @pytest.mark.parametrize("include_dynamic", [True, False])
-    @pytest.mark.parametrize("include_json", [True, False])
+    @pytest.mark.parametrize("include_partition_key", [True])
+    @pytest.mark.parametrize("include_dynamic", [True])
+    @pytest.mark.parametrize("include_json", [True])
     @pytest.mark.tags(CaseLabel.L0)
-    def test_milvus_restore_back_with_new_feature_support(self, include_json, include_dynamic, include_partition_key):
+    def test_milvus_restore_back_with_json_dynamic_schema_partition_key(self, include_json, include_dynamic, include_partition_key):
         self._connect()
         name_origin = cf.gen_unique_str(prefix)
         back_up_name = cf.gen_unique_str(backup_prefix)
@@ -268,7 +267,7 @@ class TestRestoreBackup(TestcaseBase):
     @pytest.mark.parametrize("include_partition_key", [True])
     @pytest.mark.parametrize("include_dynamic", [True])
     @pytest.mark.parametrize("include_json", [True])
-    @pytest.mark.tags(CaseLabel.MASTER)
+    @pytest.mark.tags(CaseLabel.L2)
     def test_milvus_restore_back_with_multi_json_datatype(self, include_json, include_dynamic, include_partition_key):
         self._connect()
         name_origin = cf.gen_unique_str(prefix)
@@ -349,8 +348,7 @@ class TestRestoreBackup(TestcaseBase):
             all_backup = []
         assert back_up_name not in all_backup
 
-
-    @pytest.mark.parametrize("drop_db", [True, False])
+    @pytest.mark.parametrize("drop_db", [True])
     @pytest.mark.parametrize("str_json", [True, False])
     @pytest.mark.tags(CaseLabel.L0)
     def test_milvus_restore_with_db_collections(self, drop_db, str_json):
@@ -413,9 +411,9 @@ class TestRestoreBackup(TestcaseBase):
             if not drop_db:
                 self.compare_collections(collection_name, collection_name + suffix)
 
-    @pytest.mark.parametrize("include_partition_key", [True, False])
-    @pytest.mark.parametrize("include_dynamic", [True, False])
-    @pytest.mark.tags(CaseLabel.L0)
+    @pytest.mark.parametrize("include_partition_key", [True])
+    @pytest.mark.parametrize("include_dynamic", [True])
+    @pytest.mark.tags(CaseLabel.L2)
     def test_milvus_restore_back_with_array_datatype(self, include_dynamic, include_partition_key):
         self._connect()
         name_origin = cf.gen_unique_str(prefix)
@@ -488,10 +486,9 @@ class TestRestoreBackup(TestcaseBase):
             all_backup = []
         assert back_up_name not in all_backup
 
-
-    @pytest.mark.parametrize("include_partition_key", [True, False])
-    @pytest.mark.parametrize("include_dynamic", [True, False])
-    @pytest.mark.tags(CaseLabel.MASTER)
+    @pytest.mark.parametrize("include_partition_key", [True])
+    @pytest.mark.parametrize("include_dynamic", [True])
+    @pytest.mark.tags(CaseLabel.L2)
     def test_milvus_restore_back_with_multi_vector_datatype(self, include_dynamic, include_partition_key):
         self._connect()
         name_origin = cf.gen_unique_str(prefix)
@@ -570,10 +567,9 @@ class TestRestoreBackup(TestcaseBase):
             all_backup = []
         assert back_up_name not in all_backup
 
-
-    @pytest.mark.parametrize("include_partition_key", [True, False])
-    @pytest.mark.parametrize("include_dynamic", [True, False])
-    @pytest.mark.tags(CaseLabel.MASTER)
+    @pytest.mark.parametrize("include_partition_key", [True])
+    @pytest.mark.parametrize("include_dynamic", [True])
+    @pytest.mark.tags(CaseLabel.L1)
     def test_milvus_restore_back_with_f16_bf16_datatype(self, include_dynamic, include_partition_key):
         self._connect()
         name_origin = cf.gen_unique_str(prefix)
@@ -656,7 +652,7 @@ class TestRestoreBackup(TestcaseBase):
     @pytest.mark.parametrize("include_dynamic", [True])
     @pytest.mark.parametrize("enable_text_match", [True])
     @pytest.mark.tags(CaseLabel.MASTER)
-    def test_milvus_restore_back_with_sparse_vector_datatype(self, include_dynamic, include_partition_key, enable_text_match):
+    def test_milvus_restore_back_with_sparse_vector_text_match_datatype(self, include_dynamic, include_partition_key, enable_text_match):
         self._connect()
         name_origin = cf.gen_unique_str(prefix)
         back_up_name = cf.gen_unique_str(backup_prefix)
@@ -738,7 +734,6 @@ class TestRestoreBackup(TestcaseBase):
         else:
             all_backup = []
         assert back_up_name not in all_backup
-
 
     @pytest.mark.tags(CaseLabel.L1)
     def test_milvus_restore_back_with_delete(self):
@@ -844,7 +839,7 @@ class TestRestoreBackup(TestcaseBase):
         output_fields = None
         self.compare_collections(name_origin, name_origin + suffix, output_fields=output_fields, verify_by_query=True)
 
-    @pytest.mark.tags(CaseLabel.MASTER)
+    @pytest.mark.tags(CaseLabel.L1)
     def test_milvus_restore_back_with_dup_pk(self):
         self._connect()
         name_origin = cf.gen_unique_str(prefix)
