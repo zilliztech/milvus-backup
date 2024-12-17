@@ -16,7 +16,7 @@ do
 if [[ $container == milvus-* ]];
 then
     echo "export logs for container $container "
-    docker logs $container > ./$log_dir/$container.log 2>&1 || echo "export logs for container $container failed"
+    docker logs $container > $log_dir/$container.log 2>&1 || echo "export logs for container $container failed"
 fi
 done
 echo "export logs done"
