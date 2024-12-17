@@ -67,7 +67,8 @@ jobs:
         working-directory: deployment/${{ matrix.milvus_mode }}
         run: |
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.source_image_tag }}) && echo $tag
-          yq -i '.services.standalone.image="milvusdb/milvus:$tag"' docker-compose.yml
+          echo $tag
+          tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.source_image_tag }}) && yq -i '.services.standalone.image="milvusdb/milvus:$tag"' docker-compose.yml
           docker-compose up -d
           bash ../../scripts/check_healthy.sh
           docker-compose ps -a
