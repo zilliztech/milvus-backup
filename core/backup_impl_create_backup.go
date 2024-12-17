@@ -414,7 +414,6 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 			zap.Uint64("BackupTimestamp", collectionBackup.BackupTimestamp),
 			zap.Any("channelCPs", channelCPs))
 
-		flushSegmentIDs := append(newSealedSegmentIDs, flushedSegmentIDs...)
 		segmentEntitiesAfterFlush, err := b.getMilvusClient().GetPersistentSegmentInfo(ctx, collectionBackup.GetDbName(), collectionBackup.GetCollectionName())
 		if err != nil {
 			return err
@@ -434,31 +433,8 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 			zap.Int64s("segmentIDsAfterFlush", segmentIDsAfterFlush),
 			zap.Int64s("newL0SegmentsIDs", newL0SegmentsIDs))
 
-		segmentEntities := segmentEntitiesBeforeFlush
 		for _, seg := range segmentEntitiesAfterFlush {
-			if !lo.Contains(segmentIDsBeforeFlush, seg.ID) {
-				segmentEntities = append(segmentEntities, seg)
-			}
-		}
-
-		// segmentIDs
-		unfilledSegmentIDs := make([]int64, 0)
-		// union of (intersection of BeforeFlushIDs and AfterFlushIDs) and flushSegmentIDs
-		for _, seg := range segmentEntitiesAfterFlush {
-			if lo.Contains(segmentIDsBeforeFlush, seg.ID) {
-				unfilledSegmentIDs = append(unfilledSegmentIDs, seg.ID)
-			}
-		}
-		for _, segID := range flushSegmentIDs {
-			if !lo.Contains(unfilledSegmentIDs, segID) {
-				unfilledSegmentIDs = append(unfilledSegmentIDs, segID)
-			}
-		}
-		unfilledSegmentIDs = append(unfilledSegmentIDs, newL0SegmentsIDs...)
-		for _, seg := range segmentEntities {
-			if lo.Contains(unfilledSegmentIDs, seg.ID) {
-				unfilledSegments = append(unfilledSegments, seg)
-			}
+			unfilledSegments = append(unfilledSegments, seg)
 		}
 	} else {
 		// Flush
@@ -474,10 +450,6 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 		for _, seg := range segmentEntitiesBeforeFlush {
 			unfilledSegments = append(unfilledSegments, seg)
 		}
-	}
-
-	if err != nil {
-		return err
 	}
 
 	newSegIDs := lo.Map(unfilledSegments, func(segment *entity.Segment, _ int) int64 { return segment.ID })
