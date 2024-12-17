@@ -43,5 +43,8 @@ if __name__ == "__main__":
     argparse.add_argument("--tag", type=str, default="master-latest")
     argparse.add_argument("--arch", type=str, default="amd64")
     args = argparse.parse_args()
-    res = get_image_tag_by_short_name(args.repository, args.tag, args.arch)
-    print(res)
+    if "latest" not in args.tag:
+        print(args.tag)
+    else:
+        res = get_image_tag_by_short_name(args.repository, args.tag, args.arch)
+        print(res)
