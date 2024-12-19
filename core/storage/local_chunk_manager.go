@@ -109,6 +109,7 @@ func (lcm *LocalChunkManager) Read(ctx context.Context, bucketName string, fileP
 }
 
 func (lcm *LocalChunkManager) ListWithPrefix(ctx context.Context, bucketName string, prefix string, recursive bool) ([]string, []int64, error) {
+	log.Debug("LocalChunkManager ListWithPrefix")
 	var filePaths []string
 	var sizes []int64
 	if recursive {
@@ -234,6 +235,7 @@ func (lcm *LocalChunkManager) UploadObject(ctx context.Context, i UploadObjectIn
 		return err
 	}
 
+	fmt.Println("Successfully written to file!")
 	return nil
 }
 

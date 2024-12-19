@@ -19,6 +19,9 @@ import (
 	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/common"
 	"github.com/zilliztech/milvus-backup/internal/log"
+
+	grpc "google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 const (
@@ -72,7 +75,33 @@ func CreateMilvusClient(ctx context.Context, params paramtable.BackupParams) (go
 		if params.MilvusCfg.TLSMode == 0 {
 			c, err = gomilvus.NewDefaultGrpcClientWithAuth(ctx, milvusEndpoint, params.MilvusCfg.User, params.MilvusCfg.Password)
 		} else if params.MilvusCfg.TLSMode == 1 || params.MilvusCfg.TLSMode == 2 {
-			c, err = gomilvus.NewDefaultGrpcClientWithTLSAuth(ctx, milvusEndpoint, params.MilvusCfg.User, params.MilvusCfg.Password)
+			// GIFI
+			var creds credentials.TransportCredentials
+			//c, err = gomilvus.NewDefaultGrpcClientWithTLSAuth(ctx, milvusEndpoint, params.MilvusCfg.User, params.MilvusCfg.Password)
+			if params.MilvusCfg.TLSMode == 1 {
+				//log.Debug("Start Milvus client", zap.String("TLSCertPath", params.MilvusCfg.TLSCertPath), zap.String("ServerName", params.MilvusCfg.ServerName))
+				creds, err = credentials.NewClientTLSFromFile(params.MilvusCfg.TLSCertPath, params.MilvusCfg.ServerName)
+			} else {
+				// creds, err = withCredential(opt.ClientPemPath, opt.ClientKeyPath, opt.CaPath)
+				log.Error("milvus.tlsMode 2 is not supported")
+				return nil, errors.New("milvus.TLSMode supports 0 and 1 currently")
+			}
+			if err != nil {
+				log.Error("failed to create client from the certificate", zap.Error(err))
+				return nil, err
+			}
+			opts := []grpc.DialOption{
+				grpc.WithTransportCredentials(creds),
+			}
+
+			c, err = gomilvus.NewClient(ctx, gomilvus.Config{
+				Address:       milvusEndpoint,
+				Username:      params.MilvusCfg.User,
+				Password:      params.MilvusCfg.Password,
+				EnableTLSAuth: true,
+				DialOptions:   opts,
+			})
+
 		} else {
 			log.Error("milvus.TLSMode is not illegal, support value 0, 1, 2")
 			return nil, errors.New("milvus.TLSMode is not illegal, support value 0, 1, 2")
@@ -101,11 +130,13 @@ func createStorageClient(ctx context.Context, params paramtable.BackupParams) (s
 		BucketName:        params.MinioCfg.BucketName,
 		AccessKeyID:       params.MinioCfg.AccessKeyID,
 		SecretAccessKeyID: params.MinioCfg.SecretAccessKey,
-		UseSSL:            params.MinioCfg.UseSSL,
-		UseIAM:            params.MinioCfg.UseIAM,
-		IAMEndpoint:       params.MinioCfg.IAMEndpoint,
-		RootPath:          params.MinioCfg.RootPath,
-		CreateBucket:      true,
+		GcpCredentialJSON: params.MinioCfg.GcpCredentialJSON,
+
+		UseSSL:       params.MinioCfg.UseSSL,
+		UseIAM:       params.MinioCfg.UseIAM,
+		IAMEndpoint:  params.MinioCfg.IAMEndpoint,
+		RootPath:     params.MinioCfg.RootPath,
+		CreateBucket: true,
 	}
 
 	minioClient, err := storage.NewChunkManager(ctx, params, storageConfig)
@@ -157,6 +188,7 @@ func (b *BackupContext) getMilvusClient() *MilvusClient {
 
 func (b *BackupContext) getMilvusStorageClient() storage.ChunkManager {
 	if b.milvusStorageClient == nil {
+		//log.Info("GIFI INSIDE getMilvusStorageClient")
 		minioEndPoint := b.params.MinioCfg.Address + ":" + b.params.MinioCfg.Port
 		log.Debug("create milvus storage client",
 			zap.String("address", minioEndPoint),
@@ -169,6 +201,7 @@ func (b *BackupContext) getMilvusStorageClient() storage.ChunkManager {
 			BucketName:        b.params.MinioCfg.BucketName,
 			AccessKeyID:       b.params.MinioCfg.AccessKeyID,
 			SecretAccessKeyID: b.params.MinioCfg.SecretAccessKey,
+			GcpCredentialJSON: b.params.MinioCfg.GcpCredentialJSON,
 			UseSSL:            b.params.MinioCfg.UseSSL,
 			UseIAM:            b.params.MinioCfg.UseIAM,
 			IAMEndpoint:       b.params.MinioCfg.IAMEndpoint,
@@ -188,6 +221,7 @@ func (b *BackupContext) getMilvusStorageClient() storage.ChunkManager {
 
 func (b *BackupContext) getBackupStorageClient() storage.ChunkManager {
 	if b.backupStorageClient == nil {
+		//log.Info("GIFI INSIDE getBackupStorageClient")
 		minioEndPoint := b.params.MinioCfg.BackupAddress + ":" + b.params.MinioCfg.BackupPort
 		log.Debug("create backup storage client",
 			zap.String("address", minioEndPoint),
@@ -200,6 +234,7 @@ func (b *BackupContext) getBackupStorageClient() storage.ChunkManager {
 			BucketName:        b.params.MinioCfg.BackupBucketName,
 			AccessKeyID:       b.params.MinioCfg.BackupAccessKeyID,
 			SecretAccessKeyID: b.params.MinioCfg.BackupSecretAccessKey,
+			GcpCredentialJSON: b.params.MinioCfg.BackupGcpCredentialJSON,
 			UseSSL:            b.params.MinioCfg.BackupUseSSL,
 			UseIAM:            b.params.MinioCfg.BackupUseIAM,
 			IAMEndpoint:       b.params.MinioCfg.BackupIAMEndpoint,
@@ -647,13 +682,13 @@ func (b *BackupContext) GetRestore(ctx context.Context, request *backuppb.GetRes
 	}
 
 	task := b.meta.GetRestoreTask(request.GetId())
+	progress := int32(float32(task.GetRestoredSize()) * 100 / float32(task.GetToRestoreSize()))
+	// don't return zero
+	if progress == 0 {
+		progress = 1
+	}
+	task.Progress = progress
 	if task != nil {
-		progress := int32(float32(task.GetRestoredSize()) * 100 / float32(task.GetToRestoreSize()))
-		// don't return zero
-		if progress == 0 {
-			progress = 1
-		}
-		task.Progress = progress
 		resp.Code = backuppb.ResponseCode_Success
 		resp.Msg = "success"
 		resp.Data = task
