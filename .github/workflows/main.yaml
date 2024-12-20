@@ -382,15 +382,14 @@ jobs:
         run: |
           python example/verify_data.py
 
-  test-backup-restore-with-custom-config:
+  test-backup-restore-with-rbac-config:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         deploy_tools: [helm]
         milvus_mode: [standalone]
-        milvus_minio_rootpath: ["", "file"]
-        backup_bucket_name: ["milvus-backup", "milvus-bucket"]
+        image_tag: [master-latest]
 
     steps:
       - uses: actions/checkout@v3
@@ -410,24 +409,18 @@ jobs:
         if: ${{ matrix.deploy_tools == 'helm' }}
         uses: helm/kind-action@v1.2.0
 
-      - name: Modify Milvus config
-
-        timeout-minutes: 15
-        shell: bash
-        working-directory: deployment/${{ matrix.milvus_mode }}
-        run: |
-          yq -i '.minio.rootPath = "${{ matrix.milvus_minio_rootpath }}"' values.yaml
       - name: Build
         timeout-minutes: 5
         shell: bash
         run: |
-          if [ ${{ matrix.deploy_tools }} == 'helm' ]; then
-            yq -i '.minio.bucketName = "milvus-bucket"' configs/backup.yaml
-            yq -i '.minio.rootPath = "${{ matrix.milvus_minio_rootpath }}"' configs/backup.yaml
-            yq -i '.minio.backupBucketName = "${{ matrix.backup_bucket_name }}"' configs/backup.yaml
-
-          fi
           yq -i '.log.level = "debug"' configs/backup.yaml
+          yq -i '.milvus.authorizationEnabled = true' configs/backup.yaml
+          yq -i '.minio.bucketName = "milvus-bucket"' configs/backup.yaml
+          yq -i '.minio.rootPath = "file"' configs/backup.yaml
+          yq -i '.minio.backupPort = 9010' configs/backup.yaml
+          yq -i '.minio.backupBucketName = "milvus-bucket"' configs/backup.yaml
+          yq -i '.minio.backupRootPath = "backup"' configs/backup.yaml
+          yq -i '.minio.crossStorage = true' configs/backup.yaml
           cat configs/backup.yaml || true
           go get
           go build
@@ -447,20 +440,29 @@ jobs:
         working-directory: deployment/${{ matrix.milvus_mode }}
         run: |
           if [ ${{ matrix.deploy_tools}} == "helm" ]; then
-            helm repo add milvus https://milvus-io.github.io/milvus-helm
+            helm repo add milvus https://zilliztech.github.io/milvus-helm
             helm repo update
-            helm install --wait --timeout 600s milvus-backup milvus/milvus -f values.yaml
+            tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
+            yq -i ".image.all.tag=\"${tag}\"" rbac-values.yaml
+            helm install --wait --timeout 600s milvus-backup milvus/milvus -f rbac-values.yaml
+            helm install --wait --timeout 600s milvus-restore milvus/milvus -f rbac-values.yaml
             kubectl get pods
             kubectl port-forward service/milvus-backup 19530 >/dev/null 2>&1 &
             kubectl port-forward service/milvus-backup-minio 9000  >/dev/null 2>&1 &
+            kubectl port-forward service/milvus-restore 19531:19530 >/dev/null 2>&1 &
+            kubectl port-forward service/milvus-restore-minio 9010:9000  >/dev/null 2>&1 &
             sleep 10
             nc -vz 127.0.0.1 19530
             nc -vz 127.0.0.1 9000
+            nc -vz 127.0.0.1 19531
+            nc -vz 127.0.0.1 9010
             sleep 10
             kubectl get pods -n default | grep milvus-backup
+            kubectl get pods -n default | grep milvus-restore
           fi
-
           if [ ${{ matrix.deploy_tools}} == "docker-compose" ]; then
+            tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
+            yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml  
             docker-compose up -d
             bash ../../scripts/check_healthy.sh
             docker-compose ps -a
@@ -469,25 +471,33 @@ jobs:
         timeout-minutes: 5
         shell: bash
         run: |
-          python example/prepare_data.py
+          python example/prepare_data.py --uri http://127.0.0.1:19530
+          python example/prepare_rbac.py --uri http://127.0.0.1:19530
       - name: Backup
         timeout-minutes: 5
         shell: bash
         run: |
           ./milvus-backup check
           ./milvus-backup list
-          ./milvus-backup create -n my_backup
+          ./milvus-backup create -n my_backup --rbac
           ./milvus-backup list
+      - name: Modify Restore Config
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          yq -i '.milvus.port = 19531' configs/backup.yaml
+          yq -i '.minio.port = 9010' configs/backup.yaml
       - name: Restore backup
         timeout-minutes: 5
         shell: bash
         run: |
-          ./milvus-backup restore -n my_backup -s _recover
+          ./milvus-backup restore -n my_backup -s _recover --rbac
       - name: Verify data
         timeout-minutes: 5
         shell: bash
         run: |
-          python example/verify_data.py
+          python example/verify_data.py --uri http://127.0.0.1:19531
+          python example/verify_rbac.py --uri http://127.0.0.1:19531
       - name: Export logs
         if: ${{ always() }}
         shell: bash
@@ -495,12 +505,11 @@ jobs:
         run: |
           if [ ${{ matrix.deploy_tools}} == "helm" ]; then
             bash ../../scripts/export_log_k8s.sh default milvus-backup logs
+            bash ../../scripts/export_log_k8s.sh default milvus-restore logs
           fi
-
           if [ ${{ matrix.deploy_tools}} == "docker-compose" ]; then
             bash ../../scripts/export_log_docker.sh logs
           fi
-
       - name: Upload logs
         if: ${{ ! success() }}
         uses: actions/upload-artifact@v4
@@ -511,6 +520,10 @@ jobs:
             ./server.log
             /tmp/ci_logs
             deployment/${{ matrix.milvus_mode }}/logs
+
+
+
+
   test-backup-restore-api:
     runs-on: ubuntu-latest
     needs: test-backup-restore-cli
@@ -565,26 +578,11 @@ jobs:
         shell: bash
         working-directory: deployment/${{ matrix.milvus_mode }}
         run: |
-          if [ ${{ matrix.deploy_tools}} == "helm" ]; then
-            helm repo add milvus https://milvus-io.github.io/milvus-helm
-            helm repo update
-            helm install --wait --timeout 600s milvus-backup milvus/milvus -f values.yaml
-            kubectl get pods
-            kubectl port-forward service/milvus-backup 19530 >/dev/null 2>&1 &
-            kubectl port-forward service/milvus-backup-minio 9000  >/dev/null 2>&1 &
-            sleep 10
-            nc -vz 127.0.0.1 19530
-            nc -vz 127.0.0.1 9000
-            sleep 10
-            kubectl get pods -n default | grep milvus-backup
-          fi
-
-          if [ ${{ matrix.deploy_tools}} == "docker-compose" ]; then
-            yq -i '.services.standalone.image="milvusdb/milvus:${{ matrix.image_tag }}"' docker-compose.yml
-            docker-compose up -d
-            bash ../../scripts/check_healthy.sh
-            docker-compose ps -a
-          fi
+          tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
+          yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          docker-compose up -d
+          bash ../../scripts/check_healthy.sh
+          docker-compose ps -a
 
       - name: Start backup server
         timeout-minutes: 5
