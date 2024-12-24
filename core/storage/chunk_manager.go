@@ -35,7 +35,7 @@ type ChunkManager interface {
 	UploadObject(ctx context.Context, i UploadObjectInput) error
 }
 
-func NewChunkManager(ctx context.Context, params paramtable.BackupParams, config *StorageConfig) (ChunkManager, error) {
+func NewChunkManager(ctx context.Context, params *paramtable.BackupParams, config *StorageConfig) (ChunkManager, error) {
 	switch config.StorageType {
 	case paramtable.Local:
 		return NewLocalChunkManager(ctx, config)
@@ -47,7 +47,7 @@ func NewChunkManager(ctx context.Context, params paramtable.BackupParams, config
 	}
 }
 
-func newAzureChunkManagerWithParams(ctx context.Context, params paramtable.BackupParams, config *StorageConfig) (*AzureChunkManager, error) {
+func newAzureChunkManagerWithParams(ctx context.Context, params *paramtable.BackupParams, config *StorageConfig) (*AzureChunkManager, error) {
 	c := newDefaultConfig()
 	c.Address = params.MinioCfg.Address + ":" + params.MinioCfg.Port
 	c.AccessKeyID = params.MinioCfg.AccessKeyID

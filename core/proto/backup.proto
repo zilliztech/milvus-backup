@@ -245,6 +245,15 @@ enum RestoreTaskStateCode {
   TIMEOUT = 4;
 }
 
+message SkipParams {
+  repeated string collection_properties = 1;
+
+  repeated string filed_index_params = 2;
+  repeated string filed_type_params = 3;
+
+  repeated string index_params = 4;
+}
+
 message RestoreBackupRequest {
   // uuid of request, will generate one if not set
   string requestId = 1;
@@ -285,6 +294,8 @@ message RestoreBackupRequest {
   bool rbac = 18;
   // target max shard number
   int32 maxShardNum = 19;
+  // if key is set, will skip the params in restore process
+  SkipParams skip_params = 20;
 }
 
 message RestorePartitionTask {
@@ -325,6 +336,7 @@ message RestoreCollectionTask {
   bool skipDiskQuotaCheck = 19;
   // target max shard number
   int32 maxShardNum = 20;
+  SkipParams skip_params = 21;
 }
 
 message RestoreBackupTask {
@@ -385,6 +397,12 @@ enum ConsistencyLevel {
   Customized = 4; // Users pass their own `guarantee_timestamp`.
 }
 
+enum FunctionType{
+  Unknown =0;
+  BM25 =1;
+  TextEmbedding =2;
+}
+
 
 // copied from milvus schema.proto
 
@@ -434,9 +452,6 @@ message ValueField {
   }
 }
 
-/**
- * @brief Field schema. The same as https://github.com/milvus-io/milvus-proto schema.proto
- */
 message FieldSchema {
   int64 fieldID = 1;
   string name = 2;
@@ -453,6 +468,19 @@ message FieldSchema {
   bool is_partition_key = 13; // enable logic partitions
   bool nullable = 14;
   string default_value_proto = 15; // json not support marshall oneof, so use proto string
+  bool is_function_output = 16;
+}
+
+message FunctionSchema {
+  string name = 1;
+  int64 id =2;
+  string description = 3;
+  FunctionType type = 4;
+  repeated string input_field_names = 5;
+  repeated int64 input_field_ids = 6;
+  repeated string output_field_names = 7;
+  repeated int64 output_field_ids = 8;
+  repeated KeyValuePair params = 9;
 }
 
 /**
@@ -464,6 +492,8 @@ message CollectionSchema {
   bool autoID = 3; // deprecated later, keep compatible with c++ part now
   repeated FieldSchema fields = 4;
   bool enable_dynamic_field = 5; // mark whether this table has the dynamic field function enabled.
+  repeated KeyValuePair properties = 6;
+  repeated FunctionSchema functions = 7;
 }
 
 message CheckRequest {

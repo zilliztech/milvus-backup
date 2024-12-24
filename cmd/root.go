@@ -23,7 +23,7 @@ var rootCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		Error(cmd, args, errors.New("unrecognized command"))
 	},
-	PersistentPreRun: func(cmd *cobra.Command, args []string){
+	PersistentPreRun: func(cmd *cobra.Command, args []string) {
 		setEnvs(yamlOverrides)
 	},
 }

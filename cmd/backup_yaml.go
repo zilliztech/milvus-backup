@@ -5,8 +5,9 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
-	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"gopkg.in/yaml.v3"
+
+	"github.com/zilliztech/milvus-backup/core/paramtable"
 )
 
 var configCmd = &cobra.Command{

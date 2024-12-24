@@ -26,8 +26,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/cockroachdb/errors"
 	"github.com/zilliztech/milvus-backup/internal/log"
+
+	"github.com/cockroachdb/errors"
 )
 
 func WrapErrFileNotFound(key string) error {

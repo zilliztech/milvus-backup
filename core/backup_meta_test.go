@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/zilliztech/milvus-backup/core/meta"
+
 	jsoniter "github.com/json-iterator/go"
 	"github.com/stretchr/testify/assert"
 
@@ -134,24 +136,24 @@ func TestBackupSerialize(t *testing.T) {
 		CollectionBackups: []*backuppb.CollectionBackupInfo{collection},
 	}
 
-	serData, err := serialize(backup)
+	serData, err := meta.serialize(backup)
 	assert.NoError(t, err)
 	log.Info(string(serData.BackupMetaBytes))
 	log.Info(string(serData.CollectionMetaBytes))
 	log.Info(string(serData.PartitionMetaBytes))
 	log.Info(string(serData.SegmentMetaBytes))
 
-	deserBackup, err := deserialize(serData)
+	deserBackup, err := meta.deserialize(serData)
 	log.Info(deserBackup.String())
 }
 
 func TestDbCollectionJson(t *testing.T) {
-	dbCollection := DbCollections{"db1": []string{"coll1", "coll2"}, "db2": []string{"coll3", "coll4"}}
+	dbCollection := meta.DbCollections{"db1": []string{"coll1", "coll2"}, "db2": []string{"coll3", "coll4"}}
 	jsonStr, err := jsoniter.MarshalToString(dbCollection)
 	assert.NoError(t, err)
 	println(jsonStr)
 
-	var dbCollection2 DbCollections
+	var dbCollection2 meta.DbCollections
 	jsoniter.UnmarshalFromString(jsonStr, &dbCollection2)
 	println(dbCollection2)
 }
@@ -202,14 +204,14 @@ func readBackup(backupDir string) (*backuppb.BackupInfo, error) {
 		return nil, err
 	}
 
-	completeBackupMetas := &BackupMetaBytes{
+	completeBackupMetas := &meta.BackupMetaBytes{
 		BackupMetaBytes:     backupMetaBytes,
 		CollectionMetaBytes: collectionBackupMetaBytes,
 		PartitionMetaBytes:  partitionBackupMetaBytes,
 		SegmentMetaBytes:    segmentBackupMetaBytes,
 	}
 
-	deserBackup, err := deserialize(completeBackupMetas)
+	deserBackup, err := meta.deserialize(completeBackupMetas)
 
 	return deserBackup, err
 }
@@ -220,11 +222,11 @@ func TestReadBackupFile(t *testing.T) {
 	backupInfo, err := readBackup(filepath)
 	assert.NoError(t, err)
 
-	levelBackupInfo, err := treeToLevel(backupInfo)
+	levelBackupInfo, err := meta.treeToLevel(backupInfo)
 	assert.NoError(t, err)
 	assert.NotNil(t, levelBackupInfo)
 
-	output, _ := serialize(backupInfo)
+	output, _ := meta.serialize(backupInfo)
 	BackupMetaStr := string(output.BackupMetaBytes)
 	segmentMetaStr := string(output.SegmentMetaBytes)
 	fmt.Sprintf(BackupMetaStr)
@@ -239,7 +241,7 @@ func TestSimpleBackupResponse(t *testing.T) {
 		Msg:       "not found",
 		Data:      nil,
 	}
-	simpleInfo := SimpleBackupResponse(info)
+	simpleInfo := meta.SimpleBackupResponse(info)
 	assert.Nil(t, simpleInfo.Data)
 	assert.Equal(t, info.Code, simpleInfo.Code)
 	assert.Equal(t, info.Msg, simpleInfo.Msg)
@@ -253,7 +255,7 @@ func TestSimpleRestoreResponse(t *testing.T) {
 		Msg:       "not found",
 		Data:      nil,
 	}
-	simpleInfo := SimpleRestoreResponse(info)
+	simpleInfo := meta.SimpleRestoreResponse(info)
 	assert.Nil(t, simpleInfo.Data)
 	assert.Equal(t, info.Code, simpleInfo.Code)
 	assert.Equal(t, info.Msg, simpleInfo.Msg)

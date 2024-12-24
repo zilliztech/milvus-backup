@@ -13,9 +13,12 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zilliztech/milvus-backup/core/meta"
+
 	"github.com/golang/protobuf/proto"
 	jsoniter "github.com/json-iterator/go"
-	"github.com/milvus-io/milvus-sdk-go/v2/entity"
+	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
+	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 
@@ -24,6 +27,15 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/util/retry"
 )
+
+func conv2BakKV(kv []*commonpb.KeyValuePair) []*backuppb.KeyValuePair {
+	return lo.Map(kv, func(item *commonpb.KeyValuePair, _ int) *backuppb.KeyValuePair {
+		return &backuppb.KeyValuePair{
+			Key:   item.Key,
+			Value: item.Value,
+		}
+	})
+}
 
 func (b *BackupContext) CreateBackup(ctx context.Context, request *backuppb.CreateBackupRequest) *backuppb.BackupInfoResponse {
 	if request.GetRequestId() == "" {
@@ -56,7 +68,7 @@ func (b *BackupContext) CreateBackup(ctx context.Context, request *backuppb.Crea
 		request.BackupName = "backup_" + fmt.Sprint(time.Now().UTC().Format("2006_01_02_15_04_05_")) + fmt.Sprint(time.Now().Nanosecond())
 	}
 	if request.GetBackupName() != "" {
-		exist, err := b.getBackupStorageClient().Exist(b.ctx, b.backupBucketName, b.backupRootPath+SEPERATOR+request.GetBackupName())
+		exist, err := b.getBackupStorageClient().Exist(b.ctx, b.backupBucketName, b.backupRootPath+meta.SEPERATOR+request.GetBackupName())
 		if err != nil {
 			errMsg := fmt.Sprintf("fail to check whether exist backup with name: %s", request.GetBackupName())
 			log.Error(errMsg, zap.Error(err))
@@ -72,7 +84,7 @@ func (b *BackupContext) CreateBackup(ctx context.Context, request *backuppb.Crea
 			return resp
 		}
 	}
-	err := utils.ValidateType(request.GetBackupName(), BACKUP_NAME)
+	err := utils.ValidateType(request.GetBackupName(), BackupName)
 	if err != nil {
 		log.Error("illegal backup name", zap.Error(err))
 		resp.Code = backuppb.ResponseCode_Parameter_Error
@@ -143,7 +155,7 @@ func (b *BackupContext) parseBackupCollections(request *backuppb.CreateBackupReq
 	dbCollectionsStr := utils.GetCreateDBCollections(request)
 	// first priority: dbCollections
 	if dbCollectionsStr != "" {
-		var dbCollections DbCollections
+		var dbCollections meta.DbCollections
 		err := jsoniter.UnmarshalFromString(dbCollectionsStr, &dbCollections)
 		if err != nil {
 			log.Error("fail in unmarshal dbCollections in CreateBackupRequest", zap.String("dbCollections", dbCollectionsStr), zap.Error(err))
@@ -151,14 +163,14 @@ func (b *BackupContext) parseBackupCollections(request *backuppb.CreateBackupReq
 		}
 		for db, collections := range dbCollections {
 			if len(collections) == 0 {
-				collections, err := b.getMilvusClient().ListCollections(b.ctx, db)
+				resp, err := b.getMilvusClient().ListCollections(b.ctx, db)
 				if err != nil {
 					log.Error("fail in ListCollections", zap.Error(err))
 					return nil, err
 				}
-				for _, coll := range collections {
-					log.Debug("Add collection to toBackupCollections", zap.String("db", db), zap.String("collection", coll.Name))
-					toBackupCollections = append(toBackupCollections, collectionStruct{db, coll.Name})
+				for _, coll := range resp.CollectionNames {
+					log.Debug("Add collection to toBackupCollections", zap.String("db", db), zap.String("collection", coll))
+					toBackupCollections = append(toBackupCollections, collectionStruct{db, coll})
 				}
 			} else {
 				for _, coll := range collections {
@@ -174,15 +186,15 @@ func (b *BackupContext) parseBackupCollections(request *backuppb.CreateBackupReq
 		dbs, err := b.getMilvusClient().ListDatabases(b.ctx)
 		if err != nil {
 			// compatible to milvus under v2.2.8 without database support
-			if strings.Contains(err.Error(), "feature not supported") {
+			if !b.getMilvusClient().SupportMultiDatabase() {
 				// default database only
-				collections, err := b.getMilvusClient().ListCollections(b.ctx, "default")
+				resp, err := b.getMilvusClient().ListCollections(b.ctx, "default")
 				if err != nil {
 					log.Error("fail in ListCollections", zap.Error(err))
 					return nil, err
 				}
-				for _, coll := range collections {
-					toBackupCollections = append(toBackupCollections, collectionStruct{"default", coll.Name})
+				for _, coll := range resp.CollectionNames {
+					toBackupCollections = append(toBackupCollections, collectionStruct{"default", coll})
 				}
 			} else {
 				log.Error("fail in ListDatabases", zap.Error(err))
@@ -190,13 +202,13 @@ func (b *BackupContext) parseBackupCollections(request *backuppb.CreateBackupReq
 			}
 		} else {
 			for _, db := range dbs {
-				collections, err := b.getMilvusClient().ListCollections(b.ctx, db.Name)
+				resp, err := b.getMilvusClient().ListCollections(b.ctx, db)
 				if err != nil {
 					log.Error("fail in ListCollections", zap.Error(err))
 					return nil, err
 				}
-				for _, coll := range collections {
-					toBackupCollections = append(toBackupCollections, collectionStruct{db.Name, coll.Name})
+				for _, coll := range resp.CollectionNames {
+					toBackupCollections = append(toBackupCollections, collectionStruct{db, coll})
 				}
 			}
 		}
@@ -230,26 +242,27 @@ func (b *BackupContext) parseBackupCollections(request *backuppb.CreateBackupReq
 func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo *backuppb.BackupInfo, collection collectionStruct, force bool) error {
 	log.Info("start backup collection", zap.String("db", collection.db), zap.String("collection", collection.collectionName))
 	// list collection result is not complete
-	completeCollection, err := b.getMilvusClient().DescribeCollection(b.ctx, collection.db, collection.collectionName)
+	descResp, err := b.getMilvusClient().DescribeCollection(b.ctx, collection.db, collection.collectionName)
 	if err != nil {
 		log.Error("fail in DescribeCollection", zap.Error(err))
 		return err
 	}
-	fields := make([]*backuppb.FieldSchema, 0)
-	for _, field := range completeCollection.Schema.Fields {
+	fields := make([]*backuppb.FieldSchema, 0, len(descResp.Schema.Fields))
+	for _, field := range descResp.Schema.Fields {
 		fieldBak := &backuppb.FieldSchema{
-			FieldID:        field.ID,
-			Name:           field.Name,
-			IsPrimaryKey:   field.PrimaryKey,
-			Description:    field.Description,
-			AutoID:         field.AutoID,
-			DataType:       backuppb.DataType(field.DataType),
-			TypeParams:     utils.MapToKVPair(field.TypeParams),
-			IndexParams:    utils.MapToKVPair(field.IndexParams),
-			IsDynamic:      field.IsDynamic,
-			IsPartitionKey: field.IsPartitionKey,
-			Nullable:       field.Nullable,
-			ElementType:    backuppb.DataType(field.ElementType),
+			FieldID:          field.FieldID,
+			Name:             field.Name,
+			IsPrimaryKey:     field.IsPrimaryKey,
+			Description:      field.Description,
+			AutoID:           field.AutoID,
+			DataType:         backuppb.DataType(field.DataType),
+			TypeParams:       conv2BakKV(field.TypeParams),
+			IndexParams:      conv2BakKV(field.IndexParams),
+			IsDynamic:        field.IsDynamic,
+			IsPartitionKey:   field.IsPartitionKey,
+			Nullable:         field.Nullable,
+			ElementType:      backuppb.DataType(field.ElementType),
+			IsFunctionOutput: field.IsFunctionOutput,
 		}
 		defaultValue := field.DefaultValue
 		if defaultValue != nil {
@@ -261,53 +274,55 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 		}
 		fields = append(fields, fieldBak)
 	}
+	functions := make([]*backuppb.FunctionSchema, 0, len(descResp.Schema.Functions))
+	for _, function := range descResp.Schema.Functions {
+		functionBak := &backuppb.FunctionSchema{
+			Name:             function.Name,
+			Id:               function.Id,
+			Description:      function.Description,
+			Type:             backuppb.FunctionType(function.Type),
+			InputFieldNames:  function.InputFieldNames,
+			InputFieldIds:    function.InputFieldIds,
+			OutputFieldNames: function.OutputFieldNames,
+			OutputFieldIds:   function.OutputFieldIds,
+			Params:           conv2BakKV(function.Params),
+		}
+		functions = append(functions, functionBak)
+	}
 	schema := &backuppb.CollectionSchema{
-		Name:               completeCollection.Schema.CollectionName,
-		Description:        completeCollection.Schema.Description,
-		AutoID:             completeCollection.Schema.AutoID,
+		Name:               descResp.Schema.Name,
+		Description:        descResp.Schema.Description,
+		AutoID:             descResp.Schema.AutoID,
 		Fields:             fields,
-		EnableDynamicField: completeCollection.Schema.EnableDynamicField,
+		EnableDynamicField: descResp.Schema.EnableDynamicField,
+		Functions:          functions,
 	}
 
 	indexInfos := make([]*backuppb.IndexInfo, 0)
-	indexDict := make(map[string]*backuppb.IndexInfo, 0)
-	log.Info("try to get index",
-		zap.String("collection_name", completeCollection.Name))
-	for _, field := range completeCollection.Schema.Fields {
-		//if field.DataType != entity.FieldTypeBinaryVector && field.DataType != entity.FieldTypeFloatVector {
-		//	continue
-		//}
-		fieldIndex, err := b.getMilvusClient().DescribeIndex(b.ctx, collection.db, completeCollection.Name, field.Name)
-		if err != nil {
-			if strings.Contains(err.Error(), "index not found") ||
-				strings.HasPrefix(err.Error(), "index doesn't exist") {
-				// todo
-				log.Info("field has no index",
-					zap.String("collection_name", completeCollection.Name),
-					zap.String("field_name", field.Name))
-				continue
-			} else {
-				log.Error("fail in DescribeIndex", zap.Error(err))
-				return err
+	indexDict := make(map[string]*backuppb.IndexInfo)
+	log.Info("try to get index", zap.String("collection_name", descResp.CollectionName))
+	indexes, err := b.getMilvusClient().ListIndex(b.ctx, collection.db, descResp.CollectionName)
+	if err != nil && !strings.Contains(err.Error(), "index not found") {
+		log.Error("fail in DescribeIndex", zap.Error(err))
+		return err
+	}
+
+	log.Info("List index", zap.String("collection_name", descResp.CollectionName), zap.Any("indexes", indexes))
+	for _, index := range indexes {
+		if _, ok := indexDict[index.IndexName]; ok {
+			continue
+		} else {
+			params := lo.SliceToMap(index.Params, func(item *commonpb.KeyValuePair) (string, string) {
+				return item.Key, item.Value
+			})
+			indexInfo := &backuppb.IndexInfo{
+				FieldName: index.FieldName,
+				IndexName: index.IndexName,
+				IndexType: params["index_type"],
+				Params:    params,
 			}
-		}
-		log.Info("field index",
-			zap.String("collection_name", completeCollection.Name),
-			zap.String("field_name", field.Name),
-			zap.Any("index info", fieldIndex))
-		for _, index := range fieldIndex {
-			if _, ok := indexDict[index.Name()]; ok {
-				continue
-			} else {
-				indexInfo := &backuppb.IndexInfo{
-					FieldName: field.Name,
-					IndexName: index.Name(),
-					IndexType: string(index.IndexType()),
-					Params:    index.Params(),
-				}
-				indexInfos = append(indexInfos, indexInfo)
-				indexDict[index.Name()] = indexInfo
-			}
+			indexInfos = append(indexInfos, indexInfo)
+			indexDict[index.IndexName] = indexInfo
 		}
 	}
 
@@ -315,18 +330,18 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 		Id:               backupInfo.Id,
 		StateCode:        backuppb.BackupTaskStateCode_BACKUP_INITIAL,
 		StartTime:        time.Now().Unix(),
-		CollectionId:     completeCollection.ID,
+		CollectionId:     descResp.CollectionID,
 		DbName:           collection.db,
-		CollectionName:   completeCollection.Name,
+		CollectionName:   descResp.CollectionName,
 		Schema:           schema,
-		ShardsNum:        completeCollection.ShardNum,
-		ConsistencyLevel: backuppb.ConsistencyLevel(completeCollection.ConsistencyLevel),
+		ShardsNum:        descResp.ShardsNum,
+		ConsistencyLevel: backuppb.ConsistencyLevel(descResp.ConsistencyLevel),
 		HasIndex:         len(indexInfos) > 0,
 		IndexInfos:       indexInfos,
 	}
 	b.meta.AddCollection(collectionBackup)
 
-	partitions, err := b.getMilvusClient().ShowPartitions(b.ctx, collectionBackup.GetDbName(), collectionBackup.GetCollectionName())
+	showPartResp, err := b.getMilvusClient().ShowPartitions(b.ctx, collectionBackup.GetDbName(), collectionBackup.GetCollectionName())
 	if err != nil {
 		log.Error("fail to ShowPartitions", zap.Error(err))
 		return err
@@ -340,37 +355,37 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 	}
 
 	var collectionLoadState string
-	partitionLoadStates := make(map[string]string, 0)
+	partitionLoadStates := make(map[string]string, len(showPartResp.PartitionNames))
 	if collectionLoadProgress == 0 {
-		collectionLoadState = LoadState_NotLoad
-		for _, partition := range partitions {
-			partitionLoadStates[partition.Name] = LoadState_NotLoad
+		collectionLoadState = meta.LoadState_NotLoad
+		for _, partitionName := range showPartResp.PartitionNames {
+			partitionLoadStates[partitionName] = meta.LoadState_NotLoad
 		}
 	} else if collectionLoadProgress == 100 {
-		collectionLoadState = LoadState_Loaded
-		for _, partition := range partitions {
-			partitionLoadStates[partition.Name] = LoadState_Loaded
+		collectionLoadState = meta.LoadState_Loaded
+		for _, partitionName := range showPartResp.PartitionNames {
+			partitionLoadStates[partitionName] = meta.LoadState_Loaded
 		}
 	} else {
-		collectionLoadState = LoadState_Loading
-		for _, partition := range partitions {
-			loadProgress, err := b.getMilvusClient().GetLoadingProgress(ctx, collectionBackup.GetDbName(), collectionBackup.GetCollectionName(), []string{partition.Name})
+		collectionLoadState = meta.LoadState_Loading
+		for _, partitionName := range showPartResp.PartitionNames {
+			loadProgress, err := b.getMilvusClient().GetLoadingProgress(ctx, collectionBackup.GetDbName(), collectionBackup.GetCollectionName(), []string{partitionName})
 			if err != nil {
 				log.Error("fail to GetLoadingProgress of partition", zap.Error(err))
 				return err
 			}
 			if loadProgress == 0 {
-				partitionLoadStates[partition.Name] = LoadState_NotLoad
+				partitionLoadStates[partitionName] = meta.LoadState_NotLoad
 			} else if loadProgress == 100 {
-				partitionLoadStates[partition.Name] = LoadState_Loaded
+				partitionLoadStates[partitionName] = meta.LoadState_Loaded
 			} else {
-				partitionLoadStates[partition.Name] = LoadState_Loading
+				partitionLoadStates[partitionName] = meta.LoadState_Loading
 			}
 		}
 	}
 
 	// fill segments
-	unfilledSegments := make([]*entity.Segment, 0)
+	unfilledSegments := make([]*milvuspb.PersistentSegmentInfo, 0)
 	if !force {
 		// Flush
 		segmentEntitiesBeforeFlush, err := b.getMilvusClient().GetPersistentSegmentInfo(ctx, collectionBackup.GetDbName(), collectionBackup.GetCollectionName())
@@ -381,7 +396,7 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 			zap.String("databaseName", collectionBackup.GetDbName()),
 			zap.String("collectionName", collectionBackup.GetCollectionName()),
 			zap.Int("segmentNumBeforeFlush", len(segmentEntitiesBeforeFlush)))
-		newSealedSegmentIDs, flushedSegmentIDs, timeOfSeal, channelCPs, err := b.getMilvusClient().FlushV2(ctx, collectionBackup.GetDbName(), collectionBackup.GetCollectionName(), false)
+		flushResp, err := b.getMilvusClient().Flush(ctx, collectionBackup.GetDbName(), collectionBackup.GetCollectionName())
 		if err != nil {
 			log.Error("fail to flush the collection",
 				zap.String("databaseName", collectionBackup.GetDbName()),
@@ -393,8 +408,8 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 		//collectionBackup.BackupTimestamp = utils.ComposeTS(timeOfSeal, 0)
 		channelCheckpoints := make(map[string]string, 0)
 		var maxChannelBackupTimeStamp uint64 = 0
-		for vch, checkpoint := range channelCPs {
-			channelCheckpoints[vch] = utils.Base64MsgPosition(&checkpoint)
+		for vch, checkpoint := range flushResp.GetChannelCps() {
+			channelCheckpoints[vch] = utils.Base64MsgPosition(checkpoint)
 			if maxChannelBackupTimeStamp == 0 {
 				maxChannelBackupTimeStamp = checkpoint.GetTimestamp()
 			} else if maxChannelBackupTimeStamp < checkpoint.GetTimestamp() {
@@ -402,29 +417,29 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 			}
 		}
 		b.meta.UpdateCollection(collectionBackup.Id, collectionBackup.CollectionId,
-			setCollectionChannelCheckpoints(channelCheckpoints),
-			setCollectionBackupTimestamp(maxChannelBackupTimeStamp),
-			setCollectionBackupPhysicalTimestamp(uint64(timeOfSeal)))
+			meta.SetCollectionChannelCheckpoints(channelCheckpoints),
+			meta.SetCollectionBackupTimestamp(maxChannelBackupTimeStamp),
+			meta.SetCollectionBackupPhysicalTimestamp(uint64(flushResp.GetCollSealTimes()[collectionBackup.GetCollectionName()])))
 		log.Info("flush segments",
 			zap.String("databaseName", collectionBackup.GetDbName()),
 			zap.String("collectionName", collectionBackup.GetCollectionName()),
-			zap.Int64s("newSealedSegmentIDs", newSealedSegmentIDs),
-			zap.Int64s("flushedSegmentIDs", flushedSegmentIDs),
-			zap.Int64("timeOfSeal", timeOfSeal),
+			zap.Int64s("newSealedSegmentIDs", flushResp.GetCollSegIDs()[collectionBackup.GetCollectionName()].GetData()),
+			zap.Int64s("flushedSegmentIDs", flushResp.GetFlushCollSegIDs()[collectionBackup.GetCollectionName()].GetData()),
+			zap.Uint64("timeOfSeal", uint64(flushResp.GetCollSealTimes()[collectionBackup.GetCollectionName()])),
 			zap.Uint64("BackupTimestamp", collectionBackup.BackupTimestamp),
-			zap.Any("channelCPs", channelCPs))
+			zap.Any("channelCPs", flushResp.GetChannelCps()))
 
 		segmentEntitiesAfterFlush, err := b.getMilvusClient().GetPersistentSegmentInfo(ctx, collectionBackup.GetDbName(), collectionBackup.GetCollectionName())
 		if err != nil {
 			return err
 		}
 
-		segmentIDsBeforeFlush := lo.Map(segmentEntitiesBeforeFlush, func(segment *entity.Segment, _ int) int64 { return segment.ID })
-		segmentIDsAfterFlush := lo.Map(segmentEntitiesAfterFlush, func(segment *entity.Segment, _ int) int64 { return segment.ID })
-		newL0Segments := lo.Filter(segmentEntitiesAfterFlush, func(segment *entity.Segment, _ int) bool {
-			return !lo.Contains(segmentIDsBeforeFlush, segment.ID) && segment.NumRows == 0
+		segmentIDsBeforeFlush := lo.Map(segmentEntitiesBeforeFlush, func(segment *milvuspb.PersistentSegmentInfo, _ int) int64 { return segment.SegmentID })
+		segmentIDsAfterFlush := lo.Map(segmentEntitiesAfterFlush, func(segment *milvuspb.PersistentSegmentInfo, _ int) int64 { return segment.SegmentID })
+		newL0Segments := lo.Filter(segmentEntitiesAfterFlush, func(segment *milvuspb.PersistentSegmentInfo, _ int) bool {
+			return !lo.Contains(segmentIDsBeforeFlush, segment.SegmentID) && segment.Level == commonpb.SegmentLevel_L0
 		})
-		newL0SegmentsIDs := lo.Map(newL0Segments, func(segment *entity.Segment, _ int) int64 { return segment.ID })
+		newL0SegmentsIDs := lo.Map(newL0Segments, func(segment *milvuspb.PersistentSegmentInfo, _ int) int64 { return segment.SegmentID })
 
 		log.Info("GetPersistentSegmentInfo after flush from milvus",
 			zap.String("databaseName", collectionBackup.GetDbName()),
@@ -452,7 +467,7 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 		}
 	}
 
-	newSegIDs := lo.Map(unfilledSegments, func(segment *entity.Segment, _ int) int64 { return segment.ID })
+	newSegIDs := lo.Map(unfilledSegments, func(segment *milvuspb.PersistentSegmentInfo, _ int) int64 { return segment.SegmentID })
 	log.Debug("Finished fill segment",
 		zap.String("databaseName", collectionBackup.GetDbName()),
 		zap.String("collectionName", collectionBackup.GetCollectionName()),
@@ -462,35 +477,35 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 	for _, v := range unfilledSegments {
 		segment := v
 		segmentInfo := &backuppb.SegmentBackupInfo{
-			SegmentId:    segment.ID,
+			SegmentId:    segment.SegmentID,
 			CollectionId: segment.CollectionID,
-			PartitionId:  segment.ParititionID,
+			PartitionId:  segment.PartitionID,
 			NumOfRows:    segment.NumRows,
 		}
 		b.meta.AddSegment(segmentInfo)
-		partSegInfoMap[segment.ParititionID] = append(partSegInfoMap[segment.ParititionID], segmentInfo)
+		partSegInfoMap[segment.PartitionID] = append(partSegInfoMap[segment.PartitionID], segmentInfo)
 	}
 
-	for _, partition := range partitions {
-		partitionSegments := partSegInfoMap[partition.ID]
+	for i, partitionID := range showPartResp.PartitionIDs {
+		partitionSegments := partSegInfoMap[partitionID]
 		var size int64 = 0
 		for _, seg := range partitionSegments {
 			size += seg.GetSize()
 		}
 		partitionBackupInfo := &backuppb.PartitionBackupInfo{
-			PartitionId:    partition.ID,
-			PartitionName:  partition.Name,
+			PartitionId:    partitionID,
+			PartitionName:  showPartResp.PartitionNames[i],
 			CollectionId:   collectionBackup.GetCollectionId(),
-			SegmentBackups: partSegInfoMap[partition.ID],
+			SegmentBackups: partSegInfoMap[partitionID],
 			Size:           size,
-			LoadState:      partitionLoadStates[partition.Name],
+			LoadState:      partitionLoadStates[showPartResp.PartitionNames[i]],
 		}
 		b.meta.AddPartition(partitionBackupInfo)
 	}
 
 	l0segments, exist := partSegInfoMap[-1]
 	if exist {
-		b.meta.UpdateCollection(collectionBackup.Id, collectionBackup.CollectionId, setL0Segments(l0segments))
+		b.meta.UpdateCollection(collectionBackup.Id, collectionBackup.CollectionId, meta.SetL0Segments(l0segments))
 	}
 
 	partitionBackupInfos := b.meta.GetPartitions(collectionBackup.CollectionId)
@@ -504,14 +519,14 @@ func (b *BackupContext) backupCollectionPrepare(ctx context.Context, backupInfo 
 		collectionBackupSize += part.GetSize()
 	}
 
-	b.meta.UpdateCollection(collectionBackup.Id, collectionBackup.CollectionId, setCollectionLoadState(collectionLoadState), setCollectionSize(collectionBackupSize))
+	b.meta.UpdateCollection(collectionBackup.Id, collectionBackup.CollectionId, meta.SetCollectionLoadState(collectionLoadState), meta.SetCollectionSize(collectionBackupSize))
 	return nil
 }
 
 func (b *BackupContext) backupCollectionExecute(ctx context.Context, collectionBackup *backuppb.CollectionBackupInfo) error {
 	log.Info("backupCollectionExecute", zap.Any("collectionMeta", collectionBackup.String()))
 	backupInfo := b.meta.GetBackupByCollectionID(collectionBackup.GetCollectionId())
-	backupBinlogPath := BackupBinlogDirPath(b.backupRootPath, backupInfo.GetName())
+	backupBinlogPath := meta.BackupBinlogDirPath(b.backupRootPath, backupInfo.GetName())
 	for _, partition := range b.meta.GetPartitions(collectionBackup.CollectionId) {
 		segmentBackupInfos := make([]*backuppb.SegmentBackupInfo, 0)
 		var currentSize int64 = 0
@@ -533,14 +548,14 @@ func (b *BackupContext) backupCollectionExecute(ctx context.Context, collectionB
 					currentSize = 0
 				}
 				currentSize = currentSize + segment.GetSize()
-				b.meta.UpdateSegment(segment.GetPartitionId(), segment.GetSegmentId(), setGroupID(groupID))
+				b.meta.UpdateSegment(segment.GetPartitionId(), segment.GetSegmentId(), meta.SetGroupID(groupID))
 			} else {
 				//if currentSize > BackupSegmentGroupMaxSizeInMB*1024*1024 { // 256MB
 				//	l0GroupID++
 				//	currentL0Size = 0
 				//}
 				//currentL0Size = currentL0Size + segment.GetSize()
-				b.meta.UpdateSegment(segment.GetPartitionId(), segment.GetSegmentId(), setGroupID(segment.GetSegmentId()))
+				b.meta.UpdateSegment(segment.GetPartitionId(), segment.GetSegmentId(), meta.SetGroupID(segment.GetSegmentId()))
 			}
 			segmentBackupInfos = append(segmentBackupInfos, segment)
 		}
@@ -581,9 +596,9 @@ func (b *BackupContext) backupCollectionExecute(ctx context.Context, collectionB
 		log.Error("Fail to fill segment backup info", zap.Error(err))
 		return err
 	}
-	b.meta.UpdateCollection(collectionBackup.Id, collectionBackup.CollectionId, setL0Segments(segmentBackupInfos))
+	b.meta.UpdateCollection(collectionBackup.Id, collectionBackup.CollectionId, meta.SetL0Segments(segmentBackupInfos))
 
-	b.meta.UpdateCollection(collectionBackup.Id, collectionBackup.CollectionId, setCollectionEndTime(time.Now().Unix()))
+	b.meta.UpdateCollection(collectionBackup.Id, collectionBackup.CollectionId, meta.SetCollectionEndTime(time.Now().Unix()))
 	log.Info("Finish copy data",
 		zap.String("dbName", collectionBackup.GetDbName()),
 		zap.String("collectionName", collectionBackup.GetCollectionName()))
@@ -598,14 +613,14 @@ func (b *BackupContext) pauseMilvusGC(ctx context.Context, gcAddress string, pau
 	response, err := http.Get(fullURL)
 
 	if err != nil {
-		log.Warn("Pause Milvus GC Error:"+GC_Warn_Message, zap.Error(err))
+		log.Warn("Pause Milvus GC Error:"+GcWarnMessage, zap.Error(err))
 		return
 	}
 	defer response.Body.Close()
 	// Read the response body
 	body, err := ioutil.ReadAll(response.Body)
 	if err != nil {
-		log.Warn("Read response Error:"+GC_Warn_Message, zap.Error(err))
+		log.Warn("Read response Error:"+GcWarnMessage, zap.Error(err))
 		return
 	}
 	log.Info("Pause Milvus GC response", zap.String("response", string(body)), zap.String("address", gcAddress), zap.Int("pauseSeconds", pauseSeconds))
@@ -616,13 +631,13 @@ func (b *BackupContext) resumeMilvusGC(ctx context.Context, gcAddress string) {
 	fullURL := gcAddress + pauseAPI
 	response, err := http.Get(fullURL)
 	if err != nil {
-		log.Warn("Resume Milvus GC Error:"+GC_Warn_Message, zap.Error(err))
+		log.Warn("Resume Milvus GC Error:"+GcWarnMessage, zap.Error(err))
 		return
 	}
 	// Read the response body
 	body, err := ioutil.ReadAll(response.Body)
 	if err != nil {
-		log.Warn("Read response Error:"+GC_Warn_Message, zap.Error(err))
+		log.Warn("Read response Error:"+GcWarnMessage, zap.Error(err))
 		return
 	}
 	log.Info("Resume Milvus GC response", zap.String("response", string(body)), zap.String("address", gcAddress))
@@ -633,7 +648,7 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 	defer b.mu.Unlock()
 
 	// set backup state
-	b.meta.UpdateBackup(backupInfo.Id, setStateCode(backuppb.BackupTaskStateCode_BACKUP_EXECUTING))
+	b.meta.UpdateBackup(backupInfo.Id, meta.SetStateCode(backuppb.BackupTaskStateCode_BACKUP_EXECUTING))
 
 	// pause GC
 	if request.GetGcPauseEnable() || b.params.BackupCfg.GcPauseEnable {
@@ -657,7 +672,7 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 	toBackupCollections, err := b.parseBackupCollections(request)
 	if err != nil {
 		log.Error("parse backup collections from request failed", zap.Error(err))
-		b.meta.UpdateBackup(backupInfo.Id, setStateCode(backuppb.BackupTaskStateCode_BACKUP_FAIL), setErrorMessage(err.Error()))
+		b.meta.UpdateBackup(backupInfo.Id, meta.SetStateCode(backuppb.BackupTaskStateCode_BACKUP_FAIL), meta.SetErrorMessage(err.Error()))
 		return err
 	}
 	collectionNames := make([]string, len(toBackupCollections))
@@ -695,7 +710,7 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 	}
 	err = b.getBackupCollectionWorkerPool().WaitJobs(jobIds)
 	if err != nil {
-		b.meta.UpdateBackup(backupInfo.Id, setStateCode(backuppb.BackupTaskStateCode_BACKUP_FAIL), setErrorMessage(err.Error()))
+		b.meta.UpdateBackup(backupInfo.Id, meta.SetStateCode(backuppb.BackupTaskStateCode_BACKUP_FAIL), meta.SetErrorMessage(err.Error()))
 		return err
 	}
 	log.Info("Finish prepare all collections meta")
@@ -714,14 +729,14 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 
 		err = b.getBackupCollectionWorkerPool().WaitJobs(jobIds)
 		if err != nil {
-			b.meta.UpdateBackup(backupInfo.Id, setStateCode(backuppb.BackupTaskStateCode_BACKUP_FAIL), setErrorMessage(err.Error()))
+			b.meta.UpdateBackup(backupInfo.Id, meta.SetStateCode(backuppb.BackupTaskStateCode_BACKUP_FAIL), meta.SetErrorMessage(err.Error()))
 			return err
 		}
 	} else {
 		log.Info("skip copy data because it is a metaOnly backup request")
 	}
 	backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_SUCCESS
-	b.meta.UpdateBackup(backupInfo.Id, setStateCode(backuppb.BackupTaskStateCode_BACKUP_SUCCESS), setEndTime(time.Now().UnixNano()/int64(time.Millisecond)))
+	b.meta.UpdateBackup(backupInfo.Id, meta.SetStateCode(backuppb.BackupTaskStateCode_BACKUP_SUCCESS), meta.SetEndTime(time.Now().UnixNano()/int64(time.Millisecond)))
 
 	if request.GetRbac() {
 		err = b.backupRBAC(ctx, backupInfo)
@@ -737,8 +752,8 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 	if err != nil {
 		backupInfo.StateCode = backuppb.BackupTaskStateCode_BACKUP_FAIL
 		backupInfo.ErrorMessage = err.Error()
-		b.meta.UpdateBackup(backupInfo.Id, setStateCode(backuppb.BackupTaskStateCode_BACKUP_FAIL),
-			setErrorMessage(err.Error()))
+		b.meta.UpdateBackup(backupInfo.Id, meta.SetStateCode(backuppb.BackupTaskStateCode_BACKUP_FAIL),
+			meta.SetErrorMessage(err.Error()))
 		return err
 	}
 	log.Info("finish backup all collections",
@@ -752,7 +767,7 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 func (b *BackupContext) writeBackupInfoMeta(ctx context.Context, id string) error {
 	backupInfo := b.meta.GetFullMeta(id)
 	log.Debug("Final backupInfo", zap.String("backupInfo", backupInfo.String()))
-	output, _ := serialize(backupInfo)
+	output, _ := meta.Serialize(backupInfo)
 	log.Debug("backup meta", zap.String("value", string(output.BackupMetaBytes)))
 	log.Debug("collection meta", zap.String("value", string(output.CollectionMetaBytes)))
 	log.Debug("partition meta", zap.String("value", string(output.PartitionMetaBytes)))
@@ -777,15 +792,15 @@ func (b *BackupContext) writeBackupInfoMeta(ctx context.Context, id string) erro
 	}
 	log.Debug("channel cp meta", zap.String("value", string(channelCPsBytes)))
 
-	b.getBackupStorageClient().Write(ctx, b.backupBucketName, BackupMetaPath(b.backupRootPath, backupInfo.GetName()), output.BackupMetaBytes)
-	b.getBackupStorageClient().Write(ctx, b.backupBucketName, CollectionMetaPath(b.backupRootPath, backupInfo.GetName()), output.CollectionMetaBytes)
-	b.getBackupStorageClient().Write(ctx, b.backupBucketName, PartitionMetaPath(b.backupRootPath, backupInfo.GetName()), output.PartitionMetaBytes)
-	b.getBackupStorageClient().Write(ctx, b.backupBucketName, SegmentMetaPath(b.backupRootPath, backupInfo.GetName()), output.SegmentMetaBytes)
-	b.getBackupStorageClient().Write(ctx, b.backupBucketName, FullMetaPath(b.backupRootPath, backupInfo.GetName()), output.FullMetaBytes)
-	b.getBackupStorageClient().Write(ctx, b.backupBucketName, ChannelCPMetaPath(b.backupRootPath, backupInfo.GetName()), channelCPsBytes)
+	b.getBackupStorageClient().Write(ctx, b.backupBucketName, meta.BackupMetaPath(b.backupRootPath, backupInfo.GetName()), output.BackupMetaBytes)
+	b.getBackupStorageClient().Write(ctx, b.backupBucketName, meta.CollectionMetaPath(b.backupRootPath, backupInfo.GetName()), output.CollectionMetaBytes)
+	b.getBackupStorageClient().Write(ctx, b.backupBucketName, meta.PartitionMetaPath(b.backupRootPath, backupInfo.GetName()), output.PartitionMetaBytes)
+	b.getBackupStorageClient().Write(ctx, b.backupBucketName, meta.SegmentMetaPath(b.backupRootPath, backupInfo.GetName()), output.SegmentMetaBytes)
+	b.getBackupStorageClient().Write(ctx, b.backupBucketName, meta.FullMetaPath(b.backupRootPath, backupInfo.GetName()), output.FullMetaBytes)
+	b.getBackupStorageClient().Write(ctx, b.backupBucketName, meta.ChannelCPMetaPath(b.backupRootPath, backupInfo.GetName()), channelCPsBytes)
 
 	log.Info("finish writeBackupInfoMeta",
-		zap.String("path", BackupDirPath(b.backupRootPath, backupInfo.GetName())),
+		zap.String("path", meta.BackupDirPath(b.backupRootPath, backupInfo.GetName())),
 		zap.String("backupName", backupInfo.GetName()),
 		zap.String("backup meta", string(output.BackupMetaBytes)))
 	return nil
@@ -818,7 +833,7 @@ func (b *BackupContext) copySegment(ctx context.Context, backupBinlogPath string
 	// backup_rootpath/backup_name/binlog/insert_log/collection_id/partition_id/group_id/segment_id
 	backupPathFunc := func(binlogPath, rootPath, backupBinlogPath string) string {
 		if rootPath == "" {
-			return backupBinlogPath + SEPERATOR + binlogPath
+			return backupBinlogPath + meta.SEPERATOR + binlogPath
 		} else {
 			return strings.Replace(binlogPath, rootPath, backupBinlogPath, 1)
 		}
@@ -916,7 +931,7 @@ func (b *BackupContext) copySegment(ctx context.Context, backupBinlogPath string
 			}
 		}
 	}
-	b.meta.UpdateSegment(segment.GetPartitionId(), segment.GetSegmentId(), setSegmentBackuped(true))
+	b.meta.UpdateSegment(segment.GetPartitionId(), segment.GetSegmentId(), meta.SetSegmentBackuped(true))
 	return nil
 }
 
@@ -946,7 +961,7 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackup
 	insertLogs := make([]*backuppb.FieldBinlog, 0)
 	for _, fieldLogDir := range fieldsLogDir {
 		binlogPaths, sizes, _ := b.getMilvusStorageClient().ListWithPrefix(ctx, b.milvusBucketName, fieldLogDir, false)
-		fieldIdStr := strings.Replace(strings.Replace(fieldLogDir, insertPath, "", 1), SEPERATOR, "", -1)
+		fieldIdStr := strings.Replace(strings.Replace(fieldLogDir, insertPath, "", 1), meta.SEPERATOR, "", -1)
 		fieldId, _ := strconv.ParseInt(fieldIdStr, 10, 64)
 		binlogs := make([]*backuppb.Binlog, 0)
 		for index, binlogPath := range binlogPaths {
@@ -967,7 +982,7 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackup
 	deltaLogs := make([]*backuppb.FieldBinlog, 0)
 	for _, deltaFieldLogDir := range deltaFieldsLogDir {
 		binlogPaths, sizes, _ := b.getMilvusStorageClient().ListWithPrefix(ctx, b.milvusBucketName, deltaFieldLogDir, false)
-		fieldIdStr := strings.Replace(strings.Replace(deltaFieldLogDir, deltaLogPath, "", 1), SEPERATOR, "", -1)
+		fieldIdStr := strings.Replace(strings.Replace(deltaFieldLogDir, deltaLogPath, "", 1), meta.SEPERATOR, "", -1)
 		fieldId, _ := strconv.ParseInt(fieldIdStr, 10, 64)
 		binlogs := make([]*backuppb.Binlog, 0)
 		for index, binlogPath := range binlogPaths {
@@ -983,60 +998,36 @@ func (b *BackupContext) fillSegmentBackupInfo(ctx context.Context, segmentBackup
 		})
 	}
 	if len(deltaLogs) == 0 {
-		deltaLogs = append(deltaLogs, &backuppb.FieldBinlog{
-			FieldID: 0,
-		})
+		deltaLogs = append(deltaLogs, &backuppb.FieldBinlog{FieldID: 0})
 	}
 
-	//statsLogPath := fmt.Sprintf("%s/%s/%v/%v/%v/", b.params.MinioCfg.RootPath, "stats_log", collectionID, partitionID, segmentID)
-	//statsFieldsLogDir, _, _ := b.milvusStorageClient.ListWithPrefix(ctx, b.milvusBucketName, statsLogPath, false)
-	//statsLogs := make([]*backuppb.FieldBinlog, 0)
-	//for _, statsFieldLogDir := range statsFieldsLogDir {
-	//	binlogPaths, sizes, _ := b.milvusStorageClient.ListWithPrefix(ctx, b.milvusBucketName, statsFieldLogDir, false)
-	//	fieldIdStr := strings.Replace(strings.Replace(statsFieldLogDir, statsLogPath, "", 1), SEPERATOR, "", -1)
-	//	fieldId, _ := strconv.ParseInt(fieldIdStr, 10, 64)
-	//	binlogs := make([]*backuppb.Binlog, 0)
-	//	for index, binlogPath := range binlogPaths {
-	//		binlogs = append(binlogs, &backuppb.Binlog{
-	//			LogPath: binlogPath,
-	//			LogSize: sizes[index],
-	//		})
-	//	}
-	//	statsLogs = append(statsLogs, &backuppb.FieldBinlog{
-	//		FieldID: fieldId,
-	//		Binlogs: binlogs,
-	//	})
-	//}
-
-	//segmentBackupInfo.Binlogs = insertLogs
-	//segmentBackupInfo.Deltalogs = deltaLogs
 	segmentBackupInfo.Size = size
 	segmentBackupInfo.IsL0 = isL0
-	b.meta.UpdateSegment(segmentBackupInfo.GetPartitionId(), segmentBackupInfo.GetSegmentId(), setSegmentBinlogs(insertLogs), setSegmentDeltaBinlogs(deltaLogs), setSegmentSize(size), setSegmentL0(isL0))
+	b.meta.UpdateSegment(segmentBackupInfo.GetPartitionId(), segmentBackupInfo.GetSegmentId(), meta.SetSegmentBinlogs(insertLogs), meta.SetSegmentDeltaBinlogs(deltaLogs), meta.SetSegmentSize(size), meta.SetSegmentL0(isL0))
 	log.Debug("fill segment info", zap.Int64("segId", segmentBackupInfo.GetSegmentId()), zap.Int64("size", size))
 	return nil
 }
 
 func (b *BackupContext) backupRBAC(ctx context.Context, backupInfo *backuppb.BackupInfo) error {
 	log.Info("backup RBAC")
-	rbacMeta, err := b.getMilvusClient().BackupRBAC(ctx)
+	resp, err := b.getMilvusClient().BackupRBAC(ctx)
 	if err != nil {
 		log.Error("fail in BackupMeta", zap.Error(err))
 		return err
 	}
+	rbacMeta := resp.RBACMeta
 
-	users := make([]*backuppb.UserInfo, 0)
-	roles := make([]*backuppb.RoleEntity, 0)
-	grants := make([]*backuppb.GrantEntity, 0)
-
+	users := make([]*backuppb.UserInfo, 0, len(rbacMeta.Users))
+	roles := make([]*backuppb.RoleEntity, 0, len(rbacMeta.Roles))
+	grants := make([]*backuppb.GrantEntity, 0, len(rbacMeta.Grants))
 	for _, user := range rbacMeta.Users {
-		roles := lo.Map(user.Roles, func(role string, index int) *backuppb.RoleEntity {
-			return &backuppb.RoleEntity{Name: role}
+		rs := lo.Map(user.Roles, func(role *milvuspb.RoleEntity, index int) *backuppb.RoleEntity {
+			return &backuppb.RoleEntity{Name: role.Name}
 		})
 		userP := &backuppb.UserInfo{
-			User:     user.Name,
+			User:     user.User,
 			Password: user.Password,
-			Roles:    roles,
+			Roles:    rs,
 		}
 		users = append(users, userP)
 	}
@@ -1048,21 +1039,21 @@ func (b *BackupContext) backupRBAC(ctx context.Context, backupInfo *backuppb.Bac
 		roles = append(roles, roleP)
 	}
 
-	for _, roleGrant := range rbacMeta.RoleGrants {
+	for _, roleGrant := range rbacMeta.Grants {
 		roleGrantP := &backuppb.GrantEntity{
 			Role: &backuppb.RoleEntity{
-				Name: roleGrant.RoleName,
+				Name: roleGrant.Role.Name,
 			},
 			Object: &backuppb.ObjectEntity{
-				Name: roleGrant.Object,
+				Name: roleGrant.Object.Name,
 			},
 			ObjectName: roleGrant.ObjectName,
 			Grantor: &backuppb.GrantorEntity{
 				User: &backuppb.UserEntity{
-					Name: roleGrant.GrantorName,
+					Name: roleGrant.Grantor.User.Name,
 				},
 				Privilege: &backuppb.PrivilegeEntity{
-					Name: roleGrant.PrivilegeName,
+					Name: roleGrant.Grantor.Privilege.Name,
 				},
 			},
 			DbName: roleGrant.DbName,
@@ -1077,6 +1068,6 @@ func (b *BackupContext) backupRBAC(ctx context.Context, backupInfo *backuppb.Bac
 	}
 
 	log.Info("backup RBAC", zap.Int("users", len(users)), zap.Int("roles", len(roles)), zap.Int("grants", len(grants)))
-	b.meta.UpdateBackup(backupInfo.Id, setRBACMeta(rbacPb))
+	b.meta.UpdateBackup(backupInfo.Id, meta.SetRBACMeta(rbacPb))
 	return nil
 }

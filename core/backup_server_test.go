@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 )
 
@@ -18,7 +19,7 @@ func TestBackupService(t *testing.T) {
 	params.Init()
 
 	context := context.Background()
-	server, err := NewServer(context, params)
+	server, err := NewServer(context, &params)
 	assert.NoError(t, err)
 	server.Init()
 	server.Start()
