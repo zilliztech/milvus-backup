@@ -403,7 +403,7 @@ jobs:
       - uses: actions/setup-go@v3
         with:
           go-version: '1.18.0'
-          cache: true
+          cache: "true"
 
       - name: Creating kind cluster
         if: ${{ matrix.deploy_tools == 'helm' }}
@@ -444,8 +444,8 @@ jobs:
             helm repo update
             tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
             yq -i ".image.all.tag=\"${tag}\"" rbac-values.yaml
-            helm install --wait --timeout 600s milvus-backup milvus/milvus -f rbac-values.yaml
-            helm install --wait --timeout 600s milvus-restore milvus/milvus -f rbac-values.yaml
+            helm install --wait --debug --timeout 600s milvus-backup milvus/milvus -f rbac-values.yaml
+            helm install --wait --debug --timeout 600s milvus-restore milvus/milvus -f rbac-values.yaml
             kubectl get pods
             kubectl port-forward service/milvus-backup 19530 >/dev/null 2>&1 &
             kubectl port-forward service/milvus-backup-minio 9000  >/dev/null 2>&1 &
@@ -462,7 +462,7 @@ jobs:
           fi
           if [ ${{ matrix.deploy_tools}} == "docker-compose" ]; then
             tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
-            yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml  
+            yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
             docker-compose up -d
             bash ../../scripts/check_healthy.sh
             docker-compose ps -a
@@ -504,6 +504,7 @@ jobs:
         working-directory: deployment/${{ matrix.milvus_mode }}
         run: |
           if [ ${{ matrix.deploy_tools}} == "helm" ]; then
+            kubectl get pods
             bash ../../scripts/export_log_k8s.sh default milvus-backup logs
             bash ../../scripts/export_log_k8s.sh default milvus-restore logs
           fi
