@@ -932,33 +932,61 @@ func (b *BackupContext) getBackupPartitionPathsWithGroupID(ctx context.Context, 
 func (b *BackupContext) restoreRBAC(ctx context.Context, backupInfo *backuppb.BackupInfo) error {
 	log.Info("restore RBAC")
 
-	rbacBackup := backupInfo.GetRbacMeta()
-	users := make([]*entity.UserInfo, 0)
-	roles := make([]*entity.Role, 0)
-	grants := make([]*entity.RoleGrants, 0)
+	curRBAC, err := b.getMilvusClient().BackupRBAC(ctx)
+	if err != nil {
+		return fmt.Errorf("fail to get current RBAC, err: %s", err)
+	}
 
+	rbacBackup := backupInfo.GetRbacMeta()
+	curUsers := lo.SliceToMap(curRBAC.Users, func(user *entity.UserInfo) (string, struct{}) {
+		return user.Name, struct{}{}
+	})
+	users := make([]*entity.UserInfo, 0, len(rbacBackup.GetUsers()))
 	for _, user := range rbacBackup.GetUsers() {
-		roles := lo.Map(user.GetRoles(), func(role *backuppb.RoleEntity, index int) string {
+		// skip if user already exist
+		if _, ok := curUsers[user.GetUser()]; ok {
+			continue
+		}
+
+		ur := lo.Map(user.GetRoles(), func(role *backuppb.RoleEntity, index int) string {
 			return role.Name
 		})
 		userEntity := &entity.UserInfo{
 			UserDescription: entity.UserDescription{
 				Name:  user.GetUser(),
-				Roles: roles,
+				Roles: ur,
 			},
 			Password: user.Password,
 		}
 		users = append(users, userEntity)
 	}
 
+	curRoles := lo.SliceToMap(curRBAC.Roles, func(role *entity.Role) (string, struct{}) {
+		return role.Name, struct{}{}
+	})
+	roles := make([]*entity.Role, 0, len(rbacBackup.GetRoles()))
 	for _, role := range rbacBackup.GetRoles() {
+		// skip if role already exist
+		if _, ok := curRoles[role.GetName()]; ok {
+			continue
+		}
+
 		roleEntity := &entity.Role{
 			Name: role.GetName(),
 		}
 		roles = append(roles, roleEntity)
 	}
 
+	grants := make([]*entity.RoleGrants, 0, len(rbacBackup.GetGrants()))
+	curGrants := lo.SliceToMap(curRBAC.RoleGrants, func(grant *entity.RoleGrants) (string, struct{}) {
+		return fmt.Sprintf("%s/%s/%s/%s/%s/%s", grant.Object, grant.ObjectName, grant.RoleName, grant.GrantorName, grant.PrivilegeName, grant.DbName), struct{}{}
+	})
 	for _, roleGrant := range rbacBackup.GetGrants() {
+		key := fmt.Sprintf("%s/%s/%s/%s/%s/%s", roleGrant.Object.GetName(), roleGrant.GetObjectName(), roleGrant.GetRole().GetName(), roleGrant.GetGrantor().GetUser().GetName(), roleGrant.GetGrantor().GetPrivilege().GetName(), roleGrant.GetDbName())
+		// skip if grant already exist
+		if _, ok := curGrants[key]; ok {
+			continue
+		}
 		roleGrantEntity := &entity.RoleGrants{
 			Object:        roleGrant.Object.GetName(),
 			ObjectName:    roleGrant.GetObjectName(),
@@ -977,6 +1005,6 @@ func (b *BackupContext) restoreRBAC(ctx context.Context, backupInfo *backuppb.Ba
 	}
 
 	log.Info("restore RBAC", zap.Int("users", len(users)), zap.Int("roles", len(roles)), zap.Int("grants", len(grants)))
-	err := b.getMilvusClient().RestoreRBAC(ctx, rbacMeta)
+	err = b.getMilvusClient().RestoreRBAC(ctx, rbacMeta)
 	return err
 }
