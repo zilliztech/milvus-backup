@@ -111,6 +111,21 @@ func treeToLevel(backup *backuppb.BackupInfo) (LeveledBackupInfo, error) {
 	}, nil
 }
 
+func (meta *MetaManager) CleanBinlogInfo(id string) {
+	meta.mu.Lock()
+	defer meta.mu.Unlock()
+	collections := meta.collections[id]
+	for _, collection := range collections {
+		for _, partition := range meta.partitions[collection.GetCollectionId()] {
+			for _, segment := range meta.segments[partition.GetPartitionId()] {
+				segment.Binlogs = nil
+				segment.Statslogs = nil
+				segment.Deltalogs = nil
+			}
+		}
+	}
+}
+
 func serialize(backup *backuppb.BackupInfo) (*BackupMetaBytes, error) {
 	level, err := treeToLevel(backup)
 	if err != nil {

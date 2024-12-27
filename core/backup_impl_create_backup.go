@@ -750,18 +750,17 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 }
 
 func (b *BackupContext) writeBackupInfoMeta(ctx context.Context, id string) error {
+	log.Info("Start write backup meta", zap.String("backupName", id))
+	b.meta.CleanBinlogInfo(id)
+	log.Info("Clean binlog info done", zap.String("backupName", id))
 	backupInfo := b.meta.GetFullMeta(id)
 	log.Debug("Final backupInfo", zap.String("backupInfo", backupInfo.String()))
 	output, _ := serialize(backupInfo)
-	log.Debug("backup meta", zap.String("value", string(output.BackupMetaBytes)))
-	log.Debug("collection meta", zap.String("value", string(output.CollectionMetaBytes)))
-	log.Debug("partition meta", zap.String("value", string(output.PartitionMetaBytes)))
-	log.Debug("segment meta", zap.String("value", string(output.SegmentMetaBytes)))
 
 	collectionBackups := backupInfo.GetCollectionBackups()
-	collectionPositions := make(map[string][]*backuppb.ChannelPosition, 0)
+	collectionPositions := make(map[string][]*backuppb.ChannelPosition, len(collectionBackups))
 	for _, collectionBackup := range collectionBackups {
-		collectionCPs := make([]*backuppb.ChannelPosition, 0)
+		collectionCPs := make([]*backuppb.ChannelPosition, 0, len(collectionBackup.GetChannelCheckpoints()))
 		for vCh, position := range collectionBackup.GetChannelCheckpoints() {
 			pCh := strings.Split(vCh, "_")[0] + "_" + strings.Split(vCh, "_")[1]
 			collectionCPs = append(collectionCPs, &backuppb.ChannelPosition{
