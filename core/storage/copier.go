@@ -238,6 +238,7 @@ func (c *Copier) Copy(ctx context.Context, srcPrefix, destPrefix, srcBucket, des
 		return fmt.Errorf("storage: copier get src attrs %w", err)
 	}
 	for _, srcAttr := range srcAttrs {
+
 		destKey := strings.Replace(srcAttr.Key, srcPrefix, destPrefix, 1)
 		err := fn(ctx, srcAttr, destKey, srcBucket, destBucket)
 		if err != nil {
