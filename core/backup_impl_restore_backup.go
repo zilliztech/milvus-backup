@@ -8,9 +8,7 @@ import (
 	"time"
 
 	"github.com/cockroachdb/errors"
-	"github.com/golang/protobuf/proto"
 	jsoniter "github.com/json-iterator/go"
-	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
 	gomilvus "github.com/milvus-io/milvus-sdk-go/v2/client"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 	"github.com/samber/lo"
@@ -44,8 +42,7 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 		zap.String("bucketName", request.GetBucketName()),
 		zap.String("path", request.GetPath()),
 		zap.String("databaseCollections", utils.GetRestoreDBCollections(request)),
-		zap.Bool("skipDiskQuotaCheck", request.GetSkipImportDiskQuotaCheck()),
-		zap.Int32("maxShardNum", request.GetMaxShardNum()))
+		zap.Bool("skipDiskQuotaCheck", request.GetSkipImportDiskQuotaCheck()))
 
 	resp := &backuppb.RestoreBackupResponse{
 		RequestId: request.GetRequestId(),
@@ -314,7 +311,6 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 			DropExistIndex:        request.GetDropExistIndex(),
 			SkipCreateCollection:  request.GetSkipCreateCollection(),
 			SkipDiskQuotaCheck:    request.GetSkipImportDiskQuotaCheck(),
-			MaxShardNum:           request.GetMaxShardNum(),
 		}
 		restoreCollectionTasks = append(restoreCollectionTasks, restoreCollectionTask)
 		task.CollectionRestoreTasks = restoreCollectionTasks
@@ -398,15 +394,7 @@ func (b *BackupContext) executeRestoreBackupTask(ctx context.Context, backupBuck
 		return task, err
 	}
 
-	endTime := time.Now().Unix()
-	task.EndTime = endTime
-	b.meta.UpdateRestoreTask(id, setRestoreStateCode(backuppb.RestoreTaskStateCode_SUCCESS), setRestoreEndTime(endTime))
-
-	log.Info("finish restore all collections",
-		zap.String("backupName", backup.GetName()),
-		zap.Int("collections", len(backup.GetCollectionBackups())),
-		zap.String("taskID", task.GetId()),
-		zap.Int64("duration in seconds", task.GetEndTime()-task.GetStartTime()))
+	b.meta.UpdateRestoreTask(id, setRestoreStateCode(backuppb.RestoreTaskStateCode_SUCCESS), setRestoreEndTime(time.Now().Unix()))
 	return task, nil
 }
 
@@ -419,8 +407,7 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 		zap.String("backup_collection_name", task.GetCollBackup().DbName),
 		zap.String("target_db_name", targetDBName),
 		zap.String("target_collection_name", targetCollectionName),
-		zap.Bool("skipDiskQuotaCheck", task.GetSkipDiskQuotaCheck()),
-		zap.Int32("maxShardNum", task.GetMaxShardNum()))
+		zap.Bool("skipDiskQuotaCheck", task.GetSkipDiskQuotaCheck()))
 	log.Info("start restore",
 		zap.String("backupBucketName", backupBucketName),
 		zap.String("backupPath", backupPath))
@@ -428,7 +415,7 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 	fields := make([]*entity.Field, 0)
 	hasPartitionKey := false
 	for _, field := range task.GetCollBackup().GetSchema().GetFields() {
-		fieldRestore := &entity.Field{
+		fields = append(fields, &entity.Field{
 			ID:             field.GetFieldID(),
 			Name:           field.GetName(),
 			PrimaryKey:     field.GetIsPrimaryKey(),
@@ -439,19 +426,8 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 			IndexParams:    utils.KvPairsMap(field.GetIndexParams()),
 			IsDynamic:      field.GetIsDynamic(),
 			IsPartitionKey: field.GetIsPartitionKey(),
-			Nullable:       field.GetNullable(),
 			ElementType:    entity.FieldType(field.GetElementType()),
-		}
-		if field.DefaultValueProto != "" {
-			defaultValue := &schemapb.ValueField{}
-			err := proto.Unmarshal([]byte(field.DefaultValueProto), defaultValue)
-			if err != nil {
-				return nil, err
-			}
-			fieldRestore.DefaultValue = defaultValue
-		}
-
-		fields = append(fields, fieldRestore)
+		})
 		if field.GetIsPartitionKey() {
 			hasPartitionKey = true
 		}
@@ -490,20 +466,13 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 	//so here it is necessary to be compatible with the situation where SkipCreateCollection and DropExistCollection are enabled at the same time.
 	if !task.GetSkipCreateCollection() || task.GetDropExistCollection() {
 		err := retry.Do(ctx, func() error {
-			// overwrite shardNum by request parameter
-			shardNum := task.GetCollBackup().GetShardsNum()
-			if shardNum > task.GetMaxShardNum() && task.GetMaxShardNum() != 0 {
-				shardNum = task.GetMaxShardNum()
-				log.Info("overwrite shardNum by request parameter", zap.Int32("oldShardNum", task.GetCollBackup().GetShardsNum()), zap.Int32("newShardNum", shardNum))
-
-			}
 			if hasPartitionKey {
 				partitionNum := len(task.GetCollBackup().GetPartitionBackups())
 				return b.getMilvusClient().CreateCollection(
 					ctx,
 					targetDBName,
 					collectionSchema,
-					shardNum,
+					task.GetCollBackup().GetShardsNum(),
 					gomilvus.WithConsistencyLevel(entity.ConsistencyLevel(task.GetCollBackup().GetConsistencyLevel())),
 					gomilvus.WithPartitionNum(int64(partitionNum)))
 			}
@@ -511,7 +480,7 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 				ctx,
 				targetDBName,
 				collectionSchema,
-				shardNum,
+				task.GetCollBackup().GetShardsNum(),
 				gomilvus.WithConsistencyLevel(entity.ConsistencyLevel(task.GetCollBackup().GetConsistencyLevel())))
 		}, retry.Attempts(10), retry.Sleep(1*time.Second))
 		if err != nil {
@@ -626,6 +595,8 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 					tempFileKey := path.Join(tempDir, strings.Replace(file, b.params.MinioCfg.BackupRootPath, "", 1)) + SEPERATOR
 					log.Debug("Copy temporary restore file", zap.String("from", file), zap.String("to", tempFileKey))
 					err := retry.Do(ctx, func() error {
+						//log.Debug("GIFI copyAndBulkInsert", zap.String("backupBucketName", backupBucketName), zap.String("b.milvusBucketName", b.milvusBucketName))
+						//log.Debug("GIFI copyAndBulkInsert", zap.String("tempFileKey", tempFileKey))
 						return b.getRestoreCopier().Copy(ctx, file, tempFileKey, backupBucketName, b.milvusBucketName)
 					}, retry.Sleep(2*time.Second), retry.Attempts(5))
 					if err != nil {
@@ -637,6 +608,7 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 			}
 		} else {
 			realFiles = files
+			log.Debug("GIFI inside copyAndBulkInsert", zap.Any("realFiles", realFiles))
 		}
 
 		err := b.executeBulkInsert(ctx, dbName, collectionName, partitionName, realFiles, int64(task.GetCollBackup().BackupTimestamp), isL0, skipDiskQuotaCheck)
@@ -692,6 +664,7 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 			return !segment.IsL0
 		})
 		groupIds := collectGroupIdsFromSegments(notl0Segments)
+		log.Debug("GIFI collectGroupIdsFromSegments", zap.Any("groupIds", groupIds))
 		if len(groupIds) == 1 && groupIds[0] == 0 {
 			// backward compatible old backup without group id
 			files, size, err := b.getBackupPartitionPaths(ctx, backupBucketName, backupPath, partitionBackup)
@@ -718,6 +691,9 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 
 		for _, value := range restoreFileGroups {
 			group := value
+			log.Debug("GIFI restoreFileGroups loop", zap.Any("group.files", group.files))
+			// group.files[0] += "453580537997766901/0/453580537997566904"
+			//group.files[0] = "gs://gcs-nv1/nativemill/BackupMilvus864/flavorBacks15/binlogs/insert_log/453580537997566884/453580537997566885/453580537997766901/"
 			job := func(ctx context.Context) error {
 				err := copyAndBulkInsert(targetDBName, targetCollectionName, partitionBackup.GetPartitionName(), group.files, false, task.GetSkipDiskQuotaCheck())
 				if err != nil {
@@ -802,13 +778,19 @@ func (b *BackupContext) executeBulkInsert(ctx context.Context, db, coll string, 
 		zap.Int64("endTime", endTime))
 	var taskId int64
 	var err error
+	log.Debug("GIFI executeBulkInsert", zap.Any("files", files))
 	if endTime == 0 {
+		log.Info("endTime == 0")
 		if isL0 {
+			log.Info("isL0 true")
+
 			taskId, err = b.getMilvusClient().BulkInsert(ctx, db, coll, partition, files, gomilvus.IsL0(isL0), gomilvus.SkipDiskQuotaCheck(skipDiskQuotaCheck))
 		} else {
+			log.Info("isL0 false", zap.String("db", db), zap.String("coll", coll), zap.String("partition", partition), zap.Any("files", files))
 			taskId, err = b.getMilvusClient().BulkInsert(ctx, db, coll, partition, files, gomilvus.IsBackup(), gomilvus.SkipDiskQuotaCheck(skipDiskQuotaCheck))
 		}
 	} else {
+		log.Info("endTime not 0")
 		if isL0 {
 			taskId, err = b.getMilvusClient().BulkInsert(ctx, db, coll, partition, files, gomilvus.IsL0(isL0), gomilvus.SkipDiskQuotaCheck(skipDiskQuotaCheck), gomilvus.WithEndTs(endTime))
 		} else {
@@ -908,8 +890,8 @@ func (b *BackupContext) getBackupPartitionPathsWithGroupID(ctx context.Context, 
 		zap.Int64("groupId", groupId))
 
 	insertPath := fmt.Sprintf("%s/%s/%s/%v/%v/%d/", backupPath, BINGLOG_DIR, INSERT_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId(), groupId)
+	// insertPath := "nativemill/BackupMilvus864/flavorBack5/binlogs/insert_log/453580537997566884/453580537997566885/453580537997766901/453580537997766901/333/" //GIFI
 	deltaPath := fmt.Sprintf("%s/%s/%s/%v/%v/%d/", backupPath, BINGLOG_DIR, DELTA_LOG_DIR, partition.GetCollectionId(), partition.GetPartitionId(), groupId)
-
 	var totalSize int64
 	for _, seg := range partition.GetSegmentBackups() {
 		if seg.GetGroupId() == groupId {
@@ -924,6 +906,7 @@ func (b *BackupContext) getBackupPartitionPathsWithGroupID(ctx context.Context, 
 	}
 	if !exist {
 		return []string{insertPath, ""}, totalSize, nil
+		// return []string{insertPath}, totalSize, nil //GIFI doubted
 	}
 
 	return []string{insertPath, deltaPath}, totalSize, nil

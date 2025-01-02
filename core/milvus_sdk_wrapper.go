@@ -9,7 +9,9 @@ import (
 	gomilvus "github.com/milvus-io/milvus-sdk-go/v2/client"
 	"github.com/milvus-io/milvus-sdk-go/v2/entity"
 
+	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/util/retry"
+	"go.uber.org/zap"
 )
 
 // MilvusClient wrap db into milvus API to make it thread safe
@@ -121,6 +123,7 @@ func (m *MilvusClient) BulkInsert(ctx context.Context, db, collName string, part
 	if err != nil {
 		return 0, err
 	}
+	log.Debug("GIFI Inside BulkInsert", zap.Any("files", files))
 	return m.client.BulkInsert(ctx, collName, partitionName, files, opts...)
 }
 

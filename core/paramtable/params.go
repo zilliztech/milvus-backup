@@ -2,6 +2,7 @@ package paramtable
 
 import (
 	"strconv"
+	"strings"
 )
 
 // BackupParams
@@ -108,6 +109,8 @@ type MilvusConfig struct {
 	Port                 string
 	User                 string
 	Password             string
+	TLSCertPath          string
+	ServerName           string
 	AuthorizationEnabled bool
 	TLSMode              int
 }
@@ -119,6 +122,8 @@ func (p *MilvusConfig) init(base *BaseTable) {
 	p.initPort()
 	p.initUser()
 	p.initPassword()
+	p.initTLSCertPath()
+	p.initServerName()
 	p.initAuthorizationEnabled()
 	p.initTLSMode()
 }
@@ -155,6 +160,24 @@ func (p *MilvusConfig) initPassword() {
 	p.Password = password
 }
 
+// GIFI added
+func (p *MilvusConfig) initTLSCertPath() {
+	tlsCertPath, err := p.Base.Load("milvus.tlsCertPath")
+	if err != nil {
+		panic(err)
+	}
+	p.TLSCertPath = tlsCertPath
+}
+
+// GIFI added
+func (p *MilvusConfig) initServerName() {
+	serverName, err := p.Base.Load("milvus.serverName")
+	if err != nil {
+		panic(err)
+	}
+	p.ServerName = serverName
+}
+
 func (p *MilvusConfig) initAuthorizationEnabled() {
 	p.AuthorizationEnabled = p.Base.ParseBool("milvus.authorizationEnabled", false)
 }
@@ -171,6 +194,7 @@ const (
 	S3                        = "s3"
 	CloudProviderAWS          = "aws"
 	CloudProviderGCP          = "gcp"
+	CloudProviderGCPNative    = "gcpnative"
 	CloudProviderAli          = "ali"
 	CloudProviderAliyun       = "aliyun"
 	CloudProviderAzure        = "azure"
@@ -184,6 +208,7 @@ var supportedStorageType = map[string]bool{
 	S3:                        true,
 	CloudProviderAWS:          true,
 	CloudProviderGCP:          true,
+	CloudProviderGCPNative:    true,
 	CloudProviderAli:          true,
 	CloudProviderAliyun:       true,
 	CloudProviderAzure:        true,
@@ -196,27 +221,29 @@ type MinioConfig struct {
 
 	StorageType string
 	// Deprecated
-	CloudProvider   string
-	Address         string
-	Port            string
-	AccessKeyID     string
-	SecretAccessKey string
-	UseSSL          bool
-	BucketName      string
-	RootPath        string
-	UseIAM          bool
-	IAMEndpoint     string
+	CloudProvider     string
+	Address           string
+	Port              string
+	AccessKeyID       string
+	SecretAccessKey   string
+	GcpCredentialJSON string
+	UseSSL            bool
+	BucketName        string
+	RootPath          string
+	UseIAM            bool
+	IAMEndpoint       string
 
-	BackupStorageType     string
-	BackupAddress         string
-	BackupPort            string
-	BackupAccessKeyID     string
-	BackupSecretAccessKey string
-	BackupUseSSL          bool
-	BackupBucketName      string
-	BackupRootPath        string
-	BackupUseIAM          bool
-	BackupIAMEndpoint     string
+	BackupStorageType       string
+	BackupAddress           string
+	BackupPort              string
+	BackupAccessKeyID       string
+	BackupSecretAccessKey   string
+	BackupGcpCredentialJSON string
+	BackupUseSSL            bool
+	BackupBucketName        string
+	BackupRootPath          string
+	BackupUseIAM            bool
+	BackupIAMEndpoint       string
 
 	CrossStorage bool
 }
@@ -229,6 +256,7 @@ func (p *MinioConfig) init(base *BaseTable) {
 	p.initPort()
 	p.initAccessKeyID()
 	p.initSecretAccessKey()
+	p.initGcpCredentialJSON()
 	p.initUseSSL()
 	p.initBucketName()
 	p.initRootPath()
@@ -241,6 +269,7 @@ func (p *MinioConfig) init(base *BaseTable) {
 	p.initBackupPort()
 	p.initBackupAccessKeyID()
 	p.initBackupSecretAccessKey()
+	p.initBackupGcpCredentialJSON()
 	p.initBackupUseSSL()
 	p.initBackupBucketName()
 	p.initBackupRootPath()
@@ -270,6 +299,11 @@ func (p *MinioConfig) initSecretAccessKey() {
 	p.SecretAccessKey = key
 }
 
+func (p *MinioConfig) initGcpCredentialJSON() {
+	gcpCredentialJSON := p.Base.LoadWithDefault("minio.gcpCredentialJSON", DefaultMinioGcpCredentialJSON)
+	p.GcpCredentialJSON = gcpCredentialJSON
+}
+
 func (p *MinioConfig) initUseSSL() {
 	usessl := p.Base.LoadWithDefault("minio.useSSL", DefaultMinioUseSSL)
 	var err error
@@ -286,7 +320,7 @@ func (p *MinioConfig) initBucketName() {
 
 func (p *MinioConfig) initRootPath() {
 	rootPath := p.Base.LoadWithDefault("minio.rootPath", DefaultMinioRootPath)
-	p.RootPath = rootPath
+	p.RootPath = strings.TrimLeft(rootPath, "/") //GIFI modified
 }
 
 func (p *MinioConfig) initUseIAM() {
@@ -378,6 +412,11 @@ func (p *MinioConfig) initBackupSecretAccessKey() {
 	key := p.Base.LoadWithDefault("minio.backupSecretAccessKey",
 		p.Base.LoadWithDefault("minio.secretAccessKey", DefaultMinioSecretAccessKey))
 	p.BackupSecretAccessKey = key
+}
+
+func (p *MinioConfig) initBackupGcpCredentialJSON() {
+	gcpCredentialJSON := p.Base.LoadWithDefault("minio.backupGcpCredentialJSON", DefaultMinioGcpCredentialJSON)
+	p.BackupGcpCredentialJSON = gcpCredentialJSON
 }
 
 func (p *MinioConfig) initBackupBucketName() {
