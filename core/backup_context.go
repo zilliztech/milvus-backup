@@ -19,6 +19,9 @@ import (
 	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/common"
 	"github.com/zilliztech/milvus-backup/internal/log"
+
+	grpc "google.golang.org/grpc"
+	"google.golang.org/grpc/credentials"
 )
 
 const (
@@ -69,13 +72,35 @@ func CreateMilvusClient(ctx context.Context, params paramtable.BackupParams) (go
 	var c gomilvus.Client
 	var err error
 	if params.MilvusCfg.AuthorizationEnabled && params.MilvusCfg.User != "" && params.MilvusCfg.Password != "" {
-		if params.MilvusCfg.TLSMode == 0 {
+		switch params.MilvusCfg.TLSMode {
+		case 0:
 			c, err = gomilvus.NewDefaultGrpcClientWithAuth(ctx, milvusEndpoint, params.MilvusCfg.User, params.MilvusCfg.Password)
-		} else if params.MilvusCfg.TLSMode == 1 || params.MilvusCfg.TLSMode == 2 {
+		case 1:
+			if params.MilvusCfg.TLSCertPath != "" {
+				var creds credentials.TransportCredentials
+				creds, err = credentials.NewClientTLSFromFile(params.MilvusCfg.TLSCertPath, params.MilvusCfg.ServerName)
+				if err != nil {
+					log.Error("failed to create client from the certificate", zap.Error(err))
+					return nil, err
+				}
+				opts := []grpc.DialOption{
+					grpc.WithTransportCredentials(creds),
+				}
+				c, err = gomilvus.NewClient(ctx, gomilvus.Config{
+					Address:       milvusEndpoint,
+					Username:      params.MilvusCfg.User,
+					Password:      params.MilvusCfg.Password,
+					EnableTLSAuth: true,
+					DialOptions:   opts,
+				})
+			} else {
+				c, err = gomilvus.NewDefaultGrpcClientWithTLSAuth(ctx, milvusEndpoint, params.MilvusCfg.User, params.MilvusCfg.Password)
+			}
+		case 2:
 			c, err = gomilvus.NewDefaultGrpcClientWithTLSAuth(ctx, milvusEndpoint, params.MilvusCfg.User, params.MilvusCfg.Password)
-		} else {
-			log.Error("milvus.TLSMode is not illegal, support value 0, 1, 2")
-			return nil, errors.New("milvus.TLSMode is not illegal, support value 0, 1, 2")
+		default:
+			log.Error("milvus.TLSMode is illegal, support value 0, 1, 2")
+			return nil, errors.New("milvus.TLSMode is illegal, support value 0, 1, 2")
 		}
 	} else {
 		c, err = gomilvus.NewGrpcClient(ctx, milvusEndpoint)

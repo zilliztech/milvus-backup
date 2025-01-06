@@ -2,6 +2,7 @@ package paramtable
 
 import (
 	"strconv"
+	"strings"
 )
 
 // BackupParams
@@ -108,6 +109,8 @@ type MilvusConfig struct {
 	Port                 string
 	User                 string
 	Password             string
+	TLSCertPath          string
+	ServerName           string
 	AuthorizationEnabled bool
 	TLSMode              int
 }
@@ -119,6 +122,8 @@ func (p *MilvusConfig) init(base *BaseTable) {
 	p.initPort()
 	p.initUser()
 	p.initPassword()
+	p.initTLSCertPath()
+	p.initServerName()
 	p.initAuthorizationEnabled()
 	p.initTLSMode()
 }
@@ -153,6 +158,22 @@ func (p *MilvusConfig) initPassword() {
 		p.Password = ""
 	}
 	p.Password = password
+}
+
+func (p *MilvusConfig) initTLSCertPath() {
+	tlsCertPath, err := p.Base.Load("milvus.tlsCertPath")
+	if err != nil {
+		panic(err)
+	}
+	p.TLSCertPath = tlsCertPath
+}
+
+func (p *MilvusConfig) initServerName() {
+	serverName, err := p.Base.Load("milvus.serverName")
+	if err != nil {
+		panic(err)
+	}
+	p.ServerName = serverName
 }
 
 func (p *MilvusConfig) initAuthorizationEnabled() {
@@ -286,7 +307,7 @@ func (p *MinioConfig) initBucketName() {
 
 func (p *MinioConfig) initRootPath() {
 	rootPath := p.Base.LoadWithDefault("minio.rootPath", DefaultMinioRootPath)
-	p.RootPath = rootPath
+	p.RootPath = strings.TrimLeft(rootPath, "/")
 }
 
 func (p *MinioConfig) initUseIAM() {

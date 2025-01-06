@@ -57,6 +57,8 @@ const (
 	DefaultMilvusTlsMode              = "0"
 	DefaultMilvusUser                 = "root"
 	DefaultMilvusPassword             = "Milvus"
+	DefaultMilvusTLSCertPath          = ""
+	DefaultMilvusServerName           = ""
 )
 
 var defaultYaml = DefaultBackupYaml
@@ -528,5 +530,15 @@ func (gp *BaseTable) loadMilvusConfig() {
 	milvusPassword := os.Getenv("MILVUS_PASSWORD")
 	if milvusPassword != "" {
 		_ = gp.Save("milvus.password", milvusPassword)
+	}
+
+	milvusTLSCertPath := os.Getenv("MILVUS_TLS_CERTPATH")
+	if milvusTLSCertPath != "" {
+		_ = gp.Save("milvus.tlsCertPath", milvusTLSCertPath)
+	}
+
+	milvusServerName := os.Getenv("MILVUS_SERVER_NAME")
+	if milvusServerName != "" {
+		_ = gp.Save("milvus.serverName", milvusServerName)
 	}
 }
