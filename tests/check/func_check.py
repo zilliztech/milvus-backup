@@ -4,7 +4,8 @@ from pymilvus import Role
 from utils.util_log import test_log as log
 from common import common_type as ct
 from common import common_func as cf
-from common.common_type import CheckTasks, Connect_Object_Name
+from common.common_type import CheckTasks
+
 # from common.code_mapping import ErrorCode, ErrorMessage
 from pymilvus import Collection, Partition
 from utils.api_request import Error
@@ -12,11 +13,15 @@ import check.param_check as pc
 
 
 class ResponseChecker:
-    def __init__(self, response, func_name, check_task, check_items, is_succ=True, **kwargs):
+    def __init__(
+        self, response, func_name, check_task, check_items, is_succ=True, **kwargs
+    ):
         self.response = response  # response of api request
         self.func_name = func_name  # api function name
         self.check_task = check_task  # task to check response of the api request
-        self.check_items = check_items  # check items and expectations that to be checked in check task
+        self.check_items = (
+            check_items  # check items and expectations that to be checked in check task
+        )
         self.succ = is_succ  # api responses successful or not
 
         self.kwargs_dict = {}  # not used for now, just for extension
@@ -42,23 +47,33 @@ class ResponseChecker:
 
         elif self.check_task == CheckTasks.ccr:
             # Connection interface response check
-            result = self.check_value_equal(self.response, self.func_name, self.check_items)
+            result = self.check_value_equal(
+                self.response, self.func_name, self.check_items
+            )
 
         elif self.check_task == CheckTasks.check_collection_property:
             # Collection interface response check
-            result = self.check_collection_property(self.response, self.func_name, self.check_items)
+            result = self.check_collection_property(
+                self.response, self.func_name, self.check_items
+            )
 
         elif self.check_task == CheckTasks.check_partition_property:
             # Partition interface response check
-            result = self.check_partition_property(self.response, self.func_name, self.check_items)
+            result = self.check_partition_property(
+                self.response, self.func_name, self.check_items
+            )
 
         elif self.check_task == CheckTasks.check_search_results:
             # Search interface of collection and partition that response check
-            result = self.check_search_results(self.response, self.func_name, self.check_items)
+            result = self.check_search_results(
+                self.response, self.func_name, self.check_items
+            )
 
         elif self.check_task == CheckTasks.check_query_results:
             # Query interface of collection and partition that response check
-            result = self.check_query_results(self.response, self.func_name, self.check_items)
+            result = self.check_query_results(
+                self.response, self.func_name, self.check_items
+            )
 
         elif self.check_task == CheckTasks.check_query_empty:
             result = self.check_query_empty(self.response, self.func_name)
@@ -68,17 +83,25 @@ class ResponseChecker:
 
         elif self.check_task == CheckTasks.check_distance:
             # Calculate distance interface that response check
-            result = self.check_distance(self.response, self.func_name, self.check_items)
+            result = self.check_distance(
+                self.response, self.func_name, self.check_items
+            )
 
         elif self.check_task == CheckTasks.check_delete_compact:
-            result = self.check_delete_compact_plan(self.response, self.func_name, self.check_items)
+            result = self.check_delete_compact_plan(
+                self.response, self.func_name, self.check_items
+            )
 
         elif self.check_task == CheckTasks.check_merge_compact:
-            result = self.check_merge_compact_plan(self.response, self.func_name, self.check_items)
+            result = self.check_merge_compact_plan(
+                self.response, self.func_name, self.check_items
+            )
 
         elif self.check_task == CheckTasks.check_role_property:
             # Collection interface response check
-            result = self.check_role_property(self.response, self.func_name, self.check_items)
+            result = self.check_role_property(
+                self.response, self.func_name, self.check_items
+            )
 
         elif self.check_task == CheckTasks.check_permission_deny:
             # Collection interface response check
@@ -107,16 +130,22 @@ class ResponseChecker:
 
     @staticmethod
     def check_value_equal(res, func_name, params):
-        """ check response of connection interface that result is normal """
+        """check response of connection interface that result is normal"""
 
         if func_name == "list_connections":
             if not isinstance(res, list):
-                log.error("[CheckFunc] Response of list_connections is not a list: %s" % str(res))
+                log.error(
+                    "[CheckFunc] Response of list_connections is not a list: %s"
+                    % str(res)
+                )
                 assert False
 
             list_content = params.get(ct.list_content, None)
             if not isinstance(list_content, list):
-                log.error("[CheckFunc] Check param of list_content is not a list: %s" % str(list_content))
+                log.error(
+                    "[CheckFunc] Check param of list_content is not a list: %s"
+                    % str(list_content)
+                )
                 assert False
 
             new_res = pc.get_connect_object_name(res)
@@ -153,7 +182,11 @@ class ResponseChecker:
         exp_func_name = "init_collection"
         exp_func_name_2 = "construct_from_dataframe"
         if func_name != exp_func_name and func_name != exp_func_name_2:
-            log.warning("The function name is {} rather than {}".format(func_name, exp_func_name))
+            log.warning(
+                "The function name is {} rather than {}".format(
+                    func_name, exp_func_name
+                )
+            )
         if isinstance(res, Collection):
             collection = res
         elif isinstance(res, tuple):
@@ -181,7 +214,11 @@ class ResponseChecker:
     def check_partition_property(partition, func_name, check_items):
         exp_func_name = "init_partition"
         if func_name != exp_func_name:
-            log.warning("The function name is {} rather than {}".format(func_name, exp_func_name))
+            log.warning(
+                "The function name is {} rather than {}".format(
+                    func_name, exp_func_name
+                )
+            )
         if not isinstance(partition, Partition):
             raise Exception("The result to check isn't partition type object")
         if len(check_items) == 0:
@@ -206,8 +243,10 @@ class ResponseChecker:
         expected: check the search is ok
         """
         log.info("search_results_check: checking the searching results")
-        if func_name != 'search':
-            log.warning("The function name is {} rather than {}".format(func_name, "search"))
+        if func_name != "search":
+            log.warning(
+                "The function name is {} rather than {}".format(func_name, "search")
+            )
         if len(check_items) == 0:
             raise Exception("No expect values found in the check task")
         if check_items.get("_async", None):
@@ -215,31 +254,38 @@ class ResponseChecker:
                 search_res.done()
                 search_res = search_res.result()
         if len(search_res) != check_items["nq"]:
-            log.error("search_results_check: Numbers of query searched (%d) "
-                      "is not equal with expected (%d)"
-                      % (len(search_res), check_items["nq"]))
+            log.error(
+                "search_results_check: Numbers of query searched (%d) "
+                "is not equal with expected (%d)" % (len(search_res), check_items["nq"])
+            )
             assert len(search_res) == check_items["nq"]
         else:
             log.info("search_results_check: Numbers of query searched is correct")
         for hits in search_res:
-            if (len(hits) != check_items["limit"]) \
-                    or (len(hits.ids) != check_items["limit"]):
-                log.error("search_results_check: limit(topK) searched (%d) "
-                          "is not equal with expected (%d)"
-                          % (len(hits), check_items["limit"]))
+            if (len(hits) != check_items["limit"]) or (
+                len(hits.ids) != check_items["limit"]
+            ):
+                log.error(
+                    "search_results_check: limit(topK) searched (%d) "
+                    "is not equal with expected (%d)"
+                    % (len(hits), check_items["limit"])
+                )
                 assert len(hits) == check_items["limit"]
                 assert len(hits.ids) == check_items["limit"]
             else:
                 if check_items.get("ids", None) is not None:
-                    ids_match = pc.list_contain_check(list(hits.ids),
-                                                      list(check_items["ids"]))
+                    ids_match = pc.list_contain_check(
+                        list(hits.ids), list(check_items["ids"])
+                    )
                     if not ids_match:
                         log.error("search_results_check: ids searched not match")
                         assert ids_match
                 else:
-                    pass    # just check nq and topk, not specific ids need check
-        log.info("search_results_check: limit (topK) and "
-                 "ids searched for %d queries are correct" % len(search_res))
+                    pass  # just check nq and topk, not specific ids need check
+        log.info(
+            "search_results_check: limit (topK) and "
+            "ids searched for %d queries are correct" % len(search_res)
+        )
         return True
 
     @staticmethod
@@ -258,8 +304,10 @@ class ResponseChecker:
                             The type of with_vec value is bool, True value means check vector field, False otherwise
         :type check_items: dict
         """
-        if func_name != 'query':
-            log.warning("The function name is {} rather than {}".format(func_name, "query"))
+        if func_name != "query":
+            log.warning(
+                "The function name is {} rather than {}".format(func_name, "query")
+            )
         if not isinstance(query_res, list):
             raise Exception("The query result to check isn't list type object")
         if len(check_items) == 0:
@@ -269,12 +317,17 @@ class ResponseChecker:
         primary_field = check_items.get("primary_field", None)
         if exp_res is not None:
             if isinstance(query_res, list):
-                assert pc.equal_entities_list(exp=exp_res, actual=query_res, primary_field=primary_field, with_vec=with_vec)
+                assert pc.equal_entities_list(
+                    exp=exp_res,
+                    actual=query_res,
+                    primary_field=primary_field,
+                    with_vec=with_vec,
+                )
                 return True
             else:
                 log.error(f"Query result {query_res} is not list")
                 return False
-        log.warning(f'Expected query result is {exp_res}')
+        log.warning(f"Expected query result is {exp_res}")
 
     @staticmethod
     def check_query_empty(query_res, func_name):
@@ -287,8 +340,10 @@ class ResponseChecker:
         :param func_name: Query API name
         :type func_name: str
         """
-        if func_name != 'query':
-            log.warning("The function name is {} rather than {}".format(func_name, "query"))
+        if func_name != "query":
+            log.warning(
+                "The function name is {} rather than {}".format(func_name, "query")
+            )
         if not isinstance(query_res, list):
             raise Exception("The query result to check isn't list type object")
         assert len(query_res) == 0, "Query result is not empty"
@@ -304,16 +359,22 @@ class ResponseChecker:
         :param func_name: Query API name
         :type func_name: str
         """
-        if func_name != 'query':
-            log.warning("The function name is {} rather than {}".format(func_name, "query"))
+        if func_name != "query":
+            log.warning(
+                "The function name is {} rather than {}".format(func_name, "query")
+            )
         if not isinstance(query_res, list):
             raise Exception("The query result to check isn't list type object")
         assert len(query_res) > 0
 
     @staticmethod
     def check_distance(distance_res, func_name, check_items):
-        if func_name != 'calc_distance':
-            log.warning("The function name is {} rather than {}".format(func_name, "calc_distance"))
+        if func_name != "calc_distance":
+            log.warning(
+                "The function name is {} rather than {}".format(
+                    func_name, "calc_distance"
+                )
+            )
         if not isinstance(distance_res, list):
             raise Exception("The distance result to check isn't list type object")
         if len(check_items) == 0:
@@ -322,9 +383,7 @@ class ResponseChecker:
         vectors_r = check_items["vectors_r"]
         metric = check_items.get("metric", "L2")
         sqrt = check_items.get("sqrt", False)
-        cf.compare_distance_2d_vector(vectors_l, vectors_r,
-                                      distance_res,
-                                      metric, sqrt)
+        cf.compare_distance_2d_vector(vectors_l, vectors_r, distance_res, metric, sqrt)
 
         return True
 
@@ -343,11 +402,17 @@ class ResponseChecker:
                             plans_num represent the delete compact plans number
         :type: dict
         """
-        to_check_func = 'get_compaction_plans'
+        to_check_func = "get_compaction_plans"
         if func_name != to_check_func:
-            log.warning("The function name is {} rather than {}".format(func_name, to_check_func))
+            log.warning(
+                "The function name is {} rather than {}".format(
+                    func_name, to_check_func
+                )
+            )
         if not isinstance(compaction_plans, CompactionPlans):
-            raise Exception("The compaction_plans result to check isn't CompactionPlans type object")
+            raise Exception(
+                "The compaction_plans result to check isn't CompactionPlans type object"
+            )
 
         plans_num = check_items.get("plans_num", 1)
         assert len(compaction_plans.plans) == plans_num
@@ -370,11 +435,17 @@ class ResponseChecker:
                             segment_num represent how many segments are expected to be merged, default is 2
         :type: dict
         """
-        to_check_func = 'get_compaction_plans'
+        to_check_func = "get_compaction_plans"
         if func_name != to_check_func:
-            log.warning("The function name is {} rather than {}".format(func_name, to_check_func))
+            log.warning(
+                "The function name is {} rather than {}".format(
+                    func_name, to_check_func
+                )
+            )
         if not isinstance(compaction_plans, CompactionPlans):
-            raise Exception("The compaction_plans result to check isn't CompactionPlans type object")
+            raise Exception(
+                "The compaction_plans result to check isn't CompactionPlans type object"
+            )
 
         segment_num = check_items.get("segment_num", 2)
         assert len(compaction_plans.plans) == 1
@@ -385,7 +456,11 @@ class ResponseChecker:
     def check_role_property(role, func_name, check_items):
         exp_func_name = "create_role"
         if func_name != exp_func_name:
-            log.warning("The function name is {} rather than {}".format(func_name, exp_func_name))
+            log.warning(
+                "The function name is {} rather than {}".format(
+                    func_name, exp_func_name
+                )
+            )
         if not isinstance(role, Role):
             raise Exception("The result to check isn't role type object")
         if check_items is None:
