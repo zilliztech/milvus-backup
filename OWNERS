@@ -1,5 +1,5 @@
 filters:
-  "*":
+  ".*":
     reviewers:
       - huanghaoyuanhhy
       - Thomas-HuWei
