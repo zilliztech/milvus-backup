@@ -18,6 +18,8 @@ milvus:
   tlsMode: 0
   user: "root"
   password: "Milvus"
+  tlsCertPath: ""
+  serverName: ""
 
 # Related configuration of minio, which is responsible for data persistence for Milvus.
 minio:

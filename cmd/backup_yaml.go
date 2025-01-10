@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"strings"
+
 	"github.com/spf13/cobra"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"gopkg.in/yaml.v3"
@@ -39,6 +40,8 @@ type YAMLConFig struct {
 		TlsMode              int    `yaml:"tlsMode"`
 		User                 string `yaml:"user"`
 		Password             string `yaml:"password"`
+		TlsCertPath          string `yaml:"tlsCertPath"`
+		ServerName           string `yaml:"serverName"`
 	} `yaml:"milvus"`
 	Minio struct {
 		Address          string `yaml:"address"`
@@ -77,6 +80,8 @@ func printParams(base *paramtable.BackupParams) {
 	yml.Milvus.TlsMode = base.ParseIntWithDefault("milvus.tlsMode", 0)
 	yml.Milvus.User = base.BaseTable.LoadWithDefault("milvus.user", "")
 	yml.Milvus.Password = base.BaseTable.LoadWithDefault("milvus.password", "")
+	yml.Milvus.TlsCertPath = base.BaseTable.LoadWithDefault("milvus.tlsCertPath", "")
+	yml.Milvus.ServerName = base.BaseTable.LoadWithDefault("milvus.serverName", "localhost")
 
 	yml.Minio.Address = base.LoadWithDefault("minio.address", "localhost")
 	yml.Minio.Port = base.ParseIntWithDefault("minio.port", 9000)
