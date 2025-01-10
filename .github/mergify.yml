@@ -26,10 +26,11 @@ pull_request_rules:
 
   - name: Test passed for code changed-main
     conditions:
-      - check-success=test-backup-restore-cross-version
-      - check-success=test-backup-restore-after-upgrade
-      - check-success=test-backup-restore-cli
-      - check-success=test-backup-restore-api
+      - check-success=Backup and restore cross version
+      - check-success=Backup and restore after upgrade
+      - check-success=Backup and restore with rbac config
+      - check-success=Backup and restore cli
+      - check-success=Backup and restore api
     actions:
       label:
         add:
