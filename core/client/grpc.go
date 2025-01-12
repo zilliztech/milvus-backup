@@ -77,7 +77,7 @@ type Grpc interface {
 	Flush(ctx context.Context, db, collName string) (*milvuspb.FlushResponse, error)
 	ListCollections(ctx context.Context, db string) (*milvuspb.ShowCollectionsResponse, error)
 	HasCollection(ctx context.Context, db, collName string) (bool, error)
-	BulkInsert(ctx context.Context, input BulkInsertInput) (int64, error)
+	BulkInsert(ctx context.Context, input GrpcBulkInsertInput) (int64, error)
 	GetBulkInsertState(ctx context.Context, taskID int64) (*milvuspb.GetImportStateResponse, error)
 	CreateCollection(ctx context.Context, input CreateCollectionInput) error
 	CreatePartition(ctx context.Context, db, collName, partitionName string) error
@@ -355,7 +355,7 @@ func (m *GrpcClient) HasCollection(ctx context.Context, db, collName string) (bo
 	return resp.GetValue(), nil
 }
 
-type BulkInsertInput struct {
+type GrpcBulkInsertInput struct {
 	DB             string
 	CollectionName string
 	PartitionName  string
@@ -366,7 +366,7 @@ type BulkInsertInput struct {
 	SkipDiskQuotaCheck bool
 }
 
-func (m *GrpcClient) BulkInsert(ctx context.Context, input BulkInsertInput) (int64, error) {
+func (m *GrpcClient) BulkInsert(ctx context.Context, input GrpcBulkInsertInput) (int64, error) {
 	ctx = m.newCtxWithDB(ctx, input.DB)
 	var opts []*commonpb.KeyValuePair
 	if input.EndTime > 0 {

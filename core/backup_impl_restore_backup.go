@@ -41,6 +41,8 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 		zap.String("path", request.GetPath()),
 		zap.String("databaseCollections", utils.GetRestoreDBCollections(request)),
 		zap.Bool("skipDiskQuotaCheck", request.GetSkipImportDiskQuotaCheck()),
+		zap.Any("skipParams", request.GetSkipParams()),
+		zap.Bool("useV2Restore", request.GetUseV2Restore()),
 		zap.Int32("maxShardNum", request.GetMaxShardNum()))
 
 	resp := &backuppb.RestoreBackupResponse{
@@ -311,6 +313,8 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 			SkipCreateCollection:  request.GetSkipCreateCollection(),
 			SkipDiskQuotaCheck:    request.GetSkipImportDiskQuotaCheck(),
 			MaxShardNum:           request.GetMaxShardNum(),
+			SkipParams:            request.GetSkipParams(),
+			UseV2Restore:          request.GetUseV2Restore(),
 		}
 		restoreCollectionTasks = append(restoreCollectionTasks, restoreCollectionTask)
 		task.CollectionRestoreTasks = restoreCollectionTasks
