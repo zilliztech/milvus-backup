@@ -161,18 +161,12 @@ func (p *MilvusConfig) initPassword() {
 }
 
 func (p *MilvusConfig) initTLSCertPath() {
-	tlsCertPath, err := p.Base.Load("milvus.tlsCertPath")
-	if err != nil {
-		panic(err)
-	}
+	tlsCertPath := p.Base.LoadWithDefault("milvus.tlsCertPath", "")
 	p.TLSCertPath = tlsCertPath
 }
 
 func (p *MilvusConfig) initServerName() {
-	serverName, err := p.Base.Load("milvus.serverName")
-	if err != nil {
-		panic(err)
-	}
+	serverName := p.Base.LoadWithDefault("milvus.serverName", "")
 	p.ServerName = serverName
 }
 
