@@ -986,6 +986,7 @@ class TestRestoreBackup(TestcaseBase):
         token = word_freq.most_common(1)[0][0]
         c = Collection(name=name_origin + suffix)
         create_index_for_vector_fields(c)
+        c.load()
         if enable_text_match:
             res = c.query(
                 expr=f"TextMatch(text, '{token}')",
