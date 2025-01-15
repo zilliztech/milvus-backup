@@ -1002,6 +1002,7 @@ class TestRestoreBackup(TestcaseBase):
                 data=search_data,
                 anns_field="bm25_sparse_vector",
                 output_fields=["text"],
+                param={},
                 limit=1
             )
             assert len(res) == 1
