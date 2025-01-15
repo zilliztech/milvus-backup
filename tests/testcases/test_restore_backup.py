@@ -989,7 +989,7 @@ class TestRestoreBackup(TestcaseBase):
         c.load()
         if enable_text_match:
             res = c.query(
-                expr=f"TextMatch(text, '{token}')",
+                expr=f"text_match(text, '{token}')",
                 output_fields=["text"],
                 limit=1
             )
