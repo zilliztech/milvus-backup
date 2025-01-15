@@ -2,15 +2,18 @@ package core
 
 import (
 	"context"
+	"net/http"
+
+	"github.com/zilliztech/milvus-backup/core/meta"
+
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
+	"go.uber.org/zap"
+
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"go.uber.org/zap"
-	"net/http"
-	"net/http/pprof"
 )
 
 const (
@@ -36,7 +39,7 @@ type Server struct {
 	config        *BackupConfig
 }
 
-func NewServer(ctx context.Context, params paramtable.BackupParams, opts ...BackupOption) (*Server, error) {
+func NewServer(ctx context.Context, params *paramtable.BackupParams, opts ...BackupOption) (*Server, error) {
 	c := newDefaultBackupConfig()
 	for _, opt := range opts {
 		opt(c)
@@ -57,7 +60,6 @@ func (s *Server) Init() {
 }
 
 func (s *Server) Start() {
-	s.registerProfilePort()
 	err := s.engine.Run(s.config.port)
 	if err != nil {
 		log.Error("Failed to start server", zap.Error(err))
@@ -79,15 +81,7 @@ func (s *Server) registerHTTPServer() {
 	s.engine = ginHandler
 }
 
-// registerHTTPServer register the http server, panic when failed
-func (s *Server) registerProfilePort() {
-	go func() {
-		http.HandleFunc("/debug/pprof/heap", pprof.Index)
-		http.ListenAndServe("localhost:8089", nil)
-	}()
-}
-
-func handleHello(c *gin.Context) (interface{}, error) {
+func handleHello(c *gin.Context) (any, error) {
 	c.String(200, "Hello, This is backup service")
 	return nil, nil
 }
@@ -145,7 +139,7 @@ func (h *Handlers) handleCreateBackup(c *gin.Context) (interface{}, error) {
 	requestBody.RequestId = c.GetHeader("request_id")
 	resp := h.backupContext.CreateBackup(h.backupContext.ctx, &requestBody)
 	if h.backupContext.params.HTTPCfg.SimpleResponse {
-		resp = SimpleBackupResponse(resp)
+		resp = meta.SimpleBackupResponse(resp)
 	}
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
@@ -167,7 +161,7 @@ func (h *Handlers) handleListBackups(c *gin.Context) (interface{}, error) {
 	}
 	resp := h.backupContext.ListBackups(h.backupContext.ctx, &req)
 	if h.backupContext.params.HTTPCfg.SimpleResponse {
-		resp = SimpleListBackupsResponse(resp)
+		resp = meta.SimpleListBackupsResponse(resp)
 	}
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
@@ -191,7 +185,7 @@ func (h *Handlers) handleGetBackup(c *gin.Context) (interface{}, error) {
 	}
 	resp := h.backupContext.GetBackup(h.backupContext.ctx, &req)
 	if h.backupContext.params.HTTPCfg.SimpleResponse {
-		resp = SimpleBackupResponse(resp)
+		resp = meta.SimpleBackupResponse(resp)
 	}
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
@@ -240,7 +234,7 @@ func (h *Handlers) handleRestoreBackup(c *gin.Context) (interface{}, error) {
 	requestBody.RequestId = c.GetHeader("request_id")
 	resp := h.backupContext.RestoreBackup(h.backupContext.ctx, &requestBody)
 	if h.backupContext.params.HTTPCfg.SimpleResponse {
-		resp = SimpleRestoreResponse(resp)
+		resp = meta.SimpleRestoreResponse(resp)
 	}
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
@@ -262,7 +256,7 @@ func (h *Handlers) handleGetRestore(c *gin.Context) (interface{}, error) {
 	}
 	resp := h.backupContext.GetRestore(h.backupContext.ctx, &req)
 	if h.backupContext.params.HTTPCfg.SimpleResponse {
-		resp = SimpleRestoreResponse(resp)
+		resp = meta.SimpleRestoreResponse(resp)
 	}
 	log.Info("End to GetRestoreStateRequest", zap.Any("resp", resp))
 	c.JSON(http.StatusOK, resp)

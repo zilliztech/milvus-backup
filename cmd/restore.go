@@ -8,6 +8,7 @@ import (
 
 	jsoniter "github.com/json-iterator/go"
 	"github.com/spf13/cobra"
+
 	"github.com/zilliztech/milvus-backup/core"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
@@ -43,7 +44,7 @@ var restoreBackupCmd = &cobra.Command{
 		params.Init()
 
 		context := context.Background()
-		backupContext := core.CreateBackupContext(context, params)
+		backupContext := core.CreateBackupContext(context, &params)
 		log.Info("restore cmd input args", zap.Strings("args", args))
 		start := time.Now().Unix()
 		var collectionNameArr []string

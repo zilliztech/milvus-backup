@@ -24,11 +24,12 @@ import (
 
 	"google.golang.org/grpc/backoff"
 
-	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/util/funcutil"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/keepalive"
+
+	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/util/funcutil"
 )
 
 // GrpcClient abstracts client of grpc

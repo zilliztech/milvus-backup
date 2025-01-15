@@ -1,4 +1,4 @@
-package core
+package meta
 
 import (
 	"sync"
@@ -23,7 +23,7 @@ type MetaManager struct {
 	mu                         sync.Mutex
 }
 
-func newMetaManager() *MetaManager {
+func NewMetaManager() *MetaManager {
 	return &MetaManager{
 		backups:                    make(map[string]*backuppb.BackupInfo, 0),
 		collections:                make(map[string]map[int64]*backuppb.CollectionBackupInfo, 0),
@@ -101,13 +101,13 @@ func (meta *MetaManager) AddSegment(segment *backuppb.SegmentBackupInfo) {
 
 type BackupOpt func(backup *backuppb.BackupInfo)
 
-func setStateCode(stateCode backuppb.BackupTaskStateCode) BackupOpt {
+func SetStateCode(stateCode backuppb.BackupTaskStateCode) BackupOpt {
 	return func(backup *backuppb.BackupInfo) {
 		backup.StateCode = stateCode
 	}
 }
 
-func setErrorMessage(errorMessage string) BackupOpt {
+func SetErrorMessage(errorMessage string) BackupOpt {
 	return func(backup *backuppb.BackupInfo) {
 		backup.ErrorMessage = errorMessage
 	}
@@ -118,7 +118,7 @@ func setStartTime(startTime int64) BackupOpt {
 	}
 }
 
-func setEndTime(endTime int64) BackupOpt {
+func SetEndTime(endTime int64) BackupOpt {
 	return func(backup *backuppb.BackupInfo) {
 		backup.EndTime = endTime
 	}
@@ -164,7 +164,7 @@ func setMilvusVersion(milvusVersion string) BackupOpt {
 	}
 }
 
-func setRBACMeta(rbacMeta *backuppb.RBACMeta) BackupOpt {
+func SetRBACMeta(rbacMeta *backuppb.RBACMeta) BackupOpt {
 	return func(backup *backuppb.BackupInfo) {
 		backup.RbacMeta = rbacMeta
 	}
@@ -201,7 +201,7 @@ func setCollectionStartTime(startTime int64) CollectionOpt {
 	}
 }
 
-func setCollectionEndTime(endTime int64) CollectionOpt {
+func SetCollectionEndTime(endTime int64) CollectionOpt {
 	return func(collection *backuppb.CollectionBackupInfo) {
 		collection.EndTime = endTime
 	}
@@ -214,19 +214,19 @@ func setCollectionProgress(progress int32) CollectionOpt {
 }
 
 // backup timestamp
-func setCollectionBackupTimestamp(backupTimestamp uint64) CollectionOpt {
+func SetCollectionBackupTimestamp(backupTimestamp uint64) CollectionOpt {
 	return func(collection *backuppb.CollectionBackupInfo) {
 		collection.BackupTimestamp = backupTimestamp
 	}
 }
 
-func setCollectionSize(size int64) CollectionOpt {
+func SetCollectionSize(size int64) CollectionOpt {
 	return func(collection *backuppb.CollectionBackupInfo) {
 		collection.Size = size
 	}
 }
 
-func setL0Segments(segments []*backuppb.SegmentBackupInfo) CollectionOpt {
+func SetL0Segments(segments []*backuppb.SegmentBackupInfo) CollectionOpt {
 	return func(collection *backuppb.CollectionBackupInfo) {
 		collection.L0Segments = segments
 	}
@@ -280,19 +280,19 @@ func setCollectionIndexInfos(indexInfos []*backuppb.IndexInfo) CollectionOpt {
 	}
 }
 
-func setCollectionLoadState(loadState string) CollectionOpt {
+func SetCollectionLoadState(loadState string) CollectionOpt {
 	return func(collection *backuppb.CollectionBackupInfo) {
 		collection.LoadState = loadState
 	}
 }
 
-func setCollectionBackupPhysicalTimestamp(backupPhysicalTimestamp uint64) CollectionOpt {
+func SetCollectionBackupPhysicalTimestamp(backupPhysicalTimestamp uint64) CollectionOpt {
 	return func(collection *backuppb.CollectionBackupInfo) {
 		collection.BackupPhysicalTimestamp = backupPhysicalTimestamp
 	}
 }
 
-func setCollectionChannelCheckpoints(channelCheckpoints map[string]string) CollectionOpt {
+func SetCollectionChannelCheckpoints(channelCheckpoints map[string]string) CollectionOpt {
 	return func(collection *backuppb.CollectionBackupInfo) {
 		collection.ChannelCheckpoints = channelCheckpoints
 	}
@@ -370,25 +370,25 @@ func setSegmentNumOfRows(numOfRows int64) SegmentOpt {
 	}
 }
 
-func setSegmentSize(size int64) SegmentOpt {
+func SetSegmentSize(size int64) SegmentOpt {
 	return func(segment *backuppb.SegmentBackupInfo) {
 		segment.Size = size
 	}
 }
 
-func setSegmentL0(isL0 bool) SegmentOpt {
+func SetSegmentL0(isL0 bool) SegmentOpt {
 	return func(segment *backuppb.SegmentBackupInfo) {
 		segment.IsL0 = isL0
 	}
 }
 
-func setGroupID(groupID int64) SegmentOpt {
+func SetGroupID(groupID int64) SegmentOpt {
 	return func(segment *backuppb.SegmentBackupInfo) {
 		segment.GroupId = groupID
 	}
 }
 
-func setSegmentBinlogs(binlogs []*backuppb.FieldBinlog) SegmentOpt {
+func SetSegmentBinlogs(binlogs []*backuppb.FieldBinlog) SegmentOpt {
 	return func(segment *backuppb.SegmentBackupInfo) {
 		segment.Binlogs = binlogs
 	}
@@ -400,7 +400,7 @@ func setSegmentStatsBinlogs(binlogs []*backuppb.FieldBinlog) SegmentOpt {
 	}
 }
 
-func setSegmentDeltaBinlogs(binlogs []*backuppb.FieldBinlog) SegmentOpt {
+func SetSegmentDeltaBinlogs(binlogs []*backuppb.FieldBinlog) SegmentOpt {
 	return func(segment *backuppb.SegmentBackupInfo) {
 		segment.Deltalogs = binlogs
 	}
@@ -412,7 +412,7 @@ func setSegmentGroupId(groupId int64) SegmentOpt {
 	}
 }
 
-func setSegmentBackuped(backuped bool) SegmentOpt {
+func SetSegmentBackuped(backuped bool) SegmentOpt {
 	return func(segment *backuppb.SegmentBackupInfo) {
 		segment.Backuped = backuped
 	}
@@ -504,13 +504,13 @@ func (meta *MetaManager) GetFullMeta(id string) *backuppb.BackupInfo {
 
 type RestoreTaskOpt func(task *backuppb.RestoreBackupTask)
 
-func setRestoreStateCode(stateCode backuppb.RestoreTaskStateCode) RestoreTaskOpt {
+func SetRestoreStateCode(stateCode backuppb.RestoreTaskStateCode) RestoreTaskOpt {
 	return func(task *backuppb.RestoreBackupTask) {
 		task.StateCode = stateCode
 	}
 }
 
-func setRestoreErrorMessage(errorMessage string) RestoreTaskOpt {
+func SetRestoreErrorMessage(errorMessage string) RestoreTaskOpt {
 	return func(task *backuppb.RestoreBackupTask) {
 		task.ErrorMessage = errorMessage
 	}
@@ -522,7 +522,7 @@ func setRestoreStartTime(startTime int64) RestoreTaskOpt {
 	}
 }
 
-func setRestoreEndTime(endTime int64) RestoreTaskOpt {
+func SetRestoreEndTime(endTime int64) RestoreTaskOpt {
 	return func(task *backuppb.RestoreBackupTask) {
 		task.EndTime = endTime
 	}
@@ -534,7 +534,7 @@ func addRestoreRestoredSize(restoredSize int64) RestoreTaskOpt {
 	}
 }
 
-func addCollectionRestoredSize(collectionID, restoredSize int64) RestoreTaskOpt {
+func AddCollectionRestoredSize(collectionID, restoredSize int64) RestoreTaskOpt {
 	return func(task *backuppb.RestoreBackupTask) {
 		task.RestoredSize = task.RestoredSize + restoredSize
 		for _, coll := range task.GetCollectionRestoreTasks() {
@@ -588,13 +588,13 @@ func (meta *MetaManager) UpdateRestoreCollectionTask(restoreID string, restoreCo
 
 type RestoreCollectionTaskOpt func(task *backuppb.RestoreCollectionTask)
 
-func setRestoreCollectionStateCode(stateCode backuppb.RestoreTaskStateCode) RestoreCollectionTaskOpt {
+func SetRestoreCollectionStateCode(stateCode backuppb.RestoreTaskStateCode) RestoreCollectionTaskOpt {
 	return func(task *backuppb.RestoreCollectionTask) {
 		task.StateCode = stateCode
 	}
 }
 
-func setRestoreCollectionErrorMessage(errorMessage string) RestoreCollectionTaskOpt {
+func SetRestoreCollectionErrorMessage(errorMessage string) RestoreCollectionTaskOpt {
 	return func(task *backuppb.RestoreCollectionTask) {
 		task.ErrorMessage = errorMessage
 	}

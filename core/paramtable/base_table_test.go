@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+
 	memkv "github.com/zilliztech/milvus-backup/internal/kv/mem"
 )
 

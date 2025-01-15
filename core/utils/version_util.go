@@ -1,8 +1,9 @@
 package utils
 
 import (
-	"github.com/blang/semver/v4"
 	"strings"
+
+	"github.com/blang/semver/v4"
 )
 
 const (
