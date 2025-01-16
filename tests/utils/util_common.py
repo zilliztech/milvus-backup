@@ -1,6 +1,66 @@
 from yaml import full_load
 import json
+from collections import Counter
+from bm25s.tokenization import Tokenizer
+import jieba
+import re
 from utils.util_log import test_log as log
+
+
+def custom_tokenizer(language="en"):
+    def remove_punctuation(text):
+        text = text.strip()
+        text = text.replace("\n", " ")
+        return re.sub(r'[^\w\s]', ' ', text)
+
+    # Tokenize the corpus
+    def jieba_split(text):
+        text_without_punctuation = remove_punctuation(text)
+        return jieba.lcut(text_without_punctuation)
+
+    def blank_space_split(text):
+        text_without_punctuation = remove_punctuation(text)
+        return text_without_punctuation.split()
+
+    stopwords = [" "]
+    stemmer = None
+    if language in ["zh", "cn", "chinese"]:
+        splitter = jieba_split
+        tokenizer = Tokenizer(
+            stemmer=stemmer, splitter=splitter, stopwords=stopwords
+        )
+    else:
+        splitter = blank_space_split
+        tokenizer = Tokenizer(
+            stemmer=stemmer, splitter= splitter, stopwords=stopwords
+        )
+    return tokenizer
+
+
+def analyze_documents(texts, language="en"):
+
+    tokenizer = custom_tokenizer(language)
+    new_texts = []
+    for text in texts:
+        if isinstance(text, str):
+            new_texts.append(text)
+    # Tokenize the corpus
+    tokenized = tokenizer.tokenize(new_texts, return_as="tuple")
+    # log.info(f"Tokenized: {tokenized}")
+    # Create a frequency counter
+    freq = Counter()
+
+    # Count the frequency of each token
+    for doc_ids in tokenized.ids:
+        freq.update(doc_ids)
+    # Create a reverse vocabulary mapping
+    id_to_word = {id: word for word, id in tokenized.vocab.items()}
+
+    # Convert token ids back to words
+    word_freq = Counter({id_to_word[token_id]: count for token_id, count in freq.items()})
+    log.debug(f"word freq {word_freq.most_common(10)}")
+
+    return word_freq
 
 
 def gen_experiment_config(yaml):
