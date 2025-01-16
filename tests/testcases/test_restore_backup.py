@@ -31,9 +31,11 @@ class TestRestoreBackup(TestcaseBase):
     @pytest.mark.parametrize("is_async", [True, False])
     @pytest.mark.parametrize("collection_need_to_restore", [3])
     @pytest.mark.parametrize("collection_type", ["all"])
+    @pytest.mark.parametrize("use_v2_restore", [True, False])
     @pytest.mark.tags(CaseLabel.L0)
     def test_milvus_restore_back(
         self,
+        use_v2_restore,
         collection_type,
         collection_need_to_restore,
         is_async,
@@ -110,6 +112,7 @@ class TestRestoreBackup(TestcaseBase):
                 "collection_suffix": suffix,
                 "collection_names": restore_collections,
             }
+        payload["useV2Restore"] = use_v2_restore
         t0 = time.time()
         res = self.client.restore_backup(payload)
         restore_id = res["data"]["id"]
