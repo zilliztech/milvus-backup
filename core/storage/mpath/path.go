@@ -24,6 +24,9 @@ const Separator = "/"
 // ${root}/binglogs/insert_log/${collection_id}/${partition_id}/${groupId}(optional)/${segment_id}/${field_id}/${log_idx}
 // delta log
 // ${root}/binglogs/delta_log/${collection_id}/${partition_id}/${groupId}(optional)/${segment_id}/${field_id}/${log_idx}
+// The group ID is a virtual partition ID. The Milvus BulkInsert interface requires a partition prefix,
+// but passing multiple segments is a more suitable option.
+// Therefore, a virtual partition ID is used here to enable the functionality of importing multiple segments.
 
 func LogDir(base, typePrefix string, opts ...PathOption) string {
 	elem := []string{base, _binlogPrefix, typePrefix}

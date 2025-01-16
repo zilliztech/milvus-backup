@@ -12,8 +12,28 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
+type ImportState string
+
+const (
+	ImportStatePending   ImportState = "Pending"
+	ImportStateImporting ImportState = "Importing"
+	ImportStateCompleted ImportState = "Completed"
+	ImportStateFailed    ImportState = "Failed"
+)
+
+type RestfulBulkInsertInput struct {
+	DB             string
+	CollectionName string
+	PartitionName  string
+	// offset 0 is path to insertLog file, offset 1 is path to deleteLog file
+	Paths              [][]string
+	EndTime            int64
+	IsL0               bool
+	SkipDiskQuotaCheck bool
+}
+
 type Restful interface {
-	BulkInsert(ctx context.Context, db, collName, partitionName string, files []string, endTime int64, isL0 bool, skipDiskQuotaCheck bool) (string, error)
+	BulkInsert(ctx context.Context, input RestfulBulkInsertInput) (string, error)
 	GetBulkInsertState(ctx context.Context, db, jobID string) (*GetProcessResp, error)
 }
 
@@ -73,27 +93,27 @@ type RestfulClient struct {
 	cli *req.Client
 }
 
-func (r *RestfulClient) BulkInsert(ctx context.Context, db, collName, partitionName string, files []string, endTime int64, isL0 bool, skipDiskQuotaCheck bool) (string, error) {
+func (r *RestfulClient) BulkInsert(ctx context.Context, input RestfulBulkInsertInput) (string, error) {
 	opts := make(map[string]string)
-	if endTime > 0 {
-		opts["end_time"] = strconv.FormatInt(endTime, 10)
+	if input.EndTime > 0 {
+		opts["end_time"] = strconv.FormatInt(input.EndTime, 10)
 	}
-	if isL0 {
+	if input.IsL0 {
 		opts["l0_import"] = "true"
 	} else {
 		opts["backup"] = "true"
 	}
-	opts["skip_disk_quota_check"] = strconv.FormatBool(skipDiskQuotaCheck)
+	opts["skip_disk_quota_check"] = strconv.FormatBool(input.SkipDiskQuotaCheck)
 
 	createReq := createImportReq{
-		DbName:         db,
-		CollectionName: collName,
-		PartitionName:  partitionName,
-		Files:          [][]string{files},
+		DbName:         input.DB,
+		CollectionName: input.CollectionName,
+		PartitionName:  input.PartitionName,
+		Files:          input.Paths,
 		Options:        opts,
 	}
 	var createResp createImportResp
-	log.Info("create import job via restful", zap.Any("createReq", createReq))
+	log.Debug("create import job via restful", zap.Any("createReq", createReq))
 	resp, err := r.cli.R().
 		SetContext(ctx).
 		SetBody(createReq).
@@ -102,7 +122,7 @@ func (r *RestfulClient) BulkInsert(ctx context.Context, db, collName, partitionN
 	if err != nil {
 		return "", fmt.Errorf("client: failed to create import job via restful: %w", err)
 	}
-	log.Info("create import job via restful", zap.Any("createResp", resp))
+	log.Debug("create import job via restful", zap.Any("createResp", resp))
 	if resp.IsErrorState() {
 		return "", fmt.Errorf("client: failed to create import job via restful: %v", resp)
 	}
@@ -125,7 +145,7 @@ func (r *RestfulClient) GetBulkInsertState(ctx context.Context, dbName, jobID st
 	if err != nil {
 		return nil, fmt.Errorf("client: failed to get import job state via restful: %w", err)
 	}
-	log.Info("get import job state via restful", zap.Any("getResp", resp))
+	log.Debug("get import job state via restful", zap.Any("getResp", resp))
 	if resp.IsErrorState() {
 		return nil, fmt.Errorf("client: failed to get import job state via restful: %v", resp)
 	}

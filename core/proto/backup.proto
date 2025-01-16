@@ -246,12 +246,12 @@ enum RestoreTaskStateCode {
 }
 
 message SkipParams {
-  repeated string collection_properties = 1;
+  repeated string collectionProperties = 1;
 
-  repeated string filed_index_params = 2;
-  repeated string filed_type_params = 3;
+  repeated string fieldIndexParams = 2;
+  repeated string fieldTypeParams = 3;
 
-  repeated string index_params = 4;
+  repeated string indexParams = 4;
 }
 
 message RestoreBackupRequest {
@@ -295,7 +295,8 @@ message RestoreBackupRequest {
   // target max shard number
   int32 maxShardNum = 19;
   // if key is set, will skip the params in restore process
-  SkipParams skip_params = 20;
+  SkipParams skipParams = 20;
+  bool useV2Restore = 21;
 }
 
 message RestorePartitionTask {
@@ -336,7 +337,8 @@ message RestoreCollectionTask {
   bool skipDiskQuotaCheck = 19;
   // target max shard number
   int32 maxShardNum = 20;
-  SkipParams skip_params = 21;
+  SkipParams skipParams = 21;
+  bool useV2Restore = 22;
 }
 
 message RestoreBackupTask {

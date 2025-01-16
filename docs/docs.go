@@ -1060,7 +1060,7 @@ const docTemplate = `{
                     "description": "if true, skip the diskQuota in Import",
                     "type": "boolean"
                 },
-                "skip_params": {
+                "skipParams": {
                     "description": "if key is set, will skip the params in restore process",
                     "allOf": [
                         {
@@ -1070,6 +1070,9 @@ const docTemplate = `{
                 },
                 "useAutoIndex": {
                     "description": "if true use autoindex when restore vector index",
+                    "type": "boolean"
+                },
+                "useV2Restore": {
                     "type": "boolean"
                 }
             }
@@ -1192,7 +1195,7 @@ const docTemplate = `{
                 "skipDiskQuotaCheck": {
                     "type": "boolean"
                 },
-                "skip_params": {
+                "skipParams": {
                     "$ref": "#/definitions/backuppb.SkipParams"
                 },
                 "start_time": {
@@ -1212,6 +1215,9 @@ const docTemplate = `{
                 },
                 "useAutoIndex": {
                     "description": "if true use autoindex when restore vector index",
+                    "type": "boolean"
+                },
+                "useV2Restore": {
                     "type": "boolean"
                 }
             }
@@ -1318,25 +1324,25 @@ const docTemplate = `{
         "backuppb.SkipParams": {
             "type": "object",
             "properties": {
-                "collection_properties": {
+                "collectionProperties": {
                     "type": "array",
                     "items": {
                         "type": "string"
                     }
                 },
-                "filed_index_params": {
+                "fieldIndexParams": {
                     "type": "array",
                     "items": {
                         "type": "string"
                     }
                 },
-                "filed_type_params": {
+                "fieldTypeParams": {
                     "type": "array",
                     "items": {
                         "type": "string"
                     }
                 },
-                "index_params": {
+                "indexParams": {
                     "type": "array",
                     "items": {
                         "type": "string"

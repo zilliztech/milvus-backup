@@ -64,7 +64,7 @@ type BackupContext struct {
 	bulkinsertWorkerPools sync.Map
 }
 
-func CreateMilvusClient(ctx context.Context, params *paramtable.BackupParams) (client.Grpc, error) {
+func paramsToCfg(params *paramtable.BackupParams) (*client.Cfg, error) {
 	ep := params.MilvusCfg.Address + ":" + params.MilvusCfg.Port
 	log.Debug("Start Milvus client", zap.String("endpoint", ep))
 
@@ -76,6 +76,7 @@ func CreateMilvusClient(ctx context.Context, params *paramtable.BackupParams) (c
 		enableTLS = true
 	default:
 		log.Error("milvus.TLSMode is illegal, support value 0, 1, 2")
+		return nil, fmt.Errorf("milvus.TLSMode is illegal, support value 0, 1, 2")
 	}
 
 	cfg := &client.Cfg{
@@ -84,6 +85,17 @@ func CreateMilvusClient(ctx context.Context, params *paramtable.BackupParams) (c
 		Username:  params.MilvusCfg.User,
 		Password:  params.MilvusCfg.Password,
 	}
+
+	return cfg, nil
+}
+
+func CreateGrpcClient(params *paramtable.BackupParams) (client.Grpc, error) {
+	cfg, err := paramsToCfg(params)
+	if err != nil {
+		log.Error("failed to create milvus client", zap.Error(err))
+		return nil, fmt.Errorf("failed to create milvus client: %w", err)
+	}
+
 	cli, err := client.NewGrpc(cfg)
 	if err != nil {
 		log.Error("failed to create milvus client", zap.Error(err))
@@ -93,10 +105,12 @@ func CreateMilvusClient(ctx context.Context, params *paramtable.BackupParams) (c
 }
 
 func CreateRestfulClient(params *paramtable.BackupParams) (client.Restful, error) {
-	ep := params.MilvusCfg.Address + ":" + params.MilvusCfg.Port
-	log.Debug("Start Restful client", zap.String("endpoint", ep))
+	cfg, err := paramsToCfg(params)
+	if err != nil {
+		log.Error("failed to create restful client", zap.Error(err))
+		return nil, fmt.Errorf("failed to create restful client: %w", err)
+	}
 
-	cfg := &client.Cfg{Address: ep, Username: params.MilvusCfg.User, Password: params.MilvusCfg.Password}
 	cli, err := client.NewRestful(cfg)
 	if err != nil {
 		log.Error("failed to create restful client", zap.Error(err))
@@ -136,7 +150,7 @@ func CreateBackupContext(ctx context.Context, params *paramtable.BackupParams) *
 
 func (b *BackupContext) getMilvusClient() client.Grpc {
 	if b.grpcClient == nil {
-		milvusClient, err := CreateMilvusClient(b.ctx, b.params)
+		milvusClient, err := CreateGrpcClient(b.params)
 		if err != nil {
 			log.Error("failed to initial milvus client", zap.Error(err))
 			panic(err)

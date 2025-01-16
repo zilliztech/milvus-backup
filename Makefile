@@ -14,8 +14,11 @@ all: gen build
 
 # Build the binary
 build:
-	@echo "Building binary..."
-	GO111MODULE=on CGO_ENABLED=0 go build -ldflags '$(LDFLAGS)' -o $(BINARY_NAME)
+	@echo "Building Backup binary..."
+	@echo "Version: $(VERSION)"
+	@echo "Commit: $(COMMIT)"
+	@echo "Date: $(DATE)"
+	@GO111MODULE=on CGO_ENABLED=0 go build -ldflags '$(LDFLAGS)' -o $(BINARY_NAME)
 
 gen:
 	./scripts/gen_swag.sh
