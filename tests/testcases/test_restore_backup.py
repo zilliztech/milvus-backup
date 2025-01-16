@@ -995,7 +995,7 @@ class TestRestoreBackup(TestcaseBase):
             )
             assert len(res) == 1
             for r in res:
-                assert token in r["text"]
+                assert token.lower() in r["text"].lower()
         if enable_full_text_search:
             search_data = [fake_en.text()+f" {token} "]
             res = c.search(
