@@ -32,7 +32,7 @@ type RestfulBulkInsertInput struct {
 	SkipDiskQuotaCheck bool
 }
 
-type Restful interface {
+type RestfulBulkInsert interface {
 	BulkInsert(ctx context.Context, input RestfulBulkInsertInput) (string, error)
 	GetBulkInsertState(ctx context.Context, db, jobID string) (*GetProcessResp, error)
 }
@@ -88,6 +88,8 @@ type createImportReq struct {
 	Files          [][]string        `json:"files"`
 	Options        map[string]string `json:"options,omitempty"`
 }
+
+var _ RestfulBulkInsert = (*RestfulClient)(nil)
 
 type RestfulClient struct {
 	cli *req.Client
@@ -154,12 +156,12 @@ func (r *RestfulClient) GetBulkInsertState(ctx context.Context, dbName, jobID st
 }
 
 func NewRestful(cfg *Cfg) (*RestfulClient, error) {
-	baseURL, err := cfg.parseRestful()
-	if err != nil {
-		return nil, fmt.Errorf("client: failed to parse restful address: %w", err)
+	baseURL := cfg.parseRestful()
+	cli := req.C().SetBaseURL(baseURL.String())
+
+	if auth := cfg.parseRestfulAuth(); len(auth) != 0 {
+		cli.SetCommonBearerAuthToken(auth)
 	}
-	cli := req.C().
-		SetBaseURL(baseURL.String()).
-		SetCommonBearerAuthToken(fmt.Sprintf("%s:%s", cfg.Username, cfg.Password))
+
 	return &RestfulClient{cli: cli}, nil
 }

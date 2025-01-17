@@ -172,11 +172,10 @@ Execute `make all` will generate an executable binary `milvus-backup` in the `{p
 
 ### Test
 
-Developers can also test it using an IDE. `core/backup_context_test.go` contains test demos for all main interfaces. Alternatively, you can test it using the command line interface:
+Developers can also test it using an IDE. You can test it using the command line interface:
 
 ```shell
-cd core
-go test -v -test.run TestCreateBackup
+make test
 ```
 
 
