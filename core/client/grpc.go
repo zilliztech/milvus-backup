@@ -9,16 +9,15 @@ import (
 	"strconv"
 	"time"
 
-	grpcretry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
-	"google.golang.org/grpc/backoff"
-	"google.golang.org/grpc/keepalive"
-
 	"github.com/golang/protobuf/proto"
+	grpcretry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
@@ -114,17 +113,20 @@ func checkResponse(resp any, err error) error {
 	return nil
 }
 
+var _ Grpc = (*GrpcClient)(nil)
+
 type GrpcClient struct {
 	cfg *Cfg
 
 	conn *grpc.ClientConn
 	srv  milvuspb.MilvusServiceClient
 
-	auth          string
+	auth string
+
+	// get from connect
 	serverVersion string
 	identifier    string
-
-	flags uint64
+	flags         uint64
 }
 
 func NewGrpc(cfg *Cfg) (*GrpcClient, error) {
@@ -132,10 +134,9 @@ func NewGrpc(cfg *Cfg) (*GrpcClient, error) {
 	if err != nil {
 		return nil, fmt.Errorf("client: parse address failed: %w", err)
 	}
-	auth := cfg.parseAuth()
+	auth := cfg.parseGrpcAuth()
 
 	opts = append(opts, defaultDialOpt()...)
-
 	conn, err := grpc.NewClient(addr.Host, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("client: create grpc client failed: %w", err)

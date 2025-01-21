@@ -43,7 +43,7 @@ type BackupContext struct {
 	grpcClient client.Grpc
 
 	// restful client
-	restfulClient client.Restful
+	restfulClient client.RestfulBulkInsert
 
 	// data storage client
 	milvusStorageClient storage.ChunkManager
@@ -80,7 +80,7 @@ func paramsToCfg(params *paramtable.BackupParams) (*client.Cfg, error) {
 	}
 
 	cfg := &client.Cfg{
-		Address:   ep,
+		Host:      ep,
 		EnableTLS: enableTLS,
 		Username:  params.MilvusCfg.User,
 		Password:  params.MilvusCfg.Password,
@@ -104,7 +104,7 @@ func CreateGrpcClient(params *paramtable.BackupParams) (client.Grpc, error) {
 	return cli, nil
 }
 
-func CreateRestfulClient(params *paramtable.BackupParams) (client.Restful, error) {
+func CreateRestfulClient(params *paramtable.BackupParams) (client.RestfulBulkInsert, error) {
 	cfg, err := paramsToCfg(params)
 	if err != nil {
 		log.Error("failed to create restful client", zap.Error(err))
@@ -160,7 +160,7 @@ func (b *BackupContext) getMilvusClient() client.Grpc {
 	return b.grpcClient
 }
 
-func (b *BackupContext) getRestfulClient() client.Restful {
+func (b *BackupContext) getRestfulClient() client.RestfulBulkInsert {
 	if b.restfulClient == nil {
 		restfulClient, err := CreateRestfulClient(b.params)
 		if err != nil {

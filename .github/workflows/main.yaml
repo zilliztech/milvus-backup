@@ -11,12 +11,30 @@ on:
   schedule:
     - cron: '0 0 * * *'
 
+
+env:
+  go-version: 1.23
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  unit-test-go:
+    name: Unit test go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Go ${{ env.go-version }}
+        uses: actions/setup-go@v3
+        with:
+          go-version: ${{ env.go-version }}
+          cache: true
+      - name: Unit test
+        run: make test
+
   test-backup-restore-cross-version:
+    needs: unit-test-go
     name: Backup and restore cross version
     runs-on: ubuntu-latest
     strategy:
@@ -41,8 +59,9 @@ jobs:
           cache: pip
 
       - uses: actions/setup-go@v3
+        name: Set up Go ${{ env.go-version }}
         with:
-          go-version: '1.23'
+          go-version: ${{ env.go-version }}
           cache: true
 
       - name: Build
@@ -62,7 +81,6 @@ jobs:
           sudo chmod +x /usr/local/bin/docker-compose
 
       - name: Milvus deploy
-
         timeout-minutes: 15
         shell: bash
         working-directory: deployment/${{ matrix.milvus_mode }}
@@ -157,6 +175,7 @@ jobs:
           python example/verify_data.py
 
   test-backup-restore-after-upgrade:
+    needs: unit-test-go
     name: Backup and restore after upgrade
     runs-on: ubuntu-latest
     strategy:
@@ -181,8 +200,9 @@ jobs:
           cache: pip
 
       - uses: actions/setup-go@v3
+        name: Set up Go ${{ env.go-version }}
         with:
-          go-version: '1.23'
+          go-version: ${{ env.go-version }}
           cache: true
 
       - name: Build
@@ -251,6 +271,7 @@ jobs:
 
 
   test-backup-restore-cli:
+    needs: unit-test-go
     name: Backup and restore cli
     runs-on: ubuntu-latest
     strategy:
@@ -272,8 +293,9 @@ jobs:
           cache: pip
 
       - uses: actions/setup-go@v3
+        name: Set up Go ${{ env.go-version }}
         with:
-          go-version: '1.23'
+          go-version: ${{ env.go-version }}
           cache: true
 
       - name: Build
@@ -386,6 +408,7 @@ jobs:
           python example/verify_data.py
 
   test-backup-restore-with-rbac-config:
+    needs: unit-test-go
     name: Backup and restore with rbac config
     runs-on: ubuntu-latest
     strategy:
@@ -406,7 +429,7 @@ jobs:
 
       - uses: actions/setup-go@v3
         with:
-          go-version: '1.23'
+          go-version: ${{ env.go-version }}
           cache: "true"
 
       - name: Creating kind cluster
@@ -555,7 +578,7 @@ jobs:
 
       - uses: actions/setup-go@v3
         with:
-          go-version: '1.23'
+          go-version: ${{ env.go-version }}
           cache: true
 
       - name: Build

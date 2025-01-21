@@ -12,6 +12,10 @@ LDFLAGS += -X "$(PKG)/version.Date=$(DATE)"
 # Default target
 all: gen build
 
+test:
+	@echo "Running unit tests..."
+	@go test --race ./...
+
 # Build the binary
 build:
 	@echo "Building Backup binary..."

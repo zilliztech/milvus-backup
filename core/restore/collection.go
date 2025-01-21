@@ -58,7 +58,7 @@ type CollectionTask struct {
 	restoredSize atomic.Int64
 
 	grpcCli    client.Grpc
-	restfulCli client.Restful
+	restfulCli client.RestfulBulkInsert
 
 	tearDownFns []tearDownFn
 
@@ -76,7 +76,7 @@ func NewCollectionTask(task *backuppb.RestoreCollectionTask,
 	backupStorage storage.ChunkManager,
 	milvusStorage storage.ChunkManager,
 	grpcCli client.Grpc,
-	restfulCli client.Restful,
+	restfulCli client.RestfulBulkInsert,
 ) *CollectionTask {
 	logger := log.With(
 		zap.String("backup_db_name", task.GetCollBackup().GetDbName()),
