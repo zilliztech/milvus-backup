@@ -311,7 +311,6 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 			DropExistCollection:   request.GetDropExistCollection(),
 			DropExistIndex:        request.GetDropExistIndex(),
 			SkipCreateCollection:  request.GetSkipCreateCollection(),
-			SkipDiskQuotaCheck:    request.GetSkipImportDiskQuotaCheck(),
 			MaxShardNum:           request.GetMaxShardNum(),
 			SkipParams:            request.GetSkipParams(),
 			UseV2Restore:          request.GetUseV2Restore(),

@@ -25,11 +25,9 @@ type RestfulBulkInsertInput struct {
 	DB             string
 	CollectionName string
 	PartitionName  string
-	// offset 0 is path to insertLog file, offset 1 is path to deleteLog file
-	Paths              [][]string
-	EndTime            int64
-	IsL0               bool
-	SkipDiskQuotaCheck bool
+	Paths          [][]string // offset 0 is path to insertLog file, offset 1 is path to deleteLog file
+	EndTime        int64
+	IsL0           bool
 }
 
 type Restful interface {
@@ -103,7 +101,7 @@ func (r *RestfulClient) BulkInsert(ctx context.Context, input RestfulBulkInsertI
 	} else {
 		opts["backup"] = "true"
 	}
-	opts["skip_disk_quota_check"] = strconv.FormatBool(input.SkipDiskQuotaCheck)
+	opts["skip_disk_quota_check"] = "true"
 
 	createReq := createImportReq{
 		DbName:         input.DB,

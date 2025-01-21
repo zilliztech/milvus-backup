@@ -173,7 +173,7 @@ func (ct *CollectionTask) restoreDataV2(ctx context.Context) error {
 	ct.logger.Info("start restore partition segment", zap.Int("partition_num", len(ct.task.GetCollBackup().GetPartitionBackups())))
 	for _, part := range ct.task.GetCollBackup().GetPartitionBackups() {
 		if err := ct.restorePartitionV2(ctx, part); err != nil {
-			return fmt.Errorf("restore_collection: restore partition data v1: %w", err)
+			return fmt.Errorf("restore_collection: restore partition data v2: %w", err)
 		}
 	}
 
@@ -556,7 +556,7 @@ func (ct *CollectionTask) restoreNotL0SegV2(ctx context.Context, part *backuppb.
 		}
 
 		if err := ct.bulkInsertViaRestful(ctx, part.GetPartitionName(), paths, false); err != nil {
-			return fmt.Errorf("restore_collection: restore data v1 bulk insert via restful: %w", err)
+			return fmt.Errorf("restore_collection: bulk insert via restful: %w", err)
 		}
 	}
 
@@ -691,13 +691,12 @@ func (ct *CollectionTask) notL0Groups(ctx context.Context, part *backuppb.Partit
 func (ct *CollectionTask) bulkInsertViaGrpc(ctx context.Context, partition string, paths []string, isL0 bool) error {
 	ct.logger.Info("start bulk insert via grpc", zap.Strings("paths", paths), zap.String("partition", partition))
 	in := client.GrpcBulkInsertInput{
-		DB:                 ct.task.GetTargetDbName(),
-		CollectionName:     ct.task.GetTargetCollectionName(),
-		PartitionName:      partition,
-		Paths:              paths,
-		EndTime:            ct.task.GetCollBackup().EndTime,
-		IsL0:               isL0,
-		SkipDiskQuotaCheck: ct.task.GetSkipDiskQuotaCheck(),
+		DB:             ct.task.GetTargetDbName(),
+		CollectionName: ct.task.GetTargetCollectionName(),
+		PartitionName:  partition,
+		Paths:          paths,
+		EndTime:        ct.task.GetCollBackup().EndTime,
+		IsL0:           isL0,
 	}
 	jobID, err := ct.grpcCli.BulkInsert(ctx, in)
 	if err != nil {

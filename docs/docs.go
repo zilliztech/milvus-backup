@@ -1057,7 +1057,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "skipImportDiskQuotaCheck": {
-                    "description": "if true, skip the diskQuota in Import",
+                    "description": "if true, skip the diskQuota in Import\n\nDeprecated: Marked as deprecated in backup.proto.",
                     "type": "boolean"
                 },
                 "skipParams": {
@@ -1193,6 +1193,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "skipDiskQuotaCheck": {
+                    "description": "Deprecated: Marked as deprecated in backup.proto.",
                     "type": "boolean"
                 },
                 "skipParams": {

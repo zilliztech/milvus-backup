@@ -289,7 +289,7 @@ message RestoreBackupRequest {
   bool skipCreateCollection = 15;
   string id = 16;
   // if true, skip the diskQuota in Import
-  bool skipImportDiskQuotaCheck = 17;
+  bool skipImportDiskQuotaCheck = 17 [deprecated=true];
   // whether restore RBAC
   bool rbac = 18;
   // target max shard number
@@ -334,7 +334,7 @@ message RestoreCollectionTask {
   bool dropExistIndex = 17;
   // if true will skip create collections
   bool skipCreateCollection = 18;
-  bool skipDiskQuotaCheck = 19;
+  bool skipDiskQuotaCheck = 19 [deprecated=true]; // when restore, skip disk quota check will always be true
   // target max shard number
   int32 maxShardNum = 20;
   SkipParams skipParams = 21;

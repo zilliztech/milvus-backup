@@ -570,7 +570,10 @@ definitions:
           index or data
         type: boolean
       skipImportDiskQuotaCheck:
-        description: if true, skip the diskQuota in Import
+        description: |-
+          if true, skip the diskQuota in Import
+
+          Deprecated: Marked as deprecated in backup.proto.
         type: boolean
       skipParams:
         allOf:
@@ -659,6 +662,7 @@ definitions:
         description: if true will skip create collections
         type: boolean
       skipDiskQuotaCheck:
+        description: 'Deprecated: Marked as deprecated in backup.proto.'
         type: boolean
       skipParams:
         $ref: '#/definitions/backuppb.SkipParams'
