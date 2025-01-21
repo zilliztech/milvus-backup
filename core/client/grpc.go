@@ -359,11 +359,9 @@ type GrpcBulkInsertInput struct {
 	DB             string
 	CollectionName string
 	PartitionName  string
-	// offset 0 is path to insertLog file, offset 1 is path to deleteLog file
-	Paths              []string
-	EndTime            int64
-	IsL0               bool
-	SkipDiskQuotaCheck bool
+	Paths          []string // offset 0 is path to insertLog file, offset 1 is path to deleteLog file
+	EndTime        int64
+	IsL0           bool
 }
 
 func (m *GrpcClient) BulkInsert(ctx context.Context, input GrpcBulkInsertInput) (int64, error) {
@@ -377,7 +375,7 @@ func (m *GrpcClient) BulkInsert(ctx context.Context, input GrpcBulkInsertInput) 
 	} else {
 		opts = append(opts, &commonpb.KeyValuePair{Key: "backup", Value: "true"})
 	}
-	skipOpt := &commonpb.KeyValuePair{Key: "skip_disk_quota_check", Value: strconv.FormatBool(input.SkipDiskQuotaCheck)}
+	skipOpt := &commonpb.KeyValuePair{Key: "skip_disk_quota_check", Value: "true"}
 	opts = append(opts, skipOpt)
 
 	in := &milvuspb.ImportRequest{
