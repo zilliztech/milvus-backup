@@ -374,12 +374,13 @@ func (ct *CollectionTask) createIndex(ctx context.Context) error {
 		ct.logger.Info("skip restore index")
 		return nil
 	}
+	ct.logger.Info("start restore index")
 
 	vectorFields := make(map[string]struct{})
 	for _, field := range ct.task.GetCollBackup().GetSchema().GetFields() {
 		typStr, ok := schemapb.DataType_name[int32(field.DataType)]
-		if ok {
-			return fmt.Errorf("restore_collection: failed to get field type: %s", typStr)
+		if !ok {
+			return fmt.Errorf("restore_collection: invalid field data type %d", field.DataType)
 		}
 
 		if strings.HasSuffix(strings.ToLower(typStr), "vector") {
@@ -388,16 +389,58 @@ func (ct *CollectionTask) createIndex(ctx context.Context) error {
 	}
 
 	indexes := ct.task.GetCollBackup().GetIndexInfos()
+	var vectorIndexes, scalarIndexes []*backuppb.IndexInfo
 	for _, index := range indexes {
-		log.Info("source index", zap.String("index_name", index.GetIndexName()),
+		if _, ok := vectorFields[index.GetFieldName()]; ok {
+			vectorIndexes = append(vectorIndexes, index)
+		} else {
+			scalarIndexes = append(scalarIndexes, index)
+		}
+	}
+
+	if err := ct.restoreVectorFieldIdx(ctx, vectorIndexes); err != nil {
+		return fmt.Errorf("restore_collection: restore vector field index: %w", err)
+	}
+	if err := ct.restoreScalarFieldIdx(ctx, scalarIndexes); err != nil {
+		return fmt.Errorf("restore_collection: restore scalar field index: %w", err)
+	}
+
+	return nil
+}
+
+func (ct *CollectionTask) restoreScalarFieldIdx(ctx context.Context, indexes []*backuppb.IndexInfo) error {
+	for _, index := range indexes {
+		ct.logger.Info("source index",
+			zap.String("indexName", index.GetIndexName()),
+			zap.Any("params", index.GetParams()))
+
+		opt := client.CreateIndexInput{
+			DB:             ct.task.GetTargetDbName(),
+			CollectionName: ct.task.GetTargetCollectionName(),
+			FieldName:      index.GetFieldName(),
+			IndexName:      index.GetIndexName(),
+			Params:         index.GetParams(),
+		}
+		if err := ct.grpcCli.CreateIndex(ctx, opt); err != nil {
+			return fmt.Errorf("restore_collection: restore scalar idx %s: %w", index.GetIndexName(), err)
+		}
+	}
+
+	return nil
+}
+
+func (ct *CollectionTask) restoreVectorFieldIdx(ctx context.Context, indexes []*backuppb.IndexInfo) error {
+	for _, index := range indexes {
+		ct.logger.Info("source  index",
+			zap.String("indexName", index.GetIndexName()),
 			zap.Any("params", index.GetParams()))
 
 		params := make(map[string]string)
-		if _, ok := vectorFields[index.GetFieldName()]; ok && ct.task.GetUseAutoIndex() {
-			log.Info("use auto index")
+		if ct.task.GetUseAutoIndex() {
+			ct.logger.Info("use auto index", zap.String("fieldName", index.GetFieldName()))
 			params = map[string]string{"index_type": "AUTOINDEX", "metric_type": index.GetParams()["metric_type"]}
 		} else {
-			log.Info("use source index")
+			ct.logger.Info("use source index", zap.String("fieldName", index.GetFieldName()))
 			params = index.GetParams()
 			if params["index_type"] == "marisa-trie" {
 				params["index_type"] = "Trie"
@@ -412,7 +455,7 @@ func (ct *CollectionTask) createIndex(ctx context.Context) error {
 			Params:         params,
 		}
 		if err := ct.grpcCli.CreateIndex(ctx, opt); err != nil {
-			return fmt.Errorf("restore_collection: failed to create index %s: %w", index.GetIndexName(), err)
+			return fmt.Errorf("restore_collection: restore vec idx %s: %w", index.GetIndexName(), err)
 		}
 	}
 
