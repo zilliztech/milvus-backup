@@ -6,15 +6,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zilliztech/milvus-backup/core/meta"
-	"github.com/zilliztech/milvus-backup/core/restore"
-
 	jsoniter "github.com/json-iterator/go"
-	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
-	"github.com/samber/lo"
 	"go.uber.org/zap"
 
+	"github.com/zilliztech/milvus-backup/core/meta"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/core/restore"
 	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/common"
 	"github.com/zilliztech/milvus-backup/internal/log"
@@ -122,13 +119,15 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 
 	// restore rbac
 	if request.GetRbac() {
-		err := b.restoreRBAC(ctx, backup)
-		if err != nil {
+		rt := restore.NewRBACTask(b.getMilvusClient(), backup.GetRbacMeta())
+		if err := rt.Execute(ctx); err != nil {
 			log.Error("fail to restore RBAC", zap.Error(err))
 			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = fmt.Sprintf("fail to restore RBAC, err: %s", err)
 			return resp
 		}
+	} else {
+		log.Info("skip restore RBAC")
 	}
 
 	// 2, initial restoreCollectionTasks
@@ -424,85 +423,4 @@ func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backup
 	err := collTask.Execute(ctx)
 
 	return task, err
-}
-
-func (b *BackupContext) restoreRBAC(ctx context.Context, backupInfo *backuppb.BackupInfo) error {
-	log.Info("restore RBAC")
-
-	resp, err := b.getMilvusClient().BackupRBAC(ctx)
-	if err != nil {
-		return fmt.Errorf("fail to get current RBAC, err: %s", err)
-	}
-	curRBAC := resp.RBACMeta
-
-	rbacBackup := backupInfo.GetRbacMeta()
-	curUsers := lo.SliceToMap(curRBAC.Users, func(user *milvuspb.UserInfo) (string, struct{}) {
-		return user.User, struct{}{}
-	})
-	users := make([]*milvuspb.UserInfo, 0, len(rbacBackup.GetUsers()))
-	for _, user := range rbacBackup.GetUsers() {
-		// skip if user already exist
-		if _, ok := curUsers[user.GetUser()]; ok {
-			continue
-		}
-
-		ur := lo.Map(user.GetRoles(), func(role *backuppb.RoleEntity, index int) *milvuspb.RoleEntity {
-			return &milvuspb.RoleEntity{Name: role.Name}
-		})
-		userEntity := &milvuspb.UserInfo{
-			User:     user.User,
-			Password: user.Password,
-			Roles:    ur,
-		}
-		users = append(users, userEntity)
-	}
-
-	curRoles := lo.SliceToMap(curRBAC.Roles, func(role *milvuspb.RoleEntity) (string, struct{}) {
-		return role.Name, struct{}{}
-	})
-	roles := make([]*milvuspb.RoleEntity, 0, len(rbacBackup.GetRoles()))
-	for _, role := range rbacBackup.GetRoles() {
-		// skip if role already exist
-		if _, ok := curRoles[role.GetName()]; ok {
-			continue
-		}
-
-		roleEntity := &milvuspb.RoleEntity{
-			Name: role.GetName(),
-		}
-		roles = append(roles, roleEntity)
-	}
-
-	grants := make([]*milvuspb.GrantEntity, 0, len(rbacBackup.GetGrants()))
-	curGrants := lo.SliceToMap(curRBAC.Grants, func(grant *milvuspb.GrantEntity) (string, struct{}) {
-		return fmt.Sprintf("%s/%s/%s/%s/%s/%s", grant.Object, grant.ObjectName, grant.Role.Name, grant.Grantor.User, grant.Grantor.Privilege.Name, grant.DbName), struct{}{}
-	})
-	for _, roleGrant := range rbacBackup.GetGrants() {
-		key := fmt.Sprintf("%s/%s/%s/%s/%s/%s", roleGrant.Object.GetName(), roleGrant.GetObjectName(), roleGrant.GetRole().GetName(), roleGrant.GetGrantor().GetUser().GetName(), roleGrant.GetGrantor().GetPrivilege().GetName(), roleGrant.GetDbName())
-		// skip if grant already exist
-		if _, ok := curGrants[key]; ok {
-			continue
-		}
-		roleGrantEntity := &milvuspb.GrantEntity{
-			Object:     &milvuspb.ObjectEntity{Name: roleGrant.Object.Name},
-			ObjectName: roleGrant.GetObjectName(),
-			Role:       &milvuspb.RoleEntity{Name: roleGrant.Role.Name},
-			Grantor: &milvuspb.GrantorEntity{
-				User:      &milvuspb.UserEntity{Name: roleGrant.Grantor.User.Name},
-				Privilege: &milvuspb.PrivilegeEntity{Name: roleGrant.Grantor.Privilege.Name},
-			},
-			DbName: roleGrant.GetDbName(),
-		}
-		grants = append(grants, roleGrantEntity)
-	}
-
-	rbacMeta := &milvuspb.RBACMeta{
-		Users:  users,
-		Roles:  roles,
-		Grants: grants,
-	}
-
-	log.Info("restore RBAC", zap.Int("users", len(users)), zap.Int("roles", len(roles)), zap.Int("grants", len(grants)))
-	err = b.getMilvusClient().RestoreRBAC(ctx, rbacMeta)
-	return err
 }
