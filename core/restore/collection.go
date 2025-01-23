@@ -27,6 +27,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/storage/mpath"
 	"github.com/zilliztech/milvus-backup/internal/common"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/util/retry"
 )
 
 const (
@@ -281,9 +282,11 @@ func (ct *CollectionTask) createColl(ctx context.Context) error {
 		ConsLevel: commonpb.ConsistencyLevel(ct.task.GetCollBackup().GetConsistencyLevel()),
 		ShardNum:  shardNum,
 	}
-
-	if err := ct.grpcCli.CreateCollection(ctx, opt); err != nil {
-		return fmt.Errorf("restore_collection: failed to create collection: %w", err)
+	err = retry.Do(ctx, func() error {
+		return ct.grpcCli.CreateCollection(ctx, opt)
+	}, retry.Attempts(10), retry.Sleep(1*time.Second))
+	if err != nil {
+		return fmt.Errorf("restore_collection: call create collection api after retry: %w", err)
 	}
 
 	return nil
