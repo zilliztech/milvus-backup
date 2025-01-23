@@ -516,8 +516,8 @@ class TestcaseBase(Base):
     def compare_indexes(self, src_name, dist_name):
         collection_src, _ = self.collection_wrap.init_collection(name=src_name)
         collection_dist, _ = self.collection_wrap.init_collection(name=dist_name)
-        log.info(f"collection_src schema: {collection_src.schema}")
-        log.info(f"collection_dist schema: {collection_dist.schema}")
+        log.info(f"collection_src indexes: {collection_src.indexes}")
+        log.info(f"collection_dist indexes: {collection_dist.indexes}")
         assert collection_src.indexes == collection_dist.indexes
 
     def compare_collections(
