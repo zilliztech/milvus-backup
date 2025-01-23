@@ -227,7 +227,7 @@ class TestRestoreBackup(TestcaseBase):
         for name in restore_collections:
             assert name + suffix in res
         for name in restore_collections:
-            self.compare_index(name, name + suffix, verify_by_query=False)
+            self.compare_indexes(name, name + suffix)
         for name in restore_collections:
             self.compare_collections(name, name + suffix, verify_by_query=True, skip_index=True)
 
