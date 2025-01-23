@@ -2,9 +2,11 @@ filters:
   ".*":
     reviewers:
       - huanghaoyuanhhy
-      - Thomas-HuWei
       - zhuwenxing
+      - lentitude2tk
+      - Thomas-HuWei
     approvers:
       - huanghaoyuanhhy
-      - Thomas-HuWei
       - zhuwenxing
+      - lentitude2tk
+      - Thomas-HuWei
