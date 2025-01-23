@@ -513,8 +513,23 @@ class TestcaseBase(Base):
             if field.dtype == DataType.FLOAT_VECTOR:
                 return False
 
+    def compare_indexes(self, src_name, dist_name):
+        collection_src, _ = self.collection_wrap.init_collection(name=src_name)
+        collection_dist, _ = self.collection_wrap.init_collection(name=dist_name)
+        src_indexes_info = [x.to_dict() for x in collection_src.indexes]
+        dist_indexes_info = [x.to_dict() for x in collection_dist.indexes]
+        log.info(f"collection_src indexes: {src_indexes_info}")
+        log.info(f"collection_dist indexes: {dist_indexes_info}")
+        # compare indexes info with same field name for src and dist
+        for src_index_info in src_indexes_info:
+            for dist_index_info in dist_indexes_info:
+                if src_index_info["field"] == dist_index_info["field"]:
+                    src_index_info.pop("collection")
+                    dist_index_info.pop("collection")
+                    assert src_index_info == dist_index_info
+
     def compare_collections(
-        self, src_name, dist_name, output_fields=None, verify_by_query=False
+        self, src_name, dist_name, output_fields=None, verify_by_query=False, skip_index=False
     ):
         if output_fields is None:
             output_fields = ["*"]
@@ -538,22 +553,23 @@ class TestcaseBase(Base):
             assert src_num == dist_num, f"srs_num: {src_num}, dist_num: {dist_num}"
             return
         for coll in [collection_src, collection_dist]:
-            is_binary = self.is_binary_by_schema(coll.schema)
-            try:
-                if is_binary:
-                    coll.create_index(
-                        ct.default_binary_vec_field_name,
-                        ct.default_bin_flat_index,
-                        index_name=cf.gen_unique_str(),
-                    )
-                else:
-                    coll.create_index(
-                        ct.default_float_vec_field_name,
-                        ct.default_index,
-                        index_name=cf.gen_unique_str(),
-                    )
-            except Exception as e:
-                log.error(f"collection {coll.name} create index failed with error: {e}")
+            if not skip_index:
+                is_binary = self.is_binary_by_schema(coll.schema)
+                try:
+                    if is_binary:
+                        coll.create_index(
+                            ct.default_binary_vec_field_name,
+                            ct.default_bin_flat_index,
+                            index_name=cf.gen_unique_str(),
+                        )
+                    else:
+                        coll.create_index(
+                            ct.default_float_vec_field_name,
+                            ct.default_index,
+                            index_name=cf.gen_unique_str(),
+                        )
+                except Exception as e:
+                    log.error(f"collection {coll.name} create index failed with error: {e}")
             coll.load()
             time.sleep(5)
         # get entities by count
