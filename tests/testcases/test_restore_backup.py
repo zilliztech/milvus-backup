@@ -184,6 +184,12 @@ class TestRestoreBackup(TestcaseBase):
         for name in names_origin:
             res, _ = self.utility_wrap.has_collection(name)
             assert res is True
+
+        # create index for source collection
+        for name in names_origin:
+            c = Collection(name)
+            create_index_for_vector_fields(c)
+
         # create backup
         names_need_backup = names_origin
         payload = {

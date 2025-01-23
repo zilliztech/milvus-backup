@@ -516,9 +516,17 @@ class TestcaseBase(Base):
     def compare_indexes(self, src_name, dist_name):
         collection_src, _ = self.collection_wrap.init_collection(name=src_name)
         collection_dist, _ = self.collection_wrap.init_collection(name=dist_name)
-        log.info(f"collection_src indexes: {collection_src.indexes}")
-        log.info(f"collection_dist indexes: {collection_dist.indexes}")
-        assert collection_src.indexes == collection_dist.indexes
+        src_indexes_info = [x.to_dict() for x in collection_src.indexes]
+        dist_indexes_info = [x.to_dict() for x in collection_dist.indexes]
+        log.info(f"collection_src indexes: {src_indexes_info}")
+        log.info(f"collection_dist indexes: {dist_indexes_info}")
+        # compare indexes info with same field name for src and dist
+        for src_index_info in src_indexes_info:
+            for dist_index_info in dist_indexes_info:
+                if src_index_info["field"] == dist_index_info["field"]:
+                    src_index_info.pop("collection")
+                    dist_index_info.pop("collection")
+                    assert src_index_info == dist_index_info
 
     def compare_collections(
         self, src_name, dist_name, output_fields=None, verify_by_query=False, skip_index=False
