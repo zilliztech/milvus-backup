@@ -2,6 +2,9 @@ package client
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"math"
@@ -14,13 +17,17 @@ import (
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
+	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/credentials"
+	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/version"
 )
@@ -93,7 +100,7 @@ const (
 	databaseHeader      = `dbname`
 )
 
-func ok(status *commonpb.Status) bool { return status.GetCode() == 0 }
+func statusOk(status *commonpb.Status) bool { return status.GetCode() == 0 }
 
 func checkResponse(resp any, err error) error {
 	if err != nil {
@@ -102,11 +109,11 @@ func checkResponse(resp any, err error) error {
 
 	switch resp.(type) {
 	case interface{ GetStatus() *commonpb.Status }:
-		if !ok(resp.(interface{ GetStatus() *commonpb.Status }).GetStatus()) {
+		if !statusOk(resp.(interface{ GetStatus() *commonpb.Status }).GetStatus()) {
 			return fmt.Errorf("client: operation failed: %v", resp.(interface{ GetStatus() *commonpb.Status }).GetStatus())
 		}
 	case *commonpb.Status:
-		if !ok(resp.(*commonpb.Status)) {
+		if !statusOk(resp.(*commonpb.Status)) {
 			return fmt.Errorf("client: operation failed: %v", resp.(*commonpb.Status))
 		}
 	}
@@ -116,11 +123,10 @@ func checkResponse(resp any, err error) error {
 var _ Grpc = (*GrpcClient)(nil)
 
 type GrpcClient struct {
-	cfg *Cfg
-
 	conn *grpc.ClientConn
 	srv  milvuspb.MilvusServiceClient
 
+	user string
 	auth string
 
 	// get from connect
@@ -129,51 +135,116 @@ type GrpcClient struct {
 	flags         uint64
 }
 
-func NewGrpc(cfg *Cfg) (*GrpcClient, error) {
-	addr, opts, err := cfg.parseGrpc()
-	if err != nil {
-		return nil, fmt.Errorf("client: parse address failed: %w", err)
+func grpcAuth(username, password string) string {
+	if username != "" || password != "" {
+		value := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("%s:%s", username, password)))
+		return value
 	}
-	auth := cfg.parseGrpcAuth()
 
-	opts = append(opts, defaultDialOpt()...)
-	conn, err := grpc.NewClient(addr.Host, opts...)
+	return ""
+}
+
+func transCred(cfg *paramtable.MilvusConfig) (credentials.TransportCredentials, error) {
+	if cfg.TLSMode < 0 || cfg.TLSMode > 2 {
+		return nil, errors.New("milvus.TLSMode is illegal, support value 0, 1, 2")
+	}
+
+	// tls mode 0 disable tls
+	if cfg.TLSMode == 0 {
+		return insecure.NewCredentials(), nil
+	}
+
+	// tls mode 1, 2
+
+	// validate server cert
+	tlsCfg := &tls.Config{ServerName: cfg.ServerName}
+	if cfg.CACertPath != "" {
+		b, err := os.ReadFile(cfg.CACertPath)
+		if err != nil {
+			return nil, fmt.Errorf("client: read ca cert %w", err)
+		}
+		cp := x509.NewCertPool()
+		if !cp.AppendCertsFromPEM(b) {
+			return nil, fmt.Errorf("client: failed to append ca certificates")
+		}
+
+		tlsCfg.RootCAs = cp
+	}
+
+	// tls mode 1, server tls
+	if cfg.TLSMode == 1 {
+		return credentials.NewTLS(tlsCfg), nil
+	}
+
+	// tls mode 2, mutual tls
+	// use mTLS but key/cert path not set, for backward compatibility, use server tls instead
+	// WARN: this behavior will be removed after v0.6.0
+	if cfg.TLSMode == 2 {
+		if cfg.MTLSKeyPath == "" || cfg.MTLSCertPath == "" {
+			log.Warn("client: mutual tls enabled but key/cert path not set! will use server tls instead")
+			return credentials.NewTLS(tlsCfg), nil
+		}
+
+		// use mTLS
+		cert, err := tls.LoadX509KeyPair(cfg.MTLSCertPath, cfg.MTLSKeyPath)
+		if err != nil {
+			return nil, fmt.Errorf("client: load client cert: %w", err)
+		}
+		tlsCfg.Certificates = []tls.Certificate{cert}
+	}
+
+	return credentials.NewTLS(tlsCfg), nil
+}
+
+func NewGrpc(cfg *paramtable.MilvusConfig) (*GrpcClient, error) {
+	host := fmt.Sprintf("%s:%s", cfg.Address, cfg.Port)
+	log.Info("New milvus grpc client", zap.String("host", host))
+
+	auth := grpcAuth(cfg.User, cfg.Password)
+
+	cerd, err := transCred(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("client: create transport credentials: %w", err)
+	}
+
+	opts := defaultDialOpt()
+	opts = append(opts, grpc.WithTransportCredentials(cerd))
+	conn, err := grpc.NewClient(host, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("client: create grpc client failed: %w", err)
 	}
 	srv := milvuspb.NewMilvusServiceClient(conn)
 
 	cli := &GrpcClient{
-		cfg: cfg,
-
 		conn: conn,
 		srv:  srv,
 
+		user: cfg.User,
 		auth: auth,
 	}
 
 	return cli, nil
 }
 
-func (m *GrpcClient) hasFlags(flags uint64) bool { return (m.flags & flags) > 0 }
-func (m *GrpcClient) SupportMultiDatabase() bool { return !m.hasFlags(disableDatabase) }
+func (g *GrpcClient) hasFlags(flags uint64) bool { return (g.flags & flags) > 0 }
+func (g *GrpcClient) SupportMultiDatabase() bool { return !g.hasFlags(disableDatabase) }
 
-func (m *GrpcClient) newCtx(ctx context.Context) context.Context {
-	if m.auth != "" {
-		return metadata.AppendToOutgoingContext(ctx, authorizationHeader, m.auth)
+func (g *GrpcClient) newCtx(ctx context.Context) context.Context {
+	if g.auth != "" {
+		return metadata.AppendToOutgoingContext(ctx, authorizationHeader, g.auth)
 	}
-	if m.identifier != "" {
-		return metadata.AppendToOutgoingContext(ctx, identifierHeader, m.identifier)
+	if g.identifier != "" {
+		return metadata.AppendToOutgoingContext(ctx, identifierHeader, g.identifier)
 	}
 	return ctx
 }
 
-func (m *GrpcClient) newCtxWithDB(ctx context.Context, db string) context.Context {
-	ctx = m.newCtx(ctx)
+func (g *GrpcClient) newCtxWithDB(ctx context.Context, db string) context.Context {
+	ctx = g.newCtx(ctx)
 	return metadata.AppendToOutgoingContext(ctx, databaseHeader, db)
 }
 
-func (m *GrpcClient) connect(ctx context.Context) error {
+func (g *GrpcClient) connect(ctx context.Context) error {
 	hostName, err := os.Hostname()
 	if err != nil {
 		return fmt.Errorf("get hostname failed: %w", err)
@@ -184,39 +255,39 @@ func (m *GrpcClient) connect(ctx context.Context) error {
 			SdkType:    "Backup Tool Custom SDK",
 			SdkVersion: version.Version,
 			LocalTime:  time.Now().String(),
-			User:       m.cfg.Username,
+			User:       g.user,
 			Host:       hostName,
 		},
 	}
 
-	resp, err := m.srv.Connect(ctx, connReq)
+	resp, err := g.srv.Connect(ctx, connReq)
 	if err != nil {
 		s, ok := status.FromError(err)
 		if ok {
 			if s.Code() == codes.Unimplemented {
 				log.Info("The server does not support the Connect API, skipping")
-				m.flags |= disableDatabase
+				g.flags |= disableDatabase
 			}
 		}
 		return fmt.Errorf("client: connect to server failed: %w", err)
 	}
 
-	if !ok(resp.GetStatus()) {
+	if !statusOk(resp.GetStatus()) {
 		return fmt.Errorf("client: connect to server failed: %v", resp.GetStatus())
 	}
 
-	m.serverVersion = resp.GetServerInfo().GetBuildTags()
-	m.identifier = strconv.FormatInt(resp.GetIdentifier(), 10)
+	g.serverVersion = resp.GetServerInfo().GetBuildTags()
+	g.identifier = strconv.FormatInt(resp.GetIdentifier(), 10)
 	return nil
 }
 
-func (m *GrpcClient) Close() error {
-	return m.conn.Close()
+func (g *GrpcClient) Close() error {
+	return g.conn.Close()
 }
 
-func (m *GrpcClient) GetVersion(ctx context.Context) (string, error) {
-	ctx = m.newCtx(ctx)
-	resp, err := m.srv.GetVersion(ctx, &milvuspb.GetVersionRequest{})
+func (g *GrpcClient) GetVersion(ctx context.Context) (string, error) {
+	ctx = g.newCtx(ctx)
+	resp, err := g.srv.GetVersion(ctx, &milvuspb.GetVersionRequest{})
 	if err := checkResponse(resp, err); err != nil {
 		return "", fmt.Errorf("client: get version failed: %w", err)
 	}
@@ -224,13 +295,13 @@ func (m *GrpcClient) GetVersion(ctx context.Context) (string, error) {
 	return resp.GetVersion(), nil
 }
 
-func (m *GrpcClient) CreateDatabase(ctx context.Context, dbName string) error {
-	ctx = m.newCtx(ctx)
-	if m.hasFlags(disableDatabase) {
+func (g *GrpcClient) CreateDatabase(ctx context.Context, dbName string) error {
+	ctx = g.newCtx(ctx)
+	if g.hasFlags(disableDatabase) {
 		return errors.New("client: the server does not support database")
 	}
 
-	resp, err := m.srv.CreateDatabase(ctx, &milvuspb.CreateDatabaseRequest{DbName: dbName})
+	resp, err := g.srv.CreateDatabase(ctx, &milvuspb.CreateDatabaseRequest{DbName: dbName})
 	if err := checkResponse(resp, err); err != nil {
 		return fmt.Errorf("client: create database failed: %w", err)
 	}
@@ -238,13 +309,13 @@ func (m *GrpcClient) CreateDatabase(ctx context.Context, dbName string) error {
 	return nil
 }
 
-func (m *GrpcClient) ListDatabases(ctx context.Context) ([]string, error) {
-	ctx = m.newCtx(ctx)
-	if m.hasFlags(disableDatabase) {
+func (g *GrpcClient) ListDatabases(ctx context.Context) ([]string, error) {
+	ctx = g.newCtx(ctx)
+	if g.hasFlags(disableDatabase) {
 		return nil, errors.New("client: the server does not support database")
 	}
 
-	resp, err := m.srv.ListDatabases(ctx, &milvuspb.ListDatabasesRequest{})
+	resp, err := g.srv.ListDatabases(ctx, &milvuspb.ListDatabasesRequest{})
 	if err := checkResponse(resp, err); err != nil {
 		return nil, fmt.Errorf("client: list databases failed: %w", err)
 	}
@@ -252,9 +323,9 @@ func (m *GrpcClient) ListDatabases(ctx context.Context) ([]string, error) {
 	return resp.GetDbNames(), nil
 }
 
-func (m *GrpcClient) DescribeCollection(ctx context.Context, db, collName string) (*milvuspb.DescribeCollectionResponse, error) {
-	ctx = m.newCtxWithDB(ctx, db)
-	resp, err := m.srv.DescribeCollection(ctx, &milvuspb.DescribeCollectionRequest{CollectionName: collName})
+func (g *GrpcClient) DescribeCollection(ctx context.Context, db, collName string) (*milvuspb.DescribeCollectionResponse, error) {
+	ctx = g.newCtxWithDB(ctx, db)
+	resp, err := g.srv.DescribeCollection(ctx, &milvuspb.DescribeCollectionRequest{CollectionName: collName})
 	if err := checkResponse(resp, err); err != nil {
 		return nil, fmt.Errorf("client: describe collection failed: %w", err)
 	}
@@ -262,9 +333,9 @@ func (m *GrpcClient) DescribeCollection(ctx context.Context, db, collName string
 	return resp, nil
 }
 
-func (m *GrpcClient) ListIndex(ctx context.Context, db, collName string) ([]*milvuspb.IndexDescription, error) {
-	ctx = m.newCtxWithDB(ctx, db)
-	resp, err := m.srv.DescribeIndex(ctx, &milvuspb.DescribeIndexRequest{CollectionName: collName})
+func (g *GrpcClient) ListIndex(ctx context.Context, db, collName string) ([]*milvuspb.IndexDescription, error) {
+	ctx = g.newCtxWithDB(ctx, db)
+	resp, err := g.srv.DescribeIndex(ctx, &milvuspb.DescribeIndexRequest{CollectionName: collName})
 	if err := checkResponse(resp, err); err != nil {
 		return nil, fmt.Errorf("client: describe index failed: %w", err)
 	}
@@ -272,18 +343,18 @@ func (m *GrpcClient) ListIndex(ctx context.Context, db, collName string) ([]*mil
 	return resp.IndexDescriptions, nil
 }
 
-func (m *GrpcClient) ShowPartitions(ctx context.Context, db, collName string) (*milvuspb.ShowPartitionsResponse, error) {
-	ctx = m.newCtxWithDB(ctx, db)
-	resp, err := m.srv.ShowPartitions(ctx, &milvuspb.ShowPartitionsRequest{CollectionName: collName})
+func (g *GrpcClient) ShowPartitions(ctx context.Context, db, collName string) (*milvuspb.ShowPartitionsResponse, error) {
+	ctx = g.newCtxWithDB(ctx, db)
+	resp, err := g.srv.ShowPartitions(ctx, &milvuspb.ShowPartitionsRequest{CollectionName: collName})
 	if err := checkResponse(resp, err); err != nil {
 		return nil, fmt.Errorf("client: show partitions failed: %w", err)
 	}
 	return resp, nil
 }
 
-func (m *GrpcClient) GetLoadingProgress(ctx context.Context, db, collName string, partitionNames []string) (int64, error) {
-	ctx = m.newCtxWithDB(ctx, db)
-	resp, err := m.srv.GetLoadingProgress(ctx, &milvuspb.GetLoadingProgressRequest{CollectionName: collName, PartitionNames: partitionNames})
+func (g *GrpcClient) GetLoadingProgress(ctx context.Context, db, collName string, partitionNames []string) (int64, error) {
+	ctx = g.newCtxWithDB(ctx, db)
+	resp, err := g.srv.GetLoadingProgress(ctx, &milvuspb.GetLoadingProgressRequest{CollectionName: collName, PartitionNames: partitionNames})
 	if err != nil {
 		return 0, fmt.Errorf("client: get loading progress failed: %w", err)
 	}
@@ -291,9 +362,9 @@ func (m *GrpcClient) GetLoadingProgress(ctx context.Context, db, collName string
 	return resp.GetProgress(), nil
 }
 
-func (m *GrpcClient) GetPersistentSegmentInfo(ctx context.Context, db, collName string) ([]*milvuspb.PersistentSegmentInfo, error) {
-	ctx = m.newCtxWithDB(ctx, db)
-	resp, err := m.srv.GetPersistentSegmentInfo(ctx, &milvuspb.GetPersistentSegmentInfoRequest{CollectionName: collName})
+func (g *GrpcClient) GetPersistentSegmentInfo(ctx context.Context, db, collName string) ([]*milvuspb.PersistentSegmentInfo, error) {
+	ctx = g.newCtxWithDB(ctx, db)
+	resp, err := g.srv.GetPersistentSegmentInfo(ctx, &milvuspb.GetPersistentSegmentInfoRequest{CollectionName: collName})
 	if err := checkResponse(resp, err); err != nil {
 		return nil, fmt.Errorf("client: get persistent segment info failed: %w", err)
 	}
@@ -301,9 +372,9 @@ func (m *GrpcClient) GetPersistentSegmentInfo(ctx context.Context, db, collName 
 	return resp.GetInfos(), nil
 }
 
-func (m *GrpcClient) Flush(ctx context.Context, db, collName string) (*milvuspb.FlushResponse, error) {
-	ctx = m.newCtxWithDB(ctx, db)
-	resp, err := m.srv.Flush(ctx, &milvuspb.FlushRequest{CollectionNames: []string{collName}})
+func (g *GrpcClient) Flush(ctx context.Context, db, collName string) (*milvuspb.FlushResponse, error) {
+	ctx = g.newCtxWithDB(ctx, db)
+	resp, err := g.srv.Flush(ctx, &milvuspb.FlushRequest{CollectionNames: []string{collName}})
 	if err := checkResponse(resp, err); err != nil {
 		return nil, fmt.Errorf("client: flush failed: %w", err)
 	}
@@ -312,7 +383,7 @@ func (m *GrpcClient) Flush(ctx context.Context, db, collName string) (*milvuspb.
 	ids := segmentIDs.GetData()
 	if has && len(ids) > 0 {
 		flushed := func() bool {
-			getFlushResp, err := m.srv.GetFlushState(ctx, &milvuspb.GetFlushStateRequest{
+			getFlushResp, err := g.srv.GetFlushState(ctx, &milvuspb.GetFlushStateRequest{
 				SegmentIDs:     ids,
 				FlushTs:        resp.GetCollFlushTs()[collName],
 				CollectionName: collName,
@@ -337,9 +408,9 @@ func (m *GrpcClient) Flush(ctx context.Context, db, collName string) (*milvuspb.
 	return resp, nil
 }
 
-func (m *GrpcClient) ListCollections(ctx context.Context, db string) (*milvuspb.ShowCollectionsResponse, error) {
-	ctx = m.newCtxWithDB(ctx, db)
-	resp, err := m.srv.ShowCollections(ctx, &milvuspb.ShowCollectionsRequest{})
+func (g *GrpcClient) ListCollections(ctx context.Context, db string) (*milvuspb.ShowCollectionsResponse, error) {
+	ctx = g.newCtxWithDB(ctx, db)
+	resp, err := g.srv.ShowCollections(ctx, &milvuspb.ShowCollectionsRequest{})
 	if err := checkResponse(resp, err); err != nil {
 		return nil, fmt.Errorf("client: list collections failed: %w", err)
 	}
@@ -347,9 +418,9 @@ func (m *GrpcClient) ListCollections(ctx context.Context, db string) (*milvuspb.
 	return resp, nil
 }
 
-func (m *GrpcClient) HasCollection(ctx context.Context, db, collName string) (bool, error) {
-	ctx = m.newCtxWithDB(ctx, db)
-	resp, err := m.srv.HasCollection(ctx, &milvuspb.HasCollectionRequest{CollectionName: collName})
+func (g *GrpcClient) HasCollection(ctx context.Context, db, collName string) (bool, error) {
+	ctx = g.newCtxWithDB(ctx, db)
+	resp, err := g.srv.HasCollection(ctx, &milvuspb.HasCollectionRequest{CollectionName: collName})
 	if err := checkResponse(resp, err); err != nil {
 		return false, fmt.Errorf("client: has collection failed: %w", err)
 	}
@@ -365,8 +436,8 @@ type GrpcBulkInsertInput struct {
 	IsL0           bool
 }
 
-func (m *GrpcClient) BulkInsert(ctx context.Context, input GrpcBulkInsertInput) (int64, error) {
-	ctx = m.newCtxWithDB(ctx, input.DB)
+func (g *GrpcClient) BulkInsert(ctx context.Context, input GrpcBulkInsertInput) (int64, error) {
+	ctx = g.newCtxWithDB(ctx, input.DB)
 	var opts []*commonpb.KeyValuePair
 	if input.EndTime > 0 {
 		opts = append(opts, &commonpb.KeyValuePair{Key: "end_time", Value: strconv.FormatInt(input.EndTime, 10)})
@@ -385,7 +456,7 @@ func (m *GrpcClient) BulkInsert(ctx context.Context, input GrpcBulkInsertInput) 
 		Files:          input.Paths,
 		Options:        opts,
 	}
-	resp, err := m.srv.Import(ctx, in)
+	resp, err := g.srv.Import(ctx, in)
 	if err := checkResponse(resp, err); err != nil {
 		return 0, fmt.Errorf("client: bulk insert failed: %w", err)
 	}
@@ -393,9 +464,9 @@ func (m *GrpcClient) BulkInsert(ctx context.Context, input GrpcBulkInsertInput) 
 	return resp.GetTasks()[0], nil
 }
 
-func (m *GrpcClient) GetBulkInsertState(ctx context.Context, taskID int64) (*milvuspb.GetImportStateResponse, error) {
-	ctx = m.newCtx(ctx)
-	resp, err := m.srv.GetImportState(ctx, &milvuspb.GetImportStateRequest{Task: taskID})
+func (g *GrpcClient) GetBulkInsertState(ctx context.Context, taskID int64) (*milvuspb.GetImportStateResponse, error) {
+	ctx = g.newCtx(ctx)
+	resp, err := g.srv.GetImportState(ctx, &milvuspb.GetImportStateRequest{Task: taskID})
 	if err := checkResponse(resp, err); err != nil {
 		return nil, fmt.Errorf("client: get bulk insert state failed: %w", err)
 	}
@@ -411,8 +482,8 @@ type CreateCollectionInput struct {
 	partitionNum int64
 }
 
-func (m *GrpcClient) CreateCollection(ctx context.Context, input CreateCollectionInput) error {
-	ctx = m.newCtxWithDB(ctx, input.DB)
+func (g *GrpcClient) CreateCollection(ctx context.Context, input CreateCollectionInput) error {
+	ctx = g.newCtxWithDB(ctx, input.DB)
 	bs, err := proto.Marshal(input.Schema)
 	if err != nil {
 		return fmt.Errorf("client: create collection failed: %w", err)
@@ -425,7 +496,7 @@ func (m *GrpcClient) CreateCollection(ctx context.Context, input CreateCollectio
 		NumPartitions:    input.partitionNum,
 	}
 
-	resp, err := m.srv.CreateCollection(ctx, in)
+	resp, err := g.srv.CreateCollection(ctx, in)
 	if err := checkResponse(resp, err); err != nil {
 		return fmt.Errorf("client: create collection failed: %w", err)
 	}
@@ -433,9 +504,9 @@ func (m *GrpcClient) CreateCollection(ctx context.Context, input CreateCollectio
 	return nil
 }
 
-func (m *GrpcClient) DropCollection(ctx context.Context, db string, collectionName string) error {
-	ctx = m.newCtxWithDB(ctx, db)
-	resp, err := m.srv.DropCollection(ctx, &milvuspb.DropCollectionRequest{CollectionName: collectionName})
+func (g *GrpcClient) DropCollection(ctx context.Context, db string, collectionName string) error {
+	ctx = g.newCtxWithDB(ctx, db)
+	resp, err := g.srv.DropCollection(ctx, &milvuspb.DropCollectionRequest{CollectionName: collectionName})
 	if err := checkResponse(resp, err); err != nil {
 		return fmt.Errorf("client: drop collection failed: %w", err)
 	}
@@ -443,10 +514,10 @@ func (m *GrpcClient) DropCollection(ctx context.Context, db string, collectionNa
 	return nil
 }
 
-func (m *GrpcClient) CreatePartition(ctx context.Context, db, collName, partitionName string) error {
-	ctx = m.newCtxWithDB(ctx, db)
+func (g *GrpcClient) CreatePartition(ctx context.Context, db, collName, partitionName string) error {
+	ctx = g.newCtxWithDB(ctx, db)
 	in := &milvuspb.CreatePartitionRequest{CollectionName: collName, PartitionName: partitionName}
-	resp, err := m.srv.CreatePartition(ctx, in)
+	resp, err := g.srv.CreatePartition(ctx, in)
 	if err := checkResponse(resp, err); err != nil {
 		return fmt.Errorf("client: create partition failed: %w", err)
 	}
@@ -454,10 +525,10 @@ func (m *GrpcClient) CreatePartition(ctx context.Context, db, collName, partitio
 	return nil
 }
 
-func (m *GrpcClient) HasPartition(ctx context.Context, db, collName string, partitionName string) (bool, error) {
-	ctx = m.newCtxWithDB(ctx, db)
+func (g *GrpcClient) HasPartition(ctx context.Context, db, collName string, partitionName string) (bool, error) {
+	ctx = g.newCtxWithDB(ctx, db)
 	in := &milvuspb.HasPartitionRequest{CollectionName: collName, PartitionName: partitionName}
-	resp, err := m.srv.HasPartition(ctx, in)
+	resp, err := g.srv.HasPartition(ctx, in)
 	if err := checkResponse(resp, err); err != nil {
 		return false, fmt.Errorf("client: has partition failed: %w", err)
 	}
@@ -481,8 +552,8 @@ type CreateIndexInput struct {
 	Params         map[string]string
 }
 
-func (m *GrpcClient) CreateIndex(ctx context.Context, input CreateIndexInput) error {
-	ctx = m.newCtxWithDB(ctx, input.DB)
+func (g *GrpcClient) CreateIndex(ctx context.Context, input CreateIndexInput) error {
+	ctx = g.newCtxWithDB(ctx, input.DB)
 	in := &milvuspb.CreateIndexRequest{
 		CollectionName: input.CollectionName,
 		FieldName:      input.FieldName,
@@ -490,7 +561,7 @@ func (m *GrpcClient) CreateIndex(ctx context.Context, input CreateIndexInput) er
 		ExtraParams:    mapKvPairs(input.Params),
 	}
 
-	resp, err := m.srv.CreateIndex(ctx, in)
+	resp, err := g.srv.CreateIndex(ctx, in)
 	if err := checkResponse(resp, err); err != nil {
 		return fmt.Errorf("client: create index failed: %w", err)
 	}
@@ -498,19 +569,19 @@ func (m *GrpcClient) CreateIndex(ctx context.Context, input CreateIndexInput) er
 	return nil
 }
 
-func (m *GrpcClient) DropIndex(ctx context.Context, db, collName, indexName string) error {
-	ctx = m.newCtxWithDB(ctx, db)
+func (g *GrpcClient) DropIndex(ctx context.Context, db, collName, indexName string) error {
+	ctx = g.newCtxWithDB(ctx, db)
 	in := &milvuspb.DropIndexRequest{CollectionName: collName, IndexName: indexName}
-	resp, err := m.srv.DropIndex(ctx, in)
+	resp, err := g.srv.DropIndex(ctx, in)
 	if err := checkResponse(resp, err); err != nil {
 		return fmt.Errorf("client: drop index failed: %w", err)
 	}
 	return nil
 }
 
-func (m *GrpcClient) BackupRBAC(ctx context.Context) (*milvuspb.BackupRBACMetaResponse, error) {
-	ctx = m.newCtx(ctx)
-	resp, err := m.srv.BackupRBAC(ctx, &milvuspb.BackupRBACMetaRequest{})
+func (g *GrpcClient) BackupRBAC(ctx context.Context) (*milvuspb.BackupRBACMetaResponse, error) {
+	ctx = g.newCtx(ctx)
+	resp, err := g.srv.BackupRBAC(ctx, &milvuspb.BackupRBACMetaRequest{})
 	if err := checkResponse(resp, err); err != nil {
 		return nil, fmt.Errorf("client: backup rbac failed: %w", err)
 	}
@@ -518,9 +589,9 @@ func (m *GrpcClient) BackupRBAC(ctx context.Context) (*milvuspb.BackupRBACMetaRe
 	return resp, nil
 }
 
-func (m *GrpcClient) RestoreRBAC(ctx context.Context, rbacMeta *milvuspb.RBACMeta) error {
-	ctx = m.newCtx(ctx)
-	resp, err := m.srv.RestoreRBAC(ctx, &milvuspb.RestoreRBACMetaRequest{RBACMeta: rbacMeta})
+func (g *GrpcClient) RestoreRBAC(ctx context.Context, rbacMeta *milvuspb.RBACMeta) error {
+	ctx = g.newCtx(ctx)
+	resp, err := g.srv.RestoreRBAC(ctx, &milvuspb.RestoreRBACMetaRequest{RBACMeta: rbacMeta})
 	if err := checkResponse(resp, err); err != nil {
 		return fmt.Errorf("client: restore rbac failed: %w", err)
 	}

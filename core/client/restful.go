@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -9,6 +10,7 @@ import (
 	"github.com/imroc/req/v3"
 	"go.uber.org/zap"
 
+	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
@@ -153,11 +155,30 @@ func (r *RestfulClient) GetBulkInsertState(ctx context.Context, dbName, jobID st
 	return &getResp, nil
 }
 
-func NewRestful(cfg *Cfg) (*RestfulClient, error) {
-	baseURL := cfg.parseRestful()
-	cli := req.C().SetBaseURL(baseURL.String())
+func restfulAuth(username, password string) string {
+	if username != "" || password != "" {
+		return fmt.Sprintf("%s:%s", username, password)
+	}
 
-	if auth := cfg.parseRestfulAuth(); len(auth) != 0 {
+	return ""
+}
+
+func NewRestful(cfg *paramtable.MilvusConfig) (*RestfulClient, error) {
+	host := fmt.Sprintf("%s:%s", cfg.Address, cfg.Port)
+	log.Info("New milvus restful client", zap.String("host", host))
+
+	var baseURL string
+	if cfg.TLSMode == 0 {
+		baseURL = "http://" + host
+	} else if cfg.TLSMode == 1 || cfg.TLSMode == 2 {
+		baseURL = "https://" + host
+	} else {
+		return nil, errors.New("client: invalid tls mode")
+	}
+
+	cli := req.C().SetBaseURL(baseURL)
+
+	if auth := restfulAuth(cfg.User, cfg.Password); len(auth) != 0 {
 		cli.SetCommonBearerAuthToken(auth)
 	}
 
