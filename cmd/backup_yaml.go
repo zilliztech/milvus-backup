@@ -81,7 +81,7 @@ func printParams(base *paramtable.BackupParams) {
 	yml.Milvus.TlsMode = base.ParseIntWithDefault("milvus.tlsMode", 0)
 	yml.Milvus.User = base.BaseTable.LoadWithDefault("milvus.user", "")
 	yml.Milvus.Password = base.BaseTable.LoadWithDefault("milvus.password", "")
-	yml.Milvus.CACertPath = base.BaseTable.LoadWithDefault("milvus.tlsCertPath", "")
+	yml.Milvus.CACertPath = base.BaseTable.LoadWithDefault("milvus.caCertPath", "")
 	yml.Milvus.ServerName = base.BaseTable.LoadWithDefault("milvus.serverName", "localhost")
 	yml.Milvus.mtlsCertPath = base.BaseTable.LoadWithDefault("milvus.mtlsCertPath", "")
 	yml.Milvus.mtlsKeyPath = base.BaseTable.LoadWithDefault("milvus.mtlsKeyPath", "")

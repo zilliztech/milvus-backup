@@ -526,9 +526,9 @@ func (gp *BaseTable) loadMilvusConfig() {
 		_ = gp.Save("milvus.password", milvusPassword)
 	}
 
-	milvusTLSCertPath := os.Getenv("MILVUS_CA_CERT_PATH")
-	if milvusTLSCertPath != "" {
-		_ = gp.Save("milvus.caCertPath", milvusTLSCertPath)
+	milvusCACertPath := os.Getenv("MILVUS_CA_CERT_PATH")
+	if milvusCACertPath != "" {
+		_ = gp.Save("milvus.caCertPath", milvusCACertPath)
 	}
 
 	milvusServerName := os.Getenv("MILVUS_SERVER_NAME")
