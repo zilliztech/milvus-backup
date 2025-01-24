@@ -35,14 +35,15 @@ type YAMLConFig struct {
 		} `yaml:"http"`
 	} `yaml:"log"`
 	Milvus struct {
-		Address              string `yaml:"address"`
-		Port                 int    `yaml:"port"`
-		AuthorizationEnabled bool   `yaml:"authorizationEnabled"`
-		TlsMode              int    `yaml:"tlsMode"`
-		User                 string `yaml:"user"`
-		Password             string `yaml:"password"`
-		TlsCertPath          string `yaml:"tlsCertPath"`
-		ServerName           string `yaml:"serverName"`
+		Address      string `yaml:"address"`
+		Port         int    `yaml:"port"`
+		User         string `yaml:"user"`
+		Password     string `yaml:"password"`
+		TlsMode      int    `yaml:"tlsMode"`
+		CACertPath   string `yaml:"caCertPath"`
+		ServerName   string `yaml:"serverName"`
+		mtlsCertPath string `yaml:"mtlsCertPath"`
+		mtlsKeyPath  string `yaml:"mtlsKeyPath"`
 	} `yaml:"milvus"`
 	Minio struct {
 		Address          string `yaml:"address"`
@@ -77,13 +78,13 @@ func printParams(base *paramtable.BackupParams) {
 
 	yml.Milvus.Address = base.LoadWithDefault("milvus.address", "localhost")
 	yml.Milvus.Port = base.ParseIntWithDefault("milvus.port", 19530)
-	yml.Milvus.AuthorizationEnabled = base.ParseBool("milvus.authorizationEnabled", false)
 	yml.Milvus.TlsMode = base.ParseIntWithDefault("milvus.tlsMode", 0)
 	yml.Milvus.User = base.BaseTable.LoadWithDefault("milvus.user", "")
 	yml.Milvus.Password = base.BaseTable.LoadWithDefault("milvus.password", "")
-	yml.Milvus.TlsCertPath = base.BaseTable.LoadWithDefault("milvus.tlsCertPath", "")
+	yml.Milvus.CACertPath = base.BaseTable.LoadWithDefault("milvus.tlsCertPath", "")
 	yml.Milvus.ServerName = base.BaseTable.LoadWithDefault("milvus.serverName", "localhost")
-
+	yml.Milvus.mtlsCertPath = base.BaseTable.LoadWithDefault("milvus.mtlsCertPath", "")
+	yml.Milvus.mtlsKeyPath = base.BaseTable.LoadWithDefault("milvus.mtlsKeyPath", "")
 	yml.Minio.Address = base.LoadWithDefault("minio.address", "localhost")
 	yml.Minio.Port = base.ParseIntWithDefault("minio.port", 9000)
 	yml.Minio.AccessKeyID = base.BaseTable.LoadWithDefault("minio.accessKeyID", "")

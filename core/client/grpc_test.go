@@ -7,12 +7,39 @@ import (
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/grpc/credentials/insecure"
+
+	"github.com/zilliztech/milvus-backup/core/paramtable"
 )
 
-func TestOk(t *testing.T) {
-	assert.True(t, ok(&commonpb.Status{Code: 0}))
+func TestGrpcAuth(t *testing.T) {
+	got := grpcAuth("username", "password")
+	assert.Equal(t, "dXNlcm5hbWU6cGFzc3dvcmQ=", got)
 
-	assert.False(t, ok(&commonpb.Status{Code: 1}))
+	got = grpcAuth("", "")
+	assert.Equal(t, "", got)
+}
+
+func TestTransCred(t *testing.T) {
+	cred, err := transCred(&paramtable.MilvusConfig{TLSMode: 3})
+	assert.Error(t, err)
+	assert.Nil(t, cred)
+
+	cred, err = transCred(&paramtable.MilvusConfig{TLSMode: 0})
+	assert.NoError(t, err)
+	assert.Equal(t, insecure.NewCredentials(), cred)
+
+	cred, err = transCred(&paramtable.MilvusConfig{TLSMode: 1})
+	assert.NoError(t, err)
+
+	cred, err = transCred(&paramtable.MilvusConfig{TLSMode: 2})
+	assert.NoError(t, err)
+}
+
+func TestStatusOk(t *testing.T) {
+	assert.True(t, statusOk(&commonpb.Status{Code: 0}))
+
+	assert.False(t, statusOk(&commonpb.Status{Code: 1}))
 }
 
 func TestCheckResponse(t *testing.T) {

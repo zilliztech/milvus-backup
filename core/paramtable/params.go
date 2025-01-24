@@ -105,14 +105,21 @@ func (p *BackupConfig) initGcPauseAddress() {
 type MilvusConfig struct {
 	Base *BaseTable
 
-	Address              string
-	Port                 string
-	User                 string
-	Password             string
-	TLSCertPath          string
-	ServerName           string
-	AuthorizationEnabled bool
-	TLSMode              int
+	Address string
+	Port    string
+
+	User     string
+	Password string
+
+	TLSMode int
+
+	// tls credentials for validate server
+	CACertPath string
+	ServerName string
+
+	// tls credentials for validate client, eg: mTLS
+	MTLSCertPath string
+	MTLSKeyPath  string
 }
 
 func (p *MilvusConfig) init(base *BaseTable) {
@@ -120,12 +127,17 @@ func (p *MilvusConfig) init(base *BaseTable) {
 
 	p.initAddress()
 	p.initPort()
+
 	p.initUser()
 	p.initPassword()
-	p.initTLSCertPath()
-	p.initServerName()
-	p.initAuthorizationEnabled()
+
 	p.initTLSMode()
+
+	p.initCACertPath()
+	p.initServerName()
+
+	p.initMTLSCertPath()
+	p.initMTLSKeyPath()
 }
 
 func (p *MilvusConfig) initAddress() {
@@ -160,9 +172,9 @@ func (p *MilvusConfig) initPassword() {
 	p.Password = password
 }
 
-func (p *MilvusConfig) initTLSCertPath() {
-	tlsCertPath := p.Base.LoadWithDefault("milvus.tlsCertPath", "")
-	p.TLSCertPath = tlsCertPath
+func (p *MilvusConfig) initCACertPath() {
+	caCertPath := p.Base.LoadWithDefault("milvus.caCertPath", "")
+	p.CACertPath = caCertPath
 }
 
 func (p *MilvusConfig) initServerName() {
@@ -170,11 +182,23 @@ func (p *MilvusConfig) initServerName() {
 	p.ServerName = serverName
 }
 
-func (p *MilvusConfig) initAuthorizationEnabled() {
-	p.AuthorizationEnabled = p.Base.ParseBool("milvus.authorizationEnabled", false)
+func (p *MilvusConfig) initMTLSCertPath() {
+	// for backward compatibility, if mTLS cert path is not set, use tls mode 1.
+	// WARN: This behavior will be removed in the version after v0.6.0
+	mtlsCertPath := p.Base.LoadWithDefault("milvus.mtlsCertPath", "")
+	p.MTLSCertPath = mtlsCertPath
+}
+
+func (p *MilvusConfig) initMTLSKeyPath() {
+	// for backward compatibility, if mTLS key path is not set, use tls mode 1 instead of 2.
+	// WARN: This behavior will be removed in the version after v0.6.0
+	mtlsKeyPath := p.Base.LoadWithDefault("milvus.mtlsKeyPath", "")
+	p.MTLSKeyPath = mtlsKeyPath
 }
 
 func (p *MilvusConfig) initTLSMode() {
+	// for backward compatibility, if mTLS cert path is not set, use tls mode 1 instead of 2.
+	// WARN: This behavior will be removed in the version after v0.6.0
 	p.TLSMode = p.Base.ParseIntWithDefault("milvus.tlsMode", 0)
 }
 

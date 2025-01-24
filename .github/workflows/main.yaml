@@ -441,7 +441,6 @@ jobs:
         shell: bash
         run: |
           yq -i '.log.level = "debug"' configs/backup.yaml
-          yq -i '.milvus.authorizationEnabled = true' configs/backup.yaml
           yq -i '.minio.bucketName = "milvus-bucket"' configs/backup.yaml
           yq -i '.minio.rootPath = "file"' configs/backup.yaml
           yq -i '.minio.backupPort = 9010' configs/backup.yaml

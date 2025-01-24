@@ -64,39 +64,8 @@ type BackupContext struct {
 	bulkinsertWorkerPools sync.Map
 }
 
-func paramsToCfg(params *paramtable.BackupParams) (*client.Cfg, error) {
-	ep := params.MilvusCfg.Address + ":" + params.MilvusCfg.Port
-	log.Debug("Start Milvus client", zap.String("endpoint", ep))
-
-	var enableTLS bool
-	switch params.MilvusCfg.TLSMode {
-	case 0:
-		enableTLS = false
-	case 1, 2:
-		enableTLS = true
-	default:
-		log.Error("milvus.TLSMode is illegal, support value 0, 1, 2")
-		return nil, fmt.Errorf("milvus.TLSMode is illegal, support value 0, 1, 2")
-	}
-
-	cfg := &client.Cfg{
-		Host:      ep,
-		EnableTLS: enableTLS,
-		Username:  params.MilvusCfg.User,
-		Password:  params.MilvusCfg.Password,
-	}
-
-	return cfg, nil
-}
-
 func CreateGrpcClient(params *paramtable.BackupParams) (client.Grpc, error) {
-	cfg, err := paramsToCfg(params)
-	if err != nil {
-		log.Error("failed to create milvus client", zap.Error(err))
-		return nil, fmt.Errorf("failed to create milvus client: %w", err)
-	}
-
-	cli, err := client.NewGrpc(cfg)
+	cli, err := client.NewGrpc(&params.MilvusCfg)
 	if err != nil {
 		log.Error("failed to create milvus client", zap.Error(err))
 		return nil, fmt.Errorf("failed to create milvus client: %w", err)
@@ -105,13 +74,7 @@ func CreateGrpcClient(params *paramtable.BackupParams) (client.Grpc, error) {
 }
 
 func CreateRestfulClient(params *paramtable.BackupParams) (client.RestfulBulkInsert, error) {
-	cfg, err := paramsToCfg(params)
-	if err != nil {
-		log.Error("failed to create restful client", zap.Error(err))
-		return nil, fmt.Errorf("failed to create restful client: %w", err)
-	}
-
-	cli, err := client.NewRestful(cfg)
+	cli, err := client.NewRestful(&params.MilvusCfg)
 	if err != nil {
 		log.Error("failed to create restful client", zap.Error(err))
 		return nil, fmt.Errorf("failed to create restful client: %w", err)

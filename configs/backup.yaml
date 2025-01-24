@@ -12,14 +12,21 @@ http:
 milvus:
   address: localhost
   port: 19530
-  authorizationEnabled: false
-  # tls mode values [0, 1, 2]
-  # 0 is close, 1 is one-way authentication, 2 is two-way authentication.
-  tlsMode: 0
   user: "root"
   password: "Milvus"
-  tlsCertPath: ""
+
+  # tls mode values [0, 1, 2]
+  # 0 is close, 1 is one-way authentication, 2 is mutual authentication
+  tlsMode: 0
+  # tls cert path for validate server, will be used when tlsMode is 1 or 2
+  caCertPath: ""
   serverName: ""
+  # mutual tls cert path, for server to validate client.
+  # Will be used when tlsMode is 2
+  # for backward compatibility, if not set, will use tlsmode 1.
+  # WARN: in future version, if user set tlsmode 2, but not set mtlsCertPath, will cause error.
+  mtlsCertPath: ""
+  mtlsKeyPath: ""
 
 # Related configuration of minio, which is responsible for data persistence for Milvus.
 minio:
@@ -43,6 +50,7 @@ minio:
   backupSecretAccessKey: minioadmin # MinIO/S3 encryption string
   backupBucketName: "a-bucket" # Bucket name to store backup data. Backup data will store to backupBucketName/backupRootPath
   backupRootPath: "backup" # Rootpath to store backup data. Backup data will store to backupBucketName/backupRootPath
+  backupUseSSL: false # Access to MinIO/S3 with SSL
 
   # If you need to back up or restore data between two different storage systems, direct client-side copying is not supported. 
   # Set this option to true to enable data transfer through Milvus Backup.
