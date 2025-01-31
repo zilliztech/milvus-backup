@@ -10,6 +10,7 @@ import (
 	"math"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/golang/protobuf/proto"
@@ -28,6 +29,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/zilliztech/milvus-backup/core/paramtable"
+	"github.com/zilliztech/milvus-backup/internal/common"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/version"
 )
@@ -120,11 +122,27 @@ func checkResponse(resp any, err error) error {
 	return nil
 }
 
+func isRateLimitError(err error) bool {
+	if err == nil {
+		return false
+	}
+	return strings.Contains(err.Error(), "rate limit exceeded")
+}
+
+func newRateLimiters() map[string]*common.AIMDLimiter {
+	return map[string]*common.AIMDLimiter{
+		"flush":      common.NewAIMDLimiter(1, 50, 5),
+		"createColl": common.NewAIMDLimiter(1, 100, 5),
+	}
+}
+
 var _ Grpc = (*GrpcClient)(nil)
 
 type GrpcClient struct {
 	conn *grpc.ClientConn
 	srv  milvuspb.MilvusServiceClient
+
+	limiters map[string]*common.AIMDLimiter
 
 	user string
 	auth string
@@ -219,6 +237,8 @@ func NewGrpc(cfg *paramtable.MilvusConfig) (*GrpcClient, error) {
 		conn: conn,
 		srv:  srv,
 
+		limiters: newRateLimiters(),
+
 		user: cfg.User,
 		auth: auth,
 	}
@@ -282,6 +302,10 @@ func (g *GrpcClient) connect(ctx context.Context) error {
 }
 
 func (g *GrpcClient) Close() error {
+	for _, limiter := range g.limiters {
+		limiter.Stop()
+	}
+
 	return g.conn.Close()
 }
 
@@ -374,10 +398,20 @@ func (g *GrpcClient) GetPersistentSegmentInfo(ctx context.Context, db, collName 
 
 func (g *GrpcClient) Flush(ctx context.Context, db, collName string) (*milvuspb.FlushResponse, error) {
 	ctx = g.newCtxWithDB(ctx, db)
+	limiter := g.limiters["flush"]
+
+	if err := limiter.Wait(ctx); err != nil {
+		return nil, fmt.Errorf("client: flush wait: %w", err)
+	}
+
 	resp, err := g.srv.Flush(ctx, &milvuspb.FlushRequest{CollectionNames: []string{collName}})
 	if err := checkResponse(resp, err); err != nil {
+		if isRateLimitError(err) {
+			limiter.Failure()
+		}
 		return nil, fmt.Errorf("client: flush failed: %w", err)
 	}
+	limiter.Success()
 
 	segmentIDs, has := resp.GetCollSegIDs()[collName]
 	ids := segmentIDs.GetData()
@@ -484,9 +518,15 @@ type CreateCollectionInput struct {
 
 func (g *GrpcClient) CreateCollection(ctx context.Context, input CreateCollectionInput) error {
 	ctx = g.newCtxWithDB(ctx, input.DB)
+	limiter := g.limiters["createColl"]
+
+	if err := limiter.Wait(ctx); err != nil {
+		return fmt.Errorf("client: create collection wait: %w", err)
+	}
+
 	bs, err := proto.Marshal(input.Schema)
 	if err != nil {
-		return fmt.Errorf("client: create collection failed: %w", err)
+		return fmt.Errorf("client: create collection marshal proto: %w", err)
 	}
 	in := &milvuspb.CreateCollectionRequest{
 		CollectionName:   input.Schema.Name,
@@ -498,8 +538,12 @@ func (g *GrpcClient) CreateCollection(ctx context.Context, input CreateCollectio
 
 	resp, err := g.srv.CreateCollection(ctx, in)
 	if err := checkResponse(resp, err); err != nil {
-		return fmt.Errorf("client: create collection failed: %w", err)
+		if isRateLimitError(err) {
+			limiter.Failure()
+		}
+		return fmt.Errorf("client: call create collection rpc: %w", err)
 	}
+	limiter.Success()
 
 	return nil
 }

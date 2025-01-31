@@ -55,3 +55,10 @@ func TestCheckResponse(t *testing.T) {
 	assert.Nil(t, checkResponse(&commonpb.Status{Code: 0}, nil))
 	assert.Nil(t, checkResponse(&milvuspb.ShowCollectionsResponse{Status: &commonpb.Status{Code: 0}}, nil))
 }
+
+func TestIsRateLimitError(t *testing.T) {
+	assert.False(t, isRateLimitError(errors.New("some error")))
+	assert.False(t, isRateLimitError(nil))
+	assert.False(t, isRateLimitError(errors.New("rate limit")))
+	assert.True(t, isRateLimitError(errors.New("rate limit exceeded[rate=1]")))
+}
