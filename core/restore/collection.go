@@ -277,10 +277,11 @@ func (ct *CollectionTask) createColl(ctx context.Context) error {
 	}
 
 	opt := client.CreateCollectionInput{
-		DB:        ct.task.GetTargetDbName(),
-		Schema:    schema,
-		ConsLevel: commonpb.ConsistencyLevel(ct.task.GetCollBackup().GetConsistencyLevel()),
-		ShardNum:  shardNum,
+		DB:           ct.task.GetTargetDbName(),
+		Schema:       schema,
+		ConsLevel:    commonpb.ConsistencyLevel(ct.task.GetCollBackup().GetConsistencyLevel()),
+		ShardNum:     shardNum,
+		PartitionNum: ct.partitionNum(),
 	}
 	err = retry.Do(ctx, func() error {
 		return ct.grpcCli.CreateCollection(ctx, opt)
@@ -325,6 +326,25 @@ func (ct *CollectionTask) fields() ([]*schemapb.FieldSchema, error) {
 	}
 
 	return fields, nil
+}
+
+// partitionNum returns the partition number of the collection
+// if partition key was set, return the length of partition in backup
+// else return 0
+func (ct *CollectionTask) partitionNum() int {
+	var hasPartitionKey bool
+	for _, field := range ct.task.GetCollBackup().GetSchema().GetFields() {
+		if field.GetIsPartitionKey() {
+			hasPartitionKey = true
+			break
+		}
+	}
+
+	if hasPartitionKey {
+		return len(ct.task.GetCollBackup().GetPartitionBackups())
+	}
+
+	return 0
 }
 
 func (ct *CollectionTask) functions() []*schemapb.FunctionSchema {
