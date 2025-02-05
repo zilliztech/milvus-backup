@@ -479,7 +479,7 @@ type CreateCollectionInput struct {
 	Schema       *schemapb.CollectionSchema
 	ConsLevel    commonpb.ConsistencyLevel
 	ShardNum     int32
-	partitionNum int64
+	PartitionNum int
 }
 
 func (g *GrpcClient) CreateCollection(ctx context.Context, input CreateCollectionInput) error {
@@ -493,7 +493,7 @@ func (g *GrpcClient) CreateCollection(ctx context.Context, input CreateCollectio
 		Schema:           bs,
 		ConsistencyLevel: input.ConsLevel,
 		ShardsNum:        input.ShardNum,
-		NumPartitions:    input.partitionNum,
+		NumPartitions:    int64(input.PartitionNum),
 	}
 
 	resp, err := g.srv.CreateCollection(ctx, in)
