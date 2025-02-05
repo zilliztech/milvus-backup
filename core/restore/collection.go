@@ -174,7 +174,7 @@ func (ct *CollectionTask) restoreDataV2(ctx context.Context) error {
 	ct.logger.Info("start restore partition segment", zap.Int("partition_num", len(ct.task.GetCollBackup().GetPartitionBackups())))
 	for _, part := range ct.task.GetCollBackup().GetPartitionBackups() {
 		if err := ct.restorePartitionV2(ctx, part); err != nil {
-			return fmt.Errorf("restore_collection: restore partition data v2: %w", err)
+			return fmt.Errorf("restore_collection: restore partition v2: %w", err)
 		}
 	}
 
@@ -667,7 +667,7 @@ func (ct *CollectionTask) restoreL0SegV2(ctx context.Context, partitionID int64,
 }
 
 func (ct *CollectionTask) restorePartitionV1(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
-	log.Info("start restore partition", zap.String("partition", part.GetPartitionName()))
+	ct.logger.Info("start restore partition", zap.String("partition", part.GetPartitionName()))
 
 	if err := ct.createPartition(ctx, part.GetPartitionName()); err != nil {
 		return fmt.Errorf("restore_collection: restore partition: %w", err)
@@ -692,7 +692,7 @@ func (ct *CollectionTask) restorePartitionV1(ctx context.Context, part *backuppb
 }
 
 func (ct *CollectionTask) restorePartitionV2(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
-	log.Info("start restore partition v2", zap.String("partition", part.GetPartitionName()))
+	ct.logger.Info("start restore partition v2", zap.String("partition", part.GetPartitionName()))
 
 	if err := ct.createPartition(ctx, part.GetPartitionName()); err != nil {
 		return fmt.Errorf("restore_collection: restore partition: %w", err)
