@@ -68,6 +68,17 @@ pull_request_rules:
         add:
           - ci-passed
 
+  - name: Add kind/improvement tag for dependabot's PR
+    conditions:
+      - base=main
+      - author=dependabot[bot]
+    actions:
+      label:
+        add:
+          - kind/improvement
+        remove:
+          - do-not-merge/missing-related-issue
+
   - name: Blocking PR if missing a related issue or PR doesn't have kind/improvement label
     conditions:
       - base=main
