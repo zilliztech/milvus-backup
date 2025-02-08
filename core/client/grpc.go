@@ -243,6 +243,12 @@ func NewGrpc(cfg *paramtable.MilvusConfig) (*GrpcClient, error) {
 		auth: auth,
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := cli.connect(ctx); err != nil {
+		return nil, fmt.Errorf("client: connect to server: %w", err)
+	}
+
 	return cli, nil
 }
 
@@ -272,7 +278,7 @@ func (g *GrpcClient) connect(ctx context.Context) error {
 
 	connReq := &milvuspb.ConnectRequest{
 		ClientInfo: &commonpb.ClientInfo{
-			SdkType:    "Backup Tool Custom SDK",
+			SdkType:    "BackupToolCustomSDK",
 			SdkVersion: version.Version,
 			LocalTime:  time.Now().String(),
 			User:       g.user,
@@ -280,7 +286,7 @@ func (g *GrpcClient) connect(ctx context.Context) error {
 		},
 	}
 
-	resp, err := g.srv.Connect(ctx, connReq)
+	resp, err := g.srv.Connect(g.newCtx(ctx), connReq)
 	if err != nil {
 		s, ok := status.FromError(err)
 		if ok {
