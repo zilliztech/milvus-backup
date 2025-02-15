@@ -131,7 +131,7 @@ func isRateLimitError(err error) bool {
 
 func newRateLimiters() map[string]*common.AIMDLimiter {
 	return map[string]*common.AIMDLimiter{
-		"flush":      common.NewAIMDLimiter(1, 50, 5),
+		"flush":      common.NewAIMDLimiter(0.01, 50, 5),
 		"createColl": common.NewAIMDLimiter(1, 100, 5),
 	}
 }
