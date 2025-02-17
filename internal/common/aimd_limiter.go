@@ -66,11 +66,15 @@ func (a *AIMDLimiter) Wait(ctx context.Context) error {
 }
 
 func (a *AIMDLimiter) Success() {
-	if a.curRPS.Load() >= a.maxRPS {
+	curRPS := a.curRPS.Load()
+	if curRPS >= a.maxRPS {
 		return
 	}
-
-	a.curRPS.Add(1)
+	if curRPS < 1 {
+		a.curRPS.Add(0.1)
+	} else {
+		a.curRPS.Add(1)
+	}
 }
 
 func (a *AIMDLimiter) Failure() {
