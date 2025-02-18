@@ -534,7 +534,8 @@ func (ct *CollectionTask) copyFiles(ctx context.Context, paths []string) ([]stri
 	tempPaths := make([]string, 0, len(paths))
 	tempDir := fmt.Sprintf("restore-temp-%s-%s-%s/", ct.parentTaskID, ct.task.GetTargetDbName(), ct.task.GetTargetCollectionName())
 	ct.logger.Info("milvus and backup store in different bucket, copy the data first",
-		zap.Strings("paths", paths), zap.String("copy_data_path", tempDir))
+		zap.Strings("paths", paths),
+		zap.String("copy_data_path", tempDir))
 	for _, p := range paths {
 		// empty delta path, no need to copy
 		if len(p) == 0 {
@@ -761,7 +762,7 @@ func (ct *CollectionTask) bulkInsertViaGrpc(ctx context.Context, partition strin
 		CollectionName: ct.task.GetTargetCollectionName(),
 		PartitionName:  partition,
 		Paths:          paths,
-		EndTime:        ct.task.GetCollBackup().EndTime,
+		BackupTS:       ct.task.GetCollBackup().BackupTimestamp,
 		IsL0:           isL0,
 	}
 	jobID, err := ct.grpcCli.BulkInsert(ctx, in)
@@ -810,7 +811,7 @@ func (ct *CollectionTask) bulkInsertViaRestful(ctx context.Context, partition st
 		CollectionName: ct.task.GetTargetCollectionName(),
 		PartitionName:  partition,
 		Paths:          paths,
-		EndTime:        ct.task.GetCollBackup().EndTime,
+		BackupTS:       ct.task.GetCollBackup().BackupTimestamp,
 		IsL0:           isL0,
 	}
 	jobID, err := ct.restfulCli.BulkInsert(ctx, in)

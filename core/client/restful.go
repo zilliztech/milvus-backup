@@ -28,7 +28,7 @@ type RestfulBulkInsertInput struct {
 	CollectionName string
 	PartitionName  string
 	Paths          [][]string // offset 0 is path to insertLog file, offset 1 is path to deleteLog file
-	EndTime        int64
+	BackupTS       uint64
 	IsL0           bool
 }
 
@@ -97,8 +97,8 @@ type RestfulClient struct {
 
 func (r *RestfulClient) BulkInsert(ctx context.Context, input RestfulBulkInsertInput) (string, error) {
 	opts := make(map[string]string)
-	if input.EndTime > 0 {
-		opts["end_time"] = strconv.FormatInt(input.EndTime, 10)
+	if input.BackupTS > 0 {
+		opts["end_ts"] = strconv.FormatUint(input.BackupTS, 10)
 	}
 	if input.IsL0 {
 		opts["l0_import"] = "true"
