@@ -3,16 +3,16 @@ package core
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"path"
 	"sync"
 	"time"
 
-	gomilvus "github.com/milvus-io/milvus-sdk-go/v2/client"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 
+	"github.com/zilliztech/milvus-backup/core/client"
+	"github.com/zilliztech/milvus-backup/core/meta"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/storage"
@@ -22,14 +22,11 @@ import (
 )
 
 const (
-	BULKINSERT_TIMEOUT            = 60 * 60
-	BULKINSERT_SLEEP_INTERVAL     = 5
-	BACKUP_NAME                   = "BACKUP_NAME"
-	COLLECTION_RENAME_SUFFIX      = "COLLECTION_RENAME_SUFFIX"
+	BackupName                    = "BACKUP_NAME"
+	CollectionRenameSuffix        = "COLLECTION_RENAME_SUFFIX"
 	RPS                           = 1000
 	BackupSegmentGroupMaxSizeInMB = 256
-
-	GC_Warn_Message = "This warn won't fail the backup process. Pause GC can protect data not to be GCed during backup, it is necessary to backup very large data(cost more than a hour)."
+	GcWarnMessage                 = "This warn won't fail the backup process. Pause GC can protect data not to be GCed during backup, it is necessary to backup very large data(cost more than a hour)."
 )
 
 // makes sure BackupContext implements `Backup`
@@ -40,10 +37,13 @@ type BackupContext struct {
 	// lock to make sure only one backup is creating or restoring
 	mu      sync.Mutex
 	started bool
-	params  paramtable.BackupParams
+	params  *paramtable.BackupParams
 
 	// milvus client
-	milvusClient *MilvusClient
+	grpcClient client.Grpc
+
+	// restful client
+	restfulClient client.RestfulBulkInsert
 
 	// data storage client
 	milvusStorageClient storage.ChunkManager
@@ -56,61 +56,30 @@ type BackupContext struct {
 	milvusRootPath   string
 	backupRootPath   string
 
-	meta *MetaManager
+	meta *meta.MetaManager
 
 	backupCollectionWorkerPool *common.WorkerPool
 	backupCopyDataWorkerPool   *common.WorkerPool
-	bulkinsertWorkerPools      map[string]*common.WorkerPool
+
+	bulkinsertWorkerPools sync.Map
 }
 
-func CreateMilvusClient(ctx context.Context, params paramtable.BackupParams) (gomilvus.Client, error) {
-	milvusEndpoint := params.MilvusCfg.Address + ":" + params.MilvusCfg.Port
-	log.Debug("Start Milvus client", zap.String("endpoint", milvusEndpoint))
-	var c gomilvus.Client
-	var err error
-	if params.MilvusCfg.AuthorizationEnabled && params.MilvusCfg.User != "" && params.MilvusCfg.Password != "" {
-		if params.MilvusCfg.TLSMode == 0 {
-			c, err = gomilvus.NewDefaultGrpcClientWithAuth(ctx, milvusEndpoint, params.MilvusCfg.User, params.MilvusCfg.Password)
-		} else if params.MilvusCfg.TLSMode == 1 || params.MilvusCfg.TLSMode == 2 {
-			c, err = gomilvus.NewDefaultGrpcClientWithTLSAuth(ctx, milvusEndpoint, params.MilvusCfg.User, params.MilvusCfg.Password)
-		} else {
-			log.Error("milvus.TLSMode is not illegal, support value 0, 1, 2")
-			return nil, errors.New("milvus.TLSMode is not illegal, support value 0, 1, 2")
-		}
-	} else {
-		c, err = gomilvus.NewGrpcClient(ctx, milvusEndpoint)
-	}
+func CreateGrpcClient(params *paramtable.BackupParams) (client.Grpc, error) {
+	cli, err := client.NewGrpc(&params.MilvusCfg)
 	if err != nil {
-		log.Error("failed to connect to milvus", zap.Error(err))
-		return nil, err
+		log.Error("failed to create milvus client", zap.Error(err))
+		return nil, fmt.Errorf("failed to create milvus client: %w", err)
 	}
-	return c, nil
+	return cli, nil
 }
 
-// Deprecated
-func createStorageClient(ctx context.Context, params paramtable.BackupParams) (storage.ChunkManager, error) {
-	minioEndPoint := params.MinioCfg.Address + ":" + params.MinioCfg.Port
-	log.Debug("Start minio client",
-		zap.String("address", minioEndPoint),
-		zap.String("bucket", params.MinioCfg.BucketName),
-		zap.String("backupBucket", params.MinioCfg.BackupBucketName))
-
-	storageConfig := &storage.StorageConfig{
-		StorageType:       params.MinioCfg.StorageType,
-		Address:           minioEndPoint,
-		BucketName:        params.MinioCfg.BucketName,
-		AccessKeyID:       params.MinioCfg.AccessKeyID,
-		SecretAccessKeyID: params.MinioCfg.SecretAccessKey,
-		GcpCredentialJSON: params.MinioCfg.GcpCredentialJSON,
-		UseSSL:            params.MinioCfg.UseSSL,
-		UseIAM:            params.MinioCfg.UseIAM,
-		IAMEndpoint:       params.MinioCfg.IAMEndpoint,
-		RootPath:          params.MinioCfg.RootPath,
-		CreateBucket:      true,
+func CreateRestfulClient(params *paramtable.BackupParams) (client.RestfulBulkInsert, error) {
+	cli, err := client.NewRestful(&params.MilvusCfg)
+	if err != nil {
+		log.Error("failed to create restful client", zap.Error(err))
+		return nil, fmt.Errorf("failed to create restful client: %w", err)
 	}
-
-	minioClient, err := storage.NewChunkManager(ctx, params, storageConfig)
-	return minioClient, err
+	return cli, nil
 }
 
 func (b *BackupContext) Start() error {
@@ -122,14 +91,14 @@ func (b *BackupContext) Start() error {
 
 func (b *BackupContext) Close() error {
 	b.started = false
-	if b.milvusClient != nil {
+	if b.grpcClient != nil {
 		err := b.getMilvusClient().Close()
 		return err
 	}
 	return nil
 }
 
-func CreateBackupContext(ctx context.Context, params paramtable.BackupParams) *BackupContext {
+func CreateBackupContext(ctx context.Context, params *paramtable.BackupParams) *BackupContext {
 	return &BackupContext{
 		ctx:                   ctx,
 		params:                params,
@@ -137,23 +106,33 @@ func CreateBackupContext(ctx context.Context, params paramtable.BackupParams) *B
 		backupBucketName:      params.MinioCfg.BackupBucketName,
 		milvusRootPath:        params.MinioCfg.RootPath,
 		backupRootPath:        params.MinioCfg.BackupRootPath,
-		bulkinsertWorkerPools: make(map[string]*common.WorkerPool),
-		meta:                  newMetaManager(),
+		bulkinsertWorkerPools: sync.Map{},
+		meta:                  meta.NewMetaManager(),
 	}
 }
 
-func (b *BackupContext) getMilvusClient() *MilvusClient {
-	if b.milvusClient == nil {
-		milvusClient, err := CreateMilvusClient(b.ctx, b.params)
+func (b *BackupContext) getMilvusClient() client.Grpc {
+	if b.grpcClient == nil {
+		milvusClient, err := CreateGrpcClient(b.params)
 		if err != nil {
 			log.Error("failed to initial milvus client", zap.Error(err))
 			panic(err)
 		}
-		b.milvusClient = &MilvusClient{
-			client: milvusClient,
-		}
+		b.grpcClient = milvusClient
 	}
-	return b.milvusClient
+	return b.grpcClient
+}
+
+func (b *BackupContext) getRestfulClient() client.RestfulBulkInsert {
+	if b.restfulClient == nil {
+		restfulClient, err := CreateRestfulClient(b.params)
+		if err != nil {
+			log.Error("failed to initial restful client", zap.Error(err))
+			panic(err)
+		}
+		b.restfulClient = restfulClient
+	}
+	return b.restfulClient
 }
 
 func (b *BackupContext) getMilvusStorageClient() storage.ChunkManager {
@@ -284,23 +263,26 @@ func (b *BackupContext) getCopyDataWorkerPool() *common.WorkerPool {
 }
 
 func (b *BackupContext) getRestoreWorkerPool(id string) *common.WorkerPool {
-	if pool, exist := b.bulkinsertWorkerPools[id]; exist {
-		return pool
+	// TODO DO NOT use pool of worker pool
+	if pool, exist := b.bulkinsertWorkerPools.Load(id); exist {
+		return pool.(*common.WorkerPool)
 	} else {
 		wp, err := common.NewWorkerPool(b.ctx, b.params.BackupCfg.RestoreParallelism, RPS)
 		if err != nil {
 			log.Error("failed to initial copy data worker pool", zap.Error(err))
 			panic(err)
 		}
-		b.bulkinsertWorkerPools[id] = wp
-		b.bulkinsertWorkerPools[id].Start()
-		return b.bulkinsertWorkerPools[id]
+		wp.Start()
+		b.bulkinsertWorkerPools.Store(id, wp)
+
+		return wp
 	}
 }
 
 func (b *BackupContext) cleanRestoreWorkerPool(id string) {
-	if _, exist := b.bulkinsertWorkerPools[id]; exist {
-		delete(b.bulkinsertWorkerPools, id)
+	// TODO DO NOT use pool of worker pool
+	if _, exist := b.bulkinsertWorkerPools.Load(id); exist {
+		b.bulkinsertWorkerPools.Delete(id)
 	}
 }
 
@@ -347,10 +329,10 @@ func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBack
 			var backupPath string
 			if request.GetBucketName() == "" || request.GetPath() == "" {
 				backupBucketName = b.backupBucketName
-				backupPath = b.backupRootPath + SEPERATOR + request.GetBackupName()
+				backupPath = b.backupRootPath + meta.SEPERATOR + request.GetBackupName()
 			} else {
 				backupBucketName = request.GetBucketName()
-				backupPath = request.GetPath() + SEPERATOR + request.GetBackupName()
+				backupPath = request.GetPath() + meta.SEPERATOR + request.GetBackupName()
 			}
 			backup, err := b.readBackupV2(ctx, backupBucketName, backupPath)
 			if err != nil {
@@ -374,7 +356,7 @@ func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBack
 	}
 
 	if request.WithoutDetail {
-		resp = SimpleBackupResponse(resp)
+		resp = meta.SimpleBackupResponse(resp)
 	}
 
 	if log.GetLevel() == zapcore.DebugLevel {
@@ -418,7 +400,7 @@ func (b *BackupContext) ListBackups(ctx context.Context, request *backuppb.ListB
 	}
 
 	// 1, trigger inner sync to get the newest backup list in the milvus cluster
-	backupPaths, _, err := b.getBackupStorageClient().ListWithPrefix(ctx, b.backupBucketName, b.backupRootPath+SEPERATOR, false)
+	backupPaths, _, err := b.getBackupStorageClient().ListWithPrefix(ctx, b.backupBucketName, b.backupRootPath+meta.SEPERATOR, false)
 	if err != nil {
 		log.Error("Fail to list backup directory", zap.Error(err))
 		resp.Code = backuppb.ResponseCode_Fail
@@ -431,7 +413,7 @@ func (b *BackupContext) ListBackups(ctx context.Context, request *backuppb.ListB
 	backupNames := make([]string, 0)
 	for _, backupPath := range backupPaths {
 		backupResp := b.GetBackup(ctx, &backuppb.GetBackupRequest{
-			BackupName: BackupPathToName(b.backupRootPath, backupPath),
+			BackupName: meta.BackupPathToName(b.backupRootPath, backupPath),
 		})
 		if backupResp.GetCode() != backuppb.ResponseCode_Success {
 			log.Warn("Fail to read backup",
@@ -504,7 +486,7 @@ func (b *BackupContext) DeleteBackup(ctx context.Context, request *backuppb.Dele
 		BackupName: request.GetBackupName(),
 	})
 	// always trigger a remove to make sure it is deleted
-	err := b.getBackupStorageClient().RemoveWithPrefix(ctx, b.backupBucketName, BackupDirPath(b.backupRootPath, request.GetBackupName()))
+	err := b.getBackupStorageClient().RemoveWithPrefix(ctx, b.backupBucketName, meta.BackupDirPath(b.backupRootPath, request.GetBackupName()))
 
 	if getResp.GetCode() == backuppb.ResponseCode_Request_Object_Not_Found {
 		resp.Code = backuppb.ResponseCode_Request_Object_Not_Found
@@ -542,8 +524,8 @@ func (b *BackupContext) DeleteBackup(ctx context.Context, request *backuppb.Dele
 // 1. first read backup from full meta
 // 2. if full meta not exist, which means backup is a very old version, read from seperate files
 func (b *BackupContext) readBackupV2(ctx context.Context, bucketName string, backupPath string) (*backuppb.BackupInfo, error) {
-	backupMetaDirPath := backupPath + SEPERATOR + META_PREFIX
-	fullMetaPath := backupMetaDirPath + SEPERATOR + FULL_META_FILE
+	backupMetaDirPath := backupPath + meta.SEPERATOR + meta.META_PREFIX
+	fullMetaPath := backupMetaDirPath + meta.SEPERATOR + meta.FULL_META_FILE
 	exist, err := b.getBackupStorageClient().Exist(ctx, bucketName, fullMetaPath)
 	if err != nil {
 		log.Error("check full meta file failed", zap.String("path", fullMetaPath), zap.Error(err))
@@ -569,11 +551,11 @@ func (b *BackupContext) readBackupV2(ctx context.Context, bucketName string, bac
 
 // read backup from seperated meta files
 func (b *BackupContext) readBackup(ctx context.Context, bucketName string, backupPath string) (*backuppb.BackupInfo, error) {
-	backupMetaDirPath := backupPath + SEPERATOR + META_PREFIX
-	backupMetaPath := backupMetaDirPath + SEPERATOR + BACKUP_META_FILE
-	collectionMetaPath := backupMetaDirPath + SEPERATOR + COLLECTION_META_FILE
-	partitionMetaPath := backupMetaDirPath + SEPERATOR + PARTITION_META_FILE
-	segmentMetaPath := backupMetaDirPath + SEPERATOR + SEGMENT_META_FILE
+	backupMetaDirPath := backupPath + meta.SEPERATOR + meta.META_PREFIX
+	backupMetaPath := backupMetaDirPath + meta.SEPERATOR + meta.BACKUP_META_FILE
+	collectionMetaPath := backupMetaDirPath + meta.SEPERATOR + meta.COLLECTION_META_FILE
+	partitionMetaPath := backupMetaDirPath + meta.SEPERATOR + meta.PARTITION_META_FILE
+	segmentMetaPath := backupMetaDirPath + meta.SEPERATOR + meta.SEGMENT_META_FILE
 
 	exist, err := b.getBackupStorageClient().Exist(ctx, bucketName, backupMetaPath)
 	if err != nil {
@@ -606,14 +588,14 @@ func (b *BackupContext) readBackup(ctx context.Context, bucketName string, backu
 		return nil, err
 	}
 
-	completeBackupMetas := &BackupMetaBytes{
+	completeBackupMetas := &meta.BackupMetaBytes{
 		BackupMetaBytes:     backupMetaBytes,
 		CollectionMetaBytes: collectionBackupMetaBytes,
 		PartitionMetaBytes:  partitionBackupMetaBytes,
 		SegmentMetaBytes:    segmentBackupMetaBytes,
 	}
 
-	backupInfo, err := deserialize(completeBackupMetas)
+	backupInfo, err := meta.Deserialize(completeBackupMetas)
 	if err != nil {
 		log.Error("Fail to deserialize backup info", zap.String("backupPath", backupPath), zap.Error(err))
 		return nil, err
@@ -683,7 +665,7 @@ func (b *BackupContext) Check(ctx context.Context) string {
 			"backup-rootpath: %s\n",
 		version, b.milvusBucketName, b.milvusRootPath, b.backupBucketName, b.backupRootPath)
 
-	milvusFiles, _, err := b.getMilvusStorageClient().ListWithPrefix(ctx, b.milvusBucketName, b.milvusRootPath+SEPERATOR, false)
+	milvusFiles, _, err := b.getMilvusStorageClient().ListWithPrefix(ctx, b.milvusBucketName, b.milvusRootPath+meta.SEPERATOR, false)
 	if err != nil {
 		return "Failed to connect to storage milvus path\n" + info + err.Error()
 	}
@@ -692,7 +674,7 @@ func (b *BackupContext) Check(ctx context.Context) string {
 		return "Milvus storage is empty. Please verify whether your cluster is really empty. If not, the configs(minio address, port, bucket, rootPath) may be wrong\n" + info
 	}
 
-	_, _, err = b.getBackupStorageClient().ListWithPrefix(ctx, b.backupBucketName, b.backupRootPath+SEPERATOR, false)
+	_, _, err = b.getBackupStorageClient().ListWithPrefix(ctx, b.backupBucketName, b.backupRootPath+meta.SEPERATOR, false)
 	if err != nil {
 		return "Failed to connect to storage backup path " + info + err.Error()
 	}

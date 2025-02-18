@@ -92,45 +92,48 @@ http://localhost:8080/api/v1/docs/index.html
 
 Below is a summary of the configurations supported in `backup.yaml`:
 
-| **Section**       | **Field**                         | **Description**                                                                                       | **Default/Example**                           |
-|--------------------|-----------------------------------|-------------------------------------------------------------------------------------------------------|-----------------------------------------------|
-| `log`             | `level`                          | Logging level. Supported: `debug`, `info`, `warn`, `error`, `panic`, `fatal`.                         | `info`                                        |
-|                   | `console`                        | Whether to print logs to the console.                                                                | `true`                                        |
-|                   | `file.rootPath`                  | Path to the log file.                                                                                 | `logs/backup.log`                             |
-| `http`            | `simpleResponse`                 | Whether to enable simple HTTP responses.                                                             | `true`                                        |
-| `milvus`          | `address`                        | Milvus proxy address.                                                                                 | `localhost`                                   |
-|                   | `port`                           | Milvus proxy port.                                                                                    | `19530`                                       |
-|                   | `authorizationEnabled`           | Whether to enable authorization.                                                                     | `false`                                       |
-|                   | `tlsMode`                        | TLS mode (0: none, 1: one-way, 2: two-way).                                                          | `0`                                           |
-|                   | `user`                           | Username for Milvus.                                                                                  | `root`                                        |
-|                   | `password`                       | Password for Milvus.                                                                                  | `Milvus`                                      |
-| `minio`           | `storageType`                    | Storage type for Milvus (e.g., `local`, `minio`, `s3`, `aws`, `gcp`, `ali(aliyun)`, `azure`, `tc(tencent)`, `gcpnative`). Use `gcpnative` for the Google Cloud Platform provider.                                                 | `minio`                                       |
-|                   | `address`                        | MinIO/S3 address.                                                                                     | `localhost`                                   |
-|                   | `port`                           | MinIO/S3 port.                                                                                        | `9000`                                        |
-|                   | `accessKeyID`                    | MinIO/S3 access key ID.                                                                               | `minioadmin`                                  |
-|                   | `secretAccessKey`                | MinIO/S3 secret access key.                                                                           | `minioadmin`                                  |
-|                   | `gcpCredentialJSON`              | Path to your GCP credential JSON key file. Used only for the "gcpnative" cloud provider.                                                                                                                                                      |             `/path/to/file`                               |
-|                   | `useSSL`                         | Whether to use SSL for MinIO/S3.                                                                      | `false`                                       |
-|                   | `bucketName`                     | Bucket name in MinIO/S3.                                                                              | `a-bucket`                                    |
-|                   | `rootPath`                       | Storage root path in MinIO/S3.                                                                        | `files`                                       |
-| `minio (backup)`  | `backupStorageType`              | Backup storage type for Milvus (e.g., `local`, `minio`, `s3`, `aws`, `gcp`, `ali(aliyun)`, `azure`, `tc(tencent)`, `gcpnative`). Use `gcpnative` for the Google Cloud Platform provider.                                                     | `minio`                                       |
-|                   | `backupAddress`                  | Address of backup storage.                                                                            | `localhost`                                   |
-|                   | `backupPort`                     | Port of backup storage.                                                                               | `9000`                                        |
-|                   | `backupUseSSL`                   | Whether to use SSL for backup storage.                                                                | `false`                                       |
-|                   | `backupAccessKeyID`              | Backup storage access key ID.                                                                         | `minioadmin`                                  |
-|                   | `backupSecretAccessKey`          | Backup storage secret access key.                                                                     | `minioadmin`                                  |
-|                   | `backupGcpCredentialJSON`        | Path to your GCP credential JSON key file. Used only for the "gcpnative" cloud provider.                                                                                                                                                      |             `/path/to/file`                                        |
-|                   | `backupBucketName`               | Bucket name for backups.                                                                              | `a-bucket`                                    |
-|                   | `backupRootPath`                 | Root path to store backup data.                                                                       | `backup`                                      |
-|                   | `crossStorage`                   | Enable cross-storage backups (e.g., MinIO to AWS S3).                                                 | `false`                                       |
-| `backup`          | `maxSegmentGroupSize`            | Maximum segment group size for backups.                                                               | `2G`                                          |
-|                   | `parallelism.backupCollection`   | Collection-level parallelism for backup.                                                              | `4`                                           |
-|                   | `parallelism.copydata`           | Thread pool size for copying data.                                                                    | `128`                                         |
-|                   | `parallelism.restoreCollection`  | Collection-level parallelism for restore.                                                             | `2`                                           |
-|                   | `keepTempFiles`                  | Whether to keep temporary files during restore (for debugging).                                       | `false`                                       |
-|                   | `gcPause.enable`                 | Pause Milvus garbage collection during backup.                                                        | `true`                                        |
-|                   | `gcPause.seconds`                | Duration to pause garbage collection (in seconds).                                                    | `7200`                                        |
-|                   | `gcPause.address`                | Address for Milvus garbage collection API.                                                            | `http://localhost:9091`                       |
+| **Section**       | **Field**                       | **Description**                                                                                              | **Default/Example**     |
+|--------------------|---------------------------------|--------------------------------------------------------------------------------------------------------------|-------------------------|
+| `log`             | `level`                         | Logging level. Supported: `debug`, `info`, `warn`, `error`, `panic`, `fatal`.                                | `info`                  |
+|                   | `console`                       | Whether to print logs to the console.                                                                        | `true`                  |
+|                   | `file.rootPath`                 | Path to the log file.                                                                                        | `logs/backup.log`       |
+| `http`            | `simpleResponse`                | Whether to enable simple HTTP responses.                                                                     | `true`                  |
+| `milvus`          | `address`                       | Milvus proxy address.                                                                                        | `localhost`             |
+|                   | `port`                          | Milvus proxy port.                                                                                           | `19530`                 |
+|                   | `user`                          | Username for Milvus.                                                                                         | `root`                  |
+|                   | `password`                      | Password for Milvus.                                                                                         | `Milvus`                |
+|                   | `tlsMode`                       | TLS mode (0: none, 1: one-way, 2: two-way/mtls).                                                             | `0`                     |
+|                   | `caCertPath`                    | Path to your ca certificate file                                                                             | `/path/to/certificate`  |
+|                   | `serverName `                   | Server name                                                                                                  | `localhost`             |
+|                   | `mtlsCertPath`                  | Path to your mtls certificate file                                                                           | `/path/to/certificate`  |
+|                   | `mtlsKeyPath `                  | Path to your mtls key file                                                                                   | `/path/to/key`          |
+| `minio`           | `storageType`                    | Storage type for Milvus (e.g., `local`, `minio`, `s3`, `aws`, `gcp`, `ali(aliyun)`, `azure`, `tc(tencent)`, `gcpnative`). Use `gcpnative` for the Google Cloud Platform provider.                                                                                                 | `minio`                 |
+|                   | `address`                       | MinIO/S3 address.                                                                                            | `localhost`             |
+|                   | `port`                          | MinIO/S3 port.                                                                                               | `9000`                  |
+|                   | `accessKeyID`                   | MinIO/S3 access key ID.                                                                                      | `minioadmin`            |
+|                   | `secretAccessKey`               | MinIO/S3 secret access key.                                                                                  | `minioadmin`            |
+|                   | `gcpCredentialJSON`             | Path to your GCP credential JSON key file. Used only for the "gcpnative" cloud provider.                                                                                                                                                            |        `/path/to/file`         |
+|                   | `useSSL`                        | Whether to use SSL for MinIO/S3.                                                                             | `false`                 |
+|                   | `bucketName`                    | Bucket name in MinIO/S3.                                                                                     | `a-bucket`              |
+|                   | `rootPath`                      | Storage root path in MinIO/S3.                                                                               | `files`                 |
+| `minio (backup)`  | `backupStorageType`             | Backup storage type for Milvus (e.g., `local`, `minio`, `s3`, `aws`, `gcp`, `ali(aliyun)`, `azure`, `tc(tencent)`, `gcpnative`). Use `gcpnative` for the Google Cloud Platform provider.                                                                                                | `minio`                 |
+|                   | `backupAddress`                 | Address of backup storage.                                                                                   | `localhost`             |
+|                   | `backupPort`                    | Port of backup storage.                                                                                      | `9000`                  |
+|                   | `backupUseSSL`                  | Whether to use SSL for backup storage.                                                                       | `false`                 |
+|                   | `backupAccessKeyID`             | Backup storage access key ID.                                                                                | `minioadmin`            |
+|                   | `backupSecretAccessKey`         | Backup storage secret access key.                                                                            | `minioadmin`            |
+|                   | `backupGcpCredentialJSON`       | Path to your GCP credential JSON key file. Used only for the "gcpnative" cloud provider.                                                                                                                                                            |        `/path/to/file`         |
+|                   | `backupBucketName`              | Bucket name for backups.                                                                                     | `a-bucket`              |
+|                   | `backupRootPath`                | Root path to store backup data.                                                                              | `backup`                |
+|                   | `crossStorage`                  | Enable cross-storage backups (e.g., MinIO to AWS S3).                                                        | `false`                 |
+| `backup`          | `maxSegmentGroupSize`           | Maximum segment group size for backups.                                                                      | `2G`                    |
+|                   | `parallelism.backupCollection`  | Collection-level parallelism for backup.                                                                     | `4`                     |
+|                   | `parallelism.copydata`          | Thread pool size for copying data.                                                                           | `128`                   |
+|                   | `parallelism.restoreCollection` | Collection-level parallelism for restore.                                                                    | `2`                     |
+|                   | `keepTempFiles`                 | Whether to keep temporary files during restore (for debugging).                                              | `false`                 |
+|                   | `gcPause.enable`                | Pause Milvus garbage collection during backup.                                                               | `true`                  |
+|                   | `gcPause.seconds`               | Duration to pause garbage collection (in seconds).                                                           | `7200`                  |
+|                   | `gcPause.address`               | Address for Milvus garbage collection API.                                                                   | `http://localhost:9091` |
 
 For more details, refer to the [backup.yaml](configs/backup.yaml) configuration file.
 
@@ -173,11 +176,10 @@ Execute `make all` will generate an executable binary `milvus-backup` in the `{p
 
 ### Test
 
-Developers can also test it using an IDE. `core/backup_context_test.go` contains test demos for all main interfaces. Alternatively, you can test it using the command line interface:
+Developers can also test it using an IDE. You can test it using the command line interface:
 
 ```shell
-cd core
-go test -v -test.run TestCreateBackup
+make test
 ```
 
 
