@@ -103,7 +103,7 @@ Below is a summary of the configurations supported in `backup.yaml`:
 |                   | `user`                          | Username for Milvus.                                                                                         | `root`                  |
 |                   | `password`                      | Password for Milvus.                                                                                         | `Milvus`                |
 |                   | `tlsMode`                       | TLS mode (0: none, 1: one-way, 2: two-way/mtls).                                                             | `0`                     |
-|                   | `caCertPath`                    | Path to your ca certificate file                                                                             | `/path/to/certificate`         |
+|                   | `caCertPath`                    | Path to your ca certificate file                                                                             | `/path/to/certificate`  |
 |                   | `serverName `                   | Server name                                                                                                  | `localhost`             |
 |                   | `mtlsCertPath`                  | Path to your mtls certificate file                                                                           | `/path/to/certificate`         |
 |                   | `mtlsKeyPath `                  | Path to your mtls key file                                                                                   | `/path/to/key`                 |
