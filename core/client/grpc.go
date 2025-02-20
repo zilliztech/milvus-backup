@@ -466,15 +466,15 @@ type GrpcBulkInsertInput struct {
 	CollectionName string
 	PartitionName  string
 	Paths          []string // offset 0 is path to insertLog file, offset 1 is path to deleteLog file
-	EndTime        int64
+	BackupTS       uint64
 	IsL0           bool
 }
 
 func (g *GrpcClient) BulkInsert(ctx context.Context, input GrpcBulkInsertInput) (int64, error) {
 	ctx = g.newCtxWithDB(ctx, input.DB)
 	var opts []*commonpb.KeyValuePair
-	if input.EndTime > 0 {
-		opts = append(opts, &commonpb.KeyValuePair{Key: "end_time", Value: strconv.FormatInt(input.EndTime, 10)})
+	if input.BackupTS > 0 {
+		opts = append(opts, &commonpb.KeyValuePair{Key: "end_ts", Value: strconv.FormatUint(input.BackupTS, 10)})
 	}
 	if input.IsL0 {
 		opts = append(opts, &commonpb.KeyValuePair{Key: "l0_import", Value: "true"})
