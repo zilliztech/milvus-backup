@@ -13,7 +13,7 @@ jobs:
       matrix:
         deploy_tools: [docker-compose]
         milvus_mode: [standalone]
-        milvus_version: [master-latest, 2.4-latest]
+        milvus_version: ["master", "2.5"]
 
     steps:
       - uses: actions/checkout@v4
@@ -53,6 +53,8 @@ jobs:
         shell: bash
         run: |
           pip install -r requirements.txt --trusted-host https://test.pypi.org
+          sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.3/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
 
       - name: Milvus deploy
 
@@ -61,7 +63,7 @@ jobs:
         working-directory: deployment/${{ matrix.milvus_mode }}
         run: |
           if [ ${{ matrix.deploy_tools }} == "helm" ]; then
-            helm repo add milvus https://milvus-io.github.io/milvus-helm
+            helm repo add milvus https://zilliztech.github.io/milvus-helm
             helm repo update
             helm install --wait --timeout 600s milvus-backup milvus/milvus --set image.all.tag=${{ matrix.milvus_version }} -f values.yaml
             kubectl get pods
@@ -75,7 +77,8 @@ jobs:
           fi
 
           if [ ${{ matrix.deploy_tools}} == "docker-compose" ]; then
-            yq -i '.services.standalone.image= "milvusdb/milvus:${{ matrix.milvus_version }}"' docker-compose.yml
+            tag=$(python3 ../../scripts/get_latest_tag.py -n milvusdb -r milvus --prefix ${{ matrix.milvus_version }} --arch amd64)
+            yq -i ".services.standalone.image= \"milvusdb/milvus:$tag\"" docker-compose.yml
             cat docker-compose.yml
             docker-compose up -d
             bash ../../scripts/check_healthy.sh
