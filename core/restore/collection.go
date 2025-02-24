@@ -557,9 +557,9 @@ func (ct *CollectionTask) copyFiles(ctx context.Context, paths []string) ([]stri
 			return nil, fmt.Errorf("restore_collection: failed to copy backup data: %w", err)
 		}
 		tempPaths = append(tempPaths, tempPath)
+		ct.tearDownFns = append(ct.tearDownFns, ct.cleanTempFiles(tempPath))
 	}
 
-	ct.tearDownFns = append(ct.tearDownFns, ct.cleanTempFiles(tempDir))
 	return tempPaths, nil
 }
 
