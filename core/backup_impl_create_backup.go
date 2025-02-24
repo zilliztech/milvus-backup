@@ -774,13 +774,12 @@ func (b *BackupContext) writeBackupInfoMeta(ctx context.Context, id string) erro
 	log.Debug("segment meta", zap.String("value", string(output.SegmentMetaBytes)))
 
 	collectionBackups := backupInfo.GetCollectionBackups()
-	collectionPositions := make(map[string][]*backuppb.ChannelPosition, 0)
+	collectionPositions := make(map[string][]*backuppb.ChannelPosition)
 	for _, collectionBackup := range collectionBackups {
-		collectionCPs := make([]*backuppb.ChannelPosition, 0)
+		collectionCPs := make([]*backuppb.ChannelPosition, 0, len(collectionBackup.GetChannelCheckpoints()))
 		for vCh, position := range collectionBackup.GetChannelCheckpoints() {
-			pCh := strings.Split(vCh, "_")[0] + "_" + strings.Split(vCh, "_")[1]
 			collectionCPs = append(collectionCPs, &backuppb.ChannelPosition{
-				Name:     pCh,
+				Name:     vCh,
 				Position: position,
 			})
 		}
