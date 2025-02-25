@@ -16,12 +16,12 @@ builds:
       - arm64
     ldflags:
       - -w -s
-      - -X main.version={{ .Version }}
-      - -X main.commit={{ .Commit }}
-      - -X main.date={{ .Date }}
+      - -X github.com/zilliztech/milvus-backup/version.Version={{ .Version }}
+      - -X github.com/zilliztech/milvus-backup/version.Commit={{ .Commit }}
+      - -X github.com/zilliztech/milvus-backup/version.Date={{ .Date }}
 
 archives:
-  - format: tar.gz
+  - formats: ['tar.gz']
     # this name template makes the OS and Arch compatible with the results of uname.
     name_template: >-
       {{ .ProjectName }}_
@@ -33,7 +33,7 @@ archives:
 checksum:
   name_template: "checksums.txt"
 snapshot:
-  name_template: "{{ incpatch .Version }}-next"
+  version_template: "{{ incpatch .Version }}-next"
 
 brews:
   - name: milvus-backup
