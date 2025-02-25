@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"path"
 	"strings"
 	"time"
 
@@ -76,10 +77,10 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 	var backupPath string
 	if request.GetBucketName() == "" || request.GetPath() == "" {
 		backupBucketName = b.backupBucketName
-		backupPath = b.backupRootPath + meta.SEPERATOR + request.GetBackupName()
+		backupPath = path.Join(b.backupRootPath, request.GetBackupName())
 	} else {
 		backupBucketName = request.GetBucketName()
-		backupPath = request.GetPath() + meta.SEPERATOR + request.GetBackupName()
+		backupPath = path.Join(request.GetPath(), request.GetBackupName())
 	}
 
 	if getResp.GetCode() != backuppb.ResponseCode_Success {
