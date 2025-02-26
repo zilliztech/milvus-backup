@@ -68,7 +68,7 @@ type CollectionTask struct {
 	logger *zap.Logger
 }
 
-func NewCollectionTask(task *backuppb.RestoreCollectionTask,
+func newCollectionTask(task *backuppb.RestoreCollectionTask,
 	meta *meta.MetaManager,
 	params *paramtable.BackupParams,
 	parentTaskID,

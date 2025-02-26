@@ -14,7 +14,6 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore"
 	"github.com/zilliztech/milvus-backup/core/utils"
-	"github.com/zilliztech/milvus-backup/internal/common"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
@@ -331,8 +330,8 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 		}
 		return asyncResp
 	} else {
-		endTask, err := b.executeRestoreBackupTask(ctx, backupBucketName, backupPath, backup, task)
-		resp.Data = endTask
+		err := b.executeRestoreBackupTask(ctx, backupBucketName, backupPath, backup, task)
+		resp.Data = task
 		if err != nil {
 			resp.Code = backuppb.ResponseCode_Fail
 			log.Error("execute restore collection fail", zap.String("backupId", backup.GetId()), zap.Error(err))
@@ -345,83 +344,24 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 	}
 }
 
-func (b *BackupContext) executeRestoreBackupTask(ctx context.Context, backupBucketName string, backupPath string, backup *backuppb.BackupInfo, task *backuppb.RestoreBackupTask) (*backuppb.RestoreBackupTask, error) {
+func (b *BackupContext) executeRestoreBackupTask(ctx context.Context, backupBucketName, backupPath string, backup *backuppb.BackupInfo, task *backuppb.RestoreBackupTask) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	wp, err := common.NewWorkerPool(ctx, b.params.BackupCfg.RestoreParallelism, RPS)
-	if err != nil {
-		return task, err
-	}
-	wp.Start()
-	log.Info("Start collection level restore pool", zap.Int("parallelism", b.params.BackupCfg.RestoreParallelism))
-
-	id := task.GetId()
-	b.meta.UpdateRestoreTask(id, meta.SetRestoreStateCode(backuppb.RestoreTaskStateCode_EXECUTING))
-	log.Info("executeRestoreBackupTask start",
-		zap.String("backup_name", backup.GetName()),
-		zap.String("backupBucketName", backupBucketName),
-		zap.String("backupPath", backupPath))
-
-	restoreCollectionTasks := task.GetCollectionRestoreTasks()
-
-	// 3, execute restoreCollectionTasks
-	for _, restoreCollectionTask := range restoreCollectionTasks {
-		restoreCollectionTaskClone := restoreCollectionTask
-		job := func(ctx context.Context) error {
-			endTask, err := b.executeRestoreCollectionTask(ctx, backupBucketName, backupPath, restoreCollectionTaskClone, id)
-			if err != nil {
-				b.meta.UpdateRestoreTask(id, meta.SetRestoreStateCode(backuppb.RestoreTaskStateCode_FAIL),
-					meta.SetRestoreErrorMessage(endTask.ErrorMessage))
-				b.meta.UpdateRestoreCollectionTask(id, endTask.Id,
-					meta.SetRestoreCollectionStateCode(backuppb.RestoreTaskStateCode_FAIL),
-					meta.SetRestoreCollectionErrorMessage(endTask.ErrorMessage))
-				log.Error("executeRestoreCollectionTask failed",
-					zap.String("TargetDBName", restoreCollectionTaskClone.GetTargetDbName()),
-					zap.String("TargetCollectionName", restoreCollectionTaskClone.GetTargetCollectionName()),
-					zap.Error(err))
-				return err
-			}
-
-			restoreCollectionTaskClone.StateCode = backuppb.RestoreTaskStateCode_SUCCESS
-			log.Info("finish restore collection",
-				zap.String("db_name", restoreCollectionTaskClone.GetTargetDbName()),
-				zap.String("collection_name", restoreCollectionTaskClone.GetTargetCollectionName()),
-				zap.Int64("size", endTask.RestoredSize))
-			return nil
-		}
-		wp.Submit(job)
-	}
-	wp.Done()
-	if err := wp.Wait(); err != nil {
-		return task, err
-	}
-
-	endTime := time.Now().Unix()
-	task.EndTime = endTime
-	b.meta.UpdateRestoreTask(id, meta.SetRestoreStateCode(backuppb.RestoreTaskStateCode_SUCCESS), meta.SetRestoreEndTime(endTime))
-
-	log.Info("finish restore all collections",
-		zap.String("backupName", backup.GetName()),
-		zap.Int("collections", len(backup.GetCollectionBackups())),
-		zap.String("taskID", task.GetId()),
-		zap.Int64("duration in seconds", task.GetEndTime()-task.GetStartTime()))
-	return task, nil
-}
-
-func (b *BackupContext) executeRestoreCollectionTask(ctx context.Context, backupBucketName string, backupPath string, task *backuppb.RestoreCollectionTask, parentTaskID string) (*backuppb.RestoreCollectionTask, error) {
-	collTask := restore.NewCollectionTask(task,
-		b.meta,
-		b.params,
-		parentTaskID,
-		backupBucketName,
+	restoreBackupTask := restore.NewTask(task,
 		backupPath,
+		backupBucketName,
+		b.params,
+		backup,
+		b.meta,
 		b.getBackupStorageClient(),
 		b.getMilvusStorageClient(),
 		b.getMilvusClient(),
 		b.getRestfulClient())
 
-	err := collTask.Execute(ctx)
+	if err := restoreBackupTask.Execute(ctx, task); err != nil {
+		return fmt.Errorf("backup: execute restore collection fail, err: %w", err)
+	}
 
-	return task, err
+	return nil
 }
