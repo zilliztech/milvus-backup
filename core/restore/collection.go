@@ -33,7 +33,7 @@ import (
 const (
 	_bulkInsertTimeout             = 60 * time.Minute
 	_bulkInsertCheckInterval       = 3 * time.Second
-	_bulkInsertRestfulAPIChunkSize = 1024
+	_bulkInsertRestfulAPIChunkSize = 256
 )
 
 type tearDownFn func(ctx context.Context) error
@@ -618,7 +618,7 @@ func (ct *CollectionTask) restoreNotL0SegV2(ctx context.Context, part *backuppb.
 	chunkedGroups := lo.Chunk(notL0Groups, _bulkInsertRestfulAPIChunkSize)
 	for _, groups := range chunkedGroups {
 		paths := make([][]string, 0, len(groups))
-		for _, g := range notL0Groups {
+		for _, g := range groups {
 			paths = append(paths, []string{g.insertLogDir, g.deltaLogDir})
 		}
 

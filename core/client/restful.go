@@ -117,6 +117,7 @@ func (r *RestfulClient) BulkInsert(ctx context.Context, input RestfulBulkInsertI
 	var createResp createImportResp
 	log.Debug("create import job via restful", zap.Any("createReq", createReq))
 	resp, err := r.cli.R().
+		SetHeader("Request-Timeout", "600").
 		SetContext(ctx).
 		SetBody(createReq).
 		SetSuccessResult(&createResp).
