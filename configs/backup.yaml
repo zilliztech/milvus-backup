@@ -10,17 +10,17 @@ http:
 
 # milvus proxy address, compatible to milvus.yaml
 milvus:
-  address: localhost
-  port: 19530
-  user: "root"
-  password: "Milvus"
+  address: ibm-lh-lakehouse-milvus727.milvus.apps.enginecluster-aurora.cp.fyre.ibm.com
+  port: 443
+  user: "admin"
+  password: "6ihRVTx0gDEP"
 
   # tls mode values [0, 1, 2]
   # 0 is close, 1 is one-way authentication, 2 is mutual authentication
-  tlsMode: 0
+  tlsMode: 1
   # tls cert path for validate server, will be used when tlsMode is 1 or 2
-  caCertPath: ""
-  serverName: ""
+  caCertPath: "/root/hello_milvus/aura.crt"
+  serverName: "ibm-lh-lakehouse-milvus727.milvus.apps.enginecluster-aurora.cp.fyre.ibm.com"
   # mutual tls cert path, for server to validate client.
   # Will be used when tlsMode is 2
   # for backward compatibility, if not set, will use tlsmode 1.
@@ -31,26 +31,29 @@ milvus:
 # Related configuration of minio, which is responsible for data persistence for Milvus.
 minio:
   # Milvus storage configs, make them the same with milvus config
-  storageType: "minio" # support storage type: local, minio, s3, aws, gcp, ali(aliyun), azure, tc(tencent)
-  address: localhost # Address of MinIO/S3
-  port: 9000   # Port of MinIO/S3
-  accessKeyID: minioadmin  # accessKeyID of MinIO/S3
-  secretAccessKey: minioadmin # MinIO/S3 encryption string
-  useSSL: false # Access to MinIO/S3 with SSL
+  storageType: "gcpnative" # support storage type: local, minio, s3, aws, gcp, ali(aliyun), azure, tc(tencent), gcpnative
+  # You can use "gcpnative" for the Google Cloud Platform provider. Uses service account credentials for authentication.
+  address: storage.googleapis.com  # Address of MinIO/S3
+  port: 443   # Port of MinIO/S3
+  accessKeyID:   # accessKeyID of MinIO/S3
+  secretAccessKey:  # MinIO/S3 encryption string
+  gcpCredentialJSON: "/root/gcs/gcpnative_creds.json" # The JSON content contains the gcs service account credentials. Used only for the "gcpnative" cloud provider.
+  useSSL: true # Access to MinIO/S3 with SSL
   useIAM: false
   iamEndpoint: ""
-  bucketName: "a-bucket" # Milvus Bucket name in MinIO/S3, make it the same as your milvus instance
-  rootPath: "files" # Milvus storage root path in MinIO/S3, make it the same as your milvus instance
+  bucketName: "gcs-nv1" # Milvus Bucket name in MinIO/S3, make it the same as your milvus instance
+  rootPath: "GifiGcpNative/milvus727" # Milvus storage root path in MinIO/S3, make it the same as your milvus instance
 
   # Backup storage configs, the storage you want to put the backup data
-  backupStorageType: "minio" # support storage type: local, minio, s3, aws, gcp, ali(aliyun), azure, tc(tencent)
-  backupAddress: localhost # Address of MinIO/S3
-  backupPort: 9000   # Port of MinIO/S3
-  backupAccessKeyID: minioadmin  # accessKeyID of MinIO/S3
-  backupSecretAccessKey: minioadmin # MinIO/S3 encryption string
-  backupBucketName: "a-bucket" # Bucket name to store backup data. Backup data will store to backupBucketName/backupRootPath
-  backupRootPath: "backup" # Rootpath to store backup data. Backup data will store to backupBucketName/backupRootPath
-  backupUseSSL: false # Access to MinIO/S3 with SSL
+  backupStorageType: "gcpnative" # support storage type: local, minio, s3, aws, gcp, ali(aliyun), azure, tc(tencent), gcpnative
+  backupAddress: storage.googleapis.com  # Address of MinIO/S3
+  backupPort: 443   # Port of MinIO/S3
+  backupAccessKeyID:   # accessKeyID of MinIO/S3
+  backupSecretAccessKey:  # MinIO/S3 encryption string
+  backupGcpCredentialJSON: "/root/gcs/gcpnative_creds.json" # The JSON content contains the gcs service account credentials. Used only for the "gcpnative" cloud provider.
+  backupBucketName: "gcs-nv1" # Bucket name to store backup data. Backup data will store to backupBucketName/backupRootPath
+  backupRootPath: "giffBackk" # Rootpath to store backup data. Backup data will store to backupBucketName/backupRootPath
+  backupUseSSL: true # Access to MinIO/S3 with SSL
 
   # If you need to back up or restore data between two different storage systems, direct client-side copying is not supported. 
   # Set this option to true to enable data transfer through Milvus Backup.
