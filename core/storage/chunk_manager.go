@@ -42,6 +42,8 @@ func NewChunkManager(ctx context.Context, params *paramtable.BackupParams, confi
 	case paramtable.CloudProviderAzure:
 		// todo @wayblink
 		return newAzureChunkManagerWithParams(ctx, params, config)
+	case paramtable.CloudProviderGCPNative:
+		return newGCPNativeChunkManagerWithConfig(ctx, config)
 	default:
 		return NewMinioChunkManagerWithConfig(ctx, config)
 	}
