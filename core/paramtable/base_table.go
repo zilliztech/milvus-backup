@@ -37,6 +37,7 @@ const (
 	DefaultMinioPort            = "9000"
 	DefaultMinioAccessKey       = "minioadmin"
 	DefaultMinioSecretAccessKey = "minioadmin"
+	DefaultGcpCredentialJSON    = ""
 	DefaultMinioUseSSL          = "false"
 	DefaultMinioBucketName      = "a-bucket"
 	DefaultMinioRootPath        = "files"
@@ -429,6 +430,11 @@ func (gp *BaseTable) loadMinioConfig() {
 		_ = gp.Save("minio.secretAccessKey", minioSecretKey)
 	}
 
+	gcpCredentialJSON := os.Getenv("GCP_KEY_JSON")
+	if gcpCredentialJSON != "" {
+		_ = gp.Save("minio.gcpCredentialJSON", gcpCredentialJSON)
+	}
+
 	minioUseSSL := os.Getenv("MINIO_USE_SSL")
 	if minioUseSSL != "" {
 		_ = gp.Save("minio.useSSL", minioUseSSL)
@@ -482,6 +488,11 @@ func (gp *BaseTable) loadMinioConfig() {
 	minioBackupSecretKey := os.Getenv("MINIO_BACKUP_SECRET_KEY")
 	if minioBackupSecretKey != "" {
 		_ = gp.Save("minio.backupSecretAccessKey", minioBackupSecretKey)
+	}
+
+	backupGcpCredentialJSON := os.Getenv("BACKUP_GCP_KEY_JSON")
+	if backupGcpCredentialJSON != "" {
+		_ = gp.Save("minio.backupGcpCredentialJSON", backupGcpCredentialJSON)
 	}
 
 	minioBackupUseSSL := os.Getenv("MINIO_BACKUP_USE_SSL")
