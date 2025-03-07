@@ -33,7 +33,12 @@ def get_latest_tag(namespace, repository, tag_prefix="", tag_suffix=""):
         matching_tags = []
         for tag_info in data['results']:
             tag_name = tag_info['name']
+            # Validate tag format: must be exactly 4 segments when split by '-'
             if tag_name.startswith(tag_prefix) and tag_name.endswith(tag_suffix):
+                segments = tag_name.split('-')
+                # version-date-commit-arch
+                if len(segments) != 4:
+                    continue
                 # Convert last_updated string to datetime object
                 last_updated = datetime.strptime(tag_info['last_updated'], "%Y-%m-%dT%H:%M:%S.%fZ")
                 matching_tags.append((tag_name, last_updated))
