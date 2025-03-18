@@ -5,7 +5,35 @@
 
 version: 2
 updates:
-  - package-ecosystem: "github-actions" # See documentation for possible values
-    directory: "/" # Location of package manifests
+  # GitHub Actions dependency update configuration
+  - package-ecosystem: "github-actions"
+    directory: "/"
     schedule:
       interval: "weekly"
+    open-pull-requests-limit: 10
+    # Only create PRs when security vulnerabilities exist
+    allow:
+      - dependency-type: "all"
+    security-updates-only: true
+
+  # Go dependency update configuration
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    # Only create PRs when security vulnerabilities exist
+    allow:
+      - dependency-type: "all"
+    security-updates-only: true
+
+  # Python dependency update configuration
+  - package-ecosystem: "pip"
+    directory: "/tests"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 10
+    # Only create PRs when security vulnerabilities exist
+    allow:
+      - dependency-type: "all"
+    security-updates-only: true
