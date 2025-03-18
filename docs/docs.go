@@ -1068,6 +1068,10 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "truncateBinlogByTs": {
+                    "description": "if true, truncate binlog by timestamp, for cdc",
+                    "type": "boolean"
+                },
                 "useAutoIndex": {
                     "description": "if true use autoindex when restore vector index",
                     "type": "boolean"
@@ -1213,6 +1217,10 @@ const docTemplate = `{
                 },
                 "to_restore_size": {
                     "type": "integer"
+                },
+                "truncateBinlogByTs": {
+                    "description": "if true, truncate binlog by timestamp, for cdc",
+                    "type": "boolean"
                 },
                 "useAutoIndex": {
                     "description": "if true use autoindex when restore vector index",
