@@ -26,15 +26,9 @@ pull_request_rules:
 
   - name: Test passed for code changed-main
     conditions:
-      - check-success=Unit test go
-      - check-success=Backup and restore cross version (docker-compose, standalone, standalone, 2.4-latest, master-latest)
-      - check-success=Backup and restore cross version (docker-compose, standalone, standalone, 2.4-latest, v2.5.4)
-      - check-success=Backup and restore cross version (docker-compose, standalone, standalone, v2.5.4, master-latest)
       - check-success=Backup and restore after upgrade (docker-compose, standalone, standalone, v2.4.21, master-latest)
       - check-success=Backup and restore after upgrade (docker-compose, standalone, standalone, v2.4.21, v2.5.4)
       - check-success=Backup and restore after upgrade (docker-compose, standalone, standalone, v2.5.4, master-latest)
-      - check-success=Backup and restore cli (docker-compose, standalone, standalone, master-latest)
-      - check-success=Backup and restore with rbac config (helm, standalone, master-latest)
       - check-success=Backup and restore api (docker-compose, standalone, master-latest, L0)
       - check-success=Backup and restore api (docker-compose, standalone, master-latest, L1)
       - check-success=Backup and restore api (docker-compose, standalone, master-latest, L2)
@@ -42,6 +36,12 @@ pull_request_rules:
       - check-success=Backup and restore api (docker-compose, standalone, v2.5.4, L0)
       - check-success=Backup and restore api (docker-compose, standalone, v2.5.4, L1)
       - check-success=Backup and restore api (docker-compose, standalone, v2.5.4, L2)
+      - check-success=Backup and restore cross version (docker-compose, standalone, standalone, 2.4-latest, v2.5.4)
+      - check-success=Backup and restore cross version (docker-compose, standalone, standalone, v2.5.4, master-latest)
+      - check-success=Backup and restore cli (docker-compose, standalone, standalone, master-latest)
+      - check-success=Backup and restore cross version (docker-compose, standalone, standalone, 2.4-latest, master-latest)
+      - check-success=Backup and restore with rbac config (helm, standalone, master-latest)
+      - check-success=Unit test go
     actions:
       label:
         add:
@@ -93,7 +93,8 @@ pull_request_rules:
           - do-not-merge/missing-related-issue
       comment:
         message: |
-          @{{author}} Please associate the related issue to the body of your Pull Request.  (eg. “issue: #<xyz>”)
+          @{{author}} Please associate the related issue to the body of your Pull Request.  (eg. "issue: #<xyz>")
+
   - name: Dismiss block label if related issue be added into PR
     conditions:
       - or:
@@ -119,28 +120,28 @@ pull_request_rules:
         remove:
           - do-not-merge/missing-related-issue
 
-  - name: Remove ci-passed label when status for code checker or ut  is not success-main
+  - name: Remove ci-passed label when status for code checker or ut is not success-main
     conditions:
       - label!=manual-pass
       - base=main
       - files~=^(?=.*((\.(go|h|cpp)|CMakeLists.txt))).*$
       - or:
-        - check-success!=Unit test go
-        - check-success!=Backup and restore cross version (docker-compose, standalone, standalone, 2.4-latest, master-latest)
-        - check-success!=Backup and restore cross version (docker-compose, standalone, standalone, 2.4-latest, v2.5.4)
-        - check-success!=Backup and restore cross version (docker-compose, standalone, standalone, v2.5.4, master-latest)
-        - check-success!=Backup and restore after upgrade (docker-compose, standalone, standalone, v2.4.21, master-latest)
-        - check-success!=Backup and restore after upgrade (docker-compose, standalone, standalone, v2.4.21, v2.5.4)
-        - check-success!=Backup and restore after upgrade (docker-compose, standalone, standalone, v2.5.4, master-latest)
-        - check-success!=Backup and restore cli (docker-compose, standalone, standalone, master-latest)
-        - check-success!=Backup and restore with rbac config (helm, standalone, master-latest)
-        - check-success!=Backup and restore api (docker-compose, standalone, master-latest, L0)
-        - check-success!=Backup and restore api (docker-compose, standalone, master-latest, L1)
-        - check-success!=Backup and restore api (docker-compose, standalone, master-latest, L2)
-        - check-success!=Backup and restore api (docker-compose, standalone, master-latest, MASTER)
-        - check-success!=Backup and restore api (docker-compose, standalone, v2.5.4, L0)
-        - check-success!=Backup and restore api (docker-compose, standalone, v2.5.4, L1)
-        - check-success!=Backup and restore api (docker-compose, standalone, v2.5.4, L2)
+        - check-success=Backup and restore after upgrade (docker-compose, standalone, standalone, v2.4.21, master-latest)
+        - check-success=Backup and restore after upgrade (docker-compose, standalone, standalone, v2.4.21, v2.5.4)
+        - check-success=Backup and restore after upgrade (docker-compose, standalone, standalone, v2.5.4, master-latest)
+        - check-success=Backup and restore api (docker-compose, standalone, master-latest, L0)
+        - check-success=Backup and restore api (docker-compose, standalone, master-latest, L1)
+        - check-success=Backup and restore api (docker-compose, standalone, master-latest, L2)
+        - check-success=Backup and restore api (docker-compose, standalone, master-latest, MASTER)
+        - check-success=Backup and restore api (docker-compose, standalone, v2.5.4, L0)
+        - check-success=Backup and restore api (docker-compose, standalone, v2.5.4, L1)
+        - check-success=Backup and restore api (docker-compose, standalone, v2.5.4, L2)
+        - check-success=Backup and restore cross version (docker-compose, standalone, standalone, 2.4-latest, v2.5.4)
+        - check-success=Backup and restore cross version (docker-compose, standalone, standalone, v2.5.4, master-latest)
+        - check-success=Backup and restore cli (docker-compose, standalone, standalone, master-latest)
+        - check-success=Backup and restore cross version (docker-compose, standalone, standalone, 2.4-latest, master-latest)
+        - check-success=Backup and restore with rbac config (helm, standalone, master-latest)
+        - check-success=Unit test go
     actions:
       label:
         remove:
