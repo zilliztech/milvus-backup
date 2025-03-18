@@ -21,26 +21,7 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 	if request.GetRequestId() == "" {
 		request.RequestId = utils.UUID()
 	}
-	log.Info("receive RestoreBackupRequest",
-		zap.String("requestId", request.GetRequestId()),
-		zap.String("backupName", request.GetBackupName()),
-		zap.Bool("onlyMeta", request.GetMetaOnly()),
-		zap.Bool("restoreIndex", request.GetRestoreIndex()),
-		zap.Bool("useAutoIndex", request.GetUseAutoIndex()),
-		zap.Bool("dropExistCollection", request.GetDropExistCollection()),
-		zap.Bool("dropExistIndex", request.GetDropExistIndex()),
-		zap.Bool("skipCreateCollection", request.GetSkipCreateCollection()),
-		zap.Strings("collections", request.GetCollectionNames()),
-		zap.String("CollectionSuffix", request.GetCollectionSuffix()),
-		zap.Any("CollectionRenames", request.GetCollectionRenames()),
-		zap.Bool("async", request.GetAsync()),
-		zap.String("bucketName", request.GetBucketName()),
-		zap.String("path", request.GetPath()),
-		zap.String("databaseCollections", utils.GetRestoreDBCollections(request)),
-		zap.Bool("skipDiskQuotaCheck", request.GetSkipImportDiskQuotaCheck()),
-		zap.Any("skipParams", request.GetSkipParams()),
-		zap.Bool("useV2Restore", request.GetUseV2Restore()),
-		zap.Int32("maxShardNum", request.GetMaxShardNum()))
+	log.Info("receive RestoreBackupRequest", zap.Any("request", request))
 
 	resp := &backuppb.RestoreBackupResponse{
 		RequestId: request.GetRequestId(),
@@ -313,6 +294,7 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 			MaxShardNum:           request.GetMaxShardNum(),
 			SkipParams:            request.GetSkipParams(),
 			UseV2Restore:          request.GetUseV2Restore(),
+			TruncateBinlogByTs:    request.GetTruncateBinlogByTs(),
 		}
 		restoreCollectionTasks = append(restoreCollectionTasks, restoreCollectionTask)
 		task.CollectionRestoreTasks = restoreCollectionTasks

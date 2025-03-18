@@ -579,6 +579,9 @@ definitions:
         allOf:
         - $ref: '#/definitions/backuppb.SkipParams'
         description: if key is set, will skip the params in restore process
+      truncateBinlogByTs:
+        description: if true, truncate binlog by timestamp, for cdc
+        type: boolean
       useAutoIndex:
         description: if true use autoindex when restore vector index
         type: boolean
@@ -676,6 +679,9 @@ definitions:
         type: string
       to_restore_size:
         type: integer
+      truncateBinlogByTs:
+        description: if true, truncate binlog by timestamp, for cdc
+        type: boolean
       useAutoIndex:
         description: if true use autoindex when restore vector index
         type: boolean

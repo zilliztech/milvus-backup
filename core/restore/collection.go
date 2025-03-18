@@ -755,6 +755,15 @@ func (ct *CollectionTask) notL0Groups(ctx context.Context, part *backuppb.Partit
 	return groups, nil
 }
 
+// backupTS Only truncate the binlog by timestamp when CDC needs to be connected after restore.
+func (ct *CollectionTask) backupTS() uint64 {
+	if ct.task.GetTruncateBinlogByTs() {
+		return ct.task.GetCollBackup().BackupTimestamp
+	}
+
+	return 0
+}
+
 func (ct *CollectionTask) bulkInsertViaGrpc(ctx context.Context, partition string, paths []string, isL0 bool) error {
 	ct.logger.Info("start bulk insert via grpc", zap.Strings("paths", paths), zap.String("partition", partition))
 	in := client.GrpcBulkInsertInput{
@@ -762,7 +771,7 @@ func (ct *CollectionTask) bulkInsertViaGrpc(ctx context.Context, partition strin
 		CollectionName: ct.task.GetTargetCollectionName(),
 		PartitionName:  partition,
 		Paths:          paths,
-		BackupTS:       ct.task.GetCollBackup().BackupTimestamp,
+		BackupTS:       ct.backupTS(),
 		IsL0:           isL0,
 	}
 	jobID, err := ct.grpcCli.BulkInsert(ctx, in)
@@ -811,7 +820,7 @@ func (ct *CollectionTask) bulkInsertViaRestful(ctx context.Context, partition st
 		CollectionName: ct.task.GetTargetCollectionName(),
 		PartitionName:  partition,
 		Paths:          paths,
-		BackupTS:       ct.task.GetCollBackup().BackupTimestamp,
+		BackupTS:       ct.backupTS(),
 		IsL0:           isL0,
 	}
 	jobID, err := ct.restfulCli.BulkInsert(ctx, in)
