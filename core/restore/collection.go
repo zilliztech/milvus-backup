@@ -156,13 +156,27 @@ func (ct *CollectionTask) privateExecute(ctx context.Context) error {
 	}
 
 	// restore collection data
+	if err := ct.restoreData(ctx); err != nil {
+		return fmt.Errorf("restore_collection: restore data: %w", err)
+	}
+
+	return nil
+}
+
+func (ct *CollectionTask) restoreData(ctx context.Context) error {
+	if ct.task.GetMetaOnly() {
+		ct.logger.Info("skip restore data")
+		return nil
+	}
+
+	// restore collection data
 	if ct.task.UseV2Restore {
 		if err := ct.restoreDataV2(ctx); err != nil {
 			return fmt.Errorf("restore_collection: restore data v2: %w", err)
 		}
 	} else {
 		if err := ct.restoreDataV1(ctx); err != nil {
-			return fmt.Errorf("restore_collection: restore data: %w", err)
+			return fmt.Errorf("restore_collection: restore data v1: %w", err)
 		}
 	}
 
