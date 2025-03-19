@@ -1,0 +1,79 @@
+# Configures the system log output.
+log:
+  level: info # Only supports debug, info, warn, error, panic, or fatal. Default 'info'.
+  console: true # whether print log to console
+  file:
+    rootPath: "logs/backup.log"
+
+http:
+  simpleResponse: true
+
+# milvus proxy address, compatible to milvus.yaml
+milvus:
+  address: localhost
+  port: 19530
+  user: "root"
+  password: "Milvus"
+
+  # tls mode values [0, 1, 2]
+  # 0 is close, 1 is one-way authentication, 2 is mutual authentication
+  tlsMode: 0
+  # tls cert path for validate server, will be used when tlsMode is 1 or 2
+  caCertPath: ""
+  serverName: ""
+  # mutual tls cert path, for server to validate client.
+  # Will be used when tlsMode is 2
+  # for backward compatibility, if not set, will use tlsmode 1.
+  # WARN: in future version, if user set tlsmode 2, but not set mtlsCertPath, will cause error.
+  mtlsCertPath: ""
+  mtlsKeyPath: ""
+
+# Related configuration of minio, which is responsible for data persistence for Milvus.
+minio:
+  # Milvus storage configs, make them the same with milvus config
+  storageType: "minio" # support storage type: local, minio, s3, aws, gcp, ali(aliyun), azure, tc(tencent)
+  address: localhost # Address of MinIO/S3
+  port: 9000   # Port of MinIO/S3
+  accessKeyID: minioadmin  # accessKeyID of MinIO/S3
+  secretAccessKey: minioadmin # MinIO/S3 encryption string
+  useSSL: false # Access to MinIO/S3 with SSL
+  useIAM: false
+  iamEndpoint: ""
+  bucketName: "a-bucket" # Milvus Bucket name in MinIO/S3, make it the same as your milvus instance
+  rootPath: "files" # Milvus storage root path in MinIO/S3, make it the same as your milvus instance
+
+  # Backup storage configs, the storage you want to put the backup data
+  backupStorageType: "minio" # support storage type: local, minio, s3, aws, gcp, ali(aliyun), azure, tc(tencent)
+  backupAddress: localhost # Address of MinIO/S3
+  backupPort: 9000   # Port of MinIO/S3
+  backupAccessKeyID: minioadmin  # accessKeyID of MinIO/S3
+  backupSecretAccessKey: minioadmin # MinIO/S3 encryption string
+  backupBucketName: "a-bucket" # Bucket name to store backup data. Backup data will store to backupBucketName/backupRootPath
+  backupRootPath: "backup_alice" # Rootpath to store backup data. Backup data will store to backupBucketName/backupRootPath
+  backupUseSSL: false # Access to MinIO/S3 with SSL
+
+  # If you need to back up or restore data between two different storage systems, direct client-side copying is not supported. 
+  # Set this option to true to enable data transfer through Milvus Backup.
+  # Note: This option will be automatically set to true if `minio.storageType` and `minio.backupStorageType` differ.
+  # However, if they are the same but belong to different services, you must manually set this option to `true`.
+  crossStorage: "false"
+  
+backup:
+  maxSegmentGroupSize: 2G
+
+  parallelism: 
+    # collection level parallelism to backup
+    backupCollection: 4
+    # thread pool to copy data. reduce it if blocks your storage's network bandwidth
+    copydata: 128
+    # Collection level parallelism to restore
+    restoreCollection: 2
+  
+  # keep temporary files during restore, only use to debug 
+  keepTempFiles: false
+  
+  # Pause GC during backup through Milvus Http API. 
+  gcPause:
+    enable: true
+    seconds: 7200
+    address: http://localhost:9091

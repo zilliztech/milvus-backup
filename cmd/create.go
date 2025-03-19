@@ -13,6 +13,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/utils"
+	"github.com/zilliztech/milvus-backup/internal/alias"
 )
 
 var (
@@ -30,9 +31,38 @@ var createBackupCmd = &cobra.Command{
 	Short: "create subcommand create a backup.",
 
 	Run: func(cmd *cobra.Command, args []string) {
+		// Check if backup name contains alias prefix (alias/backup_name format)
+		var configFile = config
+		var actualBackupName = backupName
+		
+		if strings.Contains(backupName, "/") {
+			// Parse alias and backup name
+			aliasManager, err := alias.NewAliasManager()
+			if err != nil {
+				PrintError("Failed to initialize alias manager", err, 1)
+			}
+			
+			aliasName, parsedBackupName, err := aliasManager.ParseBackupName(backupName)
+			if err != nil {
+				PrintError("Failed to parse backup name", err, 1)
+			}
+			
+			if aliasName != "" {
+				// Get config file for the alias
+				configFile, err = aliasManager.GetConfigPath(aliasName)
+				if err != nil {
+					PrintError(fmt.Sprintf("Failed to get config for alias '%s'", aliasName), err, 1)
+				}
+				
+				// Use the parsed backup name
+				actualBackupName = parsedBackupName
+				PrintInfo(fmt.Sprintf("Using config file for alias '%s': %s", aliasName, configFile))
+			}
+		}
+		
 		var params paramtable.BackupParams
-		fmt.Println("config:" + config)
-		params.GlobalInitWithYaml(config)
+		fmt.Println("config:" + configFile)
+		params.GlobalInitWithYaml(configFile)
 		params.Init()
 
 		context := context.Background()
@@ -59,8 +89,41 @@ var createBackupCmd = &cobra.Command{
 				return
 			}
 		}
+		// Display backup information
+		PrintSectionTitle("BACKUP INFORMATION")
+		PrintKeyValue("Backup Name", actualBackupName)
+		
+		if len(collectionNameArr) > 0 {
+			PrintSubsectionTitle("COLLECTIONS TO BACKUP")
+			for _, coll := range collectionNameArr {
+				fmt.Printf("  %s %s\n", colorInfo(symbolBullet), coll)
+			}
+		}
+		
+		if dbCollections != "" {
+			PrintSubsectionTitle("DATABASES AND COLLECTIONS TO BACKUP")
+			fmt.Println("  " + dbCollections)
+		}
+		
+		// Display backup options
+		PrintSubsectionTitle("BACKUP OPTIONS")
+		if metaOnly {
+			fmt.Printf("  %s %s\n", colorInfo(symbolBullet), "Metadata only (no data)")
+		}
+		
+		if rbac {
+			fmt.Printf("  %s %s\n", colorInfo(symbolBullet), "Include RBAC metadata")
+		}
+		
+		if force {
+			fmt.Printf("  %s %s\n", colorWarning(symbolWarning), "Force backup mode enabled")
+		}
+		
+		PrintInfo("Creating backup...")
+		
+		// Create backup
 		resp := backupContext.CreateBackup(context, &backuppb.CreateBackupRequest{
-			BackupName:      backupName,
+			BackupName:      actualBackupName,
 			CollectionNames: collectionNameArr,
 			DbCollections:   utils.WrapDBCollections(dbCollections),
 			Force:           force,
@@ -68,9 +131,90 @@ var createBackupCmd = &cobra.Command{
 			Rbac:            rbac,
 		})
 
-		fmt.Println(resp.GetMsg())
+		// Display results
+		PrintSectionTitle("BACKUP RESULTS")
+		
+		// Check if backup was successful
+		if resp.GetCode() == backuppb.ResponseCode_Success {
+			PrintSuccess(resp.GetMsg())
+		} else {
+			PrintError("Backup operation failed", fmt.Errorf(resp.GetMsg()), 0)
+		}
+		
 		duration := time.Now().Unix() - start
-		fmt.Println(fmt.Sprintf("duration:%d s", duration))
+		PrintKeyValue("Duration", fmt.Sprintf("%d seconds", duration))
+		
+		// If backup was successful, get and display backup details
+		if resp.GetCode() == backuppb.ResponseCode_Success {
+			// Use the correct backup name to get details
+			var getBackupName string
+			if strings.Contains(backupName, "/") {
+				// If original backup name contains alias, use the actual backup name
+				getBackupName = actualBackupName
+			} else {
+				getBackupName = backupName
+			}
+			
+			getResp := backupContext.GetBackup(context, &backuppb.GetBackupRequest{
+				BackupName: getBackupName,
+			})
+			
+			if getResp.GetCode() == backuppb.ResponseCode_Success && getResp.GetData() != nil {
+				backupInfo := getResp.GetData()
+				PrintSubsectionTitle("BACKUP DETAILS")
+				PrintKeyValue("Backup ID", backupInfo.GetId())
+				PrintKeyValue("Backup Size", FormatSize(backupInfo.GetSize()))
+				
+				// Collect database and collection information
+				dbCollMap := make(map[string][]string)
+				
+				if len(backupInfo.GetCollectionBackups()) > 0 {
+					PrintSubsectionTitle("BACKED UP COLLECTIONS")
+					
+					// Create a table for collections
+					table := CreateTable([]string{"Collection Name", "Database", "Collection ID"})
+					
+					for _, coll := range backupInfo.GetCollectionBackups() {
+						dbName := coll.GetDbName()
+						if dbName == "" {
+							dbName = "default"
+						}
+						
+						// Add to database collection mapping
+						if _, exists := dbCollMap[dbName]; !exists {
+							dbCollMap[dbName] = []string{}
+						}
+						dbCollMap[dbName] = append(dbCollMap[dbName], coll.GetCollectionName())
+						
+						// Add to table
+						table.Append([]string{
+							coll.GetCollectionName(),
+							dbName,
+							fmt.Sprintf("%d", coll.GetCollectionId()),
+						})
+					}
+					
+					// Render the table
+					table.Render()
+					
+					// Show collections grouped by database
+					if len(dbCollMap) > 0 {
+						PrintSubsectionTitle("COLLECTIONS GROUPED BY DATABASE")
+						for db, collections := range dbCollMap {
+							fmt.Printf("  %s %s\n", colorInfo(symbolBullet), colorHeader(db))
+							for _, coll := range collections {
+								fmt.Printf("    %s %s\n", colorInfo(symbolArrow), coll)
+							}
+						}
+					}
+				}
+				
+				// If alias was used, show the full alias/backup name format
+				if backupName != actualBackupName {
+					PrintInfo(fmt.Sprintf("Backup created with alias, accessible via: %s", colorValue(backupName)))
+				}
+			}
+		}
 	},
 }
 
