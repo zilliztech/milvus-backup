@@ -159,6 +159,8 @@ func (l *limiters) close() {
 var _ Grpc = (*GrpcClient)(nil)
 
 type GrpcClient struct {
+	logger *zap.Logger
+
 	conn *grpc.ClientConn
 	srv  milvuspb.MilvusServiceClient
 
@@ -254,6 +256,8 @@ func NewGrpc(cfg *paramtable.MilvusConfig) (*GrpcClient, error) {
 	srv := milvuspb.NewMilvusServiceClient(conn)
 
 	cli := &GrpcClient{
+		logger: log.L().With(zap.String("component", "grpc-client")),
+
 		conn: conn,
 		srv:  srv,
 
@@ -440,30 +444,42 @@ func (g *GrpcClient) Flush(ctx context.Context, db, collName string) (*milvuspb.
 	segmentIDs, has := resp.GetCollSegIDs()[collName]
 	ids := segmentIDs.GetData()
 	if has && len(ids) > 0 {
-		flushed := func() bool {
-			getFlushResp, err := g.srv.GetFlushState(ctx, &milvuspb.GetFlushStateRequest{
-				SegmentIDs:     ids,
-				FlushTs:        resp.GetCollFlushTs()[collName],
-				CollectionName: collName,
-			})
-			if err != nil {
-				// TODO max retry
-				return false
-			}
-			return getFlushResp.GetFlushed()
-		}
-		for !flushed() {
-			// respect context deadline/cancel
-			select {
-			case <-ctx.Done():
-				return nil, errors.New("deadline exceeded")
-			default:
-			}
-			time.Sleep(200 * time.Millisecond)
+		flushTS := resp.GetCollFlushTs()[collName]
+		if err := g.checkFlush(ctx, ids, flushTS, collName); err != nil {
+			return nil, fmt.Errorf("client: check flush failed: %w", err)
 		}
 	}
 
 	return resp, nil
+}
+
+func (g *GrpcClient) checkFlush(ctx context.Context, segIDs []int64, flushTS uint64, collName string) error {
+	start := time.Now()
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		resp, err := g.srv.GetFlushState(ctx, &milvuspb.GetFlushStateRequest{
+			SegmentIDs:     segIDs,
+			FlushTs:        flushTS,
+			CollectionName: collName,
+		})
+		if err != nil {
+			g.logger.Warn("get flush state failed, will retry", zap.Error(err))
+		}
+		if resp.GetFlushed() {
+			return nil
+		}
+
+		cost := time.Since(start)
+		if cost > 30*time.Minute {
+			g.logger.Warn("waiting for the flush to complete took too much time!",
+				zap.Duration("cost", cost),
+				zap.String("collection", collName))
+		}
+	}
+
+	return errors.New("client: into an dead end, should not reach here")
 }
 
 func (g *GrpcClient) ListCollections(ctx context.Context, db string) (*milvuspb.ShowCollectionsResponse, error) {
