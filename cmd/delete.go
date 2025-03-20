@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 	"time"
-
+	"errors"
 	"github.com/spf13/cobra"
 
 	"github.com/zilliztech/milvus-backup/core"
@@ -18,13 +18,13 @@ import (
 
 var (
 	deleteBackName string
-	forceDelete    bool
+	noInteractive bool
 )
 
 var deleteBackupCmd = &cobra.Command{
 	Use:   "delete",
 	Short: "delete subcommand delete backup by name.",
-	Long:  "Delete a backup by name. Use the --force flag to skip confirmation prompt.",
+	Long:  "Delete a backup by name. Use the --no-interactive flag to skip confirmation prompt.",
 
 	Run: func(cmd *cobra.Command, args []string) {
 		// Validate backup name is provided
@@ -80,7 +80,7 @@ var deleteBackupCmd = &cobra.Command{
 		})
 		
 		if getResp.GetCode() != backuppb.ResponseCode_Success || getResp.GetData() == nil {
-			PrintError(fmt.Sprintf("Could not find backup '%s'", displayName), fmt.Errorf(getResp.GetMsg()), 1)
+			PrintError(fmt.Sprintf("Could not find backup '%s'", displayName), errors.New(getResp.GetMsg()), 1)
 		}
 		
 		// Display backup details
@@ -120,8 +120,8 @@ var deleteBackupCmd = &cobra.Command{
 			table.Render()
 		}
 		
-		// If not force delete, ask for user confirmation
-		if !forceDelete {
+		// If interactive mode, ask for user confirmation
+		if !noInteractive {
 			PrintWarning("This operation will permanently delete the backup and cannot be undone!")
 			fmt.Print("Confirm deletion? (y/N): ")
 			
@@ -148,14 +148,14 @@ var deleteBackupCmd = &cobra.Command{
 		if resp.GetCode() == backuppb.ResponseCode_Success {
 			PrintSuccess(fmt.Sprintf("Backup '%s' has been deleted", displayName))
 		} else {
-			PrintError(fmt.Sprintf("Failed to delete backup '%s'", displayName), fmt.Errorf(resp.GetMsg()), 0)
+			PrintError(fmt.Sprintf("Failed to delete backup '%s'", displayName), errors.New(resp.GetMsg()), 1)
 		}
 	},
 }
 
 func init() {
 	deleteBackupCmd.Flags().StringVarP(&deleteBackName, "name", "n", "", "backup name to delete")
-	deleteBackupCmd.Flags().BoolVarP(&forceDelete, "force", "f", false, "force delete without confirmation")
+	deleteBackupCmd.Flags().BoolVar(&noInteractive, "no-interactive", false, "Do not prompt for confirmation when deleting resources. Be careful using this flag!")
 	deleteBackupCmd.MarkFlagRequired("name")
 
 	rootCmd.AddCommand(deleteBackupCmd)
