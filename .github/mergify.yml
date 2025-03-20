@@ -27,11 +27,11 @@ pull_request_rules:
   - name: Test passed for code changed-main
     conditions:
       - check-success=Unit test go
-      - check-success~=Backup and restore cross version.*
-      - check-success~=Backup and restore after upgrade.*
-      - check-success~=Backup and restore cli.*
-      - check-success~=Backup and restore with rbac config.*
-      - check-success~=Backup and restore api.*
+      - "status-success~=Backup and restore cross version.*"
+      - "status-success~=Backup and restore after upgrade.*"
+      - "status-success~=Backup and restore cli.*"
+      - "status-success~=Backup and restore with rbac config.*"
+      - "status-success~=Backup and restore api.*"
     actions:
       label:
         add:
@@ -115,12 +115,12 @@ pull_request_rules:
       - base=main
       - files~=^(?=.*((\.(go|h|cpp)|CMakeLists.txt))).*$
       - or:
-        - check-success!=Unit test go
-        - check-success!~=Backup and restore cross version.*
-        - check-success!~=Backup and restore after upgrade.*
-        - check-success!~=Backup and restore cli.*
-        - check-success!~=Backup and restore with rbac config.*
-        - check-success!~=Backup and restore api.*
+        - check-success=Unit test go
+        - "status-success~=Backup and restore cross version.*"
+        - "status-success~=Backup and restore after upgrade.*"
+        - "status-success~=Backup and restore cli.*"
+        - "status-success~=Backup and restore with rbac config.*"
+        - "status-success~=Backup and restore api.*"
     actions:
       label:
         remove:
