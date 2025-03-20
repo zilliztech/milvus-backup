@@ -126,7 +126,7 @@ jobs:
         timeout-minutes: 5
         shell: bash
         run: |
-          ./milvus-backup delete -n my_backup
+          ./milvus-backup delete -n my_backup --no-interactive
           ./milvus-backup list
 
       - name: Uninstall Milvus
@@ -361,7 +361,7 @@ jobs:
         timeout-minutes: 5
         shell: bash
         run: |
-          ./milvus-backup delete -n my_backup
+          ./milvus-backup delete -n my_backup --no-interactive
           ./milvus-backup list
 
       - name: Uninstall Milvus

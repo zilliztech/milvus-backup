@@ -34,7 +34,8 @@ var serverCmd = &cobra.Command{
 		context := context.Background()
 		server, err := core.NewServer(context, &params, core.Port(port))
 		if err != nil {
-			fmt.Errorf("fail to create backup server, %s", err.Error())
+			fmt.Printf("fail to create backup server: %s\n", err.Error())
+			os.Exit(1)
 		}
 		server.Init()
 		server.Start()

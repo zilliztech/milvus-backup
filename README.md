@@ -45,7 +45,9 @@ Usage:
   milvus-backup [command]
 
 Available Commands:
+  alias       manage cluster aliases for cross-cluster operations
   check       check if the connects is right.
+  copy        copy a backup from one cluster to another
   create      create subcommand create a backup.
   delete      delete subcommand delete backup by name.
   get         get subcommand get backup by name.
@@ -59,6 +61,46 @@ Flags:
   -h, --help            help for milvus-backup
 
 Use "milvus-backup [command] --help" for more information about a command.
+```
+
+### Cross-Cluster Backup with Aliases
+
+Milvus-backup now supports cross-cluster operations using aliases. This feature allows you to manage backups across multiple Milvus clusters more efficiently.
+
+#### Managing Aliases
+
+You can set, list, and delete aliases for different Milvus clusters:
+
+```
+# Set an alias for a cluster
+milvus-backup alias set <alias-name> --config /path/to/config.yaml
+
+# List all configured aliases
+milvus-backup alias list
+
+# Delete an alias
+milvus-backup alias delete <alias-name>
+```
+
+#### Using Aliases with Commands
+
+Many commands now support aliases to specify which cluster to operate on:
+
+```
+# Check connection to a specific cluster
+milvus-backup check <alias-name>
+
+# List backups from a specific cluster
+milvus-backup list <alias-name>
+
+# List backups from all configured clusters
+milvus-backup list
+
+# Copy a backup from one cluster to another (using flags)
+milvus-backup copy --source-alias <source-alias> --source-backup <backup-name> --dest-alias <dest-alias> [--dest-backup <new-backup-name>]
+
+# Copy a backup from one cluster to another (using positional arguments)
+milvus-backup copy <source-alias>/<backup-name> <dest-alias>/<new-backup-name>
 ```
 
 Here is a [demo](docs/user_guide/e2e_demo_cli.md) for a complete backup and restore process.
