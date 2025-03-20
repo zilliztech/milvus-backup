@@ -443,7 +443,7 @@ func (g *GrpcClient) Flush(ctx context.Context, db, collName string) (*milvuspb.
 
 	segmentIDs, has := resp.GetCollSegIDs()[collName]
 	ids := segmentIDs.GetData()
-	if has && len(ids) > 0 {
+	if has {
 		flushTS := resp.GetCollFlushTs()[collName]
 		if err := g.checkFlush(ctx, ids, flushTS, collName); err != nil {
 			return nil, fmt.Errorf("client: check flush failed: %w", err)
