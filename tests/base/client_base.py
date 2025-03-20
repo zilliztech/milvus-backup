@@ -14,7 +14,7 @@ from utils.util_log import test_log as log
 from common import common_func as cf
 from common import common_type as ct
 from api.milvus_backup import MilvusBackupClient
-
+from utils.util_pymilvus import create_index_for_vector_fields
 
 class Base:
     """Initialize class object"""
@@ -554,20 +554,8 @@ class TestcaseBase(Base):
             return
         for coll in [collection_src, collection_dist]:
             if not skip_index:
-                is_binary = self.is_binary_by_schema(coll.schema)
                 try:
-                    if is_binary:
-                        coll.create_index(
-                            ct.default_binary_vec_field_name,
-                            ct.default_bin_flat_index,
-                            index_name=cf.gen_unique_str(),
-                        )
-                    else:
-                        coll.create_index(
-                            ct.default_float_vec_field_name,
-                            ct.default_index,
-                            index_name=cf.gen_unique_str(),
-                        )
+                    create_index_for_vector_fields(coll)
                 except Exception as e:
                     log.error(f"collection {coll.name} create index failed with error: {e}")
             coll.load()
