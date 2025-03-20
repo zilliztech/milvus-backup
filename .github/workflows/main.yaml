@@ -43,11 +43,11 @@ jobs:
         deploy_tools: [docker-compose]
         milvus_mode: [standalone]
         another_milvus_mode: [standalone]
-        source_image_tag: [2.4-latest, v2.5.4]
-        target_image_tag: [master-latest, v2.5.4]
+        source_image_tag: [2.4-latest, 2.5-latest]
+        target_image_tag: [master-latest, 2.5-latest]
         exclude:
-          - source_image_tag: v2.5.4
-            target_image_tag: v2.5.4
+          - source_image_tag: 2.5-latest
+            target_image_tag: 2.5-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -184,11 +184,11 @@ jobs:
         deploy_tools: [docker-compose]
         milvus_mode: [standalone]
         another_milvus_mode: [standalone]
-        source_image_tag: [v2.4.21, v2.5.4]
-        target_image_tag: [master-latest, v2.5.4]
+        source_image_tag: [2.4-latest, 2.5-latest]
+        target_image_tag: [master-latest, 2.5-latest]
         exclude:
-          - source_image_tag: v2.5.4
-            target_image_tag: v2.5.4
+          - source_image_tag: 2.5-latest
+            target_image_tag: 2.5-latest
 
     steps:
       - uses: actions/checkout@v4
@@ -560,10 +560,10 @@ jobs:
       matrix:
         deploy_tools: [docker-compose]
         milvus_mode: [standalone]
-        image_tag: [master-latest, v2.5.4]
+        image_tag: [master-latest, 2.5-latest]
         case_tag: [L0, L1, L2, MASTER]
         exclude:
-          - image_tag: v2.5.4
+          - image_tag: 2.5-latest
             case_tag: MASTER
 
     steps:

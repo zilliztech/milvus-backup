@@ -1138,24 +1138,41 @@ class TestRestoreBackup(TestcaseBase):
             cf.gen_int64_field(name="int64", is_primary=True),
             cf.gen_int64_field(name="key"),
             cf.gen_json_field(name="json"),
+            cf.gen_string_field(name="text", enable_match=True, enable_analyzer=True),
             cf.gen_array_field(name="var_array", element_type=DataType.VARCHAR),
             cf.gen_array_field(name="int_array", element_type=DataType.INT64),
             cf.gen_float_vec_field(name="float_vector", dim=128),
+            cf.gen_sparse_vec_field(name="bm25_vector"),
         ]
         default_schema = cf.gen_collection_schema(fields)
+
+        # Add BM25 function
+        bm25_function = Function(
+            name="text_bm25_emb",
+            function_type=FunctionType.BM25,
+            input_field_names=["text"],
+            output_field_names=["bm25_vector"],
+            params={},
+        )
+        default_schema.add_function(bm25_function)
+
         collection_w = self.init_collection_wrap(
             name=name_origin, schema=default_schema, active_trace=True
         )
+
+        create_index_for_vector_fields(collection_w)
         nb = 3000
         data = [
             [i for i in range(nb)],
             [i % 3 for i in range(nb)],
             [{f"key_{str(i)}": i} for i in range(nb)],
+            [fake_en.text() for _ in range(nb)],  # Text data for BM25
             [[str(x) for x in range(10)] for i in range(nb)],
             [[int(x) for x in range(10)] for i in range(nb)],
             [[np.float32(i) for i in range(128)] for _ in range(nb)],
         ]
         res, result = collection_w.insert(data=data)
+        collection_w.flush()
         pk = res.primary_keys
         # delete first 100 rows
         delete_ids = pk[:100]
@@ -1209,29 +1226,47 @@ class TestRestoreBackup(TestcaseBase):
             cf.gen_int64_field(name="int64", is_primary=True),
             cf.gen_int64_field(name="key"),
             cf.gen_json_field(name="json"),
+            cf.gen_string_field(name="text", enable_match=True, enable_analyzer=True),
             cf.gen_array_field(name="var_array", element_type=DataType.VARCHAR),
             cf.gen_array_field(name="int_array", element_type=DataType.INT64),
             cf.gen_float_vec_field(name="float_vector", dim=128),
+            cf.gen_sparse_vec_field(name="bm25_vector"),
         ]
         default_schema = cf.gen_collection_schema(fields)
+
+        # Add BM25 function
+        bm25_function = Function(
+            name="text_bm25_emb",
+            function_type=FunctionType.BM25,
+            input_field_names=["text"],
+            output_field_names=["bm25_vector"],
+            params={},
+        )
+        default_schema.add_function(bm25_function)
+
         collection_w = self.init_collection_wrap(
             name=name_origin, schema=default_schema, active_trace=True
         )
+        # create index for float_vector and bm25_sparse_vector
+        create_index_for_vector_fields(collection_w)
         nb = 3000
         data = [
             [i for i in range(nb)],
             [i % 3 for i in range(nb)],
             [{f"key_{str(i)}": i} for i in range(nb)],
+            [fake_en.text() for _ in range(nb)],  # Text data for BM25
             [[str(x) for x in range(10)] for i in range(nb)],
             [[int(x) for x in range(10)] for i in range(nb)],
             [[np.float32(i) for i in range(128)] for _ in range(nb)],
         ]
         res, result = collection_w.insert(data=data)
+        collection_w.flush()
         # upsert first 100 rows by pk
         upsert_data = [
             [i for i in range(100)],
             [i % 3 for i in range(100, 200)],
             [{f"key_{str(i)}": i} for i in range(100, 200)],
+            [fake_en.text() for _ in range(100)],  # Text data for BM25
             [[str(x) for x in range(10, 20)] for _ in range(100)],
             [[int(x) for x in range(10)] for _ in range(100)],
             [[np.float32(i) for i in range(128, 128 * 2)] for _ in range(100)],
@@ -1286,28 +1321,45 @@ class TestRestoreBackup(TestcaseBase):
             cf.gen_int64_field(name="int64", is_primary=True),
             cf.gen_int64_field(name="key"),
             cf.gen_json_field(name="json"),
+            cf.gen_string_field(name="text", enable_match=True, enable_analyzer=True),
             cf.gen_array_field(name="var_array", element_type=DataType.VARCHAR),
             cf.gen_array_field(name="int_array", element_type=DataType.INT64),
             cf.gen_float_vec_field(name="float_vector", dim=128),
+            cf.gen_sparse_vec_field(name="bm25_sparse_vector"),
         ]
         default_schema = cf.gen_collection_schema(fields)
+
+        # Add BM25 function
+        bm25_function = Function(
+            name="text_bm25_emb",
+            function_type=FunctionType.BM25,
+            input_field_names=["text"],
+            output_field_names=["bm25_sparse_vector"],
+            params={},
+        )
+        default_schema.add_function(bm25_function)
+
         collection_w = self.init_collection_wrap(
             name=name_origin, schema=default_schema, active_trace=True
         )
+        create_index_for_vector_fields(collection_w)
         nb = 3000
         data = [
             [i for i in range(nb)],
             [i % 3 for i in range(nb)],
             [{f"key_{str(i)}": i} for i in range(nb)],
+            [fake_en.text() for _ in range(nb)],  # Text data for BM25
             [[str(x) for x in range(10)] for i in range(nb)],
             [[int(x) for x in range(10)] for i in range(nb)],
             [[np.float32(i) for i in range(128)] for _ in range(nb)],
         ]
         res, result = collection_w.insert(data=data)
+        collection_w.flush()
         data = [
             [i for i in range(nb)],
             [i % 3 for i in range(nb, nb * 2)],
             [{f"key_{str(i)}": i} for i in range(nb, nb * 2)],
+            [fake_en.text() for _ in range(nb, nb * 2)],  # Text data for BM25
             [[str(x) for x in range(10)] for i in range(nb, nb * 2)],
             [[int(x) for x in range(10)] for i in range(nb, nb * 2)],
             [[np.float32(i) for i in range(128)] for _ in range(nb)],
