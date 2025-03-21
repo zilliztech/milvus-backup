@@ -107,20 +107,22 @@ Below is a summary of the configurations supported in `backup.yaml`:
 |                   | `serverName `                   | Server name                                                                                                  | `localhost`             |
 |                   | `mtlsCertPath`                  | Path to your mtls certificate file                                                                           | `/path/to/certificate`  |
 |                   | `mtlsKeyPath `                  | Path to your mtls key file                                                                                   | `/path/to/key`          |
-| `minio`           | `storageType`                   | Storage type for Milvus (e.g., `local`, `minio`, `s3`, `aws`, `gcp`, `ali(aliyun)`, `azure`, `tc(tencent)`). | `minio`                 |
+| `minio`           | `storageType`                   | Storage type for Milvus (e.g., `local`, `minio`, `s3`, `aws`, `gcp`, `ali(aliyun)`, `azure`, `tc(tencent)`, `gcpnative`). Use `gcpnative` for the Google Cloud Platform provider.          | `minio`                 |
 |                   | `address`                       | MinIO/S3 address.                                                                                            | `localhost`             |
 |                   | `port`                          | MinIO/S3 port.                                                                                               | `9000`                  |
 |                   | `accessKeyID`                   | MinIO/S3 access key ID.                                                                                      | `minioadmin`            |
 |                   | `secretAccessKey`               | MinIO/S3 secret access key.                                                                                  | `minioadmin`            |
+|                   | `gcpCredentialJSON`             | Path to your GCP credential JSON key file. Used only for the "gcpnative" cloud provider.                     | `/path/to/json-key-file`       |
 |                   | `useSSL`                        | Whether to use SSL for MinIO/S3.                                                                             | `false`                 |
 |                   | `bucketName`                    | Bucket name in MinIO/S3.                                                                                     | `a-bucket`              |
 |                   | `rootPath`                      | Storage root path in MinIO/S3.                                                                               | `files`                 |
-| `minio (backup)`  | `backupStorageType`             | Backup storage type (e.g., `local`, `minio`, `s3`, `aws`, `gcp`, `ali(aliyun)`, `azure`, `tc(tencent)`).     | `minio`                 |
-|                   | `backupAddress`                 | Address of backup storage.                                                                                   | `localhost`             |
+| `minio (backup)`  | `backupStorageType`             | Backup storage type (e.g., `local`, `minio`, `s3`, `aws`, `gcp`, `ali(aliyun)`, `azure`, `tc(tencent)`, `gcpnative`). Use `gcpnative` for the Google Cloud Platform provider.                       | `minio`                 |
+|                   | `backupAddress`                 | Address of backup storagße.                                                                                   | `localhost`             |
 |                   | `backupPort`                    | Port of backup storage.                                                                                      | `9000`                  |
 |                   | `backupUseSSL`                  | Whether to use SSL for backup storage.                                                                       | `false`                 |
 |                   | `backupAccessKeyID`             | Backup storage access key ID.                                                                                | `minioadmin`            |
 |                   | `backupSecretAccessKey`         | Backup storage secret access key.                                                                            | `minioadmin`            |
+|                   | `backupGcpCredentialJSON`       | Path to your GCP credential JSON key file. Used only for the "gcpnative" cloud provider.                     | `/path/to/json-key-file`       |
 |                   | `backupBucketName`              | Bucket name for backups.                                                                                     | `a-bucket`              |
 |                   | `backupRootPath`                | Root path to store backup data.                                                                              | `backup`                |
 |                   | `crossStorage`                  | Enable cross-storage backups (e.g., MinIO to AWS S3).                                                        | `false`                 |
@@ -156,6 +158,7 @@ backupAddress: s3.{your-aws-region}.amazonaws.com  # Address of AWS S3 (replace 
 backupPort: 443                              # Default port for AWS S3
 backupAccessKeyID: <your-access-key-id>      # Access key ID for your AWS S3
 backupSecretAccessKey: <your-secret-key>     # Secret access key for AWS S3
+backupGcpCredentialJSON: "/path/to/file"     # Path to your GCP credential JSON key file. Used only for the "gcpnative" cloud provider.
 backupBucketName: "your-bucket-name"         # Bucket name where the backups will be stored
 backupRootPath: "backups"                    # Root path inside the bucket to store backups
 backupUseSSL: true                           # Use SSL for secure connections (Required)
