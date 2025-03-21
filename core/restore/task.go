@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/samber/lo"
 	"go.uber.org/zap"
+	"golang.org/x/exp/maps"
 
 	"github.com/zilliztech/milvus-backup/core/client"
 	"github.com/zilliztech/milvus-backup/core/meta"
@@ -71,7 +73,81 @@ func NewTask(task *backuppb.RestoreBackupTask,
 	}
 }
 
-func (t *Task) Execute(ctx context.Context, task *backuppb.RestoreBackupTask) error {
+// prepareDB create database if not exist
+func (t *Task) prepareDB(ctx context.Context) error {
+	dbInTarget, err := t.grpcCli.ListDatabases(ctx)
+	if err != nil {
+		return fmt.Errorf("restore: list databases %w", err)
+	}
+
+	dbs := make(map[string]struct{})
+	for _, collTask := range t.task.GetCollectionRestoreTasks() {
+		dbs[collTask.GetTargetDbName()] = struct{}{}
+	}
+	dbsNeedToRestores := maps.Keys(dbs)
+
+	dbNotInTarget := lo.Without(dbsNeedToRestores, dbInTarget...)
+	for _, db := range dbNotInTarget {
+		if err := t.grpcCli.CreateDatabase(ctx, db); err != nil {
+			return fmt.Errorf("restore: create database %w", err)
+		}
+		t.logger.Info("create db done", zap.String("database", db))
+	}
+
+	return nil
+}
+
+// checkCollsExist check if the collection exist in target milvus, if collection exist, return error.
+func (t *Task) checkCollsExist(ctx context.Context) error {
+	for _, collTask := range t.task.GetCollectionRestoreTasks() {
+		if err := t.checkCollExist(ctx, collTask); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (t *Task) checkCollExist(ctx context.Context, task *backuppb.RestoreCollectionTask) error {
+	has, err := t.grpcCli.HasCollection(ctx, task.GetTargetDbName(), task.GetTargetCollectionName())
+	if err != nil {
+		return fmt.Errorf("restore: check collection %w", err)
+	}
+
+	if task.SkipCreateCollection && task.DropExistCollection {
+		return fmt.Errorf("restore: skip create and drop exist collection can not be true at the same time collection %s", task.GetTargetCollectionName())
+	}
+
+	// collection not exist and not create collection
+	if !has && task.GetSkipCreateCollection() {
+		return fmt.Errorf("restore: database %s collction %s not exist", task.GetTargetDbName(), task.GetTargetCollectionName())
+	}
+
+	// collection existed and not drop collection
+	if has && !task.GetSkipCreateCollection() && !task.GetDropExistCollection() {
+		return fmt.Errorf("restore: database %s collection %s already exist", task.GetTargetDbName(), task.GetTargetCollectionName())
+	}
+
+	return nil
+}
+
+func (t *Task) Execute(ctx context.Context) error {
+	if err := t.prepareDB(ctx); err != nil {
+		return err
+	}
+
+	if err := t.checkCollsExist(ctx); err != nil {
+		return err
+	}
+
+	if err := t.runCollTask(ctx); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (t *Task) runCollTask(ctx context.Context) error {
 	t.logger.Info("start restore backup")
 
 	wp, err := common.NewWorkerPool(ctx, t.params.BackupCfg.RestoreParallelism, 0)
@@ -81,10 +157,10 @@ func (t *Task) Execute(ctx context.Context, task *backuppb.RestoreBackupTask) er
 	wp.Start()
 	t.logger.Info("Start collection level restore pool", zap.Int("parallelism", t.params.BackupCfg.RestoreParallelism))
 
-	id := task.GetId()
+	id := t.task.GetId()
 	t.meta.UpdateRestoreTask(id, meta.SetRestoreStateCode(backuppb.RestoreTaskStateCode_EXECUTING))
 
-	collTaskMetas := task.GetCollectionRestoreTasks()
+	collTaskMetas := t.task.GetCollectionRestoreTasks()
 	for _, collTaskMeta := range collTaskMetas {
 		collTask := t.newRestoreCollTask(collTaskMeta)
 		job := func(ctx context.Context) error {
@@ -99,7 +175,7 @@ func (t *Task) Execute(ctx context.Context, task *backuppb.RestoreBackupTask) er
 
 				t.logger.Error("restore coll failed",
 					zap.String("target_db_name", collTaskMeta.GetTargetDbName()),
-					zap.String("TargetCollectionName", collTaskMeta.GetTargetCollectionName()),
+					zap.String("target_collection_name", collTaskMeta.GetTargetCollectionName()),
 					zap.Error(err))
 				return fmt.Errorf("restore: restore collection %w", err)
 			}
@@ -119,14 +195,15 @@ func (t *Task) Execute(ctx context.Context, task *backuppb.RestoreBackupTask) er
 	}
 
 	endTime := time.Now().Unix()
-	task.EndTime = endTime
+	t.task.EndTime = endTime
 	t.meta.UpdateRestoreTask(id, meta.SetRestoreStateCode(backuppb.RestoreTaskStateCode_SUCCESS), meta.SetRestoreEndTime(endTime))
 
+	duration := time.Unix(endTime, 0).Sub(time.Unix(t.task.GetStartTime(), 0))
 	t.logger.Info("finish restore all collections",
 		zap.String("backup_name", t.info.GetName()),
 		zap.Int("collection_num", len(t.info.GetCollectionBackups())),
-		zap.String("task_id", task.GetId()),
-		zap.Duration("duration", time.Duration(task.GetEndTime()-task.GetStartTime())*time.Second))
+		zap.String("task_id", t.task.GetId()),
+		zap.Duration("duration", duration))
 	return nil
 }
 
