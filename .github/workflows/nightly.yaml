@@ -5,6 +5,7 @@ on:
   schedule:
     - cron: '0 2 * * *'
 
+
 jobs:
   test-backup-restore-api:
     runs-on: ubuntu-latest
@@ -91,12 +92,51 @@ jobs:
         run: |
           ./milvus-backup server > server.log 2>&1 &
 
+      
+      - name: Deploy Text Embedding Inference
+        timeout-minutes: 5
+        shell: bash
+        if: ${{ matrix.milvus_version == 'master' }}
+        working-directory: tests
+        run: |
+            model=BAAI/bge-base-en-v1.5
+            volume=$PWD/data # share a volume with the Docker container to avoid downloading weights every run
+            docker run -d -p 8848:80 -v $volume:/data --pull always ghcr.io/huggingface/text-embeddings-inference:cpu-1.6 --model-id $model
+            
+            # Wait for the container to be ready
+            echo "Waiting for Text Embedding Inference service to be ready..."
+            max_retries=30
+            retry_count=0
+            
+            while [ $retry_count -lt $max_retries ]; do
+              # Check if port 8848 is open
+              if nc -vz 127.0.0.1 8848 2>/dev/null; then
+                echo "Text Embedding Inference service is ready!"
+                break
+              fi
+              
+              echo "Service not ready yet, retrying in 2 seconds..."
+              sleep 2
+              retry_count=$((retry_count+1))
+            done
+            
+            if [ $retry_count -eq $max_retries ]; then
+              echo "Failed to validate Text Embedding Inference service after multiple attempts"
+              exit 1
+            fi
+
       - name: Run test
         timeout-minutes: 180
         shell: bash
         working-directory: tests
         run: |
-          pytest -s -v --tags L0 L1 L2 L3 -n 4
+          if [ ${{ matrix.milvus_version }} == "master" ]; then
+            pytest -s -v --tags L0 L1 L2 L3 MASTER -n 4 --tei_endpoint http://127.0.0.1:8848
+          fi
+
+          if [ ${{ matrix.milvus_version }} != "master" ]; then
+            pytest -s -v --tags L0 L1 L2 L3 -n 4
+          fi
 
       - name: Get Milvus status
         shell: bash

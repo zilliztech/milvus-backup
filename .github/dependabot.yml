@@ -11,10 +11,8 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
-    # Only create PRs when security vulnerabilities exist
     allow:
       - dependency-type: "all"
-    security-updates-only: true
 
   # Go dependency update configuration
   - package-ecosystem: "gomod"
@@ -22,10 +20,8 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
-    # Only create PRs when security vulnerabilities exist
     allow:
       - dependency-type: "all"
-    security-updates-only: true
 
   # Python dependency update configuration
   - package-ecosystem: "pip"
@@ -33,7 +29,5 @@ updates:
     schedule:
       interval: "weekly"
     open-pull-requests-limit: 10
-    # Only create PRs when security vulnerabilities exist
     allow:
       - dependency-type: "all"
-    security-updates-only: true
