@@ -40,7 +40,7 @@ Faker==19.2.0
 
 
 # for log
-loguru==0.7.0
+loguru==0.7.3
 
 # util
 psutil==5.9.4
