@@ -242,6 +242,7 @@ func (ct *CollectionTask) dropExistedColl(ctx context.Context) error {
 		return nil
 	}
 
+	ct.logger.Info("start drop existed collection")
 	exist, err := ct.grpcCli.HasCollection(ctx, ct.task.GetTargetDbName(), ct.task.GetTargetCollectionName())
 	if err != nil {
 		return fmt.Errorf("restore_collection: failed to check collection exist: %w", err)
@@ -388,6 +389,7 @@ func (ct *CollectionTask) dropExistedIndex(ctx context.Context) error {
 		return nil
 	}
 
+	ct.logger.Info("start drop existed index")
 	indexes, err := ct.grpcCli.ListIndex(ctx, ct.task.GetTargetDbName(), ct.task.GetTargetCollectionName())
 	if err != nil {
 		log.Error("fail in DescribeIndex", zap.Error(err))
