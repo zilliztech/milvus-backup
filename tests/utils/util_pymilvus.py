@@ -209,17 +209,6 @@ def superstructure(x, y):
     return 1 - np.double(np.bitwise_and(x, y).sum()) / np.count_nonzero(x)
 
 
-def get_milvus(host, port, uri=None, handler=None, **kwargs):
-    if handler is None:
-        handler = "GRPC"
-    try_connect = kwargs.get("try_connect", True)
-    if uri is not None:
-        milvus = Milvus(uri=uri, handler=handler, try_connect=try_connect)
-    else:
-        milvus = Milvus(host=host, port=port, handler=handler, try_connect=try_connect)
-    return milvus
-
-
 def reset_build_index_threshold(connect):
     connect.set_config("engine", "build_index_threshold", 1024)
 
