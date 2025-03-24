@@ -13,21 +13,3 @@ updates:
     open-pull-requests-limit: 10
     allow:
       - dependency-type: "all"
-
-  # Go dependency update configuration
-  - package-ecosystem: "gomod"
-    directory: "/"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 10
-    allow:
-      - dependency-type: "all"
-
-  # Python dependency update configuration
-  - package-ecosystem: "pip"
-    directory: "/tests"
-    schedule:
-      interval: "weekly"
-    open-pull-requests-limit: 10
-    allow:
-      - dependency-type: "all"
