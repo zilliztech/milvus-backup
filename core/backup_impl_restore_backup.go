@@ -217,56 +217,6 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 		} else if request.GetCollectionSuffix() != "" {
 			targetCollectionName = targetCollectionName + request.GetCollectionSuffix()
 		}
-		targetDBCollectionName := targetDBName + "." + targetCollectionName
-
-		// check if the database exist, if not, create it first
-		dbs, err := b.getMilvusClient().ListDatabases(ctx)
-		if err != nil {
-			errorMsg := fmt.Sprintf("fail to list databases, err: %s", err)
-			log.Error(errorMsg)
-			resp.Code = backuppb.ResponseCode_Fail
-			resp.Msg = errorMsg
-			return resp
-		}
-		var hasDatabase = false
-		for _, db := range dbs {
-			if db == targetDBName {
-				hasDatabase = true
-				break
-			}
-		}
-		if !hasDatabase {
-			err := b.getMilvusClient().CreateDatabase(ctx, targetDBName)
-			if err != nil {
-				errorMsg := fmt.Sprintf("fail to create database %s, err: %s", targetDBName, err)
-				log.Error(errorMsg)
-				resp.Code = backuppb.ResponseCode_Fail
-				resp.Msg = errorMsg
-				return resp
-			}
-			log.Info("create database", zap.String("database", targetDBName))
-		}
-
-		// check if the collection exist, if existed, will not restore
-		if !request.GetSkipCreateCollection() {
-			exist, err := b.getMilvusClient().HasCollection(ctx, targetDBName, targetCollectionName)
-			if err != nil {
-				errorMsg := fmt.Sprintf("fail to check whether the collection is exist, collection_name: %s, err: %s", targetDBCollectionName, err)
-				log.Error(errorMsg)
-				resp.Code = backuppb.ResponseCode_Fail
-				resp.Msg = errorMsg
-				return resp
-			}
-			if exist {
-				errorMsg := fmt.Sprintf("The collection to restore already exists, backupCollectName: %s, targetCollectionName: %s", backupDBCollectionName, targetDBCollectionName)
-				log.Error(errorMsg)
-				resp.Code = backuppb.ResponseCode_Fail
-				resp.Msg = errorMsg
-				return resp
-			}
-		} else {
-			log.Info("skip check collection exist")
-		}
 
 		var toRestoreSize int64 = 0
 		for _, partitionBackup := range restoreCollection.GetPartitionBackups() {
@@ -283,8 +233,6 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 			TargetCollectionName:  targetCollectionName,
 			PartitionRestoreTasks: []*backuppb.RestorePartitionTask{},
 			ToRestoreSize:         toRestoreSize,
-			RestoredSize:          0,
-			Progress:              0,
 			MetaOnly:              request.GetMetaOnly(),
 			RestoreIndex:          request.GetRestoreIndex(),
 			UseAutoIndex:          request.GetUseAutoIndex(),
@@ -341,7 +289,7 @@ func (b *BackupContext) executeRestoreBackupTask(ctx context.Context, backupBuck
 		b.getMilvusClient(),
 		b.getRestfulClient())
 
-	if err := restoreBackupTask.Execute(ctx, task); err != nil {
+	if err := restoreBackupTask.Execute(ctx); err != nil {
 		return fmt.Errorf("backup: execute restore collection fail, err: %w", err)
 	}
 

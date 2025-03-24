@@ -23,10 +23,16 @@ build:
 	@echo "Commit: $(BUILD_COMMIT)"
 	@echo "Date: $(DATE)"
 	@GO111MODULE=on CGO_ENABLED=0 go build -ldflags '$(LDFLAGS)' -o $(BINARY_NAME)
+	@echo "Building Backup binary done"
 
 gen:
 	./scripts/gen_swag.sh
 	./scripts/gen_proto.sh
+
+gen-mock:
+	@echo "Generating mock files..."
+	@mockery
+	@echo "Generating mock files done"
 
 fmt:
 	@echo Formatting code...
