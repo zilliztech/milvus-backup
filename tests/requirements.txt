@@ -35,7 +35,7 @@ pytest-benchmark==4.0.0
 # for bulk insert test
 minio==7.1.5
 npy-append-array==0.9.15
-Faker==19.2.0
+Faker==37.0.2
 
 
 
