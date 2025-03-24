@@ -606,6 +606,9 @@ jobs:
         shell: bash
         working-directory: deployment/${{ matrix.milvus_mode }}
         run: |
+          if [ ${{ matrix.case_tag }} == "MASTER" ]; then
+            mv docker-compose-tei.yml docker-compose.yml
+          fi
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
           docker-compose up -d
@@ -626,7 +629,7 @@ jobs:
         shell: bash
         working-directory: tests
         run: |
-          pytest -s -v --tags ${{ matrix.case_tag }} -n 4
+          pytest -s -v --tags ${{ matrix.case_tag }} -n 4 --tei_endpoint http://text-embeddings:80
 
       - name: Get Milvus status
         shell: bash

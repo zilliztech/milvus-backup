@@ -1,4 +1,4 @@
-import logging
+import os
 
 import pytest
 import socket
@@ -10,7 +10,6 @@ from common.common_func import param_info
 from check.param_check import ip_check, number_check
 from config.log_config import log_config
 from utils.util_pymilvus import (
-    get_milvus,
     gen_unique_str,
     gen_default_fields,
     gen_binary_default_fields,
@@ -45,6 +44,7 @@ def pytest_addoption(parser):
         default=True,
         help="secure for connection",
     )
+    parser.addoption("--tei_endpoint", action="store", default=os.environ.get("TEI_ENDPOINT", "http://localhost:8080"), help="tei endpoint")
     parser.addoption(
         "--milvus_ns", action="store", default="chaos-testing", help="milvus_ns"
     )
@@ -116,7 +116,7 @@ def pytest_addoption(parser):
     )
     parser.addoption(
         "--replica_num",
-        type="int",
+        type=int,
         action="store",
         default=ct.default_replica_num,
         help="memory replica number",
@@ -157,6 +157,10 @@ def password(request):
 def secure(request):
     return request.config.getoption("--secure")
 
+
+@pytest.fixture
+def tei_endpoint(request):
+    return request.config.getoption("--tei_endpoint")
 
 @pytest.fixture
 def milvus_ns(request):
@@ -409,45 +413,6 @@ def check_server_connection(request):
 
 
 @pytest.fixture(scope="module")
-def connect(request):
-    host = request.config.getoption("--host")
-    port = request.config.getoption("--port")
-    http_port = request.config.getoption("--http_port")
-    handler = request.config.getoption("--handler")
-    if handler == "HTTP":
-        port = http_port
-    try:
-        milvus = get_milvus(host=host, port=port, handler=handler)
-        # reset_build_index_threshold(milvus)
-    except Exception as e:
-        logging.getLogger().error(str(e))
-        pytest.exit("Milvus server can not connected, exit pytest ...")
-
-    def fin():
-        try:
-            milvus.close()
-            pass
-        except Exception as e:
-            logging.getLogger().info(str(e))
-
-    request.addfinalizer(fin)
-    return milvus
-
-
-@pytest.fixture(scope="module")
-def dis_connect(request):
-    host = request.config.getoption("--host")
-    port = request.config.getoption("--port")
-    http_port = request.config.getoption("--http_port")
-    handler = request.config.getoption("--handler")
-    if handler == "HTTP":
-        port = http_port
-    milvus = get_milvus(host=host, port=port, handler=handler)
-    milvus.close()
-    return milvus
-
-
-@pytest.fixture(scope="module")
 def args(request):
     host = request.config.getoption("--host")
     service_name = request.config.getoption("--service")
@@ -459,16 +424,6 @@ def args(request):
     args = {"ip": host, "port": port, "handler": handler, "service_name": service_name}
     return args
 
-
-@pytest.fixture(scope="module")
-def milvus(request):
-    host = request.config.getoption("--host")
-    port = request.config.getoption("--port")
-    http_port = request.config.getoption("--http_port")
-    handler = request.config.getoption("--handler")
-    if handler == "HTTP":
-        port = http_port
-    return get_milvus(host=host, port=port, handler=handler)
 
 
 @pytest.fixture(scope="function")
