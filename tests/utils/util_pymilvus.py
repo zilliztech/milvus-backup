@@ -64,6 +64,13 @@ DEFAULT_SPARSE_INDEX_PARAM = {"index_type": "SPARSE_INVERTED_INDEX", "metric_typ
 DEFAULT_SPARSE_SEARCH_PARAM = {"metric_type": "IP", "params": {}}
 DEFAULT_BM25_INDEX_PARAM = {"index_type": "SPARSE_INVERTED_INDEX", "metric_type": "BM25", "params": {"bm25_k1": 1.5, "bm25_b": 0.75}}
 DEFAULT_BM25_SEARCH_PARAM = {"metric_type": "BM25", "params": {}}
+DEFAULT_JSON_PATH_INDEX = {"index_type": "INVERTED", "params": {"json_cast_type": "DOUBLE"}}
+DEFAULT_JSON_PATH_INDEX_DOUBLE = {"index_type": "INVERTED",
+                                  "params": {"json_cast_type": "DOUBLE", "json_path": "json['key']"}}
+DEFAULT_JSON_PATH_INDEX_VARCHAR = {"index_type": "INVERTED",
+                                   "params": {"json_cast_type": "VARCHAR", "json_path": "json['key'][0]['key']"}}
+DEFAULT_JSON_PATH_INDEX_BOOL = {"index_type": "INVERTED",
+                                "params": {"json_cast_type": "BOOL", "json_path": "json['key']['not_exist']"}}
 
 
 def get_float_vec_field_name_list(schema):
@@ -104,6 +111,13 @@ def get_sparse_vec_field_name_list(schema):
             vec_fields.append(field.name)
     return  list(set(vec_fields) - set(bm25_fields))
 
+def get_json_field_name_list(schema):
+    json_fields = []
+    fields = schema.fields
+    for field in fields:
+        if field.dtype in [DataType.JSON]:
+            json_fields.append(field.name)
+    return json_fields
 
 def create_index_for_vector_fields(collection):
     schema = collection.schema
@@ -130,14 +144,18 @@ def create_index_for_vector_fields(collection):
             continue
         collection.create_index(field_name, DEFAULT_BM25_INDEX_PARAM)
 
-
-
-
-
-
-
-
-
+def create_json_path_index_for_json_fields(collection):
+    schema = collection.schema
+    json_fields = get_json_field_name_list(schema)
+    indexes = [index.to_dict() for index in collection.indexes]
+    indexed_fields = [index['field'] for index in indexes]
+    for field_name in json_fields:
+        if field_name in indexed_fields:
+            continue
+        collection.create_index(field_name, DEFAULT_JSON_PATH_INDEX)
+        collection.create_index(field_name, DEFAULT_JSON_PATH_INDEX_DOUBLE)
+        collection.create_index(field_name, DEFAULT_JSON_PATH_INDEX_VARCHAR)
+        collection.create_index(field_name, DEFAULT_JSON_PATH_INDEX_BOOL)
 
 def create_target_index(index, field_name):
     index["field_name"] = field_name

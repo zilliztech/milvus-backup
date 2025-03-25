@@ -142,41 +142,41 @@ def gen_int64_field(
     name=ct.default_int64_field_name,
     description=ct.default_desc,
     is_primary=False,
-    **kwargs,
+    **kwargs
 ):
     int64_field, _ = ApiFieldSchemaWrapper().init_field_schema(
         name=name,
         dtype=DataType.INT64,
         description=description,
         is_primary=is_primary,
-        **kwargs,
+        **kwargs
     )
     return int64_field
 
 
 def gen_float_field(
-    name=ct.default_float_field_name, is_primary=False, description=ct.default_desc
+    name=ct.default_float_field_name, is_primary=False, description=ct.default_desc, **kwargs
 ):
     float_field, _ = ApiFieldSchemaWrapper().init_field_schema(
-        name=name, dtype=DataType.FLOAT, description=description, is_primary=is_primary
+        name=name, dtype=DataType.FLOAT, description=description, is_primary=is_primary, **kwargs
     )
     return float_field
 
 
 def gen_double_field(
-    name=ct.default_double_field_name, is_primary=False, description=ct.default_desc
+    name=ct.default_double_field_name, is_primary=False, description=ct.default_desc, **kwargs
 ):
     double_field, _ = ApiFieldSchemaWrapper().init_field_schema(
-        name=name, dtype=DataType.DOUBLE, description=description, is_primary=is_primary
+        name=name, dtype=DataType.DOUBLE, description=description, is_primary=is_primary, **kwargs
     )
     return double_field
 
 
 def gen_json_field(
-    name=ct.default_json_field_name, is_primary=False, description=ct.default_desc
+    name=ct.default_json_field_name, is_primary=False, description=ct.default_desc, **kwargs
 ):
     json_field, _ = ApiFieldSchemaWrapper().init_field_schema(
-        name=name, dtype=DataType.JSON, description=description, is_primary=is_primary
+        name=name, dtype=DataType.JSON, description=description, is_primary=is_primary, **kwargs
     )
     return json_field
 
@@ -186,6 +186,7 @@ def gen_array_field(
     is_primary=False,
     element_type=DataType.VARCHAR,
     description=ct.default_desc,
+    **kwargs
 ):
     array_field, _ = ApiFieldSchemaWrapper().init_field_schema(
         name=name,
@@ -195,6 +196,7 @@ def gen_array_field(
         element_type=element_type,
         max_capacity=2000,
         max_length=1500,
+        **kwargs
     )
     return array_field
 
@@ -204,6 +206,7 @@ def gen_float_vec_field(
     is_primary=False,
     dim=ct.default_dim,
     description=ct.default_desc,
+    **kwargs
 ):
     float_vec_field, _ = ApiFieldSchemaWrapper().init_field_schema(
         name=name,
@@ -211,6 +214,7 @@ def gen_float_vec_field(
         description=description,
         dim=dim,
         is_primary=is_primary,
+        **kwargs
     )
     return float_vec_field
 
@@ -220,9 +224,10 @@ def gen_sparse_vec_field(
     is_primary=False,
     dim=ct.default_dim,
     description=ct.default_desc,
+    **kwargs
 ):
     sparse_vec_field, _ = ApiFieldSchemaWrapper().init_field_schema(
-        name=name, dtype=DataType.SPARSE_FLOAT_VECTOR, description=description
+        name=name, dtype=DataType.SPARSE_FLOAT_VECTOR, description=description, **kwargs
     )
     return sparse_vec_field
 
@@ -232,6 +237,7 @@ def gen_float16_vec_field(
     is_primary=False,
     dim=ct.default_dim,
     description=ct.default_desc,
+    **kwargs
 ):
     float_vec_field, _ = ApiFieldSchemaWrapper().init_field_schema(
         name=name,
@@ -239,6 +245,7 @@ def gen_float16_vec_field(
         description=description,
         dim=dim,
         is_primary=is_primary,
+        **kwargs
     )
     return float_vec_field
 
@@ -248,6 +255,7 @@ def gen_brain_float16_vec_field(
     is_primary=False,
     dim=ct.default_dim,
     description=ct.default_desc,
+    **kwargs
 ):
     float_vec_field, _ = ApiFieldSchemaWrapper().init_field_schema(
         name=name,
@@ -255,6 +263,7 @@ def gen_brain_float16_vec_field(
         description=description,
         dim=dim,
         is_primary=is_primary,
+        **kwargs
     )
     return float_vec_field
 
@@ -264,6 +273,7 @@ def gen_binary_vec_field(
     is_primary=False,
     dim=ct.default_dim,
     description=ct.default_desc,
+    **kwargs
 ):
     binary_vec_field, _ = ApiFieldSchemaWrapper().init_field_schema(
         name=name,
@@ -271,6 +281,7 @@ def gen_binary_vec_field(
         description=description,
         dim=dim,
         is_primary=is_primary,
+        **kwargs
     )
     return binary_vec_field
 
@@ -280,12 +291,13 @@ def gen_default_collection_schema(
     primary_field=ct.default_int64_field_name,
     auto_id=False,
     dim=ct.default_dim,
+    nullable=False
 ):
     fields = [
         gen_int64_field(),
-        gen_float_field(),
-        gen_string_field(),
-        gen_json_field(),
+        gen_float_field(nullable=nullable),
+        gen_string_field(nullable=nullable),
+        gen_json_field(nullable=nullable),
         gen_float_vec_field(dim=dim),
     ]
     schema, _ = ApiCollectionSchemaWrapper().init_collection_schema(
@@ -353,16 +365,22 @@ def gen_collection_schema_all_datatype(
     primary_field=ct.default_int64_field_name,
     auto_id=False,
     dim=ct.default_dim,
+    nullable=False
 ):
     fields = [
         gen_int64_field(),
-        gen_int32_field(),
-        gen_int16_field(),
-        gen_int8_field(),
-        gen_bool_field(),
-        gen_float_field(),
-        gen_double_field(),
-        gen_string_field(),
+        gen_int32_field(nullable=nullable),
+        gen_int16_field(nullable=nullable),
+        gen_int8_field(nullable=nullable),
+        gen_bool_field(nullable=nullable),
+        gen_float_field(nullable=nullable),
+        gen_double_field(nullable=nullable),
+        gen_string_field(nullable=nullable),
+        gen_json_field(nullable=nullable),
+        gen_array_field(name=ct.default_int64_array_field_name, element_type=DataType.INT64,nullable=nullable),
+        gen_array_field(name=ct.default_float_array_field_name, element_type=DataType.FLOAT,nullable=nullable),
+        gen_array_field(name=ct.default_string_array_field_name, element_type=DataType.VARCHAR, nullable=nullable),
+        gen_array_field(name=ct.default_bool_array_field_name, element_type=DataType.BOOL, nullable=nullable),
         gen_float_vec_field(dim=dim),
     ]
     schema, _ = ApiCollectionSchemaWrapper().init_collection_schema(
@@ -467,17 +485,30 @@ def gen_binary_vectors(num, dim):
     return raw_vectors, binary_vectors
 
 
-def gen_default_dataframe_data(nb=ct.default_nb, dim=ct.default_dim, start=0):
+def gen_default_dataframe_data(nb=ct.default_nb, dim=ct.default_dim, start=0, nullable=False):
     int_values = pd.Series(data=[i for i in range(start, start + nb)])
-    float_values = pd.Series(
-        data=[np.float32(i) for i in range(start, start + nb)], dtype="float32"
-    )
-    string_values = pd.Series(
-        data=[str(i) for i in range(start, start + nb)], dtype="string"
-    )
-    json_values = pd.Series(
-        data=[{"key": i} for i in range(start, start + nb)],
-    )
+
+    if not nullable:
+        float_values = pd.Series(
+            data=[np.float32(i) for i in range(start, start + nb)], dtype="float32"
+        )
+        string_values = pd.Series(
+            data=[str(i) for i in range(start, start + nb)], dtype="string"
+        )
+        json_values = pd.Series(
+            data=[{"key": i} for i in range(start, start + nb)],
+        )
+    else:
+        float_values = pd.Series(
+            data=[None for _ in range(start, start + nb)], dtype="object"
+        )
+        string_values = pd.Series(
+            data=[None for i in range(start, start + nb)], dtype="object"
+        )
+        json_values = pd.Series(
+            data=[None for i in range(start, start + nb)],
+        )
+
     float_vec_values = gen_vectors(nb, dim)
     df = pd.DataFrame(
         {
@@ -544,29 +575,65 @@ def gen_dataframe_multi_string_fields(string_fields, nb=ct.default_nb):
     return df
 
 
-def gen_dataframe_all_data_type(nb=ct.default_nb, dim=ct.default_dim, start=0):
+def gen_dataframe_all_data_type(nb=ct.default_nb, dim=ct.default_dim, start=0, nullable=False):
     int64_values = pd.Series(data=[i for i in range(start, start + nb)])
-    int32_values = pd.Series(
-        data=[np.int32(i) for i in range(start, start + nb)], dtype="int32"
-    )
-    int16_values = pd.Series(
-        data=[np.int16(i) for i in range(start, start + nb)], dtype="int16"
-    )
-    int8_values = pd.Series(
-        data=[np.int8(i) for i in range(start, start + nb)], dtype="int8"
-    )
-    bool_values = pd.Series(
-        data=[np.bool(i) for i in range(start, start + nb)], dtype="bool"
-    )
-    float_values = pd.Series(
-        data=[np.float32(i) for i in range(start, start + nb)], dtype="float32"
-    )
-    double_values = pd.Series(
-        data=[np.double(i) for i in range(start, start + nb)], dtype="double"
-    )
-    string_values = pd.Series(
-        data=[str(i) for i in range(start, start + nb)], dtype="string"
-    )
+    if not nullable:
+        int32_values = pd.Series(
+            data=[np.int32(i) for i in range(start, start + nb)], dtype="int32"
+        )
+        int16_values = pd.Series(
+            data=[np.int16(i) for i in range(start, start + nb)], dtype="int16"
+        )
+        int8_values = pd.Series(
+            data=[np.int8(i) for i in range(start, start + nb)], dtype="int8"
+        )
+        bool_values = pd.Series(
+            data=[np.bool_(i) for i in range(start, start + nb)], dtype="bool"
+        )
+        float_values = pd.Series(
+            data=[np.float32(i) for i in range(start, start + nb)], dtype="float32"
+        )
+        double_values = pd.Series(
+            data=[np.double(i) for i in range(start, start + nb)], dtype="double"
+        )
+        string_values = pd.Series(
+            data=[str(i) for i in range(start, start + nb)], dtype="string"
+        )
+        json_values = [{"number": i, "string": str(i), "bool": bool(i),
+                        "list": [j for j in range(i, i + ct.default_json_list_length)]} for i in
+                       range(start, start + nb)]
+        int_array_values = [[i for i in range(3)] for _ in range(start, start + nb)]
+        float_array_values = [[np.float32(i) for i in range(3)] for _ in range(start, start + nb)]
+        string_array_values = [[str(i) for i in range(3)] for _ in range(start, start + nb)]
+        bool_array_values = [[np.bool_(i) for i in range(3)] for _ in range(start, start + nb)]
+    else:
+        int32_values = pd.Series(
+            data=[None for i in range(start, start + nb)], dtype="object"
+        )
+        int16_values = pd.Series(
+            data=[None for i in range(start, start + nb)], dtype="object"
+        )
+        int8_values = pd.Series(
+            data=[None for i in range(start, start + nb)], dtype="object"
+        )
+        bool_values = pd.Series(
+            data=[None for i in range(start, start + nb)], dtype="object"
+        )
+        float_values = pd.Series(
+            data=[None for i in range(start, start + nb)], dtype="object"
+        )
+        double_values = pd.Series(
+            data=[None for i in range(start, start + nb)], dtype="object"
+        )
+        string_values = pd.Series(
+            data=[None for i in range(start, start + nb)], dtype="object"
+        )
+        json_values = [None for i in range(start, start + nb)]
+        int_array_values = [None for _ in range(start, start + nb)]
+        float_array_values = [None for _ in range(start, start + nb)]
+        string_array_values = [None for _ in range(start, start + nb)]
+        bool_array_values = [None for _ in range(start, start + nb)]
+
     float_vec_values = gen_vectors(nb, dim)
     df = pd.DataFrame(
         {
@@ -578,7 +645,12 @@ def gen_dataframe_all_data_type(nb=ct.default_nb, dim=ct.default_dim, start=0):
             ct.default_float_field_name: float_values,
             ct.default_double_field_name: double_values,
             ct.default_string_field_name: string_values,
-            ct.default_float_vec_field_name: float_vec_values,
+            ct.default_json_field_name: json_values,
+            ct.default_int64_array_field_name: int_array_values,
+            ct.default_float_array_field_name: float_array_values,
+            ct.default_string_array_field_name: string_array_values,
+            ct.default_bool_array_field_name: bool_array_values,
+            ct.default_float_vec_field_name: float_vec_values
         }
     )
     return df
@@ -874,22 +946,22 @@ def ip(x, y):
 
 
 def jaccard(x, y):
-    x = np.asarray(x, np.bool)
-    y = np.asarray(y, np.bool)
+    x = np.asarray(x, np.bool_)
+    y = np.asarray(y, np.bool_)
     return 1 - np.double(np.bitwise_and(x, y).sum()) / np.double(
         np.bitwise_or(x, y).sum()
     )
 
 
 def hamming(x, y):
-    x = np.asarray(x, np.bool)
-    y = np.asarray(y, np.bool)
+    x = np.asarray(x, np.bool_)
+    y = np.asarray(y, np.bool_)
     return np.bitwise_xor(x, y).sum()
 
 
 def tanimoto(x, y):
-    x = np.asarray(x, np.bool)
-    y = np.asarray(y, np.bool)
+    x = np.asarray(x, np.bool_)
+    y = np.asarray(y, np.bool_)
     res = np.double(np.bitwise_and(x, y).sum()) / np.double(np.bitwise_or(x, y).sum())
     if res == 0:
         value = 0
@@ -899,22 +971,22 @@ def tanimoto(x, y):
 
 
 def tanimoto_calc(x, y):
-    x = np.asarray(x, np.bool)
-    y = np.asarray(y, np.bool)
+    x = np.asarray(x, np.bool_)
+    y = np.asarray(y, np.bool_)
     return np.double((len(x) - np.bitwise_xor(x, y).sum())) / (
         len(y) + np.bitwise_xor(x, y).sum()
     )
 
 
 def substructure(x, y):
-    x = np.asarray(x, np.bool)
-    y = np.asarray(y, np.bool)
+    x = np.asarray(x, np.bool_)
+    y = np.asarray(y, np.bool_)
     return 1 - np.double(np.bitwise_and(x, y).sum()) / np.count_nonzero(y)
 
 
 def superstructure(x, y):
-    x = np.asarray(x, np.bool)
-    y = np.asarray(y, np.bool)
+    x = np.asarray(x, np.bool_)
+    y = np.asarray(y, np.bool_)
     return 1 - np.double(np.bitwise_and(x, y).sum()) / np.count_nonzero(x)
 
 
@@ -1008,6 +1080,7 @@ def insert_data(
     auto_id=False,
     dim=ct.default_dim,
     insert_offset=0,
+    nullable=False,
 ):
     """
     target: insert non-binary/binary data
@@ -1022,14 +1095,14 @@ def insert_data(
     start = insert_offset
     log.info(f"inserted {nb} data into collection {collection_w.name}")
     for i in range(num):
-        default_data = gen_default_dataframe_data(nb // num, dim=dim, start=start)
+        default_data = gen_default_dataframe_data(nb // num, dim=dim, start=start, nullable=nullable)
         if is_binary:
             default_data, binary_raw_data = gen_default_binary_dataframe_data(
                 nb // num, dim=dim, start=start
             )
             binary_raw_vectors.extend(binary_raw_data)
         if is_all_data_type:
-            default_data = gen_dataframe_all_data_type(nb // num, dim=dim, start=start)
+            default_data = gen_dataframe_all_data_type(nb // num, dim=dim, start=start, nullable=nullable)
         if auto_id:
             default_data.drop(ct.default_int64_field_name, axis=1, inplace=True)
         insert_res = collection_w.insert(default_data, par[i].name)[0]
