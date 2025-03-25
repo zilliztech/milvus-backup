@@ -386,6 +386,8 @@ class TestcaseBase(Base):
         is_flushed=True,
         check_function=False,
         enable_partition=False,
+        nullable=False,
+        is_all_data_type = False
     ):
         """
         prepare data for test case
@@ -395,11 +397,15 @@ class TestcaseBase(Base):
         prefix = "backup_e2e_"
         name = cf.gen_unique_str(prefix) if name is None else name
         default_schema = cf.gen_default_collection_schema(
-            auto_id=auto_id, dim=dim, primary_field=primary_field
+            auto_id=auto_id, dim=dim, primary_field=primary_field, nullable=nullable
         )
         if is_binary:
             default_schema = cf.gen_default_binary_collection_schema(
                 auto_id=auto_id, dim=dim, primary_field=primary_field
+            )
+        if is_all_data_type:
+            default_schema = cf.gen_collection_schema_all_datatype(
+                auto_id=auto_id, dim=dim, primary_field=primary_field, nullable=nullable
             )
         collection_w = self.init_collection_wrap(
             name=name, schema=default_schema, active_trace=True
@@ -411,7 +417,8 @@ class TestcaseBase(Base):
         assert collection_w.name == name
         if nb > 0:
             cf.insert_data(
-                collection_w, nb=nb, is_binary=is_binary, auto_id=auto_id, dim=dim
+                collection_w, nb=nb, is_binary=is_binary, auto_id=auto_id, dim=dim, nullable=nullable,
+                is_all_data_type=is_all_data_type
             )
         if is_flushed:
             collection_w.flush(timeout=180)
