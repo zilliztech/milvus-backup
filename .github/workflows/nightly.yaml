@@ -12,8 +12,6 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        deploy_tools: [docker-compose]
-        milvus_mode: [standalone]
         milvus_version: ["master", "2.5"]
 
     steps:
@@ -30,19 +28,10 @@ jobs:
           go-version: '1.23'
           cache: true
 
-      - name: Creating kind cluster
-        if: ${{ matrix.deploy_tools == 'helm' }}
-        uses: helm/kind-action@v1.12.0
-
       - name: Build
         timeout-minutes: 5
         shell: bash
         run: |
-          if [ ${{ matrix.deploy_tools }} == 'helm' ]; then
-            yq -i '.minio.bucketName = "milvus-bucket"' configs/backup.yaml
-            yq -i '.minio.backupBucketName = "milvus-bucket"' configs/backup.yaml
-            yq -i '.minio.rootPath = "file"' configs/backup.yaml
-          fi
           yq -i '.log.level = "debug"' configs/backup.yaml
           cat configs/backup.yaml || true
           go get
@@ -61,30 +50,16 @@ jobs:
 
         timeout-minutes: 15
         shell: bash
-        working-directory: deployment/${{ matrix.milvus_mode }}
+        working-directory: deployment/standalone
         run: |
-          if [ ${{ matrix.deploy_tools }} == "helm" ]; then
-            helm repo add milvus https://zilliztech.github.io/milvus-helm
-            helm repo update
-            helm install --wait --timeout 600s milvus-backup milvus/milvus --set image.all.tag=${{ matrix.milvus_version }} -f values.yaml
-            kubectl get pods
-            kubectl port-forward service/milvus-backup 19530 >/dev/null 2>&1 &
-            kubectl port-forward service/milvus-backup-minio 9000  >/dev/null 2>&1 &
-            sleep 10
-            nc -vz 127.0.0.1 19530
-            nc -vz 127.0.0.1 9000
-            sleep 10
-            kubectl get pods -n default | grep milvus-backup
+          if [ ${{ matrix.milvus_version }} == "master" ]; then
+            mv docker-compose-tei.yml docker-compose.yml
           fi
-
-          if [ ${{ matrix.deploy_tools}} == "docker-compose" ]; then
-            tag=$(python3 ../../scripts/get_latest_tag.py -n milvusdb -r milvus --prefix ${{ matrix.milvus_version }} --arch amd64)
-            yq -i ".services.standalone.image= \"milvusdb/milvus:$tag\"" docker-compose.yml
-            cat docker-compose.yml
-            docker-compose up -d
-            bash ../../scripts/check_healthy.sh
-            docker-compose ps -a
-          fi
+          tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.milvus_version }}-latest) && echo $tag
+          yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          docker-compose up -d
+          bash ../../scripts/check_healthy.sh
+          docker-compose ps -a
 
       - name: Start server
         timeout-minutes: 5
@@ -92,46 +67,13 @@ jobs:
         run: |
           ./milvus-backup server > server.log 2>&1 &
 
-      
-      - name: Deploy Text Embedding Inference
-        timeout-minutes: 5
-        shell: bash
-        if: ${{ matrix.milvus_version == 'master' }}
-        working-directory: tests
-        run: |
-            model=BAAI/bge-base-en-v1.5
-            volume=$PWD/data # share a volume with the Docker container to avoid downloading weights every run
-            docker run -d -p 8848:80 -v $volume:/data --pull always ghcr.io/huggingface/text-embeddings-inference:cpu-1.6 --model-id $model
-            
-            # Wait for the container to be ready
-            echo "Waiting for Text Embedding Inference service to be ready..."
-            max_retries=30
-            retry_count=0
-            
-            while [ $retry_count -lt $max_retries ]; do
-              # Check if port 8848 is open
-              if nc -vz 127.0.0.1 8848 2>/dev/null; then
-                echo "Text Embedding Inference service is ready!"
-                break
-              fi
-              
-              echo "Service not ready yet, retrying in 2 seconds..."
-              sleep 2
-              retry_count=$((retry_count+1))
-            done
-            
-            if [ $retry_count -eq $max_retries ]; then
-              echo "Failed to validate Text Embedding Inference service after multiple attempts"
-              exit 1
-            fi
-
       - name: Run test
         timeout-minutes: 180
         shell: bash
         working-directory: tests
         run: |
           if [ ${{ matrix.milvus_version }} == "master" ]; then
-            pytest -s -v --tags L0 L1 L2 L3 MASTER -n 4 --tei_endpoint http://127.0.0.1:8848
+            pytest -s -v --tags L0 L1 L2 L3 MASTER -n 4 --tei_endpoint http://text-embeddings:80
           fi
 
           if [ ${{ matrix.milvus_version }} != "master" ]; then
@@ -140,7 +82,7 @@ jobs:
 
       - name: Get Milvus status
         shell: bash
-        working-directory: deployment/${{ matrix.milvus_mode }}
+        working-directory: deployment/standalone
         run: |
           docker-compose ps -a || true
           kubectl get pods -n default || true
@@ -148,26 +90,20 @@ jobs:
       - name: Export logs
         if: ${{ always() }}
         shell: bash
-        working-directory: deployment/${{ matrix.milvus_mode }}
+        working-directory: deployment/standalone
         run: |
-          if [ ${{ matrix.deploy_tools}} == "helm" ]; then
-            bash ../../scripts/export_log_k8s.sh default milvus-backup logs
-          fi
-
-          if [ ${{ matrix.deploy_tools}} == "docker-compose" ]; then
-            bash ../../scripts/export_log_docker.sh logs
-          fi
+          bash ../../scripts/export_log_docker.sh logs
 
       - name: Upload logs
         if: ${{ ! success() }}
         uses: actions/upload-artifact@v4
         with:
-          name: logs-${{ matrix.deploy_tools }}-${{ matrix.milvus_mode }}-${{ matrix.milvus_version }}
+          name: logs-docker-standalone-${{ matrix.milvus_version }}
           path: |
             ./logs
             ./server.log
             /tmp/ci_logs
-            deployment/${{ matrix.milvus_mode }}/logs
+            deployment/standalone/logs
 
   test-backup-restore-with-custom-config:
     runs-on: ubuntu-latest
