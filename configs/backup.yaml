@@ -37,7 +37,7 @@ minio:
   port: 9000   # Port of MinIO/S3
   accessKeyID: minioadmin  # accessKeyID of MinIO/S3
   secretAccessKey: minioadmin # MinIO/S3 encryption string
-  gcpCredentialJSON: "/root/gcs/gcpnative_creds.json" # The JSON content contains the gcs service account credentials.
+  gcpCredentialJSON: "/path/to/json-key-file" # The JSON content contains the gcs service account credentials.
   # Used only for the "gcpnative" cloud provider.
   useSSL: false # Access to MinIO/S3 with SSL
   useIAM: false
@@ -51,7 +51,7 @@ minio:
   backupPort: 9000   # Port of MinIO/S3
   backupAccessKeyID: minioadmin  # accessKeyID of MinIO/S3
   backupSecretAccessKey: minioadmin # MinIO/S3 encryption string
-  backupGcpCredentialJSON: "/root/gcs/gcpnative_creds.json" # The JSON content contains the gcs service account credentials.
+  backupGcpCredentialJSON: "/path/to/json-key-file" # The JSON content contains the gcs service account credentials.
   # Used only for the "gcpnative" cloud provider.
   backupBucketName: "a-bucket" # Bucket name to store backup data. Backup data will store to backupBucketName/backupRootPath
   backupRootPath: "backup" # Rootpath to store backup data. Backup data will store to backupBucketName/backupRootPath
@@ -82,3 +82,4 @@ backup:
     enable: true
     seconds: 7200
     address: http://localhost:9091
+    

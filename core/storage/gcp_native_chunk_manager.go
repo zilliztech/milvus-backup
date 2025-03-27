@@ -228,7 +228,7 @@ func (gcm *GCPNativeChunkManager) Remove(ctx context.Context, bucketName string,
 	return nil
 }
 
-func (gcm *GCPNativeChunkManager) RemoveWithPrefix(ctx context.Context, bucketName string, prefix string) error {
+func (gcm *GCPNativeChunkManager) RemoveWithPrefix_OLD(ctx context.Context, bucketName string, prefix string) error {
 	objectKeys, _, err := gcm.ListWithPrefix(ctx, bucketName, prefix, false)
 	if err != nil {
 		return err
@@ -282,6 +282,35 @@ func (gcm *GCPNativeChunkManager) RemoveWithPrefix(ctx context.Context, bucketNa
 	if err != nil {
 		log.Warn("failed to remove object", zap.String("bucket", bucketName), zap.String("path", prefix), zap.Error(err))
 		return err
+	}
+	return nil
+}
+
+func (gcm *GCPNativeChunkManager) RemoveWithPrefix(ctx context.Context, bucketName string, prefix string) error {
+	objectKeys, _, err := gcm.ListWithPrefix(ctx, bucketName, prefix, false)
+	if err != nil {
+		return err
+	}
+	// Remove objects in parallel
+	i := 0
+	maxGoroutine := 10
+	for i < len(objectKeys) {
+		runningGroup, groupCtx := errgroup.WithContext(ctx)
+		for j := 0; j < maxGoroutine && i < len(objectKeys); j++ {
+			key := objectKeys[i]
+			runningGroup.Go(func() error {
+				err := gcm.Remove(groupCtx, bucketName, key)
+				if err != nil {
+					log.Warn("failed to remove object", zap.String("bucket", bucketName), zap.String("path", key), zap.Error(err))
+					return err
+				}
+				return nil
+			})
+			i++
+		}
+		if err := runningGroup.Wait(); err != nil {
+			return err
+		}
 	}
 	return nil
 }
