@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -225,15 +224,8 @@ func (aos *AzureObjectStorage) CopyObject(ctx context.Context, fromBucketName, t
 		return nil
 	}()
 
-	// Check if fromPath is a folder or a file
-	isFile, err := aos.isFile(ctx, fromBucketName, fromPath)
-	if err != nil {
-		return err
-	}
-	if isFile {
-		if _, err := blobCli.CopyFromURL(ctx, fromPathUrl, nil); err != nil {
-			return fmt.Errorf("storage: azure copy from url %w abort previous %w", err, abortErr)
-		}
+	if _, err := blobCli.CopyFromURL(ctx, fromPathUrl, nil); err != nil {
+		return fmt.Errorf("storage: azure copy from url %w abort previous %w", err, abortErr)
 	}
 	return nil
 }
@@ -255,22 +247,3 @@ func (aos *AzureObjectStorage) getSAS(bucket string) (*sas.QueryParameters, erro
 	return &sasQueryParams, nil
 }
 
-func (aos *AzureObjectStorage) isFile(ctx context.Context, bucketName, path string) (bool, error) {
-	// Prefix ends with a slash for directory-like behavior
-	directoryPrefix := path
-	if !strings.HasSuffix(directoryPrefix, "/") {
-		directoryPrefix += "/"
-	}
-
-	objects, err := aos.ListObjects(ctx, bucketName, directoryPrefix, false)
-	if err != nil {
-		return false, err
-	}
-	// If ListObjects called with end file name, it returns file name itself
-	if len(objects) == 1 {
-		if _, found := objects[path]; found {
-			return true, nil
-		}
-	}
-	return false, nil
-}
