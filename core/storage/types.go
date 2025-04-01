@@ -66,15 +66,6 @@ type Object struct {
 type ObjectAttr struct {
 	Key    string
 	Length int64
-
-	// The documentation for s3 says, ETag may NOT be an MD5 digest of the object data.
-	ETag string
-}
-
-// SameAs returns true if two ObjectAttr are the same.
-// If two ObjectAttr have same length and ETag, they are considered.
-func (o *ObjectAttr) SameAs(other ObjectAttr) bool {
-	return o.Length == other.Length && o.ETag == other.ETag
 }
 
 func (o *ObjectAttr) IsEmpty() bool { return o.Length == 0 }

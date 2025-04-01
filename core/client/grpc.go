@@ -80,7 +80,7 @@ type Grpc interface {
 	DropCollection(ctx context.Context, db, collectionName string) error
 	ListIndex(ctx context.Context, db, collName string) ([]*milvuspb.IndexDescription, error)
 	ShowPartitions(ctx context.Context, db, collName string) (*milvuspb.ShowPartitionsResponse, error)
-	GetLoadingProgress(ctx context.Context, db, collName string, partitionNames []string) (int64, error)
+	GetLoadingProgress(ctx context.Context, db, collName string, partitionNames ...string) (int64, error)
 	GetPersistentSegmentInfo(ctx context.Context, db, collName string) ([]*milvuspb.PersistentSegmentInfo, error)
 	Flush(ctx context.Context, db, collName string) (*milvuspb.FlushResponse, error)
 	ListCollections(ctx context.Context, db string) (*milvuspb.ShowCollectionsResponse, error)
@@ -94,6 +94,7 @@ type Grpc interface {
 	DropIndex(ctx context.Context, db, collName, indexName string) error
 	BackupRBAC(ctx context.Context) (*milvuspb.BackupRBACMetaResponse, error)
 	RestoreRBAC(ctx context.Context, rbacMeta *milvuspb.RBACMeta) error
+	ReplicateMessage(ctx context.Context, channelName string) (string, error)
 }
 
 const (
@@ -405,7 +406,7 @@ func (g *GrpcClient) ShowPartitions(ctx context.Context, db, collName string) (*
 	return resp, nil
 }
 
-func (g *GrpcClient) GetLoadingProgress(ctx context.Context, db, collName string, partitionNames []string) (int64, error) {
+func (g *GrpcClient) GetLoadingProgress(ctx context.Context, db, collName string, partitionNames ...string) (int64, error) {
 	ctx = g.newCtxWithDB(ctx, db)
 	resp, err := g.srv.GetLoadingProgress(ctx, &milvuspb.GetLoadingProgressRequest{CollectionName: collName, PartitionNames: partitionNames})
 	if err != nil {
@@ -428,9 +429,12 @@ func (g *GrpcClient) GetPersistentSegmentInfo(ctx context.Context, db, collName 
 func (g *GrpcClient) Flush(ctx context.Context, db, collName string) (*milvuspb.FlushResponse, error) {
 	ctx = g.newCtxWithDB(ctx, db)
 
+	start := time.Now()
 	if err := g.limiters.flush.Wait(ctx); err != nil {
 		return nil, fmt.Errorf("client: flush wait: %w", err)
 	}
+	cost := time.Since(start)
+	g.logger.Info("flush wait aimd", zap.Duration("cost", cost), zap.String("db", db), zap.String("collection", collName))
 
 	resp, err := g.srv.Flush(ctx, &milvuspb.FlushRequest{CollectionNames: []string{collName}})
 	if err := checkResponse(resp, err); err != nil {
@@ -697,4 +701,14 @@ func (g *GrpcClient) RestoreRBAC(ctx context.Context, rbacMeta *milvuspb.RBACMet
 	}
 
 	return nil
+}
+
+func (g *GrpcClient) ReplicateMessage(ctx context.Context, channelName string) (string, error) {
+	ctx = g.newCtx(ctx)
+	resp, err := g.srv.ReplicateMessage(ctx, &milvuspb.ReplicateMessageRequest{ChannelName: channelName})
+	if err := checkResponse(resp, err); err != nil {
+		return "", fmt.Errorf("client: replicate message failed: %w", err)
+	}
+
+	return resp.GetPosition(), nil
 }

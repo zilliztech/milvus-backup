@@ -32,11 +32,6 @@ type RestfulBulkInsertInput struct {
 	IsL0           bool
 }
 
-type RestfulBulkInsert interface {
-	BulkInsert(ctx context.Context, input RestfulBulkInsertInput) (string, error)
-	GetBulkInsertState(ctx context.Context, db, jobID string) (*GetProcessResp, error)
-}
-
 type ImportDetail struct {
 	FileName     string    `json:"fileName"`
 	FileSize     int       `json:"fileSize"`
@@ -75,8 +70,9 @@ type GetProgressReq struct {
 }
 
 type createImportResp struct {
-	Code int `json:"code"`
-	Data struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Data    struct {
 		JobId string `json:"jobId"`
 	} `json:"data"`
 }
@@ -89,7 +85,45 @@ type createImportReq struct {
 	Options        map[string]string `json:"options,omitempty"`
 }
 
-var _ RestfulBulkInsert = (*RestfulClient)(nil)
+type getSegmentInfoResp struct {
+	Code int `json:"code"`
+	Data struct {
+		SegmentInfos []SegmentInfo `json:"segmentInfos"`
+	} `json:"data"`
+}
+
+type getSegmentInfoReq struct {
+	DbName       string  `json:"dbName"`
+	CollectionID int64   `json:"collectionId"`
+	SegmentIDs   []int64 `json:"segmentIds"`
+}
+
+type BinlogInfo struct {
+	FieldID int64   `json:"fieldID"`
+	LogIDs  []int64 `json:"logIDs"`
+}
+
+type SegmentInfo struct {
+	CollectionID int64        `json:"collectionID"`
+	DeltaLogs    []BinlogInfo `json:"deltaLogs"`
+	InsertLogs   []BinlogInfo `json:"insertLogs"`
+	IsSorted     bool         `json:"isSorted"`
+	Level        int          `json:"level"`
+	NumRows      int          `json:"numRows"`
+	PartitionID  int64        `json:"partitionID"`
+	SegmentID    int64        `json:"segmentID"`
+	State        int          `json:"state"`
+	StatsLogs    []BinlogInfo `json:"statsLogs"`
+	VChannel     string       `json:"vChannel"`
+}
+
+type Restful interface {
+	BulkInsert(ctx context.Context, input RestfulBulkInsertInput) (string, error)
+	GetBulkInsertState(ctx context.Context, db, jobID string) (*GetProcessResp, error)
+	GetSegmentInfo(ctx context.Context, db string, collID, segID int64) (*SegmentInfo, error)
+}
+
+var _ Restful = (*RestfulClient)(nil)
 
 type RestfulClient struct {
 	cli *req.Client
@@ -154,6 +188,33 @@ func (r *RestfulClient) GetBulkInsertState(ctx context.Context, dbName, jobID st
 	}
 
 	return &getResp, nil
+}
+
+func (r *RestfulClient) GetSegmentInfo(ctx context.Context, db string, collID, segID int64) (*SegmentInfo, error) {
+	getReq := getSegmentInfoReq{DbName: db, CollectionID: collID, SegmentIDs: []int64{segID}}
+
+	var getResp getSegmentInfoResp
+	resp, err := r.cli.R().
+		SetContext(ctx).
+		SetBody(getReq).
+		SetSuccessResult(&getResp).
+		Post("/v2/vectordb/segments/describe")
+	if err != nil {
+		return nil, fmt.Errorf("client: failed to get segment info via restful: %w", err)
+	}
+	log.Debug("get segment info via restful", zap.Any("getResp", resp))
+	if resp.IsErrorState() {
+		return nil, fmt.Errorf("client: failed to get segment info via restful: %v", resp)
+	}
+
+	if len(getResp.Data.SegmentInfos) == 0 {
+		return nil, fmt.Errorf("client: no segment info found for segment id %d", segID)
+	}
+	if getResp.Code != 0 {
+		return nil, fmt.Errorf("client: failed to get segment info via restful: %v", getResp)
+	}
+
+	return &getResp.Data.SegmentInfos[0], nil
 }
 
 func restfulAuth(username, password string) string {
