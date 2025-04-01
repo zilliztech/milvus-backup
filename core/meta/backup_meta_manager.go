@@ -112,6 +112,7 @@ func SetErrorMessage(errorMessage string) BackupOpt {
 		backup.ErrorMessage = errorMessage
 	}
 }
+
 func setStartTime(startTime int64) BackupOpt {
 	return func(backup *backuppb.BackupInfo) {
 		backup.StartTime = startTime
@@ -121,6 +122,12 @@ func setStartTime(startTime int64) BackupOpt {
 func SetEndTime(endTime int64) BackupOpt {
 	return func(backup *backuppb.BackupInfo) {
 		backup.EndTime = endTime
+	}
+}
+
+func SetRPCChannelPos(name, pos string) BackupOpt {
+	return func(backup *backuppb.BackupInfo) {
+		backup.RpcChannelInfo = &backuppb.RPCChannelInfo{Name: name, Position: pos}
 	}
 }
 
@@ -167,6 +174,12 @@ func setMilvusVersion(milvusVersion string) BackupOpt {
 func SetRBACMeta(rbacMeta *backuppb.RBACMeta) BackupOpt {
 	return func(backup *backuppb.BackupInfo) {
 		backup.RbacMeta = rbacMeta
+	}
+}
+
+func AddDatabase(database *backuppb.DatabaseBackupInfo) BackupOpt {
+	return func(backup *backuppb.BackupInfo) {
+		backup.DatabaseBackups = append(backup.DatabaseBackups, database)
 	}
 }
 
@@ -226,9 +239,9 @@ func SetCollectionSize(size int64) CollectionOpt {
 	}
 }
 
-func SetL0Segments(segments []*backuppb.SegmentBackupInfo) CollectionOpt {
+func AddL0Segment(segment *backuppb.SegmentBackupInfo) CollectionOpt {
 	return func(collection *backuppb.CollectionBackupInfo) {
-		collection.L0Segments = segments
+		collection.L0Segments = append(collection.L0Segments, segment)
 	}
 }
 
