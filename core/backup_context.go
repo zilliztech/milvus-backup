@@ -22,11 +22,10 @@ import (
 )
 
 const (
-	BackupName                    = "BACKUP_NAME"
-	CollectionRenameSuffix        = "COLLECTION_RENAME_SUFFIX"
-	RPS                           = 1000
-	BackupSegmentGroupMaxSizeInMB = 256
-	GcWarnMessage                 = "This warn won't fail the backup process. Pause GC can protect data not to be GCed during backup, it is necessary to backup very large data(cost more than a hour)."
+	BackupName             = "BACKUP_NAME"
+	CollectionRenameSuffix = "COLLECTION_RENAME_SUFFIX"
+	RPS                    = 1000
+	GcWarnMessage          = "This warn won't fail the backup process. Pause GC can protect data not to be GCed during backup, it is necessary to backup very large data(cost more than a hour)."
 )
 
 // makes sure BackupContext implements `Backup`
@@ -213,38 +212,6 @@ func (b *BackupContext) getBackupCopier() *storage.Copier {
 			})
 	}
 	return b.backupCopier
-}
-
-func (b *BackupContext) getRestoreCopier() *storage.Copier {
-	crossStorage := b.params.MinioCfg.CrossStorage
-	// force set copyByServer is true if two storage type is different
-	if b.getBackupStorageClient().Config().StorageType != b.getMilvusStorageClient().Config().StorageType {
-		crossStorage = true
-	}
-	if b.restoreCopier == nil {
-		b.restoreCopier = storage.NewCopier(
-			b.getBackupStorageClient(),
-			b.getMilvusStorageClient(),
-			storage.CopyOption{
-				WorkerNum:    b.params.BackupCfg.BackupCopyDataParallelism,
-				RPS:          RPS,
-				CopyByServer: crossStorage,
-			})
-	}
-	return b.restoreCopier
-}
-
-func (b *BackupContext) getBackupCollectionWorkerPool() *common.WorkerPool {
-	if b.backupCollectionWorkerPool == nil {
-		wp, err := common.NewWorkerPool(b.ctx, b.params.BackupCfg.BackupCollectionParallelism, RPS)
-		if err != nil {
-			log.Error("failed to initial collection backup worker pool", zap.Error(err))
-			panic(err)
-		}
-		b.backupCollectionWorkerPool = wp
-		b.backupCollectionWorkerPool.Start()
-	}
-	return b.backupCollectionWorkerPool
 }
 
 func (b *BackupContext) getCopyDataWorkerPool() *common.WorkerPool {

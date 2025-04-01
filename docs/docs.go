@@ -346,6 +346,10 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "entries_num": {
+                    "description": "Deprecated: Marked as deprecated in backup.proto.",
+                    "type": "integer"
+                },
+                "log_id": {
                     "type": "integer"
                 },
                 "log_path": {
@@ -355,9 +359,11 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "timestamp_from": {
+                    "description": "Deprecated: Marked as deprecated in backup.proto.",
                     "type": "integer"
                 },
                 "timestamp_to": {
+                    "description": "Deprecated: Marked as deprecated in backup.proto.",
                     "type": "integer"
                 }
             }
@@ -1304,7 +1310,7 @@ const docTemplate = `{
                     }
                 },
                 "group_id": {
-                    "description": "separate segments into multi groups by size,\nsegments in one group will be copied into one directory during backup\nand will bulkinsert in one call during restore",
+                    "description": "The group ID is a virtual partition ID.\nThe Milvus BulkInsert interface requires a partition prefix,\nbut passing multiple segments is a more suitable option.\nTherefore, a virtual partition ID is used here to enable the functionality of importing multiple segments.",
                     "type": "integer"
                 },
                 "is_l0": {
@@ -1323,10 +1329,14 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "statslogs": {
+                    "description": "Deprecated: Marked as deprecated in backup.proto.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/backuppb.FieldBinlog"
                     }
+                },
+                "vChannel": {
+                    "type": "string"
                 }
             }
         },
