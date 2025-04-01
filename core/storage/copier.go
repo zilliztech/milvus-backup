@@ -146,57 +146,6 @@ func (c *Copier) getAttrs(ctx context.Context, bucket, prefix string) ([]ObjectA
 	return attrs, nil
 }
 
-// CopyPrefix Copy all files under src path
-func (c *Copier) CopyPrefix(ctx context.Context, i CopyPathInput) error {
-	srcAttrs, err := c.getAttrs(ctx, i.SrcBucket, i.SrcPrefix)
-	if err != nil {
-		return fmt.Errorf("storage: copier get src attrs %w", err)
-	}
-
-	wp, err := common.NewWorkerPool(ctx, c.workerNum, c.rps)
-	if err != nil {
-		return fmt.Errorf("storage: copier new worker pool %w", err)
-	}
-	wp.Start()
-	fn := c.selectCopyFn()
-	for _, srcAttr := range srcAttrs {
-		attr := srcAttr
-		job := func(ctx context.Context) error {
-			destKey := i.DestKeyFn(attr)
-			// copy
-			destAttr, err := c.dest.HeadObject(ctx, i.DestBucket, destKey)
-			if err != nil || !attr.SameAs(destAttr) {
-				if err := fn(ctx, attr, destKey, i.SrcBucket, i.DestBucket); err != nil {
-					return fmt.Errorf("storage: copier copy object %w", err)
-				}
-			}
-			// check
-			destAttr, err = c.dest.HeadObject(ctx, i.DestBucket, destKey)
-			if err != nil {
-				return fmt.Errorf("storage: after copy  %w", err)
-			}
-			if destAttr.Length != attr.Length {
-				return fmt.Errorf("storage: dest len %d != src len %d", destAttr.Length, attr.Length)
-			}
-
-			if i.OnSuccess != nil {
-				i.OnSuccess(attr)
-			}
-			c.cnt.Add(1)
-
-			return nil
-		}
-
-		wp.Submit(job)
-	}
-	wp.Done()
-
-	if err := wp.Wait(); err != nil {
-		return fmt.Errorf("storage: copier copy prefix %w", err)
-	}
-	return nil
-}
-
 func (c *Copier) Copy(ctx context.Context, srcPrefix, destPrefix, srcBucket, destBucket string) error {
 	fn := c.selectCopyFn()
 	srcAttrs, err := c.getAttrs(ctx, srcBucket, srcPrefix)
@@ -209,6 +158,38 @@ func (c *Copier) Copy(ctx context.Context, srcPrefix, destPrefix, srcBucket, des
 			return err
 		}
 	}
+	return nil
+}
+
+type CopyAttr struct {
+	Src     ObjectAttr
+	DestKey string
+}
+
+func (c *Copier) CopyObjects(ctx context.Context, srcBucket, destBucket string, attrs []CopyAttr) error {
+	fn := c.selectCopyFn()
+	wp, err := common.NewWorkerPool(ctx, c.workerNum, 0)
+	if err != nil {
+		return fmt.Errorf("storage: copier new worker pool %w", err)
+	}
+	wp.Start()
+
+	for _, attr := range attrs {
+		job := func(ctx context.Context) error {
+			if err := fn(ctx, attr.Src, attr.DestKey, srcBucket, destBucket); err != nil {
+				return fmt.Errorf("storage: copier copy object %w", err)
+			}
+
+			return nil
+		}
+		wp.Submit(job)
+	}
+	wp.Done()
+
+	if err := wp.Wait(); err != nil {
+		return fmt.Errorf("storage: copier wait worker pool %w", err)
+	}
+
 	return nil
 }
 

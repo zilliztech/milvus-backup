@@ -476,7 +476,7 @@ func (p *MinioListObjectPaginator) NextPage(_ context.Context) (*Page, error) {
 		if obj.Err != nil {
 			return nil, fmt.Errorf("storage list objs %w", obj.Err)
 		}
-		contents = append(contents, ObjectAttr{Key: obj.Key, Length: obj.Size, ETag: obj.ETag})
+		contents = append(contents, ObjectAttr{Key: obj.Key, Length: obj.Size})
 		if len(contents) == int(p.pageSize) {
 			return &Page{Contents: contents}, nil
 		}
@@ -492,7 +492,7 @@ func (mcm *MinioChunkManager) HeadObject(ctx context.Context, bucket, key string
 		return ObjectAttr{}, fmt.Errorf("storage: %s head object %w", mcm.provider, err)
 	}
 
-	return ObjectAttr{Key: attr.Key, Length: attr.Size, ETag: attr.ETag}, nil
+	return ObjectAttr{Key: attr.Key, Length: attr.Size}, nil
 }
 
 func (mcm *MinioChunkManager) ListObjectsPage(ctx context.Context, bucket, prefix string) (ListObjectsPaginator, error) {

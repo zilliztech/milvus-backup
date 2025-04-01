@@ -17,7 +17,7 @@ require (
 	github.com/imroc/req/v3 v3.49.1
 	github.com/json-iterator/go v1.1.12
 	github.com/lingdor/stackerror v0.0.0-20191119040541-976d8885ed76
-	github.com/milvus-io/milvus-proto/go-api/v2 v2.5.1
+	github.com/milvus-io/milvus-proto/go-api/v2 v2.5.7
 	github.com/minio/minio-go/v7 v7.0.82
 	github.com/pkg/errors v0.9.1
 	github.com/samber/lo v1.47.0

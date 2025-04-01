@@ -435,6 +435,65 @@ func (_c *MockGrpc_DescribeCollection_Call) RunAndReturn(run func(context.Contex
 	return _c
 }
 
+// DescribeDatabase provides a mock function with given fields: ctx, dbName
+func (_m *MockGrpc) DescribeDatabase(ctx context.Context, dbName string) (*milvuspb.DescribeDatabaseResponse, error) {
+	ret := _m.Called(ctx, dbName)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DescribeDatabase")
+	}
+
+	var r0 *milvuspb.DescribeDatabaseResponse
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, string) (*milvuspb.DescribeDatabaseResponse, error)); ok {
+		return rf(ctx, dbName)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, string) *milvuspb.DescribeDatabaseResponse); ok {
+		r0 = rf(ctx, dbName)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.DescribeDatabaseResponse)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = rf(ctx, dbName)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockGrpc_DescribeDatabase_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DescribeDatabase'
+type MockGrpc_DescribeDatabase_Call struct {
+	*mock.Call
+}
+
+// DescribeDatabase is a helper method to define mock.On call
+//   - ctx context.Context
+//   - dbName string
+func (_e *MockGrpc_Expecter) DescribeDatabase(ctx interface{}, dbName interface{}) *MockGrpc_DescribeDatabase_Call {
+	return &MockGrpc_DescribeDatabase_Call{Call: _e.mock.On("DescribeDatabase", ctx, dbName)}
+}
+
+func (_c *MockGrpc_DescribeDatabase_Call) Run(run func(ctx context.Context, dbName string)) *MockGrpc_DescribeDatabase_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(string))
+	})
+	return _c
+}
+
+func (_c *MockGrpc_DescribeDatabase_Call) Return(_a0 *milvuspb.DescribeDatabaseResponse, _a1 error) *MockGrpc_DescribeDatabase_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockGrpc_DescribeDatabase_Call) RunAndReturn(run func(context.Context, string) (*milvuspb.DescribeDatabaseResponse, error)) *MockGrpc_DescribeDatabase_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // DropCollection provides a mock function with given fields: ctx, db, collectionName
 func (_m *MockGrpc) DropCollection(ctx context.Context, db string, collectionName string) error {
 	ret := _m.Called(ctx, db, collectionName)
@@ -652,8 +711,15 @@ func (_c *MockGrpc_GetBulkInsertState_Call) RunAndReturn(run func(context.Contex
 }
 
 // GetLoadingProgress provides a mock function with given fields: ctx, db, collName, partitionNames
-func (_m *MockGrpc) GetLoadingProgress(ctx context.Context, db string, collName string, partitionNames []string) (int64, error) {
-	ret := _m.Called(ctx, db, collName, partitionNames)
+func (_m *MockGrpc) GetLoadingProgress(ctx context.Context, db string, collName string, partitionNames ...string) (int64, error) {
+	_va := make([]interface{}, len(partitionNames))
+	for _i := range partitionNames {
+		_va[_i] = partitionNames[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, db, collName)
+	_ca = append(_ca, _va...)
+	ret := _m.Called(_ca...)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetLoadingProgress")
@@ -661,17 +727,17 @@ func (_m *MockGrpc) GetLoadingProgress(ctx context.Context, db string, collName 
 
 	var r0 int64
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, []string) (int64, error)); ok {
-		return rf(ctx, db, collName, partitionNames)
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, ...string) (int64, error)); ok {
+		return rf(ctx, db, collName, partitionNames...)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, []string) int64); ok {
-		r0 = rf(ctx, db, collName, partitionNames)
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, ...string) int64); ok {
+		r0 = rf(ctx, db, collName, partitionNames...)
 	} else {
 		r0 = ret.Get(0).(int64)
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, string, string, []string) error); ok {
-		r1 = rf(ctx, db, collName, partitionNames)
+	if rf, ok := ret.Get(1).(func(context.Context, string, string, ...string) error); ok {
+		r1 = rf(ctx, db, collName, partitionNames...)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -688,14 +754,21 @@ type MockGrpc_GetLoadingProgress_Call struct {
 //   - ctx context.Context
 //   - db string
 //   - collName string
-//   - partitionNames []string
-func (_e *MockGrpc_Expecter) GetLoadingProgress(ctx interface{}, db interface{}, collName interface{}, partitionNames interface{}) *MockGrpc_GetLoadingProgress_Call {
-	return &MockGrpc_GetLoadingProgress_Call{Call: _e.mock.On("GetLoadingProgress", ctx, db, collName, partitionNames)}
+//   - partitionNames ...string
+func (_e *MockGrpc_Expecter) GetLoadingProgress(ctx interface{}, db interface{}, collName interface{}, partitionNames ...interface{}) *MockGrpc_GetLoadingProgress_Call {
+	return &MockGrpc_GetLoadingProgress_Call{Call: _e.mock.On("GetLoadingProgress",
+		append([]interface{}{ctx, db, collName}, partitionNames...)...)}
 }
 
-func (_c *MockGrpc_GetLoadingProgress_Call) Run(run func(ctx context.Context, db string, collName string, partitionNames []string)) *MockGrpc_GetLoadingProgress_Call {
+func (_c *MockGrpc_GetLoadingProgress_Call) Run(run func(ctx context.Context, db string, collName string, partitionNames ...string)) *MockGrpc_GetLoadingProgress_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string), args[2].(string), args[3].([]string))
+		variadicArgs := make([]string, len(args)-3)
+		for i, a := range args[3:] {
+			if a != nil {
+				variadicArgs[i] = a.(string)
+			}
+		}
+		run(args[0].(context.Context), args[1].(string), args[2].(string), variadicArgs...)
 	})
 	return _c
 }
@@ -705,7 +778,7 @@ func (_c *MockGrpc_GetLoadingProgress_Call) Return(_a0 int64, _a1 error) *MockGr
 	return _c
 }
 
-func (_c *MockGrpc_GetLoadingProgress_Call) RunAndReturn(run func(context.Context, string, string, []string) (int64, error)) *MockGrpc_GetLoadingProgress_Call {
+func (_c *MockGrpc_GetLoadingProgress_Call) RunAndReturn(run func(context.Context, string, string, ...string) (int64, error)) *MockGrpc_GetLoadingProgress_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1116,6 +1189,63 @@ func (_c *MockGrpc_ListIndex_Call) Return(_a0 []*milvuspb.IndexDescription, _a1 
 }
 
 func (_c *MockGrpc_ListIndex_Call) RunAndReturn(run func(context.Context, string, string) ([]*milvuspb.IndexDescription, error)) *MockGrpc_ListIndex_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ReplicateMessage provides a mock function with given fields: ctx, channelName
+func (_m *MockGrpc) ReplicateMessage(ctx context.Context, channelName string) (string, error) {
+	ret := _m.Called(ctx, channelName)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ReplicateMessage")
+	}
+
+	var r0 string
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, string) (string, error)); ok {
+		return rf(ctx, channelName)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, string) string); ok {
+		r0 = rf(ctx, channelName)
+	} else {
+		r0 = ret.Get(0).(string)
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = rf(ctx, channelName)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockGrpc_ReplicateMessage_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ReplicateMessage'
+type MockGrpc_ReplicateMessage_Call struct {
+	*mock.Call
+}
+
+// ReplicateMessage is a helper method to define mock.On call
+//   - ctx context.Context
+//   - channelName string
+func (_e *MockGrpc_Expecter) ReplicateMessage(ctx interface{}, channelName interface{}) *MockGrpc_ReplicateMessage_Call {
+	return &MockGrpc_ReplicateMessage_Call{Call: _e.mock.On("ReplicateMessage", ctx, channelName)}
+}
+
+func (_c *MockGrpc_ReplicateMessage_Call) Run(run func(ctx context.Context, channelName string)) *MockGrpc_ReplicateMessage_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(string))
+	})
+	return _c
+}
+
+func (_c *MockGrpc_ReplicateMessage_Call) Return(_a0 string, _a1 error) *MockGrpc_ReplicateMessage_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockGrpc_ReplicateMessage_Call) RunAndReturn(run func(context.Context, string) (string, error)) *MockGrpc_ReplicateMessage_Call {
 	_c.Call.Return(run)
 	return _c
 }

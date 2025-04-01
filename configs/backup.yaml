@@ -28,6 +28,9 @@ milvus:
   mtlsCertPath: ""
   mtlsKeyPath: ""
 
+  # Milvus replicate msg channel name, default is by-dev-replicate-msg
+  rpcChannelName: "by-dev-replicate-msg"
+
 # Related configuration of minio, which is responsible for data persistence for Milvus.
 minio:
   # Milvus storage configs, make them the same with milvus config
