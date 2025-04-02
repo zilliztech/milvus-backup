@@ -486,6 +486,7 @@ func (ct *CollectionTask) restoreScalarFieldIdx(ctx context.Context, indexes []*
 		indexName := index.GetIndexName()
 		if hasSpecialChar(indexName) {
 			// Skip index name for JSON path index (eg. /a/b/c) in Milvus 2.5 due to special character issue
+			// If milvus changed the index name validation, we should also update this function
 			// TODO: Handle other special character cases if found in the future
 			indexName = ""
 		}
