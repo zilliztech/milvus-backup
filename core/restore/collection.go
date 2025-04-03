@@ -447,17 +447,55 @@ func (ct *CollectionTask) createIndex(ctx context.Context) error {
 	return nil
 }
 
+// hasSpecialChar checks if the index name contains special characters
+// This function is mainly copied from milvus main repo
+func hasSpecialChar(indexName string) bool {
+	indexName = strings.TrimSpace(indexName)
+
+	if indexName == "" {
+		return false
+	}
+
+	isAlpha := func(c byte) bool {
+		return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
+	}
+	isNumber := func(c byte) bool {
+		return c >= '0' && c <= '9'
+	}
+	firstChar := indexName[0]
+	if firstChar != '_' && !isAlpha(firstChar) {
+		return true
+	}
+
+	indexNameSize := len(indexName)
+	for i := 1; i < indexNameSize; i++ {
+		c := indexName[i]
+		if c != '_' && !isAlpha(c) && !isNumber(c) {
+			return true
+		}
+	}
+	return false
+}
+
 func (ct *CollectionTask) restoreScalarFieldIdx(ctx context.Context, indexes []*backuppb.IndexInfo) error {
 	for _, index := range indexes {
 		ct.logger.Info("source index",
 			zap.String("indexName", index.GetIndexName()),
 			zap.Any("params", index.GetParams()))
 
+		indexName := index.GetIndexName()
+		if hasSpecialChar(indexName) {
+			// Skip index name for JSON path index (eg. /a/b/c) in Milvus 2.5 due to special character issue
+			// If milvus changed the index name validation, we should also update this function
+			// TODO: Handle other special character cases if found in the future
+			indexName = ""
+		}
+
 		opt := client.CreateIndexInput{
 			DB:             ct.task.GetTargetDbName(),
 			CollectionName: ct.task.GetTargetCollectionName(),
 			FieldName:      index.GetFieldName(),
-			IndexName:      index.GetIndexName(),
+			IndexName:      indexName,
 			Params:         index.GetParams(),
 		}
 		if err := ct.grpcCli.CreateIndex(ctx, opt); err != nil {
