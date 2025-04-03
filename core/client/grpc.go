@@ -13,6 +13,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/milvus-io/milvus/pkg/v2/proto/internalpb"
+	"github.com/milvus-io/milvus/pkg/v2/proto/proxypb"
+
 	"github.com/golang/protobuf/proto"
 	grpcretry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
@@ -80,8 +83,9 @@ type Grpc interface {
 	DropCollection(ctx context.Context, db, collectionName string) error
 	ListIndex(ctx context.Context, db, collName string) ([]*milvuspb.IndexDescription, error)
 	ShowPartitions(ctx context.Context, db, collName string) (*milvuspb.ShowPartitionsResponse, error)
-	GetLoadingProgress(ctx context.Context, db, collName string, partitionNames []string) (int64, error)
+	GetLoadingProgress(ctx context.Context, db, collName string, partitionNames ...string) (int64, error)
 	GetPersistentSegmentInfo(ctx context.Context, db, collName string) ([]*milvuspb.PersistentSegmentInfo, error)
+	GetSegmentInfo(ctx context.Context, db string, collID int64, segmentIDs []int64) ([]*internalpb.SegmentInfo, error)
 	Flush(ctx context.Context, db, collName string) (*milvuspb.FlushResponse, error)
 	ListCollections(ctx context.Context, db string) (*milvuspb.ShowCollectionsResponse, error)
 	HasCollection(ctx context.Context, db, collName string) (bool, error)
@@ -161,8 +165,9 @@ var _ Grpc = (*GrpcClient)(nil)
 type GrpcClient struct {
 	logger *zap.Logger
 
-	conn *grpc.ClientConn
-	srv  milvuspb.MilvusServiceClient
+	conn     *grpc.ClientConn
+	srv      milvuspb.MilvusServiceClient
+	proxySrv proxypb.ProxyClient
 
 	limiters limiters
 
@@ -254,12 +259,14 @@ func NewGrpc(cfg *paramtable.MilvusConfig) (*GrpcClient, error) {
 		return nil, fmt.Errorf("client: create grpc client failed: %w", err)
 	}
 	srv := milvuspb.NewMilvusServiceClient(conn)
+	proxySrv := proxypb.NewProxyClient(conn)
 
 	cli := &GrpcClient{
 		logger: log.L().With(zap.String("component", "grpc-client")),
 
-		conn: conn,
-		srv:  srv,
+		conn:     conn,
+		srv:      srv,
+		proxySrv: proxySrv,
 
 		limiters: newLimiters(),
 
@@ -405,7 +412,7 @@ func (g *GrpcClient) ShowPartitions(ctx context.Context, db, collName string) (*
 	return resp, nil
 }
 
-func (g *GrpcClient) GetLoadingProgress(ctx context.Context, db, collName string, partitionNames []string) (int64, error) {
+func (g *GrpcClient) GetLoadingProgress(ctx context.Context, db, collName string, partitionNames ...string) (int64, error) {
 	ctx = g.newCtxWithDB(ctx, db)
 	resp, err := g.srv.GetLoadingProgress(ctx, &milvuspb.GetLoadingProgressRequest{CollectionName: collName, PartitionNames: partitionNames})
 	if err != nil {
@@ -425,12 +432,34 @@ func (g *GrpcClient) GetPersistentSegmentInfo(ctx context.Context, db, collName 
 	return resp.GetInfos(), nil
 }
 
+func (g *GrpcClient) GetSegmentInfo(ctx context.Context, db string, collID int64, segmentIDs []int64) ([]*internalpb.SegmentInfo, error) {
+	ctx = g.newCtxWithDB(ctx, db)
+	in := &internalpb.GetSegmentsInfoRequest{
+		DbName:       db,
+		CollectionID: collID,
+		SegmentIDs:   segmentIDs,
+	}
+
+	resp, err := g.proxySrv.GetSegmentsInfo(ctx, in)
+	if err := checkResponse(resp, err); err != nil {
+		return nil, fmt.Errorf("client: get segment info failed: %w", err)
+	}
+	if len(resp.GetSegmentInfos()) != len(segmentIDs) {
+		return nil, fmt.Errorf("client: get segment info resp len %d not equal to input len %d", len(resp.GetSegmentInfos()), len(segmentIDs))
+	}
+
+	return resp.GetSegmentInfos(), nil
+}
+
 func (g *GrpcClient) Flush(ctx context.Context, db, collName string) (*milvuspb.FlushResponse, error) {
 	ctx = g.newCtxWithDB(ctx, db)
 
+	start := time.Now()
 	if err := g.limiters.flush.Wait(ctx); err != nil {
 		return nil, fmt.Errorf("client: flush wait: %w", err)
 	}
+	cost := time.Since(start)
+	g.logger.Info("flush wait aimd", zap.Duration("cost", cost), zap.String("db", db), zap.String("collection", collName))
 
 	resp, err := g.srv.Flush(ctx, &milvuspb.FlushRequest{CollectionNames: []string{collName}})
 	if err := checkResponse(resp, err); err != nil {

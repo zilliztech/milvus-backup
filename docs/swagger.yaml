@@ -65,14 +65,19 @@ definitions:
   backuppb.Binlog:
     properties:
       entries_num:
+        description: 'Deprecated: Marked as deprecated in backup.proto.'
+        type: integer
+      log_id:
         type: integer
       log_path:
         type: string
       log_size:
         type: integer
       timestamp_from:
+        description: 'Deprecated: Marked as deprecated in backup.proto.'
         type: integer
       timestamp_to:
+        description: 'Deprecated: Marked as deprecated in backup.proto.'
         type: integer
     type: object
   backuppb.CollectionBackupInfo:
@@ -740,9 +745,10 @@ definitions:
         type: array
       group_id:
         description: |-
-          separate segments into multi groups by size,
-          segments in one group will be copied into one directory during backup
-          and will bulkinsert in one call during restore
+          The group ID is a virtual partition ID.
+          The Milvus BulkInsert interface requires a partition prefix,
+          but passing multiple segments is a more suitable option.
+          Therefore, a virtual partition ID is used here to enable the functionality of importing multiple segments.
         type: integer
       is_l0:
         type: boolean
@@ -755,9 +761,12 @@ definitions:
       size:
         type: integer
       statslogs:
+        description: 'Deprecated: Marked as deprecated in backup.proto.'
         items:
           $ref: '#/definitions/backuppb.FieldBinlog'
         type: array
+      vChannel:
+        type: string
     type: object
   backuppb.SkipParams:
     properties:

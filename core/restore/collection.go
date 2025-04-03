@@ -686,12 +686,12 @@ func (ct *CollectionTask) restoreNotL0SegV2(ctx context.Context, part *backuppb.
 
 func (ct *CollectionTask) restoreL0SegV1(ctx context.Context, partitionID int64, partitionName string, l0Segs []*backuppb.SegmentBackupInfo) error {
 	for _, seg := range l0Segs {
-		opts := []mpath.PathOption{
+		opts := []mpath.Option{
 			mpath.CollectionID(ct.task.GetCollBackup().CollectionId),
 			mpath.PartitionID(partitionID),
 			mpath.SegmentID(seg.SegmentId)}
 
-		deltaLogDir := mpath.DeltaLogDir(ct.backupPath, opts...)
+		deltaLogDir := mpath.BackupDeltaLogDir(ct.backupPath, opts...)
 		paths, err := ct.copyFiles(ctx, []string{deltaLogDir})
 		if err != nil {
 			return fmt.Errorf("restore_collection: restore L0 segment copy files: %w", err)
@@ -707,12 +707,12 @@ func (ct *CollectionTask) restoreL0SegV1(ctx context.Context, partitionID int64,
 
 func (ct *CollectionTask) restoreL0SegV2(ctx context.Context, partitionID int64, partitionName string, l0Segs []*backuppb.SegmentBackupInfo) error {
 	for _, seg := range l0Segs {
-		opts := []mpath.PathOption{
+		opts := []mpath.Option{
 			mpath.CollectionID(ct.task.GetCollBackup().CollectionId),
 			mpath.PartitionID(partitionID),
 			mpath.SegmentID(seg.SegmentId)}
 
-		deltaLogDir := mpath.DeltaLogDir(ct.backupPath, opts...)
+		deltaLogDir := mpath.BackupDeltaLogDir(ct.backupPath, opts...)
 		if err := ct.bulkInsertViaRestful(ctx, partitionName, [][]string{{deltaLogDir}}, true); err != nil {
 			return fmt.Errorf("restore_collection: restore L0 segment bulk insert via restful: %w", err)
 		}
@@ -782,7 +782,7 @@ func (ct *CollectionTask) notL0Groups(ctx context.Context, part *backuppb.Partit
 	groups := make([]restoreGroup, 0, len(groupIDs))
 	if len(groupIDs) == 1 && groupIDs[0] == 0 {
 		// backward compatible old backup without group id
-		opts := []mpath.PathOption{
+		opts := []mpath.Option{
 			mpath.CollectionID(ct.task.GetCollBackup().CollectionId),
 			mpath.PartitionID(part.GetPartitionId()),
 		}
@@ -794,7 +794,7 @@ func (ct *CollectionTask) notL0Groups(ctx context.Context, part *backuppb.Partit
 	}
 
 	for _, gID := range groupIDs {
-		opts := []mpath.PathOption{
+		opts := []mpath.Option{
 			mpath.CollectionID(ct.task.GetCollBackup().CollectionId),
 			mpath.PartitionID(part.GetPartitionId()),
 			mpath.GroupID(gID),
@@ -942,9 +942,9 @@ func getFailedReason(infos []*commonpb.KeyValuePair) string {
 	return ""
 }
 
-func (ct *CollectionTask) verifyBackupPartitionPaths(ctx context.Context, pathOpt ...mpath.PathOption) (string, string, error) {
-	insertLogDir := mpath.InsertLogDir(ct.backupPath, pathOpt...)
-	deltaLogDir := mpath.DeltaLogDir(ct.backupPath, pathOpt...)
+func (ct *CollectionTask) verifyBackupPartitionPaths(ctx context.Context, pathOpt ...mpath.Option) (string, string, error) {
+	insertLogDir := mpath.BackupInsertLogDir(ct.backupPath, pathOpt...)
+	deltaLogDir := mpath.BackupDeltaLogDir(ct.backupPath, pathOpt...)
 
 	exist, err := ct.backupStorage.Exist(ctx, ct.backupBucketName, deltaLogDir)
 	if err != nil {

@@ -7,6 +7,8 @@ import (
 
 	client "github.com/zilliztech/milvus-backup/core/client"
 
+	internalpb "github.com/milvus-io/milvus/pkg/v2/proto/internalpb"
+
 	milvuspb "github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
 
 	mock "github.com/stretchr/testify/mock"
@@ -652,8 +654,15 @@ func (_c *MockGrpc_GetBulkInsertState_Call) RunAndReturn(run func(context.Contex
 }
 
 // GetLoadingProgress provides a mock function with given fields: ctx, db, collName, partitionNames
-func (_m *MockGrpc) GetLoadingProgress(ctx context.Context, db string, collName string, partitionNames []string) (int64, error) {
-	ret := _m.Called(ctx, db, collName, partitionNames)
+func (_m *MockGrpc) GetLoadingProgress(ctx context.Context, db string, collName string, partitionNames ...string) (int64, error) {
+	_va := make([]interface{}, len(partitionNames))
+	for _i := range partitionNames {
+		_va[_i] = partitionNames[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, db, collName)
+	_ca = append(_ca, _va...)
+	ret := _m.Called(_ca...)
 
 	if len(ret) == 0 {
 		panic("no return value specified for GetLoadingProgress")
@@ -661,17 +670,17 @@ func (_m *MockGrpc) GetLoadingProgress(ctx context.Context, db string, collName 
 
 	var r0 int64
 	var r1 error
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, []string) (int64, error)); ok {
-		return rf(ctx, db, collName, partitionNames)
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, ...string) (int64, error)); ok {
+		return rf(ctx, db, collName, partitionNames...)
 	}
-	if rf, ok := ret.Get(0).(func(context.Context, string, string, []string) int64); ok {
-		r0 = rf(ctx, db, collName, partitionNames)
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, ...string) int64); ok {
+		r0 = rf(ctx, db, collName, partitionNames...)
 	} else {
 		r0 = ret.Get(0).(int64)
 	}
 
-	if rf, ok := ret.Get(1).(func(context.Context, string, string, []string) error); ok {
-		r1 = rf(ctx, db, collName, partitionNames)
+	if rf, ok := ret.Get(1).(func(context.Context, string, string, ...string) error); ok {
+		r1 = rf(ctx, db, collName, partitionNames...)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -688,14 +697,21 @@ type MockGrpc_GetLoadingProgress_Call struct {
 //   - ctx context.Context
 //   - db string
 //   - collName string
-//   - partitionNames []string
-func (_e *MockGrpc_Expecter) GetLoadingProgress(ctx interface{}, db interface{}, collName interface{}, partitionNames interface{}) *MockGrpc_GetLoadingProgress_Call {
-	return &MockGrpc_GetLoadingProgress_Call{Call: _e.mock.On("GetLoadingProgress", ctx, db, collName, partitionNames)}
+//   - partitionNames ...string
+func (_e *MockGrpc_Expecter) GetLoadingProgress(ctx interface{}, db interface{}, collName interface{}, partitionNames ...interface{}) *MockGrpc_GetLoadingProgress_Call {
+	return &MockGrpc_GetLoadingProgress_Call{Call: _e.mock.On("GetLoadingProgress",
+		append([]interface{}{ctx, db, collName}, partitionNames...)...)}
 }
 
-func (_c *MockGrpc_GetLoadingProgress_Call) Run(run func(ctx context.Context, db string, collName string, partitionNames []string)) *MockGrpc_GetLoadingProgress_Call {
+func (_c *MockGrpc_GetLoadingProgress_Call) Run(run func(ctx context.Context, db string, collName string, partitionNames ...string)) *MockGrpc_GetLoadingProgress_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string), args[2].(string), args[3].([]string))
+		variadicArgs := make([]string, len(args)-3)
+		for i, a := range args[3:] {
+			if a != nil {
+				variadicArgs[i] = a.(string)
+			}
+		}
+		run(args[0].(context.Context), args[1].(string), args[2].(string), variadicArgs...)
 	})
 	return _c
 }
@@ -705,7 +721,7 @@ func (_c *MockGrpc_GetLoadingProgress_Call) Return(_a0 int64, _a1 error) *MockGr
 	return _c
 }
 
-func (_c *MockGrpc_GetLoadingProgress_Call) RunAndReturn(run func(context.Context, string, string, []string) (int64, error)) *MockGrpc_GetLoadingProgress_Call {
+func (_c *MockGrpc_GetLoadingProgress_Call) RunAndReturn(run func(context.Context, string, string, ...string) (int64, error)) *MockGrpc_GetLoadingProgress_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -766,6 +782,67 @@ func (_c *MockGrpc_GetPersistentSegmentInfo_Call) Return(_a0 []*milvuspb.Persist
 }
 
 func (_c *MockGrpc_GetPersistentSegmentInfo_Call) RunAndReturn(run func(context.Context, string, string) ([]*milvuspb.PersistentSegmentInfo, error)) *MockGrpc_GetPersistentSegmentInfo_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetSegmentInfo provides a mock function with given fields: ctx, db, collID, segmentIDs
+func (_m *MockGrpc) GetSegmentInfo(ctx context.Context, db string, collID int64, segmentIDs []int64) ([]*internalpb.SegmentInfo, error) {
+	ret := _m.Called(ctx, db, collID, segmentIDs)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetSegmentInfo")
+	}
+
+	var r0 []*internalpb.SegmentInfo
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, int64, []int64) ([]*internalpb.SegmentInfo, error)); ok {
+		return rf(ctx, db, collID, segmentIDs)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, string, int64, []int64) []*internalpb.SegmentInfo); ok {
+		r0 = rf(ctx, db, collID, segmentIDs)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).([]*internalpb.SegmentInfo)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, string, int64, []int64) error); ok {
+		r1 = rf(ctx, db, collID, segmentIDs)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockGrpc_GetSegmentInfo_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetSegmentInfo'
+type MockGrpc_GetSegmentInfo_Call struct {
+	*mock.Call
+}
+
+// GetSegmentInfo is a helper method to define mock.On call
+//   - ctx context.Context
+//   - db string
+//   - collID int64
+//   - segmentIDs []int64
+func (_e *MockGrpc_Expecter) GetSegmentInfo(ctx interface{}, db interface{}, collID interface{}, segmentIDs interface{}) *MockGrpc_GetSegmentInfo_Call {
+	return &MockGrpc_GetSegmentInfo_Call{Call: _e.mock.On("GetSegmentInfo", ctx, db, collID, segmentIDs)}
+}
+
+func (_c *MockGrpc_GetSegmentInfo_Call) Run(run func(ctx context.Context, db string, collID int64, segmentIDs []int64)) *MockGrpc_GetSegmentInfo_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(context.Context), args[1].(string), args[2].(int64), args[3].([]int64))
+	})
+	return _c
+}
+
+func (_c *MockGrpc_GetSegmentInfo_Call) Return(_a0 []*internalpb.SegmentInfo, _a1 error) *MockGrpc_GetSegmentInfo_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockGrpc_GetSegmentInfo_Call) RunAndReturn(run func(context.Context, string, int64, []int64) ([]*internalpb.SegmentInfo, error)) *MockGrpc_GetSegmentInfo_Call {
 	_c.Call.Return(run)
 	return _c
 }
