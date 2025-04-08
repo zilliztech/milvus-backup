@@ -935,6 +935,20 @@ const docTemplate = `{
                 }
             }
         },
+        "backuppb.PrivilegeGroupInfo": {
+            "type": "object",
+            "properties": {
+                "group_name": {
+                    "type": "string"
+                },
+                "privileges": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/backuppb.PrivilegeEntity"
+                    }
+                }
+            }
+        },
         "backuppb.RBACMeta": {
             "type": "object",
             "properties": {
@@ -943,6 +957,13 @@ const docTemplate = `{
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/backuppb.GrantEntity"
+                    }
+                },
+                "privilege_groups": {
+                    "description": "privilege group",
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/backuppb.PrivilegeGroupInfo"
                     }
                 },
                 "roles": {

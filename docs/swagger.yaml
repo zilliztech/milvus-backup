@@ -471,12 +471,26 @@ definitions:
       name:
         type: string
     type: object
+  backuppb.PrivilegeGroupInfo:
+    properties:
+      group_name:
+        type: string
+      privileges:
+        items:
+          $ref: '#/definitions/backuppb.PrivilegeEntity'
+        type: array
+    type: object
   backuppb.RBACMeta:
     properties:
       grants:
         description: (role, object, previledge)
         items:
           $ref: '#/definitions/backuppb.GrantEntity'
+        type: array
+      privilege_groups:
+        description: privilege group
+        items:
+          $ref: '#/definitions/backuppb.PrivilegeGroupInfo'
         type: array
       roles:
         description: role
