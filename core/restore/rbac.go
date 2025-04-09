@@ -28,11 +28,13 @@ func (rt *RBACTask) Execute(ctx context.Context) error {
 	users := rt.users(curRBAC.GetRBACMeta().GetUsers())
 	roles := rt.roles(curRBAC.GetRBACMeta().GetRoles())
 	grants := rt.grants(curRBAC.GetRBACMeta().GetGrants())
+	privilegeGroups := rt.privilegeGroups(curRBAC.GetRBACMeta().GetPrivilegeGroups())
 
 	rbacMeta := &milvuspb.RBACMeta{
-		Users:  users,
-		Roles:  roles,
-		Grants: grants,
+		Users:           users,
+		Roles:           roles,
+		Grants:          grants,
+		PrivilegeGroups: privilegeGroups,
 	}
 
 	log.Info("insert rbac to milvus", zap.Int("users", len(users)),
@@ -143,4 +145,25 @@ func (rt *RBACTask) grants(curGrants []*milvuspb.GrantEntity) []*milvuspb.GrantE
 	}
 
 	return grants
+}
+
+func (rt *RBACTask) privilegeGroups(curGroups []*milvuspb.PrivilegeGroupInfo) []*milvuspb.PrivilegeGroupInfo {
+	curGroupName := lo.SliceToMap(curGroups, func(group *milvuspb.PrivilegeGroupInfo) (string, struct{}) {
+		return group.GetGroupName(), struct{}{}
+	})
+	groups := make([]*milvuspb.PrivilegeGroupInfo, 0, len(rt.bakRBAC.GetPrivilegeGroups()))
+	for _, group := range rt.bakRBAC.GetPrivilegeGroups() {
+		if _, ok := curGroupName[group.GetGroupName()]; ok {
+			continue
+		}
+
+		privileges := lo.Map(group.GetPrivileges(), func(privilege *backuppb.PrivilegeEntity, _ int) *milvuspb.PrivilegeEntity {
+			return &milvuspb.PrivilegeEntity{Name: privilege.GetName()}
+		})
+		g := &milvuspb.PrivilegeGroupInfo{GroupName: group.GetGroupName(), Privileges: privileges}
+		groups = append(groups, g)
+
+	}
+
+	return groups
 }
