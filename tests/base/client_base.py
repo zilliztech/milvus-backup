@@ -1,7 +1,7 @@
 import sys
 import time
 import pytest
-from pymilvus import DefaultConfig, DataType, db
+from pymilvus import DefaultConfig, DataType, db, MilvusClient
 
 sys.path.append("..")
 from base.connections_wrapper import ApiConnectionsWrapper
@@ -94,9 +94,15 @@ class TestcaseBase(Base):
     """
 
     @pytest.fixture(scope="function", autouse=True)
-    def inti_client(self, backup_uri):
+    def inti_client(self, backup_uri, host, port, user, password):
         endpoint = f"{backup_uri}/api/v1"
         self.client = MilvusBackupClient(endpoint)
+        self.milvus_client = MilvusClient(
+            uri=f"http://{host}:{port}",
+            token=f"{user}:{password}",
+        )
+        self.milvus_uri = f"http://{host}:{port}"
+        self.milvus_token = f"{user}:{password}"
 
     def _connect(self):
         """Add a connection and create the connect"""

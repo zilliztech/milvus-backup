@@ -561,7 +561,7 @@ jobs:
         deploy_tools: [docker-compose]
         milvus_mode: [standalone]
         image_tag: [master-latest, 2.5-latest]
-        case_tag: [L0, L1, L2, MASTER]
+        case_tag: [L0, L1, L2, MASTER, RBAC]
         exclude:
           - image_tag: 2.5-latest
             case_tag: MASTER
@@ -608,6 +608,9 @@ jobs:
         run: |
           if [ ${{ matrix.case_tag }} == "MASTER" ]; then
             mv docker-compose-tei.yml docker-compose.yml
+          fi
+          if [ ${{ matrix.case_tag }} == "RBAC" ]; then
+            mv docker-compose-rbac.yml docker-compose.yml
           fi
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
