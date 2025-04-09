@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+
 	"github.com/zilliztech/milvus-backup/core"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
@@ -27,7 +28,7 @@ var getBackupCmd = &cobra.Command{
 		params.Init()
 
 		context := context.Background()
-		backupContext := core.CreateBackupContext(context, params)
+		backupContext := core.CreateBackupContext(context, &params)
 
 		resp := backupContext.GetBackup(context, &backuppb.GetBackupRequest{
 			BackupName:    getBackName,

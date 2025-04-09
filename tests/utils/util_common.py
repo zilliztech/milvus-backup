@@ -1,6 +1,67 @@
 from yaml import full_load
 import json
+from collections import Counter
+from bm25s.tokenization import Tokenizer
+import jieba
+import re
 from utils.util_log import test_log as log
+
+
+def custom_tokenizer(language="en"):
+    def remove_punctuation(text):
+        text = text.strip()
+        text = text.replace("\n", " ")
+        return re.sub(r'[^\w\s]', ' ', text)
+
+    # Tokenize the corpus
+    def jieba_split(text):
+        text_without_punctuation = remove_punctuation(text)
+        return jieba.lcut(text_without_punctuation)
+
+    def blank_space_split(text):
+        text_without_punctuation = remove_punctuation(text)
+        return text_without_punctuation.split()
+
+    stopwords = [" "]
+    stemmer = None
+    if language in ["zh", "cn", "chinese"]:
+        splitter = jieba_split
+        tokenizer = Tokenizer(
+            stemmer=stemmer, splitter=splitter, stopwords=stopwords
+        )
+    else:
+        splitter = blank_space_split
+        tokenizer = Tokenizer(
+            stemmer=stemmer, splitter= splitter, stopwords=stopwords
+        )
+    return tokenizer
+
+
+def analyze_documents(texts, language="en"):
+
+    tokenizer = custom_tokenizer(language)
+    new_texts = []
+    for text in texts:
+        if isinstance(text, str):
+            new_texts.append(text)
+    # Tokenize the corpus
+    tokenized = tokenizer.tokenize(new_texts, return_as="tuple")
+    # log.info(f"Tokenized: {tokenized}")
+    # Create a frequency counter
+    freq = Counter()
+
+    # Count the frequency of each token
+    for doc_ids in tokenized.ids:
+        freq.update(doc_ids)
+    # Create a reverse vocabulary mapping
+    id_to_word = {id: word for word, id in tokenized.vocab.items()}
+
+    # Convert token ids back to words
+    word_freq = Counter({id_to_word[token_id]: count for token_id, count in freq.items()})
+    log.debug(f"word freq {word_freq.most_common(10)}")
+
+    return word_freq
+
 
 def gen_experiment_config(yaml):
     """load the yaml file of chaos experiment"""
@@ -15,7 +76,7 @@ def findkeys(node, kv):
     if isinstance(node, list):
         for i in node:
             for x in findkeys(i, kv):
-               yield x
+                yield x
     elif isinstance(node, dict):
         if kv in node:
             yield node[kv]
@@ -64,17 +125,24 @@ def get_collections():
 
 
 if __name__ == "__main__":
-    d = { "id" : "abcde",
-        "key1" : "blah",
-        "key2" : "blah blah",
-        "nestedlist" : [
-        { "id" : "qwerty",
-            "nestednestedlist" : [
-            { "id" : "xyz", "keyA" : "blah blah blah" },
-            { "id" : "fghi", "keyZ" : "blah blah blah" }],
-            "anothernestednestedlist" : [
-            { "id" : "asdf", "keyQ" : "blah blah" },
-            { "id" : "yuiop", "keyW" : "blah" }] } ] }
-    print(list(findkeys(d, 'id')))
+    d = {
+        "id": "abcde",
+        "key1": "blah",
+        "key2": "blah blah",
+        "nestedlist": [
+            {
+                "id": "qwerty",
+                "nestednestedlist": [
+                    {"id": "xyz", "keyA": "blah blah blah"},
+                    {"id": "fghi", "keyZ": "blah blah blah"},
+                ],
+                "anothernestednestedlist": [
+                    {"id": "asdf", "keyQ": "blah blah"},
+                    {"id": "yuiop", "keyW": "blah"},
+                ],
+            }
+        ],
+    }
+    print(list(findkeys(d, "id")))
     update_key_value(d, "none_id", "ccc")
     print(d)

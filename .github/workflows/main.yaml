@@ -11,12 +11,31 @@ on:
   schedule:
     - cron: '0 0 * * *'
 
+
+env:
+  go-version: 1.23
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
+  unit-test-go:
+    name: Unit test go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Go ${{ env.go-version }}
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.go-version }}
+          cache: true
+      - name: Unit test
+        run: make test
+
   test-backup-restore-cross-version:
+    needs: unit-test-go
+    name: Backup and restore cross version
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -24,14 +43,14 @@ jobs:
         deploy_tools: [docker-compose]
         milvus_mode: [standalone]
         another_milvus_mode: [standalone]
-        source_image_tag: [2.3-latest, 2.4-latest]
-        target_image_tag: [master-latest, 2.4-latest]
+        source_image_tag: [2.4-latest, 2.5-latest]
+        target_image_tag: [master-latest, 2.5-latest]
         exclude:
-          - source_image_tag: 2.4-latest
-            target_image_tag: 2.4-latest
+          - source_image_tag: 2.5-latest
+            target_image_tag: 2.5-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Python 3.10
         uses: actions/setup-python@v5
@@ -39,9 +58,10 @@ jobs:
           python-version: '3.10'
           cache: pip
 
-      - uses: actions/setup-go@v3
+      - uses: actions/setup-go@v5
+        name: Set up Go ${{ env.go-version }}
         with:
-          go-version: '1.18.0'
+          go-version: ${{ env.go-version }}
           cache: true
 
       - name: Build
@@ -61,7 +81,6 @@ jobs:
           sudo chmod +x /usr/local/bin/docker-compose
 
       - name: Milvus deploy
-
         timeout-minutes: 15
         shell: bash
         working-directory: deployment/${{ matrix.milvus_mode }}
@@ -156,6 +175,8 @@ jobs:
           python example/verify_data.py
 
   test-backup-restore-after-upgrade:
+    needs: unit-test-go
+    name: Backup and restore after upgrade
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -163,14 +184,14 @@ jobs:
         deploy_tools: [docker-compose]
         milvus_mode: [standalone]
         another_milvus_mode: [standalone]
-        source_image_tag: [v2.4.17, 2.4-latest]
-        target_image_tag: [master-latest, 2.4-latest]
+        source_image_tag: [2.4-latest, 2.5-latest]
+        target_image_tag: [master-latest, 2.5-latest]
         exclude:
-          - source_image_tag: 2.4-latest
-            target_image_tag: 2.4-latest
+          - source_image_tag: 2.5-latest
+            target_image_tag: 2.5-latest
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Python 3.10
         uses: actions/setup-python@v5
@@ -178,9 +199,10 @@ jobs:
           python-version: '3.10'
           cache: pip
 
-      - uses: actions/setup-go@v3
+      - uses: actions/setup-go@v5
+        name: Set up Go ${{ env.go-version }}
         with:
-          go-version: '1.18.0'
+          go-version: ${{ env.go-version }}
           cache: true
 
       - name: Build
@@ -249,6 +271,8 @@ jobs:
 
 
   test-backup-restore-cli:
+    needs: unit-test-go
+    name: Backup and restore cli
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -260,7 +284,7 @@ jobs:
         # mq_type: [pulsar, kafka]  # TODO: add pulsar and kafka
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Python 3.10
         uses: actions/setup-python@v5
@@ -268,9 +292,10 @@ jobs:
           python-version: '3.10'
           cache: pip
 
-      - uses: actions/setup-go@v3
+      - uses: actions/setup-go@v5
+        name: Set up Go ${{ env.go-version }}
         with:
-          go-version: '1.18.0'
+          go-version: ${{ env.go-version }}
           cache: true
 
       - name: Build
@@ -383,6 +408,8 @@ jobs:
           python example/verify_data.py
 
   test-backup-restore-with-rbac-config:
+    needs: unit-test-go
+    name: Backup and restore with rbac config
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -392,7 +419,7 @@ jobs:
         image_tag: [master-latest]
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Python 3.10
         uses: actions/setup-python@v5
@@ -400,21 +427,20 @@ jobs:
           python-version: '3.10'
           cache: pip
 
-      - uses: actions/setup-go@v3
+      - uses: actions/setup-go@v5
         with:
-          go-version: '1.18.0'
+          go-version: ${{ env.go-version }}
           cache: "true"
 
       - name: Creating kind cluster
         if: ${{ matrix.deploy_tools == 'helm' }}
-        uses: helm/kind-action@v1.2.0
+        uses: helm/kind-action@v1.12.0
 
       - name: Build
         timeout-minutes: 5
         shell: bash
         run: |
           yq -i '.log.level = "debug"' configs/backup.yaml
-          yq -i '.milvus.authorizationEnabled = true' configs/backup.yaml
           yq -i '.minio.bucketName = "milvus-bucket"' configs/backup.yaml
           yq -i '.minio.rootPath = "file"' configs/backup.yaml
           yq -i '.minio.backupPort = 9010' configs/backup.yaml
@@ -526,6 +552,7 @@ jobs:
 
 
   test-backup-restore-api:
+    name: Backup and restore api
     runs-on: ubuntu-latest
     needs: test-backup-restore-cli
     strategy:
@@ -533,14 +560,14 @@ jobs:
       matrix:
         deploy_tools: [docker-compose]
         milvus_mode: [standalone]
-        image_tag: [master-latest, 2.4-latest]
+        image_tag: [master-latest, 2.5-latest]
         case_tag: [L0, L1, L2, MASTER]
         exclude:
-          - image_tag: 2.4-latest
+          - image_tag: 2.5-latest
             case_tag: MASTER
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Python 3.10
         uses: actions/setup-python@v5
@@ -548,9 +575,9 @@ jobs:
           python-version: '3.10'
           cache: pip
 
-      - uses: actions/setup-go@v3
+      - uses: actions/setup-go@v5
         with:
-          go-version: '1.18.0'
+          go-version: ${{ env.go-version }}
           cache: true
 
       - name: Build
@@ -579,6 +606,9 @@ jobs:
         shell: bash
         working-directory: deployment/${{ matrix.milvus_mode }}
         run: |
+          if [ ${{ matrix.case_tag }} == "MASTER" ]; then
+            mv docker-compose-tei.yml docker-compose.yml
+          fi
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
           docker-compose up -d
@@ -599,7 +629,7 @@ jobs:
         shell: bash
         working-directory: tests
         run: |
-          pytest -s -v --tags ${{ matrix.case_tag }} -n 4
+          pytest -s -v --tags ${{ matrix.case_tag }} -n 4 --tei_endpoint http://text-embeddings:80
 
       - name: Get Milvus status
         shell: bash

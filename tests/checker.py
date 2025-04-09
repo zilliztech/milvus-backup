@@ -11,8 +11,8 @@ client = MilvusBackupClient("http://localhost:8080/api/v1")
 
 
 class Op(Enum):
-    create = 'create'
-    restore = 'restore'
+    create = "create"
+    restore = "restore"
 
 
 def start_monitor_threads(checkers={}):
@@ -23,18 +23,18 @@ def start_monitor_threads(checkers={}):
         t.start()
 
 
-DEFAULT_FMT = '[start time:{start_time}][time cost:{elapsed:0.8f}s][operation_name:{operation_name}] -> {result!r}'
+DEFAULT_FMT = "[start time:{start_time}][time cost:{elapsed:0.8f}s][operation_name:{operation_name}] -> {result!r}"
 
 
-def trace(fmt=DEFAULT_FMT, prefix='chaos-test', flag=True):
+def trace(fmt=DEFAULT_FMT, prefix="chaos-test", flag=True):
     def decorate(func):
         @functools.wraps(func)
         def inner_wrapper(self, *args, **kwargs):
-            start_time = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+            start_time = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
             t0 = time.perf_counter()
             res, result = func(self, *args, **kwargs)
             elapsed = time.perf_counter() - t0
-            end_time = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
+            end_time = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ")
             if flag:
                 operation_name = func.__name__
                 log_str = f"[{prefix}]" + fmt.format(**locals())
@@ -43,7 +43,9 @@ def trace(fmt=DEFAULT_FMT, prefix='chaos-test', flag=True):
                 log.info(log_str)
             if result:
                 self.rsp_times.append(elapsed)
-                self.average_time = (elapsed + self.average_time * self._succ) / (self._succ + 1)
+                self.average_time = (elapsed + self.average_time * self._succ) / (
+                    self._succ + 1
+                )
                 self._succ += 1
             else:
                 self._fail += 1
@@ -64,8 +66,11 @@ def exception_handler():
             except Exception as e:
                 log_row_length = 300
                 e_str = str(e)
-                log_e = e_str[0:log_row_length] + \
-                        '......' if len(e_str) > log_row_length else e_str
+                log_e = (
+                    e_str[0:log_row_length] + "......"
+                    if len(e_str) > log_row_length
+                    else e_str
+                )
                 log.error(log_e)
                 return e, False
 
@@ -96,8 +101,7 @@ class Checker:
         succ_rate = self.succ_rate()
         total = self.total()
         rsp_times = self.rsp_times
-        average_time = 0 if len(rsp_times) == 0 else sum(
-            rsp_times) / len(rsp_times)
+        average_time = 0 if len(rsp_times) == 0 else sum(rsp_times) / len(rsp_times)
         max_time = 0 if len(rsp_times) == 0 else max(rsp_times)
         min_time = 0 if len(rsp_times) == 0 else min(rsp_times)
         checker_name = self.__class__.__name__
@@ -129,12 +133,19 @@ class BackupCreateChecker(Checker):
     @trace()
     def create(self, backup_name, collections_to_backup):
         res = client.create_backup(
-            {"async": False, "backup_name": backup_name, "collection_names": collections_to_backup})
+            {
+                "async": False,
+                "backup_name": backup_name,
+                "collection_names": collections_to_backup,
+            }
+        )
         return res, res["msg"] == "success"
 
     @exception_handler()
     def run_task(self):
-        res, result = self.create(cf.gen_unique_str("backup"), self.collections_to_backup)
+        res, result = self.create(
+            cf.gen_unique_str("backup"), self.collections_to_backup
+        )
         return res, result
 
     def keep_running(self):
@@ -155,15 +166,25 @@ class BackupRestoreChecker(Checker):
 
     @trace()
     def restore(self, backup_name, suffix, collections_to_restore):
-        res = client.restore_backup({"async": False, "backup_name": backup_name, "collection_suffix": suffix,
-                                     "collection_names": collections_to_restore})
+        res = client.restore_backup(
+            {
+                "async": False,
+                "backup_name": backup_name,
+                "collection_suffix": suffix,
+                "collection_names": collections_to_restore,
+            }
+        )
         time.sleep(20)
         log.info(res)
-        return res, res['msg'] == "success"
+        return res, res["msg"] == "success"
 
     @exception_handler()
     def run_task(self):
-        res, result = self.restore(self.backup_name, cf.gen_unique_str(self.suffix), self.collections_to_restore)
+        res, result = self.restore(
+            self.backup_name,
+            cf.gen_unique_str(self.suffix),
+            self.collections_to_restore,
+        )
         return res, result
 
     def keep_running(self):

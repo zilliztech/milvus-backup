@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/spf13/cobra"
+
 	"github.com/zilliztech/milvus-backup/core"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 )
@@ -20,7 +21,7 @@ var checkCmd = &cobra.Command{
 		params.Init()
 
 		context := context.Background()
-		backupContext := core.CreateBackupContext(context, params)
+		backupContext := core.CreateBackupContext(context, &params)
 
 		resp := backupContext.Check(context)
 		fmt.Println(resp)

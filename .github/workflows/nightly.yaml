@@ -5,18 +5,17 @@ on:
   schedule:
     - cron: '0 2 * * *'
 
+
 jobs:
   test-backup-restore-api:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        deploy_tools: [docker-compose]
-        milvus_mode: [standalone]
-        milvus_version: [master-latest, 2.4-latest]
+        milvus_version: ["master", "2.5"]
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Python 3.10
         uses: actions/setup-python@v5
@@ -24,24 +23,15 @@ jobs:
           python-version: '3.10'
           cache: pip
 
-      - uses: actions/setup-go@v3
+      - uses: actions/setup-go@v5
         with:
-          go-version: '1.18.0'
+          go-version: '1.23'
           cache: true
-
-      - name: Creating kind cluster
-        if: ${{ matrix.deploy_tools == 'helm' }}
-        uses: helm/kind-action@v1.2.0
 
       - name: Build
         timeout-minutes: 5
         shell: bash
         run: |
-          if [ ${{ matrix.deploy_tools }} == 'helm' ]; then
-            yq -i '.minio.bucketName = "milvus-bucket"' configs/backup.yaml
-            yq -i '.minio.backupBucketName = "milvus-bucket"' configs/backup.yaml
-            yq -i '.minio.rootPath = "file"' configs/backup.yaml
-          fi
           yq -i '.log.level = "debug"' configs/backup.yaml
           cat configs/backup.yaml || true
           go get
@@ -53,34 +43,23 @@ jobs:
         shell: bash
         run: |
           pip install -r requirements.txt --trusted-host https://test.pypi.org
+          sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.3/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
 
       - name: Milvus deploy
 
         timeout-minutes: 15
         shell: bash
-        working-directory: deployment/${{ matrix.milvus_mode }}
+        working-directory: deployment/standalone
         run: |
-          if [ ${{ matrix.deploy_tools }} == "helm" ]; then
-            helm repo add milvus https://milvus-io.github.io/milvus-helm
-            helm repo update
-            helm install --wait --timeout 600s milvus-backup milvus/milvus --set image.all.tag=${{ matrix.milvus_version }} -f values.yaml
-            kubectl get pods
-            kubectl port-forward service/milvus-backup 19530 >/dev/null 2>&1 &
-            kubectl port-forward service/milvus-backup-minio 9000  >/dev/null 2>&1 &
-            sleep 10
-            nc -vz 127.0.0.1 19530
-            nc -vz 127.0.0.1 9000
-            sleep 10
-            kubectl get pods -n default | grep milvus-backup
+          if [ ${{ matrix.milvus_version }} == "master" ]; then
+            mv docker-compose-tei.yml docker-compose.yml
           fi
-
-          if [ ${{ matrix.deploy_tools}} == "docker-compose" ]; then
-            yq -i '.services.standalone.image= "milvusdb/milvus:${{ matrix.milvus_version }}"' docker-compose.yml
-            cat docker-compose.yml
-            docker-compose up -d
-            bash ../../scripts/check_healthy.sh
-            docker-compose ps -a
-          fi
+          tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.milvus_version }}-latest) && echo $tag
+          yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          docker-compose up -d
+          bash ../../scripts/check_healthy.sh
+          docker-compose ps -a
 
       - name: Start server
         timeout-minutes: 5
@@ -93,11 +72,17 @@ jobs:
         shell: bash
         working-directory: tests
         run: |
-          pytest -s -v --tags L0 L1 L2 L3 -n 4
+          if [ ${{ matrix.milvus_version }} == "master" ]; then
+            pytest -s -v --tags L0 L1 L2 L3 MASTER -n 4 --tei_endpoint http://text-embeddings:80
+          fi
+
+          if [ ${{ matrix.milvus_version }} != "master" ]; then
+            pytest -s -v --tags L0 L1 L2 L3 -n 4
+          fi
 
       - name: Get Milvus status
         shell: bash
-        working-directory: deployment/${{ matrix.milvus_mode }}
+        working-directory: deployment/standalone
         run: |
           docker-compose ps -a || true
           kubectl get pods -n default || true
@@ -105,26 +90,20 @@ jobs:
       - name: Export logs
         if: ${{ always() }}
         shell: bash
-        working-directory: deployment/${{ matrix.milvus_mode }}
+        working-directory: deployment/standalone
         run: |
-          if [ ${{ matrix.deploy_tools}} == "helm" ]; then
-            bash ../../scripts/export_log_k8s.sh default milvus-backup logs
-          fi
-
-          if [ ${{ matrix.deploy_tools}} == "docker-compose" ]; then
-            bash ../../scripts/export_log_docker.sh logs
-          fi
+          bash ../../scripts/export_log_docker.sh logs
 
       - name: Upload logs
         if: ${{ ! success() }}
         uses: actions/upload-artifact@v4
         with:
-          name: logs-${{ matrix.deploy_tools }}-${{ matrix.milvus_mode }}-${{ matrix.milvus_version }}
+          name: logs-docker-standalone-${{ matrix.milvus_version }}
           path: |
             ./logs
             ./server.log
             /tmp/ci_logs
-            deployment/${{ matrix.milvus_mode }}/logs
+            deployment/standalone/logs
 
   test-backup-restore-with-custom-config:
     runs-on: ubuntu-latest
@@ -137,7 +116,7 @@ jobs:
         backup_bucket_name: ["milvus-backup", "milvus-bucket"]
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
       - name: Set up Python 3.10
         uses: actions/setup-python@v5
@@ -145,14 +124,14 @@ jobs:
           python-version: '3.10'
           cache: pip
 
-      - uses: actions/setup-go@v3
+      - uses: actions/setup-go@v5
         with:
-          go-version: '1.18.0'
+          go-version: '1.23'
           cache: true
 
       - name: Creating kind cluster
         if: ${{ matrix.deploy_tools == 'helm' }}
-        uses: helm/kind-action@v1.2.0
+        uses: helm/kind-action@v1.12.0
 
       - name: Modify Milvus config
 

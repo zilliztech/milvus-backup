@@ -51,12 +51,13 @@ const (
 
 	DefaultStorageType = "minio"
 
-	DefaultMilvusAddress              = "localhost"
-	DefaultMilvusPort                 = "19530"
-	DefaultMilvusAuthorizationEnabled = "false"
-	DefaultMilvusTlsMode              = "0"
-	DefaultMilvusUser                 = "root"
-	DefaultMilvusPassword             = "Milvus"
+	DefaultMilvusAddress     = "localhost"
+	DefaultMilvusPort        = "19530"
+	DefaultMilvusTlsMode     = "0"
+	DefaultMilvusUser        = "root"
+	DefaultMilvusPassword    = "Milvus"
+	DefaultMilvusTLSCertPath = ""
+	DefaultMilvusServerName  = ""
 )
 
 var defaultYaml = DefaultBackupYaml
@@ -510,11 +511,6 @@ func (gp *BaseTable) loadMilvusConfig() {
 		_ = gp.Save("milvus.port", milvusPort)
 	}
 
-	milvusAuthorizationEnabled := os.Getenv("MILVUS_AUTHORIZATION_ENABLED")
-	if milvusAuthorizationEnabled != "" {
-		_ = gp.Save("milvus.authorizationEnabled", milvusAuthorizationEnabled)
-	}
-
 	milvusTlsMode := os.Getenv("MILVUS_TLS_MODE")
 	if milvusTlsMode != "" {
 		_ = gp.Save("milvus.tlsMode", milvusTlsMode)
@@ -528,5 +524,25 @@ func (gp *BaseTable) loadMilvusConfig() {
 	milvusPassword := os.Getenv("MILVUS_PASSWORD")
 	if milvusPassword != "" {
 		_ = gp.Save("milvus.password", milvusPassword)
+	}
+
+	milvusCACertPath := os.Getenv("MILVUS_CA_CERT_PATH")
+	if milvusCACertPath != "" {
+		_ = gp.Save("milvus.caCertPath", milvusCACertPath)
+	}
+
+	milvusServerName := os.Getenv("MILVUS_SERVER_NAME")
+	if milvusServerName != "" {
+		_ = gp.Save("milvus.serverName", milvusServerName)
+	}
+
+	milvusMtlsCertPath := os.Getenv("MILVUS_MTLS_CERT_PATH")
+	if milvusMtlsCertPath != "" {
+		_ = gp.Save("milvus.mtlsCertPath", milvusMtlsCertPath)
+	}
+
+	milvusMtlsKeyPath := os.Getenv("MILVUS_MTLS_KEY_PATH")
+	if milvusMtlsKeyPath != "" {
+		_ = gp.Save("milvus.mtlsKeyPath", milvusMtlsKeyPath)
 	}
 }

@@ -9,7 +9,7 @@ function check_healthy {
     time_cnt=0
     echo "running num $cnt expect num $Expect"
     echo "healthy num $healthy expect num $Expect_health"
-    while [[ $cnt -ne $Expect || $healthy -ne 1 ]];
+    while [[ $cnt -ne $Expect || $healthy -ne $Expect_health ]];
     do
     printf "waiting all containers getting running\n"
     sleep 5

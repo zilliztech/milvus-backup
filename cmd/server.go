@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/spf13/cobra"
+
 	"github.com/zilliztech/milvus-backup/core"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 )
@@ -31,7 +32,7 @@ var serverCmd = &cobra.Command{
 		params.Init()
 
 		context := context.Background()
-		server, err := core.NewServer(context, params, core.Port(port))
+		server, err := core.NewServer(context, &params, core.Port(port))
 		if err != nil {
 			fmt.Errorf("fail to create backup server, %s", err.Error())
 		}

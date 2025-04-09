@@ -4,8 +4,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/zilliztech/milvus-backup/internal/log"
 	"go.uber.org/zap"
+
+	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
 func TestErrorList_Error(t *testing.T) {

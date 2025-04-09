@@ -133,17 +133,27 @@ definitions:
   backuppb.CollectionSchema:
     properties:
       autoID:
+        description: deprecated later, keep compatible with c++ part now
         type: boolean
       description:
         type: string
       enable_dynamic_field:
+        description: mark whether this table has the dynamic field function enabled.
         type: boolean
       fields:
         items:
           $ref: '#/definitions/backuppb.FieldSchema'
         type: array
+      functions:
+        items:
+          $ref: '#/definitions/backuppb.FunctionSchema'
+        type: array
       name:
         type: string
+      properties:
+        items:
+          $ref: '#/definitions/backuppb.KeyValuePair'
+        type: array
     type: object
   backuppb.ConsistencyLevel:
     enum:
@@ -153,6 +163,9 @@ definitions:
     - 3
     - 4
     type: integer
+    x-enum-comments:
+      ConsistencyLevel_Customized: Users pass their own `guarantee_timestamp`.
+      ConsistencyLevel_Session: default in PyMilvus
     x-enum-varnames:
     - ConsistencyLevel_Strong
     - ConsistencyLevel_Session
@@ -220,6 +233,8 @@ definitions:
     - 103
     - 104
     type: integer
+    x-enum-comments:
+      DataType_VarChar: variable-length strings with a specified maximum length
     x-enum-varnames:
     - DataType_None
     - DataType_Bool
@@ -267,13 +282,19 @@ definitions:
       data_type:
         $ref: '#/definitions/backuppb.DataType'
       default_value:
-        $ref: '#/definitions/backuppb.ValueField'
+        allOf:
+        - $ref: '#/definitions/backuppb.ValueField'
+        description: default_value only support scalars except array and json for
+          now
       default_value_proto:
+        description: json not support marshall oneof, so use proto string
         type: string
       description:
         type: string
       element_type:
-        $ref: '#/definitions/backuppb.DataType'
+        allOf:
+        - $ref: '#/definitions/backuppb.DataType'
+        description: For array type, the element type is stored here
       fieldID:
         type: integer
       index_params:
@@ -281,8 +302,12 @@ definitions:
           $ref: '#/definitions/backuppb.KeyValuePair'
         type: array
       is_dynamic:
+        description: mark whether this field is the dynamic field
+        type: boolean
+      is_function_output:
         type: boolean
       is_partition_key:
+        description: enable logic partitions
         type: boolean
       is_primary_key:
         type: boolean
@@ -291,7 +316,9 @@ definitions:
       nullable:
         type: boolean
       state:
-        $ref: '#/definitions/backuppb.FieldState'
+        allOf:
+        - $ref: '#/definitions/backuppb.FieldState'
+        description: To keep compatible with older version, the default state is `Created`.
       type_params:
         items:
           $ref: '#/definitions/backuppb.KeyValuePair'
@@ -309,6 +336,47 @@ definitions:
     - FieldState_FieldCreating
     - FieldState_FieldDropping
     - FieldState_FieldDropped
+  backuppb.FunctionSchema:
+    properties:
+      description:
+        type: string
+      id:
+        type: integer
+      input_field_ids:
+        items:
+          type: integer
+        type: array
+      input_field_names:
+        items:
+          type: string
+        type: array
+      name:
+        type: string
+      output_field_ids:
+        items:
+          type: integer
+        type: array
+      output_field_names:
+        items:
+          type: string
+        type: array
+      params:
+        items:
+          $ref: '#/definitions/backuppb.KeyValuePair'
+        type: array
+      type:
+        $ref: '#/definitions/backuppb.FunctionType'
+    type: object
+  backuppb.FunctionType:
+    enum:
+    - 0
+    - 1
+    - 2
+    type: integer
+    x-enum-varnames:
+    - FunctionType_Unknown
+    - FunctionType_BM25
+    - FunctionType_TextEmbedding
   backuppb.GrantEntity:
     properties:
       db_name:
@@ -502,10 +570,22 @@ definitions:
           index or data
         type: boolean
       skipImportDiskQuotaCheck:
-        description: if true, skip the diskQuota in Import
+        description: |-
+          if true, skip the diskQuota in Import
+
+          Deprecated: Marked as deprecated in backup.proto.
+        type: boolean
+      skipParams:
+        allOf:
+        - $ref: '#/definitions/backuppb.SkipParams'
+        description: if key is set, will skip the params in restore process
+      truncateBinlogByTs:
+        description: if true, truncate binlog by timestamp, for cdc
         type: boolean
       useAutoIndex:
         description: if true use autoindex when restore vector index
+        type: boolean
+      useV2Restore:
         type: boolean
     type: object
   backuppb.RestoreBackupResponse:
@@ -585,7 +665,10 @@ definitions:
         description: if true will skip create collections
         type: boolean
       skipDiskQuotaCheck:
+        description: 'Deprecated: Marked as deprecated in backup.proto.'
         type: boolean
+      skipParams:
+        $ref: '#/definitions/backuppb.SkipParams'
       start_time:
         type: integer
       state_code:
@@ -596,8 +679,13 @@ definitions:
         type: string
       to_restore_size:
         type: integer
+      truncateBinlogByTs:
+        description: if true, truncate binlog by timestamp, for cdc
+        type: boolean
       useAutoIndex:
         description: if true use autoindex when restore vector index
+        type: boolean
+      useV2Restore:
         type: boolean
     type: object
   backuppb.RestorePartitionTask:
@@ -671,6 +759,25 @@ definitions:
           $ref: '#/definitions/backuppb.FieldBinlog'
         type: array
     type: object
+  backuppb.SkipParams:
+    properties:
+      collectionProperties:
+        items:
+          type: string
+        type: array
+      fieldIndexParams:
+        items:
+          type: string
+        type: array
+      fieldTypeParams:
+        items:
+          type: string
+        type: array
+      indexParams:
+        items:
+          type: string
+        type: array
+    type: object
   backuppb.UserEntity:
     properties:
       name:
@@ -690,7 +797,7 @@ definitions:
   backuppb.ValueField:
     properties:
       data:
-        description: "Types that are valid to be assigned to Data:\n\n\t*ValueField_BoolData\n\t*ValueField_IntData\n\t*ValueField_LongData\n\t*ValueField_FloatData\n\t*ValueField_DoubleData\n\t*ValueField_StringData\n\t*ValueField_BytesData"
+        description: "Types that are assignable to Data:\n\n\t*ValueField_BoolData\n\t*ValueField_IntData\n\t*ValueField_LongData\n\t*ValueField_FloatData\n\t*ValueField_DoubleData\n\t*ValueField_StringData\n\t*ValueField_BytesData"
     type: object
 info:
   contact:

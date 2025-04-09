@@ -1,4 +1,4 @@
-package core
+package meta
 
 import (
 	"encoding/json"
@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/golang/protobuf/proto"
+
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 )
 
@@ -19,10 +20,7 @@ const (
 	CP_META_FILE         = "channel_cp_meta.json"
 	SEPERATOR            = "/"
 
-	BINGLOG_DIR    = "binlogs"
-	INSERT_LOG_DIR = "insert_log"
-	DELTA_LOG_DIR  = "delta_log"
-	STATS_LOG_DIR  = "stats_log"
+	BinglogDir = "binlogs"
 
 	LoadState_NotExist = "NotExist"
 	LoadState_NotLoad  = "NotLoad"
@@ -111,7 +109,7 @@ func treeToLevel(backup *backuppb.BackupInfo) (LeveledBackupInfo, error) {
 	}, nil
 }
 
-func serialize(backup *backuppb.BackupInfo) (*BackupMetaBytes, error) {
+func Serialize(backup *backuppb.BackupInfo) (*BackupMetaBytes, error) {
 	level, err := treeToLevel(backup)
 	if err != nil {
 		return nil, err
@@ -194,7 +192,7 @@ func levelToTree(level *LeveledBackupInfo) (*backuppb.BackupInfo, error) {
 	return backupInfo, nil
 }
 
-func deserialize(backup *BackupMetaBytes) (*backuppb.BackupInfo, error) {
+func Deserialize(backup *BackupMetaBytes) (*backuppb.BackupInfo, error) {
 	backupInfo := &backuppb.BackupInfo{}
 	err := json.Unmarshal(backup.BackupMetaBytes, backupInfo)
 	if err != nil {
@@ -252,7 +250,7 @@ func ChannelCPMetaPath(backupRootPath, backupName string) string {
 }
 
 func BackupBinlogDirPath(backupRootPath, backupName string) string {
-	return backupRootPath + SEPERATOR + backupName + SEPERATOR + BINGLOG_DIR
+	return backupRootPath + SEPERATOR + backupName + SEPERATOR + BinglogDir
 }
 
 func SimpleListBackupsResponse(input *backuppb.ListBackupsResponse) *backuppb.ListBackupsResponse {

@@ -124,25 +124,21 @@ type CopyPathInput struct {
 	DestBucket string
 	DestKeyFn  func(attr ObjectAttr) string
 
-	// optional
-	CopySuffix string
-
 	// OnSuccess when an object copy success, this func will be call
 	// May be executed concurrently, please pay attention to thread safety
 	OnSuccess func(attr ObjectAttr)
 }
 
 // getAttrs get all attrs under bucket/prefix
-func (c *Copier) getAttrs(ctx context.Context, bucket, prefix string, copySuffix string) ([]ObjectAttr, error) {
-	var attrs []ObjectAttr
-
-	paths, sizes, err := c.src.ListWithPrefix(ctx, bucket, prefix, true)
+func (c *Copier) getAttrs(ctx context.Context, bucket, prefix string) ([]ObjectAttr, error) {
+	keys, sizes, err := c.src.ListWithPrefix(ctx, bucket, prefix, true)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("storage: copier list %w", err)
 	}
 
-	for i, path := range paths {
-		attrs = append(attrs, ObjectAttr{Key: path, Length: sizes[i]})
+	attrs := make([]ObjectAttr, 0, len(keys))
+	for i, key := range keys {
+		attrs = append(attrs, ObjectAttr{Key: key, Length: sizes[i]})
 		c.totalSize.Add(uint64(sizes[i]))
 		c.cnt.Add(1)
 	}
@@ -150,39 +146,9 @@ func (c *Copier) getAttrs(ctx context.Context, bucket, prefix string, copySuffix
 	return attrs, nil
 }
 
-func (c *Copier) getAttrs2(ctx context.Context, bucket, prefix string, copySuffix string) ([]ObjectAttr, error) {
-	var attrs []ObjectAttr
-
-	p, err := c.src.ListObjectsPage(ctx, bucket, prefix)
-	if err != nil {
-		return nil, err
-	}
-	for p.HasMorePages() {
-		page, err := p.NextPage(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("storage: copier list objects %w", err)
-		}
-		for _, attr := range page.Contents {
-			if attr.IsEmpty() {
-				continue
-			}
-
-			if copySuffix != "" && !strings.HasSuffix(attr.Key, copySuffix) {
-				continue
-			}
-
-			attrs = append(attrs, attr)
-			c.totalSize.Add(uint64(attr.Length))
-			c.cnt.Add(1)
-		}
-	}
-
-	return attrs, nil
-}
-
 // CopyPrefix Copy all files under src path
 func (c *Copier) CopyPrefix(ctx context.Context, i CopyPathInput) error {
-	srcAttrs, err := c.getAttrs(ctx, i.SrcBucket, i.SrcPrefix, i.CopySuffix)
+	srcAttrs, err := c.getAttrs(ctx, i.SrcBucket, i.SrcPrefix)
 	if err != nil {
 		return fmt.Errorf("storage: copier get src attrs %w", err)
 	}
@@ -233,14 +199,13 @@ func (c *Copier) CopyPrefix(ctx context.Context, i CopyPathInput) error {
 
 func (c *Copier) Copy(ctx context.Context, srcPrefix, destPrefix, srcBucket, destBucket string) error {
 	fn := c.selectCopyFn()
-	srcAttrs, err := c.getAttrs(ctx, srcBucket, srcPrefix, "")
+	srcAttrs, err := c.getAttrs(ctx, srcBucket, srcPrefix)
 	if err != nil {
 		return fmt.Errorf("storage: copier get src attrs %w", err)
 	}
 	for _, srcAttr := range srcAttrs {
 		destKey := strings.Replace(srcAttr.Key, srcPrefix, destPrefix, 1)
-		err := fn(ctx, srcAttr, destKey, srcBucket, destBucket)
-		if err != nil {
+		if err := fn(ctx, srcAttr, destKey, srcBucket, destBucket); err != nil {
 			return err
 		}
 	}
