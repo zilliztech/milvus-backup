@@ -116,3 +116,35 @@ func TestRBACTask_Users(t *testing.T) {
 	assert.Len(t, restoreUsers, 1)
 	assert.Equal(t, "user1.user", restoreUsers[0].User)
 }
+
+func TestRBACTask_PrivilegeGroups(t *testing.T) {
+	bakPG := []*backuppb.PrivilegeGroupInfo{{
+		GroupName: "group1",
+		Privileges: []*backuppb.PrivilegeEntity{
+			{Name: "privilege1"},
+			{Name: "privilege2"},
+		},
+	}, {
+		GroupName: "group2",
+		Privileges: []*backuppb.PrivilegeEntity{
+			{Name: "privilege3"},
+			{Name: "privilege4"},
+		},
+	}}
+
+	curPrivilegeGroups := []*milvuspb.PrivilegeGroupInfo{{
+		GroupName: "group1",
+		Privileges: []*milvuspb.PrivilegeEntity{
+			{Name: "privilege1"},
+			{Name: "privilege2"},
+		},
+	}}
+
+	rt := &RBACTask{bakRBAC: &backuppb.RBACMeta{PrivilegeGroups: bakPG}}
+	restorePG := rt.privilegeGroups(curPrivilegeGroups)
+	assert.Len(t, restorePG, 1)
+	assert.Equal(t, "group2", restorePG[0].GroupName)
+	assert.Equal(t, 2, len(restorePG[0].Privileges))
+	assert.Equal(t, "privilege3", restorePG[0].Privileges[0].Name)
+	assert.Equal(t, "privilege4", restorePG[0].Privileges[1].Name)
+}

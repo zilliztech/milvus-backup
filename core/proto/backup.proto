@@ -562,6 +562,11 @@ message GrantEntity {
   string db_name = 5;
 }
 
+message PrivilegeGroupInfo {
+  string group_name = 1;
+  repeated PrivilegeEntity privileges = 2;
+}
+
 message UserInfo {
   string user = 1;
   string password = 2;
@@ -575,4 +580,6 @@ message RBACMeta {
   repeated RoleEntity roles = 2;
   // (role, object, previledge)
   repeated GrantEntity grants = 3;
+  // privilege group
+  repeated PrivilegeGroupInfo privilege_groups = 4;
 }
