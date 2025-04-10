@@ -106,7 +106,7 @@ class TestRestoreBackupWithRbac(TestcaseBase):
 
 
     @pytest.mark.tags(CaseLabel.L0)
-    def test_milvus_restore_back_with_rbac(
+    def test_milvus_restore_backup_with_rbac(
         self,
     ):
         """Test backup and restore with RBAC configuration"""

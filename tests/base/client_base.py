@@ -94,7 +94,7 @@ class TestcaseBase(Base):
     """
 
     @pytest.fixture(scope="function", autouse=True)
-    def inti_client(self, backup_uri, host, port, user, password):
+    def init_client(self, backup_uri, host, port, user, password):
         endpoint = f"{backup_uri}/api/v1"
         self.client = MilvusBackupClient(endpoint)
         self.milvus_client = MilvusClient(
