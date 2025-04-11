@@ -1,7 +1,7 @@
 import sys
 import time
 import pytest
-from pymilvus import DefaultConfig, DataType, db
+from pymilvus import DefaultConfig, DataType, db, MilvusClient
 
 sys.path.append("..")
 from base.connections_wrapper import ApiConnectionsWrapper
@@ -94,27 +94,22 @@ class TestcaseBase(Base):
     """
 
     @pytest.fixture(scope="function", autouse=True)
-    def inti_client(self, backup_uri):
+    def init_client(self, backup_uri, host, port, user, password):
         endpoint = f"{backup_uri}/api/v1"
         self.client = MilvusBackupClient(endpoint)
+        self.milvus_client = MilvusClient(
+            uri=f"http://{host}:{port}",
+            token=f"{user}:{password}",
+        )
+        self.milvus_uri = f"http://{host}:{port}"
+        self.milvus_token = f"{user}:{password}"
 
     def _connect(self):
         """Add a connection and create the connect"""
-        if cf.param_info.param_user and cf.param_info.param_password:
-            res, is_succ = self.connection_wrap.connect(
-                alias=DefaultConfig.DEFAULT_USING,
-                host=cf.param_info.param_host,
-                port=cf.param_info.param_port,
-                user=cf.param_info.param_user,
-                password=cf.param_info.param_password,
-                secure=cf.param_info.param_secure,
-            )
-        else:
-            res, is_succ = self.connection_wrap.connect(
-                alias=DefaultConfig.DEFAULT_USING,
-                host=cf.param_info.param_host,
-                port=cf.param_info.param_port,
-            )
+        res, _ = self.connection_wrap.connect(
+            uri=self.milvus_uri,
+            token=self.milvus_token
+        )
         return res
 
     def init_collection_wrap(

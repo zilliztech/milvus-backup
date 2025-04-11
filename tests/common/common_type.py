@@ -275,3 +275,4 @@ class CaseLabel:
     Perf = "Perf"
     MASTER = "MASTER"
     RELEASE = "RELEASE"
+    RBAC = "RBAC"
