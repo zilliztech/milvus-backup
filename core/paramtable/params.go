@@ -120,6 +120,8 @@ type MilvusConfig struct {
 	// tls credentials for validate client, eg: mTLS
 	MTLSCertPath string
 	MTLSKeyPath  string
+
+	RPCChanelName string
 }
 
 func (p *MilvusConfig) init(base *BaseTable) {
@@ -138,6 +140,8 @@ func (p *MilvusConfig) init(base *BaseTable) {
 
 	p.initMTLSCertPath()
 	p.initMTLSKeyPath()
+
+	p.initRPCChanelName()
 }
 
 func (p *MilvusConfig) initAddress() {
@@ -200,6 +204,11 @@ func (p *MilvusConfig) initTLSMode() {
 	// for backward compatibility, if mTLS cert path is not set, use tls mode 1 instead of 2.
 	// WARN: This behavior will be removed in the version after v0.6.0
 	p.TLSMode = p.Base.ParseIntWithDefault("milvus.tlsMode", 0)
+}
+
+func (p *MilvusConfig) initRPCChanelName() {
+	rpcChanelName := p.Base.LoadWithDefault("milvus.rpcChannelName", "by-dev-replicate-msg")
+	p.RPCChanelName = rpcChanelName
 }
 
 // /////////////////////////////////////////////////////////////////////////////

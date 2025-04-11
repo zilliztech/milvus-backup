@@ -20,8 +20,6 @@ const (
 	CP_META_FILE         = "channel_cp_meta.json"
 	SEPERATOR            = "/"
 
-	BinglogDir = "binlogs"
-
 	LoadState_NotExist = "NotExist"
 	LoadState_NotLoad  = "NotLoad"
 	LoadState_Loading  = "Loading"
@@ -247,10 +245,6 @@ func FullMetaPath(backupRootPath, backupName string) string {
 
 func ChannelCPMetaPath(backupRootPath, backupName string) string {
 	return BackupMetaDirPath(backupRootPath, backupName) + SEPERATOR + CP_META_FILE
-}
-
-func BackupBinlogDirPath(backupRootPath, backupName string) string {
-	return backupRootPath + SEPERATOR + backupName + SEPERATOR + BinglogDir
 }
 
 func SimpleListBackupsResponse(input *backuppb.ListBackupsResponse) *backuppb.ListBackupsResponse {

@@ -17,7 +17,8 @@ require (
 	github.com/imroc/req/v3 v3.49.1
 	github.com/json-iterator/go v1.1.12
 	github.com/lingdor/stackerror v0.0.0-20191119040541-976d8885ed76
-	github.com/milvus-io/milvus-proto/go-api/v2 v2.5.1
+	github.com/milvus-io/milvus-proto/go-api/v2 v2.5.7
+	github.com/milvus-io/milvus/pkg/v2 v2.5.7
 	github.com/minio/minio-go/v7 v7.0.82
 	github.com/pkg/errors v0.9.1
 	github.com/samber/lo v1.47.0
@@ -98,7 +99,6 @@ require (
 	github.com/onsi/ginkgo/v2 v2.22.0 // indirect
 	github.com/onsi/gomega v1.35.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.3 // indirect
-	github.com/pingcap/errors v0.11.5-0.20211224045212-9687c2b0f87c // indirect
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/quic-go/qpack v0.5.1 // indirect
