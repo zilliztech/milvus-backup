@@ -210,6 +210,7 @@ const (
 	S3                        = "s3"
 	CloudProviderAWS          = "aws"
 	CloudProviderGCP          = "gcp"
+	CloudProviderGCPNative    = "gcpnative"
 	CloudProviderAli          = "ali"
 	CloudProviderAliyun       = "aliyun"
 	CloudProviderAzure        = "azure"
@@ -223,6 +224,7 @@ var supportedStorageType = map[string]bool{
 	S3:                        true,
 	CloudProviderAWS:          true,
 	CloudProviderGCP:          true,
+	CloudProviderGCPNative:    true,
 	CloudProviderAli:          true,
 	CloudProviderAliyun:       true,
 	CloudProviderAzure:        true,
@@ -235,27 +237,29 @@ type MinioConfig struct {
 
 	StorageType string
 	// Deprecated
-	CloudProvider   string
-	Address         string
-	Port            string
-	AccessKeyID     string
-	SecretAccessKey string
-	UseSSL          bool
-	BucketName      string
-	RootPath        string
-	UseIAM          bool
-	IAMEndpoint     string
+	CloudProvider     string
+	Address           string
+	Port              string
+	AccessKeyID       string
+	SecretAccessKey   string
+	GcpCredentialJSON string
+	UseSSL            bool
+	BucketName        string
+	RootPath          string
+	UseIAM            bool
+	IAMEndpoint       string
 
-	BackupStorageType     string
-	BackupAddress         string
-	BackupPort            string
-	BackupAccessKeyID     string
-	BackupSecretAccessKey string
-	BackupUseSSL          bool
-	BackupBucketName      string
-	BackupRootPath        string
-	BackupUseIAM          bool
-	BackupIAMEndpoint     string
+	BackupStorageType       string
+	BackupAddress           string
+	BackupPort              string
+	BackupAccessKeyID       string
+	BackupSecretAccessKey   string
+	BackupGcpCredentialJSON string
+	BackupUseSSL            bool
+	BackupBucketName        string
+	BackupRootPath          string
+	BackupUseIAM            bool
+	BackupIAMEndpoint       string
 
 	CrossStorage bool
 }
@@ -268,6 +272,7 @@ func (p *MinioConfig) init(base *BaseTable) {
 	p.initPort()
 	p.initAccessKeyID()
 	p.initSecretAccessKey()
+	p.initGcpCredentialJSON()
 	p.initUseSSL()
 	p.initBucketName()
 	p.initRootPath()
@@ -280,6 +285,7 @@ func (p *MinioConfig) init(base *BaseTable) {
 	p.initBackupPort()
 	p.initBackupAccessKeyID()
 	p.initBackupSecretAccessKey()
+	p.initBackupGcpCredentialJSON()
 	p.initBackupUseSSL()
 	p.initBackupBucketName()
 	p.initBackupRootPath()
@@ -307,6 +313,11 @@ func (p *MinioConfig) initAccessKeyID() {
 func (p *MinioConfig) initSecretAccessKey() {
 	key := p.Base.LoadWithDefault("minio.secretAccessKey", DefaultMinioSecretAccessKey)
 	p.SecretAccessKey = key
+}
+
+func (p *MinioConfig) initGcpCredentialJSON() {
+	gcpCredentialJSON := p.Base.LoadWithDefault("minio.gcpCredentialJSON", DefaultGcpCredentialJSON)
+	p.GcpCredentialJSON = gcpCredentialJSON
 }
 
 func (p *MinioConfig) initUseSSL() {
@@ -417,6 +428,11 @@ func (p *MinioConfig) initBackupSecretAccessKey() {
 	key := p.Base.LoadWithDefault("minio.backupSecretAccessKey",
 		p.Base.LoadWithDefault("minio.secretAccessKey", DefaultMinioSecretAccessKey))
 	p.BackupSecretAccessKey = key
+}
+
+func (p *MinioConfig) initBackupGcpCredentialJSON() {
+	gcpCredentialJSON := p.Base.LoadWithDefault("minio.backupGcpCredentialJSON", DefaultGcpCredentialJSON)
+	p.BackupGcpCredentialJSON = gcpCredentialJSON
 }
 
 func (p *MinioConfig) initBackupBucketName() {

@@ -7,6 +7,7 @@ type StorageConfig struct {
 	BucketName        string
 	AccessKeyID       string
 	SecretAccessKeyID string
+	GcpCredentialJSON string
 	UseSSL            bool
 	CreateBucket      bool
 	RootPath          string
@@ -15,6 +16,7 @@ type StorageConfig struct {
 
 	backupAccessKeyID       string
 	backupSecretAccessKeyID string
+	BackupGcpCredentialJSON string
 	backupBucketName        string
 	backupRootPath          string
 }
@@ -46,6 +48,12 @@ func AccessKeyID(accessKeyID string) Option {
 func SecretAccessKeyID(secretAccessKeyID string) Option {
 	return func(c *StorageConfig) {
 		c.SecretAccessKeyID = secretAccessKeyID
+	}
+}
+
+func GcpCredentialJSON(gcpCredentialJSON string) Option {
+	return func(c *StorageConfig) {
+		c.GcpCredentialJSON = gcpCredentialJSON
 	}
 }
 
