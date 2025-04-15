@@ -15,6 +15,9 @@ from common import common_func as cf
 from common import common_type as ct
 from api.milvus_backup import MilvusBackupClient
 from utils.util_pymilvus import create_index_for_vector_fields
+from deepdiff import DeepDiff
+
+suffix = "_bak"
 
 class Base:
     """Initialize class object"""
@@ -522,13 +525,18 @@ class TestcaseBase(Base):
         dist_indexes_info = [x.to_dict() for x in collection_dist.indexes]
         log.info(f"collection_src indexes: {src_indexes_info}")
         log.info(f"collection_dist indexes: {dist_indexes_info}")
-        # compare indexes info with same field name for src and dist
-        for src_index_info in src_indexes_info:
-            for dist_index_info in dist_indexes_info:
-                if src_index_info["field"] == dist_index_info["field"]:
-                    src_index_info.pop("collection")
-                    dist_index_info.pop("collection")
-                    assert src_index_info == dist_index_info
+        # copy dist_indexes_info for rewriting the collection name
+        dist_indexes_info_copy = dist_indexes_info.copy()
+        # rewrite the collection name with the backup suffix, the left part
+        # should be the same with source collection name
+        for dist_index_info in dist_indexes_info_copy:
+            dist_index_info["collection"] = dist_index_info["collection"][:-len(suffix)]
+        log.info(f"collection_dist indexes after rewrite the collection name is: {dist_indexes_info_copy}")
+        # compare src_indexes_info and dist_indexes_info_copy
+        compare_result = DeepDiff(src_indexes_info, dist_indexes_info_copy, ignore_order=True)
+        if (not compare_result) is False:
+            log.debug(f"the indexes diff is {compare_result}")
+        assert (not compare_result) is True
 
     def compare_collections(
         self, src_name, dist_name, output_fields=None, verify_by_query=False, skip_index=False
