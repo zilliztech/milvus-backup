@@ -40,6 +40,11 @@ func (rt *RBACTask) Execute(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("backup: get RBAC info: %w", err)
 	}
+	rt.logger.Info("read RBAC info from milvus done",
+		zap.Int("user", len(resp.GetRBACMeta().GetUsers())),
+		zap.Int("role", len(resp.GetRBACMeta().GetRoles())),
+		zap.Int("grant", len(resp.GetRBACMeta().GetGrants())),
+		zap.Int("privilege_group", len(resp.GetRBACMeta().GetPrivilegeGroups())))
 
 	rbacPb := &backuppb.RBACMeta{
 		Users:           rt.users(resp.GetRBACMeta().GetUsers()),
