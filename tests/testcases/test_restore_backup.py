@@ -448,18 +448,31 @@ class TestRestoreBackup(TestcaseBase):
             name=name_origin, schema=default_schema, active_trace=True
         )
         nb = 3000
+        # Use row-based data: list of dicts, each dict is a row
         if include_json:
             data = [
-                [i for i in range(nb)],
-                [i % 3 for i in range(nb)],
-                [{f"key_{str(i)}": i} for i in range(nb)],
-                [[np.float32(i) for i in range(128)] for _ in range(nb)],
+                {
+                    "int64": i,  # int field
+                    "key": i % 3,  # int field
+                    "json": {f"key_{str(i)}": i},  # json field
+                    "float_vector": [np.float32(i) for _ in range(128)],  # vector field
+                    "address": fake_en.address(),  # dynamic field
+                    "name": fake_en.name(),  # dynamic field
+                    f"key_{i}": i,  # dynamic field
+                }
+                for i in range(nb)
             ]
         else:
             data = [
-                [i for i in range(nb)],
-                [i % 3 for i in range(nb)],
-                [[np.float32(i) for i in range(128)] for _ in range(nb)],
+                {
+                    "int64": i,  # int field
+                    "key": i % 3,  # int field
+                    "float_vector": [np.float32(i) for _ in range(128)],  # vector field
+                    "address": fake_en.address(),  # dynamic field
+                    "name": fake_en.name(),  # dynamic field
+                    f"key_{i}": i,  # dynamic field
+                }
+                for i in range(nb)
             ]
         collection_w.insert(data=data)
 
