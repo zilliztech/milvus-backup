@@ -76,11 +76,12 @@ type Grpc interface {
 	GetVersion(ctx context.Context) (string, error)
 	CreateDatabase(ctx context.Context, dbName string) error
 	ListDatabases(ctx context.Context) ([]string, error)
+	DescribeDatabase(ctx context.Context, dbName string) (*milvuspb.DescribeDatabaseResponse, error)
 	DescribeCollection(ctx context.Context, db, collName string) (*milvuspb.DescribeCollectionResponse, error)
 	DropCollection(ctx context.Context, db, collectionName string) error
 	ListIndex(ctx context.Context, db, collName string) ([]*milvuspb.IndexDescription, error)
 	ShowPartitions(ctx context.Context, db, collName string) (*milvuspb.ShowPartitionsResponse, error)
-	GetLoadingProgress(ctx context.Context, db, collName string, partitionNames []string) (int64, error)
+	GetLoadingProgress(ctx context.Context, db, collName string, partitionNames ...string) (int64, error)
 	GetPersistentSegmentInfo(ctx context.Context, db, collName string) ([]*milvuspb.PersistentSegmentInfo, error)
 	Flush(ctx context.Context, db, collName string) (*milvuspb.FlushResponse, error)
 	ListCollections(ctx context.Context, db string) (*milvuspb.ShowCollectionsResponse, error)
@@ -94,6 +95,7 @@ type Grpc interface {
 	DropIndex(ctx context.Context, db, collName, indexName string) error
 	BackupRBAC(ctx context.Context) (*milvuspb.BackupRBACMetaResponse, error)
 	RestoreRBAC(ctx context.Context, rbacMeta *milvuspb.RBACMeta) error
+	ReplicateMessage(ctx context.Context, channelName string) (string, error)
 }
 
 const (
@@ -237,8 +239,10 @@ func transCred(cfg *paramtable.MilvusConfig) (credentials.TransportCredentials, 
 }
 
 func NewGrpc(cfg *paramtable.MilvusConfig) (*GrpcClient, error) {
+	logger := log.L().With(zap.String("component", "grpc-client"))
+
 	host := fmt.Sprintf("%s:%s", cfg.Address, cfg.Port)
-	log.Info("New milvus grpc client", zap.String("host", host))
+	logger.Info("New milvus grpc client", zap.String("host", host))
 
 	auth := grpcAuth(cfg.User, cfg.Password)
 
@@ -256,7 +260,7 @@ func NewGrpc(cfg *paramtable.MilvusConfig) (*GrpcClient, error) {
 	srv := milvuspb.NewMilvusServiceClient(conn)
 
 	cli := &GrpcClient{
-		logger: log.L().With(zap.String("component", "grpc-client")),
+		logger: logger,
 
 		conn: conn,
 		srv:  srv,
@@ -265,6 +269,10 @@ func NewGrpc(cfg *paramtable.MilvusConfig) (*GrpcClient, error) {
 
 		user: cfg.User,
 		auth: auth,
+	}
+
+	if err := cli.connect(context.Background()); err != nil {
+		return nil, fmt.Errorf("client: connect to server: %w", err)
 	}
 
 	return cli, nil
@@ -291,12 +299,12 @@ func (g *GrpcClient) newCtxWithDB(ctx context.Context, db string) context.Contex
 func (g *GrpcClient) connect(ctx context.Context) error {
 	hostName, err := os.Hostname()
 	if err != nil {
-		return fmt.Errorf("get hostname failed: %w", err)
+		return fmt.Errorf("get hostname : %w", err)
 	}
 
 	connReq := &milvuspb.ConnectRequest{
 		ClientInfo: &commonpb.ClientInfo{
-			SdkType:    "Backup Tool Custom SDK",
+			SdkType:    "BackupToolCustomSDK",
 			SdkVersion: version.Version,
 			LocalTime:  time.Now().String(),
 			User:       g.user,
@@ -304,18 +312,22 @@ func (g *GrpcClient) connect(ctx context.Context) error {
 		},
 	}
 
+	ctx = g.newCtx(ctx)
 	resp, err := g.srv.Connect(ctx, connReq)
 	if err != nil {
 		s, ok := status.FromError(err)
 		if ok {
 			if s.Code() == codes.Unimplemented {
-				log.Info("The server does not support the Connect API, skipping")
+				g.logger.Info("the server does not support the Connect API, skipping")
 				g.flags |= disableDatabase
+
+				return nil
 			}
 		}
 		return fmt.Errorf("client: connect to server failed: %w", err)
 	}
 
+	g.logger.Info("connect to server", zap.String("server", resp.GetServerInfo().GetBuildTags()))
 	if !statusOk(resp.GetStatus()) {
 		return fmt.Errorf("client: connect to server failed: %v", resp.GetStatus())
 	}
@@ -386,6 +398,20 @@ func (g *GrpcClient) DescribeCollection(ctx context.Context, db, collName string
 	return resp, nil
 }
 
+func (g *GrpcClient) DescribeDatabase(ctx context.Context, dbName string) (*milvuspb.DescribeDatabaseResponse, error) {
+	ctx = g.newCtx(ctx)
+	if g.hasFlags(disableDatabase) {
+		return nil, errors.New("client: the server does not support database")
+	}
+
+	resp, err := g.srv.DescribeDatabase(ctx, &milvuspb.DescribeDatabaseRequest{DbName: dbName})
+	if err := checkResponse(resp, err); err != nil {
+		return nil, fmt.Errorf("client: describe database failed: %w", err)
+	}
+
+	return resp, nil
+}
+
 func (g *GrpcClient) ListIndex(ctx context.Context, db, collName string) ([]*milvuspb.IndexDescription, error) {
 	ctx = g.newCtxWithDB(ctx, db)
 	resp, err := g.srv.DescribeIndex(ctx, &milvuspb.DescribeIndexRequest{CollectionName: collName})
@@ -405,7 +431,7 @@ func (g *GrpcClient) ShowPartitions(ctx context.Context, db, collName string) (*
 	return resp, nil
 }
 
-func (g *GrpcClient) GetLoadingProgress(ctx context.Context, db, collName string, partitionNames []string) (int64, error) {
+func (g *GrpcClient) GetLoadingProgress(ctx context.Context, db, collName string, partitionNames ...string) (int64, error) {
 	ctx = g.newCtxWithDB(ctx, db)
 	resp, err := g.srv.GetLoadingProgress(ctx, &milvuspb.GetLoadingProgressRequest{CollectionName: collName, PartitionNames: partitionNames})
 	if err != nil {
@@ -428,9 +454,12 @@ func (g *GrpcClient) GetPersistentSegmentInfo(ctx context.Context, db, collName 
 func (g *GrpcClient) Flush(ctx context.Context, db, collName string) (*milvuspb.FlushResponse, error) {
 	ctx = g.newCtxWithDB(ctx, db)
 
+	start := time.Now()
 	if err := g.limiters.flush.Wait(ctx); err != nil {
 		return nil, fmt.Errorf("client: flush wait: %w", err)
 	}
+	cost := time.Since(start)
+	g.logger.Info("flush wait aimd", zap.Duration("cost", cost), zap.String("db", db), zap.String("collection", collName))
 
 	resp, err := g.srv.Flush(ctx, &milvuspb.FlushRequest{CollectionNames: []string{collName}})
 	if err := checkResponse(resp, err); err != nil {
@@ -697,4 +726,14 @@ func (g *GrpcClient) RestoreRBAC(ctx context.Context, rbacMeta *milvuspb.RBACMet
 	}
 
 	return nil
+}
+
+func (g *GrpcClient) ReplicateMessage(ctx context.Context, channelName string) (string, error) {
+	ctx = g.newCtx(ctx)
+	resp, err := g.srv.ReplicateMessage(ctx, &milvuspb.ReplicateMessageRequest{ChannelName: channelName})
+	if err := checkResponse(resp, err); err != nil {
+		return "", fmt.Errorf("client: replicate message failed: %w", err)
+	}
+
+	return resp.GetPosition(), nil
 }

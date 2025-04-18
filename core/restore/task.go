@@ -31,7 +31,7 @@ type Task struct {
 	milvusStorage storage.ChunkManager
 
 	grpcCli    client.Grpc
-	restfulCli client.RestfulBulkInsert
+	restfulCli client.Restful
 
 	backupBucketName string
 	backupPath       string
@@ -46,7 +46,7 @@ func NewTask(task *backuppb.RestoreBackupTask,
 	backupStorage storage.ChunkManager,
 	milvusStorage storage.ChunkManager,
 	grpcCli client.Grpc,
-	restfulCli client.RestfulBulkInsert,
+	restfulCli client.Restful,
 ) *Task {
 	logger := log.L().With(
 		zap.String("backup_name", info.GetName()),

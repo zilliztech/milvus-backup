@@ -114,7 +114,7 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 	// 2, initial restoreCollectionTasks
 	toRestoreCollectionBackups := make([]*backuppb.CollectionBackupInfo, 0)
 
-	dbCollectionsStr := utils.GetRestoreDBCollections(request)
+	dbCollectionsStr := utils.GetDBCollections(request.GetDbCollections())
 	if dbCollectionsStr != "" {
 		var dbCollections meta.DbCollections
 		err := jsoniter.UnmarshalFromString(dbCollectionsStr, &dbCollections)
