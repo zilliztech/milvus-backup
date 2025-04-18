@@ -198,11 +198,10 @@ class TestRestoreBackup(TestcaseBase):
         for name in names_origin:
             c = Collection(name)
             create_index_for_vector_fields(c)
-        # # skip for issue 606
-        # # create json path index for json field of source collections
-        # for name in names_origin:
-        #     c = Collection(name)
-        #     create_json_path_index_for_json_fields(c)
+        # create json path index for json field of source collections
+        for name in names_origin:
+            c = Collection(name)
+            create_json_path_index_for_json_fields(c)
 
         # create backup
         names_need_backup = names_origin
