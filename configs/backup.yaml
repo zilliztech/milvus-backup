@@ -1,4 +1,4 @@
-# Configures the system log output.
+# Configures the system log output. 
 log:
   level: info # Only supports debug, info, warn, error, panic, or fatal. Default 'info'.
   console: true # whether print log to console
