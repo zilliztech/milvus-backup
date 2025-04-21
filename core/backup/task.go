@@ -139,6 +139,9 @@ func (t *Task) listDBAndCollectionFromDBCollections(ctx context.Context, dbColle
 	var dbNames []string
 	var collections []collection
 	for db, colls := range dbCollections {
+		if db == "" {
+			db = namespace.DefaultDBName
+		}
 		dbNames = append(dbNames, db)
 
 		// if collections is empty, list all collections in the database
@@ -151,12 +154,13 @@ func (t *Task) listDBAndCollectionFromDBCollections(ctx context.Context, dbColle
 		}
 
 		for _, coll := range colls {
-			exist, err := t.grpc.HasCollection(ctx, db, coll)
+			ns := namespace.New(db, coll)
+			exist, err := t.grpc.HasCollection(ctx, ns.DBName(), ns.CollName())
 			if err != nil {
-				return nil, nil, fmt.Errorf("backup: check collection %s.%s: %w", db, coll, err)
+				return nil, nil, fmt.Errorf("backup: check collection %s: %w", ns, err)
 			}
 			if !exist {
-				return nil, nil, fmt.Errorf("backup: collection %s.%s does not exist", db, coll)
+				return nil, nil, fmt.Errorf("backup: collection %s does not exist", ns)
 			}
 			t.logger.Debug("need backup collection", zap.String("db", db), zap.String("collection", coll))
 			collections = append(collections, collection{DBName: db, CollName: coll})

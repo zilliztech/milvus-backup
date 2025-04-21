@@ -84,17 +84,22 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 	}
 
 	if request.Async {
-		go b.executeRestoreBackupTask(ctx, backupBucketName, backupPath, backup, request)
-		task := b.meta.GetRestoreTask(request.GetId())
+		taskPB, err := b.executeRestoreBackupTask(ctx, backupBucketName, backupPath, backup, request, true)
+		if err != nil {
+			resp.Code = backuppb.ResponseCode_Fail
+			log.Error("execute restore collection fail", zap.String("backupId", backup.GetId()), zap.Error(err))
+			resp.Msg = err.Error()
+			return resp
+		}
 		asyncResp := &backuppb.RestoreBackupResponse{
 			RequestId: request.GetRequestId(),
 			Code:      backuppb.ResponseCode_Success,
 			Msg:       "restore backup is executing asynchronously",
-			Data:      task,
+			Data:      taskPB,
 		}
 		return asyncResp
 	} else {
-		taskPB, err := b.executeRestoreBackupTask(ctx, backupBucketName, backupPath, backup, request)
+		taskPB, err := b.executeRestoreBackupTask(ctx, backupBucketName, backupPath, backup, request, false)
 		resp.Data = taskPB
 		if err != nil {
 			resp.Code = backuppb.ResponseCode_Fail
@@ -108,7 +113,7 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 	}
 }
 
-func (b *BackupContext) executeRestoreBackupTask(ctx context.Context, backupBucketName, backupPath string, backup *backuppb.BackupInfo, request *backuppb.RestoreBackupRequest) (*backuppb.RestoreBackupTask, error) {
+func (b *BackupContext) executeRestoreBackupTask(ctx context.Context, backupBucketName, backupPath string, backup *backuppb.BackupInfo, request *backuppb.RestoreBackupRequest, async bool) (*backuppb.RestoreBackupTask, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -124,11 +129,22 @@ func (b *BackupContext) executeRestoreBackupTask(ctx context.Context, backupBuck
 		b.getMilvusClient(),
 		b.getRestfulClient())
 
-	if err := restoreBackupTask.Execute(ctx); err != nil {
-		return nil, fmt.Errorf("backup: execute restore collection fail, err: %w", err)
+	taskPB, err := restoreBackupTask.BuildTaskPB()
+	if err != nil {
+		return nil, fmt.Errorf("backup: build restore collection task fail, err: %w", err)
 	}
 
-	taskPB := b.meta.GetRestoreTask(request.GetId())
+	if async {
+		go func() {
+			if err := restoreBackupTask.Execute(ctx, taskPB); err != nil {
+				log.Error("restore backup task execute fail", zap.String("backupId", backup.GetId()), zap.Error(err))
+			}
+		}()
+	} else {
+		if err := restoreBackupTask.Execute(ctx, taskPB); err != nil {
+			return nil, fmt.Errorf("backup: restore backup task execute fail, err: %w", err)
+		}
+	}
 
 	return taskPB, nil
 }

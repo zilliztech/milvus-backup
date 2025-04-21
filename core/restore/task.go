@@ -128,7 +128,9 @@ func (t *Task) filterCollBackup(dbCollections meta.DbCollections) ([]*backuppb.C
 	needRestoreColls := make([]*backuppb.CollectionBackupInfo, 0, len(bakDBColl))
 	for db, colls := range dbCollections {
 		collNameColl, ok := bakDBColl[db]
-		if !ok {
+		// if colls is not empty, it means only the specified collections need to be restored,
+		// so we need to check if the specified collections exist in the backup
+		if len(colls) != 0 && !ok {
 			return nil, fmt.Errorf("restore: database %s not exist in backup", db)
 		}
 
@@ -328,7 +330,6 @@ func (t *Task) newRestoreTaskPB() (*backuppb.RestoreBackupTask, error) {
 		DatabaseRestoreTasks:   dbTaskes,
 		CollectionRestoreTasks: collTasks,
 	}
-	t.meta.AddRestoreTask(task)
 
 	return task, nil
 }
@@ -367,8 +368,19 @@ func (t *Task) checkCollExist(ctx context.Context, task *backuppb.RestoreCollect
 	return nil
 }
 
-func (t *Task) Execute(ctx context.Context) error {
-	if err := t.privateExecute(ctx); err != nil {
+func (t *Task) BuildTaskPB() (*backuppb.RestoreBackupTask, error) {
+	task, err := t.newRestoreTaskPB()
+	if err != nil {
+		return nil, fmt.Errorf("restore: create restore task %w", err)
+	}
+
+	t.meta.AddRestoreTask(task)
+
+	return task, nil
+}
+
+func (t *Task) Execute(ctx context.Context, task *backuppb.RestoreBackupTask) error {
+	if err := t.privateExecute(ctx, task); err != nil {
 		t.logger.Error("restore task failed", zap.Error(err))
 		t.meta.UpdateRestoreTask(t.request.GetId(), meta.SetRestoreStateCode(backuppb.RestoreTaskStateCode_FAIL))
 		return fmt.Errorf("restore: execute %w", err)
@@ -379,14 +391,9 @@ func (t *Task) Execute(ctx context.Context) error {
 	return nil
 }
 
-func (t *Task) privateExecute(ctx context.Context) error {
+func (t *Task) privateExecute(ctx context.Context, task *backuppb.RestoreBackupTask) error {
 	if err := t.runRBACTask(ctx); err != nil {
 		return err
-	}
-
-	task, err := t.newRestoreTaskPB()
-	if err != nil {
-		return fmt.Errorf("restore: create restore task %w", err)
 	}
 
 	t.meta.UpdateRestoreTask(task.GetId(), meta.SetRestoreStateCode(backuppb.RestoreTaskStateCode_EXECUTING))
