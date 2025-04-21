@@ -14,6 +14,10 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 )
 
+func newTestTask(bak *backuppb.BackupInfo) *Task {
+	return &Task{backup: bak, logger: zap.NewNop()}
+}
+
 func TestTask_GetDBNameDBBackup(t *testing.T) {
 	t.Run("WithDBBackup", func(t *testing.T) {
 		bak := &backuppb.BackupInfo{DatabaseBackups: []*backuppb.DatabaseBackupInfo{{DbName: "db1"}, {DbName: "db2"}}}
@@ -68,20 +72,26 @@ func TestTask_FilterDBBackup(t *testing.T) {
 			{DbName: "db2"},
 			{DbName: "db3"},
 		}}
-		task := &Task{backup: bak}
+		task := newTestTask(bak)
 		dbCollections := meta.DbCollections{"db1": {}, "db2": {}}
 		expect := []*backuppb.DatabaseBackupInfo{{DbName: "db1"}, {DbName: "db2"}}
-		result, err := task.filterDBBackup(dbCollections)
-		assert.NoError(t, err)
+		result := task.filterDBBackup(dbCollections)
 		assert.ElementsMatch(t, expect, result)
+	})
+
+	t.Run("DBBackupIsEmpty", func(t *testing.T) {
+		task := newTestTask(&backuppb.BackupInfo{})
+		dbCollections := meta.DbCollections{"db1": {}}
+		result := task.filterDBBackup(dbCollections)
+		assert.Empty(t, result)
 	})
 
 	t.Run("DBNotExist", func(t *testing.T) {
 		bak := &backuppb.BackupInfo{DatabaseBackups: []*backuppb.DatabaseBackupInfo{{DbName: "db1"}}}
-		task := &Task{backup: bak}
+		task := newTestTask(bak)
 		dbCollections := meta.DbCollections{"db2": {}}
-		_, err := task.filterDBBackup(dbCollections)
-		assert.Error(t, err)
+		result := task.filterDBBackup(dbCollections)
+		assert.Empty(t, result)
 	})
 }
 

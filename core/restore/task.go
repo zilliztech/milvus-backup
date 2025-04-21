@@ -106,19 +106,20 @@ func (t *Task) getDBNameCollNameCollBackup() map[string]map[string]*backuppb.Col
 	return bakDBColl
 }
 
-func (t *Task) filterDBBackup(dbCollections meta.DbCollections) ([]*backuppb.DatabaseBackupInfo, error) {
+func (t *Task) filterDBBackup(dbCollections meta.DbCollections) []*backuppb.DatabaseBackupInfo {
 	bakDB := t.getDBNameDBBackup()
 
 	needRestoreDBs := make([]*backuppb.DatabaseBackupInfo, 0, len(bakDB))
-	for db, _ := range dbCollections {
+	for db := range dbCollections {
 		dbBackup, ok := bakDB[db]
 		if !ok {
-			return nil, fmt.Errorf("restore: database %s not exist in backup", db)
+			t.logger.Warn("database not exist in backup", zap.String("db_name", db))
+			continue
 		}
 		needRestoreDBs = append(needRestoreDBs, dbBackup)
 	}
 
-	return needRestoreDBs, nil
+	return needRestoreDBs
 }
 
 func (t *Task) filterCollBackup(dbCollections meta.DbCollections) ([]*backuppb.CollectionBackupInfo, error) {
@@ -156,10 +157,7 @@ func (t *Task) filterBackupByDBCollections(dbCollectionsStr string) ([]*backuppb
 		return nil, nil, fmt.Errorf("restore: unmarshal dbCollections %w", err)
 	}
 
-	dbBackups, err := t.filterDBBackup(dbCollections)
-	if err != nil {
-		return nil, nil, fmt.Errorf("restore: filter db backups by dbColletions %w", err)
-	}
+	dbBackups := t.filterDBBackup(dbCollections)
 
 	collBackups, err := t.filterCollBackup(dbCollections)
 	if err != nil {
@@ -186,10 +184,7 @@ func (t *Task) filterBackupByCollectionNames(collectionNames []string) ([]*backu
 		}
 	}
 
-	dbBackups, err := t.filterDBBackup(dbCollections)
-	if err != nil {
-		return nil, nil, fmt.Errorf("restore: filter db backups by collection names %w", err)
-	}
+	dbBackups := t.filterDBBackup(dbCollections)
 
 	collBackups, err := t.filterCollBackup(dbCollections)
 	if err != nil {
