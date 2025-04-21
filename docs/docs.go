@@ -264,6 +264,12 @@ const docTemplate = `{
                         "$ref": "#/definitions/backuppb.CollectionBackupInfo"
                     }
                 },
+                "database_backups": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/backuppb.DatabaseBackupInfo"
+                    }
+                },
                 "end_time": {
                     "type": "integer"
                 },
@@ -284,6 +290,9 @@ const docTemplate = `{
                 },
                 "rbac_meta": {
                     "$ref": "#/definitions/backuppb.RBACMeta"
+                },
+                "rpc_channel_info": {
+                    "$ref": "#/definitions/backuppb.RPCChannelInfo"
                 },
                 "size": {
                     "type": "integer"
@@ -346,6 +355,10 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "entries_num": {
+                    "description": "Deprecated: Marked as deprecated in backup.proto.",
+                    "type": "integer"
+                },
+                "log_id": {
                     "type": "integer"
                 },
                 "log_path": {
@@ -355,9 +368,11 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "timestamp_from": {
+                    "description": "Deprecated: Marked as deprecated in backup.proto.",
                     "type": "integer"
                 },
                 "timestamp_to": {
+                    "description": "Deprecated: Marked as deprecated in backup.proto.",
                     "type": "integer"
                 }
             }
@@ -597,6 +612,23 @@ const docTemplate = `{
                 "DataType_BFloat16Vector",
                 "DataType_SparseFloatVector"
             ]
+        },
+        "backuppb.DatabaseBackupInfo": {
+            "type": "object",
+            "properties": {
+                "db_id": {
+                    "type": "integer"
+                },
+                "db_name": {
+                    "type": "string"
+                },
+                "properties": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/backuppb.KeyValuePair"
+                    }
+                }
+            }
         },
         "backuppb.DeleteBackupResponse": {
             "type": "object",
@@ -982,6 +1014,17 @@ const docTemplate = `{
                 }
             }
         },
+        "backuppb.RPCChannelInfo": {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string"
+                },
+                "position": {
+                    "type": "string"
+                }
+            }
+        },
         "backuppb.ResponseCode": {
             "type": "integer",
             "enum": [
@@ -1140,6 +1183,12 @@ const docTemplate = `{
                         "$ref": "#/definitions/backuppb.RestoreCollectionTask"
                     }
                 },
+                "database_restore_tasks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/backuppb.RestoreDatabaseTask"
+                    }
+                },
                 "end_time": {
                     "type": "integer"
                 },
@@ -1198,6 +1247,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "partition_restore_tasks": {
+                    "description": "Deprecated: Marked as deprecated in backup.proto.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/backuppb.RestorePartitionTask"
@@ -1249,6 +1299,20 @@ const docTemplate = `{
                 },
                 "useV2Restore": {
                     "type": "boolean"
+                }
+            }
+        },
+        "backuppb.RestoreDatabaseTask": {
+            "type": "object",
+            "properties": {
+                "db_backup": {
+                    "$ref": "#/definitions/backuppb.DatabaseBackupInfo"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "target_db_name": {
+                    "type": "string"
                 }
             }
         },
@@ -1325,7 +1389,7 @@ const docTemplate = `{
                     }
                 },
                 "group_id": {
-                    "description": "separate segments into multi groups by size,\nsegments in one group will be copied into one directory during backup\nand will bulkinsert in one call during restore",
+                    "description": "The group ID is a virtual partition ID.\nThe Milvus BulkInsert interface requires a partition prefix,\nbut passing multiple segments is a more suitable option.\nTherefore, a virtual partition ID is used here to enable the functionality of importing multiple segments.",
                     "type": "integer"
                 },
                 "is_l0": {
@@ -1344,10 +1408,14 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "statslogs": {
+                    "description": "Deprecated: Marked as deprecated in backup.proto.",
                     "type": "array",
                     "items": {
                         "$ref": "#/definitions/backuppb.FieldBinlog"
                     }
+                },
+                "v_channel": {
+                    "type": "string"
                 }
             }
         },

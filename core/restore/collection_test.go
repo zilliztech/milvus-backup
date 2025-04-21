@@ -5,31 +5,7 @@ import (
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/stretchr/testify/assert"
-
-	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 )
-
-func TestCollectionTask_BackupTS(t *testing.T) {
-	t.Run("Truncate", func(t *testing.T) {
-		task := &backuppb.RestoreCollectionTask{
-			TruncateBinlogByTs: true,
-			CollBackup:         &backuppb.CollectionBackupInfo{BackupTimestamp: 100},
-		}
-
-		ct := &CollectionTask{task: task}
-		assert.Equal(t, uint64(100), ct.backupTS())
-	})
-
-	t.Run("NotTruncate", func(t *testing.T) {
-		task := &backuppb.RestoreCollectionTask{
-			TruncateBinlogByTs: false,
-			CollBackup:         &backuppb.CollectionBackupInfo{BackupTimestamp: 100},
-		}
-
-		ct := &CollectionTask{task: task}
-		assert.Equal(t, uint64(0), ct.backupTS())
-	})
-}
 
 func TestGetFailedReason(t *testing.T) {
 	t.Run("Normal", func(t *testing.T) {

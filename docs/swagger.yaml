@@ -10,6 +10,10 @@ definitions:
         items:
           $ref: '#/definitions/backuppb.CollectionBackupInfo'
         type: array
+      database_backups:
+        items:
+          $ref: '#/definitions/backuppb.DatabaseBackupInfo'
+        type: array
       end_time:
         type: integer
       errorMessage:
@@ -24,6 +28,8 @@ definitions:
         type: integer
       rbac_meta:
         $ref: '#/definitions/backuppb.RBACMeta'
+      rpc_channel_info:
+        $ref: '#/definitions/backuppb.RPCChannelInfo'
       size:
         type: integer
       start_time:
@@ -65,14 +71,19 @@ definitions:
   backuppb.Binlog:
     properties:
       entries_num:
+        description: 'Deprecated: Marked as deprecated in backup.proto.'
+        type: integer
+      log_id:
         type: integer
       log_path:
         type: string
       log_size:
         type: integer
       timestamp_from:
+        description: 'Deprecated: Marked as deprecated in backup.proto.'
         type: integer
       timestamp_to:
+        description: 'Deprecated: Marked as deprecated in backup.proto.'
         type: integer
     type: object
   backuppb.CollectionBackupInfo:
@@ -253,6 +264,17 @@ definitions:
     - DataType_Float16Vector
     - DataType_BFloat16Vector
     - DataType_SparseFloatVector
+  backuppb.DatabaseBackupInfo:
+    properties:
+      db_id:
+        type: integer
+      db_name:
+        type: string
+      properties:
+        items:
+          $ref: '#/definitions/backuppb.KeyValuePair'
+        type: array
+    type: object
   backuppb.DeleteBackupResponse:
     properties:
       code:
@@ -503,6 +525,13 @@ definitions:
           $ref: '#/definitions/backuppb.UserInfo'
         type: array
     type: object
+  backuppb.RPCChannelInfo:
+    properties:
+      name:
+        type: string
+      position:
+        type: string
+    type: object
   backuppb.ResponseCode:
     enum:
     - 0
@@ -625,6 +654,10 @@ definitions:
         items:
           $ref: '#/definitions/backuppb.RestoreCollectionTask'
         type: array
+      database_restore_tasks:
+        items:
+          $ref: '#/definitions/backuppb.RestoreDatabaseTask'
+        type: array
       end_time:
         type: integer
       errorMessage:
@@ -665,6 +698,7 @@ definitions:
         description: if true only restore meta
         type: boolean
       partition_restore_tasks:
+        description: 'Deprecated: Marked as deprecated in backup.proto.'
         items:
           $ref: '#/definitions/backuppb.RestorePartitionTask'
         type: array
@@ -701,6 +735,15 @@ definitions:
         type: boolean
       useV2Restore:
         type: boolean
+    type: object
+  backuppb.RestoreDatabaseTask:
+    properties:
+      db_backup:
+        $ref: '#/definitions/backuppb.DatabaseBackupInfo'
+      id:
+        type: string
+      target_db_name:
+        type: string
     type: object
   backuppb.RestorePartitionTask:
     properties:
@@ -754,9 +797,10 @@ definitions:
         type: array
       group_id:
         description: |-
-          separate segments into multi groups by size,
-          segments in one group will be copied into one directory during backup
-          and will bulkinsert in one call during restore
+          The group ID is a virtual partition ID.
+          The Milvus BulkInsert interface requires a partition prefix,
+          but passing multiple segments is a more suitable option.
+          Therefore, a virtual partition ID is used here to enable the functionality of importing multiple segments.
         type: integer
       is_l0:
         type: boolean
@@ -769,9 +813,12 @@ definitions:
       size:
         type: integer
       statslogs:
+        description: 'Deprecated: Marked as deprecated in backup.proto.'
         items:
           $ref: '#/definitions/backuppb.FieldBinlog'
         type: array
+      v_channel:
+        type: string
     type: object
   backuppb.SkipParams:
     properties:

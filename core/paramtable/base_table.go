@@ -545,4 +545,9 @@ func (gp *BaseTable) loadMilvusConfig() {
 	if milvusMtlsKeyPath != "" {
 		_ = gp.Save("milvus.mtlsKeyPath", milvusMtlsKeyPath)
 	}
+
+	milvusRPCChannelName := os.Getenv("MILVUS_RPC_CHANNEL_NAME")
+	if milvusRPCChannelName != "" {
+		_ = gp.Save("milvus.rpcChannelName", milvusRPCChannelName)
+	}
 }

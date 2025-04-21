@@ -38,9 +38,12 @@ message IndexInfo {
   map<string, string> params = 4;
 }
 
-/**
- * lite version of Collection info
- */
+message DatabaseBackupInfo {
+  string db_name = 1;
+  int64 db_id = 2;
+  repeated KeyValuePair properties = 3;
+}
+
 message CollectionBackupInfo {
   string id = 1;
   BackupTaskStateCode state_code = 2;
@@ -86,15 +89,17 @@ message SegmentBackupInfo {
   int64 partition_id = 3;
   int64 num_of_rows = 4;
   repeated FieldBinlog binlogs = 5;
-  repeated FieldBinlog statslogs = 6;
+  repeated FieldBinlog statslogs = 6 [deprecated=true];
   repeated FieldBinlog deltalogs = 7;
   int64 size = 8;
-  // separate segments into multi groups by size, 
-  // segments in one group will be copied into one directory during backup
-  // and will bulkinsert in one call during restore
+  // The group ID is a virtual partition ID.
+  // The Milvus BulkInsert interface requires a partition prefix,
+  // but passing multiple segments is a more suitable option.
+  // Therefore, a virtual partition ID is used here to enable the functionality of importing multiple segments.
   int64 group_id = 9;
   bool backuped = 10;
   bool is_l0 = 11;
+  string v_channel = 12;
 }
 
 /**
@@ -115,6 +120,13 @@ message BackupInfo {
   int64 size = 10;
   string milvus_version = 11;
   RBACMeta rbac_meta = 12;
+  RPCChannelInfo rpc_channel_info = 13;
+  repeated DatabaseBackupInfo database_backups = 14;
+}
+
+message RPCChannelInfo {
+  string name = 1;
+  string position = 2;
 }
 
 /**
@@ -319,7 +331,7 @@ message RestoreCollectionTask {
   int64 end_time = 5;
   CollectionBackupInfo coll_backup = 6;
   string target_collection_name = 7;
-  repeated RestorePartitionTask partition_restore_tasks = 8;
+  repeated RestorePartitionTask partition_restore_tasks = 8 [deprecated=true];
   int64 restored_size = 9;
   int64 to_restore_size = 10;
   int32 progress = 11;
@@ -345,6 +357,12 @@ message RestoreCollectionTask {
   bool truncateBinlogByTs = 23;
 }
 
+message RestoreDatabaseTask {
+  string id = 1;
+  DatabaseBackupInfo db_backup = 2;
+  string target_db_name = 3;
+}
+
 message RestoreBackupTask {
   string id = 1;
   RestoreTaskStateCode state_code = 2;
@@ -355,6 +373,7 @@ message RestoreBackupTask {
   int64 restored_size = 7;
   int64 to_restore_size = 8;
   int32 progress = 9;
+  repeated RestoreDatabaseTask database_restore_tasks = 10;
 }
 
 message RestoreBackupResponse {
@@ -382,11 +401,12 @@ message FieldBinlog{
 }
 
 message Binlog {
-  int64 entries_num = 1;
-  uint64 timestamp_from = 2;
-  uint64 timestamp_to = 3;
+  int64 entries_num = 1 [deprecated=true];
+  uint64 timestamp_from = 2 [deprecated=true];
+  uint64 timestamp_to = 3 [deprecated=true];
   string log_path = 4;
   int64 log_size = 5;
+  int64 log_id = 6;
 }
 
 // copied from milvus common.proto
