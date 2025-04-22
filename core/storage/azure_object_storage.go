@@ -21,6 +21,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -240,8 +241,8 @@ func (aos *AzureObjectStorage) getSAS(ctx context.Context, bucket string) (*sas.
 		return nil, fmt.Errorf("account name is required for generating SAS (accessKeyID is empty)")
 	}
 
-	// Case 1: Shared Key Auth (accessKeyID and secretAccessKeyID are present)
-	if accessKeyID != "" && secretAccessKeyID != "" {
+	// Shared Key Auth (accessKeyID and secretAccessKeyID are present)
+	if strings.TrimSpace(accessKeyID) != "" && strings.TrimSpace(secretAccessKeyID) != "" {
 		credential, err := azblob.NewSharedKeyCredential(accessKeyID, secretAccessKeyID)
 		if err != nil {
 			return nil, fmt.Errorf("failed to create shared key credential: %w", err)
@@ -261,7 +262,7 @@ func (aos *AzureObjectStorage) getSAS(ctx context.Context, bucket string) (*sas.
 		return &sasQueryParams, nil
 	}
 
-	// Case 2: Workload Identity / User Delegation SAS
+	// Workload Identity / User Delegation SAS
 	srcSvcCli := bucketClient.client
 	now := time.Now().UTC().Add(-10 * time.Second)
 	expiry := now.Add(48 * time.Hour)
