@@ -203,7 +203,7 @@ func (aos *AzureObjectStorage) RemoveObject(ctx context.Context, bucketName, obj
 func (aos *AzureObjectStorage) CopyObject(ctx context.Context, fromBucketName, toBucketName, fromPath, toPath string) error {
 	var blobCli *blockblob.Client
 	var fromPathUrl string
-	srcSAS, err := aos.getSAS(fromBucketName)
+	srcSAS, err := aos.getSAS(ctx, fromBucketName)
 	if err != nil {
 		return err
 	}
@@ -230,20 +230,62 @@ func (aos *AzureObjectStorage) CopyObject(ctx context.Context, fromBucketName, t
 	return nil
 }
 
-func (aos *AzureObjectStorage) getSAS(bucket string) (*sas.QueryParameters, error) {
-	credential, err := azblob.NewSharedKeyCredential(aos.clients[bucket].accessKeyID, aos.clients[bucket].secretAccessKeyID)
-	if err != nil {
-		return nil, err
+func (aos *AzureObjectStorage) getSAS(ctx context.Context, bucket string) (*sas.QueryParameters, error) {
+	bucketClient := aos.clients[bucket]
+	accessKeyID := bucketClient.accessKeyID
+	secretAccessKeyID := bucketClient.secretAccessKeyID
+
+	accountName := accessKeyID
+	if accountName == "" {
+		return nil, fmt.Errorf("account name is required for generating SAS (accessKeyID is empty)")
 	}
-	sasQueryParams, err := sas.AccountSignatureValues{
+
+	// Case 1: Shared Key Auth (accessKeyID and secretAccessKeyID are present)
+	if accessKeyID != "" && secretAccessKeyID != "" {
+		credential, err := azblob.NewSharedKeyCredential(accessKeyID, secretAccessKeyID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create shared key credential: %w", err)
+		}
+
+		sasQueryParams, err := sas.AccountSignatureValues{
+			Protocol:      sas.ProtocolHTTPS,
+			ExpiryTime:    time.Now().UTC().Add(48 * time.Hour),
+			Permissions:   to.Ptr(sas.AccountPermissions{Read: true, List: true}).String(),
+			ResourceTypes: to.Ptr(sas.AccountResourceTypes{Container: true, Object: true}).String(),
+		}.SignWithSharedKey(credential)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed to sign SAS with shared key: %w", err)
+		}
+
+		return &sasQueryParams, nil
+	}
+
+	// Case 2: Workload Identity / User Delegation SAS
+	srcSvcCli := bucketClient.client
+	now := time.Now().UTC().Add(-10 * time.Second)
+	expiry := now.Add(48 * time.Hour)
+
+	info := service.KeyInfo{
+		Start:  to.Ptr(now.Format(sas.TimeFormat)),
+		Expiry: to.Ptr(expiry.Format(sas.TimeFormat)),
+	}
+	udc, err := srcSvcCli.GetUserDelegationCredential(context.Background(), info, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get user delegation credential: %w", err)
+	}
+
+	sasQueryParams, err := sas.BlobSignatureValues{
 		Protocol:      sas.ProtocolHTTPS,
-		ExpiryTime:    time.Now().UTC().Add(48 * time.Hour), // 48-hours before expiration,
-		Permissions:   to.Ptr(sas.AccountPermissions{Read: true, List: true}).String(),
-		ResourceTypes: to.Ptr(sas.AccountResourceTypes{Container: true, Object: true}).String(),
-	}.SignWithSharedKey(credential)
+		StartTime:     now,
+		ExpiryTime:    expiry,
+		Permissions:   to.Ptr(sas.ContainerPermissions{Read: true, List: true}).String(),
+		ContainerName: bucket,
+	}.SignWithUserDelegation(udc)
+
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to sign SAS with user delegation: %w", err)
 	}
+
 	return &sasQueryParams, nil
 }
-
