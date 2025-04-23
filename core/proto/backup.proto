@@ -311,6 +311,8 @@ message RestoreBackupRequest {
   bool useV2Restore = 21;
   // if true, truncate binlog by timestamp, for cdc
   bool truncateBinlogByTs = 22;
+  // determine which database and collections to restore after rename
+  google.protobuf.Value db_collections_after_rename = 23;
 }
 
 message RestorePartitionTask {

@@ -244,14 +244,10 @@ func (t *Task) newRenamer() (nsRenamer, error) {
 	return newDefaultNSRenamer(), nil
 }
 
-func (t *Task) newCollTaskPB(reNamer nsRenamer, bak *backuppb.CollectionBackupInfo) (*backuppb.RestoreCollectionTask, error) {
+func (t *Task) newCollTaskPB(targetNS namespace.NS, bak *backuppb.CollectionBackupInfo) (*backuppb.RestoreCollectionTask, error) {
 	if bak.GetCollectionName() == "" {
 		return nil, fmt.Errorf("restore: collection name is empty")
 	}
-
-	sourceNS := namespace.New(bak.GetDbName(), bak.GetCollectionName())
-	targetNS := reNamer.rename(sourceNS)
-	t.logger.Debug("restore: rename collection", zap.String("source", sourceNS.String()), zap.String("target", targetNS.String()))
 
 	size := lo.SumBy(bak.GetPartitionBackups(), func(partition *backuppb.PartitionBackupInfo) int64 { return partition.GetSize() })
 
@@ -299,26 +295,9 @@ func (t *Task) newRestoreTaskPB() (*backuppb.RestoreBackupTask, error) {
 		return nil, fmt.Errorf("restore: filter backup %w", err)
 	}
 
-	dbTaskes := make([]*backuppb.RestoreDatabaseTask, 0, len(dbBackups))
-	for _, dbBackup := range dbBackups {
-		dbTask, err := t.newDBTaskPB(dbBackup)
-		if err != nil {
-			return nil, fmt.Errorf("restore: create database task %w", err)
-		}
-		dbTaskes = append(dbTaskes, dbTask)
-	}
-
-	renamer, err := t.newRenamer()
+	dbTasks, collTasks, err := t.renameAndFilter(dbBackups, collBackups)
 	if err != nil {
-		return nil, fmt.Errorf("restore: create renamer %w", err)
-	}
-	collTasks := make([]*backuppb.RestoreCollectionTask, 0, len(collBackups))
-	for _, collBackup := range collBackups {
-		collTask, err := t.newCollTaskPB(renamer, collBackup)
-		if err != nil {
-			return nil, fmt.Errorf("restore: create collection task %w", err)
-		}
-		collTasks = append(collTasks, collTask)
+		return nil, fmt.Errorf("restore: rename and filter backck to build task %w", err)
 	}
 
 	size := lo.SumBy(collTasks, func(coll *backuppb.RestoreCollectionTask) int64 { return coll.ToRestoreSize })
@@ -327,11 +306,132 @@ func (t *Task) newRestoreTaskPB() (*backuppb.RestoreBackupTask, error) {
 		StateCode:              backuppb.RestoreTaskStateCode_INITIAL,
 		StartTime:              time.Now().Unix(),
 		ToRestoreSize:          size,
-		DatabaseRestoreTasks:   dbTaskes,
+		DatabaseRestoreTasks:   dbTasks,
 		CollectionRestoreTasks: collTasks,
 	}
 
 	return task, nil
+}
+
+// renameAndFilter rename db and collection in need to restore, by db_collections_after_rename.
+// and then build restore task.
+func (t *Task) renameAndFilter(dbBackups []*backuppb.DatabaseBackupInfo, collBackups []*backuppb.CollectionBackupInfo) ([]*backuppb.RestoreDatabaseTask, []*backuppb.RestoreCollectionTask, error) {
+	dbNameDBTask, err := t.newDBTaskPBs(dbBackups)
+	if err != nil {
+		return nil, nil, fmt.Errorf("restore: create database task %w", err)
+	}
+
+	dbNameCollNameTask, err := t.newCollTaskPBs(collBackups)
+	if err != nil {
+		return nil, nil, fmt.Errorf("restore: create collection task %w", err)
+	}
+
+	dbCollectionsStr := utils.GetDBCollections(t.request.GetDbCollectionsAfterRename())
+	if dbCollectionsStr == "" {
+		dbTasks := lo.Values(dbNameDBTask)
+		var collTasks []*backuppb.RestoreCollectionTask
+		for _, collNameColl := range dbNameCollNameTask {
+			collTasks = append(collTasks, lo.Values(collNameColl)...)
+		}
+		return dbTasks, collTasks, nil
+	}
+
+	dbTask, collTask, err := t.filterTask(dbCollectionsStr, dbNameDBTask, dbNameCollNameTask)
+	if err != nil {
+		return nil, nil, fmt.Errorf("restore: filter task %w", err)
+	}
+
+	return dbTask, collTask, nil
+}
+
+func (t *Task) filterTask(dbCollectionsStr string, dbNameDBTask map[string]*backuppb.RestoreDatabaseTask, dbNameCollNameTask map[string]map[string]*backuppb.RestoreCollectionTask) ([]*backuppb.RestoreDatabaseTask, []*backuppb.RestoreCollectionTask, error) {
+	var dbCollections meta.DbCollections
+	if err := json.Unmarshal([]byte(dbCollectionsStr), &dbCollections); err != nil {
+		return nil, nil, fmt.Errorf("restore: filter task unmarshal dbCollections %w", err)
+	}
+
+	dbTasks := t.filterDBTask(dbCollections, dbNameDBTask)
+
+	collTasks, err := t.filterCollTask(dbCollections, dbNameCollNameTask)
+	if err != nil {
+		return nil, nil, fmt.Errorf("restore: filter collection task %w", err)
+	}
+
+	return dbTasks, collTasks, nil
+}
+
+func (t *Task) filterDBTask(dbCollections meta.DbCollections, dbNameDBTask map[string]*backuppb.RestoreDatabaseTask) []*backuppb.RestoreDatabaseTask {
+	needRestoreDBs := make([]*backuppb.RestoreDatabaseTask, 0, len(dbCollections))
+	for dbName, task := range dbNameDBTask {
+		if _, ok := dbCollections[dbName]; ok {
+			needRestoreDBs = append(needRestoreDBs, task)
+		} else {
+			t.logger.Info("skip restore database", zap.String("db_name", dbName))
+		}
+	}
+
+	return needRestoreDBs
+}
+
+func (t *Task) filterCollTask(dbCollections meta.DbCollections, dbNameCollNameTask map[string]map[string]*backuppb.RestoreCollectionTask) ([]*backuppb.RestoreCollectionTask, error) {
+	needRestoreColls := make([]*backuppb.RestoreCollectionTask, 0, len(dbCollections))
+	for dbName, collNames := range dbCollections {
+		// means restore all collections in the database
+		if len(collNames) == 0 {
+			needRestoreColls = append(needRestoreColls, lo.Values(dbNameCollNameTask[dbName])...)
+		}
+
+		for _, collName := range collNames {
+			if task, ok := dbNameCollNameTask[dbName][collName]; ok {
+				needRestoreColls = append(needRestoreColls, task)
+			} else {
+				return nil, fmt.Errorf("restore: collection %s not exist in backup after rename", collName)
+			}
+		}
+	}
+
+	return needRestoreColls, nil
+}
+
+func (t *Task) newDBTaskPBs(dbBackups []*backuppb.DatabaseBackupInfo) (map[string]*backuppb.RestoreDatabaseTask, error) {
+	dbNameDBTask := make(map[string]*backuppb.RestoreDatabaseTask, len(dbBackups))
+	for _, dbBackup := range dbBackups {
+		dbTask, err := t.newDBTaskPB(dbBackup)
+		if err != nil {
+			return nil, fmt.Errorf("restore: create database task %w", err)
+		}
+		dbNameDBTask[dbTask.GetTargetDbName()] = dbTask
+	}
+
+	return dbNameDBTask, nil
+}
+
+func (t *Task) newCollTaskPBs(collBackups []*backuppb.CollectionBackupInfo) (map[string]map[string]*backuppb.RestoreCollectionTask, error) {
+	renamer, err := t.newRenamer()
+	if err != nil {
+		return nil, fmt.Errorf("restore: create renamer %w", err)
+	}
+	dbNameCollNameTask := make(map[string]map[string]*backuppb.RestoreCollectionTask)
+	for _, collBackup := range collBackups {
+		sourceNS := namespace.New(collBackup.GetDbName(), collBackup.GetCollectionName())
+		targetNS := renamer.rename(sourceNS)
+
+		t.logger.Info("restore: rename collection",
+			zap.String("source", sourceNS.String()),
+			zap.String("target", targetNS.String()))
+		collTask, err := t.newCollTaskPB(targetNS, collBackup)
+		if err != nil {
+			return nil, fmt.Errorf("restore: create collection task %w", err)
+		}
+		if _, ok := dbNameCollNameTask[collTask.GetTargetDbName()]; ok {
+			dbNameCollNameTask[collTask.GetTargetDbName()][collTask.GetTargetCollectionName()] = collTask
+		} else {
+			dbNameCollNameTask[collTask.GetTargetDbName()] = make(map[string]*backuppb.RestoreCollectionTask)
+			dbNameCollNameTask[collTask.GetTargetDbName()][collTask.GetTargetCollectionName()] = collTask
+		}
+	}
+
+	return dbNameCollNameTask, nil
 }
 
 // checkCollsExist check if the collection exist in target milvus, if collection exist, return error.

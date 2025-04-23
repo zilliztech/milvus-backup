@@ -21,7 +21,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -204,12 +203,17 @@ func (aos *AzureObjectStorage) RemoveObject(ctx context.Context, bucketName, obj
 func (aos *AzureObjectStorage) CopyObject(ctx context.Context, fromBucketName, toBucketName, fromPath, toPath string) error {
 	var blobCli *blockblob.Client
 	var fromPathUrl string
-	srcSAS, err := aos.getSAS(ctx, fromBucketName)
-	if err != nil {
-		return err
+	if aos.clients[fromBucketName].accessKeyID == aos.clients[toBucketName].accessKeyID {
+		fromPathUrl = fmt.Sprintf("https://%s.blob.core.windows.net/%s/%s", aos.clients[fromBucketName].accessKeyID, fromBucketName, fromPath)
+		blobCli = aos.clients[toBucketName].client.NewContainerClient(toBucketName).NewBlockBlobClient(toPath)
+	} else {
+		srcSAS, err := aos.getSAS(fromBucketName)
+		if err != nil {
+			return err
+		}
+		fromPathUrl = fmt.Sprintf("https://%s.blob.core.windows.net/%s/%s?%s", aos.clients[fromBucketName].accessKeyID, fromBucketName, fromPath, srcSAS.Encode())
+		blobCli = aos.clients[toBucketName].client.NewContainerClient(toBucketName).NewBlockBlobClient(toPath)
 	}
-	fromPathUrl = fmt.Sprintf("https://%s.blob.core.windows.net/%s/%s?%s", aos.clients[fromBucketName].accessKeyID, fromBucketName, fromPath, srcSAS.Encode())
-	blobCli = aos.clients[toBucketName].client.NewContainerClient(toBucketName).NewBlockBlobClient(toPath)
 
 	// we need to abort the previous copy operation before copy from url
 	abortErr := func() error {
@@ -228,65 +232,33 @@ func (aos *AzureObjectStorage) CopyObject(ctx context.Context, fromBucketName, t
 	if _, err := blobCli.CopyFromURL(ctx, fromPathUrl, nil); err != nil {
 		return fmt.Errorf("storage: azure copy from url %w abort previous %w", err, abortErr)
 	}
+
 	return nil
 }
 
-func (aos *AzureObjectStorage) getSAS(ctx context.Context, bucket string) (*sas.QueryParameters, error) {
-	bucketClient := aos.clients[bucket]
-	accessKeyID := bucketClient.accessKeyID
-	secretAccessKeyID := bucketClient.secretAccessKeyID
-
-	accountName := accessKeyID
-	if accountName == "" {
-		return nil, fmt.Errorf("account name is required for generating SAS (accessKeyID is empty)")
-	}
-
-	// Shared Key Auth (accessKeyID and secretAccessKeyID are present)
-	if strings.TrimSpace(accessKeyID) != "" && strings.TrimSpace(secretAccessKeyID) != "" {
-		credential, err := azblob.NewSharedKeyCredential(accessKeyID, secretAccessKeyID)
-		if err != nil {
-			return nil, fmt.Errorf("failed to create shared key credential: %w", err)
-		}
-
-		sasQueryParams, err := sas.AccountSignatureValues{
-			Protocol:      sas.ProtocolHTTPS,
-			ExpiryTime:    time.Now().UTC().Add(48 * time.Hour),
-			Permissions:   to.Ptr(sas.AccountPermissions{Read: true, List: true}).String(),
-			ResourceTypes: to.Ptr(sas.AccountResourceTypes{Container: true, Object: true}).String(),
-		}.SignWithSharedKey(credential)
-
-		if err != nil {
-			return nil, fmt.Errorf("failed to sign SAS with shared key: %w", err)
-		}
-
-		return &sasQueryParams, nil
-	}
-
-	// Workload Identity / User Delegation SAS
-	srcSvcCli := bucketClient.client
+func (aos *AzureObjectStorage) getSAS(bucket string) (*sas.QueryParameters, error) {
+	srcSvcCli := aos.clients[bucket].client
+	// Set current and past time and create key
 	now := time.Now().UTC().Add(-10 * time.Second)
 	expiry := now.Add(48 * time.Hour)
-
 	info := service.KeyInfo{
-		Start:  to.Ptr(now.Format(sas.TimeFormat)),
-		Expiry: to.Ptr(expiry.Format(sas.TimeFormat)),
+		Start:  to.Ptr(now.UTC().Format(sas.TimeFormat)),
+		Expiry: to.Ptr(expiry.UTC().Format(sas.TimeFormat)),
 	}
 	udc, err := srcSvcCli.GetUserDelegationCredential(context.Background(), info, nil)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get user delegation credential: %w", err)
+		return nil, err
 	}
-
+	// Create Blob Signature Values with desired permissions and sign with user delegation credential
 	sasQueryParams, err := sas.BlobSignatureValues{
 		Protocol:      sas.ProtocolHTTPS,
-		StartTime:     now,
-		ExpiryTime:    expiry,
+		StartTime:     time.Now().UTC().Add(time.Second * -10),
+		ExpiryTime:    time.Now().UTC().Add(time.Duration(sasSignMinute * time.Minute)),
 		Permissions:   to.Ptr(sas.ContainerPermissions{Read: true, List: true}).String(),
 		ContainerName: bucket,
 	}.SignWithUserDelegation(udc)
-
 	if err != nil {
-		return nil, fmt.Errorf("failed to sign SAS with user delegation: %w", err)
+		return nil, err
 	}
-
 	return &sasQueryParams, nil
 }
