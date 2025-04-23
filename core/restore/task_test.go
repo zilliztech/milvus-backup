@@ -118,16 +118,11 @@ func TestTask_FilterCollBackup(t *testing.T) {
 	t.Run("DBNotExist", func(t *testing.T) {
 		collsBak := []*backuppb.CollectionBackupInfo{{DbName: "db1", CollectionName: "coll1"}}
 		task := &Task{backup: &backuppb.BackupInfo{CollectionBackups: collsBak}}
-		dbCollections := meta.DbCollections{"db2": {}}
-		_, err := task.filterCollBackup(dbCollections)
-		assert.Error(t, err)
-	})
-
-	t.Run("CollNotExist", func(t *testing.T) {
-		collsBak := []*backuppb.CollectionBackupInfo{{DbName: "db1", CollectionName: "coll1"}}
-		task := &Task{backup: &backuppb.BackupInfo{CollectionBackups: collsBak}}
-		dbCollections := meta.DbCollections{"db1": {"coll2"}}
-		_, err := task.filterCollBackup(dbCollections)
+		// if db2 not exist, but hasn't collections, it should be ok, it means restore the empty db
+		_, err := task.filterCollBackup(meta.DbCollections{"db2": {}})
+		assert.NoError(t, err)
+		// if db2 not exist, but has collections, it should be error
+		_, err = task.filterCollBackup(meta.DbCollections{"db2": {"coll2"}})
 		assert.Error(t, err)
 	})
 }
