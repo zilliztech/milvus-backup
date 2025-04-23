@@ -264,29 +264,14 @@ func (gcm *GCPNativeChunkManager) Copy(ctx context.Context, fromBucketName strin
 		log.Error("Error listing objects", zap.Error(err))
 		return err
 	}
+
 	for _, srcObjectKey := range objectKeys {
 		dstObjectKey := strings.Replace(srcObjectKey, fromPath, toPath, 1)
 
-		srcReader, err := gcm.client.Bucket(fromBucketName).Object(srcObjectKey).NewReader(ctx)
-		if err != nil {
-			log.Error("Error creating reader for object", zap.String("srcObjectKey", srcObjectKey), zap.Error(err))
-			return err
-		}
+		srcObj := gcm.client.Bucket(fromBucketName).Object(srcObjectKey)
+		dstObj := gcm.client.Bucket(toBucketName).Object(dstObjectKey)
 
-		defer func(srcObjectKey string, srcReader *storage.Reader) {
-			if err := srcReader.Close(); err != nil {
-				log.Error("Error closing source reader", zap.String("srcObjectKey", srcObjectKey), zap.Error(err))
-			}
-		}(srcObjectKey, srcReader)
-
-		dstWriter := gcm.client.Bucket(toBucketName).Object(dstObjectKey).NewWriter(ctx)
-		defer func(dstObjectKey string, dstWriter *storage.Writer) {
-			if err := dstWriter.Close(); err != nil {
-				log.Error("Error closing destination writer", zap.String("dstObjectKey", dstObjectKey), zap.Error(err))
-			}
-		}(dstObjectKey, dstWriter)
-
-		if _, err := io.Copy(dstWriter, srcReader); err != nil {
+		if _, err := dstObj.CopierFrom(srcObj).Run(ctx); err != nil {
 			log.Error("Error copying object", zap.String("from", srcObjectKey), zap.String("to", dstObjectKey), zap.Error(err))
 			return err
 		}
