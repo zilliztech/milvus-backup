@@ -497,15 +497,12 @@ func (ct *CollectionTask) listInsertLogByListFile(ctx context.Context, binlogDir
 			return nil, 0, fmt.Errorf("backup: parse log path %w", err)
 		}
 		bakBinlog := &backuppb.Binlog{LogId: binlog.LogID, LogSize: sizes[idx], LogPath: key}
-		if fieldBinlog, ok := fieldBinlogs[binlog.FieldID]; ok {
-			fieldBinlog = append(fieldBinlog, bakBinlog)
-		} else {
-			fieldBinlogs[binlog.FieldID] = []*backuppb.Binlog{bakBinlog}
-		}
+		fieldBinlogs[binlog.FieldID] = append(fieldBinlogs[binlog.FieldID], bakBinlog)
 	}
 
 	fields := make([]*backuppb.FieldBinlog, 0, len(fieldBinlogs))
 	for fieldID, binlogs := range fieldBinlogs {
+		ct.logger.Info("get insert logs done", zap.Int64("field_id", fieldID), zap.Int("count", len(binlogs)))
 		fields = append(fields, &backuppb.FieldBinlog{FieldID: fieldID, Binlogs: binlogs})
 	}
 
@@ -527,6 +524,7 @@ func (ct *CollectionTask) listDeltaLogByListFile(ctx context.Context, binlogDir 
 		bakBinlog := &backuppb.Binlog{LogId: binlog.LogID, LogSize: sizes[idx], LogPath: key}
 		bakBinlogs = append(bakBinlogs, bakBinlog)
 	}
+	ct.logger.Info("get delta logs done", zap.Int("count", len(bakBinlogs)))
 
 	return []*backuppb.FieldBinlog{{Binlogs: bakBinlogs}}, lo.Sum(sizes), nil
 }

@@ -26,13 +26,14 @@ import (
 
 	"cloud.google.com/go/storage"
 	"github.com/cockroachdb/errors"
-	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/util/retry"
 	"go.uber.org/zap"
 	"golang.org/x/oauth2/google"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
+
+	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/util/retry"
 )
 
 type GCPNativeChunkManager struct {
