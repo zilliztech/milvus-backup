@@ -75,15 +75,35 @@ def main(uri="http://127.0.0.1:19530", token="root:Milvus"):
 
     print(fmt.format("Start inserting entities"))
     rng = np.random.default_rng(seed=19530)
-    entities = [
-        # provide the pk field because `auto_id` is set to False
-        [i for i in range(num_entities)],
-        rng.random(num_entities).tolist(),  # field random, only supports list
-        [str(i) for i in range(num_entities)],
-        rng.random((num_entities, dim)),  # field embeddings, supports numpy.ndarray and list
-    ]
-
-    insert_result = hello_milvus.insert(entities)
+    # Prepare data
+    pk_list = [i for i in range(num_entities)]
+    random_list = rng.random(num_entities).tolist()
+    var_list = [str(i) for i in range(num_entities)]
+    embeddings_list = rng.random((num_entities, dim))
+    
+    # Split data into 10 batches for insertion
+    batch_size = num_entities // 10
+    if batch_size == 0:
+        batch_size = 1
+        
+    for j in range(10):
+        start_idx = j * batch_size
+        end_idx = (j + 1) * batch_size if j < 9 else num_entities
+        if start_idx >= num_entities:
+            break
+            
+        # Prepare batch data
+        batch_entities = [
+            pk_list[start_idx:end_idx],
+            random_list[start_idx:end_idx],
+            var_list[start_idx:end_idx],
+            embeddings_list[start_idx:end_idx].tolist() if isinstance(embeddings_list, np.ndarray) else embeddings_list[start_idx:end_idx]
+        ]
+        
+        # Insert batch data
+        insert_result = hello_milvus.insert(batch_entities)
+        time.sleep(1)  # Add delay to prevent inserting too quickly
+        print(f"epoch {j+1}/10")
     hello_milvus.flush()
     print(f"Number of entities in hello_milvus: {hello_milvus.num_entities}")  # check the num_entites
 

@@ -1,0 +1,5 @@
+log:
+  level: debug
+dataNode:
+  segment:
+    insertBufSize: 4096 # 4KB
