@@ -184,8 +184,8 @@ type DeltaLogPath struct {
 }
 
 var (
-	_insertLogPathRegex = regexp.MustCompile(`^(.+)/insert_log/(\d+)/(\d+)/(\d+)/(\d+)/(\d+)$`)
-	_deltaLogPathRegex  = regexp.MustCompile(`^(.+)/delta_log/(\d+)/(-?\d+)/(\d+)/(\d+)$`)
+	_insertLogPathRegex = regexp.MustCompile(`^(?:(.+)/)?insert_log/(\d+)/(\d+)/(\d+)/(\d+)/(\d+)$`)
+	_deltaLogPathRegex  = regexp.MustCompile(`^(?:(.+)/)?delta_log/(\d+)/(-?\d+)/(\d+)/(\d+)$`)
 )
 
 func parseBinlogPath(reg *regexp.Regexp, p string) (binlogPath, []string, error) {

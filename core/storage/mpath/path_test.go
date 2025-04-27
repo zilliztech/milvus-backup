@@ -25,6 +25,7 @@ func TestBackupInsertLogDir(t *testing.T) {
 	// Without group id
 	t.Run("WithoutGroupID", func(t *testing.T) {
 		cases := []testCase{
+			{base: "", expected: "binlogs/insert_log/1/2/"},
 			{base: "base", expected: "base/binlogs/insert_log/1/2/"},
 			{base: "base/", expected: "base/binlogs/insert_log/1/2/"},
 			{base: "base/subdir", expected: "base/subdir/binlogs/insert_log/1/2/"},
@@ -40,6 +41,7 @@ func TestBackupInsertLogDir(t *testing.T) {
 	t.Run("WithGroupID", func(t *testing.T) {
 		groupID := int64(3)
 		cases := []testCase{
+			{base: "", expected: "binlogs/insert_log/1/2/3/"},
 			{base: "base", expected: "base/binlogs/insert_log/1/2/3/"},
 			{base: "base/", expected: "base/binlogs/insert_log/1/2/3/"},
 			{base: "base/subdir", expected: "base/subdir/binlogs/insert_log/1/2/3/"},
@@ -59,6 +61,7 @@ func TestBackupDeltaLogDir(t *testing.T) {
 	// Without group id
 	t.Run("WithoutGroupID", func(t *testing.T) {
 		cases := []testCase{
+			{base: "", expected: "binlogs/delta_log/1/2/"},
 			{base: "base", expected: "base/binlogs/delta_log/1/2/"},
 			{base: "base/", expected: "base/binlogs/delta_log/1/2/"},
 			{base: "base/subdir", expected: "base/subdir/binlogs/delta_log/1/2/"},
@@ -73,6 +76,7 @@ func TestBackupDeltaLogDir(t *testing.T) {
 	t.Run("WithGroupID", func(t *testing.T) {
 		groupID := int64(3)
 		cases := []testCase{
+			{base: "", expected: "binlogs/delta_log/1/2/3/"},
 			{base: "base", expected: "base/binlogs/delta_log/1/2/3/"},
 			{base: "base/", expected: "base/binlogs/delta_log/1/2/3/"},
 			{base: "base/subdir", expected: "base/subdir/binlogs/delta_log/1/2/3/"},
@@ -88,6 +92,7 @@ func TestBackupDeltaLogDir(t *testing.T) {
 	t.Run("L0SegmentDir", func(t *testing.T) {
 		segmentID := int64(4)
 		cases := []testCase{
+			{base: "", expected: "binlogs/delta_log/1/2/4/"},
 			{base: "base", expected: "base/binlogs/delta_log/1/2/4/"},
 			{base: "base/", expected: "base/binlogs/delta_log/1/2/4/"},
 			{base: "base/subdir", expected: "base/subdir/binlogs/delta_log/1/2/4/"},
@@ -106,6 +111,7 @@ func TestMilvusInsertLogDir(t *testing.T) {
 	segementID := int64(3)
 
 	cases := []testCase{
+		{base: "", expected: "insert_log/1/2/3/"},
 		{base: "base", expected: "base/insert_log/1/2/3/"},
 		{base: "base/", expected: "base/insert_log/1/2/3/"},
 		{base: "base/subdir", expected: "base/subdir/insert_log/1/2/3/"},
@@ -124,6 +130,7 @@ func TestMilvusDeltaLogDir(t *testing.T) {
 	segementID := int64(3)
 
 	cases := []testCase{
+		{base: "", expected: "delta_log/1/2/3/"},
 		{base: "base", expected: "base/delta_log/1/2/3/"},
 		{base: "base/", expected: "base/delta_log/1/2/3/"},
 		{base: "base/subdir", expected: "base/subdir/delta_log/1/2/3/"},
@@ -138,32 +145,23 @@ func TestMilvusDeltaLogDir(t *testing.T) {
 
 func TestParseInsertLogPath(t *testing.T) {
 	t.Run("ValidPath", func(t *testing.T) {
-		expected := InsertLogPath{
-			Root:         "base",
-			CollectionID: 1,
-			PartitionID:  2,
-			SegmentID:    3,
-			FieldID:      4,
-			LogID:        5,
-		}
-
+		expected := InsertLogPath{Root: "base", CollectionID: 1, PartitionID: 2, SegmentID: 3, FieldID: 4, LogID: 5}
 		path := "base/insert_log/1/2/3/4/5"
 		result, err := ParseInsertLogPath(path)
 		assert.NoError(t, err)
 		assert.Equal(t, expected, result)
-	})
 
-	t.Run("ValidPathWithSubPath", func(t *testing.T) {
-		expected := InsertLogPath{
-			Root:         "base/subdir",
-			CollectionID: 1,
-			PartitionID:  2,
-			SegmentID:    3,
-			FieldID:      4,
-			LogID:        5,
-		}
-		path := "base/subdir/insert_log/1/2/3/4/5"
-		result, err := ParseInsertLogPath(path)
+		// with sub path
+		expected = InsertLogPath{Root: "base/subdir", CollectionID: 1, PartitionID: 2, SegmentID: 3, FieldID: 4, LogID: 5}
+		path = "base/subdir/insert_log/1/2/3/4/5"
+		result, err = ParseInsertLogPath(path)
+		assert.NoError(t, err)
+		assert.Equal(t, expected, result)
+
+		// root is empty
+		expected = InsertLogPath{Root: "", CollectionID: 1, PartitionID: 2, SegmentID: 3, FieldID: 4, LogID: 5}
+		path = "insert_log/1/2/3/4/5"
+		result, err = ParseInsertLogPath(path)
 		assert.NoError(t, err)
 		assert.Equal(t, expected, result)
 	})
@@ -205,41 +203,30 @@ func TestParseInsertLogPath(t *testing.T) {
 
 func TestParseDeltaLogPath(t *testing.T) {
 	t.Run("ValidDeltaLog", func(t *testing.T) {
-		expected := DeltaLogPath{
-			Root:         "base",
-			CollectionID: 1,
-			PartitionID:  2,
-			SegmentID:    3,
-			LogID:        4,
-		}
+		expected := DeltaLogPath{Root: "base", CollectionID: 1, PartitionID: 2, SegmentID: 3, LogID: 4}
 		path := "base/delta_log/1/2/3/4"
 		result, err := ParseDeltaLogPath(path)
 		assert.NoError(t, err)
 		assert.Equal(t, expected, result)
 
-		expected = DeltaLogPath{
-			Root:         "base",
-			CollectionID: 1,
-			PartitionID:  -1,
-			SegmentID:    2,
-			LogID:        3,
-		}
+		// with negative partition id, -1 means all partition
+		expected = DeltaLogPath{Root: "base", CollectionID: 1, PartitionID: -1, SegmentID: 2, LogID: 3}
 		path = "base/delta_log/1/-1/2/3"
 		result, err = ParseDeltaLogPath(path)
 		assert.NoError(t, err)
 		assert.Equal(t, expected, result)
-	})
 
-	t.Run("ValidDeltaLogWithSubPath", func(t *testing.T) {
-		expected := DeltaLogPath{
-			Root:         "base/subdir",
-			CollectionID: 1,
-			PartitionID:  2,
-			SegmentID:    3,
-			LogID:        4,
-		}
-		path := "base/subdir/delta_log/1/2/3/4"
-		result, err := ParseDeltaLogPath(path)
+		// with sub path
+		expected = DeltaLogPath{Root: "base/subdir", CollectionID: 1, PartitionID: 2, SegmentID: 3, LogID: 4}
+		path = "base/subdir/delta_log/1/2/3/4"
+		result, err = ParseDeltaLogPath(path)
+		assert.NoError(t, err)
+		assert.Equal(t, expected, result)
+
+		// root is empty
+		expected = DeltaLogPath{Root: "", CollectionID: 1, PartitionID: 2, SegmentID: 3, LogID: 4}
+		path = "delta_log/1/2/3/4"
+		result, err = ParseDeltaLogPath(path)
 		assert.NoError(t, err)
 		assert.Equal(t, expected, result)
 	})
