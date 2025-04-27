@@ -581,6 +581,9 @@ definitions:
         description: 'database and collections to restore. A json string. for example:
           {"db1":["collection1"],"db2":["collection2","collection3"]}'
         type: string
+      db_collections_after_rename:
+        description: determine which database and collections to restore after rename
+        type: string
       dropExistCollection:
         description: if true, drop existing target collection before create
         type: boolean

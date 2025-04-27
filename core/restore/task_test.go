@@ -127,6 +127,57 @@ func TestTask_FilterCollBackup(t *testing.T) {
 	})
 }
 
+func TestTask_FilterDBTask(t *testing.T) {
+	t.Run("Normal", func(t *testing.T) {
+		tasks := []*backuppb.RestoreDatabaseTask{{TargetDbName: "db1"}, {TargetDbName: "db2"}}
+		task := newTestTask(nil)
+		dbCollections := meta.DbCollections{"db1": {}}
+		expect := []*backuppb.RestoreDatabaseTask{{TargetDbName: "db1"}}
+		result := task.filterDBTask(dbCollections, map[string]*backuppb.RestoreDatabaseTask{"db1": tasks[0], "db2": tasks[1]})
+		assert.ElementsMatch(t, expect, result)
+	})
+
+	t.Run("DBNotExist", func(t *testing.T) {
+		task := newTestTask(nil)
+		dbCollections := meta.DbCollections{"db1": {}}
+		result := task.filterDBTask(dbCollections, map[string]*backuppb.RestoreDatabaseTask{"db2": {}})
+		assert.Empty(t, result)
+	})
+}
+
+func TestTask_FilterCollTask(t *testing.T) {
+	t.Run("Normal", func(t *testing.T) {
+		tasks := []*backuppb.RestoreCollectionTask{
+			{TargetDbName: "db1", TargetCollectionName: "coll1"},
+			{TargetDbName: "db1", TargetCollectionName: "coll2"},
+			{TargetDbName: "db2", TargetCollectionName: "coll1"},
+			{TargetDbName: "db2", TargetCollectionName: "coll2"},
+		}
+		task := newTestTask(nil)
+		dbCollections := meta.DbCollections{"db1": {"coll1"}, "db2": {}}
+		expect := []*backuppb.RestoreCollectionTask{
+			{TargetDbName: "db1", TargetCollectionName: "coll1"},
+			{TargetDbName: "db2", TargetCollectionName: "coll1"},
+			{TargetDbName: "db2", TargetCollectionName: "coll2"},
+		}
+		result, err := task.filterCollTask(dbCollections, map[string]map[string]*backuppb.RestoreCollectionTask{
+			"db1": {"coll1": tasks[0], "coll2": tasks[1]},
+			"db2": {"coll1": tasks[2], "coll2": tasks[3]},
+		})
+		assert.NoError(t, err)
+		assert.ElementsMatch(t, expect, result)
+	})
+
+	t.Run("CollNotExist", func(t *testing.T) {
+		task := newTestTask(nil)
+		dbCollections := meta.DbCollections{"db1": {"coll1"}}
+		_, err := task.filterCollTask(dbCollections, map[string]map[string]*backuppb.RestoreCollectionTask{
+			"db1": {"coll2": {}},
+		})
+		assert.Error(t, err)
+	})
+}
+
 func TestTask_CheckCollExist(t *testing.T) {
 	testCases := []struct {
 		has        bool
