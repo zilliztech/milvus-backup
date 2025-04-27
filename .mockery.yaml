@@ -10,3 +10,7 @@ packages:
   github.com/zilliztech/milvus-backup/core/client:
     interfaces:
       Grpc:
+
+  github.com/zilliztech/milvus-backup/core/storage:
+    interfaces:
+      ChunkManager:

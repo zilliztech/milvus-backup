@@ -502,12 +502,12 @@ func (t *Task) privateExecute(ctx context.Context, task *backuppb.RestoreBackupT
 		return fmt.Errorf("restore: run database task %w", err)
 	}
 
-	if err := t.checkCollsExist(ctx, task); err != nil {
-		return fmt.Errorf("restore: check collection exist %w", err)
-	}
-
 	if err := t.prepareDB(ctx, task); err != nil {
 		return fmt.Errorf("restore: prepare database %w", err)
+	}
+
+	if err := t.checkCollsExist(ctx, task); err != nil {
+		return fmt.Errorf("restore: check collection exist %w", err)
 	}
 
 	if err := t.runCollTask(ctx, task); err != nil {
