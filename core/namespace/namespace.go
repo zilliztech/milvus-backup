@@ -35,9 +35,6 @@ func New(dbName, collName string) NS {
 	return NS{dbName: dbName, collName: collName}
 }
 
-func (n NS) String() string {
-	return n.dbName + "." + n.collName
-}
-
+func (n NS) String() string   { return n.dbName + "." + n.collName }
 func (n NS) DBName() string   { return n.dbName }
 func (n NS) CollName() string { return n.collName }

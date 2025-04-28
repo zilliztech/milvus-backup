@@ -514,7 +514,7 @@ func (ct *CollectionTask) restoreVectorFieldIdx(ctx context.Context, indexes []*
 			zap.String("indexName", index.GetIndexName()),
 			zap.Any("params", index.GetParams()))
 
-		params := make(map[string]string)
+		var params map[string]string
 		if ct.task.GetUseAutoIndex() {
 			ct.logger.Info("use auto index", zap.String("fieldName", index.GetFieldName()))
 			params = map[string]string{"index_type": "AUTOINDEX", "metric_type": index.GetParams()["metric_type"]}
