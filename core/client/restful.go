@@ -149,7 +149,7 @@ func (r *RestfulClient) BulkInsert(ctx context.Context, input RestfulBulkInsertI
 		Options:        opts,
 	}
 	var createResp createImportResp
-	log.Debug("create import job via restful", zap.Any("createReq", createReq))
+	log.Info("send create import job via restful", zap.Any("createReq", createReq))
 	resp, err := r.cli.R().
 		SetHeader("Request-Timeout", "600").
 		SetContext(ctx).
@@ -159,7 +159,7 @@ func (r *RestfulClient) BulkInsert(ctx context.Context, input RestfulBulkInsertI
 	if err != nil {
 		return "", fmt.Errorf("client: failed to create import job via restful: %w", err)
 	}
-	log.Debug("create import job via restful", zap.Any("createResp", resp))
+	log.Info("create import job via restful done", zap.Any("createResp", resp))
 	if resp.IsErrorState() {
 		return "", fmt.Errorf("client: failed to create import job via restful: %v", resp)
 	}
@@ -227,7 +227,7 @@ func restfulAuth(username, password string) string {
 
 func NewRestful(cfg *paramtable.MilvusConfig) (*RestfulClient, error) {
 	host := fmt.Sprintf("%s:%s", cfg.Address, cfg.Port)
-	log.Info("New milvus restful client", zap.String("host", host))
+	log.Info("new milvus restful client", zap.String("host", host))
 
 	var baseURL string
 	if cfg.TLSMode == 0 {

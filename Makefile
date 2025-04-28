@@ -14,7 +14,7 @@ all: gen build
 
 test:
 	@echo "Running unit tests..."
-	@go test --race ./...
+	@go test --race --cover ./...
 
 # Build the binary
 build:
