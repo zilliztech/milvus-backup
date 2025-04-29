@@ -501,8 +501,14 @@ func (ct *CollectionTask) listInsertLogByListFile(ctx context.Context, binlogDir
 	}
 
 	fields := make([]*backuppb.FieldBinlog, 0, len(fieldBinlogs))
+	var fileNum int
 	for fieldID, binlogs := range fieldBinlogs {
 		ct.logger.Info("get insert logs done", zap.Int64("field_id", fieldID), zap.Int("count", len(binlogs)))
+		if fileNum == 0 {
+			fileNum = len(binlogs)
+		} else if fileNum != len(binlogs) {
+			return nil, 0, fmt.Errorf("backup: field %d has different file num to other fields", fieldID)
+		}
 		fields = append(fields, &backuppb.FieldBinlog{FieldID: fieldID, Binlogs: binlogs})
 	}
 
