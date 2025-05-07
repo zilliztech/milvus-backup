@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc/credentials/insecure"
+	"google.golang.org/grpc/metadata"
 
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 )
@@ -61,4 +63,21 @@ func TestIsRateLimitError(t *testing.T) {
 	assert.False(t, isRateLimitError(nil))
 	assert.False(t, isRateLimitError(errors.New("rate limit")))
 	assert.True(t, isRateLimitError(errors.New("rate limit exceeded[rate=1]")))
+}
+
+func TestGrpcClient_newCtx(t *testing.T) {
+	cli := &GrpcClient{auth: "auth", identifier: "identifier"}
+	ctx := cli.newCtx(context.Background())
+	md, ok := metadata.FromOutgoingContext(ctx)
+	assert.True(t, ok)
+	assert.Equal(t, "auth", md.Get(authorizationHeader)[0])
+	assert.Equal(t, "identifier", md.Get(identifierHeader)[0])
+}
+
+func TestGrpcClient_newCtxWithDB(t *testing.T) {
+	cli := &GrpcClient{}
+	ctx := cli.newCtxWithDB(context.Background(), "db")
+	md, ok := metadata.FromOutgoingContext(ctx)
+	assert.True(t, ok)
+	assert.Equal(t, "db", md.Get(databaseHeader)[0])
 }
