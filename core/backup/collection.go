@@ -2,6 +2,7 @@ package backup
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"strings"
 	"time"
@@ -131,30 +132,37 @@ func (ct *CollectionTask) Execute(ctx context.Context) error {
 func (ct *CollectionTask) convFields(fields []*schemapb.FieldSchema) ([]*backuppb.FieldSchema, error) {
 	bakFields := make([]*backuppb.FieldSchema, 0, len(fields))
 	for _, field := range fields {
-		var defaultValue string
+		// We should use Base64 to serialize the proto array.
+		// To maintain compatibility with the previous implementation error,
+		// we will continue to support direct string encoding.
+		// TODO: remove defaultValueProto in the future.
+		var defaultValueProto string
+		var defaultValueBase64 string
 		if field.GetDefaultValue() != nil {
 			bytes, err := proto.Marshal(field.GetDefaultValue())
 			if err != nil {
 				return nil, fmt.Errorf("backup: marshal default value")
 			}
-			defaultValue = string(bytes)
+			defaultValueProto = string(bytes)
+			defaultValueBase64 = base64.StdEncoding.EncodeToString(bytes)
 		}
 
 		f := &backuppb.FieldSchema{
-			FieldID:           field.GetFieldID(),
-			Name:              field.GetName(),
-			IsPrimaryKey:      field.GetIsPrimaryKey(),
-			Description:       field.GetDescription(),
-			AutoID:            field.GetAutoID(),
-			DataType:          backuppb.DataType(field.GetDataType()),
-			TypeParams:        pbconv.MilvusKVToBakKV(field.GetTypeParams()),
-			IndexParams:       pbconv.MilvusKVToBakKV(field.GetIndexParams()),
-			IsDynamic:         field.GetIsDynamic(),
-			IsPartitionKey:    field.GetIsPartitionKey(),
-			Nullable:          field.GetNullable(),
-			ElementType:       backuppb.DataType(field.GetElementType()),
-			IsFunctionOutput:  field.GetIsFunctionOutput(),
-			DefaultValueProto: defaultValue,
+			FieldID:            field.GetFieldID(),
+			Name:               field.GetName(),
+			IsPrimaryKey:       field.GetIsPrimaryKey(),
+			Description:        field.GetDescription(),
+			AutoID:             field.GetAutoID(),
+			DataType:           backuppb.DataType(field.GetDataType()),
+			TypeParams:         pbconv.MilvusKVToBakKV(field.GetTypeParams()),
+			IndexParams:        pbconv.MilvusKVToBakKV(field.GetIndexParams()),
+			IsDynamic:          field.GetIsDynamic(),
+			IsPartitionKey:     field.GetIsPartitionKey(),
+			Nullable:           field.GetNullable(),
+			ElementType:        backuppb.DataType(field.GetElementType()),
+			IsFunctionOutput:   field.GetIsFunctionOutput(),
+			DefaultValueProto:  defaultValueProto,
+			DefaultValueBase64: defaultValueBase64,
 		}
 		bakFields = append(bakFields, f)
 	}

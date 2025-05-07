@@ -308,6 +308,8 @@ definitions:
         - $ref: '#/definitions/backuppb.ValueField'
         description: default_value only support scalars except array and json for
           now
+      default_value_base64:
+        type: string
       default_value_proto:
         description: json not support marshall oneof, so use proto string
         type: string

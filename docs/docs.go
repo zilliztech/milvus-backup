@@ -682,6 +682,9 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "default_value_base64": {
+                    "type": "string"
+                },
                 "default_value_proto": {
                     "description": "json not support marshall oneof, so use proto string",
                     "type": "string"
