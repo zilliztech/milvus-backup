@@ -2,6 +2,7 @@ package restore
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"path"
@@ -310,11 +311,43 @@ func (ct *CollectionTask) createColl(ctx context.Context) error {
 	return nil
 }
 
+func (ct *CollectionTask) getDefaultValue(field *backuppb.FieldSchema) (*schemapb.ValueField, error) {
+	// try to use DefaultValueBase64 first
+	if field.GetDefaultValueBase64() != "" {
+		bytes, err := base64.StdEncoding.DecodeString(field.GetDefaultValueBase64())
+		if err != nil {
+			return nil, fmt.Errorf("restore_collection: failed to decode default value base64: %w", err)
+		}
+		var defaultValue schemapb.ValueField
+		if err := proto.Unmarshal(bytes, &defaultValue); err != nil {
+			return nil, fmt.Errorf("restore_collection: failed to unmarshal default value: %w", err)
+		}
+		return &defaultValue, nil
+	}
+
+	// backward compatibility
+	if field.GetDefaultValueProto() != "" {
+		var defaultValue schemapb.ValueField
+		err := proto.Unmarshal([]byte(field.DefaultValueProto), &defaultValue)
+		if err != nil {
+			return nil, fmt.Errorf("restore_collection: failed to unmarshal default value: %w", err)
+		}
+		return &defaultValue, nil
+	}
+
+	return nil, nil
+}
+
 func (ct *CollectionTask) fields() ([]*schemapb.FieldSchema, error) {
 	bakFields := ct.task.GetCollBackup().GetSchema().GetFields()
 	fields := make([]*schemapb.FieldSchema, 0, len(bakFields))
 
 	for _, bakField := range bakFields {
+		defaultValue, err := ct.getDefaultValue(bakField)
+		if err != nil {
+			return nil, fmt.Errorf("restore_collection: failed to get default value: %w", err)
+		}
+
 		fieldRestore := &schemapb.FieldSchema{
 			FieldID:          bakField.GetFieldID(),
 			Name:             bakField.GetName(),
@@ -329,14 +362,7 @@ func (ct *CollectionTask) fields() ([]*schemapb.FieldSchema, error) {
 			Nullable:         bakField.GetNullable(),
 			ElementType:      schemapb.DataType(bakField.GetElementType()),
 			IsFunctionOutput: bakField.IsFunctionOutput,
-		}
-		if bakField.GetDefaultValueProto() != "" {
-			var defaultValue schemapb.ValueField
-			err := proto.Unmarshal([]byte(bakField.DefaultValueProto), &defaultValue)
-			if err != nil {
-				return nil, fmt.Errorf("restore_collection: failed to unmarshal default value: %w", err)
-			}
-			fieldRestore.DefaultValue = &defaultValue
+			DefaultValue:     defaultValue,
 		}
 
 		fields = append(fields, fieldRestore)
