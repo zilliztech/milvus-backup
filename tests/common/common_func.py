@@ -1,6 +1,7 @@
 import os
 import random
 import math
+import time
 import string
 import numpy as np
 import pandas as pd
@@ -1105,9 +1106,28 @@ def insert_data(
             default_data = gen_dataframe_all_data_type(nb // num, dim=dim, start=start, nullable=nullable)
         if auto_id:
             default_data.drop(ct.default_int64_field_name, axis=1, inplace=True)
-        insert_res = collection_w.insert(default_data, par[i].name)[0]
-        time_stamp = insert_res.timestamp
-        insert_ids.extend(insert_res.primary_keys)
+    
+        batch_size = len(default_data) // 10
+        if batch_size == 0:
+            batch_size = 1
+        
+        last_insert_res = None
+        for j in range(10):
+            start_idx = j * batch_size
+            end_idx = (j + 1) * batch_size if j < 9 else len(default_data)
+            if start_idx >= len(default_data):
+                break
+                
+            batch_data = default_data.iloc[start_idx:end_idx]
+            if len(batch_data) == 0:
+                continue
+                
+            insert_res = collection_w.insert(batch_data, par[i].name)[0]
+            time.sleep(0.5)
+            last_insert_res = insert_res
+            insert_ids.extend(insert_res.primary_keys)
+            
+        time_stamp = last_insert_res.timestamp if last_insert_res else None
         vectors.append(default_data)
         start += nb // num
     return collection_w, vectors, binary_raw_vectors, insert_ids, time_stamp
