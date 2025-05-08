@@ -283,10 +283,10 @@ func (g *GrpcClient) SupportMultiDatabase() bool { return !g.hasFlags(disableDat
 
 func (g *GrpcClient) newCtx(ctx context.Context) context.Context {
 	if g.auth != "" {
-		return metadata.AppendToOutgoingContext(ctx, authorizationHeader, g.auth)
+		ctx = metadata.AppendToOutgoingContext(ctx, authorizationHeader, g.auth)
 	}
 	if g.identifier != "" {
-		return metadata.AppendToOutgoingContext(ctx, identifierHeader, g.identifier)
+		ctx = metadata.AppendToOutgoingContext(ctx, identifierHeader, g.identifier)
 	}
 	return ctx
 }
@@ -399,11 +399,11 @@ func (g *GrpcClient) DescribeCollection(ctx context.Context, db, collName string
 }
 
 func (g *GrpcClient) DescribeDatabase(ctx context.Context, dbName string) (*milvuspb.DescribeDatabaseResponse, error) {
-	ctx = g.newCtx(ctx)
 	if g.hasFlags(disableDatabase) {
 		return nil, errors.New("client: the server does not support database")
 	}
 
+	ctx = g.newCtxWithDB(ctx, dbName)
 	resp, err := g.srv.DescribeDatabase(ctx, &milvuspb.DescribeDatabaseRequest{DbName: dbName})
 	if err := checkResponse(resp, err); err != nil {
 		return nil, fmt.Errorf("client: describe database failed: %w", err)
