@@ -2,6 +2,7 @@ package backup
 
 import (
 	"context"
+	"sort"
 	"testing"
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
@@ -54,15 +55,15 @@ func TestCollectionTask_listInsertLogByListFile(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, int64(10), size)
 		assert.Len(t, fields, 2)
-
+		sort.Slice(fields, func(i, j int) bool { return fields[i].GetFieldID() < fields[j].GetFieldID() })
 		assert.Len(t, fields[0].GetBinlogs(), 2)
-		assert.Equal(t, fields[0].GetBinlogs(), []*backuppb.Binlog{
+		assert.ElementsMatch(t, fields[0].GetBinlogs(), []*backuppb.Binlog{
 			{LogId: 1, LogPath: keys[0], LogSize: 1},
 			{LogId: 2, LogPath: keys[1], LogSize: 2},
 		})
 
 		assert.Len(t, fields[1].GetBinlogs(), 2)
-		assert.Equal(t, fields[1].GetBinlogs(), []*backuppb.Binlog{
+		assert.ElementsMatch(t, fields[1].GetBinlogs(), []*backuppb.Binlog{
 			{LogId: 1, LogPath: keys[2], LogSize: 3},
 			{LogId: 2, LogPath: keys[3], LogSize: 4},
 		})
