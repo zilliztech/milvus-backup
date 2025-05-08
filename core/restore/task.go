@@ -520,6 +520,7 @@ func (t *Task) privateExecute(ctx context.Context, task *backuppb.RestoreBackupT
 func (t *Task) runRBACTask(ctx context.Context) error {
 	if !t.request.GetRbac() {
 		t.logger.Info("skip restore RBAC")
+		return nil
 	}
 
 	t.logger.Info("start restore RBAC")
