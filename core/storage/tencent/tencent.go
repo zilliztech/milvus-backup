@@ -75,11 +75,15 @@ func (c *CredentialProvider) Retrieve() (minioCred.Value, error) {
 	return ret, nil
 }
 
+func (c *CredentialProvider) RetrieveWithCredContext(_ *minioCred.CredContext) (minioCred.Value, error) {
+	return c.Retrieve()
+}
+
 // IsExpired returns if the credentials are no longer valid, and need
 // to be retrieved.
 // according to the caller minioCred.Credentials.IsExpired(),
 // it already has a lock, so we don't need to worry about concurrency
-func (c CredentialProvider) IsExpired() bool {
+func (c *CredentialProvider) IsExpired() bool {
 	ak := c.tencentCreds.GetSecretId()
 	return ak != c.akCache
 }
