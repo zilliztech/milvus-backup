@@ -22,7 +22,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"strings"
 
 	"cloud.google.com/go/storage"
 	"github.com/cockroachdb/errors"
@@ -258,25 +257,14 @@ func (gcm *GCPNativeChunkManager) RemoveWithPrefix(ctx context.Context, bucketNa
 	return nil
 }
 
-// Copy files from fromPath into toPath recursively
-func (gcm *GCPNativeChunkManager) Copy(ctx context.Context, fromBucketName string, toBucketName string, fromPath string, toPath string) error {
-	objectKeys, _, err := gcm.ListWithPrefix(ctx, fromBucketName, fromPath, true)
-	if err != nil {
-		log.Error("Error listing objects", zap.Error(err))
-		return err
+func (gcm *GCPNativeChunkManager) CopyObject(ctx context.Context, fromBucketName string, toBucketName string, fromKey string, toKey string) error {
+	srcObj := gcm.client.Bucket(fromBucketName).Object(fromKey)
+	dstObj := gcm.client.Bucket(toBucketName).Object(toKey)
+
+	if _, err := dstObj.CopierFrom(srcObj).Run(ctx); err != nil {
+		return fmt.Errorf("storage: gcp native copy object from %s to %s: %w", fromKey, toKey, err)
 	}
 
-	for _, srcObjectKey := range objectKeys {
-		dstObjectKey := strings.Replace(srcObjectKey, fromPath, toPath, 1)
-
-		srcObj := gcm.client.Bucket(fromBucketName).Object(srcObjectKey)
-		dstObj := gcm.client.Bucket(toBucketName).Object(dstObjectKey)
-
-		if _, err := dstObj.CopierFrom(srcObj).Run(ctx); err != nil {
-			log.Error("Error copying object", zap.String("from", srcObjectKey), zap.String("to", dstObjectKey), zap.Error(err))
-			return err
-		}
-	}
 	return nil
 }
 

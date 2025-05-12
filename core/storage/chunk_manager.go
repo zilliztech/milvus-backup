@@ -22,8 +22,9 @@ type ChunkManager interface {
 	Remove(ctx context.Context, bucketName string, filePath string) error
 	// RemoveWithPrefix remove files with same @prefix.
 	RemoveWithPrefix(ctx context.Context, bucketName string, prefix string) error
-	// Copy files from fromPath into toPath recursively
-	Copy(ctx context.Context, fromBucketName string, toBucketName string, fromPath string, toPath string) error
+
+	// CopyObject copy object from src to dest
+	CopyObject(ctx context.Context, fromBucketName string, toBucketName string, fromKey string, toKey string) error
 
 	// ListObjectsPage paginate list of all objects
 	ListObjectsPage(ctx context.Context, bucket, prefix string) (ListObjectsPaginator, error)

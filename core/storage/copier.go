@@ -204,7 +204,7 @@ func (c *Copier) selectCopyFn() copyFn {
 
 func (c *Copier) copyRemote(ctx context.Context, attr ObjectAttr, destKey, srcBucket, destBucket string) error {
 	log.Debug("copyRemote", zap.String("srcBucket", srcBucket), zap.String("destBucket", destBucket), zap.String("key", attr.Key), zap.String("destKey", destKey))
-	if err := c.dest.Copy(ctx, srcBucket, destBucket, attr.Key, destKey); err != nil {
+	if err := c.dest.CopyObject(ctx, srcBucket, destBucket, attr.Key, destKey); err != nil {
 		return fmt.Errorf("storage: copier copy object %w", err)
 	}
 

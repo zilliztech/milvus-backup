@@ -431,26 +431,15 @@ func (mcm *MinioChunkManager) ListWithPrefix(ctx context.Context, bucketName str
 	return objectsKeys, sizes, nil
 }
 
-func (mcm *MinioChunkManager) Copy(ctx context.Context, fromBucketName string, toBucketName string, fromPath string, toPath string) error {
-	objectkeys, _, err := mcm.ListWithPrefix(ctx, fromBucketName, fromPath, true)
-	if err != nil {
-		log.Warn("listWithPrefix error", zap.String("bucket", fromBucketName), zap.String("prefix", fromPath), zap.Error(err))
-		return err
-	}
-	for _, objectkey := range objectkeys {
-		src := minio.CopySrcOptions{Bucket: fromBucketName, Object: objectkey}
-		dstObjectKey := strings.Replace(objectkey, fromPath, toPath, 1)
-		dst := minio.CopyDestOptions{Bucket: toBucketName, Object: dstObjectKey}
+func (mcm *MinioChunkManager) CopyObject(ctx context.Context, fromBucketName string, toBucketName string, fromKey string, toKey string) error {
+	src := minio.CopySrcOptions{Bucket: fromBucketName, Object: fromKey}
+	dst := minio.CopyDestOptions{Bucket: toBucketName, Object: toKey}
 
-		_, err = mcm.Client.CopyObject(ctx, dst, src)
-		if err != nil {
-			log.Error("copyObject error",
-				zap.String("srcObjectKey", objectkey),
-				zap.String("dstObjectKey", dstObjectKey),
-				zap.Error(err))
-			return err
-		}
+	_, err := mcm.Client.CopyObject(ctx, dst, src)
+	if err != nil {
+		return fmt.Errorf("storage: %s copy object from %s to %s: %w", mcm.provider, fromKey, toKey, err)
 	}
+
 	return nil
 }
 

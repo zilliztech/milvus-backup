@@ -1,11 +1,7 @@
-with-expecter: True
-dir: ./core/mocks
-issue-845-fix: True
-resolve-type-alias: False
-disable-version-string: True
-outpkg: mocks
+dir: ./core/mocks/
+pkgname: mocks
+template: testify
 filename: "{{.InterfaceName | camelcase | firstLower }}_mock.go"
-
 packages:
   github.com/zilliztech/milvus-backup/core/client:
     interfaces:
