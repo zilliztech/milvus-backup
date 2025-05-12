@@ -194,17 +194,8 @@ func (lcm *LocalChunkManager) MultiRemove(ctx context.Context, bucketName string
 	return nil
 }
 
-func (lcm *LocalChunkManager) Copy(ctx context.Context, fromBucketName string, toBucketName string, fromPath string, toPath string) error {
-	sourceFileStat, err := os.Stat(fromPath)
-	if err != nil {
-		return err
-	}
-
-	if sourceFileStat.IsDir() {
-		return CopyDir(fromPath, toPath)
-	} else {
-		return CopyFile(fromPath, toPath)
-	}
+func (lcm *LocalChunkManager) CopyObject(ctx context.Context, fromBucketName string, toBucketName string, fromKey string, toKey string) error {
+	return CopyFile(fromKey, toKey)
 }
 
 func (lcm *LocalChunkManager) UploadObject(ctx context.Context, i UploadObjectInput) error {

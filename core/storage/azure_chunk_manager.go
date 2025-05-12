@@ -92,20 +92,12 @@ func (mcm *AzureChunkManager) Config() *StorageConfig {
 	return mcm.config
 }
 
-func (mcm *AzureChunkManager) Copy(ctx context.Context, fromBucketName string, toBucketName string, fromPath string, toPath string) error {
-	objectkeys, _, err := mcm.ListWithPrefix(ctx, fromBucketName, fromPath, true)
+func (mcm *AzureChunkManager) CopyObject(ctx context.Context, fromBucketName, toBucketName string, fromKey string, toKey string) error {
+	err := mcm.aos.CopyObject(ctx, fromBucketName, toBucketName, fromKey, toKey)
 	if err != nil {
-		log.Warn("listWithPrefix error", zap.String("prefix", fromPath), zap.Error(err))
-		return err
+		return fmt.Errorf("storage: azure copy object from %s to %s: %w", fromKey, toKey, err)
 	}
-	for _, objectkey := range objectkeys {
-		dstObjectKey := strings.Replace(objectkey, fromPath, toPath, 1)
-		err := mcm.aos.CopyObject(ctx, fromBucketName, toBucketName, objectkey, dstObjectKey)
-		if err != nil {
-			log.Error("copyObject error", zap.String("srcObjectKey", objectkey), zap.String("dstObjectKey", dstObjectKey), zap.Error(err))
-			return err
-		}
-	}
+
 	return nil
 }
 
