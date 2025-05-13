@@ -1,4 +1,4 @@
-package cmd
+package check
 
 import (
 	"fmt"
@@ -7,20 +7,25 @@ import (
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
 
+	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 )
 
-var configCmd = &cobra.Command{
-	Use:   "backup_yaml",
-	Short: "backup_yaml is a subcommand to check.  It prints the current backup config file in yaml format to stdio.",
+func newBackupYamlCmd(opt *root.Options) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "backup_yaml",
+		Short: "backup_yaml is a subcommand to check.  It prints the current backup config file in yaml format to stdio.",
 
-	Run: func(cmd *cobra.Command, args []string) {
-		var params paramtable.BackupParams
-		params.GlobalInitWithYaml(config)
-		params.Init()
+		Run: func(cmd *cobra.Command, args []string) {
+			var params paramtable.BackupParams
+			params.GlobalInitWithYaml(opt.Config)
+			params.Init()
 
-		printParams(&params)
-	},
+			printParams(&params)
+		},
+	}
+
+	return cmd
 }
 
 type YAMLConFig struct {
@@ -64,10 +69,6 @@ type YAMLConFig struct {
 	Backup struct {
 		MaxSegmentGroupSize string `yaml:"maxSegmentGroupSize"`
 	} `yaml:"backup"`
-}
-
-func init() {
-	checkCmd.AddCommand(configCmd)
 }
 
 func printParams(base *paramtable.BackupParams) {

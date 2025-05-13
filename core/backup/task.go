@@ -372,12 +372,12 @@ func (t *Task) runCollTask(ctx context.Context, collections []collection) error 
 }
 
 func (t *Task) runRBACTask(ctx context.Context) error {
-	t.logger.Info("start backup rbac")
 	if !t.request.GetRbac() {
 		t.logger.Info("skip backup rbac")
 		return nil
 	}
 
+	t.logger.Info("start backup rbac")
 	rt := NewRBACTask(t.backupID, t.meta, t.grpc)
 	if err := rt.Execute(ctx); err != nil {
 		return fmt.Errorf("backup: execute rbac task: %w", err)

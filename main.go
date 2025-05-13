@@ -15,6 +15,7 @@ import (
 // @license.url   http://www.apache.org/licenses/LICENSE-2.0.html
 // @BasePath  /api/v1
 func main() {
-	cmd.SetVersionInfo(version.Version, version.Commit, version.Date)
+	version.Print()
+
 	cmd.Execute()
 }
