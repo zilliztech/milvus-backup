@@ -153,6 +153,12 @@ func (c *Copier) Copy(ctx context.Context, srcPrefix, destPrefix, srcBucket, des
 		return fmt.Errorf("storage: copier get src attrs %w", err)
 	}
 	for _, srcAttr := range srcAttrs {
+		// Sometimes object storage uses an empty object ending with / to represent a folder.
+		// If this file is also copied, milvus import will fail.
+		if srcAttr.IsEmpty() && strings.HasSuffix(srcAttr.Key, "/") {
+			continue
+		}
+
 		destKey := strings.Replace(srcAttr.Key, srcPrefix, destPrefix, 1)
 		if err := fn(ctx, srcAttr, destKey, srcBucket, destBucket); err != nil {
 			return err
@@ -175,6 +181,12 @@ func (c *Copier) CopyObjects(ctx context.Context, srcBucket, destBucket string, 
 	wp.Start()
 
 	for _, attr := range attrs {
+		// Sometimes object storage uses an empty object ending with / to represent a folder.
+		// If this file is also copied, milvus import will fail.
+		if attr.Src.IsEmpty() && strings.HasSuffix(attr.Src.Key, "/") {
+			continue
+		}
+
 		job := func(ctx context.Context) error {
 			if err := fn(ctx, attr.Src, attr.DestKey, srcBucket, destBucket); err != nil {
 				return fmt.Errorf("storage: copier copy object %w", err)
