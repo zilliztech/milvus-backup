@@ -19,7 +19,6 @@ type MetaManager struct {
 	partitionCollectionReverse map[int64]int64                                     // partitionID -> collectionID
 	collectionBackupReverse    map[int64]string                                    // collectionID -> backupId
 	backupNameToIdDict         map[string]string
-	restoreTasks               map[string]*backuppb.RestoreBackupTask
 	mu                         sync.Mutex
 }
 
@@ -33,7 +32,6 @@ func NewMetaManager() *MetaManager {
 		partitionCollectionReverse: make(map[int64]int64, 0),
 		collectionBackupReverse:    make(map[int64]string, 0),
 		backupNameToIdDict:         make(map[string]string, 0),
-		restoreTasks:               make(map[string]*backuppb.RestoreBackupTask, 0),
 		mu:                         sync.Mutex{},
 	}
 }
@@ -513,102 +511,4 @@ func (meta *MetaManager) GetFullMeta(id string) *backuppb.BackupInfo {
 	}
 	log.Info("Get backup", zap.String("state", cloneBackup.StateCode.String()), zap.Int64("backupedSize", backupedSize), zap.Int64("totalSize", totalSize), zap.Int32("progress", cloneBackup.Progress))
 	return cloneBackup
-}
-
-type RestoreTaskOpt func(task *backuppb.RestoreBackupTask)
-
-func SetRestoreStateCode(stateCode backuppb.RestoreTaskStateCode) RestoreTaskOpt {
-	return func(task *backuppb.RestoreBackupTask) {
-		task.StateCode = stateCode
-	}
-}
-
-func SetRestoreErrorMessage(errorMessage string) RestoreTaskOpt {
-	return func(task *backuppb.RestoreBackupTask) {
-		task.ErrorMessage = errorMessage
-	}
-}
-
-func setRestoreStartTime(startTime int64) RestoreTaskOpt {
-	return func(task *backuppb.RestoreBackupTask) {
-		task.StartTime = startTime
-	}
-}
-
-func SetRestoreEndTime(endTime int64) RestoreTaskOpt {
-	return func(task *backuppb.RestoreBackupTask) {
-		task.EndTime = endTime
-	}
-}
-
-func addRestoreRestoredSize(restoredSize int64) RestoreTaskOpt {
-	return func(task *backuppb.RestoreBackupTask) {
-		task.RestoredSize = task.RestoredSize + restoredSize
-	}
-}
-
-func AddCollectionRestoredSize(collectionID, restoredSize int64) RestoreTaskOpt {
-	return func(task *backuppb.RestoreBackupTask) {
-		task.RestoredSize = task.RestoredSize + restoredSize
-		for _, coll := range task.GetCollectionRestoreTasks() {
-			if coll.CollBackup.CollectionId == collectionID {
-				coll.RestoredSize = coll.RestoredSize + restoredSize
-			}
-		}
-	}
-}
-
-func (meta *MetaManager) UpdateRestoreTask(restoreID string, opts ...RestoreTaskOpt) {
-	meta.mu.Lock()
-	defer meta.mu.Unlock()
-	backup := meta.restoreTasks[restoreID]
-	cBackup := proto.Clone(backup).(*backuppb.RestoreBackupTask)
-	for _, opt := range opts {
-		opt(cBackup)
-	}
-	meta.restoreTasks[backup.Id] = cBackup
-}
-
-//CollectionRestoreTasks []*RestoreCollectionTask `protobuf:"bytes,6,rep,name=collection_restore_tasks,json=collectionRestoreTasks,proto3" json:"collection_restore_tasks,omitempty"`
-
-func (meta *MetaManager) AddRestoreTask(task *backuppb.RestoreBackupTask) {
-	meta.mu.Lock()
-	defer meta.mu.Unlock()
-	meta.restoreTasks[task.Id] = task
-}
-
-func (meta *MetaManager) GetRestoreTask(taskID string) *backuppb.RestoreBackupTask {
-	meta.mu.Lock()
-	defer meta.mu.Unlock()
-	return meta.restoreTasks[taskID]
-}
-
-func (meta *MetaManager) UpdateRestoreCollectionTask(restoreID string, restoreCollectionId string, opts ...RestoreCollectionTaskOpt) {
-	meta.mu.Lock()
-	defer meta.mu.Unlock()
-	restoreBackup := meta.restoreTasks[restoreID]
-	tasks := restoreBackup.GetCollectionRestoreTasks()
-	for i := 0; i < len(tasks); i++ {
-		if tasks[i].Id == restoreCollectionId {
-			cBackup := proto.Clone(tasks[i]).(*backuppb.RestoreCollectionTask)
-			for _, opt := range opts {
-				opt(cBackup)
-			}
-			tasks[i] = cBackup
-		}
-	}
-}
-
-type RestoreCollectionTaskOpt func(task *backuppb.RestoreCollectionTask)
-
-func SetRestoreCollectionStateCode(stateCode backuppb.RestoreTaskStateCode) RestoreCollectionTaskOpt {
-	return func(task *backuppb.RestoreCollectionTask) {
-		task.StateCode = stateCode
-	}
-}
-
-func SetRestoreCollectionErrorMessage(errorMessage string) RestoreCollectionTaskOpt {
-	return func(task *backuppb.RestoreCollectionTask) {
-		task.ErrorMessage = errorMessage
-	}
 }

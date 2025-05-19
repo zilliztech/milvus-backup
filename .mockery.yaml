@@ -3,6 +3,11 @@ pkgname: mocks
 template: testify
 filename: "{{.InterfaceName | camelcase | firstLower }}_mock.go"
 packages:
+  github.com/zilliztech/milvus-backup/core/meta/taskmgr:
+    interfaces:
+      RestoreCollTaskView:
+      RestoreTaskView:
+
   github.com/zilliztech/milvus-backup/core/client:
     interfaces:
       Grpc:

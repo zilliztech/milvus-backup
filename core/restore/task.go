@@ -13,6 +13,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/client"
 	"github.com/zilliztech/milvus-backup/core/meta"
+	"github.com/zilliztech/milvus-backup/core/meta/taskmgr"
 	"github.com/zilliztech/milvus-backup/core/namespace"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
@@ -29,8 +30,10 @@ type Task struct {
 
 	backup *backuppb.BackupInfo
 
-	params *paramtable.BackupParams
-	meta   *meta.MetaManager
+	params  *paramtable.BackupParams
+	taskMgr *taskmgr.Mgr
+
+	task *backuppb.RestoreBackupTask
 
 	backupStorage storage.ChunkManager
 	milvusStorage storage.ChunkManager
@@ -48,7 +51,6 @@ func NewTask(
 	backupBucketName string,
 	params *paramtable.BackupParams,
 	info *backuppb.BackupInfo,
-	meta *meta.MetaManager,
 	backupStorage storage.ChunkManager,
 	milvusStorage storage.ChunkManager,
 	grpcCli client.Grpc,
@@ -57,7 +59,8 @@ func NewTask(
 	logger := log.L().With(
 		zap.String("backup_name", info.GetName()),
 		zap.String("backup_path", backupPath),
-		zap.String("backup_bucket_name", backupBucketName))
+		zap.String("backup_bucket_name", backupBucketName),
+		zap.String("request_id", request.GetRequestId()))
 
 	return &Task{
 		logger: logger,
@@ -65,8 +68,8 @@ func NewTask(
 		request: request,
 		backup:  info,
 
-		params: params,
-		meta:   meta,
+		params:  params,
+		taskMgr: taskmgr.DefaultMgr,
 
 		backupStorage: backupStorage,
 		milvusStorage: milvusStorage,
@@ -253,7 +256,6 @@ func (t *Task) newCollTaskPB(targetNS namespace.NS, bak *backuppb.CollectionBack
 
 	collTaskPB := &backuppb.RestoreCollectionTask{
 		Id:                   uuid.NewString(),
-		StateCode:            backuppb.RestoreTaskStateCode_INITIAL,
 		StartTime:            time.Now().Unix(),
 		CollBackup:           bak,
 		TargetDbName:         targetNS.DBName(),
@@ -303,7 +305,6 @@ func (t *Task) newRestoreTaskPB() (*backuppb.RestoreBackupTask, error) {
 	size := lo.SumBy(collTasks, func(coll *backuppb.RestoreCollectionTask) int64 { return coll.ToRestoreSize })
 	task := &backuppb.RestoreBackupTask{
 		Id:                     t.request.GetId(),
-		StateCode:              backuppb.RestoreTaskStateCode_INITIAL,
 		StartTime:              time.Now().Unix(),
 		ToRestoreSize:          size,
 		DatabaseRestoreTasks:   dbTasks,
@@ -468,26 +469,34 @@ func (t *Task) checkCollExist(ctx context.Context, task *backuppb.RestoreCollect
 	return nil
 }
 
-func (t *Task) BuildTaskPB() (*backuppb.RestoreBackupTask, error) {
+func (t *Task) Prepare(_ context.Context) error {
 	task, err := t.newRestoreTaskPB()
 	if err != nil {
-		return nil, fmt.Errorf("restore: create restore task %w", err)
+		return fmt.Errorf("restore: create restore task %w", err)
 	}
 
-	t.meta.AddRestoreTask(task)
+	t.task = task
 
-	return task, nil
+	t.taskMgr.AddRestoreTask(task.GetId(), task.GetToRestoreSize())
+	opts := make([]taskmgr.RestoreTaskOpt, 0, len(task.GetCollectionRestoreTasks()))
+	for _, collTask := range task.GetCollectionRestoreTasks() {
+		targetNS := namespace.New(collTask.GetTargetDbName(), collTask.GetTargetCollectionName())
+		opts = append(opts, taskmgr.AddRestoreCollTask(targetNS, collTask.GetToRestoreSize()))
+	}
+	t.taskMgr.UpdateRestoreTask(task.GetId(), opts...)
+
+	return nil
 }
 
-func (t *Task) Execute(ctx context.Context, task *backuppb.RestoreBackupTask) error {
-	if err := t.privateExecute(ctx, task); err != nil {
+func (t *Task) Execute(ctx context.Context) error {
+	if err := t.privateExecute(ctx, t.task); err != nil {
 		t.logger.Error("restore task failed", zap.Error(err))
-		t.meta.UpdateRestoreTask(t.request.GetId(), meta.SetRestoreStateCode(backuppb.RestoreTaskStateCode_FAIL))
+		t.taskMgr.UpdateRestoreTask(t.task.GetId(), taskmgr.SetRestoreFail(err))
 		return fmt.Errorf("restore: execute %w", err)
 	}
 
 	t.logger.Info("restore task finished")
-	t.meta.UpdateRestoreTask(t.request.GetId(), meta.SetRestoreStateCode(backuppb.RestoreTaskStateCode_SUCCESS))
+	t.taskMgr.UpdateRestoreTask(t.task.GetId(), taskmgr.SetRestoreSuccess())
 	return nil
 }
 
@@ -496,7 +505,7 @@ func (t *Task) privateExecute(ctx context.Context, task *backuppb.RestoreBackupT
 		return err
 	}
 
-	t.meta.UpdateRestoreTask(task.GetId(), meta.SetRestoreStateCode(backuppb.RestoreTaskStateCode_EXECUTING))
+	t.taskMgr.UpdateRestoreTask(task.GetId(), taskmgr.SetRestoreExecuting())
 
 	if err := t.runDBTask(ctx, task); err != nil {
 		return fmt.Errorf("restore: run database task %w", err)
@@ -590,7 +599,7 @@ func (t *Task) prepareDB(ctx context.Context, task *backuppb.RestoreBackupTask) 
 }
 
 func (t *Task) runCollTask(ctx context.Context, task *backuppb.RestoreBackupTask) error {
-	t.logger.Info("start restore backup")
+	t.logger.Info("start restore collection")
 
 	wp, err := common.NewWorkerPool(ctx, t.params.BackupCfg.RestoreParallelism, 0)
 	if err != nil {
@@ -599,34 +608,17 @@ func (t *Task) runCollTask(ctx context.Context, task *backuppb.RestoreBackupTask
 	wp.Start()
 	t.logger.Info("Start collection level restore pool", zap.Int("parallelism", t.params.BackupCfg.RestoreParallelism))
 
-	id := task.GetId()
-	t.meta.UpdateRestoreTask(id, meta.SetRestoreStateCode(backuppb.RestoreTaskStateCode_EXECUTING))
-
 	collTaskMetas := task.GetCollectionRestoreTasks()
 	for _, collTaskMeta := range collTaskMetas {
 		collTask := t.newRestoreCollTask(task.GetId(), collTaskMeta)
 		job := func(ctx context.Context) error {
-			err := collTask.Execute(ctx)
-			if err != nil {
-				t.meta.UpdateRestoreTask(id, meta.SetRestoreStateCode(backuppb.RestoreTaskStateCode_FAIL),
-					meta.SetRestoreErrorMessage(collTaskMeta.GetErrorMessage()))
-
-				t.meta.UpdateRestoreCollectionTask(id, collTaskMeta.GetId(),
-					meta.SetRestoreCollectionStateCode(backuppb.RestoreTaskStateCode_FAIL),
-					meta.SetRestoreCollectionErrorMessage(collTaskMeta.GetErrorMessage()))
-
-				t.logger.Error("restore coll failed",
-					zap.String("target_db_name", collTaskMeta.GetTargetDbName()),
-					zap.String("target_collection_name", collTaskMeta.GetTargetCollectionName()),
-					zap.Error(err))
+			logger := t.logger.With(zap.String("target_ns", collTask.targetNS.String()))
+			if err := collTask.Execute(ctx); err != nil {
+				logger.Error("restore coll failed", zap.Error(err))
 				return fmt.Errorf("restore: restore collection %w", err)
 			}
 
-			collTaskMeta.StateCode = backuppb.RestoreTaskStateCode_SUCCESS
-			log.Info("finish restore collection",
-				zap.String("target_db_name", collTaskMeta.GetTargetDbName()),
-				zap.String("target_collection_name", collTaskMeta.GetTargetCollectionName()),
-				zap.Int64("size", collTaskMeta.RestoredSize))
+			logger.Info("finish restore collection", zap.Int64("size", collTaskMeta.RestoredSize))
 			return nil
 		}
 		wp.Submit(job)
@@ -636,21 +628,15 @@ func (t *Task) runCollTask(ctx context.Context, task *backuppb.RestoreBackupTask
 		return fmt.Errorf("restore: wait collection worker pool %w", err)
 	}
 
-	endTime := time.Now().Unix()
-	task.EndTime = endTime
-
-	duration := time.Unix(endTime, 0).Sub(time.Unix(task.GetStartTime(), 0))
+	duration := time.Now().Sub(time.Unix(task.GetStartTime(), 0))
 	t.logger.Info("finish restore all collections",
-		zap.String("backup_name", t.backup.GetName()),
 		zap.Int("collection_num", len(t.backup.GetCollectionBackups())),
-		zap.String("task_id", task.GetId()),
 		zap.Duration("duration", duration))
 	return nil
 }
 
 func (t *Task) newRestoreCollTask(taskID string, collTask *backuppb.RestoreCollectionTask) *CollectionTask {
 	return newCollectionTask(collTask,
-		t.meta,
 		t.params,
 		taskID,
 		t.backupBucketName,

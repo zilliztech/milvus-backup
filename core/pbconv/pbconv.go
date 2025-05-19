@@ -4,6 +4,8 @@ import (
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/samber/lo"
 
+	"github.com/zilliztech/milvus-backup/core/meta/taskmgr"
+	"github.com/zilliztech/milvus-backup/core/namespace"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 )
 
@@ -36,4 +38,35 @@ func MilvusKVToMap(kvs []*commonpb.KeyValuePair) map[string]string {
 		res[kv.GetKey()] = kv.GetValue()
 	}
 	return res
+}
+
+func RestoreCollTaskViewToResp(ns namespace.NS, taskView taskmgr.RestoreCollTaskView) *backuppb.RestoreCollectionTaskResponse {
+	return &backuppb.RestoreCollectionTaskResponse{
+		Id:                   taskView.ID(),
+		StateCode:            taskView.StateCode(),
+		ErrorMessage:         taskView.ErrorMessage(),
+		StartTime:            taskView.StartTime().Unix(),
+		EndTime:              taskView.EndTime().Unix(),
+		Progress:             taskView.Progress(),
+		TargetDbName:         ns.DBName(),
+		TargetCollectionName: ns.CollName(),
+	}
+}
+
+func RestoreTaskViewToResp(view taskmgr.RestoreTaskView) *backuppb.RestoreBackupTaskResponse {
+	collTasks := view.CollTasks()
+	collTaskResps := make([]*backuppb.RestoreCollectionTaskResponse, 0, len(collTasks))
+	for ns, taskView := range collTasks {
+		collTaskResps = append(collTaskResps, RestoreCollTaskViewToResp(ns, taskView))
+	}
+
+	return &backuppb.RestoreBackupTaskResponse{
+		Id:                     view.ID(),
+		StateCode:              view.StateCode(),
+		ErrorMessage:           view.ErrorMessage(),
+		StartTime:              view.StartTime().Unix(),
+		EndTime:                view.EndTime().Unix(),
+		Progress:               view.Progress(),
+		CollectionRestoreTasks: collTaskResps,
+	}
 }

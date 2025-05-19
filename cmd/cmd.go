@@ -2,16 +2,16 @@ package cmd
 
 import (
 	"fmt"
+	"os"
+
 	"github.com/zilliztech/milvus-backup/cmd/check"
 	"github.com/zilliztech/milvus-backup/cmd/create"
 	"github.com/zilliztech/milvus-backup/cmd/del"
 	"github.com/zilliztech/milvus-backup/cmd/get"
 	"github.com/zilliztech/milvus-backup/cmd/list"
 	"github.com/zilliztech/milvus-backup/cmd/restore"
-	"github.com/zilliztech/milvus-backup/cmd/server"
-	"os"
-
 	"github.com/zilliztech/milvus-backup/cmd/root"
+	"github.com/zilliztech/milvus-backup/cmd/server"
 )
 
 func Execute() {

@@ -233,9 +233,6 @@ func (h *Handlers) handleRestoreBackup(c *gin.Context) (interface{}, error) {
 
 	requestBody.RequestId = c.GetHeader("request_id")
 	resp := h.backupContext.RestoreBackup(h.backupContext.ctx, &requestBody)
-	if h.backupContext.params.HTTPCfg.SimpleResponse {
-		resp = meta.SimpleRestoreResponse(resp)
-	}
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
@@ -255,9 +252,6 @@ func (h *Handlers) handleGetRestore(c *gin.Context) (interface{}, error) {
 		Id:        c.Query("id"),
 	}
 	resp := h.backupContext.GetRestore(h.backupContext.ctx, &req)
-	if h.backupContext.params.HTTPCfg.SimpleResponse {
-		resp = meta.SimpleRestoreResponse(resp)
-	}
 	log.Info("End to GetRestoreStateRequest", zap.Any("resp", resp))
 	c.JSON(http.StatusOK, resp)
 	return nil, nil

@@ -13,7 +13,9 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/client"
 	"github.com/zilliztech/milvus-backup/core/meta"
+	"github.com/zilliztech/milvus-backup/core/meta/taskmgr"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
+	"github.com/zilliztech/milvus-backup/core/pbconv"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/storage"
 	"github.com/zilliztech/milvus-backup/core/utils"
@@ -575,20 +577,9 @@ func (b *BackupContext) GetRestore(ctx context.Context, request *backuppb.GetRes
 	}
 	log.Info("receive GetRestoreStateRequest",
 		zap.String("requestId", request.GetRequestId()),
-		zap.String("id", request.GetId()))
+		zap.String("task_id", request.GetId()))
 
-	resp := &backuppb.RestoreBackupResponse{
-		RequestId: request.GetRequestId(),
-	}
-
-	if !b.started {
-		err := b.Start()
-		if err != nil {
-			resp.Code = backuppb.ResponseCode_Fail
-			resp.Msg = err.Error()
-			return resp
-		}
-	}
+	resp := &backuppb.RestoreBackupResponse{RequestId: request.GetRequestId()}
 
 	if request.GetId() == "" {
 		resp.Code = backuppb.ResponseCode_Fail
@@ -596,23 +587,18 @@ func (b *BackupContext) GetRestore(ctx context.Context, request *backuppb.GetRes
 		return resp
 	}
 
-	task := b.meta.GetRestoreTask(request.GetId())
-	if task != nil {
-		progress := int32(float32(task.GetRestoredSize()) * 100 / float32(task.GetToRestoreSize()))
-		// don't return zero
-		if progress == 0 {
-			progress = 1
-		}
-		task.Progress = progress
-		resp.Code = backuppb.ResponseCode_Success
-		resp.Msg = "success"
-		resp.Data = task
-		return resp
-	} else {
+	taskView, err := taskmgr.DefaultMgr.GetRestoreTask(request.GetId())
+	log.Warn("get restore task", zap.String("task_id", request.GetId()), zap.Error(err))
+	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = "restore id not exist in context"
 		return resp
 	}
+
+	resp.Code = backuppb.ResponseCode_Success
+	resp.Msg = "success"
+	resp.Data = pbconv.RestoreTaskViewToResp(taskView)
+	return resp
 }
 
 func (b *BackupContext) Check(ctx context.Context) string {
