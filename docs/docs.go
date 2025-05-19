@@ -1167,7 +1167,7 @@ const docTemplate = `{
                     "description": "restore task info entity",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/backuppb.RestoreBackupTask"
+                            "$ref": "#/definitions/backuppb.RestoreBackupTaskResponse"
                         }
                     ]
                 },
@@ -1181,19 +1181,13 @@ const docTemplate = `{
                 }
             }
         },
-        "backuppb.RestoreBackupTask": {
+        "backuppb.RestoreBackupTaskResponse": {
             "type": "object",
             "properties": {
                 "collection_restore_tasks": {
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/backuppb.RestoreCollectionTask"
-                    }
-                },
-                "database_restore_tasks": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/backuppb.RestoreDatabaseTask"
+                        "$ref": "#/definitions/backuppb.RestoreCollectionTaskResponse"
                     }
                 },
                 "end_time": {
@@ -1206,9 +1200,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "progress": {
-                    "type": "integer"
-                },
-                "restored_size": {
                     "type": "integer"
                 },
                 "start_time": {
@@ -1216,26 +1207,12 @@ const docTemplate = `{
                 },
                 "state_code": {
                     "$ref": "#/definitions/backuppb.RestoreTaskStateCode"
-                },
-                "to_restore_size": {
-                    "type": "integer"
                 }
             }
         },
-        "backuppb.RestoreCollectionTask": {
+        "backuppb.RestoreCollectionTaskResponse": {
             "type": "object",
             "properties": {
-                "coll_backup": {
-                    "$ref": "#/definitions/backuppb.CollectionBackupInfo"
-                },
-                "dropExistCollection": {
-                    "description": "if true drop the collections",
-                    "type": "boolean"
-                },
-                "dropExistIndex": {
-                    "description": "if true drop index info",
-                    "type": "boolean"
-                },
                 "end_time": {
                     "type": "integer"
                 },
@@ -1245,41 +1222,8 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
-                "maxShardNum": {
-                    "description": "target max shard number",
-                    "type": "integer"
-                },
-                "metaOnly": {
-                    "description": "if true only restore meta",
-                    "type": "boolean"
-                },
-                "partition_restore_tasks": {
-                    "description": "Deprecated: Marked as deprecated in backup.proto.",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/backuppb.RestorePartitionTask"
-                    }
-                },
                 "progress": {
                     "type": "integer"
-                },
-                "restoreIndex": {
-                    "description": "if true restore index info",
-                    "type": "boolean"
-                },
-                "restored_size": {
-                    "type": "integer"
-                },
-                "skipCreateCollection": {
-                    "description": "if true will skip create collections",
-                    "type": "boolean"
-                },
-                "skipDiskQuotaCheck": {
-                    "description": "Deprecated: Marked as deprecated in backup.proto.",
-                    "type": "boolean"
-                },
-                "skipParams": {
-                    "$ref": "#/definitions/backuppb.SkipParams"
                 },
                 "start_time": {
                     "type": "integer"
@@ -1292,60 +1236,6 @@ const docTemplate = `{
                 },
                 "target_db_name": {
                     "type": "string"
-                },
-                "to_restore_size": {
-                    "type": "integer"
-                },
-                "truncateBinlogByTs": {
-                    "description": "if true, truncate binlog by timestamp, for cdc",
-                    "type": "boolean"
-                },
-                "useAutoIndex": {
-                    "description": "if true use autoindex when restore vector index",
-                    "type": "boolean"
-                },
-                "useV2Restore": {
-                    "type": "boolean"
-                }
-            }
-        },
-        "backuppb.RestoreDatabaseTask": {
-            "type": "object",
-            "properties": {
-                "db_backup": {
-                    "$ref": "#/definitions/backuppb.DatabaseBackupInfo"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "target_db_name": {
-                    "type": "string"
-                }
-            }
-        },
-        "backuppb.RestorePartitionTask": {
-            "type": "object",
-            "properties": {
-                "end_time": {
-                    "type": "integer"
-                },
-                "errorMessage": {
-                    "type": "string"
-                },
-                "id": {
-                    "type": "string"
-                },
-                "part_backup": {
-                    "$ref": "#/definitions/backuppb.PartitionBackupInfo"
-                },
-                "progress": {
-                    "type": "integer"
-                },
-                "start_time": {
-                    "type": "integer"
-                },
-                "state_code": {
-                    "$ref": "#/definitions/backuppb.RestoreTaskStateCode"
                 }
             }
         },

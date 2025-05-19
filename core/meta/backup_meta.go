@@ -294,38 +294,4 @@ func SimpleBackupResponse(input *backuppb.BackupInfoResponse) *backuppb.BackupIn
 	}
 }
 
-func SimpleRestoreResponse(input *backuppb.RestoreBackupResponse) *backuppb.RestoreBackupResponse {
-	restore := input.GetData()
-	if restore == nil {
-		return input
-	}
-
-	simpleRestore := proto.Clone(restore).(*backuppb.RestoreBackupTask)
-
-	collectionRestores := make([]*backuppb.RestoreCollectionTask, 0)
-	for _, coll := range restore.GetCollectionRestoreTasks() {
-		collectionRestores = append(collectionRestores, &backuppb.RestoreCollectionTask{
-			Id:                   coll.GetId(),
-			StateCode:            coll.GetStateCode(),
-			ErrorMessage:         coll.GetErrorMessage(),
-			StartTime:            coll.GetStartTime(),
-			EndTime:              coll.GetEndTime(),
-			Progress:             coll.GetProgress(),
-			TargetCollectionName: coll.GetTargetCollectionName(),
-			TargetDbName:         coll.GetTargetDbName(),
-			ToRestoreSize:        coll.GetToRestoreSize(),
-			RestoredSize:         coll.GetRestoredSize(),
-		})
-	}
-
-	simpleRestore.CollectionRestoreTasks = collectionRestores
-
-	return &backuppb.RestoreBackupResponse{
-		RequestId: input.GetRequestId(),
-		Code:      input.GetCode(),
-		Msg:       input.GetMsg(),
-		Data:      simpleRestore,
-	}
-}
-
 type DbCollections = map[string][]string

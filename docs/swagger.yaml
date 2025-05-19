@@ -644,7 +644,7 @@ definitions:
         description: response code. 0 means success. others are fail
       data:
         allOf:
-        - $ref: '#/definitions/backuppb.RestoreBackupTask'
+        - $ref: '#/definitions/backuppb.RestoreBackupTaskResponse'
         description: restore task info entity
       msg:
         description: error msg if fail
@@ -653,15 +653,11 @@ definitions:
         description: uuid of the request to response
         type: string
     type: object
-  backuppb.RestoreBackupTask:
+  backuppb.RestoreBackupTaskResponse:
     properties:
       collection_restore_tasks:
         items:
-          $ref: '#/definitions/backuppb.RestoreCollectionTask'
-        type: array
-      database_restore_tasks:
-        items:
-          $ref: '#/definitions/backuppb.RestoreDatabaseTask'
+          $ref: '#/definitions/backuppb.RestoreCollectionTaskResponse'
         type: array
       end_time:
         type: integer
@@ -670,58 +666,22 @@ definitions:
       id:
         type: string
       progress:
-        type: integer
-      restored_size:
         type: integer
       start_time:
         type: integer
       state_code:
         $ref: '#/definitions/backuppb.RestoreTaskStateCode'
-      to_restore_size:
-        type: integer
     type: object
-  backuppb.RestoreCollectionTask:
+  backuppb.RestoreCollectionTaskResponse:
     properties:
-      coll_backup:
-        $ref: '#/definitions/backuppb.CollectionBackupInfo'
-      dropExistCollection:
-        description: if true drop the collections
-        type: boolean
-      dropExistIndex:
-        description: if true drop index info
-        type: boolean
       end_time:
         type: integer
       errorMessage:
         type: string
       id:
         type: string
-      maxShardNum:
-        description: target max shard number
-        type: integer
-      metaOnly:
-        description: if true only restore meta
-        type: boolean
-      partition_restore_tasks:
-        description: 'Deprecated: Marked as deprecated in backup.proto.'
-        items:
-          $ref: '#/definitions/backuppb.RestorePartitionTask'
-        type: array
       progress:
         type: integer
-      restoreIndex:
-        description: if true restore index info
-        type: boolean
-      restored_size:
-        type: integer
-      skipCreateCollection:
-        description: if true will skip create collections
-        type: boolean
-      skipDiskQuotaCheck:
-        description: 'Deprecated: Marked as deprecated in backup.proto.'
-        type: boolean
-      skipParams:
-        $ref: '#/definitions/backuppb.SkipParams'
       start_time:
         type: integer
       state_code:
@@ -730,42 +690,6 @@ definitions:
         type: string
       target_db_name:
         type: string
-      to_restore_size:
-        type: integer
-      truncateBinlogByTs:
-        description: if true, truncate binlog by timestamp, for cdc
-        type: boolean
-      useAutoIndex:
-        description: if true use autoindex when restore vector index
-        type: boolean
-      useV2Restore:
-        type: boolean
-    type: object
-  backuppb.RestoreDatabaseTask:
-    properties:
-      db_backup:
-        $ref: '#/definitions/backuppb.DatabaseBackupInfo'
-      id:
-        type: string
-      target_db_name:
-        type: string
-    type: object
-  backuppb.RestorePartitionTask:
-    properties:
-      end_time:
-        type: integer
-      errorMessage:
-        type: string
-      id:
-        type: string
-      part_backup:
-        $ref: '#/definitions/backuppb.PartitionBackupInfo'
-      progress:
-        type: integer
-      start_time:
-        type: integer
-      state_code:
-        $ref: '#/definitions/backuppb.RestoreTaskStateCode'
     type: object
   backuppb.RestoreTaskStateCode:
     enum:

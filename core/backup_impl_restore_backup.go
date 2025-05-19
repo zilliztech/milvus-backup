@@ -8,6 +8,8 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/zilliztech/milvus-backup/core/meta/taskmgr"
+	"github.com/zilliztech/milvus-backup/core/pbconv"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore"
 	"github.com/zilliztech/milvus-backup/core/utils"
@@ -84,10 +86,17 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 	}
 
 	if request.Async {
-		taskPB, err := b.executeRestoreBackupTask(ctx, backupBucketName, backupPath, backup, request, true)
+		err := b.executeRestoreBackupTask(ctx, backupBucketName, backupPath, backup, request, true)
 		if err != nil {
 			resp.Code = backuppb.ResponseCode_Fail
 			log.Error("execute restore collection fail", zap.String("backupId", backup.GetId()), zap.Error(err))
+			resp.Msg = err.Error()
+			return resp
+		}
+		taskView, err := taskmgr.DefaultMgr.GetRestoreTask(request.GetId())
+		if err != nil {
+			resp.Code = backuppb.ResponseCode_Fail
+			log.Error("get restore task fail", zap.String("taskId", request.GetId()), zap.Error(err))
 			resp.Msg = err.Error()
 			return resp
 		}
@@ -95,25 +104,32 @@ func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.Res
 			RequestId: request.GetRequestId(),
 			Code:      backuppb.ResponseCode_Success,
 			Msg:       "restore backup is executing asynchronously",
-			Data:      taskPB,
+			Data:      pbconv.RestoreTaskViewToResp(taskView),
 		}
 		return asyncResp
 	} else {
-		taskPB, err := b.executeRestoreBackupTask(ctx, backupBucketName, backupPath, backup, request, false)
-		resp.Data = taskPB
+		err := b.executeRestoreBackupTask(ctx, backupBucketName, backupPath, backup, request, false)
 		if err != nil {
 			resp.Code = backuppb.ResponseCode_Fail
 			log.Error("execute restore collection fail", zap.String("backupId", backup.GetId()), zap.Error(err))
 			resp.Msg = err.Error()
 		} else {
-			resp.Code = backuppb.ResponseCode_Success
-			resp.Msg = "success"
+			taskView, err := taskmgr.DefaultMgr.GetRestoreTask(request.GetId())
+			if err != nil {
+				resp.Code = backuppb.ResponseCode_Fail
+				log.Error("get restore task fail", zap.String("taskId", request.GetId()), zap.Error(err))
+				resp.Msg = err.Error()
+			} else {
+				resp.Code = backuppb.ResponseCode_Success
+				resp.Msg = "success"
+				resp.Data = pbconv.RestoreTaskViewToResp(taskView)
+			}
 		}
 		return resp
 	}
 }
 
-func (b *BackupContext) executeRestoreBackupTask(ctx context.Context, backupBucketName, backupPath string, backup *backuppb.BackupInfo, request *backuppb.RestoreBackupRequest, async bool) (*backuppb.RestoreBackupTask, error) {
+func (b *BackupContext) executeRestoreBackupTask(ctx context.Context, backupBucketName, backupPath string, backup *backuppb.BackupInfo, request *backuppb.RestoreBackupRequest, async bool) error {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -123,28 +139,26 @@ func (b *BackupContext) executeRestoreBackupTask(ctx context.Context, backupBuck
 		backupBucketName,
 		b.params,
 		backup,
-		b.meta,
 		b.getBackupStorageClient(),
 		b.getMilvusStorageClient(),
 		b.getMilvusClient(),
 		b.getRestfulClient())
 
-	taskPB, err := restoreBackupTask.BuildTaskPB()
-	if err != nil {
-		return nil, fmt.Errorf("backup: build restore collection task fail, err: %w", err)
+	if err := restoreBackupTask.Prepare(ctx); err != nil {
+		return fmt.Errorf("backup: build restore collection task fail, err: %w", err)
 	}
 
 	if async {
 		go func() {
-			if err := restoreBackupTask.Execute(ctx, taskPB); err != nil {
+			if err := restoreBackupTask.Execute(ctx); err != nil {
 				log.Error("restore backup task execute fail", zap.String("backupId", backup.GetId()), zap.Error(err))
 			}
 		}()
 	} else {
-		if err := restoreBackupTask.Execute(ctx, taskPB); err != nil {
-			return nil, fmt.Errorf("backup: restore backup task execute fail, err: %w", err)
+		if err := restoreBackupTask.Execute(ctx); err != nil {
+			return fmt.Errorf("backup: restore backup task execute fail, err: %w", err)
 		}
 	}
 
-	return taskPB, nil
+	return nil
 }
