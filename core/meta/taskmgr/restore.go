@@ -51,6 +51,8 @@ func SetRestoreFail(err error) RestoreTaskOpt {
 
 func SetRestoreCollExecuting(ns namespace.NS) RestoreTaskOpt {
 	return func(task *RestoreTask) {
+		task.mu.RLock()
+		defer task.mu.RUnlock()
 		collTask := task.collTask[ns]
 
 		collTask.mu.Lock()
@@ -62,6 +64,8 @@ func SetRestoreCollExecuting(ns namespace.NS) RestoreTaskOpt {
 
 func SetRestoreCollSuccess(ns namespace.NS) RestoreTaskOpt {
 	return func(task *RestoreTask) {
+		task.mu.RLock()
+		defer task.mu.RUnlock()
 		collTask := task.collTask[ns]
 
 		collTask.mu.Lock()
@@ -74,6 +78,8 @@ func SetRestoreCollSuccess(ns namespace.NS) RestoreTaskOpt {
 
 func SetRestoreCollFail(ns namespace.NS, err error) RestoreTaskOpt {
 	return func(task *RestoreTask) {
+		task.mu.RLock()
+		defer task.mu.RUnlock()
 		collTask := task.collTask[ns]
 
 		collTask.mu.Lock()
@@ -87,6 +93,8 @@ func SetRestoreCollFail(ns namespace.NS, err error) RestoreTaskOpt {
 
 func AddRestoreImportJob(ns namespace.NS, jobID string, totalSize int64) RestoreTaskOpt {
 	return func(task *RestoreTask) {
+		task.mu.RLock()
+		defer task.mu.RUnlock()
 		collTask := task.collTask[ns]
 
 		collTask.mu.Lock()
@@ -98,12 +106,16 @@ func AddRestoreImportJob(ns namespace.NS, jobID string, totalSize int64) Restore
 
 func UpdateRestoreImportJob(ns namespace.NS, jobID string, progress int) RestoreTaskOpt {
 	return func(task *RestoreTask) {
+		task.mu.RLock()
+		defer task.mu.RUnlock()
 		collTask := task.collTask[ns]
 
-		collTask.mu.Lock()
-		defer collTask.mu.Unlock()
-
+		collTask.mu.RLock()
+		defer collTask.mu.RUnlock()
 		job := collTask.importJob[jobID]
+
+		job.mu.Lock()
+		defer job.mu.Unlock()
 		job.progress = progress
 	}
 }
@@ -187,15 +199,24 @@ func (t *RestoreTask) EndTime() time.Time {
 func (t *RestoreTask) Progress() int32 {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
+	if t.stateCode == backuppb.RestoreTaskStateCode_SUCCESS {
+		return 100
+	}
 
 	var restoredSize int64
 	for _, task := range t.collTask {
 		restoredSize += task.TotalSize() * int64(task.Progress()) / 100
 	}
+
+	// avoid divide by zero
+	if t.totalSize == 0 {
+		return 1
+	}
+
 	progress := int32(float64(restoredSize) / float64(t.totalSize) * 100)
-	// don't return zero
+	// don't return zero,
 	if progress == 0 {
-		progress = 1
+		return 1
 	}
 
 	return progress
@@ -290,9 +311,22 @@ func (t *restoreCollectionTask) EndTime() time.Time {
 }
 
 func (t *restoreCollectionTask) Progress() int32 {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	if t.stateCode == backuppb.RestoreTaskStateCode_SUCCESS {
+		return 100
+	}
+
+	if t.totalSize == 0 {
+		return 1
+	}
+
 	var restoredSize int64
 	for _, job := range t.importJob {
+		job.mu.RLock()
 		restoredSize += job.totalSize * int64(job.progress) / 100
+		job.mu.RUnlock()
 	}
 
 	progress := int32(float64(restoredSize) / float64(t.totalSize) * 100)
@@ -322,6 +356,8 @@ func newRestoreCollectionTask(ns namespace.NS, totalSize int64) *restoreCollecti
 }
 
 type importJob struct {
+	mu sync.RWMutex
+
 	totalSize int64
 	progress  int
 }
