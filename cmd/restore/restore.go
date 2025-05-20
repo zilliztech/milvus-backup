@@ -32,6 +32,7 @@ type options struct {
 	dropExistIndex       bool
 	skipCreateCollection bool
 	rbac                 bool
+	useV2Restore         bool
 }
 
 func (o *options) validate() error {
@@ -39,6 +40,15 @@ func (o *options) validate() error {
 	if o.backupName == "" {
 		return errors.New("backup name is required")
 	}
+
+	if o.renameSuffix != "" && o.renameCollectionNames != "" {
+		return errors.New("suffix and rename flag cannot be set at the same time")
+	}
+
+	if o.dropExistCollection && o.skipCreateCollection {
+		return errors.New("drop_exist_collection and skip_create_collection cannot be true at the same time")
+	}
+
 	return nil
 }
 
@@ -57,6 +67,7 @@ func (o *options) addFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVarP(&o.dropExistIndex, "drop_exist_index", "", false, "if true, drop existing index of target collection before create")
 	cmd.Flags().BoolVarP(&o.skipCreateCollection, "skip_create_collection", "", false, "if true, will skip collection, use when collection exist, restore index or data")
 	cmd.Flags().BoolVarP(&o.rbac, "rbac", "", false, "whether restore RBAC meta")
+	cmd.Flags().BoolVarP(&o.useV2Restore, "use_v2_restore", "", false, "if true, use multi-segment merged restore")
 }
 
 func (o *options) toRequest() (*backuppb.RestoreBackupRequest, error) {
@@ -106,6 +117,7 @@ func (o *options) toRequest() (*backuppb.RestoreBackupRequest, error) {
 		DropExistIndex:       o.dropExistIndex,
 		SkipCreateCollection: o.skipCreateCollection,
 		Rbac:                 o.rbac,
+		UseV2Restore:         o.useV2Restore,
 	}, nil
 }
 
@@ -134,7 +146,8 @@ func NewCmd(opt *root.Options) *cobra.Command {
 	var o options
 	cmd := &cobra.Command{
 		Use:   "restore",
-		Short: "restore a backup.",
+		Short: "restore a backup",
+		Long:  "restore a backup",
 
 		RunE: func(cmd *cobra.Command, args []string) error {
 			var params paramtable.BackupParams
