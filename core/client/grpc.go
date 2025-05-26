@@ -31,6 +31,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/internal/common"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/util/retry"
 	"github.com/zilliztech/milvus-backup/version"
 )
 
@@ -362,16 +363,20 @@ func (g *GrpcClient) CreateDatabase(ctx context.Context, dbName string) error {
 		return fmt.Errorf("client: create database wait: %w", err)
 	}
 
-	resp, err := g.srv.CreateDatabase(ctx, &milvuspb.CreateDatabaseRequest{DbName: dbName})
-	if err := checkResponse(resp, err); err != nil {
-		if isRateLimitError(err) {
-			g.limiters.createDatabase.Failure()
+	return retry.Do(ctx, func() error {
+		resp, err := g.srv.CreateDatabase(ctx, &milvuspb.CreateDatabaseRequest{DbName: dbName})
+		if err := checkResponse(resp, err); err != nil {
+			if isRateLimitError(err) {
+				g.limiters.createDatabase.Failure()
+				return fmt.Errorf("client: create database failed due to rate limit: %w", err)
+			} else {
+				return retry.Unrecoverable(fmt.Errorf("client: create database: %w", err))
+			}
 		}
-		return fmt.Errorf("client: create database failed: %w", err)
-	}
-	g.limiters.createDatabase.Success()
+		g.limiters.createDatabase.Success()
 
-	return nil
+		return nil
+	})
 }
 
 func (g *GrpcClient) ListDatabases(ctx context.Context) ([]string, error) {
@@ -604,16 +609,20 @@ func (g *GrpcClient) CreateCollection(ctx context.Context, input CreateCollectio
 		NumPartitions:    int64(input.PartitionNum),
 	}
 
-	resp, err := g.srv.CreateCollection(ctx, in)
-	if err := checkResponse(resp, err); err != nil {
-		if isRateLimitError(err) {
-			g.limiters.createCollection.Failure()
+	return retry.Do(ctx, func() error {
+		resp, err := g.srv.CreateCollection(ctx, in)
+		if err := checkResponse(resp, err); err != nil {
+			if isRateLimitError(err) {
+				g.limiters.createCollection.Failure()
+				return fmt.Errorf("client: create collection failed: %w", err)
+			} else {
+				return retry.Unrecoverable(fmt.Errorf("client: create collection: %w", err))
+			}
 		}
-		return fmt.Errorf("client: call create collection rpc: %w", err)
-	}
-	g.limiters.createCollection.Success()
+		g.limiters.createCollection.Success()
 
-	return nil
+		return nil
+	})
 }
 
 func (g *GrpcClient) DropCollection(ctx context.Context, db string, collectionName string) error {
@@ -634,16 +643,21 @@ func (g *GrpcClient) CreatePartition(ctx context.Context, db, collName, partitio
 	}
 
 	in := &milvuspb.CreatePartitionRequest{CollectionName: collName, PartitionName: partitionName}
-	resp, err := g.srv.CreatePartition(ctx, in)
-	if err := checkResponse(resp, err); err != nil {
-		if isRateLimitError(err) {
-			g.limiters.createPartition.Failure()
-		}
-		return fmt.Errorf("client: create partition failed: %w", err)
-	}
-	g.limiters.createPartition.Success()
 
-	return nil
+	return retry.Do(ctx, func() error {
+		resp, err := g.srv.CreatePartition(ctx, in)
+		if err := checkResponse(resp, err); err != nil {
+			if isRateLimitError(err) {
+				g.limiters.createPartition.Failure()
+				return fmt.Errorf("client: create partition failed due to rate limit: %w", err)
+			} else {
+				return retry.Unrecoverable(fmt.Errorf("client: create partition: %w", err))
+			}
+		}
+		g.limiters.createPartition.Success()
+
+		return nil
+	})
 }
 
 func (g *GrpcClient) HasPartition(ctx context.Context, db, collName string, partitionName string) (bool, error) {
@@ -686,16 +700,21 @@ func (g *GrpcClient) CreateIndex(ctx context.Context, input CreateIndexInput) er
 		IndexName:      input.IndexName,
 		ExtraParams:    mapKvPairs(input.Params),
 	}
-	resp, err := g.srv.CreateIndex(ctx, in)
-	if err := checkResponse(resp, err); err != nil {
-		if isRateLimitError(err) {
-			g.limiters.createIndex.Failure()
-		}
-		return fmt.Errorf("client: create index failed: %w", err)
-	}
-	g.limiters.createIndex.Success()
 
-	return nil
+	return retry.Do(ctx, func() error {
+		resp, err := g.srv.CreateIndex(ctx, in)
+		if err := checkResponse(resp, err); err != nil {
+			if isRateLimitError(err) {
+				g.limiters.createIndex.Failure()
+				return fmt.Errorf("client: create index failed due to rate limit: %w", err)
+			} else {
+				return retry.Unrecoverable(fmt.Errorf("client: create index: %w", err))
+			}
+		}
+		g.limiters.createIndex.Success()
+
+		return nil
+	})
 }
 
 func (g *GrpcClient) DropIndex(ctx context.Context, db, collName, indexName string) error {
