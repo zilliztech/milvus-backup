@@ -391,7 +391,8 @@ func (t *Task) runRPCChannelPOSTask(ctx context.Context) {
 	t.logger.Info("start backup rpc channel pos")
 	rpcPosTask := NewRPCChannelPOSTask(t.backupID, t.params.MilvusCfg.RPCChanelName, t.grpc, t.meta)
 	if err := rpcPosTask.Execute(ctx); err != nil {
-		t.logger.Warn(_rpcChWarnMessage)
+		t.logger.Warn(_rpcChWarnMessage, zap.Error(err))
+		return
 	}
 	t.logger.Info("backup rpc channel pos done")
 }
