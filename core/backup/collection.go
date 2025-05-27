@@ -22,7 +22,6 @@ import (
 	"github.com/zilliztech/milvus-backup/core/storage/mpath"
 	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/util/retry"
 )
 
 const _allPartitionID = -1
@@ -370,17 +369,9 @@ func (ct *CollectionTask) flushCollection(ctx context.Context) (*milvuspb.FlushR
 
 	ct.logger.Info("start to flush collection")
 	start := time.Now()
-	var resp *milvuspb.FlushResponse
-	err := retry.Do(ctx, func() error {
-		var flushErr error
-		resp, flushErr = ct.grpc.Flush(ctx, ct.dbName, ct.collName)
-		if flushErr != nil {
-			return fmt.Errorf("backup: flush collection %w", flushErr)
-		}
-		return nil
-	})
+	resp, err := ct.grpc.Flush(ctx, ct.dbName, ct.collName)
 	if err != nil {
-		return nil, fmt.Errorf("backup: flush collection after retry %w", err)
+		return nil, fmt.Errorf("backup: flush collection %w", err)
 	}
 
 	ct.logger.Info("flush collection done", zap.Any("resp", resp), zap.Duration("cost", time.Since(start)))

@@ -28,6 +28,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/zilliztech/milvus-backup/core/namespace"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/internal/common"
 	"github.com/zilliztech/milvus-backup/internal/log"
@@ -458,45 +459,59 @@ func (g *GrpcClient) GetPersistentSegmentInfo(ctx context.Context, db, collName 
 
 func (g *GrpcClient) Flush(ctx context.Context, db, collName string) (*milvuspb.FlushResponse, error) {
 	ctx = g.newCtxWithDB(ctx, db)
+	ns := namespace.New(db, collName)
 
-	start := time.Now()
-	if err := g.limiters.flush.Wait(ctx); err != nil {
-		return nil, fmt.Errorf("client: flush wait: %w", err)
-	}
-	cost := time.Since(start)
-	g.logger.Info("flush wait aimd", zap.Duration("cost", cost), zap.String("db", db), zap.String("collection", collName))
-
-	resp, err := g.srv.Flush(ctx, &milvuspb.FlushRequest{CollectionNames: []string{collName}})
-	if err := checkResponse(resp, err); err != nil {
-		if isRateLimitError(err) {
-			g.limiters.flush.Failure()
+	var resp *milvuspb.FlushResponse
+	err := retry.Do(ctx, func() error {
+		start := time.Now()
+		if err := g.limiters.flush.Wait(ctx); err != nil {
+			return retry.Unrecoverable(fmt.Errorf("client: flush wait: %w", err))
 		}
-		return nil, fmt.Errorf("client: flush failed: %w", err)
-	}
-	g.limiters.flush.Success()
+		cost := time.Since(start)
+		g.logger.Info("flush wait aimd", zap.Duration("cost", cost), zap.String("ns", ns.String()))
 
-	segmentIDs, has := resp.GetCollSegIDs()[collName]
+		innerResp, innerErr := g.srv.Flush(ctx, &milvuspb.FlushRequest{CollectionNames: []string{ns.CollName()}})
+		if err := checkResponse(innerResp, innerErr); err != nil {
+			if isRateLimitError(err) {
+				g.limiters.flush.Failure()
+			}
+			return fmt.Errorf("client: flush failed due to rate limit: %w", err)
+		}
+		g.limiters.flush.Success()
+		resp = innerResp
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("client: flush : %w", err)
+	}
+
+	segmentIDs, has := resp.GetCollSegIDs()[ns.CollName()]
 	ids := segmentIDs.GetData()
 	if has {
-		flushTS := resp.GetCollFlushTs()[collName]
-		if err := g.checkFlush(ctx, ids, flushTS, collName); err != nil {
-			return nil, fmt.Errorf("client: check flush failed: %w", err)
+		flushTS := resp.GetCollFlushTs()[ns.CollName()]
+		if err := g.checkFlush(ctx, ids, flushTS, ns); err != nil {
+			return nil, fmt.Errorf("client: check flush : %w", err)
 		}
 	}
 
 	return resp, nil
 }
 
-func (g *GrpcClient) checkFlush(ctx context.Context, segIDs []int64, flushTS uint64, collName string) error {
+func (g *GrpcClient) checkFlush(ctx context.Context, segIDs []int64, flushTS uint64, ns namespace.NS) error {
+	ctx = g.newCtxWithDB(ctx, ns.DBName())
+
 	start := time.Now()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
-	for range ticker.C {
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-ticker.C:
 		resp, err := g.srv.GetFlushState(ctx, &milvuspb.GetFlushStateRequest{
 			SegmentIDs:     segIDs,
 			FlushTs:        flushTS,
-			CollectionName: collName,
+			CollectionName: ns.CollName(),
 		})
 		if err != nil {
 			g.logger.Warn("get flush state failed, will retry", zap.Error(err))
@@ -509,7 +524,9 @@ func (g *GrpcClient) checkFlush(ctx context.Context, segIDs []int64, flushTS uin
 		if cost > 30*time.Minute {
 			g.logger.Warn("waiting for the flush to complete took too much time!",
 				zap.Duration("cost", cost),
-				zap.String("collection", collName))
+				zap.String("ns", ns.String()),
+				zap.Int64s("segment_ids", segIDs),
+				zap.Uint64("flush_ts", flushTS))
 		}
 	}
 
@@ -593,10 +610,6 @@ type CreateCollectionInput struct {
 func (g *GrpcClient) CreateCollection(ctx context.Context, input CreateCollectionInput) error {
 	ctx = g.newCtxWithDB(ctx, input.DB)
 
-	if err := g.limiters.createCollection.Wait(ctx); err != nil {
-		return fmt.Errorf("client: create collection wait: %w", err)
-	}
-
 	bs, err := proto.Marshal(input.Schema)
 	if err != nil {
 		return fmt.Errorf("client: create collection marshal proto: %w", err)
@@ -610,6 +623,10 @@ func (g *GrpcClient) CreateCollection(ctx context.Context, input CreateCollectio
 	}
 
 	return retry.Do(ctx, func() error {
+		if err := g.limiters.createCollection.Wait(ctx); err != nil {
+			return retry.Unrecoverable(fmt.Errorf("client: create collection wait: %w", err))
+		}
+
 		resp, err := g.srv.CreateCollection(ctx, in)
 		if err := checkResponse(resp, err); err != nil {
 			if isRateLimitError(err) {
@@ -638,13 +655,12 @@ func (g *GrpcClient) DropCollection(ctx context.Context, db string, collectionNa
 func (g *GrpcClient) CreatePartition(ctx context.Context, db, collName, partitionName string) error {
 	ctx = g.newCtxWithDB(ctx, db)
 
-	if err := g.limiters.createPartition.Wait(ctx); err != nil {
-		return fmt.Errorf("client: create partition wait: %w", err)
-	}
-
 	in := &milvuspb.CreatePartitionRequest{CollectionName: collName, PartitionName: partitionName}
-
 	return retry.Do(ctx, func() error {
+		if err := g.limiters.createPartition.Wait(ctx); err != nil {
+			return retry.Unrecoverable(fmt.Errorf("client: create partition wait: %w", err))
+		}
+
 		resp, err := g.srv.CreatePartition(ctx, in)
 		if err := checkResponse(resp, err); err != nil {
 			if isRateLimitError(err) {
@@ -690,10 +706,6 @@ type CreateIndexInput struct {
 func (g *GrpcClient) CreateIndex(ctx context.Context, input CreateIndexInput) error {
 	ctx = g.newCtxWithDB(ctx, input.DB)
 
-	if err := g.limiters.createIndex.Wait(ctx); err != nil {
-		return fmt.Errorf("client: create index wait: %w", err)
-	}
-
 	in := &milvuspb.CreateIndexRequest{
 		CollectionName: input.CollectionName,
 		FieldName:      input.FieldName,
@@ -702,6 +714,10 @@ func (g *GrpcClient) CreateIndex(ctx context.Context, input CreateIndexInput) er
 	}
 
 	return retry.Do(ctx, func() error {
+		if err := g.limiters.createIndex.Wait(ctx); err != nil {
+			return retry.Unrecoverable(fmt.Errorf("client: create index wait: %w", err))
+		}
+
 		resp, err := g.srv.CreateIndex(ctx, in)
 		if err := checkResponse(resp, err); err != nil {
 			if isRateLimitError(err) {
