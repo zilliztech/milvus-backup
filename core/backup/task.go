@@ -64,7 +64,7 @@ func NewTask(
 	if request.GetGcPauseEnable() || params.BackupCfg.GcPauseEnable {
 		addr := request.GetGcPauseAddress()
 		if len(addr) == 0 {
-			addr = params.MilvusCfg.Address
+			addr = params.BackupCfg.GcPauseAddress
 		}
 
 		manage = client.NewManage(addr)
