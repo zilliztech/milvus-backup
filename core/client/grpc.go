@@ -498,8 +498,6 @@ func (g *GrpcClient) Flush(ctx context.Context, db, collName string) (*milvuspb.
 }
 
 func (g *GrpcClient) checkFlush(ctx context.Context, segIDs []int64, flushTS uint64, ns namespace.NS) error {
-	ctx = g.newCtxWithDB(ctx, ns.DBName())
-
 	start := time.Now()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
