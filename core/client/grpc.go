@@ -504,33 +504,33 @@ func (g *GrpcClient) checkFlush(ctx context.Context, segIDs []int64, flushTS uin
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
 
-	select {
-	case <-ctx.Done():
-		return ctx.Err()
-	case <-ticker.C:
-		resp, err := g.srv.GetFlushState(ctx, &milvuspb.GetFlushStateRequest{
-			SegmentIDs:     segIDs,
-			FlushTs:        flushTS,
-			CollectionName: ns.CollName(),
-		})
-		if err != nil {
-			g.logger.Warn("get flush state failed, will retry", zap.Error(err))
-		}
-		if resp.GetFlushed() {
-			return nil
-		}
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			resp, err := g.srv.GetFlushState(ctx, &milvuspb.GetFlushStateRequest{
+				SegmentIDs:     segIDs,
+				FlushTs:        flushTS,
+				CollectionName: ns.CollName(),
+			})
+			if err != nil {
+				g.logger.Warn("get flush state failed, will retry", zap.Error(err))
+			}
+			if resp.GetFlushed() {
+				return nil
+			}
 
-		cost := time.Since(start)
-		if cost > 30*time.Minute {
-			g.logger.Warn("waiting for the flush to complete took too much time!",
-				zap.Duration("cost", cost),
-				zap.String("ns", ns.String()),
-				zap.Int64s("segment_ids", segIDs),
-				zap.Uint64("flush_ts", flushTS))
+			cost := time.Since(start)
+			if cost > 30*time.Minute {
+				g.logger.Warn("waiting for the flush to complete took too much time!",
+					zap.Duration("cost", cost),
+					zap.String("ns", ns.String()),
+					zap.Int64s("segment_ids", segIDs),
+					zap.Uint64("flush_ts", flushTS))
+			}
 		}
 	}
-
-	return errors.New("client: into an dead end, should not reach here")
 }
 
 func (g *GrpcClient) ListCollections(ctx context.Context, db string) (*milvuspb.ShowCollectionsResponse, error) {
