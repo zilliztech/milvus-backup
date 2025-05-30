@@ -11,12 +11,22 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/client"
-	"github.com/zilliztech/milvus-backup/core/mocks"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/core/storage"
 	"github.com/zilliztech/milvus-backup/core/storage/mpath"
 )
 
 func newTestCollectionTask() *CollectionTask { return &CollectionTask{logger: zap.NewNop()} }
+
+func newMockStorage(t *testing.T, prefix string, objs []storage.ObjectAttr) storage.Client {
+	iter := storage.NewMockObjectIterator(objs)
+
+	st := storage.NewMockClient(t)
+	st.EXPECT().
+		ListPrefix(mock.Anything, prefix, true).
+		Return(iter, nil)
+	return st
+}
 
 func TestCollectionTask_groupID(t *testing.T) {
 	t.Run("NormalSegment", func(t *testing.T) {
@@ -34,21 +44,17 @@ func TestCollectionTask_groupID(t *testing.T) {
 
 func TestCollectionTask_listInsertLogByListFile(t *testing.T) {
 	t.Run("Normal", func(t *testing.T) {
-		st := mocks.NewMockChunkManager(t)
 		dir := mpath.MilvusInsertLogDir("base", mpath.CollectionID(1), mpath.PartitionID(2), mpath.SegmentID(3))
-		keys := []string{
-			mpath.Join(dir, mpath.FieldID(1), mpath.LogID(1)),
-			mpath.Join(dir, mpath.FieldID(1), mpath.LogID(2)),
-			mpath.Join(dir, mpath.FieldID(2), mpath.LogID(1)),
-			mpath.Join(dir, mpath.FieldID(2), mpath.LogID(2)),
+		objs := []storage.ObjectAttr{
+			{Key: mpath.Join(dir, mpath.FieldID(1), mpath.LogID(1)), Length: 1},
+			{Key: mpath.Join(dir, mpath.FieldID(1), mpath.LogID(2)), Length: 2},
+			{Key: mpath.Join(dir, mpath.FieldID(2), mpath.LogID(1)), Length: 3},
+			{Key: mpath.Join(dir, mpath.FieldID(2), mpath.LogID(2)), Length: 4},
 		}
-		st.EXPECT().
-			ListWithPrefix(mock.Anything, "bucket", dir, true).
-			Return(keys, []int64{1, 2, 3, 4}, nil)
 
+		st := newMockStorage(t, dir, objs)
 		ct := newTestCollectionTask()
 		ct.milvusStorage = st
-		ct.milvusBucket = "bucket"
 		ct.milvusRootPath = "base"
 
 		fields, size, err := ct.listInsertLogByListFile(context.Background(), dir)
@@ -58,33 +64,28 @@ func TestCollectionTask_listInsertLogByListFile(t *testing.T) {
 		sort.Slice(fields, func(i, j int) bool { return fields[i].GetFieldID() < fields[j].GetFieldID() })
 		assert.Len(t, fields[0].GetBinlogs(), 2)
 		assert.ElementsMatch(t, fields[0].GetBinlogs(), []*backuppb.Binlog{
-			{LogId: 1, LogPath: keys[0], LogSize: 1},
-			{LogId: 2, LogPath: keys[1], LogSize: 2},
+			{LogId: 1, LogPath: objs[0].Key, LogSize: 1},
+			{LogId: 2, LogPath: objs[1].Key, LogSize: 2},
 		})
 
 		assert.Len(t, fields[1].GetBinlogs(), 2)
 		assert.ElementsMatch(t, fields[1].GetBinlogs(), []*backuppb.Binlog{
-			{LogId: 1, LogPath: keys[2], LogSize: 3},
-			{LogId: 2, LogPath: keys[3], LogSize: 4},
+			{LogId: 1, LogPath: objs[2].Key, LogSize: 3},
+			{LogId: 2, LogPath: objs[3].Key, LogSize: 4},
 		})
 	})
 
 	t.Run("FileNumNotEqual", func(t *testing.T) {
-		st := mocks.NewMockChunkManager(t)
 		dir := mpath.MilvusInsertLogDir("base", mpath.CollectionID(1), mpath.PartitionID(2), mpath.SegmentID(3))
-		keys := []string{
-			mpath.Join(dir, mpath.FieldID(1), mpath.LogID(1)),
-			mpath.Join(dir, mpath.FieldID(1), mpath.LogID(2)),
-			mpath.Join(dir, mpath.FieldID(2), mpath.LogID(1)),
+		objs := []storage.ObjectAttr{
+			{Key: mpath.Join(dir, mpath.FieldID(1), mpath.LogID(1)), Length: 1},
+			{Key: mpath.Join(dir, mpath.FieldID(1), mpath.LogID(2)), Length: 2},
+			{Key: mpath.Join(dir, mpath.FieldID(2), mpath.LogID(1)), Length: 3},
 		}
-
-		st.EXPECT().
-			ListWithPrefix(mock.Anything, "bucket", dir, true).
-			Return(keys, []int64{1, 2, 3}, nil)
+		st := newMockStorage(t, dir, objs)
 
 		ct := newTestCollectionTask()
 		ct.milvusStorage = st
-		ct.milvusBucket = "bucket"
 		ct.milvusRootPath = "base"
 
 		_, _, err := ct.listInsertLogByListFile(context.Background(), dir)
@@ -94,21 +95,17 @@ func TestCollectionTask_listInsertLogByListFile(t *testing.T) {
 }
 
 func TestCollectionTask_listDeltaLogByListFile(t *testing.T) {
-	st := mocks.NewMockChunkManager(t)
 	dir := mpath.MilvusDeltaLogDir("base", mpath.CollectionID(1), mpath.PartitionID(2), mpath.SegmentID(3))
-	keys := []string{
-		mpath.Join(dir, mpath.LogID(1)),
-		mpath.Join(dir, mpath.LogID(2)),
-		mpath.Join(dir, mpath.LogID(3)),
-		mpath.Join(dir, mpath.LogID(4)),
+	objs := []storage.ObjectAttr{
+		{Key: mpath.Join(dir, mpath.LogID(1)), Length: 1},
+		{Key: mpath.Join(dir, mpath.LogID(2)), Length: 2},
+		{Key: mpath.Join(dir, mpath.LogID(3)), Length: 3},
+		{Key: mpath.Join(dir, mpath.LogID(4)), Length: 4},
 	}
-	st.EXPECT().
-		ListWithPrefix(mock.Anything, "bucket", dir, true).
-		Return(keys, []int64{1, 2, 3, 4}, nil)
+	st := newMockStorage(t, dir, objs)
 
 	ct := newTestCollectionTask()
 	ct.milvusStorage = st
-	ct.milvusBucket = "bucket"
 	ct.milvusRootPath = "base"
 
 	fields, size, err := ct.listDeltaLogByListFile(context.Background(), dir)
@@ -118,30 +115,24 @@ func TestCollectionTask_listDeltaLogByListFile(t *testing.T) {
 
 	assert.Len(t, fields[0].GetBinlogs(), 4)
 	assert.Equal(t, fields[0].GetBinlogs(), []*backuppb.Binlog{
-		{LogId: 1, LogPath: keys[0], LogSize: 1},
-		{LogId: 2, LogPath: keys[1], LogSize: 2},
-		{LogId: 3, LogPath: keys[2], LogSize: 3},
-		{LogId: 4, LogPath: keys[3], LogSize: 4},
+		{LogId: 1, LogPath: objs[0].Key, LogSize: 1},
+		{LogId: 2, LogPath: objs[1].Key, LogSize: 2},
+		{LogId: 3, LogPath: objs[2].Key, LogSize: 3},
+		{LogId: 4, LogPath: objs[3].Key, LogSize: 4},
 	})
 }
 
 func TestCollectionTask_listInsertLogByAPI(t *testing.T) {
-	st := mocks.NewMockChunkManager(t)
 	dir := mpath.MilvusInsertLogDir("base", mpath.CollectionID(1), mpath.PartitionID(2), mpath.SegmentID(3))
-	keys := []string{
-		mpath.Join(dir, mpath.FieldID(1), mpath.LogID(1)),
-		mpath.Join(dir, mpath.FieldID(1), mpath.LogID(2)),
-		mpath.Join(dir, mpath.FieldID(2), mpath.LogID(1)),
-		mpath.Join(dir, mpath.FieldID(2), mpath.LogID(2)),
+	objs := []storage.ObjectAttr{
+		{Key: mpath.Join(dir, mpath.FieldID(1), mpath.LogID(1)), Length: 1},
+		{Key: mpath.Join(dir, mpath.FieldID(1), mpath.LogID(2)), Length: 2},
+		{Key: mpath.Join(dir, mpath.FieldID(2), mpath.LogID(1)), Length: 3},
+		{Key: mpath.Join(dir, mpath.FieldID(2), mpath.LogID(2)), Length: 4},
 	}
 
-	st.EXPECT().
-		ListWithPrefix(mock.Anything, "bucket", dir, true).
-		Return(keys, []int64{1, 2, 3, 4}, nil)
-
 	ct := newTestCollectionTask()
-	ct.milvusStorage = st
-	ct.milvusBucket = "bucket"
+	ct.milvusStorage = newMockStorage(t, dir, objs)
 	ct.milvusRootPath = "base"
 
 	binlogs := []client.BinlogInfo{{FieldID: 1, LogIDs: []int64{1, 2}}, {FieldID: 2, LogIDs: []int64{1, 2}}}
@@ -152,29 +143,26 @@ func TestCollectionTask_listInsertLogByAPI(t *testing.T) {
 
 	assert.Len(t, fields[0].GetBinlogs(), 2)
 	assert.Equal(t, fields[0].GetBinlogs(), []*backuppb.Binlog{
-		{LogId: 1, LogPath: keys[0], LogSize: 1},
-		{LogId: 2, LogPath: keys[1], LogSize: 2},
+		{LogId: 1, LogPath: objs[0].Key, LogSize: 1},
+		{LogId: 2, LogPath: objs[1].Key, LogSize: 2},
 	})
 
 	assert.Len(t, fields[1].GetBinlogs(), 2)
 	assert.Equal(t, fields[1].GetBinlogs(), []*backuppb.Binlog{
-		{LogId: 1, LogPath: keys[2], LogSize: 3},
-		{LogId: 2, LogPath: keys[3], LogSize: 4},
+		{LogId: 1, LogPath: objs[2].Key, LogSize: 3},
+		{LogId: 2, LogPath: objs[3].Key, LogSize: 4},
 	})
 }
 
 func TestCollectionTask_listDeltaLogByAPI(t *testing.T) {
-	st := mocks.NewMockChunkManager(t)
 	dir := mpath.MilvusDeltaLogDir("base", mpath.CollectionID(1), mpath.PartitionID(2), mpath.SegmentID(3))
-	keys := []string{mpath.Join(dir, mpath.LogID(1)), mpath.Join(dir, mpath.LogID(2))}
-
-	st.EXPECT().
-		ListWithPrefix(mock.Anything, "bucket", dir, true).
-		Return(keys, []int64{1, 2}, nil)
+	objs := []storage.ObjectAttr{
+		{Key: mpath.Join(dir, mpath.LogID(1)), Length: 1},
+		{Key: mpath.Join(dir, mpath.LogID(2)), Length: 2},
+	}
 
 	ct := newTestCollectionTask()
-	ct.milvusStorage = st
-	ct.milvusBucket = "bucket"
+	ct.milvusStorage = newMockStorage(t, dir, objs)
 	ct.milvusRootPath = "base"
 
 	binlogs := []client.BinlogInfo{{FieldID: 1, LogIDs: []int64{1, 2}}}
@@ -185,7 +173,7 @@ func TestCollectionTask_listDeltaLogByAPI(t *testing.T) {
 
 	assert.Len(t, fields[0].GetBinlogs(), 2)
 	assert.Equal(t, fields[0].GetBinlogs(), []*backuppb.Binlog{
-		{LogId: 1, LogPath: keys[0], LogSize: 1},
-		{LogId: 2, LogPath: keys[1], LogSize: 2},
+		{LogId: 1, LogPath: objs[0].Key, LogSize: 1},
+		{LogId: 2, LogPath: objs[1].Key, LogSize: 2},
 	})
 }

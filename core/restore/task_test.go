@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
 
+	"github.com/zilliztech/milvus-backup/core/client"
 	"github.com/zilliztech/milvus-backup/core/meta"
-	"github.com/zilliztech/milvus-backup/core/mocks"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 )
 
@@ -198,7 +198,7 @@ func TestTask_CheckCollExist(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(fmt.Sprintf("has:%v, skipCreate:%v, dropExist:%v", tc.has, tc.skipCreate, tc.dropExist), func(t *testing.T) {
-			cli := mocks.NewMockGrpc(t)
+			cli := client.NewMockGrpc(t)
 
 			task := &backuppb.RestoreCollectionTask{
 				TargetDbName:         "db1",

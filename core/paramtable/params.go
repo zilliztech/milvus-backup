@@ -211,8 +211,6 @@ func (p *MilvusConfig) initRPCChanelName() {
 	p.RPCChanelName = rpcChanelName
 }
 
-// /////////////////////////////////////////////////////////////////////////////
-// --- minio ---
 const (
 	Local                     = "local"
 	Minio                     = "minio"
