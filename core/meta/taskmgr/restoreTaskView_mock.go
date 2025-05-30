@@ -2,14 +2,13 @@
 // github.com/vektra/mockery
 // template: testify
 
-package mocks
+package taskmgr
 
 import (
 	"time"
 
 	mock "github.com/stretchr/testify/mock"
 
-	"github.com/zilliztech/milvus-backup/core/meta/taskmgr"
 	"github.com/zilliztech/milvus-backup/core/namespace"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 )
@@ -42,19 +41,19 @@ func (_m *MockRestoreTaskView) EXPECT() *MockRestoreTaskView_Expecter {
 }
 
 // CollTasks provides a mock function for the type MockRestoreTaskView
-func (_mock *MockRestoreTaskView) CollTasks() map[namespace.NS]taskmgr.RestoreCollTaskView {
+func (_mock *MockRestoreTaskView) CollTasks() map[namespace.NS]RestoreCollTaskView {
 	ret := _mock.Called()
 
 	if len(ret) == 0 {
 		panic("no return value specified for CollTasks")
 	}
 
-	var r0 map[namespace.NS]taskmgr.RestoreCollTaskView
-	if returnFunc, ok := ret.Get(0).(func() map[namespace.NS]taskmgr.RestoreCollTaskView); ok {
+	var r0 map[namespace.NS]RestoreCollTaskView
+	if returnFunc, ok := ret.Get(0).(func() map[namespace.NS]RestoreCollTaskView); ok {
 		r0 = returnFunc()
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(map[namespace.NS]taskmgr.RestoreCollTaskView)
+			r0 = ret.Get(0).(map[namespace.NS]RestoreCollTaskView)
 		}
 	}
 	return r0
@@ -77,12 +76,12 @@ func (_c *MockRestoreTaskView_CollTasks_Call) Run(run func()) *MockRestoreTaskVi
 	return _c
 }
 
-func (_c *MockRestoreTaskView_CollTasks_Call) Return(nSToRestoreCollTaskView map[namespace.NS]taskmgr.RestoreCollTaskView) *MockRestoreTaskView_CollTasks_Call {
+func (_c *MockRestoreTaskView_CollTasks_Call) Return(nSToRestoreCollTaskView map[namespace.NS]RestoreCollTaskView) *MockRestoreTaskView_CollTasks_Call {
 	_c.Call.Return(nSToRestoreCollTaskView)
 	return _c
 }
 
-func (_c *MockRestoreTaskView_CollTasks_Call) RunAndReturn(run func() map[namespace.NS]taskmgr.RestoreCollTaskView) *MockRestoreTaskView_CollTasks_Call {
+func (_c *MockRestoreTaskView_CollTasks_Call) RunAndReturn(run func() map[namespace.NS]RestoreCollTaskView) *MockRestoreTaskView_CollTasks_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -2,15 +2,13 @@
 // github.com/vektra/mockery
 // template: testify
 
-package mocks
+package client
 
 import (
 	"context"
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
 	mock "github.com/stretchr/testify/mock"
-
-	"github.com/zilliztech/milvus-backup/core/client"
 )
 
 // NewMockGrpc creates a new instance of MockGrpc. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -97,7 +95,7 @@ func (_c *MockGrpc_BackupRBAC_Call) RunAndReturn(run func(ctx context.Context) (
 }
 
 // BulkInsert provides a mock function for the type MockGrpc
-func (_mock *MockGrpc) BulkInsert(ctx context.Context, input client.GrpcBulkInsertInput) (int64, error) {
+func (_mock *MockGrpc) BulkInsert(ctx context.Context, input GrpcBulkInsertInput) (int64, error) {
 	ret := _mock.Called(ctx, input)
 
 	if len(ret) == 0 {
@@ -106,15 +104,15 @@ func (_mock *MockGrpc) BulkInsert(ctx context.Context, input client.GrpcBulkInse
 
 	var r0 int64
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, client.GrpcBulkInsertInput) (int64, error)); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, GrpcBulkInsertInput) (int64, error)); ok {
 		return returnFunc(ctx, input)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, client.GrpcBulkInsertInput) int64); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, GrpcBulkInsertInput) int64); ok {
 		r0 = returnFunc(ctx, input)
 	} else {
 		r0 = ret.Get(0).(int64)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, client.GrpcBulkInsertInput) error); ok {
+	if returnFunc, ok := ret.Get(1).(func(context.Context, GrpcBulkInsertInput) error); ok {
 		r1 = returnFunc(ctx, input)
 	} else {
 		r1 = ret.Error(1)
@@ -134,9 +132,9 @@ func (_e *MockGrpc_Expecter) BulkInsert(ctx interface{}, input interface{}) *Moc
 	return &MockGrpc_BulkInsert_Call{Call: _e.mock.On("BulkInsert", ctx, input)}
 }
 
-func (_c *MockGrpc_BulkInsert_Call) Run(run func(ctx context.Context, input client.GrpcBulkInsertInput)) *MockGrpc_BulkInsert_Call {
+func (_c *MockGrpc_BulkInsert_Call) Run(run func(ctx context.Context, input GrpcBulkInsertInput)) *MockGrpc_BulkInsert_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(client.GrpcBulkInsertInput))
+		run(args[0].(context.Context), args[1].(GrpcBulkInsertInput))
 	})
 	return _c
 }
@@ -146,7 +144,7 @@ func (_c *MockGrpc_BulkInsert_Call) Return(n int64, err error) *MockGrpc_BulkIns
 	return _c
 }
 
-func (_c *MockGrpc_BulkInsert_Call) RunAndReturn(run func(ctx context.Context, input client.GrpcBulkInsertInput) (int64, error)) *MockGrpc_BulkInsert_Call {
+func (_c *MockGrpc_BulkInsert_Call) RunAndReturn(run func(ctx context.Context, input GrpcBulkInsertInput) (int64, error)) *MockGrpc_BulkInsert_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -196,7 +194,7 @@ func (_c *MockGrpc_Close_Call) RunAndReturn(run func() error) *MockGrpc_Close_Ca
 }
 
 // CreateCollection provides a mock function for the type MockGrpc
-func (_mock *MockGrpc) CreateCollection(ctx context.Context, input client.CreateCollectionInput) error {
+func (_mock *MockGrpc) CreateCollection(ctx context.Context, input CreateCollectionInput) error {
 	ret := _mock.Called(ctx, input)
 
 	if len(ret) == 0 {
@@ -204,7 +202,7 @@ func (_mock *MockGrpc) CreateCollection(ctx context.Context, input client.Create
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, client.CreateCollectionInput) error); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, CreateCollectionInput) error); ok {
 		r0 = returnFunc(ctx, input)
 	} else {
 		r0 = ret.Error(0)
@@ -224,9 +222,9 @@ func (_e *MockGrpc_Expecter) CreateCollection(ctx interface{}, input interface{}
 	return &MockGrpc_CreateCollection_Call{Call: _e.mock.On("CreateCollection", ctx, input)}
 }
 
-func (_c *MockGrpc_CreateCollection_Call) Run(run func(ctx context.Context, input client.CreateCollectionInput)) *MockGrpc_CreateCollection_Call {
+func (_c *MockGrpc_CreateCollection_Call) Run(run func(ctx context.Context, input CreateCollectionInput)) *MockGrpc_CreateCollection_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(client.CreateCollectionInput))
+		run(args[0].(context.Context), args[1].(CreateCollectionInput))
 	})
 	return _c
 }
@@ -236,7 +234,7 @@ func (_c *MockGrpc_CreateCollection_Call) Return(err error) *MockGrpc_CreateColl
 	return _c
 }
 
-func (_c *MockGrpc_CreateCollection_Call) RunAndReturn(run func(ctx context.Context, input client.CreateCollectionInput) error) *MockGrpc_CreateCollection_Call {
+func (_c *MockGrpc_CreateCollection_Call) RunAndReturn(run func(ctx context.Context, input CreateCollectionInput) error) *MockGrpc_CreateCollection_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -288,7 +286,7 @@ func (_c *MockGrpc_CreateDatabase_Call) RunAndReturn(run func(ctx context.Contex
 }
 
 // CreateIndex provides a mock function for the type MockGrpc
-func (_mock *MockGrpc) CreateIndex(ctx context.Context, input client.CreateIndexInput) error {
+func (_mock *MockGrpc) CreateIndex(ctx context.Context, input CreateIndexInput) error {
 	ret := _mock.Called(ctx, input)
 
 	if len(ret) == 0 {
@@ -296,7 +294,7 @@ func (_mock *MockGrpc) CreateIndex(ctx context.Context, input client.CreateIndex
 	}
 
 	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, client.CreateIndexInput) error); ok {
+	if returnFunc, ok := ret.Get(0).(func(context.Context, CreateIndexInput) error); ok {
 		r0 = returnFunc(ctx, input)
 	} else {
 		r0 = ret.Error(0)
@@ -316,9 +314,9 @@ func (_e *MockGrpc_Expecter) CreateIndex(ctx interface{}, input interface{}) *Mo
 	return &MockGrpc_CreateIndex_Call{Call: _e.mock.On("CreateIndex", ctx, input)}
 }
 
-func (_c *MockGrpc_CreateIndex_Call) Run(run func(ctx context.Context, input client.CreateIndexInput)) *MockGrpc_CreateIndex_Call {
+func (_c *MockGrpc_CreateIndex_Call) Run(run func(ctx context.Context, input CreateIndexInput)) *MockGrpc_CreateIndex_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(client.CreateIndexInput))
+		run(args[0].(context.Context), args[1].(CreateIndexInput))
 	})
 	return _c
 }
@@ -328,7 +326,7 @@ func (_c *MockGrpc_CreateIndex_Call) Return(err error) *MockGrpc_CreateIndex_Cal
 	return _c
 }
 
-func (_c *MockGrpc_CreateIndex_Call) RunAndReturn(run func(ctx context.Context, input client.CreateIndexInput) error) *MockGrpc_CreateIndex_Call {
+func (_c *MockGrpc_CreateIndex_Call) RunAndReturn(run func(ctx context.Context, input CreateIndexInput) error) *MockGrpc_CreateIndex_Call {
 	_c.Call.Return(run)
 	return _c
 }
