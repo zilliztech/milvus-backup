@@ -12,6 +12,7 @@ import (
 	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
 	"github.com/samber/lo"
 	"go.uber.org/zap"
+	"golang.org/x/sync/semaphore"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/zilliztech/milvus-backup/core/client"
@@ -32,15 +33,14 @@ type CollectionOpt struct {
 	MetaOnly  bool
 	SkipFlush bool
 
-	MilvusStorage  storage.ChunkManager
+	MilvusStorage  storage.Client
 	MilvusRootPath string
-	MilvusBucket   string
 
-	CrossStorage bool
-
-	BackupStorage storage.ChunkManager
+	BackupStorage storage.Client
 	BackupDir     string
-	BackupBucket  string
+
+	CopySem      *semaphore.Weighted
+	CrossStorage bool
 
 	Meta *meta.MetaManager
 
@@ -59,15 +59,14 @@ type CollectionTask struct {
 	metaOnly  bool
 	skipFlush bool
 
-	milvusStorage  storage.ChunkManager
+	milvusStorage  storage.Client
 	milvusRootPath string
-	milvusBucket   string
+
+	backupStorage storage.Client
+	backupDir     string
 
 	crossStorage bool
-
-	backupStorage storage.ChunkManager
-	backupDir     string
-	backupBucket  string
+	copySem      *semaphore.Weighted
 
 	meta *meta.MetaManager
 
@@ -93,13 +92,12 @@ func NewCollectionTask(dbName, collName string, opt CollectionOpt) *CollectionTa
 
 		milvusStorage:  opt.MilvusStorage,
 		milvusRootPath: opt.MilvusRootPath,
-		milvusBucket:   opt.MilvusBucket,
 
 		crossStorage: opt.CrossStorage,
+		copySem:      opt.CopySem,
 
 		backupStorage: opt.BackupStorage,
 		backupDir:     opt.BackupDir,
-		backupBucket:  opt.BackupBucket,
 
 		meta: opt.Meta,
 
@@ -422,7 +420,7 @@ func (ct *CollectionTask) getSegment(ctx context.Context, seg *milvuspb.Persiste
 }
 
 func (ct *CollectionTask) listInsertLogByAPI(ctx context.Context, binlogDir string, fieldsBinlog []client.BinlogInfo) ([]*backuppb.FieldBinlog, int64, error) {
-	keys, sizes, err := ct.milvusStorage.ListWithPrefix(ctx, ct.milvusBucket, binlogDir, true)
+	keys, sizes, err := storage.ListPrefixFlat(ctx, ct.milvusStorage, binlogDir, true)
 	if err != nil {
 		return nil, 0, fmt.Errorf("backup: list insert logs %w", err)
 	}
@@ -452,7 +450,7 @@ func (ct *CollectionTask) listInsertLogByAPI(ctx context.Context, binlogDir stri
 }
 
 func (ct *CollectionTask) listDeltaLogByAPI(ctx context.Context, binlogDir string, fieldsBinlog []client.BinlogInfo) ([]*backuppb.FieldBinlog, int64, error) {
-	keys, sizes, err := ct.milvusStorage.ListWithPrefix(ctx, ct.milvusBucket, binlogDir, true)
+	keys, sizes, err := storage.ListPrefixFlat(ctx, ct.milvusStorage, binlogDir, true)
 	if err != nil {
 		return nil, 0, fmt.Errorf("backup: list insert logs %w", err)
 	}
@@ -483,7 +481,7 @@ func (ct *CollectionTask) listDeltaLogByAPI(ctx context.Context, binlogDir strin
 }
 
 func (ct *CollectionTask) listInsertLogByListFile(ctx context.Context, binlogDir string) ([]*backuppb.FieldBinlog, int64, error) {
-	keys, sizes, err := ct.milvusStorage.ListWithPrefix(ctx, ct.milvusBucket, binlogDir, true)
+	keys, sizes, err := storage.ListPrefixFlat(ctx, ct.milvusStorage, binlogDir, true)
 	if err != nil {
 		return nil, 0, fmt.Errorf("backup: list insert logs %w", err)
 	}
@@ -515,7 +513,7 @@ func (ct *CollectionTask) listInsertLogByListFile(ctx context.Context, binlogDir
 }
 
 func (ct *CollectionTask) listDeltaLogByListFile(ctx context.Context, binlogDir string) ([]*backuppb.FieldBinlog, int64, error) {
-	keys, sizes, err := ct.milvusStorage.ListWithPrefix(ctx, ct.milvusBucket, binlogDir, true)
+	keys, sizes, err := storage.ListPrefixFlat(ctx, ct.milvusStorage, binlogDir, true)
 	if err != nil {
 		return nil, 0, fmt.Errorf("backup: list delta log %w", err)
 	}
@@ -724,8 +722,15 @@ func (ct *CollectionTask) backupInsertLogs(ctx context.Context, seg *backuppb.Se
 		attrs = append(attrs, fieldAttrs...)
 	}
 
-	copier := storage.NewCopier(ct.milvusStorage, ct.backupStorage, storage.CopyOption{CopyByServer: ct.crossStorage})
-	if err := copier.CopyObjects(ctx, ct.milvusBucket, ct.backupBucket, attrs); err != nil {
+	opt := storage.CopyObjectsOpt{
+		Src:          ct.milvusStorage,
+		Dest:         ct.backupStorage,
+		Attrs:        attrs,
+		CopyByServer: ct.crossStorage,
+		Sem:          ct.copySem,
+	}
+	cpTask := storage.NewCopyObjectsTask(opt)
+	if err := cpTask.Execute(ctx); err != nil {
 		return fmt.Errorf("backup: copy insert logs %w", err)
 	}
 
@@ -758,8 +763,15 @@ func (ct *CollectionTask) backupDeltaLogs(ctx context.Context, seg *backuppb.Seg
 		attrs = append(attrs, fieldAttrs...)
 	}
 
-	copier := storage.NewCopier(ct.milvusStorage, ct.backupStorage, storage.CopyOption{CopyByServer: ct.crossStorage})
-	if err := copier.CopyObjects(ctx, ct.milvusBucket, ct.backupBucket, attrs); err != nil {
+	opt := storage.CopyObjectsOpt{
+		Src:          ct.milvusStorage,
+		Dest:         ct.backupStorage,
+		Attrs:        attrs,
+		CopyByServer: ct.crossStorage,
+		Sem:          ct.copySem,
+	}
+	cpTask := storage.NewCopyObjectsTask(opt)
+	if err := cpTask.Execute(ctx); err != nil {
 		return fmt.Errorf("backup: copy delta logs %w", err)
 	}
 

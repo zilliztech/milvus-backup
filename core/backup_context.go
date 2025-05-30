@@ -10,6 +10,7 @@ import (
 
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/zilliztech/milvus-backup/core/client"
 	"github.com/zilliztech/milvus-backup/core/meta"
@@ -19,7 +20,6 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/storage"
 	"github.com/zilliztech/milvus-backup/core/utils"
-	"github.com/zilliztech/milvus-backup/internal/common"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
@@ -42,13 +42,10 @@ type BackupContext struct {
 	// milvus client
 	grpcClient    client.Grpc
 	restfulClient client.Restful
-	manageClient  client.Manage
 
 	// data storage client
-	milvusStorageClient storage.ChunkManager
-	backupStorageClient storage.ChunkManager
-	backupCopier        *storage.Copier
-	restoreCopier       *storage.Copier
+	milvusStorageClient storage.Client
+	backupStorageClient storage.Client
 
 	milvusBucketName string
 	backupBucketName string
@@ -56,11 +53,6 @@ type BackupContext struct {
 	backupRootPath   string
 
 	meta *meta.MetaManager
-
-	backupCollectionWorkerPool *common.WorkerPool
-	backupCopyDataWorkerPool   *common.WorkerPool
-
-	bulkinsertWorkerPools sync.Map
 }
 
 func CreateGrpcClient(params *paramtable.BackupParams) (client.Grpc, error) {
@@ -99,14 +91,13 @@ func (b *BackupContext) Close() error {
 
 func CreateBackupContext(ctx context.Context, params *paramtable.BackupParams) *BackupContext {
 	return &BackupContext{
-		ctx:                   ctx,
-		params:                params,
-		milvusBucketName:      params.MinioCfg.BucketName,
-		backupBucketName:      params.MinioCfg.BackupBucketName,
-		milvusRootPath:        params.MinioCfg.RootPath,
-		backupRootPath:        params.MinioCfg.BackupRootPath,
-		bulkinsertWorkerPools: sync.Map{},
-		meta:                  meta.NewMetaManager(),
+		ctx:              ctx,
+		params:           params,
+		milvusBucketName: params.MinioCfg.BucketName,
+		backupBucketName: params.MinioCfg.BackupBucketName,
+		milvusRootPath:   params.MinioCfg.RootPath,
+		backupRootPath:   params.MinioCfg.BackupRootPath,
+		meta:             meta.NewMetaManager(),
 	}
 }
 
@@ -134,29 +125,27 @@ func (b *BackupContext) getRestfulClient() client.Restful {
 	return b.restfulClient
 }
 
-func (b *BackupContext) getMilvusStorageClient() storage.ChunkManager {
+func (b *BackupContext) getMilvusStorageClient() storage.Client {
 	if b.milvusStorageClient == nil {
 		minioEndPoint := b.params.MinioCfg.Address + ":" + b.params.MinioCfg.Port
-		log.Debug("create milvus storage client",
+		log.Info("create milvus storage client",
 			zap.String("address", minioEndPoint),
 			zap.String("bucket", b.params.MinioCfg.BucketName),
 			zap.String("backupBucket", b.params.MinioCfg.BackupBucketName))
 
-		storageConfig := &storage.StorageConfig{
-			StorageType:       b.params.MinioCfg.StorageType,
-			Address:           minioEndPoint,
-			BucketName:        b.params.MinioCfg.BucketName,
-			AccessKeyID:       b.params.MinioCfg.AccessKeyID,
-			SecretAccessKeyID: b.params.MinioCfg.SecretAccessKey,
-			GcpCredentialJSON: b.params.MinioCfg.GcpCredentialJSON,
+		cfg := storage.Config{
+			Provider:          b.params.MinioCfg.StorageType,
+			Endpoint:          minioEndPoint,
 			UseSSL:            b.params.MinioCfg.UseSSL,
-			UseIAM:            b.params.MinioCfg.UseIAM,
 			IAMEndpoint:       b.params.MinioCfg.IAMEndpoint,
-			RootPath:          b.params.MinioCfg.RootPath,
-			CreateBucket:      true,
+			UseIAM:            b.params.MinioCfg.UseIAM,
+			AK:                b.params.MinioCfg.AccessKeyID,
+			SK:                b.params.MinioCfg.SecretAccessKey,
+			GcpCredentialJSON: b.params.MinioCfg.GcpCredentialJSON,
+			Bucket:            b.params.MinioCfg.BucketName,
 		}
 
-		storageClient, err := storage.NewChunkManager(b.ctx, b.params, storageConfig)
+		storageClient, err := storage.NewClient(b.ctx, cfg)
 		if err != nil {
 			log.Error("failed to initial storage client", zap.Error(err))
 			panic(err)
@@ -166,91 +155,38 @@ func (b *BackupContext) getMilvusStorageClient() storage.ChunkManager {
 	return b.milvusStorageClient
 }
 
-func (b *BackupContext) getBackupStorageClient() storage.ChunkManager {
+func (b *BackupContext) getBackupStorageClient() storage.Client {
 	if b.backupStorageClient == nil {
 		minioEndPoint := b.params.MinioCfg.BackupAddress + ":" + b.params.MinioCfg.BackupPort
-		log.Debug("create backup storage client",
+		log.Info("create backup storage client",
 			zap.String("address", minioEndPoint),
 			zap.String("bucket", b.params.MinioCfg.BucketName),
 			zap.String("backupBucket", b.params.MinioCfg.BackupBucketName))
 
-		storageConfig := &storage.StorageConfig{
-			StorageType:       b.params.MinioCfg.BackupStorageType,
-			Address:           minioEndPoint,
-			BucketName:        b.params.MinioCfg.BackupBucketName,
-			AccessKeyID:       b.params.MinioCfg.BackupAccessKeyID,
-			SecretAccessKeyID: b.params.MinioCfg.BackupSecretAccessKey,
+		cfg := storage.Config{
+			Provider:          b.params.MinioCfg.BackupStorageType,
+			Endpoint:          minioEndPoint,
+			Bucket:            b.params.MinioCfg.BackupBucketName,
+			AK:                b.params.MinioCfg.BackupAccessKeyID,
+			SK:                b.params.MinioCfg.BackupSecretAccessKey,
 			GcpCredentialJSON: b.params.MinioCfg.BackupGcpCredentialJSON,
 			UseSSL:            b.params.MinioCfg.BackupUseSSL,
 			UseIAM:            b.params.MinioCfg.BackupUseIAM,
 			IAMEndpoint:       b.params.MinioCfg.BackupIAMEndpoint,
-			RootPath:          b.params.MinioCfg.BackupRootPath,
-			CreateBucket:      true,
 		}
 
-		storageClient, err := storage.NewChunkManager(b.ctx, b.params, storageConfig)
+		storageClient, err := storage.NewClient(b.ctx, cfg)
 		if err != nil {
 			log.Error("failed to initial storage client", zap.Error(err))
 			panic(err)
 		}
 		b.backupStorageClient = storageClient
+		if err := storage.CreateBucketIfNotExist(b.ctx, storageClient, ""); err != nil {
+			log.Error("failed to create bucket", zap.Error(err))
+			panic(err)
+		}
 	}
 	return b.backupStorageClient
-}
-
-func (b *BackupContext) getBackupCopier() *storage.Copier {
-	crossStorage := b.params.MinioCfg.CrossStorage
-	if b.getBackupStorageClient().Config().StorageType != b.getMilvusStorageClient().Config().StorageType {
-		crossStorage = true
-	}
-	if b.backupCopier == nil {
-		b.backupCopier = storage.NewCopier(
-			b.getMilvusStorageClient(),
-			b.getBackupStorageClient(),
-			storage.CopyOption{
-				WorkerNum:    b.params.BackupCfg.BackupCopyDataParallelism,
-				RPS:          RPS,
-				CopyByServer: crossStorage,
-			})
-	}
-	return b.backupCopier
-}
-
-func (b *BackupContext) getCopyDataWorkerPool() *common.WorkerPool {
-	if b.backupCopyDataWorkerPool == nil {
-		wp, err := common.NewWorkerPool(b.ctx, b.params.BackupCfg.BackupCopyDataParallelism, RPS)
-		if err != nil {
-			log.Error("failed to initial copy data worker pool", zap.Error(err))
-			panic(err)
-		}
-		b.backupCopyDataWorkerPool = wp
-		b.backupCopyDataWorkerPool.Start()
-	}
-	return b.backupCopyDataWorkerPool
-}
-
-func (b *BackupContext) getRestoreWorkerPool(id string) *common.WorkerPool {
-	// TODO DO NOT use pool of worker pool
-	if pool, exist := b.bulkinsertWorkerPools.Load(id); exist {
-		return pool.(*common.WorkerPool)
-	} else {
-		wp, err := common.NewWorkerPool(b.ctx, b.params.BackupCfg.RestoreParallelism, RPS)
-		if err != nil {
-			log.Error("failed to initial copy data worker pool", zap.Error(err))
-			panic(err)
-		}
-		wp.Start()
-		b.bulkinsertWorkerPools.Store(id, wp)
-
-		return wp
-	}
-}
-
-func (b *BackupContext) cleanRestoreWorkerPool(id string) {
-	// TODO DO NOT use pool of worker pool
-	if _, exist := b.bulkinsertWorkerPools.Load(id); exist {
-		b.bulkinsertWorkerPools.Delete(id)
-	}
 }
 
 func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBackupRequest) *backuppb.BackupInfoResponse {
@@ -367,7 +303,7 @@ func (b *BackupContext) ListBackups(ctx context.Context, request *backuppb.ListB
 	}
 
 	// 1, trigger inner sync to get the newest backup list in the milvus cluster
-	backupPaths, _, err := b.getBackupStorageClient().ListWithPrefix(ctx, b.backupBucketName, b.backupRootPath+meta.SEPERATOR, false)
+	backupPaths, _, err := storage.ListPrefixFlat(ctx, b.getBackupStorageClient(), b.backupRootPath+meta.SEPERATOR, false)
 	if err != nil {
 		log.Error("Fail to list backup directory", zap.Error(err))
 		resp.Code = backuppb.ResponseCode_Fail
@@ -453,7 +389,7 @@ func (b *BackupContext) DeleteBackup(ctx context.Context, request *backuppb.Dele
 		BackupName: request.GetBackupName(),
 	})
 	// always trigger a remove to make sure it is deleted
-	err := b.getBackupStorageClient().RemoveWithPrefix(ctx, b.backupBucketName, meta.BackupDirPath(b.backupRootPath, request.GetBackupName()))
+	err := storage.DeletePrefix(ctx, b.getBackupStorageClient(), meta.BackupDirPath(b.backupRootPath, request.GetBackupName()))
 
 	if getResp.GetCode() == backuppb.ResponseCode_Request_Object_Not_Found {
 		resp.Code = backuppb.ResponseCode_Request_Object_Not_Found
@@ -493,13 +429,13 @@ func (b *BackupContext) DeleteBackup(ctx context.Context, request *backuppb.Dele
 func (b *BackupContext) readBackupV2(ctx context.Context, bucketName string, backupPath string) (*backuppb.BackupInfo, error) {
 	backupMetaDirPath := backupPath + meta.SEPERATOR + meta.META_PREFIX
 	fullMetaPath := backupMetaDirPath + meta.SEPERATOR + meta.FULL_META_FILE
-	exist, err := b.getBackupStorageClient().Exist(ctx, bucketName, fullMetaPath)
+	exist, err := storage.Exist(ctx, b.getBackupStorageClient(), fullMetaPath)
 	if err != nil {
 		log.Error("check full meta file failed", zap.String("path", fullMetaPath), zap.Error(err))
 		return nil, err
 	}
 	if exist {
-		backupMetaBytes, err := b.getBackupStorageClient().Read(ctx, bucketName, fullMetaPath)
+		backupMetaBytes, err := storage.Read(ctx, b.getBackupStorageClient(), fullMetaPath)
 		if err != nil {
 			log.Error("Read backup meta failed", zap.String("path", fullMetaPath), zap.Error(err))
 			return nil, err
@@ -524,7 +460,7 @@ func (b *BackupContext) readBackup(ctx context.Context, bucketName string, backu
 	partitionMetaPath := backupMetaDirPath + meta.SEPERATOR + meta.PARTITION_META_FILE
 	segmentMetaPath := backupMetaDirPath + meta.SEPERATOR + meta.SEGMENT_META_FILE
 
-	exist, err := b.getBackupStorageClient().Exist(ctx, bucketName, backupMetaPath)
+	exist, err := storage.Exist(ctx, b.getBackupStorageClient(), backupMetaPath)
 	if err != nil {
 		log.Error("check backup meta file failed", zap.String("path", backupMetaPath), zap.Error(err))
 		return nil, err
@@ -534,22 +470,22 @@ func (b *BackupContext) readBackup(ctx context.Context, bucketName string, backu
 		return nil, err
 	}
 
-	backupMetaBytes, err := b.getBackupStorageClient().Read(ctx, bucketName, backupMetaPath)
+	backupMetaBytes, err := storage.Read(ctx, b.getBackupStorageClient(), backupMetaPath)
 	if err != nil {
 		log.Error("Read backup meta failed", zap.String("path", backupMetaPath), zap.Error(err))
 		return nil, err
 	}
-	collectionBackupMetaBytes, err := b.getBackupStorageClient().Read(ctx, bucketName, collectionMetaPath)
+	collectionBackupMetaBytes, err := storage.Read(ctx, b.getBackupStorageClient(), collectionMetaPath)
 	if err != nil {
 		log.Error("Read collection meta failed", zap.String("path", collectionMetaPath), zap.Error(err))
 		return nil, err
 	}
-	partitionBackupMetaBytes, err := b.getBackupStorageClient().Read(ctx, bucketName, partitionMetaPath)
+	partitionBackupMetaBytes, err := storage.Read(ctx, b.getBackupStorageClient(), partitionMetaPath)
 	if err != nil {
 		log.Error("Read partition meta failed", zap.String("path", partitionMetaPath), zap.Error(err))
 		return nil, err
 	}
-	segmentBackupMetaBytes, err := b.getBackupStorageClient().Read(ctx, bucketName, segmentMetaPath)
+	segmentBackupMetaBytes, err := storage.Read(ctx, b.getBackupStorageClient(), segmentMetaPath)
 	if err != nil {
 		log.Error("Read segment meta failed", zap.String("path", segmentMetaPath), zap.Error(err))
 		return nil, err
@@ -616,7 +552,7 @@ func (b *BackupContext) Check(ctx context.Context) string {
 			"backup-rootpath: %s\n",
 		version, b.milvusBucketName, b.milvusRootPath, b.backupBucketName, b.backupRootPath)
 
-	milvusFiles, _, err := b.getMilvusStorageClient().ListWithPrefix(ctx, b.milvusBucketName, b.milvusRootPath+meta.SEPERATOR, false)
+	milvusFiles, _, err := storage.ListPrefixFlat(ctx, b.getMilvusStorageClient(), b.milvusRootPath+meta.SEPERATOR, false)
 	if err != nil {
 		return "Failed to connect to storage milvus path\n" + info + err.Error()
 	}
@@ -625,7 +561,7 @@ func (b *BackupContext) Check(ctx context.Context) string {
 		return "Milvus storage is empty. Please verify whether your cluster is really empty. If not, the configs(minio address, port, bucket, rootPath) may be wrong\n" + info
 	}
 
-	_, _, err = b.getBackupStorageClient().ListWithPrefix(ctx, b.backupBucketName, b.backupRootPath+meta.SEPERATOR, false)
+	_, _, err = storage.ListPrefixFlat(ctx, b.getBackupStorageClient(), b.backupRootPath+meta.SEPERATOR, false)
 	if err != nil {
 		return "Failed to connect to storage backup path " + info + err.Error()
 	}
@@ -633,21 +569,37 @@ func (b *BackupContext) Check(ctx context.Context) string {
 	checkSrcPath := path.Join(b.milvusRootPath, "milvus_backup_check_src_"+fmt.Sprint(time.Now().Unix()))
 	checkDstPath := path.Join(b.backupRootPath, "milvus_backup_check_dst_"+fmt.Sprint(time.Now().Unix()))
 
-	err = b.getMilvusStorageClient().Write(ctx, b.milvusBucketName, checkSrcPath, []byte{1})
-	if err != nil {
+	if err = storage.Write(ctx, b.getMilvusStorageClient(), checkSrcPath, []byte{1}); err != nil {
 		return "Failed to connect to storage milvus path\n" + info + err.Error()
 	}
 	defer func() {
-		b.getMilvusStorageClient().Remove(ctx, b.milvusBucketName, checkSrcPath)
+		if err := storage.DeletePrefix(ctx, b.getMilvusStorageClient(), checkSrcPath); err != nil {
+			log.Error("Failed to delete check file", zap.String("path", checkSrcPath), zap.Error(err))
+		}
 	}()
 
 	log.Debug("check copy", zap.String("srcBucket", b.milvusBucketName), zap.String("destBucket", b.backupBucketName), zap.String("key", checkSrcPath), zap.String("destKey", checkDstPath))
-	err = b.getBackupCopier().Copy(ctx, checkSrcPath, checkDstPath, b.milvusBucketName, b.backupBucketName)
-	if err != nil {
+	crossStorage := b.params.MinioCfg.CrossStorage
+	if b.getBackupStorageClient().Config().Provider != b.getMilvusStorageClient().Config().Provider {
+		crossStorage = true
+	}
+	opt := storage.CopyPrefixOpt{
+		Src:          b.getMilvusStorageClient(),
+		Dest:         b.getBackupStorageClient(),
+		SrcPrefix:    checkSrcPath,
+		DestPrefix:   checkDstPath,
+		Sem:          semaphore.NewWeighted(1),
+		CopyByServer: crossStorage,
+	}
+	task := storage.NewCopyPrefixTask(opt)
+	if err := task.Execute(ctx); err != nil {
 		return "Failed to copy file from milvus storage to backup storage\n" + info + err.Error()
 	}
+
 	defer func() {
-		b.getBackupStorageClient().Remove(ctx, b.backupBucketName, checkDstPath)
+		if err := storage.DeletePrefix(ctx, b.getBackupStorageClient(), checkDstPath); err != nil {
+			log.Error("Failed to delete check file", zap.String("path", checkDstPath), zap.Error(err))
+		}
 	}()
 
 	return "Succeed to connect to milvus and storage.\n" + info

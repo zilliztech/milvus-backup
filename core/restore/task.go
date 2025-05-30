@@ -10,6 +10,8 @@ import (
 	"github.com/google/uuid"
 	"github.com/samber/lo"
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/zilliztech/milvus-backup/core/client"
 	"github.com/zilliztech/milvus-backup/core/meta"
@@ -19,7 +21,6 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/storage"
 	"github.com/zilliztech/milvus-backup/core/utils"
-	"github.com/zilliztech/milvus-backup/internal/common"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
@@ -35,8 +36,10 @@ type Task struct {
 
 	task *backuppb.RestoreBackupTask
 
-	backupStorage storage.ChunkManager
-	milvusStorage storage.ChunkManager
+	copySem *semaphore.Weighted
+
+	backupStorage storage.Client
+	milvusStorage storage.Client
 
 	grpc    client.Grpc
 	restful client.Restful
@@ -51,16 +54,14 @@ func NewTask(
 	backupBucketName string,
 	params *paramtable.BackupParams,
 	info *backuppb.BackupInfo,
-	backupStorage storage.ChunkManager,
-	milvusStorage storage.ChunkManager,
+	backupStorage storage.Client,
+	milvusStorage storage.Client,
 	grpcCli client.Grpc,
 	restfulCli client.Restful,
 ) *Task {
 	logger := log.L().With(
 		zap.String("backup_name", info.GetName()),
-		zap.String("backup_path", backupPath),
-		zap.String("backup_bucket_name", backupBucketName),
-		zap.String("request_id", request.GetRequestId()))
+		zap.String("backup_path", backupPath))
 
 	return &Task{
 		logger: logger,
@@ -70,6 +71,8 @@ func NewTask(
 
 		params:  params,
 		taskMgr: taskmgr.DefaultMgr,
+
+		copySem: semaphore.NewWeighted(int64(params.BackupCfg.BackupCopyDataParallelism)),
 
 		backupStorage: backupStorage,
 		milvusStorage: milvusStorage,
@@ -601,30 +604,25 @@ func (t *Task) prepareDB(ctx context.Context, task *backuppb.RestoreBackupTask) 
 func (t *Task) runCollTask(ctx context.Context, task *backuppb.RestoreBackupTask) error {
 	t.logger.Info("start restore collection")
 
-	wp, err := common.NewWorkerPool(ctx, t.params.BackupCfg.RestoreParallelism, 0)
-	if err != nil {
-		return fmt.Errorf("restore: create collection worker pool %w", err)
-	}
-	wp.Start()
-	t.logger.Info("Start collection level restore pool", zap.Int("parallelism", t.params.BackupCfg.RestoreParallelism))
-
+	g, subCtx := errgroup.WithContext(ctx)
+	g.SetLimit(t.params.BackupCfg.RestoreParallelism)
 	collTaskMetas := task.GetCollectionRestoreTasks()
 	for _, collTaskMeta := range collTaskMetas {
-		collTask := t.newRestoreCollTask(task.GetId(), collTaskMeta)
-		job := func(ctx context.Context) error {
+		collTask := t.newRestoreCollTask(collTaskMeta)
+
+		g.Go(func() error {
 			logger := t.logger.With(zap.String("target_ns", collTask.targetNS.String()))
-			if err := collTask.Execute(ctx); err != nil {
+			if err := collTask.Execute(subCtx); err != nil {
 				logger.Error("restore coll failed", zap.Error(err))
 				return fmt.Errorf("restore: restore collection %w", err)
 			}
 
-			logger.Info("finish restore collection", zap.Int64("size", collTaskMeta.RestoredSize))
+			logger.Info("finish restore collection")
 			return nil
-		}
-		wp.Submit(job)
+		})
 	}
-	wp.Done()
-	if err := wp.Wait(); err != nil {
+
+	if err := g.Wait(); err != nil {
 		return fmt.Errorf("restore: wait collection worker pool %w", err)
 	}
 
@@ -635,14 +633,18 @@ func (t *Task) runCollTask(ctx context.Context, task *backuppb.RestoreBackupTask
 	return nil
 }
 
-func (t *Task) newRestoreCollTask(taskID string, collTask *backuppb.RestoreCollectionTask) *CollectionTask {
-	return newCollectionTask(collTask,
-		t.params,
-		taskID,
-		t.backupBucketName,
-		t.backupPath,
-		t.backupStorage,
-		t.milvusStorage,
-		t.grpc,
-		t.restful)
+func (t *Task) newRestoreCollTask(collTask *backuppb.RestoreCollectionTask) *CollectionTask {
+	opt := collectionTaskOpt{
+		task:          collTask,
+		params:        t.params,
+		parentTaskID:  t.task.GetId(),
+		backupPath:    t.backupPath,
+		backupStorage: t.backupStorage,
+		milvusStorage: t.milvusStorage,
+		copySem:       t.copySem,
+		grpcCli:       t.grpc,
+		restfulCli:    t.restful,
+	}
+
+	return newCollectionTask(opt)
 }
