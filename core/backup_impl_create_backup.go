@@ -11,6 +11,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/backup"
 	"github.com/zilliztech/milvus-backup/core/meta"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/core/storage"
 	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
@@ -46,7 +47,7 @@ func (b *BackupContext) CreateBackup(ctx context.Context, request *backuppb.Crea
 		request.BackupName = "backup_" + fmt.Sprint(time.Now().UTC().Format("2006_01_02_15_04_05_")) + fmt.Sprint(time.Now().Nanosecond())
 	}
 	if request.GetBackupName() != "" {
-		exist, err := b.getBackupStorageClient().Exist(b.ctx, b.backupBucketName, b.backupRootPath+meta.SEPERATOR+request.GetBackupName())
+		exist, err := storage.Exist(ctx, b.getBackupStorageClient(), b.backupRootPath+meta.SEPERATOR+request.GetBackupName())
 		if err != nil {
 			errMsg := fmt.Sprintf("fail to check whether exist backup with name: %s", request.GetBackupName())
 			log.Error(errMsg, zap.Error(err))
@@ -167,12 +168,30 @@ func (b *BackupContext) writeBackupInfoMeta(ctx context.Context, id string) erro
 	}
 	log.Debug("channel cp meta", zap.String("value", string(channelCPsBytes)))
 
-	b.getBackupStorageClient().Write(ctx, b.backupBucketName, meta.BackupMetaPath(b.backupRootPath, backupInfo.GetName()), output.BackupMetaBytes)
-	b.getBackupStorageClient().Write(ctx, b.backupBucketName, meta.CollectionMetaPath(b.backupRootPath, backupInfo.GetName()), output.CollectionMetaBytes)
-	b.getBackupStorageClient().Write(ctx, b.backupBucketName, meta.PartitionMetaPath(b.backupRootPath, backupInfo.GetName()), output.PartitionMetaBytes)
-	b.getBackupStorageClient().Write(ctx, b.backupBucketName, meta.SegmentMetaPath(b.backupRootPath, backupInfo.GetName()), output.SegmentMetaBytes)
-	b.getBackupStorageClient().Write(ctx, b.backupBucketName, meta.FullMetaPath(b.backupRootPath, backupInfo.GetName()), output.FullMetaBytes)
-	b.getBackupStorageClient().Write(ctx, b.backupBucketName, meta.ChannelCPMetaPath(b.backupRootPath, backupInfo.GetName()), channelCPsBytes)
+	err = storage.Write(ctx, b.getBackupStorageClient(), meta.BackupMetaPath(b.backupRootPath, backupInfo.GetName()), output.BackupMetaBytes)
+	if err != nil {
+		return err
+	}
+	err = storage.Write(ctx, b.getBackupStorageClient(), meta.CollectionMetaPath(b.backupRootPath, backupInfo.GetName()), output.CollectionMetaBytes)
+	if err != nil {
+		return err
+	}
+	err = storage.Write(ctx, b.getBackupStorageClient(), meta.PartitionMetaPath(b.backupRootPath, backupInfo.GetName()), output.PartitionMetaBytes)
+	if err != nil {
+		return err
+	}
+	err = storage.Write(ctx, b.getBackupStorageClient(), meta.SegmentMetaPath(b.backupRootPath, backupInfo.GetName()), output.SegmentMetaBytes)
+	if err != nil {
+		return err
+	}
+	err = storage.Write(ctx, b.getBackupStorageClient(), meta.FullMetaPath(b.backupRootPath, backupInfo.GetName()), output.FullMetaBytes)
+	if err != nil {
+		return err
+	}
+	err = storage.Write(ctx, b.getBackupStorageClient(), meta.ChannelCPMetaPath(b.backupRootPath, backupInfo.GetName()), channelCPsBytes)
+	if err != nil {
+		return err
+	}
 
 	log.Info("finish writeBackupInfoMeta",
 		zap.String("path", meta.BackupDirPath(b.backupRootPath, backupInfo.GetName())),
