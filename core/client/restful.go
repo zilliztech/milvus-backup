@@ -230,11 +230,12 @@ func NewRestful(cfg *paramtable.MilvusConfig) (*RestfulClient, error) {
 	log.Info("new milvus restful client", zap.String("host", host))
 
 	var baseURL string
-	if cfg.TLSMode == 0 {
+	switch cfg.TLSMode {
+	case 0:
 		baseURL = "http://" + host
-	} else if cfg.TLSMode == 1 || cfg.TLSMode == 2 {
+	case 1, 2:
 		baseURL = "https://" + host
-	} else {
+	default:
 		return nil, errors.New("client: invalid tls mode")
 	}
 

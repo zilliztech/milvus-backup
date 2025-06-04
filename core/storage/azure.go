@@ -80,6 +80,9 @@ func NewAzureClient(cfg Config) (*AzureClient, error) {
 			return nil, fmt.Errorf("storage: new azure client %w", err)
 		}
 		sasCli, err := service.NewClientWithSharedKeyCredential(cfg.Endpoint, cred, nil)
+		if err != nil {
+			return nil, fmt.Errorf("storage: new azure service client %w", err)
+		}
 		return &AzureClient{cfg: cfg, cli: cli, sasCli: sasCli}, nil
 	}
 }

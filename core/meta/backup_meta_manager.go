@@ -111,12 +111,6 @@ func SetErrorMessage(errorMessage string) BackupOpt {
 	}
 }
 
-func setStartTime(startTime int64) BackupOpt {
-	return func(backup *backuppb.BackupInfo) {
-		backup.StartTime = startTime
-	}
-}
-
 func SetEndTime(endTime int64) BackupOpt {
 	return func(backup *backuppb.BackupInfo) {
 		backup.EndTime = endTime
@@ -126,46 +120,6 @@ func SetEndTime(endTime int64) BackupOpt {
 func SetRPCChannelPos(name, pos string) BackupOpt {
 	return func(backup *backuppb.BackupInfo) {
 		backup.RpcChannelInfo = &backuppb.RPCChannelInfo{Name: name, Position: pos}
-	}
-}
-
-func setProgress(progress int32) BackupOpt {
-	return func(backup *backuppb.BackupInfo) {
-		backup.Progress = progress
-	}
-}
-
-func setName(name string) BackupOpt {
-	return func(backup *backuppb.BackupInfo) {
-		backup.Name = name
-	}
-}
-
-// backup timestamp
-func setBackupTimestamp(backupTimestamp uint64) BackupOpt {
-	return func(backup *backuppb.BackupInfo) {
-		backup.BackupTimestamp = backupTimestamp
-	}
-}
-
-// array of collection backup
-//repeated CollectionBackupInfo collection_backups = 9;
-
-func setSize(size int64) BackupOpt {
-	return func(backup *backuppb.BackupInfo) {
-		backup.Size = size
-	}
-}
-
-func incSize(size int64) BackupOpt {
-	return func(backup *backuppb.BackupInfo) {
-		backup.Size = backup.Size + size
-	}
-}
-
-func setMilvusVersion(milvusVersion string) BackupOpt {
-	return func(backup *backuppb.BackupInfo) {
-		backup.MilvusVersion = milvusVersion
 	}
 }
 
@@ -194,36 +148,6 @@ func (meta *MetaManager) UpdateBackup(backupID string, opts ...BackupOpt) {
 
 type CollectionOpt func(collection *backuppb.CollectionBackupInfo)
 
-func setCollectionStateCode(stateCode backuppb.BackupTaskStateCode) CollectionOpt {
-	return func(collection *backuppb.CollectionBackupInfo) {
-		collection.StateCode = stateCode
-	}
-}
-
-func setCollectionErrorMessage(errorMessage string) CollectionOpt {
-	return func(collection *backuppb.CollectionBackupInfo) {
-		collection.ErrorMessage = errorMessage
-	}
-}
-
-func setCollectionStartTime(startTime int64) CollectionOpt {
-	return func(collection *backuppb.CollectionBackupInfo) {
-		collection.StartTime = startTime
-	}
-}
-
-func SetCollectionEndTime(endTime int64) CollectionOpt {
-	return func(collection *backuppb.CollectionBackupInfo) {
-		collection.EndTime = endTime
-	}
-}
-
-func setCollectionProgress(progress int32) CollectionOpt {
-	return func(collection *backuppb.CollectionBackupInfo) {
-		collection.Progress = progress
-	}
-}
-
 // backup timestamp
 func SetCollectionBackupTimestamp(backupTimestamp uint64) CollectionOpt {
 	return func(collection *backuppb.CollectionBackupInfo) {
@@ -231,69 +155,9 @@ func SetCollectionBackupTimestamp(backupTimestamp uint64) CollectionOpt {
 	}
 }
 
-func SetCollectionSize(size int64) CollectionOpt {
-	return func(collection *backuppb.CollectionBackupInfo) {
-		collection.Size = size
-	}
-}
-
 func AddL0Segment(segment *backuppb.SegmentBackupInfo) CollectionOpt {
 	return func(collection *backuppb.CollectionBackupInfo) {
 		collection.L0Segments = append(collection.L0Segments, segment)
-	}
-}
-
-func incCollectionSize(size int64) CollectionOpt {
-	return func(collection *backuppb.CollectionBackupInfo) {
-		collection.Size = collection.Size + size
-	}
-}
-
-func setCollectionDbName(dbName string) CollectionOpt {
-	return func(collection *backuppb.CollectionBackupInfo) {
-		collection.DbName = dbName
-	}
-}
-
-func setCollectionName(collectionName string) CollectionOpt {
-	return func(collection *backuppb.CollectionBackupInfo) {
-		collection.CollectionName = collectionName
-	}
-}
-
-func setCollectionSchema(schema *backuppb.CollectionSchema) CollectionOpt {
-	return func(collection *backuppb.CollectionBackupInfo) {
-		collection.Schema = schema
-	}
-}
-
-func setCollectionShardNum(shardsNum int32) CollectionOpt {
-	return func(collection *backuppb.CollectionBackupInfo) {
-		collection.ShardsNum = shardsNum
-	}
-}
-
-func setCollectionConsistencyLevel(consistencyLevel backuppb.ConsistencyLevel) CollectionOpt {
-	return func(collection *backuppb.CollectionBackupInfo) {
-		collection.ConsistencyLevel = consistencyLevel
-	}
-}
-
-func setCollectionHasIndex(hasIndex bool) CollectionOpt {
-	return func(collection *backuppb.CollectionBackupInfo) {
-		collection.HasIndex = hasIndex
-	}
-}
-
-func setCollectionIndexInfos(indexInfos []*backuppb.IndexInfo) CollectionOpt {
-	return func(collection *backuppb.CollectionBackupInfo) {
-		collection.IndexInfos = indexInfos
-	}
-}
-
-func SetCollectionLoadState(loadState string) CollectionOpt {
-	return func(collection *backuppb.CollectionBackupInfo) {
-		collection.LoadState = loadState
 	}
 }
 
@@ -327,12 +191,6 @@ func (meta *MetaManager) UpdateCollection(backupID string, collectionID int64, o
 }
 
 type PartitionOpt func(partition *backuppb.PartitionBackupInfo)
-
-func setPartitionSize(size int64) PartitionOpt {
-	return func(partition *backuppb.PartitionBackupInfo) {
-		partition.Size = size
-	}
-}
 
 func (meta *MetaManager) GetPartitions(collectionID int64) map[int64]*backuppb.PartitionBackupInfo {
 	meta.mu.Lock()
@@ -373,54 +231,6 @@ func (meta *MetaManager) GetSegment(segmentID int64) *backuppb.SegmentBackupInfo
 	defer meta.mu.Unlock()
 	partitionID := meta.segmentPartitionReverse[segmentID]
 	return meta.segments[partitionID][segmentID]
-}
-
-func setSegmentNumOfRows(numOfRows int64) SegmentOpt {
-	return func(segment *backuppb.SegmentBackupInfo) {
-		segment.NumOfRows = numOfRows
-	}
-}
-
-func SetSegmentSize(size int64) SegmentOpt {
-	return func(segment *backuppb.SegmentBackupInfo) {
-		segment.Size = size
-	}
-}
-
-func SetSegmentL0(isL0 bool) SegmentOpt {
-	return func(segment *backuppb.SegmentBackupInfo) {
-		segment.IsL0 = isL0
-	}
-}
-
-func SetGroupID(groupID int64) SegmentOpt {
-	return func(segment *backuppb.SegmentBackupInfo) {
-		segment.GroupId = groupID
-	}
-}
-
-func SetSegmentBinlogs(binlogs []*backuppb.FieldBinlog) SegmentOpt {
-	return func(segment *backuppb.SegmentBackupInfo) {
-		segment.Binlogs = binlogs
-	}
-}
-
-func setSegmentStatsBinlogs(binlogs []*backuppb.FieldBinlog) SegmentOpt {
-	return func(segment *backuppb.SegmentBackupInfo) {
-		segment.Statslogs = binlogs
-	}
-}
-
-func SetSegmentDeltaBinlogs(binlogs []*backuppb.FieldBinlog) SegmentOpt {
-	return func(segment *backuppb.SegmentBackupInfo) {
-		segment.Deltalogs = binlogs
-	}
-}
-
-func setSegmentGroupId(groupId int64) SegmentOpt {
-	return func(segment *backuppb.SegmentBackupInfo) {
-		segment.GroupId = groupId
-	}
 }
 
 func SetSegmentBackuped(backuped bool) SegmentOpt {

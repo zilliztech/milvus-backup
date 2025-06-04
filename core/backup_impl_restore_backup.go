@@ -3,6 +3,7 @@ package core
 import (
 	"context"
 	"fmt"
+	"github.com/google/uuid"
 	"path"
 	"time"
 
@@ -18,7 +19,7 @@ import (
 
 func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.RestoreBackupRequest) *backuppb.RestoreBackupResponse {
 	if request.GetRequestId() == "" {
-		request.RequestId = utils.UUID()
+		request.RequestId = uuid.NewString()
 	}
 	log.Info("receive RestoreBackupRequest", zap.Any("request", request))
 

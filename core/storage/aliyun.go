@@ -75,9 +75,9 @@ func (a *aliCredProvider) RetrieveWithCredContext(_ *minioCred.CredContext) (min
 // according to the caller minioCred.Credentials.IsExpired(),
 // it already has a lock, so we don't need to worry about concurrency
 func (a *aliCredProvider) IsExpired() bool {
-	ak, err := a.cred.GetAccessKeyId()
+	cred, err := a.cred.GetCredential()
 	if err != nil {
 		return true
 	}
-	return tea.StringValue(ak) != a.akCache
+	return tea.StringValue(cred.AccessKeyId) != a.akCache
 }

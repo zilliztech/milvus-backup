@@ -198,10 +198,19 @@ func Deserialize(backup *BackupMetaBytes) (*backuppb.BackupInfo, error) {
 	}
 	collectionLevel := &backuppb.CollectionLevelBackupInfo{}
 	err = json.Unmarshal(backup.CollectionMetaBytes, collectionLevel)
+	if err != nil {
+		return backupInfo, err
+	}
 	partitionLevel := &backuppb.PartitionLevelBackupInfo{}
 	err = json.Unmarshal(backup.PartitionMetaBytes, partitionLevel)
+	if err != nil {
+		return backupInfo, err
+	}
 	segmentLevel := &backuppb.SegmentLevelBackupInfo{}
 	err = json.Unmarshal(backup.SegmentMetaBytes, segmentLevel)
+	if err != nil {
+		return backupInfo, err
+	}
 
 	return levelToTree(&LeveledBackupInfo{
 		collectionLevel: collectionLevel,

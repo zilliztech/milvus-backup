@@ -626,7 +626,7 @@ func (t *Task) runCollTask(ctx context.Context, task *backuppb.RestoreBackupTask
 		return fmt.Errorf("restore: wait collection worker pool %w", err)
 	}
 
-	duration := time.Now().Sub(time.Unix(task.GetStartTime(), 0))
+	duration := time.Since(time.Unix(task.GetStartTime(), 0))
 	t.logger.Info("finish restore all collections",
 		zap.Int("collection_num", len(t.backup.GetCollectionBackups())),
 		zap.Duration("duration", duration))

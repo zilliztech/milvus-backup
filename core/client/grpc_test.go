@@ -31,10 +31,10 @@ func TestTransCred(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, insecure.NewCredentials(), cred)
 
-	cred, err = transCred(&paramtable.MilvusConfig{TLSMode: 1})
+	_, err = transCred(&paramtable.MilvusConfig{TLSMode: 1})
 	assert.NoError(t, err)
 
-	cred, err = transCred(&paramtable.MilvusConfig{TLSMode: 2})
+	_, err = transCred(&paramtable.MilvusConfig{TLSMode: 2})
 	assert.NoError(t, err)
 }
 

@@ -40,11 +40,10 @@ import (
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest"
-	lumberjack "gopkg.in/natefinch/lumberjack.v2"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 var _globalL, _globalP, _globalS, _globalR atomic.Value
-var rateLimiter *utils.ReconfigurableRateLimiter
 
 func init() {
 	l, p := newStdLogger()

@@ -14,7 +14,6 @@ import (
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
 	"github.com/samber/lo"
-	"go.uber.org/atomic"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
@@ -57,8 +56,6 @@ type CollectionTask struct {
 	backupStorage  storage.Client
 
 	milvusStorage storage.Client
-
-	restoredSize atomic.Int64
 
 	grpcCli    client.Grpc
 	restfulCli client.Restful
@@ -963,7 +960,7 @@ func (ct *CollectionTask) checkBulkInsertViaGrpc(ctx context.Context, jobID int6
 			ct.taskTracker.UpdateRestoreTask(ct.parentTaskID, taskmgr.UpdateRestoreImportJob(ct.targetNS, strconv.FormatInt(jobID, 10), currentProgress))
 			if currentProgress > lastProgress {
 				lastUpdateTime = time.Now()
-			} else if time.Now().Sub(lastUpdateTime) >= _bulkInsertTimeout {
+			} else if time.Since(lastUpdateTime) >= _bulkInsertTimeout {
 				ct.logger.Warn("bulk insert task timeout", zap.Int64("job_id", jobID),
 					zap.Duration("timeout", _bulkInsertTimeout))
 				return errors.New("restore_collection: bulk insert timeout")
@@ -1033,7 +1030,7 @@ func (ct *CollectionTask) checkBulkInsertViaRestful(ctx context.Context, jobID s
 			ct.taskTracker.UpdateRestoreTask(ct.parentTaskID, taskmgr.UpdateRestoreImportJob(ct.targetNS, jobID, currentProgress))
 			if currentProgress > lastProgress {
 				lastUpdateTime = time.Now()
-			} else if time.Now().Sub(lastUpdateTime) >= _bulkInsertTimeout {
+			} else if time.Since(lastUpdateTime) >= _bulkInsertTimeout {
 				ct.logger.Warn("bulk insert task timeout", zap.String("job_id", jobID),
 					zap.Duration("timeout", _bulkInsertTimeout))
 				return errors.New("restore_collection: bulk insert timeout")

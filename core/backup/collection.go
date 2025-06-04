@@ -226,11 +226,12 @@ func (ct *CollectionTask) getPartLoadState(ctx context.Context, collLoadState st
 			return nil, fmt.Errorf("backup: get loading progress %w", err)
 		}
 
-		if progress == 0 {
+		switch progress {
+		case 0:
 			partLoadState[partName] = meta.LoadState_NotLoad
-		} else if progress == 100 {
+		case 100:
 			partLoadState[partName] = meta.LoadState_Loaded
-		} else {
+		default:
 			partLoadState[partName] = meta.LoadState_Loading
 		}
 	}

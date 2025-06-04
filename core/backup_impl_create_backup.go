@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/backup"
@@ -18,7 +19,7 @@ import (
 
 func (b *BackupContext) CreateBackup(ctx context.Context, request *backuppb.CreateBackupRequest) *backuppb.BackupInfoResponse {
 	if request.GetRequestId() == "" {
-		request.RequestId = utils.UUID()
+		request.RequestId = uuid.NewString()
 	}
 	log.Info("receive CreateBackupRequest",
 		zap.String("requestId", request.GetRequestId()),

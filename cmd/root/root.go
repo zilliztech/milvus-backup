@@ -41,6 +41,9 @@ func NewCmd(opt *Options) *cobra.Command {
 func setEnvs(envs []string) {
 	for _, e := range envs {
 		env := strings.Split(e, "=")
-		os.Setenv(env[0], env[1])
+		err := os.Setenv(env[0], env[1])
+		if err != nil {
+			panic(err)
+		}
 	}
 }
