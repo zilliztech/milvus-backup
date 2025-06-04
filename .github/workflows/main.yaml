@@ -43,7 +43,7 @@ jobs:
         deploy_tools: [docker-compose]
         milvus_mode: [standalone]
         another_milvus_mode: [standalone]
-        source_image_tag: [2.4-latest, 2.5-latest]
+        source_image_tag: [v2.2.16, v2.3.22, 2.4-latest, 2.5-latest]
         target_image_tag: [master-latest, 2.5-latest]
         exclude:
           - source_image_tag: 2.5-latest
