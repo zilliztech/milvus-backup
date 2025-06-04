@@ -16,6 +16,8 @@ import (
 	"github.com/samber/lo"
 	"go.uber.org/atomic"
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/zilliztech/milvus-backup/core/client"
@@ -27,7 +29,6 @@ import (
 	"github.com/zilliztech/milvus-backup/core/storage"
 	"github.com/zilliztech/milvus-backup/core/storage/mpath"
 	"github.com/zilliztech/milvus-backup/core/utils"
-	"github.com/zilliztech/milvus-backup/internal/common"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
@@ -47,16 +48,15 @@ type CollectionTask struct {
 	taskTracker *taskmgr.Mgr
 	targetNS    namespace.NS
 
-	copyParallelism    int
+	copySem *semaphore.Weighted
+
 	restoreParallelism int
 
-	backupBucketName string
-	backupPath       string
-	backupRootPath   string
-	backupStorage    storage.ChunkManager
+	backupPath     string
+	backupRootPath string
+	backupStorage  storage.Client
 
-	milvusBucketName string
-	milvusStorage    storage.ChunkManager
+	milvusStorage storage.Client
 
 	restoredSize atomic.Int64
 
@@ -70,48 +70,55 @@ type CollectionTask struct {
 	logger *zap.Logger
 }
 
-func newCollectionTask(task *backuppb.RestoreCollectionTask,
-	params *paramtable.BackupParams,
-	parentTaskID,
-	backupBucketName,
-	backupPath string,
-	backupStorage storage.ChunkManager,
-	milvusStorage storage.ChunkManager,
-	grpcCli client.Grpc,
-	restfulCli client.Restful,
-) *CollectionTask {
-	srcNS := namespace.New(task.GetCollBackup().GetDbName(), task.GetCollBackup().GetCollectionName())
-	targetNS := namespace.New(task.GetTargetDbName(), task.GetTargetCollectionName())
+type collectionTaskOpt struct {
+	task *backuppb.RestoreCollectionTask
+
+	params *paramtable.BackupParams
+
+	parentTaskID string
+	backupPath   string
+
+	backupStorage storage.Client
+	milvusStorage storage.Client
+
+	copySem *semaphore.Weighted
+
+	grpcCli    client.Grpc
+	restfulCli client.Restful
+}
+
+func newCollectionTask(opt collectionTaskOpt) *CollectionTask {
+	srcNS := namespace.New(opt.task.GetCollBackup().GetDbName(), opt.task.GetCollBackup().GetCollectionName())
+	targetNS := namespace.New(opt.task.GetTargetDbName(), opt.task.GetTargetCollectionName())
 
 	logger := log.With(
-		zap.String("restore_task_id", task.GetId()),
+		zap.String("restore_task_id", opt.task.GetId()),
 		zap.String("backup_ns", srcNS.String()),
 		zap.String("target_ns", targetNS.String()))
 
 	taskTracker := taskmgr.DefaultMgr
-	taskTracker.UpdateRestoreTask(parentTaskID, taskmgr.AddRestoreCollTask(targetNS, task.GetToRestoreSize()))
+	taskTracker.UpdateRestoreTask(opt.parentTaskID, taskmgr.AddRestoreCollTask(targetNS, opt.task.GetToRestoreSize()))
 
 	return &CollectionTask{
-		task: task,
+		task: opt.task,
 
-		parentTaskID: parentTaskID,
+		parentTaskID: opt.parentTaskID,
 
 		taskTracker: taskTracker,
 		targetNS:    targetNS,
 
-		copyParallelism:    params.BackupCfg.BackupCopyDataParallelism,
-		restoreParallelism: params.BackupCfg.RestoreParallelism,
+		copySem: opt.copySem,
 
-		backupBucketName: backupBucketName,
-		backupPath:       backupPath,
-		backupRootPath:   params.MinioCfg.BackupRootPath,
-		backupStorage:    backupStorage,
+		restoreParallelism: opt.params.BackupCfg.RestoreParallelism,
 
-		milvusBucketName: params.MinioCfg.BucketName,
-		milvusStorage:    milvusStorage,
+		backupPath:     opt.backupPath,
+		backupRootPath: opt.params.MinioCfg.BackupRootPath,
 
-		grpcCli:    grpcCli,
-		restfulCli: restfulCli,
+		backupStorage: opt.backupStorage,
+		milvusStorage: opt.milvusStorage,
+
+		grpcCli:    opt.grpcCli,
+		restfulCli: opt.restfulCli,
 
 		vchTimestamp: make(map[string]uint64),
 
@@ -574,8 +581,7 @@ func (ct *CollectionTask) cleanTempFiles(dir string) tearDownFn {
 		}
 
 		ct.logger.Info("delete temporary file", zap.String("dir", dir))
-		err := ct.milvusStorage.RemoveWithPrefix(ctx, ct.milvusBucketName, dir)
-		if err != nil {
+		if err := storage.DeletePrefix(ctx, ct.milvusStorage, dir); err != nil {
 			return fmt.Errorf("restore_collection: failed to delete temporary file: %w", err)
 		}
 
@@ -604,9 +610,31 @@ func (ct *CollectionTask) createPartition(ctx context.Context, partitionName str
 	return nil
 }
 
+func (ct *CollectionTask) copyToMilvusBucket(ctx context.Context, tempDir, srcPrefix string) (string, error) {
+	ct.logger.Info("milvus and backup store in different bucket, copy the data first", zap.String("temp_dir", tempDir))
+	dest := path.Join(tempDir, strings.Replace(srcPrefix, ct.backupRootPath, "", 1)) + "/"
+	opt := storage.CopyPrefixOpt{
+		Sem:          ct.copySem,
+		Src:          ct.backupStorage,
+		Dest:         ct.milvusStorage,
+		SrcPrefix:    srcPrefix,
+		DestPrefix:   dest,
+		CopyByServer: true,
+	}
+
+	ct.logger.Info("copy temporary restore file", zap.String("src", srcPrefix), zap.String("dest", dest))
+	task := storage.NewCopyPrefixTask(opt)
+	if err := task.Execute(ctx); err != nil {
+		return "", fmt.Errorf("restore_collection: copy temporary restore file: %w", err)
+	}
+	ct.logger.Info("copy temporary restore file success", zap.String("src", srcPrefix), zap.String("dest", dest))
+
+	return dest, nil
+}
+
 func (ct *CollectionTask) copyAndRewriteDir(ctx context.Context, b batch) (batch, error) {
-	isSameBucket := ct.milvusBucketName == ct.backupBucketName
-	isSameStorage := ct.backupStorage.Config().StorageType == ct.milvusStorage.Config().StorageType
+	isSameBucket := ct.milvusStorage.Config().Bucket == ct.backupStorage.Config().Bucket
+	isSameStorage := ct.backupStorage.Config().Provider == ct.milvusStorage.Config().Provider
 	// if milvus bucket and backup bucket are not the same, should copy the data first
 	if isSameBucket && isSameStorage {
 		ct.logger.Info("milvus and backup store in the same bucket, no need to copy the data")
@@ -614,29 +642,10 @@ func (ct *CollectionTask) copyAndRewriteDir(ctx context.Context, b batch) (batch
 	}
 
 	tempDir := fmt.Sprintf("restore-temp-%s-%s-%s/", ct.parentTaskID, ct.task.GetTargetDbName(), ct.task.GetTargetCollectionName())
-	ct.logger.Info("milvus and backup store in different bucket, copy the data first", zap.String("temp_dir", tempDir))
-
-	opt := storage.CopyOption{
-		WorkerNum:    ct.copyParallelism,
-		RPS:          1000,
-		CopyByServer: true,
-	}
-	copier := storage.NewCopier(ct.backupStorage, ct.milvusStorage, opt)
-	copyFn := func(ctx context.Context, src string) (string, error) {
-		dest := path.Join(tempDir, strings.Replace(src, ct.backupRootPath, "", 1)) + "/"
-		ct.logger.Info("copy temporary restore file", zap.String("from", src), zap.String("to", dest))
-		if err := copier.Copy(ctx, src, dest, ct.backupBucketName, ct.milvusBucketName); err != nil {
-			ct.logger.Error("fail to copy backup date from backup bucket to restore target milvus bucket after retry", zap.Error(err))
-			return "", fmt.Errorf("restore_collection: failed to copy backup data: %w", err)
-		}
-		ct.logger.Info("copy temporary restore file success", zap.String("from", src), zap.String("to", dest))
-		return dest, nil
-	}
-
 	for i, dir := range b.partitionDirs {
 		// insert log
 		if len(dir.insertLogDir) != 0 {
-			insertLogDir, err := copyFn(ctx, dir.insertLogDir)
+			insertLogDir, err := ct.copyToMilvusBucket(ctx, tempDir, dir.insertLogDir)
 			if err != nil {
 				return batch{}, fmt.Errorf("restore_collection: copy insert log dir: %w", err)
 			}
@@ -645,7 +654,7 @@ func (ct *CollectionTask) copyAndRewriteDir(ctx context.Context, b batch) (batch
 
 		// delta log
 		if len(dir.deltaLogDir) != 0 {
-			deltaLogDir, err := copyFn(ctx, dir.deltaLogDir)
+			deltaLogDir, err := ct.copyToMilvusBucket(ctx, tempDir, dir.deltaLogDir)
 			if err != nil {
 				return batch{}, fmt.Errorf("restore_collection: copy delta log dir: %w", err)
 			}
@@ -656,7 +665,6 @@ func (ct *CollectionTask) copyAndRewriteDir(ctx context.Context, b batch) (batch
 	}
 
 	ct.tearDownFns = append(ct.tearDownFns, ct.cleanTempFiles(tempDir))
-
 	return b, nil
 }
 
@@ -666,12 +674,8 @@ func (ct *CollectionTask) restoreNotL0SegV1(ctx context.Context, part *backuppb.
 		return fmt.Errorf("restore_collection: get not L0 groups: %w", err)
 	}
 
-	wp, err := common.NewWorkerPool(ctx, ct.restoreParallelism, 0)
-	if err != nil {
-		return fmt.Errorf("restore_collection: restore data v1 create worker pool: %w", err)
-	}
-	wp.Start()
-
+	g, subCtx := errgroup.WithContext(ctx)
+	g.SetLimit(ct.restoreParallelism)
 	for _, b := range notL0SegBatches {
 		bat, err := ct.copyAndRewriteDir(ctx, b)
 		if err != nil {
@@ -680,16 +684,15 @@ func (ct *CollectionTask) restoreNotL0SegV1(ctx context.Context, part *backuppb.
 
 		// Submit each directory as an individual task
 		for _, dir := range bat.partitionDirs {
-			wp.Submit(func(ctx context.Context) error {
+			g.Go(func() error {
 				var paths = getPaths(dir)
-				return ct.submitGRPCBulkInsertTask(ctx, part.GetPartitionName(), paths, bat.timestamp, bat.isL0, dir.size)
+				return ct.submitGRPCBulkInsertTask(subCtx, part.GetPartitionName(), paths, bat.timestamp, bat.isL0, dir.size)
 			})
 		}
 	}
 
-	wp.Done()
-	if err := wp.Wait(); err != nil {
-		return fmt.Errorf("restore_collection: wait worker pool: %w", err)
+	if err := g.Wait(); err != nil {
+		return fmt.Errorf("restore_collection: restore not L0 segment v1: %w", err)
 	}
 
 	return nil
@@ -859,6 +862,7 @@ func (ct *CollectionTask) buildBatchesWithoutGroupID(ctx context.Context, part *
 		return nil, fmt.Errorf("restore_collection: get partition backup binlog files: %w", err)
 	}
 
+	ct.logger.Info("build batches without group id", zap.String("partition", part.GetPartitionName()))
 	return []batch{{partitionDirs: []partitionDir{partDir}}}, nil
 }
 
@@ -922,6 +926,8 @@ func (ct *CollectionTask) buildBatchesWithGroupID(ctx context.Context, notL0Segs
 			batches = append(batches, b)
 		}
 	}
+
+	ct.logger.Info("build batches with group id done", zap.Int("batch_num", len(batches)))
 
 	return batches, nil
 }
@@ -1110,7 +1116,7 @@ func (ct *CollectionTask) buildBackupPartitionDir(ctx context.Context, size int6
 	insertLogDir := mpath.BackupInsertLogDir(ct.backupPath, pathOpt...)
 	deltaLogDir := mpath.BackupDeltaLogDir(ct.backupPath, pathOpt...)
 
-	exist, err := ct.backupStorage.Exist(ctx, ct.backupBucketName, deltaLogDir)
+	exist, err := storage.Exist(ctx, ct.backupStorage, deltaLogDir)
 	if err != nil {
 		return partitionDir{}, fmt.Errorf("restore_collection: check delta log exist: %w", err)
 	}

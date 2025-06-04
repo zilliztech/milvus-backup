@@ -8,6 +8,8 @@ import (
 
 	"go.uber.org/zap"
 	"golang.org/x/exp/maps"
+	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/zilliztech/milvus-backup/core/client"
 	"github.com/zilliztech/milvus-backup/core/meta"
@@ -17,7 +19,6 @@ import (
 	"github.com/zilliztech/milvus-backup/core/storage"
 	"github.com/zilliztech/milvus-backup/core/storage/mpath"
 	"github.com/zilliztech/milvus-backup/core/utils"
-	"github.com/zilliztech/milvus-backup/internal/common"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
@@ -35,8 +36,9 @@ type Task struct {
 
 	logger *zap.Logger
 
-	MilvusStorage storage.ChunkManager
-	BackupStorage storage.ChunkManager
+	milvusStorage storage.Client
+	backupStorage storage.Client
+	copySem       *semaphore.Weighted
 
 	params *paramtable.BackupParams
 
@@ -51,8 +53,8 @@ type Task struct {
 
 func NewTask(
 	backupID string,
-	MilvusStorage storage.ChunkManager,
-	BackupStorage storage.ChunkManager,
+	MilvusStorage storage.Client,
+	BackupStorage storage.Client,
 	request *backuppb.CreateBackupRequest,
 	params *paramtable.BackupParams,
 	grpc client.Grpc,
@@ -75,8 +77,9 @@ func NewTask(
 
 		logger: logger,
 
-		MilvusStorage: MilvusStorage,
-		BackupStorage: BackupStorage,
+		milvusStorage: MilvusStorage,
+		backupStorage: BackupStorage,
+		copySem:       semaphore.NewWeighted(int64(params.BackupCfg.BackupCopyDataParallelism)),
 
 		params: params,
 
@@ -320,7 +323,7 @@ func (t *Task) newCollectionTaskOpt() CollectionOpt {
 	backupDir := mpath.BackupDir(t.params.MinioCfg.BackupRootPath, t.request.GetBackupName())
 
 	crossStorage := t.params.MinioCfg.CrossStorage
-	if t.BackupStorage.Config().StorageType != t.MilvusStorage.Config().StorageType {
+	if t.backupStorage.Config().Provider != t.milvusStorage.Config().Provider {
 		crossStorage = true
 	}
 
@@ -328,12 +331,11 @@ func (t *Task) newCollectionTaskOpt() CollectionOpt {
 		BackupID:       t.request.GetRequestId(),
 		MetaOnly:       t.request.GetMetaOnly(),
 		SkipFlush:      t.request.GetForce(),
-		MilvusStorage:  t.MilvusStorage,
+		MilvusStorage:  t.milvusStorage,
 		MilvusRootPath: t.params.MinioCfg.RootPath,
-		MilvusBucket:   t.params.MinioCfg.BucketName,
 		CrossStorage:   crossStorage,
-		BackupBucket:   t.params.MinioCfg.BackupBucketName,
-		BackupStorage:  t.BackupStorage,
+		BackupStorage:  t.backupStorage,
+		CopySem:        t.copySem,
 		BackupDir:      backupDir,
 		Meta:           t.meta,
 		Grpc:           t.grpc,
@@ -345,24 +347,20 @@ func (t *Task) runCollTask(ctx context.Context, collections []collection) error 
 	t.logger.Info("start backup all collections", zap.Any("collections", collections))
 	opt := t.newCollectionTaskOpt()
 
-	wp, err := common.NewWorkerPool(ctx, t.params.BackupCfg.BackupCollectionParallelism, 0)
-	if err != nil {
-		return fmt.Errorf("backup: create worker pool: %w", err)
-	}
-	wp.Start()
+	g, subCtx := errgroup.WithContext(ctx)
+	g.SetLimit(t.params.BackupCfg.BackupCollectionParallelism)
 	for _, coll := range collections {
-		job := func(ctx context.Context) error {
+		g.Go(func() error {
 			task := NewCollectionTask(coll.DBName, coll.CollName, opt)
-			if err := task.Execute(ctx); err != nil {
+			if err := task.Execute(subCtx); err != nil {
 				return fmt.Errorf("create: backup collection %s.%s failed, err: %w", coll.DBName, coll.CollName, err)
 			}
 
 			return nil
-		}
-		wp.Submit(job)
+		})
 	}
-	wp.Done()
-	if err := wp.Wait(); err != nil {
+
+	if err := g.Wait(); err != nil {
 		return fmt.Errorf("backup: wait worker pool: %w", err)
 	}
 

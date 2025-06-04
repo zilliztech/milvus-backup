@@ -1,5 +1,3 @@
-dir: ./core/mocks/
-pkgname: mocks
 template: testify
 filename: "{{.InterfaceName | camelcase | firstLower }}_mock.go"
 packages:
@@ -14,4 +12,4 @@ packages:
 
   github.com/zilliztech/milvus-backup/core/storage:
     interfaces:
-      ChunkManager:
+      Client:
