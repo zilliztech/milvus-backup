@@ -9,10 +9,11 @@ import (
 type BackupParams struct {
 	BaseTable
 
-	HTTPCfg   HTTPConfig
-	MilvusCfg MilvusConfig
-	MinioCfg  MinioConfig
-	BackupCfg BackupConfig
+	HTTPCfg     HTTPConfig
+	CloudConfig CloudConfig
+	MilvusCfg   MilvusConfig
+	MinioCfg    MinioConfig
+	BackupCfg   BackupConfig
 }
 
 func (p *BackupParams) InitOnce() {
@@ -25,6 +26,7 @@ func (p *BackupParams) Init() {
 	p.BaseTable.Init()
 
 	p.HTTPCfg.init(&p.BaseTable)
+	p.CloudConfig.init(&p.BaseTable)
 	p.MilvusCfg.init(&p.BaseTable)
 	p.MinioCfg.init(&p.BaseTable)
 	p.BackupCfg.init(&p.BaseTable)
@@ -36,7 +38,7 @@ type BackupConfig struct {
 	MaxSegmentGroupSize int64
 
 	BackupCollectionParallelism int
-	BackupCopyDataParallelism   int
+	BackupCopyDataParallelism   int64
 	RestoreParallelism          int
 
 	KeepTempFiles bool
@@ -79,7 +81,7 @@ func (p *BackupConfig) initRestoreParallelism() {
 
 func (p *BackupConfig) initBackupCopyDataParallelism() {
 	size := p.Base.ParseIntWithDefault("backup.parallelism.copydata", 128)
-	p.BackupCopyDataParallelism = size
+	p.BackupCopyDataParallelism = int64(size)
 }
 
 func (p *BackupConfig) initKeepTempFiles() {
@@ -209,6 +211,34 @@ func (p *MilvusConfig) initTLSMode() {
 func (p *MilvusConfig) initRPCChanelName() {
 	rpcChanelName := p.Base.LoadWithDefault("milvus.rpcChannelName", "by-dev-replicate-msg")
 	p.RPCChanelName = rpcChanelName
+}
+
+const (
+	DefaultCloudAddress = "https://api.cloud.zilliz.com"
+)
+
+type CloudConfig struct {
+	Base *BaseTable
+
+	Address string
+	APIKey  string
+}
+
+func (p *CloudConfig) init(base *BaseTable) {
+	p.Base = base
+
+	p.initAddress()
+	p.initAPIKey()
+}
+
+func (p *CloudConfig) initAddress() {
+	address := p.Base.LoadWithDefault("cloud.address", DefaultCloudAddress)
+	p.Address = address
+}
+
+func (p *CloudConfig) initAPIKey() {
+	apikey := p.Base.LoadWithDefault("cloud.apikey", "")
+	p.APIKey = apikey
 }
 
 const (

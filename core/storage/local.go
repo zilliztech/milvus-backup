@@ -14,7 +14,7 @@ type LocalClient struct {
 	config Config
 }
 
-func NewLocalClient(config Config) *LocalClient {
+func newLocalClient(config Config) *LocalClient {
 	return &LocalClient{config: config}
 }
 

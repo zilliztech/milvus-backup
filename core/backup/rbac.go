@@ -8,7 +8,7 @@ import (
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 
-	"github.com/zilliztech/milvus-backup/core/client"
+	"github.com/zilliztech/milvus-backup/core/client/milvus"
 	"github.com/zilliztech/milvus-backup/core/meta"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/log"
@@ -18,12 +18,12 @@ type RBACTask struct {
 	backupID string
 	meta     *meta.MetaManager
 
-	grpcCli client.Grpc
+	grpcCli milvus.Grpc
 
 	logger *zap.Logger
 }
 
-func NewRBACTask(backupID string, meta *meta.MetaManager, grpcCli client.Grpc) *RBACTask {
+func NewRBACTask(backupID string, meta *meta.MetaManager, grpcCli milvus.Grpc) *RBACTask {
 	logger := log.L().With(zap.String("backup_id", backupID))
 	return &RBACTask{
 		backupID: backupID,

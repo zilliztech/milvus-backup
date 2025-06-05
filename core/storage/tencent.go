@@ -9,7 +9,7 @@ import (
 )
 
 // NewTencentClient returns a minio.Client which is compatible for tencent OSS
-func NewTencentClient(cfg Config) (*MinioClient, error) {
+func newTencentClient(cfg Config) (*MinioClient, error) {
 	opts := minio.Options{Secure: cfg.UseSSL, BucketLookup: minio.BucketLookupDNS}
 	if cfg.UseIAM {
 		provider, err := newTencentCredProvider()

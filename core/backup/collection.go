@@ -15,7 +15,7 @@ import (
 	"golang.org/x/sync/semaphore"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/zilliztech/milvus-backup/core/client"
+	"github.com/zilliztech/milvus-backup/core/client/milvus"
 	"github.com/zilliztech/milvus-backup/core/meta"
 	"github.com/zilliztech/milvus-backup/core/pbconv"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
@@ -44,8 +44,8 @@ type CollectionOpt struct {
 
 	Meta *meta.MetaManager
 
-	Grpc    client.Grpc
-	Restful client.Restful
+	Grpc    milvus.Grpc
+	Restful milvus.Restful
 }
 
 type CollectionTask struct {
@@ -70,8 +70,8 @@ type CollectionTask struct {
 
 	meta *meta.MetaManager
 
-	grpc    client.Grpc
-	restful client.Restful
+	grpc    milvus.Grpc
+	restful milvus.Restful
 
 	logger *zap.Logger
 }
@@ -419,7 +419,7 @@ func (ct *CollectionTask) getSegment(ctx context.Context, seg *milvuspb.Persiste
 	return bakSeg, nil
 }
 
-func (ct *CollectionTask) listInsertLogByAPI(ctx context.Context, binlogDir string, fieldsBinlog []client.BinlogInfo) ([]*backuppb.FieldBinlog, int64, error) {
+func (ct *CollectionTask) listInsertLogByAPI(ctx context.Context, binlogDir string, fieldsBinlog []milvus.BinlogInfo) ([]*backuppb.FieldBinlog, int64, error) {
 	keys, sizes, err := storage.ListPrefixFlat(ctx, ct.milvusStorage, binlogDir, true)
 	if err != nil {
 		return nil, 0, fmt.Errorf("backup: list insert logs %w", err)
@@ -449,7 +449,7 @@ func (ct *CollectionTask) listInsertLogByAPI(ctx context.Context, binlogDir stri
 	return bakFieldsBinlog, lo.Sum(sizes), nil
 }
 
-func (ct *CollectionTask) listDeltaLogByAPI(ctx context.Context, binlogDir string, fieldsBinlog []client.BinlogInfo) ([]*backuppb.FieldBinlog, int64, error) {
+func (ct *CollectionTask) listDeltaLogByAPI(ctx context.Context, binlogDir string, fieldsBinlog []milvus.BinlogInfo) ([]*backuppb.FieldBinlog, int64, error) {
 	keys, sizes, err := storage.ListPrefixFlat(ctx, ct.milvusStorage, binlogDir, true)
 	if err != nil {
 		return nil, 0, fmt.Errorf("backup: list insert logs %w", err)

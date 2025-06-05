@@ -20,7 +20,7 @@ import (
 	"golang.org/x/sync/semaphore"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/zilliztech/milvus-backup/core/client"
+	"github.com/zilliztech/milvus-backup/core/client/milvus"
 	"github.com/zilliztech/milvus-backup/core/meta/taskmgr"
 	"github.com/zilliztech/milvus-backup/core/namespace"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
@@ -60,8 +60,8 @@ type CollectionTask struct {
 
 	restoredSize atomic.Int64
 
-	grpcCli    client.Grpc
-	restfulCli client.Restful
+	grpcCli    milvus.Grpc
+	restfulCli milvus.Restful
 
 	tearDownFns []tearDownFn
 
@@ -83,8 +83,8 @@ type collectionTaskOpt struct {
 
 	copySem *semaphore.Weighted
 
-	grpcCli    client.Grpc
-	restfulCli client.Restful
+	grpcCli    milvus.Grpc
+	restfulCli milvus.Restful
 }
 
 func newCollectionTask(opt collectionTaskOpt) *CollectionTask {
@@ -304,7 +304,7 @@ func (ct *CollectionTask) createColl(ctx context.Context) error {
 			zap.Int32("newShardNum", shardNum))
 	}
 
-	opt := client.CreateCollectionInput{
+	opt := milvus.CreateCollectionInput{
 		DB:           ct.task.GetTargetDbName(),
 		Schema:       schema,
 		ConsLevel:    commonpb.ConsistencyLevel(ct.task.GetCollBackup().GetConsistencyLevel()),
@@ -526,7 +526,7 @@ func (ct *CollectionTask) restoreScalarFieldIdx(ctx context.Context, indexes []*
 			indexName = ""
 		}
 
-		opt := client.CreateIndexInput{
+		opt := milvus.CreateIndexInput{
 			DB:             ct.task.GetTargetDbName(),
 			CollectionName: ct.task.GetTargetCollectionName(),
 			FieldName:      index.GetFieldName(),
@@ -559,7 +559,7 @@ func (ct *CollectionTask) restoreVectorFieldIdx(ctx context.Context, indexes []*
 			}
 		}
 
-		opt := client.CreateIndexInput{
+		opt := milvus.CreateIndexInput{
 			DB:             ct.task.GetTargetDbName(),
 			CollectionName: ct.task.GetTargetCollectionName(),
 			FieldName:      index.GetFieldName(),
@@ -703,7 +703,7 @@ func (ct *CollectionTask) submitGRPCBulkInsertTask(ctx context.Context, partitio
 	ct.logger.Info("start bulk insert via grpc",
 		zap.Strings("paths", paths),
 		zap.String("partition", partitionName))
-	in := client.GrpcBulkInsertInput{
+	in := milvus.GrpcBulkInsertInput{
 		DB:             ct.task.GetTargetDbName(),
 		CollectionName: ct.task.GetTargetCollectionName(),
 		PartitionName:  partitionName,
@@ -1031,9 +1031,9 @@ func (ct *CollectionTask) checkBulkInsertViaRestful(ctx context.Context, jobID s
 			zap.String("state", resp.Data.State),
 			zap.Int("progress", resp.Data.Progress))
 		switch resp.Data.State {
-		case string(client.ImportStateFailed):
+		case string(milvus.ImportStateFailed):
 			return fmt.Errorf("restore_collection: bulk insert failed: %s", resp.Data.Reason)
-		case string(client.ImportStateCompleted):
+		case string(milvus.ImportStateCompleted):
 			ct.logger.Info("bulk insert task success", zap.String("job_id", jobID))
 			ct.taskTracker.UpdateRestoreTask(ct.parentTaskID, taskmgr.UpdateRestoreImportJob(ct.targetNS, jobID, 100))
 			return nil
@@ -1063,7 +1063,7 @@ func (ct *CollectionTask) bulkInsertViaRestful(ctx context.Context, partition st
 			return []string{dir.insertLogDir, dir.deltaLogDir}
 		}
 	})
-	in := client.RestfulBulkInsertInput{
+	in := milvus.RestfulBulkInsertInput{
 		DB:             ct.task.GetTargetDbName(),
 		CollectionName: ct.task.GetTargetCollectionName(),
 		PartitionName:  partition,

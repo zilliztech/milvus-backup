@@ -9,8 +9,8 @@ import (
 	minioCred "github.com/minio/minio-go/v7/pkg/credentials"
 )
 
-// NewAliyunClient returns a minio.Client which is compatible for aliyun OSS
-func NewAliyunClient(cfg Config) (*MinioClient, error) {
+// newAliyunClient returns a minio.Client which is compatible for aliyun OSS
+func newAliyunClient(cfg Config) (*MinioClient, error) {
 	opts := minio.Options{Secure: cfg.UseSSL, BucketLookup: minio.BucketLookupDNS}
 	if cfg.UseIAM {
 		provider, err := newAliCredProvider()

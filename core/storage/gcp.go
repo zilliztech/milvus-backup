@@ -73,8 +73,8 @@ func (t *gcpHTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 	return t.backend.RoundTrip(req)
 }
 
-// NewGCPClient returns a minio.Client which is compatible for GCS
-func NewGCPClient(cfg Config) (*MinioClient, error) {
+// newGCPClient returns a minio.Client which is compatible for GCS
+func newGCPClient(cfg Config) (*MinioClient, error) {
 	adderss := cfg.Endpoint
 	if adderss == "" {
 		adderss = _gcpEndpoint

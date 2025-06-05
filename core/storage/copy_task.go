@@ -13,6 +13,8 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/util/retry"
 )
 
+type OnSuccessFn func(copyAttr CopyAttr)
+
 type CopyAttr struct {
 	Src     ObjectAttr
 	DestKey string
@@ -84,6 +86,8 @@ type CopyPrefixOpt struct {
 
 	Sem *semaphore.Weighted
 
+	OnSuccess OnSuccessFn
+
 	CopyByServer bool
 }
 
@@ -105,13 +109,23 @@ func NewCopyPrefixTask(opt CopyPrefixOpt) *CopyPrefixTask {
 	}
 }
 
-func (c *CopyPrefixTask) Prepare(_ context.Context) error {
+func (c *CopyPrefixTask) copy(ctx context.Context, src ObjectAttr) error {
+	destKey := strings.Replace(src.Key, c.opt.SrcPrefix, c.opt.DestPrefix, 1)
+	attr := CopyAttr{Src: src, DestKey: destKey}
+
+	if err := retry.Do(ctx, func() error { return c.copier.copy(ctx, attr) }); err != nil {
+		return fmt.Errorf("storage: copy prefix %w", err)
+	}
+
+	if c.opt.OnSuccess != nil {
+		c.opt.OnSuccess(attr)
+	}
+
 	return nil
 }
 
 func (c *CopyPrefixTask) Execute(ctx context.Context) error {
 	c.logger.Info("start copy prefix")
-
 	iter, err := c.opt.Src.ListPrefix(ctx, c.opt.SrcPrefix, true)
 	if err != nil {
 		return fmt.Errorf("storage: copy prefix walk prefix %w", err)
@@ -123,7 +137,6 @@ func (c *CopyPrefixTask) Execute(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("storage: copy prefix iter object %w", err)
 		}
-
 		if attr.IsEmpty() && strings.HasSuffix(attr.Key, "/") {
 			continue
 		}
@@ -134,13 +147,12 @@ func (c *CopyPrefixTask) Execute(ctx context.Context) error {
 		g.Go(func() error {
 			defer c.opt.Sem.Release(1)
 
-			destKey := strings.Replace(attr.Key, c.opt.SrcPrefix, c.opt.DestPrefix, 1)
-			return retry.Do(subCtx, func() error {
-				return c.copier.copy(subCtx, CopyAttr{Src: attr, DestKey: destKey})
-			})
-		})
+			if err := c.copy(subCtx, attr); err != nil {
+				return fmt.Errorf("storage: copy prefix %w", err)
+			}
 
-		return nil
+			return nil
+		})
 	}
 
 	if err := g.Wait(); err != nil {

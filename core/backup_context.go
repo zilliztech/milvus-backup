@@ -12,7 +12,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/sync/semaphore"
 
-	"github.com/zilliztech/milvus-backup/core/client"
+	"github.com/zilliztech/milvus-backup/core/client/milvus"
 	"github.com/zilliztech/milvus-backup/core/meta"
 	"github.com/zilliztech/milvus-backup/core/meta/taskmgr"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
@@ -40,8 +40,8 @@ type BackupContext struct {
 	params  *paramtable.BackupParams
 
 	// milvus client
-	grpcClient    client.Grpc
-	restfulClient client.Restful
+	grpcClient    milvus.Grpc
+	restfulClient milvus.Restful
 
 	// data storage client
 	milvusStorageClient storage.Client
@@ -55,8 +55,8 @@ type BackupContext struct {
 	meta *meta.MetaManager
 }
 
-func CreateGrpcClient(params *paramtable.BackupParams) (client.Grpc, error) {
-	cli, err := client.NewGrpc(&params.MilvusCfg)
+func CreateGrpcClient(params *paramtable.BackupParams) (milvus.Grpc, error) {
+	cli, err := milvus.NewGrpc(&params.MilvusCfg)
 	if err != nil {
 		log.Error("failed to create milvus client", zap.Error(err))
 		return nil, fmt.Errorf("failed to create milvus client: %w", err)
@@ -64,8 +64,8 @@ func CreateGrpcClient(params *paramtable.BackupParams) (client.Grpc, error) {
 	return cli, nil
 }
 
-func CreateRestfulClient(params *paramtable.BackupParams) (client.Restful, error) {
-	cli, err := client.NewRestful(&params.MilvusCfg)
+func CreateRestfulClient(params *paramtable.BackupParams) (milvus.Restful, error) {
+	cli, err := milvus.NewRestful(&params.MilvusCfg)
 	if err != nil {
 		log.Error("failed to create restful client", zap.Error(err))
 		return nil, fmt.Errorf("failed to create restful client: %w", err)
@@ -101,7 +101,7 @@ func CreateBackupContext(ctx context.Context, params *paramtable.BackupParams) *
 	}
 }
 
-func (b *BackupContext) getMilvusClient() client.Grpc {
+func (b *BackupContext) getMilvusClient() milvus.Grpc {
 	if b.grpcClient == nil {
 		milvusClient, err := CreateGrpcClient(b.params)
 		if err != nil {
@@ -113,7 +113,7 @@ func (b *BackupContext) getMilvusClient() client.Grpc {
 	return b.grpcClient
 }
 
-func (b *BackupContext) getRestfulClient() client.Restful {
+func (b *BackupContext) getRestfulClient() milvus.Restful {
 	if b.restfulClient == nil {
 		restfulClient, err := CreateRestfulClient(b.params)
 		if err != nil {
@@ -127,64 +127,26 @@ func (b *BackupContext) getRestfulClient() client.Restful {
 
 func (b *BackupContext) getMilvusStorageClient() storage.Client {
 	if b.milvusStorageClient == nil {
-		minioEndPoint := b.params.MinioCfg.Address + ":" + b.params.MinioCfg.Port
-		log.Info("create milvus storage client",
-			zap.String("address", minioEndPoint),
-			zap.String("bucket", b.params.MinioCfg.BucketName),
-			zap.String("backupBucket", b.params.MinioCfg.BackupBucketName))
-
-		cfg := storage.Config{
-			Provider:          b.params.MinioCfg.StorageType,
-			Endpoint:          minioEndPoint,
-			UseSSL:            b.params.MinioCfg.UseSSL,
-			IAMEndpoint:       b.params.MinioCfg.IAMEndpoint,
-			UseIAM:            b.params.MinioCfg.UseIAM,
-			AK:                b.params.MinioCfg.AccessKeyID,
-			SK:                b.params.MinioCfg.SecretAccessKey,
-			GcpCredentialJSON: b.params.MinioCfg.GcpCredentialJSON,
-			Bucket:            b.params.MinioCfg.BucketName,
-		}
-
-		storageClient, err := storage.NewClient(b.ctx, cfg)
+		cli, err := storage.NewMilvusStorage(b.ctx, b.params)
 		if err != nil {
-			log.Error("failed to initial storage client", zap.Error(err))
+			log.Error("failed to initial milvus storage client", zap.Error(err))
 			panic(err)
 		}
-		b.milvusStorageClient = storageClient
+
+		b.milvusStorageClient = cli
 	}
 	return b.milvusStorageClient
 }
 
 func (b *BackupContext) getBackupStorageClient() storage.Client {
 	if b.backupStorageClient == nil {
-		minioEndPoint := b.params.MinioCfg.BackupAddress + ":" + b.params.MinioCfg.BackupPort
-		log.Info("create backup storage client",
-			zap.String("address", minioEndPoint),
-			zap.String("bucket", b.params.MinioCfg.BucketName),
-			zap.String("backupBucket", b.params.MinioCfg.BackupBucketName))
-
-		cfg := storage.Config{
-			Provider:          b.params.MinioCfg.BackupStorageType,
-			Endpoint:          minioEndPoint,
-			Bucket:            b.params.MinioCfg.BackupBucketName,
-			AK:                b.params.MinioCfg.BackupAccessKeyID,
-			SK:                b.params.MinioCfg.BackupSecretAccessKey,
-			GcpCredentialJSON: b.params.MinioCfg.BackupGcpCredentialJSON,
-			UseSSL:            b.params.MinioCfg.BackupUseSSL,
-			UseIAM:            b.params.MinioCfg.BackupUseIAM,
-			IAMEndpoint:       b.params.MinioCfg.BackupIAMEndpoint,
-		}
-
-		storageClient, err := storage.NewClient(b.ctx, cfg)
+		cli, err := storage.NewBackupStorage(b.ctx, b.params)
 		if err != nil {
-			log.Error("failed to initial storage client", zap.Error(err))
+			log.Error("failed to initial backup storage client", zap.Error(err))
 			panic(err)
 		}
-		b.backupStorageClient = storageClient
-		if err := storage.CreateBucketIfNotExist(b.ctx, storageClient, ""); err != nil {
-			log.Error("failed to create bucket", zap.Error(err))
-			panic(err)
-		}
+
+		b.backupStorageClient = cli
 	}
 	return b.backupStorageClient
 }

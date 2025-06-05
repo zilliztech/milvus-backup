@@ -8,13 +8,13 @@ import (
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 
-	"github.com/zilliztech/milvus-backup/core/client"
+	"github.com/zilliztech/milvus-backup/core/client/milvus"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
 type RBACTask struct {
-	grpcCli client.Grpc
+	grpcCli milvus.Grpc
 
 	bakRBAC *backuppb.RBACMeta
 }
@@ -47,7 +47,7 @@ func (rt *RBACTask) Execute(ctx context.Context) error {
 	return nil
 }
 
-func NewRBACTask(grpcCli client.Grpc, bakRBAC *backuppb.RBACMeta) *RBACTask {
+func NewRBACTask(grpcCli milvus.Grpc, bakRBAC *backuppb.RBACMeta) *RBACTask {
 	return &RBACTask{
 		grpcCli: grpcCli,
 
