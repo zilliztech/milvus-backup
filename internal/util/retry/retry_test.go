@@ -13,11 +13,11 @@ package retry
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"testing"
 	"time"
 
-	"github.com/lingdor/stackerror"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -77,7 +77,7 @@ func TestAllError(t *testing.T) {
 	ctx := context.Background()
 
 	testFn := func() error {
-		return stackerror.New("some error")
+		return errors.New("some error")
 	}
 
 	err := Do(ctx, testFn, Attempts(3))

@@ -3,7 +3,6 @@ package storage
 import (
 	"fmt"
 
-	"github.com/cockroachdb/errors"
 	"github.com/minio/minio-go/v7"
 	minioCred "github.com/minio/minio-go/v7/pkg/credentials"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
@@ -47,7 +46,7 @@ func newTencentCredProvider() (minioCred.Provider, error) {
 
 	cred, err := provider.GetCredential()
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to get tencent credential")
+		return nil, fmt.Errorf("storage: get credential from tencent credential provider: %w", err)
 	}
 	return &tencentCredProvider{creds: cred}, nil
 }
