@@ -33,10 +33,10 @@ func NewAliyunClient(cfg Config) (*MinioClient, error) {
 // CredentialProvider implements "github.com/minio/minio-go/v7/pkg/credentials".Provider
 // also implements transport
 type aliCredProvider struct {
-	// aliyunCreds doesn't provide a way to get the expire time, so we use the cache to check if it's expired
-	// when aliyunCreds.GetAccessKeyId is different from the cache, we know it's expired
-	akCache string
-	cred    aliyunCred.Credential
+	// aliyunCreds doesn't provide a way to get the expiry time, so we use the cache to check if it's expired
+	// when aliyunCreds.GetCredential is different from the cache, we know it's expired
+	credCache *aliyunCred.CredentialModel
+	cred      aliyunCred.Credential
 }
 
 func newAliCredProvider() (minioCred.Provider, error) {
@@ -58,7 +58,7 @@ func (a *aliCredProvider) Retrieve() (minioCred.Value, error) {
 		return minioCred.Value{}, fmt.Errorf("storage: get credential from aliyun credential: %w", err)
 	}
 
-	a.akCache = tea.StringValue(cred.AccessKeyId)
+	a.credCache = cred
 	return minioCred.Value{
 		AccessKeyID:     tea.StringValue(cred.AccessKeyId),
 		SecretAccessKey: tea.StringValue(cred.AccessKeySecret),
@@ -75,9 +75,19 @@ func (a *aliCredProvider) RetrieveWithCredContext(_ *minioCred.CredContext) (min
 // according to the caller minioCred.Credentials.IsExpired(),
 // it already has a lock, so we don't need to worry about concurrency
 func (a *aliCredProvider) IsExpired() bool {
-	ak, err := a.cred.GetAccessKeyId()
+	cred, err := a.cred.GetCredential()
 	if err != nil {
 		return true
 	}
-	return tea.StringValue(ak) != a.akCache
+	if a.credCache == nil {
+		return true
+	}
+
+	if tea.StringValue(a.credCache.AccessKeyId) != tea.StringValue(cred.AccessKeyId) ||
+		tea.StringValue(a.credCache.AccessKeySecret) != tea.StringValue(cred.AccessKeySecret) ||
+		tea.StringValue(a.credCache.SecurityToken) != tea.StringValue(cred.SecurityToken) {
+		return true
+	}
+
+	return false
 }
