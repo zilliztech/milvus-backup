@@ -24,13 +24,20 @@ func NewDatabaseTask(backupID, dbName string, grpc client.Grpc, meta *meta.MetaM
 }
 
 func (dt *DatabaseTask) Execute(ctx context.Context) error {
-	resp, err := dt.grpc.DescribeDatabase(ctx, dt.dbName)
-	if err != nil {
-		return fmt.Errorf("backup: describe database %s: %w", dt.dbName, err)
+	var properties []*backuppb.KeyValuePair
+	var dbID int64
+
+	// if milvus does not support database, skip describe database
+	if dt.grpc.SupportMultiDatabase() {
+		resp, err := dt.grpc.DescribeDatabase(ctx, dt.dbName)
+		if err != nil {
+			return fmt.Errorf("backup: describe database %s: %w", dt.dbName, err)
+		}
+		properties = pbconv.MilvusKVToBakKV(resp.GetProperties())
+		dbID = resp.GetDbID()
 	}
 
-	properties := pbconv.MilvusKVToBakKV(resp.GetProperties())
-	bakDB := &backuppb.DatabaseBackupInfo{DbName: resp.GetDbName(), DbId: resp.GetDbID(), Properties: properties}
+	bakDB := &backuppb.DatabaseBackupInfo{DbName: dt.dbName, DbId: dbID, Properties: properties}
 	dt.meta.UpdateBackup(dt.backupID, meta.AddDatabase(bakDB))
 
 	return nil
