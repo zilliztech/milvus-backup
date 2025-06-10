@@ -16,10 +16,10 @@ import (
 )
 
 func TestDatabaseTask_Execute(t *testing.T) {
-	t.Run("SupportMultiDatabase", func(t *testing.T) {
+	t.Run("SupportDescribeDatabase", func(t *testing.T) {
 		cli := client.NewMockGrpc(t)
 
-		cli.EXPECT().SupportMultiDatabase().Return(true).Once()
+		cli.EXPECT().HasFeature(client.DescribeDatabase).Return(true).Once()
 		cli.EXPECT().DescribeDatabase(mock.Anything, "db1").Return(&milvuspb.DescribeDatabaseResponse{
 			DbID: 1,
 			Properties: []*commonpb.KeyValuePair{
@@ -40,10 +40,10 @@ func TestDatabaseTask_Execute(t *testing.T) {
 		assert.Equal(t, 2, len(metaMgr.GetBackup("backup1").GetDatabaseBackups()[0].GetProperties()))
 	})
 
-	t.Run("NotSupportMultiDatabase", func(t *testing.T) {
+	t.Run("NotSupportDescribeDatabase", func(t *testing.T) {
 		cli := client.NewMockGrpc(t)
 
-		cli.EXPECT().SupportMultiDatabase().Return(false).Once()
+		cli.EXPECT().HasFeature(client.DescribeDatabase).Return(false).Once()
 
 		metaMgr := meta.NewMetaManager()
 		metaMgr.AddBackup(&backuppb.BackupInfo{Id: "backup1"})

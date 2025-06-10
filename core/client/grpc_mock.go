@@ -937,6 +937,51 @@ func (_c *MockGrpc_HasCollection_Call) RunAndReturn(run func(ctx context.Context
 	return _c
 }
 
+// HasFeature provides a mock function for the type MockGrpc
+func (_mock *MockGrpc) HasFeature(flag FeatureFlag) bool {
+	ret := _mock.Called(flag)
+
+	if len(ret) == 0 {
+		panic("no return value specified for HasFeature")
+	}
+
+	var r0 bool
+	if returnFunc, ok := ret.Get(0).(func(FeatureFlag) bool); ok {
+		r0 = returnFunc(flag)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	return r0
+}
+
+// MockGrpc_HasFeature_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'HasFeature'
+type MockGrpc_HasFeature_Call struct {
+	*mock.Call
+}
+
+// HasFeature is a helper method to define mock.On call
+//   - flag
+func (_e *MockGrpc_Expecter) HasFeature(flag interface{}) *MockGrpc_HasFeature_Call {
+	return &MockGrpc_HasFeature_Call{Call: _e.mock.On("HasFeature", flag)}
+}
+
+func (_c *MockGrpc_HasFeature_Call) Run(run func(flag FeatureFlag)) *MockGrpc_HasFeature_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		run(args[0].(FeatureFlag))
+	})
+	return _c
+}
+
+func (_c *MockGrpc_HasFeature_Call) Return(b bool) *MockGrpc_HasFeature_Call {
+	_c.Call.Return(b)
+	return _c
+}
+
+func (_c *MockGrpc_HasFeature_Call) RunAndReturn(run func(flag FeatureFlag) bool) *MockGrpc_HasFeature_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // HasPartition provides a mock function for the type MockGrpc
 func (_mock *MockGrpc) HasPartition(ctx context.Context, db string, collName string, partitionName string) (bool, error) {
 	ret := _mock.Called(ctx, db, collName, partitionName)
@@ -1320,50 +1365,6 @@ func (_c *MockGrpc_ShowPartitions_Call) Return(showPartitionsResponse *milvuspb.
 }
 
 func (_c *MockGrpc_ShowPartitions_Call) RunAndReturn(run func(ctx context.Context, db string, collName string) (*milvuspb.ShowPartitionsResponse, error)) *MockGrpc_ShowPartitions_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// SupportMultiDatabase provides a mock function for the type MockGrpc
-func (_mock *MockGrpc) SupportMultiDatabase() bool {
-	ret := _mock.Called()
-
-	if len(ret) == 0 {
-		panic("no return value specified for SupportMultiDatabase")
-	}
-
-	var r0 bool
-	if returnFunc, ok := ret.Get(0).(func() bool); ok {
-		r0 = returnFunc()
-	} else {
-		r0 = ret.Get(0).(bool)
-	}
-	return r0
-}
-
-// MockGrpc_SupportMultiDatabase_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SupportMultiDatabase'
-type MockGrpc_SupportMultiDatabase_Call struct {
-	*mock.Call
-}
-
-// SupportMultiDatabase is a helper method to define mock.On call
-func (_e *MockGrpc_Expecter) SupportMultiDatabase() *MockGrpc_SupportMultiDatabase_Call {
-	return &MockGrpc_SupportMultiDatabase_Call{Call: _e.mock.On("SupportMultiDatabase")}
-}
-
-func (_c *MockGrpc_SupportMultiDatabase_Call) Run(run func()) *MockGrpc_SupportMultiDatabase_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		run()
-	})
-	return _c
-}
-
-func (_c *MockGrpc_SupportMultiDatabase_Call) Return(b bool) *MockGrpc_SupportMultiDatabase_Call {
-	_c.Call.Return(b)
-	return _c
-}
-
-func (_c *MockGrpc_SupportMultiDatabase_Call) RunAndReturn(run func() bool) *MockGrpc_SupportMultiDatabase_Call {
 	_c.Call.Return(run)
 	return _c
 }

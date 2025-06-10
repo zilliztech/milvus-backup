@@ -8,8 +8,10 @@ import (
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/status"
 
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 )
@@ -36,6 +38,12 @@ func TestTransCred(t *testing.T) {
 
 	cred, err = transCred(&paramtable.MilvusConfig{TLSMode: 2})
 	assert.NoError(t, err)
+}
+
+func TestIsUnimplemented(t *testing.T) {
+	assert.False(t, isUnimplemented(nil))
+	assert.False(t, isUnimplemented(errors.New("some error")))
+	assert.True(t, isUnimplemented(status.Error(codes.Unimplemented, "some error")))
 }
 
 func TestStatusOk(t *testing.T) {
@@ -80,4 +88,22 @@ func TestGrpcClient_newCtxWithDB(t *testing.T) {
 	md, ok := metadata.FromOutgoingContext(ctx)
 	assert.True(t, ok)
 	assert.Equal(t, "db", md.Get(databaseHeader)[0])
+}
+
+func TestGrpcClient_HasFeature(t *testing.T) {
+	cli := &GrpcClient{flags: 0}
+	assert.False(t, cli.HasFeature(MultiDatabase))
+	assert.False(t, cli.HasFeature(DescribeDatabase))
+
+	cli = &GrpcClient{flags: MultiDatabase}
+	assert.True(t, cli.HasFeature(MultiDatabase))
+	assert.False(t, cli.HasFeature(DescribeDatabase))
+
+	cli = &GrpcClient{flags: DescribeDatabase}
+	assert.True(t, cli.HasFeature(DescribeDatabase))
+	assert.False(t, cli.HasFeature(MultiDatabase))
+
+	cli = &GrpcClient{flags: MultiDatabase | DescribeDatabase}
+	assert.True(t, cli.HasFeature(MultiDatabase))
+	assert.True(t, cli.HasFeature(DescribeDatabase))
 }

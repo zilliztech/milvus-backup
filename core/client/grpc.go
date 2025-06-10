@@ -36,8 +36,11 @@ import (
 	"github.com/zilliztech/milvus-backup/version"
 )
 
+type FeatureFlag uint64
+
 const (
-	disableDatabase uint64 = 1 << iota
+	MultiDatabase FeatureFlag = 1 << iota
+	DescribeDatabase
 )
 
 func defaultDialOpt() []grpc.DialOption {
@@ -74,7 +77,7 @@ func defaultDialOpt() []grpc.DialOption {
 
 type Grpc interface {
 	Close() error
-	SupportMultiDatabase() bool
+	HasFeature(flag FeatureFlag) bool
 	GetVersion(ctx context.Context) (string, error)
 	CreateDatabase(ctx context.Context, dbName string) error
 	ListDatabases(ctx context.Context) ([]string, error)
@@ -176,7 +179,7 @@ type GrpcClient struct {
 	// get from connect
 	serverVersion string
 	identifier    string
-	flags         uint64
+	flags         FeatureFlag
 }
 
 func grpcAuth(username, password string) string {
@@ -240,6 +243,17 @@ func transCred(cfg *paramtable.MilvusConfig) (credentials.TransportCredentials, 
 	return credentials.NewTLS(tlsCfg), nil
 }
 
+func isUnimplemented(err error) bool {
+	if err == nil {
+		return false
+	}
+	s, ok := status.FromError(err)
+	if !ok {
+		return false
+	}
+	return s.Code() == codes.Unimplemented
+}
+
 func NewGrpc(cfg *paramtable.MilvusConfig) (*GrpcClient, error) {
 	logger := log.L().With(zap.String("component", "grpc-client"))
 
@@ -273,15 +287,16 @@ func NewGrpc(cfg *paramtable.MilvusConfig) (*GrpcClient, error) {
 		auth: auth,
 	}
 
-	if err := cli.connect(context.Background()); err != nil {
+	if err := cli.connect(context.TODO()); err != nil {
 		return nil, fmt.Errorf("client: connect to server: %w", err)
+	}
+
+	if err := cli.checkFeature(context.TODO()); err != nil {
+		return nil, fmt.Errorf("client: check server feature: %w", err)
 	}
 
 	return cli, nil
 }
-
-func (g *GrpcClient) hasFlags(flags uint64) bool { return (g.flags & flags) > 0 }
-func (g *GrpcClient) SupportMultiDatabase() bool { return !g.hasFlags(disableDatabase) }
 
 func (g *GrpcClient) newCtx(ctx context.Context) context.Context {
 	if g.auth != "" {
@@ -317,14 +332,9 @@ func (g *GrpcClient) connect(ctx context.Context) error {
 	ctx = g.newCtx(ctx)
 	resp, err := g.srv.Connect(ctx, connReq)
 	if err != nil {
-		s, ok := status.FromError(err)
-		if ok {
-			if s.Code() == codes.Unimplemented {
-				g.logger.Info("the server does not support the Connect API, skipping")
-				g.flags |= disableDatabase
-
-				return nil
-			}
+		if isUnimplemented(err) {
+			g.logger.Info("the server does NOT support connect, skip")
+			return nil
 		}
 		return fmt.Errorf("client: connect to server failed: %w", err)
 	}
@@ -344,6 +354,10 @@ func (g *GrpcClient) Close() error {
 	return g.conn.Close()
 }
 
+func (g *GrpcClient) HasFeature(flag FeatureFlag) bool {
+	return (g.flags & flag) != 0
+}
+
 func (g *GrpcClient) GetVersion(ctx context.Context) (string, error) {
 	ctx = g.newCtx(ctx)
 	resp, err := g.srv.GetVersion(ctx, &milvuspb.GetVersionRequest{})
@@ -354,8 +368,35 @@ func (g *GrpcClient) GetVersion(ctx context.Context) (string, error) {
 	return resp.GetVersion(), nil
 }
 
+func (g *GrpcClient) checkFeature(ctx context.Context) error {
+	ctx = g.newCtx(ctx)
+	_, err := g.srv.ListDatabases(ctx, &milvuspb.ListDatabasesRequest{})
+	if err != nil {
+		if isUnimplemented(err) {
+			g.logger.Info("the server does NOT support multi database")
+		} else {
+			return fmt.Errorf("client: check multi database feature: %w", err)
+		}
+	} else {
+		g.flags |= MultiDatabase
+	}
+
+	_, err = g.srv.DescribeDatabase(ctx, &milvuspb.DescribeDatabaseRequest{DbName: namespace.DefaultDBName})
+	if err != nil {
+		if isUnimplemented(err) {
+			g.logger.Info("the server does NOT support describe database")
+		} else {
+			return fmt.Errorf("client: check describe database feature: %w", err)
+		}
+	} else {
+		g.flags |= DescribeDatabase
+	}
+
+	return nil
+}
+
 func (g *GrpcClient) CreateDatabase(ctx context.Context, dbName string) error {
-	if g.hasFlags(disableDatabase) {
+	if !g.HasFeature(MultiDatabase) {
 		return errors.New("client: the server does not support database")
 	}
 
@@ -382,7 +423,7 @@ func (g *GrpcClient) CreateDatabase(ctx context.Context, dbName string) error {
 
 func (g *GrpcClient) ListDatabases(ctx context.Context) ([]string, error) {
 	ctx = g.newCtx(ctx)
-	if g.hasFlags(disableDatabase) {
+	if !g.HasFeature(MultiDatabase) {
 		return nil, errors.New("client: the server does not support database")
 	}
 
@@ -405,7 +446,7 @@ func (g *GrpcClient) DescribeCollection(ctx context.Context, db, collName string
 }
 
 func (g *GrpcClient) DescribeDatabase(ctx context.Context, dbName string) (*milvuspb.DescribeDatabaseResponse, error) {
-	if g.hasFlags(disableDatabase) {
+	if !g.HasFeature(MultiDatabase) {
 		return nil, errors.New("client: the server does not support database")
 	}
 

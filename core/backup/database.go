@@ -28,7 +28,7 @@ func (dt *DatabaseTask) Execute(ctx context.Context) error {
 	var dbID int64
 
 	// if milvus does not support database, skip describe database
-	if dt.grpc.SupportMultiDatabase() {
+	if dt.grpc.HasFeature(client.DescribeDatabase) {
 		resp, err := dt.grpc.DescribeDatabase(ctx, dt.dbName)
 		if err != nil {
 			return fmt.Errorf("backup: describe database %s: %w", dt.dbName, err)
