@@ -202,7 +202,7 @@ func (t *Task) listDBAndCollectionFromAPI(ctx context.Context) ([]string, []coll
 	var dbNames []string
 	var collections []collection
 	// compatible to milvus under v2.2.8 without database support
-	if t.grpc.SupportMultiDatabase() {
+	if t.grpc.HasFeature(client.MultiDatabase) {
 		t.logger.Info("the milvus server support multi database")
 		dbs, err := t.grpc.ListDatabases(ctx)
 		if err != nil {
