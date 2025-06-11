@@ -685,7 +685,7 @@ func (ct *CollectionTask) restoreNotL0SegV1(ctx context.Context, part *backuppb.
 		// Submit each directory as an individual task
 		for _, dir := range bat.partitionDirs {
 			g.Go(func() error {
-				var paths = getPaths(dir)
+				paths := getPaths(dir)
 				return ct.submitGRPCBulkInsertTask(subCtx, part.GetPartitionName(), paths, bat.timestamp, bat.isL0, dir.size)
 			})
 		}
@@ -1008,7 +1008,7 @@ func (ct *CollectionTask) checkBulkInsertViaGrpc(ctx context.Context, jobID int6
 
 func (ct *CollectionTask) bulkInsertViaGrpc(ctx context.Context, partitionName string, b batch) error {
 	for _, dir := range b.partitionDirs {
-		var paths = getPaths(dir)
+		paths := getPaths(dir)
 		if err := ct.submitGRPCBulkInsertTask(ctx, partitionName, paths, b.timestamp, b.isL0, dir.size); err != nil {
 			return fmt.Errorf("restore_collection: check bulk insert via grpc: %w", err)
 		}
