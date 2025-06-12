@@ -25,6 +25,26 @@ import (
 // but passing multiple segments is a more suitable option.
 // Therefore, a virtual partition ID is used here to enable the functionality of importing multiple segments.
 
+// backup meta path
+// ${root}/meta/${file_type}.json
+
+const _metaPrefix = "meta"
+
+type MetaType string
+
+const (
+	BackupMeta     MetaType = "backup_meta.json"
+	CollectionMeta MetaType = "collection_meta.json"
+	PartitionMeta  MetaType = "partition_meta.json"
+	SegmentMeta    MetaType = "segment_meta.json"
+	FullMeta       MetaType = "full_meta.json"
+	ChannelCPMeta  MetaType = "channel_cp_meta.json"
+)
+
+func MetaKey(backupDir string, mateType MetaType) string {
+	return path.Join(backupDir, _metaPrefix, string(mateType))
+}
+
 const (
 	_binlogPrefix    = "binlogs"
 	_insertLogPrefix = "insert_log"

@@ -13,7 +13,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 
-	"github.com/zilliztech/milvus-backup/core/client"
+	"github.com/zilliztech/milvus-backup/core/client/milvus"
 	"github.com/zilliztech/milvus-backup/core/meta"
 	"github.com/zilliztech/milvus-backup/core/meta/taskmgr"
 	"github.com/zilliztech/milvus-backup/core/namespace"
@@ -41,8 +41,8 @@ type Task struct {
 	backupStorage storage.Client
 	milvusStorage storage.Client
 
-	grpc    client.Grpc
-	restful client.Restful
+	grpc    milvus.Grpc
+	restful milvus.Restful
 
 	backupBucketName string
 	backupPath       string
@@ -56,8 +56,8 @@ func NewTask(
 	info *backuppb.BackupInfo,
 	backupStorage storage.Client,
 	milvusStorage storage.Client,
-	grpcCli client.Grpc,
-	restfulCli client.Restful,
+	grpcCli milvus.Grpc,
+	restfulCli milvus.Restful,
 ) *Task {
 	logger := log.L().With(
 		zap.String("backup_name", info.GetName()),
@@ -72,7 +72,7 @@ func NewTask(
 		params:  params,
 		taskMgr: taskmgr.DefaultMgr,
 
-		copySem: semaphore.NewWeighted(int64(params.BackupCfg.BackupCopyDataParallelism)),
+		copySem: semaphore.NewWeighted(params.BackupCfg.BackupCopyDataParallelism),
 
 		backupStorage: backupStorage,
 		milvusStorage: milvusStorage,

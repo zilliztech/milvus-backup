@@ -2,10 +2,7 @@ package storage
 
 import (
 	"context"
-	"fmt"
 	"io"
-
-	"github.com/zilliztech/milvus-backup/core/paramtable"
 )
 
 type CopyObjectInput struct {
@@ -81,25 +78,4 @@ type Client interface {
 	BucketExist(ctx context.Context, prefix string) (bool, error)
 	// CreateBucket create a bucket.
 	CreateBucket(ctx context.Context) error
-}
-
-func NewClient(ctx context.Context, cfg Config) (Client, error) {
-	switch cfg.Provider {
-	case paramtable.CloudProviderAli, paramtable.CloudProviderAliyun:
-		return NewAliyunClient(cfg)
-	case paramtable.CloudProviderAWS, paramtable.S3, paramtable.Minio:
-		return NewMinioClient(cfg)
-	case paramtable.CloudProviderAzure:
-		return NewAzureClient(cfg)
-	case paramtable.CloudProviderTencent, paramtable.CloudProviderTencentShort:
-		return NewTencentClient(cfg)
-	case paramtable.CloudProviderGCP:
-		return NewGCPClient(cfg)
-	case paramtable.CloudProviderGCPNative:
-		return newGCPNativeClient(ctx, cfg)
-	case paramtable.Local:
-		return NewLocalClient(cfg), nil
-	default:
-		return nil, fmt.Errorf("storage: unsupported storage type: %s", cfg.Provider)
-	}
 }

@@ -54,7 +54,7 @@ func (a *AzureReader) Close() error { return nil }
 
 var _ Client = (*AzureClient)(nil)
 
-func NewAzureClient(cfg Config) (*AzureClient, error) {
+func newAzureClient(cfg Config) (*AzureClient, error) {
 	if cfg.UseIAM {
 		cred, err := azidentity.NewDefaultAzureCredential(nil)
 		if err != nil {

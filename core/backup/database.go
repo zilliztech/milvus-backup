@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/zilliztech/milvus-backup/core/client"
+	"github.com/zilliztech/milvus-backup/core/client/milvus"
 	"github.com/zilliztech/milvus-backup/core/meta"
 	"github.com/zilliztech/milvus-backup/core/pbconv"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
@@ -16,10 +16,10 @@ type DatabaseTask struct {
 	dbName string
 
 	meta *meta.MetaManager
-	grpc client.Grpc
+	grpc milvus.Grpc
 }
 
-func NewDatabaseTask(backupID, dbName string, grpc client.Grpc, meta *meta.MetaManager) *DatabaseTask {
+func NewDatabaseTask(backupID, dbName string, grpc milvus.Grpc, meta *meta.MetaManager) *DatabaseTask {
 	return &DatabaseTask{backupID: backupID, dbName: dbName, meta: meta, grpc: grpc}
 }
 
@@ -28,7 +28,7 @@ func (dt *DatabaseTask) Execute(ctx context.Context) error {
 	var dbID int64
 
 	// if milvus does not support database, skip describe database
-	if dt.grpc.HasFeature(client.DescribeDatabase) {
+	if dt.grpc.HasFeature(milvus.DescribeDatabase) {
 		resp, err := dt.grpc.DescribeDatabase(ctx, dt.dbName)
 		if err != nil {
 			return fmt.Errorf("backup: describe database %s: %w", dt.dbName, err)

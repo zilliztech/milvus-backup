@@ -11,7 +11,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 
-	"github.com/zilliztech/milvus-backup/core/client"
+	"github.com/zilliztech/milvus-backup/core/client/milvus"
 	"github.com/zilliztech/milvus-backup/core/meta"
 	"github.com/zilliztech/milvus-backup/core/namespace"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
@@ -42,9 +42,9 @@ type Task struct {
 
 	params *paramtable.BackupParams
 
-	grpc    client.Grpc
-	restful client.Restful
-	manage  client.Manage
+	grpc    milvus.Grpc
+	restful milvus.Restful
+	manage  milvus.Manage
 
 	meta *meta.MetaManager
 
@@ -57,19 +57,19 @@ func NewTask(
 	BackupStorage storage.Client,
 	request *backuppb.CreateBackupRequest,
 	params *paramtable.BackupParams,
-	grpc client.Grpc,
-	restful client.Restful,
+	grpc milvus.Grpc,
+	restful milvus.Restful,
 	meta *meta.MetaManager,
 ) *Task {
 	logger := log.L().With(zap.String("backup_id", backupID))
-	var manage client.Manage
+	var manage milvus.Manage
 	if request.GetGcPauseEnable() || params.BackupCfg.GcPauseEnable {
 		addr := request.GetGcPauseAddress()
 		if len(addr) == 0 {
 			addr = params.BackupCfg.GcPauseAddress
 		}
 
-		manage = client.NewManage(addr)
+		manage = milvus.NewManage(addr)
 	}
 
 	return &Task{
@@ -79,7 +79,7 @@ func NewTask(
 
 		milvusStorage: MilvusStorage,
 		backupStorage: BackupStorage,
-		copySem:       semaphore.NewWeighted(int64(params.BackupCfg.BackupCopyDataParallelism)),
+		copySem:       semaphore.NewWeighted(params.BackupCfg.BackupCopyDataParallelism),
 
 		params: params,
 
@@ -202,7 +202,7 @@ func (t *Task) listDBAndCollectionFromAPI(ctx context.Context) ([]string, []coll
 	var dbNames []string
 	var collections []collection
 	// compatible to milvus under v2.2.8 without database support
-	if t.grpc.HasFeature(client.MultiDatabase) {
+	if t.grpc.HasFeature(milvus.MultiDatabase) {
 		t.logger.Info("the milvus server support multi database")
 		dbs, err := t.grpc.ListDatabases(ctx)
 		if err != nil {

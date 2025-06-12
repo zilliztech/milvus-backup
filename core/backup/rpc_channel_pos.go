@@ -6,7 +6,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/zilliztech/milvus-backup/core/client"
+	"github.com/zilliztech/milvus-backup/core/client/milvus"
 	"github.com/zilliztech/milvus-backup/core/meta"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
@@ -15,12 +15,12 @@ type RPCChannelPOSTask struct {
 	backupID       string
 	rpcChannelName string
 
-	grpc   client.Grpc
+	grpc   milvus.Grpc
 	meta   *meta.MetaManager
 	logger *zap.Logger
 }
 
-func NewRPCChannelPOSTask(backupID, rpcChannelName string, grpc client.Grpc, meta *meta.MetaManager) *RPCChannelPOSTask {
+func NewRPCChannelPOSTask(backupID, rpcChannelName string, grpc milvus.Grpc, meta *meta.MetaManager) *RPCChannelPOSTask {
 	return &RPCChannelPOSTask{
 		backupID: backupID,
 

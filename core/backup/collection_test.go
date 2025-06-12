@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
 
-	"github.com/zilliztech/milvus-backup/core/client"
+	"github.com/zilliztech/milvus-backup/core/client/milvus"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/storage"
 	"github.com/zilliztech/milvus-backup/core/storage/mpath"
@@ -135,7 +135,7 @@ func TestCollectionTask_listInsertLogByAPI(t *testing.T) {
 	ct.milvusStorage = newMockStorage(t, dir, objs)
 	ct.milvusRootPath = "base"
 
-	binlogs := []client.BinlogInfo{{FieldID: 1, LogIDs: []int64{1, 2}}, {FieldID: 2, LogIDs: []int64{1, 2}}}
+	binlogs := []milvus.BinlogInfo{{FieldID: 1, LogIDs: []int64{1, 2}}, {FieldID: 2, LogIDs: []int64{1, 2}}}
 	fields, size, err := ct.listInsertLogByAPI(context.Background(), dir, binlogs)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(10), size)
@@ -165,7 +165,7 @@ func TestCollectionTask_listDeltaLogByAPI(t *testing.T) {
 	ct.milvusStorage = newMockStorage(t, dir, objs)
 	ct.milvusRootPath = "base"
 
-	binlogs := []client.BinlogInfo{{FieldID: 1, LogIDs: []int64{1, 2}}}
+	binlogs := []milvus.BinlogInfo{{FieldID: 1, LogIDs: []int64{1, 2}}}
 	fields, size, err := ct.listDeltaLogByAPI(context.Background(), dir, binlogs)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(3), size)

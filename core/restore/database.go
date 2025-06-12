@@ -6,20 +6,20 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/zilliztech/milvus-backup/core/client"
+	"github.com/zilliztech/milvus-backup/core/client/milvus"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
 type DatabaseTask struct {
-	grpcCli client.Grpc
+	grpcCli milvus.Grpc
 
 	logger *zap.Logger
 
 	task *backuppb.RestoreDatabaseTask
 }
 
-func NewDatabaseTask(grpc client.Grpc, task *backuppb.RestoreDatabaseTask) *DatabaseTask {
+func NewDatabaseTask(grpc milvus.Grpc, task *backuppb.RestoreDatabaseTask) *DatabaseTask {
 	logger := log.L().With(zap.String("database_name", task.GetDbBackup().GetDbName()),
 		zap.Int64("database_id", task.GetDbBackup().GetDbId()),
 		zap.String("target_db_name", task.GetTargetDbName()))

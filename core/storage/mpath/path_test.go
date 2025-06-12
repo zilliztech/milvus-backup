@@ -6,6 +6,13 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestMetaKey(t *testing.T) {
+	backupDir := "base/backup/backup1"
+	expect := "base/backup/backup1/meta/backup_meta.json"
+	r := MetaKey(backupDir, BackupMeta)
+	assert.Equal(t, expect, r)
+}
+
 type testCase struct {
 	base     string
 	expected string

@@ -30,17 +30,18 @@
 package log
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sync/atomic"
-
-	"errors"
 
 	"github.com/uber/jaeger-client-go/utils"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest"
-	lumberjack "gopkg.in/natefinch/lumberjack.v2"
+	"gopkg.in/natefinch/lumberjack.v2"
+
+	"github.com/zilliztech/milvus-backup/internal/progressbar"
 )
 
 var _globalL, _globalP, _globalS, _globalR atomic.Value
@@ -68,10 +69,7 @@ func InitLogger(cfg *Config, opts ...zap.Option) (*zap.Logger, *ZapProperties, e
 		outputs = append(outputs, zapcore.AddSync(lg))
 	}
 	if cfg.Console {
-		stdOut, _, err := zap.Open([]string{"stdout"}...)
-		if err != nil {
-			return nil, nil, err
-		}
+		stdOut := zapcore.AddSync(progressbar.Stdout)
 		outputs = append(outputs, stdOut)
 	}
 	writer := zap.CombineWriteSyncers(outputs...)

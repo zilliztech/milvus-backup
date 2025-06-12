@@ -8,6 +8,13 @@ log:
 http:
   simpleResponse: true
 
+# Zilliz Cloud config.
+# If you want to migrate data to Zilliz Cloud, you need to configure the following parameters.
+# Otherwise, you can ignore it.
+cloud:
+  address: https://api.cloud.zilliz.com
+  apikey: <your-api-key>
+
 # milvus proxy address, compatible to milvus.yaml
 milvus:
   address: localhost

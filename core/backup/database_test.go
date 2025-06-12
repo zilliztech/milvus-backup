@@ -9,7 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 
-	"github.com/zilliztech/milvus-backup/core/client"
+	"github.com/zilliztech/milvus-backup/core/client/milvus"
 	"github.com/zilliztech/milvus-backup/core/meta"
 	"github.com/zilliztech/milvus-backup/core/namespace"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
@@ -17,9 +17,9 @@ import (
 
 func TestDatabaseTask_Execute(t *testing.T) {
 	t.Run("SupportDescribeDatabase", func(t *testing.T) {
-		cli := client.NewMockGrpc(t)
+		cli := milvus.NewMockGrpc(t)
 
-		cli.EXPECT().HasFeature(client.DescribeDatabase).Return(true).Once()
+		cli.EXPECT().HasFeature(milvus.DescribeDatabase).Return(true).Once()
 		cli.EXPECT().DescribeDatabase(mock.Anything, "db1").Return(&milvuspb.DescribeDatabaseResponse{
 			DbID: 1,
 			Properties: []*commonpb.KeyValuePair{
@@ -41,9 +41,9 @@ func TestDatabaseTask_Execute(t *testing.T) {
 	})
 
 	t.Run("NotSupportDescribeDatabase", func(t *testing.T) {
-		cli := client.NewMockGrpc(t)
+		cli := milvus.NewMockGrpc(t)
 
-		cli.EXPECT().HasFeature(client.DescribeDatabase).Return(false).Once()
+		cli.EXPECT().HasFeature(milvus.DescribeDatabase).Return(false).Once()
 
 		metaMgr := meta.NewMetaManager()
 		metaMgr.AddBackup(&backuppb.BackupInfo{Id: "backup1"})
