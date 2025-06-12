@@ -55,6 +55,8 @@ type ObjectIterator interface {
 	Next() (ObjectAttr, error)
 }
 
+// Client is the interface for storage service.
+// All implementations should include retry logic internally for idempotent operations.
 type Client interface {
 	Config() Config
 

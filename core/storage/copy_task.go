@@ -52,18 +52,21 @@ type serverCopier struct {
 
 func (sc *serverCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
 	sc.logger.Debug("copy object", zap.String("src_key", copyAttr.Src.Key), zap.String("dest_key", copyAttr.DestKey))
-	obj, err := sc.src.GetObject(ctx, copyAttr.Src.Key)
-	if err != nil {
-		return fmt.Errorf("storage: server copier get object %w", err)
-	}
-	defer obj.Body.Close()
 
-	i := UploadObjectInput{Body: obj.Body, Key: copyAttr.DestKey, Size: copyAttr.Src.Length}
-	if err := sc.dest.UploadObject(ctx, i); err != nil {
-		return fmt.Errorf("storage: copier upload object %w", err)
-	}
+	return retry.Do(ctx, func() error {
+		obj, err := sc.src.GetObject(ctx, copyAttr.Src.Key)
+		if err != nil {
+			return fmt.Errorf("storage: server copier get object %w", err)
+		}
+		defer obj.Body.Close()
 
-	return nil
+		i := UploadObjectInput{Body: obj.Body, Key: copyAttr.DestKey, Size: copyAttr.Src.Length}
+		if err := sc.dest.UploadObject(ctx, i); err != nil {
+			return fmt.Errorf("storage: copier upload object %w", err)
+		}
+
+		return nil
+	})
 }
 
 func newCopier(src, dest Client, copyByServer bool) copier {
@@ -113,7 +116,7 @@ func (c *CopyPrefixTask) copy(ctx context.Context, src ObjectAttr) error {
 	destKey := strings.Replace(src.Key, c.opt.SrcPrefix, c.opt.DestPrefix, 1)
 	attr := CopyAttr{Src: src, DestKey: destKey}
 
-	if err := retry.Do(ctx, func() error { return c.copier.copy(ctx, attr) }); err != nil {
+	if err := c.copier.copy(ctx, attr); err != nil {
 		return fmt.Errorf("storage: copy prefix %w", err)
 	}
 
