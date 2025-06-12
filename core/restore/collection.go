@@ -677,18 +677,18 @@ func (ct *CollectionTask) restoreNotL0SegV1(ctx context.Context, part *backuppb.
 	g, subCtx := errgroup.WithContext(ctx)
 	g.SetLimit(ct.restoreParallelism)
 	for _, b := range notL0SegBatches {
-		g.Go(func() error {
-			bat, err := ct.copyAndRewriteDir(subCtx, b)
-			if err != nil {
-				return fmt.Errorf("restore_collection: restore data v1 copy files: %w", err)
-			}
+		bat, err := ct.copyAndRewriteDir(ctx, b)
+		if err != nil {
+			return fmt.Errorf("restore_collection: restore data v1 copy files: %w", err)
+		}
 
-			if err := ct.bulkInsertViaGrpc(subCtx, part.GetPartitionName(), bat); err != nil {
-				return fmt.Errorf("restore_collection: restore data v1 bulk insert via grpc: %w", err)
-			}
-
-			return nil
-		})
+		// Submit each directory as an individual task
+		for _, dir := range bat.partitionDirs {
+			g.Go(func() error {
+				paths := getPaths(dir)
+				return ct.submitGRPCBulkInsertTask(subCtx, part.GetPartitionName(), paths, bat.timestamp, bat.isL0, dir.size)
+			})
+		}
 	}
 
 	if err := g.Wait(); err != nil {
@@ -696,6 +696,37 @@ func (ct *CollectionTask) restoreNotL0SegV1(ctx context.Context, part *backuppb.
 	}
 
 	return nil
+
+}
+
+func (ct *CollectionTask) submitGRPCBulkInsertTask(ctx context.Context, partitionName string, paths []string, timestamp uint64, isL0 bool, dirSize int64) error {
+	ct.logger.Info("start bulk insert via grpc",
+		zap.Strings("paths", paths),
+		zap.String("partition", partitionName))
+	in := client.GrpcBulkInsertInput{
+		DB:             ct.task.GetTargetDbName(),
+		CollectionName: ct.task.GetTargetCollectionName(),
+		PartitionName:  partitionName,
+		Paths:          paths,
+		BackupTS:       timestamp,
+		IsL0:           isL0,
+	}
+
+	jobID, err := ct.grpcCli.BulkInsert(ctx, in)
+	if err != nil {
+		return fmt.Errorf("restore_collection: failed to bulk insert via grpc: %w", err)
+	}
+	ct.taskTracker.UpdateRestoreTask(ct.parentTaskID,
+		taskmgr.AddRestoreImportJob(ct.targetNS, strconv.FormatInt(jobID, 10), dirSize))
+	ct.logger.Info("create bulk insert via grpc success", zap.Int64("job_id", jobID))
+	return ct.checkBulkInsertViaGrpc(ctx, jobID)
+}
+
+func getPaths(dir partitionDir) []string {
+	if len(dir.insertLogDir) == 0 {
+		return []string{dir.deltaLogDir}
+	}
+	return []string{dir.insertLogDir, dir.deltaLogDir}
 }
 
 func (ct *CollectionTask) restoreNotL0SegV2(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
@@ -977,30 +1008,8 @@ func (ct *CollectionTask) checkBulkInsertViaGrpc(ctx context.Context, jobID int6
 
 func (ct *CollectionTask) bulkInsertViaGrpc(ctx context.Context, partitionName string, b batch) error {
 	for _, dir := range b.partitionDirs {
-		var paths []string
-		if len(dir.insertLogDir) == 0 {
-			paths = []string{dir.deltaLogDir}
-		} else {
-			paths = []string{dir.insertLogDir, dir.deltaLogDir}
-		}
-
-		ct.logger.Info("start bulk insert via grpc", zap.Strings("paths", paths), zap.String("partition", partitionName))
-		in := client.GrpcBulkInsertInput{
-			DB:             ct.task.GetTargetDbName(),
-			CollectionName: ct.task.GetTargetCollectionName(),
-			PartitionName:  partitionName,
-			Paths:          paths,
-			BackupTS:       b.timestamp,
-			IsL0:           b.isL0,
-		}
-		jobID, err := ct.grpcCli.BulkInsert(ctx, in)
-		if err != nil {
-			return fmt.Errorf("restore_collection: failed to bulk insert via grpc: %w", err)
-		}
-		ct.logger.Info("create bulk insert via grpc success", zap.Int64("job_id", jobID))
-		ct.taskTracker.UpdateRestoreTask(ct.parentTaskID, taskmgr.AddRestoreImportJob(ct.targetNS, strconv.FormatInt(jobID, 10), dir.size))
-
-		if err := ct.checkBulkInsertViaGrpc(ctx, jobID); err != nil {
+		paths := getPaths(dir)
+		if err := ct.submitGRPCBulkInsertTask(ctx, partitionName, paths, b.timestamp, b.isL0, dir.size); err != nil {
 			return fmt.Errorf("restore_collection: check bulk insert via grpc: %w", err)
 		}
 	}
