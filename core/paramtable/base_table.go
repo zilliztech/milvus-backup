@@ -143,6 +143,7 @@ func (gp *BaseTable) loadFromYaml(file string) {
 func (gp *BaseTable) tryLoadFromEnv() {
 	gp.loadMinioConfig()
 	gp.loadMilvusConfig()
+	gp.loadBackupConfig()
 }
 
 // Load loads an object with @key.
@@ -560,5 +561,47 @@ func (gp *BaseTable) loadMilvusConfig() {
 	milvusRPCChannelName := os.Getenv("MILVUS_RPC_CHANNEL_NAME")
 	if milvusRPCChannelName != "" {
 		_ = gp.Save("milvus.rpcChannelName", milvusRPCChannelName)
+	}
+}
+
+func (gp *BaseTable) loadBackupConfig() {
+	backupMaxSegmentGroupSize := os.Getenv("BACKUP_MAX_SEGMENT_GROUP_SIZE")
+	if backupMaxSegmentGroupSize != "" {
+		_ = gp.Save("backup.maxSegmentGroupSize", backupMaxSegmentGroupSize)
+	}
+
+	backupParallelismBackupCollection := os.Getenv("BACKUP_PARALLELISM_BACKUP_COLLECTION")
+	if backupParallelismBackupCollection != "" {
+		_ = gp.Save("backup.parallelism.backupCollection", backupParallelismBackupCollection)
+	}
+
+	backupParallelismCopydata := os.Getenv("BACKUP_PARALLELISM_COPYDATA")
+	if backupParallelismCopydata != "" {
+		_ = gp.Save("backup.parallelism.copydata", backupParallelismCopydata)
+	}
+
+	backupParallelismRestoreCollection := os.Getenv("BACKUP_PARALLELISM_RESTORE_COLLECTION")
+	if backupParallelismRestoreCollection != "" {
+		_ = gp.Save("backup.parallelism.restoreCollection", backupParallelismRestoreCollection)
+	}
+
+	backupKeepTempFiles := os.Getenv("BACKUP_KEEP_TEMP_FILES")
+	if backupKeepTempFiles != "" {
+		_ = gp.Save("backup.keepTempFiles", backupKeepTempFiles)
+	}
+
+	backupGCPauseEnable := os.Getenv("BACKUP_GC_PAUSE_ENABLE")
+	if backupGCPauseEnable != "" {
+		_ = gp.Save("backup.gcPause.enable", backupGCPauseEnable)
+	}
+
+	backupGCPauseSeconds := os.Getenv("BACKUP_GC_PAUSE_SECONDS")
+	if backupGCPauseSeconds != "" {
+		_ = gp.Save("backup.gcPause.seconds", backupGCPauseSeconds)
+	}
+
+	backupGCPauseAddress := os.Getenv("BACKUP_GC_PAUSE_ADDRESS")
+	if backupGCPauseAddress != "" {
+		_ = gp.Save("backup.gcPause.address", backupGCPauseAddress)
 	}
 }
