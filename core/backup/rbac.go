@@ -54,6 +54,8 @@ func (rt *RBACTask) Execute(ctx context.Context) error {
 	}
 
 	rt.meta.UpdateBackup(rt.backupID, meta.SetRBACMeta(rbacPb))
+
+	rt.logger.Info("backup RBAC done")
 	return nil
 }
 
