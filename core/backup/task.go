@@ -375,13 +375,11 @@ func (t *Task) runRBACTask(ctx context.Context) error {
 		return nil
 	}
 
-	t.logger.Info("start backup rbac")
 	rt := NewRBACTask(t.backupID, t.meta, t.grpc)
 	if err := rt.Execute(ctx); err != nil {
 		return fmt.Errorf("backup: execute rbac task: %w", err)
 	}
 
-	t.logger.Info("backup rbac done")
 	return nil
 }
 
