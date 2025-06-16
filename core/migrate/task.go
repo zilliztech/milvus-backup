@@ -3,7 +3,9 @@ package migrate
 import (
 	"context"
 	"fmt"
+	"time"
 
+	minioCred "github.com/minio/minio-go/v7/pkg/credentials"
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
 
@@ -16,6 +18,105 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
+var _ minioCred.Provider = (*stage)(nil)
+
+type stage struct {
+	clusterID string
+	taskID    string
+
+	cloudCli cloud.Client
+
+	expiration time.Time
+	resp       *cloud.ApplyStageResp
+
+	logger *zap.Logger
+}
+
+func newStage(clusterID, taskID string, cloudCli cloud.Client) *stage {
+	return &stage{
+		clusterID: clusterID,
+		taskID:    taskID,
+
+		cloudCli: cloudCli,
+
+		logger: log.L().With(zap.String("cluster_id", clusterID), zap.String("task_id", taskID)),
+	}
+}
+
+func (s *stage) RetrieveWithCredContext(_ *minioCred.CredContext) (minioCred.Value, error) {
+	return s.Retrieve()
+}
+
+func (s *stage) Retrieve() (minioCred.Value, error) {
+	s.logger.Debug("retrieve stage credential")
+	if !s.IsExpired() {
+		s.logger.Debug("stage credential not expired, return cached credential")
+		return minioCred.Value{
+			AccessKeyID:     s.resp.Credentials.TmpAK,
+			SecretAccessKey: s.resp.Credentials.TmpSK,
+			SessionToken:    s.resp.Credentials.SessionToken,
+			Expiration:      s.expiration,
+		}, nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	s.logger.Info("stage credential expired, apply new credential")
+	if err := s.apply(ctx); err != nil {
+		return minioCred.Value{}, err
+	}
+
+	return minioCred.Value{
+		AccessKeyID:     s.resp.Credentials.TmpAK,
+		SecretAccessKey: s.resp.Credentials.TmpSK,
+		SessionToken:    s.resp.Credentials.SessionToken,
+		Expiration:      s.expiration,
+	}, nil
+}
+
+func (s *stage) IsExpired() bool {
+	return time.Now().After(s.expiration)
+}
+
+func (s *stage) apply(ctx context.Context) error {
+	s.logger.Info("apply stage")
+	// use taskID as dir
+	start := time.Now()
+	resp, err := s.cloudCli.ApplyStage(ctx, s.clusterID, s.taskID)
+	if err != nil {
+		return fmt.Errorf("migrate: apply stage %w", err)
+	}
+	s.logger.Info("apply stage done", zap.Duration("cost", time.Since(start)))
+
+	expiration, err := time.Parse(time.RFC3339, resp.Credentials.ExpireTime)
+	if err != nil {
+		return fmt.Errorf("migrate: parse expire time %w", err)
+	}
+
+	s.resp = resp
+	s.expiration = expiration
+
+	return nil
+}
+
+func newStageStorage(ctx context.Context, stage *stage) (storage.Client, error) {
+	cfg := storage.Config{
+		Provider:   stage.resp.Cloud,
+		Endpoint:   stage.resp.Endpoint,
+		UseSSL:     true,
+		Credential: storage.Credential{Type: storage.MinioCredProvider, MinioCredProvider: stage},
+		Bucket:     stage.resp.BucketName,
+	}
+
+	cli, err := storage.NewClient(ctx, cfg)
+	if err != nil {
+		return nil, fmt.Errorf("migrate: new stage storage %w", err)
+	}
+
+	return cli, nil
+}
+
 type Task struct {
 	logger *zap.Logger
 
@@ -27,9 +128,9 @@ type Task struct {
 	taskMgr *taskmgr.Mgr
 
 	backupDir     string
-	backupBucket  string
 	backupStorage storage.Client
 
+	stage   *stage
 	copySem *semaphore.Weighted
 }
 
@@ -53,9 +154,9 @@ func NewTask(taskID, backupName, clusterID string, params *paramtable.BackupPara
 		taskMgr:   taskmgr.DefaultMgr,
 
 		backupDir:     backupDir,
-		backupBucket:  params.MinioCfg.BackupBucketName,
 		backupStorage: backupStorage,
 
+		stage:   newStage(clusterID, taskID, cloudCli),
 		copySem: semaphore.NewWeighted(params.BackupCfg.BackupCopyDataParallelism),
 	}, nil
 }
@@ -72,46 +173,24 @@ func (t *Task) Prepare(ctx context.Context) error {
 	return nil
 }
 
-type stage struct {
-	storage storage.Client
-
-	resp *cloud.ApplyStageResp
-}
-
-func (t *Task) applyStage(ctx context.Context) (stage, error) {
-	t.logger.Info("apply stage")
-	// use taskID as dir
-	resp, err := t.cloudCli.ApplyStage(ctx, t.clusterID, t.taskID)
-	if err != nil {
-		return stage{}, fmt.Errorf("migrate: apply stage %w", err)
-	}
-	t.logger.Info("apply stage done")
-
-	cfg := &storage.Config{
-		Provider: resp.Cloud,
-		Endpoint: resp.Endpoint,
-		AK:       resp.Credentials.TmpAK,
-		SK:       resp.Credentials.TmpSK,
-		Token:    resp.Credentials.SessionToken,
-		UseSSL:   true,
-		Bucket:   resp.BucketName,
-	}
-
-	cli, err := storage.NewClient(ctx, *cfg)
-	if err != nil {
-		return stage{}, fmt.Errorf("migrate: new storage client %w", err)
-	}
-
-	return stage{storage: cli, resp: resp}, nil
-}
-
-func (t *Task) copyToCloud(ctx context.Context, stage stage) error {
+// copyToCloud copy all backup files to cloud.
+// We use a separate copy logic here instead of using Storage.CopyPrefixTask
+// because the temporary AK/SK credentials obtained from apply stage have an expiration time.
+// If the copy fails due to expired credentials, we need to reapply for new credentials.
+// Implementing this retry logic in the copy task would make it too complex and specialized.
+func (t *Task) copyToCloud(ctx context.Context) error {
 	t.logger.Info("copy backup to cloud")
+
+	destCli, err := newStageStorage(ctx, t.stage)
+	if err != nil {
+		return fmt.Errorf("migrate: new stage storage %w", err)
+	}
+
 	opt := storage.CopyPrefixOpt{
 		Src:        t.backupStorage,
-		Dest:       stage.storage,
+		Dest:       destCli,
 		SrcPrefix:  t.backupDir,
-		DestPrefix: stage.resp.UploadPath,
+		DestPrefix: t.stage.resp.UploadPath,
 		Sem:        t.copySem,
 		OnSuccess: func(copyAttr storage.CopyAttr) {
 			t.taskMgr.UpdateMigrateTask(t.taskID, taskmgr.IncMigrateCopiedSize(copyAttr.Src.Length))
@@ -128,15 +207,15 @@ func (t *Task) copyToCloud(ctx context.Context, stage stage) error {
 	return nil
 }
 
-func (t *Task) startMigrate(ctx context.Context, stage stage) error {
+func (t *Task) startMigrate(ctx context.Context) error {
 	src := cloud.Source{
-		AccessKey:  stage.resp.Credentials.TmpAK,
-		SecretKey:  stage.resp.Credentials.TmpSK,
-		Token:      stage.resp.Credentials.SessionToken,
-		BucketName: stage.resp.BucketName,
-		Cloud:      stage.resp.Cloud,
-		Path:       stage.resp.UploadPath,
-		Region:     stage.resp.Region,
+		AccessKey:  t.stage.resp.Credentials.TmpAK,
+		SecretKey:  t.stage.resp.Credentials.TmpSK,
+		Token:      t.stage.resp.Credentials.SessionToken,
+		BucketName: t.stage.resp.BucketName,
+		Cloud:      t.stage.resp.Cloud,
+		Path:       t.stage.resp.UploadPath,
+		Region:     t.stage.resp.Region,
 	}
 
 	dest := cloud.Destination{ClusterID: t.clusterID}
@@ -151,19 +230,18 @@ func (t *Task) startMigrate(ctx context.Context, stage stage) error {
 }
 
 func (t *Task) Execute(ctx context.Context) error {
-	s, err := t.applyStage(ctx)
-	if err != nil {
+	if err := t.stage.apply(ctx); err != nil {
 		return fmt.Errorf("migrate: apply stage %w", err)
 	}
 
 	t.taskMgr.UpdateMigrateTask(t.taskID, taskmgr.SetMigrateCopyStart())
-	if err := t.copyToCloud(ctx, s); err != nil {
+	if err := t.copyToCloud(ctx); err != nil {
 		t.taskMgr.UpdateMigrateTask(t.taskID, taskmgr.SetMigrateCopyComplete())
 		return fmt.Errorf("migrate: copy to cloud %w", err)
 	}
 	t.taskMgr.UpdateMigrateTask(t.taskID, taskmgr.SetMigrateCopyComplete())
 
-	if err := t.startMigrate(ctx, s); err != nil {
+	if err := t.startMigrate(ctx); err != nil {
 		return fmt.Errorf("migrate: start migrate %w", err)
 	}
 

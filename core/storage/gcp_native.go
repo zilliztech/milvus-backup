@@ -137,7 +137,7 @@ func (gcm *GCPNativeClient) ListPrefix(ctx context.Context, prefix string, recur
 	return &GcpNativeObjectIterator{cli: gcm, iter: iter, nextObj: next, hasNext: true}, nil
 }
 
-func (gcm *GCPNativeClient) BucketExist(ctx context.Context, prefix string) (bool, error) {
+func (gcm *GCPNativeClient) BucketExist(ctx context.Context, _ string) (bool, error) {
 	bucket := gcm.client.Bucket(gcm.cfg.Bucket)
 	_, err := bucket.Attrs(ctx)
 	if err != nil {
@@ -175,12 +175,12 @@ func newGCPNativeClient(ctx context.Context, cfg Config) (*GCPNativeClient, erro
 	}
 
 	// Read the credentials file
-	jsonData, err := os.ReadFile(cfg.GcpCredentialJSON)
+	jsonData, err := os.ReadFile(cfg.Credential.GCPCredJSON)
 	if err != nil {
 		return nil, fmt.Errorf("unable to read credentials file:: %v", err)
 	}
 
-	creds, err := google.CredentialsFromJSON(context.Background(), jsonData, storage.ScopeReadWrite)
+	creds, err := google.CredentialsFromJSON(ctx, jsonData, storage.ScopeReadWrite)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create credentials from JSON: %v", err)
 

@@ -81,26 +81,29 @@ func newGCPClient(cfg Config) (*MinioClient, error) {
 	}
 	opts := minio.Options{Secure: cfg.UseSSL}
 
-	if cfg.UseIAM {
+	switch cfg.Credential.Type {
+	case IAM:
 		trans, err := newWrapHTTPTransport(opts.Secure)
 		if err != nil {
 			return nil, fmt.Errorf("storage: create gcp http transport %w", err)
 		}
 		opts.Transport = trans
 		opts.Creds = credentials.NewStaticV2("", "", "")
-	} else {
+	case Static:
 		// region can not be empty
 		opts.Region = "auto"
-		if len(cfg.Token) != 0 {
-			trans, err := newTokenHTTPTransport(cfg.UseSSL, cfg.Token)
+		if len(cfg.Credential.Token) != 0 {
+			trans, err := newTokenHTTPTransport(cfg.UseSSL, cfg.Credential.Token)
 			if err != nil {
 				return nil, err
 			}
 			opts.Transport = trans
 			opts.Creds = credentials.NewStaticV2("", "", "")
 		} else {
-			opts.Creds = credentials.NewStaticV2(cfg.AK, cfg.SK, "")
+			opts.Creds = credentials.NewStaticV2(cfg.Credential.AK, cfg.Credential.SK, "")
 		}
+	default:
+		return nil, fmt.Errorf("storage: gcp unsupported credential type %v", cfg.Credential.Type)
 	}
 
 	cli, err := minio.New(adderss, &opts)

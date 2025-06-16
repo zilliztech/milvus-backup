@@ -15,10 +15,15 @@ var _ Client = (*MinioClient)(nil)
 
 func newMinioClient(cfg Config) (*MinioClient, error) {
 	opts := minio.Options{Secure: cfg.UseSSL}
-	if cfg.UseIAM {
-		opts.Creds = credentials.NewIAM(cfg.IAMEndpoint)
-	} else {
-		opts.Creds = credentials.NewStaticV4(cfg.AK, cfg.SK, cfg.Token)
+	switch cfg.Credential.Type {
+	case IAM:
+		opts.Creds = credentials.NewIAM(cfg.Credential.IAMEndpoint)
+	case Static:
+		opts.Creds = credentials.NewStaticV4(cfg.Credential.AK, cfg.Credential.SK, cfg.Credential.Token)
+	case MinioCredProvider:
+		opts.Creds = credentials.New(cfg.Credential.MinioCredProvider)
+	default:
+		return nil, fmt.Errorf("storage: minio unsupported credential type %s", cfg.Credential.Type.String())
 	}
 
 	cli, err := minio.New(cfg.Endpoint, &opts)

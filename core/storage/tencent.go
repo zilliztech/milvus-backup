@@ -11,14 +11,17 @@ import (
 // NewTencentClient returns a minio.Client which is compatible for tencent OSS
 func newTencentClient(cfg Config) (*MinioClient, error) {
 	opts := minio.Options{Secure: cfg.UseSSL, BucketLookup: minio.BucketLookupDNS}
-	if cfg.UseIAM {
+	switch cfg.Credential.Type {
+	case IAM:
 		provider, err := newTencentCredProvider()
 		if err != nil {
 			return nil, fmt.Errorf("storage: create tencent credential provider: %w", err)
 		}
 		opts.Creds = minioCred.New(provider)
-	} else {
-		opts.Creds = minioCred.NewStaticV4(cfg.AK, cfg.SK, cfg.Token)
+	case Static:
+		opts.Creds = minioCred.NewStaticV4(cfg.Credential.AK, cfg.Credential.SK, cfg.Credential.Token)
+	default:
+		return nil, fmt.Errorf("storage: tencent unsupported credential type %v", cfg.Credential.Type)
 	}
 
 	cli, err := minio.New(cfg.Endpoint, &opts)

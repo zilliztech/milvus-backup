@@ -50,10 +50,9 @@ func (o *options) run(cmd *cobra.Command, params *paramtable.BackupParams) error
 		return err
 	}
 
-	cmd.Printf("Successfully triggered migration")
-	cmd.Printf("with backup name: %s target cluster: %s", o.backupName, o.clusterID)
-	cmd.Printf("migration job id: %s.", taskStat.MigrateJobID())
-	cmd.Printf("You can check the progress of the migration job in Zilliz Cloud console.")
+	cmd.Printf("Successfully triggered migration with backup name: %s target cluster: %s \n", o.backupName, o.clusterID)
+	cmd.Printf("migration job id: %s. \n", taskStat.MigrateJobID())
+	cmd.Printf("You can check the progress of the migration job in Zilliz Cloud console.\n")
 
 	return nil
 }
