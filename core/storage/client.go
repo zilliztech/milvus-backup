@@ -3,6 +3,8 @@ package storage
 import (
 	"context"
 	"io"
+
+	minioCred "github.com/minio/minio-go/v7/pkg/credentials"
 )
 
 type CopyObjectInput struct {
@@ -38,16 +40,58 @@ type Config struct {
 	Endpoint string
 	UseSSL   bool
 
-	IAMEndpoint string
-	UseIAM      bool
+	Credential Credential
 
+	Bucket string
+}
+
+type Credential struct {
+	Type CredentialType
+
+	// Static credential
 	AK    string
 	SK    string
 	Token string
 
-	GcpCredentialJSON string
+	// IAM
+	IAMEndpoint string
 
-	Bucket string
+	// GCPCredJSON
+	GCPCredJSON string
+
+	// MinioCredential
+	MinioCredProvider minioCred.Provider
+}
+
+type CredentialType uint8
+
+const (
+	Unknown CredentialType = iota
+	Static
+	IAM
+
+	// GCPCredJSON For GCPNative storage. pass the json file path to the GCPNative storage.
+	GCPCredJSON
+	// MinioCredProvider For S3 compatible storage (now only support minio, aws),
+	// pass a struct which implements minioCred.Provider
+	MinioCredProvider
+)
+
+func (c CredentialType) String() string {
+	switch c {
+	case Static:
+		return "Static"
+	case IAM:
+		return "IAM"
+	case GCPCredJSON:
+		return "GCPCredJSON"
+	case MinioCredProvider:
+		return "MinioCredProvider"
+	case Unknown:
+		return "Unknown"
+	}
+
+	return "Can not find the credential type"
 }
 
 type ObjectIterator interface {

@@ -55,7 +55,8 @@ func (a *AzureReader) Close() error { return nil }
 var _ Client = (*AzureClient)(nil)
 
 func newAzureClient(cfg Config) (*AzureClient, error) {
-	if cfg.UseIAM {
+	switch cfg.Credential.Type {
+	case IAM:
 		cred, err := azidentity.NewDefaultAzureCredential(nil)
 		if err != nil {
 			return nil, fmt.Errorf("storage: new azure default azure credential %w", err)
@@ -70,8 +71,8 @@ func newAzureClient(cfg Config) (*AzureClient, error) {
 		}
 
 		return &AzureClient{cfg: cfg, cli: cli, sasCli: sasCli}, nil
-	} else {
-		cred, err := azblob.NewSharedKeyCredential(cfg.AK, cfg.SK)
+	case Static:
+		cred, err := azblob.NewSharedKeyCredential(cfg.Credential.AK, cfg.Credential.SK)
 		if err != nil {
 			return nil, fmt.Errorf("storage: new azure shared key credential %w", err)
 		}
@@ -81,6 +82,8 @@ func newAzureClient(cfg Config) (*AzureClient, error) {
 		}
 		sasCli, err := service.NewClientWithSharedKeyCredential(cfg.Endpoint, cred, nil)
 		return &AzureClient{cfg: cfg, cli: cli, sasCli: sasCli}, nil
+	default:
+		return nil, fmt.Errorf("storage: azure unsupported credential type: %s", cfg.Credential.Type.String())
 	}
 }
 
@@ -96,14 +99,14 @@ type AzureClient struct {
 }
 
 func (a *AzureClient) getSAS(ctx context.Context, srcCli *AzureClient) (*sas.QueryParameters, error) {
-	if srcCli.cfg.UseIAM {
+	if srcCli.cfg.Credential.Type == IAM {
 		return a.getSASByUserDelegation(ctx, srcCli)
 	}
 	return a.getSASBySharedKeyCredential(srcCli)
 }
 
 func (a *AzureClient) getSASBySharedKeyCredential(srcCli *AzureClient) (*sas.QueryParameters, error) {
-	credential, err := azblob.NewSharedKeyCredential(srcCli.cfg.AK, srcCli.cfg.SK)
+	credential, err := azblob.NewSharedKeyCredential(srcCli.cfg.Credential.AK, srcCli.cfg.Credential.SK)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create shared key credential: %w", err)
 	}
@@ -123,7 +126,7 @@ func (a *AzureClient) getSASBySharedKeyCredential(srcCli *AzureClient) (*sas.Que
 }
 
 func (a *AzureClient) getSASByUserDelegation(ctx context.Context, srcCli *AzureClient) (*sas.QueryParameters, error) {
-	// Set current and past time and create key
+	// Set current and pastime and create key
 	now := time.Now().Add(-10 * time.Second)
 	expiry := now.Add(48 * time.Hour)
 	info := service.KeyInfo{
@@ -156,9 +159,9 @@ func (a *AzureClient) CopyObject(ctx context.Context, i CopyObjectInput) error {
 		return fmt.Errorf("storage: azure copy object src client is not azure")
 	}
 
-	srcURL := fmt.Sprintf("https://%s.blob.core.windows.net/%s/%s", srcCli.cfg.AK, srcCli.cfg.Bucket, i.SrcKey)
+	srcURL := fmt.Sprintf("https://%s.blob.core.windows.net/%s/%s", srcCli.cfg.Credential.AK, srcCli.cfg.Bucket, i.SrcKey)
 	// if src and dest are in different account, we need to generate SAS token
-	if a.cfg.AK != srcCli.cfg.AK {
+	if a.cfg.Credential.AK != srcCli.cfg.Credential.AK {
 		srcSAS, err := a.getSAS(ctx, srcCli)
 		if err != nil {
 			return err

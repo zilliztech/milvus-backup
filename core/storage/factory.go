@@ -3,30 +3,40 @@ package storage
 import (
 	"context"
 	"fmt"
+	"net"
 
 	"go.uber.org/zap"
 
-	"github.com/zilliztech/milvus-backup/internal/log"
-
 	"github.com/zilliztech/milvus-backup/core/paramtable"
+	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
+func newBackupCredential(params *paramtable.BackupParams) Credential {
+	if params.MinioCfg.BackupUseIAM {
+		return Credential{Type: IAM, IAMEndpoint: params.MinioCfg.BackupIAMEndpoint}
+	}
+
+	if params.MinioCfg.BackupStorageType == paramtable.CloudProviderGCPNative &&
+		params.MinioCfg.BackupGcpCredentialJSON != "" {
+		return Credential{Type: GCPCredJSON, GCPCredJSON: params.MinioCfg.BackupGcpCredentialJSON}
+	}
+
+	return Credential{Type: Static, AK: params.MinioCfg.BackupAccessKeyID, SK: params.MinioCfg.BackupSecretAccessKey}
+}
+
 func NewBackupStorage(ctx context.Context, params *paramtable.BackupParams) (Client, error) {
-	ep := params.MinioCfg.BackupAddress + ":" + params.MinioCfg.BackupPort
+	ep := net.JoinHostPort(params.MinioCfg.BackupAddress, params.MinioCfg.BackupPort)
 	log.Info("create backup storage client",
 		zap.String("endpoint", ep),
 		zap.String("bucket", params.MinioCfg.BackupBucketName))
 
+	cred := newBackupCredential(params)
 	cfg := Config{
-		Provider:          params.MinioCfg.BackupStorageType,
-		Endpoint:          ep,
-		Bucket:            params.MinioCfg.BackupBucketName,
-		AK:                params.MinioCfg.BackupAccessKeyID,
-		SK:                params.MinioCfg.BackupSecretAccessKey,
-		GcpCredentialJSON: params.MinioCfg.BackupGcpCredentialJSON,
-		UseSSL:            params.MinioCfg.BackupUseSSL,
-		UseIAM:            params.MinioCfg.BackupUseIAM,
-		IAMEndpoint:       params.MinioCfg.BackupIAMEndpoint,
+		Provider:   params.MinioCfg.BackupStorageType,
+		Endpoint:   ep,
+		UseSSL:     params.MinioCfg.BackupUseSSL,
+		Bucket:     params.MinioCfg.BackupBucketName,
+		Credential: cred,
 	}
 
 	cli, err := NewClient(ctx, cfg)
@@ -40,22 +50,31 @@ func NewBackupStorage(ctx context.Context, params *paramtable.BackupParams) (Cli
 	return cli, nil
 }
 
+func newMilvusCredential(params *paramtable.BackupParams) Credential {
+	if params.MinioCfg.UseIAM {
+		return Credential{Type: IAM, IAMEndpoint: params.MinioCfg.IAMEndpoint}
+	}
+
+	if params.MinioCfg.StorageType == paramtable.CloudProviderGCPNative &&
+		params.MinioCfg.GcpCredentialJSON != "" {
+		return Credential{Type: GCPCredJSON, GCPCredJSON: params.MinioCfg.GcpCredentialJSON}
+	}
+
+	return Credential{Type: Static, AK: params.MinioCfg.AccessKeyID, SK: params.MinioCfg.SecretAccessKey}
+}
+
 func NewMilvusStorage(ctx context.Context, params *paramtable.BackupParams) (Client, error) {
-	ep := params.MinioCfg.Address + ":" + params.MinioCfg.Port
+	ep := net.JoinHostPort(params.MinioCfg.Address, params.MinioCfg.Port)
 	log.Info("create milvus storage client",
 		zap.String("endpoint", ep),
 		zap.String("bucket", params.MinioCfg.BucketName))
 
 	cfg := Config{
-		Provider:          params.MinioCfg.StorageType,
-		Endpoint:          ep,
-		UseSSL:            params.MinioCfg.UseSSL,
-		IAMEndpoint:       params.MinioCfg.IAMEndpoint,
-		UseIAM:            params.MinioCfg.UseIAM,
-		AK:                params.MinioCfg.AccessKeyID,
-		SK:                params.MinioCfg.SecretAccessKey,
-		GcpCredentialJSON: params.MinioCfg.GcpCredentialJSON,
-		Bucket:            params.MinioCfg.BucketName,
+		Provider:   params.MinioCfg.StorageType,
+		Endpoint:   ep,
+		UseSSL:     params.MinioCfg.UseSSL,
+		Credential: newMilvusCredential(params),
+		Bucket:     params.MinioCfg.BucketName,
 	}
 
 	return NewClient(ctx, cfg)

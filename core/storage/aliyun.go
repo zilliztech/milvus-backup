@@ -12,14 +12,17 @@ import (
 // newAliyunClient returns a minio.Client which is compatible for aliyun OSS
 func newAliyunClient(cfg Config) (*MinioClient, error) {
 	opts := minio.Options{Secure: cfg.UseSSL, BucketLookup: minio.BucketLookupDNS}
-	if cfg.UseIAM {
+	switch cfg.Credential.Type {
+	case IAM:
 		provider, err := newAliCredProvider()
 		if err != nil {
 			return nil, fmt.Errorf("storage: create aliyun credential: %w", err)
 		}
 		opts.Creds = minioCred.New(provider)
-	} else {
-		opts.Creds = minioCred.NewStaticV4(cfg.AK, cfg.SK, cfg.Token)
+	case Static:
+		opts.Creds = minioCred.NewStaticV4(cfg.Credential.AK, cfg.Credential.SK, cfg.Credential.Token)
+	default:
+		return nil, fmt.Errorf("storage: aliyun unsupported credential type: %s", cfg.Credential.Type.String())
 	}
 
 	cli, err := minio.New(cfg.Endpoint, &opts)
