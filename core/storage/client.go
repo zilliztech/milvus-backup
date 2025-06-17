@@ -39,6 +39,7 @@ type Config struct {
 
 	Endpoint string
 	UseSSL   bool
+	Region   string
 
 	Credential Credential
 

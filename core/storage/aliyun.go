@@ -11,7 +11,7 @@ import (
 
 // newAliyunClient returns a minio.Client which is compatible for aliyun OSS
 func newAliyunClient(cfg Config) (*MinioClient, error) {
-	opts := minio.Options{Secure: cfg.UseSSL, BucketLookup: minio.BucketLookupDNS}
+	opts := minio.Options{Secure: cfg.UseSSL, Region: cfg.Region, BucketLookup: minio.BucketLookupDNS}
 	switch cfg.Credential.Type {
 	case IAM:
 		provider, err := newAliCredProvider()

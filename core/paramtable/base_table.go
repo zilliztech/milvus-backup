@@ -421,6 +421,11 @@ func (gp *BaseTable) loadMinioConfig() {
 		_ = gp.Save("minio.port", minioPort)
 	}
 
+	minioRegion := os.Getenv("MINIO_REGION")
+	if minioRegion != "" {
+		_ = gp.Save("minio.region", minioRegion)
+	}
+
 	minioAccessKey := os.Getenv("MINIO_ACCESS_KEY")
 	if minioAccessKey != "" {
 		_ = gp.Save("minio.accessKeyID", minioAccessKey)
@@ -429,6 +434,11 @@ func (gp *BaseTable) loadMinioConfig() {
 	minioSecretKey := os.Getenv("MINIO_SECRET_KEY")
 	if minioSecretKey != "" {
 		_ = gp.Save("minio.secretAccessKey", minioSecretKey)
+	}
+
+	minioToken := os.Getenv("MINIO_TOKEN")
+	if minioToken != "" {
+		_ = gp.Save("minio.token", minioToken)
 	}
 
 	gcpCredentialJSON := os.Getenv("GCP_KEY_JSON")
@@ -481,6 +491,11 @@ func (gp *BaseTable) loadMinioConfig() {
 		_ = gp.Save("minio.backupPort", minioBackupPort)
 	}
 
+	minioBackupRegion := os.Getenv("MINIO_BACKUP_REGION")
+	if minioBackupRegion != "" {
+		_ = gp.Save("minio.backupRegion", minioBackupRegion)
+	}
+
 	minioBackupAccessKey := os.Getenv("MINIO_BACKUP_ACCESS_KEY")
 	if minioBackupAccessKey != "" {
 		_ = gp.Save("minio.backupAccessKeyID", minioBackupAccessKey)
@@ -489,6 +504,11 @@ func (gp *BaseTable) loadMinioConfig() {
 	minioBackupSecretKey := os.Getenv("MINIO_BACKUP_SECRET_KEY")
 	if minioBackupSecretKey != "" {
 		_ = gp.Save("minio.backupSecretAccessKey", minioBackupSecretKey)
+	}
+
+	minioBackupToken := os.Getenv("MINIO_BACKUP_TOKEN")
+	if minioBackupToken != "" {
+		_ = gp.Save("minio.backupToken", minioBackupToken)
 	}
 
 	backupGcpCredentialJSON := os.Getenv("BACKUP_GCP_KEY_JSON")
