@@ -490,9 +490,22 @@ func (g *GrpcClient) GetLoadingProgress(ctx context.Context, db, collName string
 
 func (g *GrpcClient) GetPersistentSegmentInfo(ctx context.Context, db, collName string) ([]*milvuspb.PersistentSegmentInfo, error) {
 	ctx = g.newCtxWithDB(ctx, db)
-	resp, err := g.srv.GetPersistentSegmentInfo(ctx, &milvuspb.GetPersistentSegmentInfoRequest{CollectionName: collName})
-	if err := checkResponse(resp, err); err != nil {
-		return nil, fmt.Errorf("client: get persistent segment info failed: %w", err)
+	var resp *milvuspb.GetPersistentSegmentInfoResponse
+	// The GetPersistentSegmentInfo interface may return a Segment not found error
+	// when compaction/stats is in progress.
+	// So retry several times.
+	err := retry.Do(ctx, func() error {
+		var err error
+		resp, err = g.srv.GetPersistentSegmentInfo(ctx, &milvuspb.GetPersistentSegmentInfoRequest{CollectionName: collName})
+		if err := checkResponse(resp, err); err != nil {
+			return fmt.Errorf("client: get persistent segment info: %w", err)
+		}
+
+		return nil
+	}, retry.Attempts(50), retry.MaxSleepTime(100*time.Millisecond))
+
+	if err != nil {
+		return nil, fmt.Errorf("client: get persistent segment info: %w", err)
 	}
 
 	return resp.GetInfos(), nil
