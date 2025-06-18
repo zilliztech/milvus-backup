@@ -33,11 +33,13 @@ func TestNewBackupCredential(t *testing.T) {
 		params := &paramtable.BackupParams{MinioCfg: paramtable.MinioConfig{
 			BackupAccessKeyID:     "ak",
 			BackupSecretAccessKey: "sk",
+			BackupToken:           "token",
 		}}
 		cred := newBackupCredential(params)
 		assert.Equal(t, Static, cred.Type)
 		assert.Equal(t, "ak", cred.AK)
 		assert.Equal(t, "sk", cred.SK)
+		assert.Equal(t, "token", cred.Token)
 	})
 }
 
@@ -66,10 +68,12 @@ func TestNewMilvusCredential(t *testing.T) {
 		params := &paramtable.BackupParams{MinioCfg: paramtable.MinioConfig{
 			AccessKeyID:     "ak",
 			SecretAccessKey: "sk",
+			Token:           "token",
 		}}
 		cred := newMilvusCredential(params)
 		assert.Equal(t, Static, cred.Type)
 		assert.Equal(t, "ak", cred.AK)
 		assert.Equal(t, "sk", cred.SK)
+		assert.Equal(t, "token", cred.Token)
 	})
 }

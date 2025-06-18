@@ -277,8 +277,10 @@ type MinioConfig struct {
 	CloudProvider     string
 	Address           string
 	Port              string
+	Region            string
 	AccessKeyID       string
 	SecretAccessKey   string
+	Token             string
 	GcpCredentialJSON string
 	UseSSL            bool
 	BucketName        string
@@ -289,8 +291,10 @@ type MinioConfig struct {
 	BackupStorageType       string
 	BackupAddress           string
 	BackupPort              string
+	BackupRegion            string
 	BackupAccessKeyID       string
 	BackupSecretAccessKey   string
+	BackupToken             string
 	BackupGcpCredentialJSON string
 	BackupUseSSL            bool
 	BackupBucketName        string
@@ -342,6 +346,11 @@ func (p *MinioConfig) initPort() {
 	p.Port = port
 }
 
+func (p *MinioConfig) initRegion() {
+	region := p.Base.LoadWithDefault("minio.region", "")
+	p.Region = region
+}
+
 func (p *MinioConfig) initAccessKeyID() {
 	keyID := p.Base.LoadWithDefault("minio.accessKeyID", DefaultMinioAccessKey)
 	p.AccessKeyID = keyID
@@ -350,6 +359,11 @@ func (p *MinioConfig) initAccessKeyID() {
 func (p *MinioConfig) initSecretAccessKey() {
 	key := p.Base.LoadWithDefault("minio.secretAccessKey", DefaultMinioSecretAccessKey)
 	p.SecretAccessKey = key
+}
+
+func (p *MinioConfig) initToken() {
+	token := p.Base.LoadWithDefault("minio.token", "")
+	p.Token = token
 }
 
 func (p *MinioConfig) initGcpCredentialJSON() {
@@ -429,6 +443,12 @@ func (p *MinioConfig) initBackupPort() {
 	p.BackupPort = port
 }
 
+func (p *MinioConfig) initBackupRegion() {
+	region := p.Base.LoadWithDefault("minio.backupRegion",
+		p.Base.LoadWithDefault("minio.region", ""))
+	p.BackupRegion = region
+}
+
 func (p *MinioConfig) initBackupUseSSL() {
 	usessl := p.Base.LoadWithDefault("minio.backupUseSSL",
 		p.Base.LoadWithDefault("minio.useSSL", DefaultMinioUseSSL))
@@ -465,6 +485,12 @@ func (p *MinioConfig) initBackupSecretAccessKey() {
 	key := p.Base.LoadWithDefault("minio.backupSecretAccessKey",
 		p.Base.LoadWithDefault("minio.secretAccessKey", DefaultMinioSecretAccessKey))
 	p.BackupSecretAccessKey = key
+}
+
+func (p *MinioConfig) initBackupToken() {
+	token := p.Base.LoadWithDefault("minio.backupToken",
+		p.Base.LoadWithDefault("minio.token", ""))
+	p.BackupToken = token
 }
 
 func (p *MinioConfig) initBackupGcpCredentialJSON() {

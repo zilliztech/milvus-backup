@@ -21,7 +21,12 @@ func newBackupCredential(params *paramtable.BackupParams) Credential {
 		return Credential{Type: GCPCredJSON, GCPCredJSON: params.MinioCfg.BackupGcpCredentialJSON}
 	}
 
-	return Credential{Type: Static, AK: params.MinioCfg.BackupAccessKeyID, SK: params.MinioCfg.BackupSecretAccessKey}
+	return Credential{
+		Type:  Static,
+		AK:    params.MinioCfg.BackupAccessKeyID,
+		SK:    params.MinioCfg.BackupSecretAccessKey,
+		Token: params.MinioCfg.BackupToken,
+	}
 }
 
 func NewBackupStorage(ctx context.Context, params *paramtable.BackupParams) (Client, error) {
@@ -60,7 +65,12 @@ func newMilvusCredential(params *paramtable.BackupParams) Credential {
 		return Credential{Type: GCPCredJSON, GCPCredJSON: params.MinioCfg.GcpCredentialJSON}
 	}
 
-	return Credential{Type: Static, AK: params.MinioCfg.AccessKeyID, SK: params.MinioCfg.SecretAccessKey}
+	return Credential{
+		Type:  Static,
+		AK:    params.MinioCfg.AccessKeyID,
+		SK:    params.MinioCfg.SecretAccessKey,
+		Token: params.MinioCfg.Token,
+	}
 }
 
 func NewMilvusStorage(ctx context.Context, params *paramtable.BackupParams) (Client, error) {

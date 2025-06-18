@@ -14,7 +14,7 @@ import (
 var _ Client = (*MinioClient)(nil)
 
 func newMinioClient(cfg Config) (*MinioClient, error) {
-	opts := minio.Options{Secure: cfg.UseSSL}
+	opts := minio.Options{Secure: cfg.UseSSL, Region: cfg.Region}
 	switch cfg.Credential.Type {
 	case IAM:
 		opts.Creds = credentials.NewIAM(cfg.Credential.IAMEndpoint)
