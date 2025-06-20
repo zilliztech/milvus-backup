@@ -5,13 +5,39 @@ import (
 	"context"
 	"io"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
 )
 
-func TestRemoteCopier_copy(t *testing.T) {
+func TestTrackReader_Read(t *testing.T) {
+	t.Run("ReadGTZero", func(t *testing.T) {
+		tr := newTrackReader(bytes.NewReader([]byte("hello")), func(size int64, cost time.Duration) {
+			assert.Equal(t, int64(5), size)
+			assert.True(t, cost > 0)
+		})
+
+		buf := make([]byte, 10)
+		n, err := tr.Read(buf)
+		assert.NoError(t, err)
+		assert.Equal(t, 5, n)
+	})
+
+	t.Run("ReadZero", func(t *testing.T) {
+		tr := newTrackReader(bytes.NewReader([]byte("hello")), func(size int64, cost time.Duration) {
+			assert.Fail(t, "should not be called")
+		})
+
+		buf := make([]byte, 0)
+		n, err := tr.Read(buf)
+		assert.NoError(t, err)
+		assert.Equal(t, 0, n)
+	})
+}
+
+func TestRemoteCopier_Copy(t *testing.T) {
 	dest := NewMockClient(t)
 	src := NewMockClient(t)
 	rp := &remoteCopier{src: src, dest: dest, logger: zap.NewNop()}

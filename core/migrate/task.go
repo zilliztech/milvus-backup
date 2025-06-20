@@ -80,7 +80,7 @@ func (s *stage) IsExpired() bool {
 }
 
 func (s *stage) apply(ctx context.Context) error {
-	s.logger.Info("apply stage")
+	s.logger.Info("apply stage, it will take about 10 seconds")
 	// use taskID as dir
 	start := time.Now()
 	resp, err := s.cloudCli.ApplyStage(ctx, s.clusterID, s.taskID)
@@ -192,9 +192,11 @@ func (t *Task) copyToCloud(ctx context.Context) error {
 		SrcPrefix:  t.backupDir,
 		DestPrefix: t.stage.resp.UploadPath,
 		Sem:        t.copySem,
-		OnSuccess: func(copyAttr storage.CopyAttr) {
-			t.taskMgr.UpdateMigrateTask(t.taskID, taskmgr.IncMigrateCopiedSize(copyAttr.Src.Length))
+
+		TraceFn: func(size int64, cost time.Duration) {
+			t.taskMgr.UpdateMigrateTask(t.taskID, taskmgr.IncMigrateCopiedSize(size, cost))
 		},
+
 		CopyByServer: true,
 	}
 
