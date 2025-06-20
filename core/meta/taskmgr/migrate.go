@@ -2,6 +2,7 @@ package taskmgr
 
 import (
 	"sync"
+	"time"
 
 	"github.com/vbauerster/mpb/v8"
 	"github.com/vbauerster/mpb/v8/decor"
@@ -20,7 +21,7 @@ func SetMigrateJobID(jobID string) MigrateTaskOpt {
 	}
 }
 
-func IncMigrateCopiedSize(size int64) MigrateTaskOpt {
+func IncMigrateCopiedSize(size int64, cost time.Duration) MigrateTaskOpt {
 	return func(task *MigrateTask) {
 		task.mu.Lock()
 		defer task.mu.Unlock()
@@ -28,7 +29,7 @@ func IncMigrateCopiedSize(size int64) MigrateTaskOpt {
 		task.copiedSize += size
 
 		if task.bar != nil {
-			task.bar.IncrInt64(size)
+			task.bar.EwmaIncrInt64(size, cost)
 		}
 	}
 }
@@ -38,8 +39,12 @@ func SetMigrateCopyStart() MigrateTaskOpt {
 		opts := []mpb.BarOption{
 			mpb.PrependDecorators(
 				decor.Name("Uploading", decor.WC{C: decor.DindentRight | decor.DextraSpace}),
-				decor.Counters(decor.SizeB1024(0), "% .1f / % .1f")),
-			mpb.AppendDecorators(decor.Percentage()),
+				decor.Counters(decor.SizeB1024(0), "% .2f / % .2f")),
+			mpb.AppendDecorators(
+				decor.EwmaETA(decor.ET_STYLE_GO, 30),
+				decor.Name(" ] "),
+				decor.EwmaSpeed(decor.SizeB1024(0), "% .2f", 30),
+			),
 			mpb.BarRemoveOnComplete(),
 		}
 
@@ -49,7 +54,7 @@ func SetMigrateCopyStart() MigrateTaskOpt {
 		// The size in backupinfo does not include all partition L0 (partition id == -1)
 		// and meta, so the total cannot be set directly.
 		// Need to use dyn total.
-		task.bar = progressbar.Progress().AddBar(0, opts...)
+		task.bar = progressbar.Progress().New(0, mpb.BarStyle().Rbound("|"), opts...)
 		task.bar.SetTotal(task.totalSize, false)
 	}
 }

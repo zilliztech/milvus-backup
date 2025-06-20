@@ -10,75 +10,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/util/retry"
 )
-
-type OnSuccessFn func(copyAttr CopyAttr)
-
-type CopyAttr struct {
-	Src     ObjectAttr
-	DestKey string
-}
-
-type copier interface {
-	copy(ctx context.Context, copyAttr CopyAttr) error
-}
-
-// remoteCopier copy data from src to dest by calling dest.CopyObject
-type remoteCopier struct {
-	src  Client
-	dest Client
-
-	logger *zap.Logger
-}
-
-func (rp *remoteCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
-	rp.logger.Debug("copy object", zap.String("src", copyAttr.Src.Key), zap.String("dest", copyAttr.DestKey))
-	i := CopyObjectInput{SrcCli: rp.src, SrcKey: copyAttr.Src.Key, DestKey: copyAttr.DestKey}
-	if err := rp.dest.CopyObject(ctx, i); err != nil {
-		return fmt.Errorf("storage: remote copier copy object %w", err)
-	}
-
-	return nil
-}
-
-// serverCopier copy data from src to dest by backup server
-type serverCopier struct {
-	src  Client
-	dest Client
-
-	logger *zap.Logger
-}
-
-func (sc *serverCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
-	sc.logger.Debug("copy object", zap.String("src_key", copyAttr.Src.Key), zap.String("dest_key", copyAttr.DestKey))
-
-	return retry.Do(ctx, func() error {
-		obj, err := sc.src.GetObject(ctx, copyAttr.Src.Key)
-		if err != nil {
-			return fmt.Errorf("storage: server copier get object %w", err)
-		}
-		defer obj.Body.Close()
-
-		i := UploadObjectInput{Body: obj.Body, Key: copyAttr.DestKey, Size: copyAttr.Src.Length}
-		if err := sc.dest.UploadObject(ctx, i); err != nil {
-			return fmt.Errorf("storage: copier upload object %w", err)
-		}
-
-		return nil
-	})
-}
-
-func newCopier(src, dest Client, copyByServer bool) copier {
-	logger := log.L().With(
-		zap.String("src", src.Config().Bucket),
-		zap.String("dest", dest.Config().Bucket),
-	)
-	if copyByServer {
-		return &serverCopier{src: src, dest: dest, logger: logger.With(zap.String("copier", "server"))}
-	}
-	return &remoteCopier{src: src, dest: dest, logger: logger.With(zap.String("copier", "remote"))}
-}
 
 type CopyPrefixOpt struct {
 	Src  Client
@@ -89,7 +21,7 @@ type CopyPrefixOpt struct {
 
 	Sem *semaphore.Weighted
 
-	OnSuccess OnSuccessFn
+	TraceFn TraceFn
 
 	CopyByServer bool
 }
@@ -106,7 +38,7 @@ func NewCopyPrefixTask(opt CopyPrefixOpt) *CopyPrefixTask {
 	return &CopyPrefixTask{
 		opt: opt,
 
-		copier: newCopier(opt.Src, opt.Dest, opt.CopyByServer),
+		copier: newCopier(opt.Src, opt.Dest, opt.CopyByServer, copierOpt{traceFn: opt.TraceFn}),
 
 		logger: log.L().With(zap.String("src", opt.SrcPrefix), zap.String("dest", opt.DestPrefix)),
 	}
@@ -118,10 +50,6 @@ func (c *CopyPrefixTask) copy(ctx context.Context, src ObjectAttr) error {
 
 	if err := c.copier.copy(ctx, attr); err != nil {
 		return fmt.Errorf("storage: copy prefix %w", err)
-	}
-
-	if c.opt.OnSuccess != nil {
-		c.opt.OnSuccess(attr)
 	}
 
 	return nil
@@ -186,7 +114,7 @@ func NewCopyObjectsTask(opt CopyObjectsOpt) *CopyObjectsTask {
 	return &CopyObjectsTask{
 		opt: opt,
 
-		copier: newCopier(opt.Src, opt.Dest, opt.CopyByServer),
+		copier: newCopier(opt.Src, opt.Dest, opt.CopyByServer, copierOpt{}),
 	}
 }
 
