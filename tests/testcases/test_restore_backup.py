@@ -1602,3 +1602,62 @@ class TestRestoreBackup(TestcaseBase):
             assert name + suffix in res
         for name in restore_collections:
             self.compare_collections(name, name + suffix, verify_by_query=True)
+
+    @pytest.mark.tags(CaseLabel.L0)
+    def test_milvus_restore_backup_with_ttl_property(self):
+        """Verify that collection TTL property can be backed up and restored correctly"""
+
+        # 1. connect to Milvus
+        self._connect()
+
+        # 2. create a collection with TTL property via MilvusClient
+        collection_name = cf.gen_unique_str(prefix)
+        backup_name = cf.gen_unique_str(backup_prefix)
+        ttl_seconds = 1209600  # 14 days
+
+        dim = 8
+        schema = self.milvus_client.create_schema(auto_id=False, enable_dynamic_field=False)
+        schema.add_field(field_name="id", datatype=DataType.INT64, is_primary=True)
+        schema.add_field(field_name="vector", datatype=DataType.FLOAT_VECTOR, dim=dim)
+
+        # create collection with ttl property
+        self.milvus_client.create_collection(
+            collection_name=collection_name,
+            schema=schema,
+            properties={"collection.ttl.seconds": ttl_seconds},
+        )
+
+        # confirm collection exists and property set
+        col_info = self.milvus_client.describe_collection(collection_name=collection_name)
+        assert (
+            col_info.get("properties", {}).get("collection.ttl.seconds") == str(ttl_seconds)
+        )
+
+        # 3. create backup for the collection
+        create_payload = {
+            "async": False,
+            "backup_name": backup_name,
+            "collection_names": [collection_name],
+        }
+        res = self.client.create_backup(create_payload)
+        log.info(f"create_backup response: {res}")
+        assert res.get("msg", "") == "success"
+
+        # 4. restore backup with suffix
+        restore_payload = {
+            "async": False,
+            "backup_name": backup_name,
+            "collection_names": [collection_name],
+            "collection_suffix": suffix,
+        }
+        res = self.client.restore_backup(restore_payload)
+        log.info(f"restore_backup response: {res}")
+        assert res.get("msg", "") == "success"
+
+        # 5. verify restored collection exists and TTL property equals source
+        restored_name = collection_name + suffix
+        restored_info = self.milvus_client.describe_collection(collection_name=restored_name)
+        assert (
+            restored_info.get("properties", {}).get("collection.ttl.seconds")
+            == str(ttl_seconds)
+        )
