@@ -461,7 +461,7 @@ func (t *Task) checkCollExist(ctx context.Context, task *backuppb.RestoreCollect
 
 	// collection not exist and not create collection
 	if !has && task.GetSkipCreateCollection() {
-		return fmt.Errorf("restore: collction not exist, database %s collection %s", task.GetTargetDbName(), task.GetTargetCollectionName())
+		return fmt.Errorf("restore: collection not exist, database %s collection %s", task.GetTargetDbName(), task.GetTargetCollectionName())
 	}
 
 	// collection existed and not drop collection
