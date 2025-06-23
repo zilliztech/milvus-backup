@@ -5,12 +5,15 @@ import (
 	"sort"
 	"testing"
 
+	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
+	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/client/milvus"
+	"github.com/zilliztech/milvus-backup/core/pbconv"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/storage"
 	"github.com/zilliztech/milvus-backup/core/storage/mpath"
@@ -40,6 +43,25 @@ func TestCollectionTask_groupID(t *testing.T) {
 		groupID := task.groupID(&milvuspb.PersistentSegmentInfo{SegmentID: 100, PartitionID: -1})
 		assert.Equal(t, int64(0), groupID)
 	})
+}
+
+func TestCollectionTask_convSchema(t *testing.T) {
+	schema := &schemapb.CollectionSchema{
+		Name:               "name",
+		Description:        "description",
+		AutoID:             true,
+		EnableDynamicField: true,
+		Properties:         []*commonpb.KeyValuePair{{Key: "k1", Value: "v1"}, {Key: "k2", Value: "v2"}},
+	}
+
+	ct := newTestCollectionTask()
+	bakSchema, err := ct.convSchema(schema)
+	assert.NoError(t, err)
+	assert.Equal(t, schema.GetName(), bakSchema.GetName())
+	assert.Equal(t, schema.GetDescription(), bakSchema.GetDescription())
+	assert.Equal(t, schema.GetAutoID(), bakSchema.GetAutoID())
+	assert.Equal(t, schema.GetEnableDynamicField(), bakSchema.GetEnableDynamicField())
+	assert.ElementsMatch(t, schema.GetProperties(), pbconv.BakKVToMilvusKV(bakSchema.GetProperties()))
 }
 
 func TestCollectionTask_listInsertLogByListFile(t *testing.T) {

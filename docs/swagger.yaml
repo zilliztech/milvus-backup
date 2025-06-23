@@ -130,6 +130,10 @@ definitions:
         type: array
       progress:
         type: integer
+      properties:
+        items:
+          $ref: '#/definitions/backuppb.KeyValuePair'
+        type: array
       schema:
         $ref: '#/definitions/backuppb.CollectionSchema'
       shards_num:

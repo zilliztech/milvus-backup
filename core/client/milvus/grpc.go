@@ -657,6 +657,7 @@ type CreateCollectionInput struct {
 	ConsLevel    commonpb.ConsistencyLevel
 	ShardNum     int32
 	PartitionNum int
+	Properties   []*commonpb.KeyValuePair
 }
 
 func (g *GrpcClient) CreateCollection(ctx context.Context, input CreateCollectionInput) error {
@@ -672,6 +673,7 @@ func (g *GrpcClient) CreateCollection(ctx context.Context, input CreateCollectio
 		ConsistencyLevel: input.ConsLevel,
 		ShardsNum:        input.ShardNum,
 		NumPartitions:    int64(input.PartitionNum),
+		Properties:       input.Properties,
 	}
 
 	return retry.Do(ctx, func() error {

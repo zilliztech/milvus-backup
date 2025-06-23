@@ -272,6 +272,19 @@ func (ct *CollectionTask) dropExistedColl(ctx context.Context) error {
 	return nil
 }
 
+func (ct *CollectionTask) shardNum() int32 {
+	// overwrite shardNum by request parameter
+	shardNum := ct.task.GetCollBackup().GetShardsNum()
+	if shardNum > ct.task.GetMaxShardNum() && ct.task.GetMaxShardNum() != 0 {
+		shardNum = ct.task.GetMaxShardNum()
+		ct.logger.Info("overwrite shardNum by request parameter",
+			zap.Int32("oldShardNum", ct.task.GetCollBackup().GetShardsNum()),
+			zap.Int32("newShardNum", shardNum))
+	}
+
+	return shardNum
+}
+
 func (ct *CollectionTask) createColl(ctx context.Context) error {
 	if ct.task.GetSkipCreateCollection() {
 		ct.logger.Info("skip create collection")
@@ -293,23 +306,16 @@ func (ct *CollectionTask) createColl(ctx context.Context) error {
 		Functions:          functions,
 		Fields:             fields,
 		EnableDynamicField: ct.task.GetCollBackup().GetSchema().GetEnableDynamicField(),
-	}
-
-	// overwrite shardNum by request parameter
-	shardNum := ct.task.GetCollBackup().GetShardsNum()
-	if shardNum > ct.task.GetMaxShardNum() && ct.task.GetMaxShardNum() != 0 {
-		shardNum = ct.task.GetMaxShardNum()
-		ct.logger.Info("overwrite shardNum by request parameter",
-			zap.Int32("oldShardNum", ct.task.GetCollBackup().GetShardsNum()),
-			zap.Int32("newShardNum", shardNum))
+		Properties:         pbconv.BakKVToMilvusKV(ct.task.GetCollBackup().GetSchema().GetProperties()),
 	}
 
 	opt := milvus.CreateCollectionInput{
 		DB:           ct.task.GetTargetDbName(),
 		Schema:       schema,
 		ConsLevel:    commonpb.ConsistencyLevel(ct.task.GetCollBackup().GetConsistencyLevel()),
-		ShardNum:     shardNum,
+		ShardNum:     ct.shardNum(),
 		PartitionNum: ct.partitionNum(),
+		Properties:   pbconv.BakKVToMilvusKV(ct.task.GetCollBackup().GetProperties(), ct.task.SkipParams.GetCollectionProperties()...),
 	}
 	if err := ct.grpcCli.CreateCollection(ctx, opt); err != nil {
 		return fmt.Errorf("restore_collection: call create collection api after retry: %w", err)
