@@ -202,6 +202,7 @@ func (ct *CollectionTask) convSchema(schema *schemapb.CollectionSchema) (*backup
 		Description:        schema.GetDescription(),
 		AutoID:             schema.GetAutoID(),
 		Fields:             fields,
+		Properties:         pbconv.MilvusKVToBakKV(schema.GetProperties()),
 		EnableDynamicField: schema.GetEnableDynamicField(),
 		Functions:          functions,
 	}
@@ -351,6 +352,7 @@ func (ct *CollectionTask) backupDDL(ctx context.Context) error {
 		IndexInfos:       indexes,
 		LoadState:        collLoadState,
 		PartitionBackups: partitions,
+		Properties:       pbconv.MilvusKVToBakKV(descResp.GetProperties()),
 	}
 	ct.meta.AddCollection(backupInfo)
 

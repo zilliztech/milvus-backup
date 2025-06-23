@@ -442,6 +442,12 @@ const docTemplate = `{
                 "progress": {
                     "type": "integer"
                 },
+                "properties": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/backuppb.KeyValuePair"
+                    }
+                },
                 "schema": {
                     "$ref": "#/definitions/backuppb.CollectionSchema"
                 },
