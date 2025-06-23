@@ -310,6 +310,8 @@ func (p *MinioConfig) init(base *BaseTable) {
 
 	p.initStorageType()
 	p.initAddress()
+	p.initRegion()
+	p.initToken()
 	p.initPort()
 	p.initAccessKeyID()
 	p.initSecretAccessKey()
@@ -330,6 +332,8 @@ func (p *MinioConfig) init(base *BaseTable) {
 	p.initBackupUseSSL()
 	p.initBackupBucketName()
 	p.initBackupRootPath()
+	p.initBackupRegion()
+	p.initBackupToken()
 	p.initBackupUseIAM()
 	p.initBackupIAMEndpoint()
 
