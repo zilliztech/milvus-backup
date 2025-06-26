@@ -3,12 +3,14 @@ package restore
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"testing"
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 
@@ -143,4 +145,45 @@ func TestCollectionTask_getDefaultValue(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Nil(t, val)
 	})
+}
+
+func TestToPaths(t *testing.T) {
+	// normal
+	dir := partitionDir{insertLogDir: "insert", deltaLogDir: "delta"}
+	paths := toPaths(dir)
+	assert.Equal(t, []string{"insert", "delta"}, paths)
+
+	// without delta
+	dir = partitionDir{insertLogDir: "insert"}
+	paths = toPaths(dir)
+	assert.Equal(t, []string{"insert", ""}, paths)
+
+	// without insert
+	dir = partitionDir{deltaLogDir: "delta"}
+	paths = toPaths(dir)
+	assert.Equal(t, []string{"delta"}, paths)
+}
+
+func TestL0SegmentBatches(t *testing.T) {
+	ct := newTestCollectionTask()
+	ct.task = &backuppb.RestoreCollectionTask{CollBackup: &backuppb.CollectionBackupInfo{CollectionId: 1}}
+
+	segs := make([]*backuppb.SegmentBackupInfo, 0, 10)
+	for i := 0; i < 10; i++ {
+		vch := fmt.Sprintf("vch%d", i%2)
+		seg := &backuppb.SegmentBackupInfo{SegmentId: int64(i), PartitionId: 1, VChannel: vch, Size: 1}
+		segs = append(segs, seg)
+	}
+
+	batches, err := ct.l0SegmentBatches(segs)
+	assert.NoError(t, err)
+	assert.Len(t, batches, 10)
+
+	for _, b := range batches {
+		require.Len(t, b.partitionDirs, 1)
+		for _, dir := range b.partitionDirs {
+			require.Empty(t, dir.insertLogDir)
+			require.NotEmpty(t, dir.deltaLogDir)
+		}
+	}
 }
