@@ -42,6 +42,7 @@ func NewBackupStorage(ctx context.Context, params *paramtable.BackupParams) (Cli
 		UseSSL:     params.MinioCfg.BackupUseSSL,
 		Bucket:     params.MinioCfg.BackupBucketName,
 		Credential: cred,
+		Region:     params.MinioCfg.BackupRegion,
 	}
 
 	cli, err := NewClient(ctx, cfg)
@@ -85,6 +86,7 @@ func NewMilvusStorage(ctx context.Context, params *paramtable.BackupParams) (Cli
 		UseSSL:     params.MinioCfg.UseSSL,
 		Credential: newMilvusCredential(params),
 		Bucket:     params.MinioCfg.BucketName,
+		Region:     params.MinioCfg.Region,
 	}
 
 	return NewClient(ctx, cfg)
