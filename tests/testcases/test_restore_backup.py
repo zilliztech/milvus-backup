@@ -1156,7 +1156,8 @@ class TestRestoreBackup(TestcaseBase):
         assert back_up_name not in all_backup
 
     @pytest.mark.tags(CaseLabel.L1)
-    def test_milvus_restore_back_with_delete(self):
+    @pytest.mark.parametrize("use_v2_restore", [True, False])
+    def test_milvus_restore_back_with_delete(self, use_v2_restore):
         self._connect()
         name_origin = cf.gen_unique_str(prefix)
         back_up_name = cf.gen_unique_str(backup_prefix)
@@ -1230,6 +1231,7 @@ class TestRestoreBackup(TestcaseBase):
                 "backup_name": back_up_name,
                 "collection_names": [name_origin],
                 "collection_suffix": suffix,
+                "useV2Restore": use_v2_restore
             }
         )
         log.info(f"restore_backup: {res}")
@@ -1244,7 +1246,8 @@ class TestRestoreBackup(TestcaseBase):
         )
 
     @pytest.mark.tags(CaseLabel.L1)
-    def test_milvus_restore_back_with_upsert(self):
+    @pytest.mark.parametrize("use_v2_restore", [True, False])
+    def test_milvus_restore_back_with_upsert(self, use_v2_restore):
         self._connect()
         name_origin = cf.gen_unique_str(prefix)
         back_up_name = cf.gen_unique_str(backup_prefix)
@@ -1325,6 +1328,7 @@ class TestRestoreBackup(TestcaseBase):
                 "backup_name": back_up_name,
                 "collection_names": [name_origin],
                 "collection_suffix": suffix,
+                "useV2Restore": use_v2_restore
             }
         )
         log.info(f"restore_backup: {res}")
