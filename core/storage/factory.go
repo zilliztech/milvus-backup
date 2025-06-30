@@ -12,21 +12,29 @@ import (
 )
 
 func newBackupCredential(params *paramtable.BackupParams) Credential {
+	var cred Credential
+	if params.MinioCfg.BackupStorageType == paramtable.CloudProviderAzure {
+		cred.AzureAccountName = params.MinioCfg.BackupAccessKeyID
+	}
+
 	if params.MinioCfg.BackupUseIAM {
-		return Credential{Type: IAM, IAMEndpoint: params.MinioCfg.BackupIAMEndpoint}
+		cred.Type = IAM
+		cred.IAMEndpoint = params.MinioCfg.BackupIAMEndpoint
+		return cred
 	}
 
 	if params.MinioCfg.BackupStorageType == paramtable.CloudProviderGCPNative &&
 		params.MinioCfg.BackupGcpCredentialJSON != "" {
-		return Credential{Type: GCPCredJSON, GCPCredJSON: params.MinioCfg.BackupGcpCredentialJSON}
+		cred.Type = GCPCredJSON
+		cred.GCPCredJSON = params.MinioCfg.BackupGcpCredentialJSON
+		return cred
 	}
 
-	return Credential{
-		Type:  Static,
-		AK:    params.MinioCfg.BackupAccessKeyID,
-		SK:    params.MinioCfg.BackupSecretAccessKey,
-		Token: params.MinioCfg.BackupToken,
-	}
+	cred.Type = Static
+	cred.AK = params.MinioCfg.BackupAccessKeyID
+	cred.SK = params.MinioCfg.BackupSecretAccessKey
+	cred.Token = params.MinioCfg.BackupToken
+	return cred
 }
 
 func NewBackupStorage(ctx context.Context, params *paramtable.BackupParams) (Client, error) {
@@ -57,21 +65,29 @@ func NewBackupStorage(ctx context.Context, params *paramtable.BackupParams) (Cli
 }
 
 func newMilvusCredential(params *paramtable.BackupParams) Credential {
+	var cred Credential
+	if params.MinioCfg.StorageType == paramtable.CloudProviderAzure {
+		cred.AzureAccountName = params.MinioCfg.AccessKeyID
+	}
+
 	if params.MinioCfg.UseIAM {
-		return Credential{Type: IAM, IAMEndpoint: params.MinioCfg.IAMEndpoint}
+		cred.Type = IAM
+		cred.IAMEndpoint = params.MinioCfg.IAMEndpoint
+		return cred
 	}
 
 	if params.MinioCfg.StorageType == paramtable.CloudProviderGCPNative &&
 		params.MinioCfg.GcpCredentialJSON != "" {
-		return Credential{Type: GCPCredJSON, GCPCredJSON: params.MinioCfg.GcpCredentialJSON}
+		cred.Type = GCPCredJSON
+		cred.GCPCredJSON = params.MinioCfg.GcpCredentialJSON
+		return cred
 	}
 
-	return Credential{
-		Type:  Static,
-		AK:    params.MinioCfg.AccessKeyID,
-		SK:    params.MinioCfg.SecretAccessKey,
-		Token: params.MinioCfg.Token,
-	}
+	cred.Type = Static
+	cred.AK = params.MinioCfg.AccessKeyID
+	cred.SK = params.MinioCfg.SecretAccessKey
+	cred.Token = params.MinioCfg.Token
+	return cred
 }
 
 func NewMilvusStorage(ctx context.Context, params *paramtable.BackupParams) (Client, error) {

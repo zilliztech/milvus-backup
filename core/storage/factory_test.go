@@ -9,6 +9,17 @@ import (
 )
 
 func TestNewBackupCredential(t *testing.T) {
+	t.Run("Azure", func(t *testing.T) {
+		params := &paramtable.BackupParams{MinioCfg: paramtable.MinioConfig{
+			BackupStorageType: paramtable.CloudProviderAzure,
+			BackupAccessKeyID: "accountName",
+			BackupUseIAM:      true,
+		}}
+		cred := newBackupCredential(params)
+		assert.Equal(t, IAM, cred.Type)
+		assert.Equal(t, "accountName", cred.AzureAccountName)
+	})
+
 	t.Run("IAM", func(t *testing.T) {
 		params := &paramtable.BackupParams{MinioCfg: paramtable.MinioConfig{
 			BackupUseIAM:      true,
@@ -44,6 +55,17 @@ func TestNewBackupCredential(t *testing.T) {
 }
 
 func TestNewMilvusCredential(t *testing.T) {
+	t.Run("Azure", func(t *testing.T) {
+		params := &paramtable.BackupParams{MinioCfg: paramtable.MinioConfig{
+			StorageType: paramtable.CloudProviderAzure,
+			AccessKeyID: "accountName",
+			UseIAM:      true,
+		}}
+		cred := newMilvusCredential(params)
+		assert.Equal(t, IAM, cred.Type)
+		assert.Equal(t, "accountName", cred.AzureAccountName)
+	})
+
 	t.Run("IAM", func(t *testing.T) {
 		params := &paramtable.BackupParams{MinioCfg: paramtable.MinioConfig{
 			UseIAM:      true,

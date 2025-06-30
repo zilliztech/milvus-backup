@@ -55,17 +55,19 @@ func (a *AzureReader) Close() error { return nil }
 var _ Client = (*AzureClient)(nil)
 
 func newAzureClient(cfg Config) (*AzureClient, error) {
+	// backwards compatible, don't know why we kept the "blob" in the code instead of letting it be input externally.
+	ep := fmt.Sprintf("https://%s.blob.%s", cfg.Credential.AzureAccountName, cfg.Endpoint)
 	switch cfg.Credential.Type {
 	case IAM:
 		cred, err := azidentity.NewDefaultAzureCredential(nil)
 		if err != nil {
 			return nil, fmt.Errorf("storage: new azure default azure credential %w", err)
 		}
-		cli, err := azblob.NewClient(cfg.Endpoint, cred, nil)
+		cli, err := azblob.NewClient(ep, cred, nil)
 		if err != nil {
 			return nil, fmt.Errorf("storage: new azure client %w", err)
 		}
-		sasCli, err := service.NewClient(cfg.Endpoint, cred, nil)
+		sasCli, err := service.NewClient(ep, cred, nil)
 		if err != nil {
 			return nil, fmt.Errorf("storage: new azure service client %w", err)
 		}
@@ -76,11 +78,11 @@ func newAzureClient(cfg Config) (*AzureClient, error) {
 		if err != nil {
 			return nil, fmt.Errorf("storage: new azure shared key credential %w", err)
 		}
-		cli, err := azblob.NewClientWithSharedKeyCredential(cfg.Endpoint, cred, nil)
+		cli, err := azblob.NewClientWithSharedKeyCredential(ep, cred, nil)
 		if err != nil {
 			return nil, fmt.Errorf("storage: new azure client %w", err)
 		}
-		sasCli, err := service.NewClientWithSharedKeyCredential(cfg.Endpoint, cred, nil)
+		sasCli, err := service.NewClientWithSharedKeyCredential(ep, cred, nil)
 		return &AzureClient{cfg: cfg, cli: cli, sasCli: sasCli}, nil
 	default:
 		return nil, fmt.Errorf("storage: azure unsupported credential type: %s", cfg.Credential.Type.String())
@@ -219,46 +221,139 @@ func (a *AzureClient) UploadObject(ctx context.Context, i UploadObjectInput) err
 	return nil
 }
 
-type AzureObjectIterator struct {
+type AzureObjectFlatIterator struct {
 	cli *AzureClient
 
-	pager     *runtime.Pager[azblob.ListBlobsFlatResponse]
-	currPage  azblob.ListBlobsFlatResponse
-	currIndex int
+	pager *runtime.Pager[azblob.ListBlobsFlatResponse]
+
+	currPage []ObjectAttr
+	nextIdx  int
 }
 
-func (a *AzureObjectIterator) HasNext() bool {
+func (flatIter *AzureObjectFlatIterator) HasNext() bool {
 	// current page has more entries
-	if a.currIndex < len(a.currPage.Segment.BlobItems) {
+	if flatIter.nextIdx < len(flatIter.currPage) {
 		return true
 	}
 
-	// current page is the last page, try to get next page
-	if !a.pager.More() {
+	// current page is the last page
+	if !flatIter.pager.More() {
 		return false
 	}
 
-	page, err := a.pager.NextPage(context.Background())
+	// try to get next page
+	page, err := flatIter.pager.NextPage(context.Background())
 	if err != nil {
 		log.Warn("failed to get next page", zap.Error(err))
 		return false
 	}
-	a.currPage = page
-	a.currIndex = 0
+	flatIter.currPage = flatIter.currPage[:0]
+	for _, blob := range page.Segment.BlobItems {
+		attr := ObjectAttr{Key: *blob.Name, Length: *blob.Properties.ContentLength}
+		flatIter.currPage = append(flatIter.currPage, attr)
+	}
+	flatIter.nextIdx = 0
 	return true
 }
 
-func (a *AzureObjectIterator) Next() (ObjectAttr, error) {
-	blob := a.currPage.Segment.BlobItems[a.currIndex]
-	a.currIndex++
+func (flatIter *AzureObjectFlatIterator) Next() (ObjectAttr, error) {
+	attr := flatIter.currPage[flatIter.nextIdx]
+	flatIter.nextIdx += 1
 
-	return ObjectAttr{Key: *blob.Name, Length: *blob.Properties.ContentLength}, nil
+	return attr, nil
 }
 
-func (a *AzureClient) ListPrefix(_ context.Context, prefix string, _ bool) (ObjectIterator, error) {
-	// currently only support list prefix recursively
+type AzureObjectHierarchyIterator struct {
+	cli *AzureClient
+
+	pager *runtime.Pager[container.ListBlobsHierarchyResponse]
+
+	currPage []ObjectAttr
+	nextIdx  int
+}
+
+func (hierIter *AzureObjectHierarchyIterator) HasNext() bool {
+	// current page has more entries
+	if hierIter.nextIdx < len(hierIter.currPage) {
+		return true
+	}
+
+	// no more page
+	if !hierIter.pager.More() {
+		return false
+	}
+
+	// try to get next page
+	page, err := hierIter.pager.NextPage(context.Background())
+	if err != nil {
+		log.Warn("failed to get next page", zap.Error(err))
+		return false
+	}
+	hierIter.currPage = hierIter.currPage[:0]
+	for _, blob := range page.Segment.BlobItems {
+		attr := ObjectAttr{Key: *blob.Name, Length: *blob.Properties.ContentLength}
+		hierIter.currPage = append(hierIter.currPage, attr)
+	}
+	for _, prefix := range page.Segment.BlobPrefixes {
+		hierIter.currPage = append(hierIter.currPage, ObjectAttr{Key: *prefix.Name})
+	}
+	hierIter.nextIdx = 0
+	return true
+}
+
+func (hierIter *AzureObjectHierarchyIterator) Next() (ObjectAttr, error) {
+	attr := hierIter.currPage[hierIter.nextIdx]
+	hierIter.nextIdx += 1
+
+	return attr, nil
+}
+
+func (a *AzureClient) ListPrefix(_ context.Context, prefix string, recursive bool) (ObjectIterator, error) {
+	if recursive {
+		return a.listPrefixRecursive(prefix)
+	}
+	return a.listPrefixNonRecursive(prefix)
+}
+
+func (a *AzureClient) listPrefixRecursive(prefix string) (*AzureObjectFlatIterator, error) {
 	pager := a.cli.NewListBlobsFlatPager(a.cfg.Bucket, &azblob.ListBlobsFlatOptions{Prefix: to.Ptr(prefix)})
-	return &AzureObjectIterator{cli: a, pager: pager}, nil
+	page, err := pager.NextPage(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("storage: azure list prefix %w", err)
+	}
+
+	var currPage []ObjectAttr
+	if page.Segment != nil {
+		for _, blob := range page.Segment.BlobItems {
+			attr := ObjectAttr{Key: *blob.Name, Length: *blob.Properties.ContentLength}
+			currPage = append(currPage, attr)
+		}
+	}
+
+	return &AzureObjectFlatIterator{cli: a, pager: pager, currPage: currPage}, nil
+}
+
+func (a *AzureClient) listPrefixNonRecursive(prefix string) (*AzureObjectHierarchyIterator, error) {
+	pager := a.cli.ServiceClient().
+		NewContainerClient(a.cfg.Bucket).
+		NewListBlobsHierarchyPager("/", &container.ListBlobsHierarchyOptions{Prefix: to.Ptr(prefix)})
+	page, err := pager.NextPage(context.Background())
+	if err != nil {
+		return nil, fmt.Errorf("storage: azure list prefix %w", err)
+	}
+
+	var currPage []ObjectAttr
+	if page.Segment != nil {
+		for _, blob := range page.Segment.BlobItems {
+			attr := ObjectAttr{Key: *blob.Name, Length: *blob.Properties.ContentLength}
+			currPage = append(currPage, attr)
+		}
+		for _, pre := range page.Segment.BlobPrefixes {
+			currPage = append(currPage, ObjectAttr{Key: *pre.Name})
+		}
+	}
+
+	return &AzureObjectHierarchyIterator{cli: a, pager: pager, currPage: currPage}, nil
 }
 
 func (a *AzureClient) DeleteObject(ctx context.Context, prefix string) error {

@@ -62,6 +62,9 @@ type Credential struct {
 
 	// MinioCredential
 	MinioCredProvider minioCred.Provider
+
+	// Azure Specific
+	AzureAccountName string
 }
 
 type CredentialType uint8
