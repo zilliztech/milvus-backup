@@ -116,13 +116,19 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 	defer b.mu.Unlock()
 	b.meta.UpdateBackup(backupInfo.GetId(), meta.SetStateCode(backuppb.BackupTaskStateCode_BACKUP_EXECUTING))
 
-	task := backup.NewTask(backupInfo.GetId(),
+	task, err := backup.NewTask(backupInfo.GetId(),
 		b.getMilvusStorageClient(),
 		b.getBackupStorageClient(),
 		request, b.params,
 		b.getMilvusClient(),
 		b.getRestfulClient(),
 		b.meta)
+	if err != nil {
+		b.meta.UpdateBackup(backupInfo.GetId(), meta.SetStateCode(backuppb.BackupTaskStateCode_BACKUP_FAIL))
+		log.Error("fail to create backup task", zap.Error(err))
+		return fmt.Errorf("fail to create backup task: %w", err)
+	}
+
 	if err := task.Execute(ctx); err != nil {
 		b.meta.UpdateBackup(backupInfo.GetId(), meta.SetStateCode(backuppb.BackupTaskStateCode_BACKUP_FAIL))
 		log.Error("fail to execute backup task", zap.Error(err))
