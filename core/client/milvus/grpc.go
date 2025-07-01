@@ -643,9 +643,19 @@ func (g *GrpcClient) BulkInsert(ctx context.Context, input GrpcBulkInsertInput) 
 
 func (g *GrpcClient) GetBulkInsertState(ctx context.Context, taskID int64) (*milvuspb.GetImportStateResponse, error) {
 	ctx = g.newCtx(ctx)
-	resp, err := g.srv.GetImportState(ctx, &milvuspb.GetImportStateRequest{Task: taskID})
-	if err := checkResponse(resp, err); err != nil {
-		return nil, fmt.Errorf("client: get bulk insert state failed: %w", err)
+
+	var resp *milvuspb.GetImportStateResponse
+	err := retry.Do(ctx, func() error {
+		innerResp, innerErr := g.srv.GetImportState(ctx, &milvuspb.GetImportStateRequest{Task: taskID})
+		if err := checkResponse(innerResp, innerErr); err != nil {
+			return fmt.Errorf("client: get bulk insert state: %w", err)
+		}
+		resp = innerResp
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("client: get bulk insert state after retry: %w", err)
 	}
 
 	return resp, nil
