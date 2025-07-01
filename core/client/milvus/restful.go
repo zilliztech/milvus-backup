@@ -12,6 +12,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/util/retry"
 )
 
 type ImportState string
@@ -171,20 +172,28 @@ func (r *RestfulClient) BulkInsert(ctx context.Context, input RestfulBulkInsertI
 }
 
 func (r *RestfulClient) GetBulkInsertState(ctx context.Context, dbName, jobID string) (*GetProcessResp, error) {
+	var getResp GetProcessResp
 	getReq := &GetProgressReq{DBName: dbName, JobId: jobID}
 
-	var getResp GetProcessResp
-	resp, err := r.cli.R().
-		SetContext(ctx).
-		SetBody(getReq).
-		SetSuccessResult(&getResp).
-		Post("/v2/vectordb/jobs/import/describe")
+	err := retry.Do(ctx, func() error {
+		resp, err := r.cli.R().
+			SetContext(ctx).
+			SetBody(getReq).
+			SetSuccessResult(&getResp).
+			Post("/v2/vectordb/jobs/import/describe")
+		if err != nil {
+			return fmt.Errorf("client: failed to get import job state via restful: %w", err)
+		}
+		log.Debug("get import job state via restful", zap.Any("getResp", resp))
+		if resp.IsErrorState() {
+			return fmt.Errorf("client: failed to get import job state via restful: %v", resp)
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		return nil, fmt.Errorf("client: failed to get import job state via restful: %w", err)
-	}
-	log.Debug("get import job state via restful", zap.Any("getResp", resp))
-	if resp.IsErrorState() {
-		return nil, fmt.Errorf("client: failed to get import job state via restful: %v", resp)
+		return nil, err
 	}
 
 	return &getResp, nil
@@ -192,26 +201,34 @@ func (r *RestfulClient) GetBulkInsertState(ctx context.Context, dbName, jobID st
 
 func (r *RestfulClient) GetSegmentInfo(ctx context.Context, db string, collID, segID int64) (*SegmentInfo, error) {
 	getReq := getSegmentInfoReq{DbName: db, CollectionID: collID, SegmentIDs: []int64{segID}}
-
 	var getResp getSegmentInfoResp
-	resp, err := r.cli.R().
-		SetContext(ctx).
-		SetBody(getReq).
-		SetSuccessResult(&getResp).
-		Post("/v2/vectordb/segments/describe")
-	if err != nil {
-		return nil, fmt.Errorf("client: failed to get segment info via restful: %w", err)
-	}
-	log.Debug("get segment info via restful", zap.Any("getResp", resp))
-	if resp.IsErrorState() {
-		return nil, fmt.Errorf("client: failed to get segment info via restful: %v", resp)
-	}
 
-	if len(getResp.Data.SegmentInfos) == 0 {
-		return nil, fmt.Errorf("client: no segment info found for segment id %d", segID)
-	}
-	if getResp.Code != 0 {
-		return nil, fmt.Errorf("client: failed to get segment info via restful: %v", getResp)
+	err := retry.Do(ctx, func() error {
+		resp, err := r.cli.R().
+			SetContext(ctx).
+			SetBody(getReq).
+			SetSuccessResult(&getResp).
+			Post("/v2/vectordb/segments/describe")
+		if err != nil {
+			return fmt.Errorf("client: failed to get segment info via restful: %w", err)
+		}
+		log.Debug("get segment info via restful", zap.Any("getResp", resp))
+		if resp.IsErrorState() {
+			return fmt.Errorf("client: failed to get segment info via restful: %v", resp)
+		}
+
+		if len(getResp.Data.SegmentInfos) == 0 {
+			return fmt.Errorf("client: no segment info found for segment id %d", segID)
+		}
+		if getResp.Code != 0 {
+			return fmt.Errorf("client: failed to get segment info via restful: %v", getResp)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return nil, err
 	}
 
 	return &getResp.Data.SegmentInfos[0], nil
