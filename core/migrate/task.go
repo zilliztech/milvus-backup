@@ -220,12 +220,13 @@ func (t *Task) startMigrate(ctx context.Context) error {
 		Region:     t.stage.resp.Region,
 	}
 
+	t.logger.Info("trigger migrate job")
 	dest := cloud.Destination{ClusterID: t.clusterID}
 	jobID, err := t.cloudCli.Migrate(ctx, src, dest)
 	if err != nil {
 		return fmt.Errorf("migrate: start migrate %w", err)
 	}
-	t.logger.Info("trigger migrate job", zap.String("job_id", jobID))
+	t.logger.Info("trigger migrate job done", zap.String("job_id", jobID))
 	t.taskMgr.UpdateMigrateTask(t.taskID, taskmgr.SetMigrateJobID(jobID))
 
 	return nil
