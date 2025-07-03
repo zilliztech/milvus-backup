@@ -72,14 +72,20 @@ type MockGrpc_BackupRBAC_Call struct {
 }
 
 // BackupRBAC is a helper method to define mock.On call
-//   - ctx
+//   - ctx context.Context
 func (_e *MockGrpc_Expecter) BackupRBAC(ctx interface{}) *MockGrpc_BackupRBAC_Call {
 	return &MockGrpc_BackupRBAC_Call{Call: _e.mock.On("BackupRBAC", ctx)}
 }
 
 func (_c *MockGrpc_BackupRBAC_Call) Run(run func(ctx context.Context)) *MockGrpc_BackupRBAC_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
 	})
 	return _c
 }
@@ -126,15 +132,26 @@ type MockGrpc_BulkInsert_Call struct {
 }
 
 // BulkInsert is a helper method to define mock.On call
-//   - ctx
-//   - input
+//   - ctx context.Context
+//   - input GrpcBulkInsertInput
 func (_e *MockGrpc_Expecter) BulkInsert(ctx interface{}, input interface{}) *MockGrpc_BulkInsert_Call {
 	return &MockGrpc_BulkInsert_Call{Call: _e.mock.On("BulkInsert", ctx, input)}
 }
 
 func (_c *MockGrpc_BulkInsert_Call) Run(run func(ctx context.Context, input GrpcBulkInsertInput)) *MockGrpc_BulkInsert_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(GrpcBulkInsertInput))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 GrpcBulkInsertInput
+		if args[1] != nil {
+			arg1 = args[1].(GrpcBulkInsertInput)
+		}
+		run(
+			arg0,
+			arg1,
+		)
 	})
 	return _c
 }
@@ -216,15 +233,26 @@ type MockGrpc_CreateCollection_Call struct {
 }
 
 // CreateCollection is a helper method to define mock.On call
-//   - ctx
-//   - input
+//   - ctx context.Context
+//   - input CreateCollectionInput
 func (_e *MockGrpc_Expecter) CreateCollection(ctx interface{}, input interface{}) *MockGrpc_CreateCollection_Call {
 	return &MockGrpc_CreateCollection_Call{Call: _e.mock.On("CreateCollection", ctx, input)}
 }
 
 func (_c *MockGrpc_CreateCollection_Call) Run(run func(ctx context.Context, input CreateCollectionInput)) *MockGrpc_CreateCollection_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(CreateCollectionInput))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 CreateCollectionInput
+		if args[1] != nil {
+			arg1 = args[1].(CreateCollectionInput)
+		}
+		run(
+			arg0,
+			arg1,
+		)
 	})
 	return _c
 }
@@ -262,15 +290,26 @@ type MockGrpc_CreateDatabase_Call struct {
 }
 
 // CreateDatabase is a helper method to define mock.On call
-//   - ctx
-//   - dbName
+//   - ctx context.Context
+//   - dbName string
 func (_e *MockGrpc_Expecter) CreateDatabase(ctx interface{}, dbName interface{}) *MockGrpc_CreateDatabase_Call {
 	return &MockGrpc_CreateDatabase_Call{Call: _e.mock.On("CreateDatabase", ctx, dbName)}
 }
 
 func (_c *MockGrpc_CreateDatabase_Call) Run(run func(ctx context.Context, dbName string)) *MockGrpc_CreateDatabase_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
 	})
 	return _c
 }
@@ -308,15 +347,26 @@ type MockGrpc_CreateIndex_Call struct {
 }
 
 // CreateIndex is a helper method to define mock.On call
-//   - ctx
-//   - input
+//   - ctx context.Context
+//   - input CreateIndexInput
 func (_e *MockGrpc_Expecter) CreateIndex(ctx interface{}, input interface{}) *MockGrpc_CreateIndex_Call {
 	return &MockGrpc_CreateIndex_Call{Call: _e.mock.On("CreateIndex", ctx, input)}
 }
 
 func (_c *MockGrpc_CreateIndex_Call) Run(run func(ctx context.Context, input CreateIndexInput)) *MockGrpc_CreateIndex_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(CreateIndexInput))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 CreateIndexInput
+		if args[1] != nil {
+			arg1 = args[1].(CreateIndexInput)
+		}
+		run(
+			arg0,
+			arg1,
+		)
 	})
 	return _c
 }
@@ -354,17 +404,38 @@ type MockGrpc_CreatePartition_Call struct {
 }
 
 // CreatePartition is a helper method to define mock.On call
-//   - ctx
-//   - db
-//   - collName
-//   - partitionName
+//   - ctx context.Context
+//   - db string
+//   - collName string
+//   - partitionName string
 func (_e *MockGrpc_Expecter) CreatePartition(ctx interface{}, db interface{}, collName interface{}, partitionName interface{}) *MockGrpc_CreatePartition_Call {
 	return &MockGrpc_CreatePartition_Call{Call: _e.mock.On("CreatePartition", ctx, db, collName, partitionName)}
 }
 
 func (_c *MockGrpc_CreatePartition_Call) Run(run func(ctx context.Context, db string, collName string, partitionName string)) *MockGrpc_CreatePartition_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string), args[2].(string), args[3].(string))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
 	})
 	return _c
 }
@@ -413,16 +484,32 @@ type MockGrpc_DescribeCollection_Call struct {
 }
 
 // DescribeCollection is a helper method to define mock.On call
-//   - ctx
-//   - db
-//   - collName
+//   - ctx context.Context
+//   - db string
+//   - collName string
 func (_e *MockGrpc_Expecter) DescribeCollection(ctx interface{}, db interface{}, collName interface{}) *MockGrpc_DescribeCollection_Call {
 	return &MockGrpc_DescribeCollection_Call{Call: _e.mock.On("DescribeCollection", ctx, db, collName)}
 }
 
 func (_c *MockGrpc_DescribeCollection_Call) Run(run func(ctx context.Context, db string, collName string)) *MockGrpc_DescribeCollection_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string), args[2].(string))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
 	})
 	return _c
 }
@@ -471,15 +558,26 @@ type MockGrpc_DescribeDatabase_Call struct {
 }
 
 // DescribeDatabase is a helper method to define mock.On call
-//   - ctx
-//   - dbName
+//   - ctx context.Context
+//   - dbName string
 func (_e *MockGrpc_Expecter) DescribeDatabase(ctx interface{}, dbName interface{}) *MockGrpc_DescribeDatabase_Call {
 	return &MockGrpc_DescribeDatabase_Call{Call: _e.mock.On("DescribeDatabase", ctx, dbName)}
 }
 
 func (_c *MockGrpc_DescribeDatabase_Call) Run(run func(ctx context.Context, dbName string)) *MockGrpc_DescribeDatabase_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
 	})
 	return _c
 }
@@ -517,16 +615,32 @@ type MockGrpc_DropCollection_Call struct {
 }
 
 // DropCollection is a helper method to define mock.On call
-//   - ctx
-//   - db
-//   - collectionName
+//   - ctx context.Context
+//   - db string
+//   - collectionName string
 func (_e *MockGrpc_Expecter) DropCollection(ctx interface{}, db interface{}, collectionName interface{}) *MockGrpc_DropCollection_Call {
 	return &MockGrpc_DropCollection_Call{Call: _e.mock.On("DropCollection", ctx, db, collectionName)}
 }
 
 func (_c *MockGrpc_DropCollection_Call) Run(run func(ctx context.Context, db string, collectionName string)) *MockGrpc_DropCollection_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string), args[2].(string))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
 	})
 	return _c
 }
@@ -564,17 +678,38 @@ type MockGrpc_DropIndex_Call struct {
 }
 
 // DropIndex is a helper method to define mock.On call
-//   - ctx
-//   - db
-//   - collName
-//   - indexName
+//   - ctx context.Context
+//   - db string
+//   - collName string
+//   - indexName string
 func (_e *MockGrpc_Expecter) DropIndex(ctx interface{}, db interface{}, collName interface{}, indexName interface{}) *MockGrpc_DropIndex_Call {
 	return &MockGrpc_DropIndex_Call{Call: _e.mock.On("DropIndex", ctx, db, collName, indexName)}
 }
 
 func (_c *MockGrpc_DropIndex_Call) Run(run func(ctx context.Context, db string, collName string, indexName string)) *MockGrpc_DropIndex_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string), args[2].(string), args[3].(string))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
 	})
 	return _c
 }
@@ -623,16 +758,32 @@ type MockGrpc_Flush_Call struct {
 }
 
 // Flush is a helper method to define mock.On call
-//   - ctx
-//   - db
-//   - collName
+//   - ctx context.Context
+//   - db string
+//   - collName string
 func (_e *MockGrpc_Expecter) Flush(ctx interface{}, db interface{}, collName interface{}) *MockGrpc_Flush_Call {
 	return &MockGrpc_Flush_Call{Call: _e.mock.On("Flush", ctx, db, collName)}
 }
 
 func (_c *MockGrpc_Flush_Call) Run(run func(ctx context.Context, db string, collName string)) *MockGrpc_Flush_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string), args[2].(string))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
 	})
 	return _c
 }
@@ -681,15 +832,26 @@ type MockGrpc_GetBulkInsertState_Call struct {
 }
 
 // GetBulkInsertState is a helper method to define mock.On call
-//   - ctx
-//   - taskID
+//   - ctx context.Context
+//   - taskID int64
 func (_e *MockGrpc_Expecter) GetBulkInsertState(ctx interface{}, taskID interface{}) *MockGrpc_GetBulkInsertState_Call {
 	return &MockGrpc_GetBulkInsertState_Call{Call: _e.mock.On("GetBulkInsertState", ctx, taskID)}
 }
 
 func (_c *MockGrpc_GetBulkInsertState_Call) Run(run func(ctx context.Context, taskID int64)) *MockGrpc_GetBulkInsertState_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(int64))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 int64
+		if args[1] != nil {
+			arg1 = args[1].(int64)
+		}
+		run(
+			arg0,
+			arg1,
+		)
 	})
 	return _c
 }
@@ -742,10 +904,10 @@ type MockGrpc_GetLoadingProgress_Call struct {
 }
 
 // GetLoadingProgress is a helper method to define mock.On call
-//   - ctx
-//   - db
-//   - collName
-//   - partitionNames
+//   - ctx context.Context
+//   - db string
+//   - collName string
+//   - partitionNames ...string
 func (_e *MockGrpc_Expecter) GetLoadingProgress(ctx interface{}, db interface{}, collName interface{}, partitionNames ...interface{}) *MockGrpc_GetLoadingProgress_Call {
 	return &MockGrpc_GetLoadingProgress_Call{Call: _e.mock.On("GetLoadingProgress",
 		append([]interface{}{ctx, db, collName}, partitionNames...)...)}
@@ -753,8 +915,30 @@ func (_e *MockGrpc_Expecter) GetLoadingProgress(ctx interface{}, db interface{},
 
 func (_c *MockGrpc_GetLoadingProgress_Call) Run(run func(ctx context.Context, db string, collName string, partitionNames ...string)) *MockGrpc_GetLoadingProgress_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		variadicArgs := args[3].([]string)
-		run(args[0].(context.Context), args[1].(string), args[2].(string), variadicArgs...)
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 []string
+		var variadicArgs []string
+		if len(args) > 3 {
+			variadicArgs = args[3].([]string)
+		}
+		arg3 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3...,
+		)
 	})
 	return _c
 }
@@ -803,16 +987,32 @@ type MockGrpc_GetPersistentSegmentInfo_Call struct {
 }
 
 // GetPersistentSegmentInfo is a helper method to define mock.On call
-//   - ctx
-//   - db
-//   - collName
+//   - ctx context.Context
+//   - db string
+//   - collName string
 func (_e *MockGrpc_Expecter) GetPersistentSegmentInfo(ctx interface{}, db interface{}, collName interface{}) *MockGrpc_GetPersistentSegmentInfo_Call {
 	return &MockGrpc_GetPersistentSegmentInfo_Call{Call: _e.mock.On("GetPersistentSegmentInfo", ctx, db, collName)}
 }
 
 func (_c *MockGrpc_GetPersistentSegmentInfo_Call) Run(run func(ctx context.Context, db string, collName string)) *MockGrpc_GetPersistentSegmentInfo_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string), args[2].(string))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
 	})
 	return _c
 }
@@ -859,14 +1059,20 @@ type MockGrpc_GetVersion_Call struct {
 }
 
 // GetVersion is a helper method to define mock.On call
-//   - ctx
+//   - ctx context.Context
 func (_e *MockGrpc_Expecter) GetVersion(ctx interface{}) *MockGrpc_GetVersion_Call {
 	return &MockGrpc_GetVersion_Call{Call: _e.mock.On("GetVersion", ctx)}
 }
 
 func (_c *MockGrpc_GetVersion_Call) Run(run func(ctx context.Context)) *MockGrpc_GetVersion_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
 	})
 	return _c
 }
@@ -913,16 +1119,32 @@ type MockGrpc_HasCollection_Call struct {
 }
 
 // HasCollection is a helper method to define mock.On call
-//   - ctx
-//   - db
-//   - collName
+//   - ctx context.Context
+//   - db string
+//   - collName string
 func (_e *MockGrpc_Expecter) HasCollection(ctx interface{}, db interface{}, collName interface{}) *MockGrpc_HasCollection_Call {
 	return &MockGrpc_HasCollection_Call{Call: _e.mock.On("HasCollection", ctx, db, collName)}
 }
 
 func (_c *MockGrpc_HasCollection_Call) Run(run func(ctx context.Context, db string, collName string)) *MockGrpc_HasCollection_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string), args[2].(string))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
 	})
 	return _c
 }
@@ -960,14 +1182,20 @@ type MockGrpc_HasFeature_Call struct {
 }
 
 // HasFeature is a helper method to define mock.On call
-//   - flag
+//   - flag FeatureFlag
 func (_e *MockGrpc_Expecter) HasFeature(flag interface{}) *MockGrpc_HasFeature_Call {
 	return &MockGrpc_HasFeature_Call{Call: _e.mock.On("HasFeature", flag)}
 }
 
 func (_c *MockGrpc_HasFeature_Call) Run(run func(flag FeatureFlag)) *MockGrpc_HasFeature_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(FeatureFlag))
+		var arg0 FeatureFlag
+		if args[0] != nil {
+			arg0 = args[0].(FeatureFlag)
+		}
+		run(
+			arg0,
+		)
 	})
 	return _c
 }
@@ -1014,17 +1242,38 @@ type MockGrpc_HasPartition_Call struct {
 }
 
 // HasPartition is a helper method to define mock.On call
-//   - ctx
-//   - db
-//   - collName
-//   - partitionName
+//   - ctx context.Context
+//   - db string
+//   - collName string
+//   - partitionName string
 func (_e *MockGrpc_Expecter) HasPartition(ctx interface{}, db interface{}, collName interface{}, partitionName interface{}) *MockGrpc_HasPartition_Call {
 	return &MockGrpc_HasPartition_Call{Call: _e.mock.On("HasPartition", ctx, db, collName, partitionName)}
 }
 
 func (_c *MockGrpc_HasPartition_Call) Run(run func(ctx context.Context, db string, collName string, partitionName string)) *MockGrpc_HasPartition_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string), args[2].(string), args[3].(string))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
 	})
 	return _c
 }
@@ -1073,15 +1322,26 @@ type MockGrpc_ListCollections_Call struct {
 }
 
 // ListCollections is a helper method to define mock.On call
-//   - ctx
-//   - db
+//   - ctx context.Context
+//   - db string
 func (_e *MockGrpc_Expecter) ListCollections(ctx interface{}, db interface{}) *MockGrpc_ListCollections_Call {
 	return &MockGrpc_ListCollections_Call{Call: _e.mock.On("ListCollections", ctx, db)}
 }
 
 func (_c *MockGrpc_ListCollections_Call) Run(run func(ctx context.Context, db string)) *MockGrpc_ListCollections_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
 	})
 	return _c
 }
@@ -1130,14 +1390,20 @@ type MockGrpc_ListDatabases_Call struct {
 }
 
 // ListDatabases is a helper method to define mock.On call
-//   - ctx
+//   - ctx context.Context
 func (_e *MockGrpc_Expecter) ListDatabases(ctx interface{}) *MockGrpc_ListDatabases_Call {
 	return &MockGrpc_ListDatabases_Call{Call: _e.mock.On("ListDatabases", ctx)}
 }
 
 func (_c *MockGrpc_ListDatabases_Call) Run(run func(ctx context.Context)) *MockGrpc_ListDatabases_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
 	})
 	return _c
 }
@@ -1186,16 +1452,32 @@ type MockGrpc_ListIndex_Call struct {
 }
 
 // ListIndex is a helper method to define mock.On call
-//   - ctx
-//   - db
-//   - collName
+//   - ctx context.Context
+//   - db string
+//   - collName string
 func (_e *MockGrpc_Expecter) ListIndex(ctx interface{}, db interface{}, collName interface{}) *MockGrpc_ListIndex_Call {
 	return &MockGrpc_ListIndex_Call{Call: _e.mock.On("ListIndex", ctx, db, collName)}
 }
 
 func (_c *MockGrpc_ListIndex_Call) Run(run func(ctx context.Context, db string, collName string)) *MockGrpc_ListIndex_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string), args[2].(string))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
 	})
 	return _c
 }
@@ -1242,15 +1524,26 @@ type MockGrpc_ReplicateMessage_Call struct {
 }
 
 // ReplicateMessage is a helper method to define mock.On call
-//   - ctx
-//   - channelName
+//   - ctx context.Context
+//   - channelName string
 func (_e *MockGrpc_Expecter) ReplicateMessage(ctx interface{}, channelName interface{}) *MockGrpc_ReplicateMessage_Call {
 	return &MockGrpc_ReplicateMessage_Call{Call: _e.mock.On("ReplicateMessage", ctx, channelName)}
 }
 
 func (_c *MockGrpc_ReplicateMessage_Call) Run(run func(ctx context.Context, channelName string)) *MockGrpc_ReplicateMessage_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
 	})
 	return _c
 }
@@ -1288,15 +1581,26 @@ type MockGrpc_RestoreRBAC_Call struct {
 }
 
 // RestoreRBAC is a helper method to define mock.On call
-//   - ctx
-//   - rbacMeta
+//   - ctx context.Context
+//   - rbacMeta *milvuspb.RBACMeta
 func (_e *MockGrpc_Expecter) RestoreRBAC(ctx interface{}, rbacMeta interface{}) *MockGrpc_RestoreRBAC_Call {
 	return &MockGrpc_RestoreRBAC_Call{Call: _e.mock.On("RestoreRBAC", ctx, rbacMeta)}
 }
 
 func (_c *MockGrpc_RestoreRBAC_Call) Run(run func(ctx context.Context, rbacMeta *milvuspb.RBACMeta)) *MockGrpc_RestoreRBAC_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(*milvuspb.RBACMeta))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.RBACMeta
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.RBACMeta)
+		}
+		run(
+			arg0,
+			arg1,
+		)
 	})
 	return _c
 }
@@ -1345,16 +1649,32 @@ type MockGrpc_ShowPartitions_Call struct {
 }
 
 // ShowPartitions is a helper method to define mock.On call
-//   - ctx
-//   - db
-//   - collName
+//   - ctx context.Context
+//   - db string
+//   - collName string
 func (_e *MockGrpc_Expecter) ShowPartitions(ctx interface{}, db interface{}, collName interface{}) *MockGrpc_ShowPartitions_Call {
 	return &MockGrpc_ShowPartitions_Call{Call: _e.mock.On("ShowPartitions", ctx, db, collName)}
 }
 
 func (_c *MockGrpc_ShowPartitions_Call) Run(run func(ctx context.Context, db string, collName string)) *MockGrpc_ShowPartitions_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string), args[2].(string))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
 	})
 	return _c
 }

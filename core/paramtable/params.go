@@ -44,7 +44,6 @@ type BackupConfig struct {
 	KeepTempFiles bool
 
 	GcPauseEnable  bool
-	GcPauseSeconds int
 	GcPauseAddress string
 }
 
@@ -57,7 +56,6 @@ func (p *BackupConfig) init(base *BaseTable) {
 	p.initBackupCopyDataParallelism()
 	p.initKeepTempFiles()
 	p.initGcPauseEnable()
-	p.initGcPauseSeconds()
 	p.initGcPauseAddress()
 }
 
@@ -92,11 +90,6 @@ func (p *BackupConfig) initKeepTempFiles() {
 func (p *BackupConfig) initGcPauseEnable() {
 	enable := p.Base.LoadWithDefault("backup.gcPause.enable", "false")
 	p.GcPauseEnable, _ = strconv.ParseBool(enable)
-}
-
-func (p *BackupConfig) initGcPauseSeconds() {
-	seconds := p.Base.ParseIntWithDefault("backup.gcPause.seconds", 7200)
-	p.GcPauseSeconds = seconds
 }
 
 func (p *BackupConfig) initGcPauseAddress() {

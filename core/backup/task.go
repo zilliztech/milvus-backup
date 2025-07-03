@@ -23,10 +23,6 @@ import (
 )
 
 const (
-	_gcWarnMessage = "Pause GC Failed," +
-		"This warn won't fail the backup process. " +
-		"Pause GC can protect data not to be GCed during backup, " +
-		"it is necessary to backup very large data(cost more than a hour)."
 	_rpcChWarnMessage = "Failed to back up RPC channel position. This won't cause the backup to fail, " +
 		"but may lead to inconsistency when reconnecting to CDC for incremental data replication."
 )
@@ -44,7 +40,8 @@ type Task struct {
 
 	grpc    milvus.Grpc
 	restful milvus.Restful
-	manage  milvus.Manage
+
+	gcCtrl *gcController
 
 	meta *meta.MetaManager
 
@@ -60,16 +57,11 @@ func NewTask(
 	grpc milvus.Grpc,
 	restful milvus.Restful,
 	meta *meta.MetaManager,
-) *Task {
+) (*Task, error) {
 	logger := log.L().With(zap.String("backup_id", backupID))
-	var manage milvus.Manage
-	if request.GetGcPauseEnable() || params.BackupCfg.GcPauseEnable {
-		addr := request.GetGcPauseAddress()
-		if len(addr) == 0 {
-			addr = params.BackupCfg.GcPauseAddress
-		}
-
-		manage = milvus.NewManage(addr)
+	gcCtrl, err := newGCController(request, params)
+	if err != nil {
+		return nil, fmt.Errorf("backup: new gc controller: %w", err)
 	}
 
 	return &Task{
@@ -85,12 +77,13 @@ func NewTask(
 
 		grpc:    grpc,
 		restful: restful,
-		manage:  manage,
+
+		gcCtrl: gcCtrl,
 
 		meta: meta,
 
 		request: request,
-	}
+	}, nil
 }
 
 type collection struct {
@@ -107,8 +100,8 @@ func (t *Task) Execute(ctx context.Context) error {
 }
 
 func (t *Task) privateExecute(ctx context.Context) error {
-	t.pauseGC(ctx)
-	defer t.resumeGC(ctx)
+	t.gcCtrl.Pause(ctx)
+	defer t.gcCtrl.Resume(ctx)
 
 	dbNames, collections, err := t.listDBAndCollection(ctx)
 	if err != nil {
@@ -275,35 +268,6 @@ func (t *Task) listDBAndCollection(ctx context.Context) ([]string, []collection,
 	t.logger.Info("list db and collection from API done", zap.Strings("dbNames", dbNames), zap.Any("collections", collections))
 
 	return dbNames, collections, nil
-}
-
-func (t *Task) pauseGC(ctx context.Context) {
-	if t.manage == nil {
-		t.logger.Info("skip pause gc")
-		return
-	}
-
-	t.logger.Info("try to pause gc")
-	resp, err := t.manage.PauseGC(ctx, t.request.GetGcPauseSeconds())
-	if err != nil {
-		t.logger.Warn(_gcWarnMessage, zap.Error(err), zap.String("resp", resp))
-	} else {
-		t.logger.Info("pause gc done", zap.String("resp", resp))
-	}
-}
-
-func (t *Task) resumeGC(ctx context.Context) {
-	if t.manage == nil {
-		t.logger.Info("skip resume gc")
-		return
-	}
-
-	resp, err := t.manage.ResumeGC(ctx)
-	if err != nil {
-		t.logger.Warn("resume gc failed", zap.Error(err), zap.String("resp", resp))
-	} else {
-		t.logger.Info("resume gc done", zap.String("resp", resp))
-	}
 }
 
 func (t *Task) runDBTask(ctx context.Context, dbNames []string) error {

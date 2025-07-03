@@ -94,6 +94,5 @@ backup:
   # Pause GC during backup through Milvus Http API. 
   gcPause:
     enable: true
-    seconds: 7200
     address: http://localhost:9091
     
