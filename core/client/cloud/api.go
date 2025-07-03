@@ -69,13 +69,13 @@ type ApplyStageResp struct {
 
 func (a *ApplyStageResp) String() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("bucketName: %s, ", a.BucketName))
+	sb.WriteString(fmt.Sprintf("bucketName: %s, ", mask(a.BucketName)))
 	sb.WriteString(fmt.Sprintf("cloud: %s, ", a.Cloud))
 	sb.WriteString(fmt.Sprintf("condition: %s, ", a.Condition.String()))
 	sb.WriteString(fmt.Sprintf("credentials: %s, ", a.Credentials.String()))
 	sb.WriteString(fmt.Sprintf("endpoint: %s, ", a.Endpoint))
 	sb.WriteString(fmt.Sprintf("region: %s, ", a.Region))
-	sb.WriteString(fmt.Sprintf("uploadPath: %s", a.UploadPath))
+	sb.WriteString(fmt.Sprintf("uploadPath: %s", mask(a.UploadPath)))
 
 	return sb.String()
 }
@@ -153,9 +153,9 @@ func (s *Source) String() string {
 	sb.WriteString(fmt.Sprintf("accessKey: %s, ", mask(s.AccessKey)))
 	sb.WriteString(fmt.Sprintf("secretKey: %s, ", mask(s.SecretKey)))
 	sb.WriteString(fmt.Sprintf("token: %s, ", mask(s.Token)))
-	sb.WriteString(fmt.Sprintf("bucketName: %s, ", s.BucketName))
+	sb.WriteString(fmt.Sprintf("bucketName: %s, ", mask(s.BucketName)))
 	sb.WriteString(fmt.Sprintf("cloud: %s, ", s.Cloud))
-	sb.WriteString(fmt.Sprintf("path: %s, ", s.Path))
+	sb.WriteString(fmt.Sprintf("path: %s, ", mask(s.Path)))
 	sb.WriteString(fmt.Sprintf("region: %s", s.Region))
 
 	return sb.String()
