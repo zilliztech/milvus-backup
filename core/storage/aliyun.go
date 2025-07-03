@@ -21,6 +21,8 @@ func newAliyunClient(cfg Config) (*MinioClient, error) {
 		opts.Creds = minioCred.New(provider)
 	case Static:
 		opts.Creds = minioCred.NewStaticV4(cfg.Credential.AK, cfg.Credential.SK, cfg.Credential.Token)
+	case MinioCredProvider:
+		opts.Creds = minioCred.New(cfg.Credential.MinioCredProvider)
 	default:
 		return nil, fmt.Errorf("storage: aliyun unsupported credential type: %s", cfg.Credential.Type.String())
 	}
