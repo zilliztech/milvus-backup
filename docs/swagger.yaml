@@ -617,6 +617,8 @@ definitions:
       restoreIndex:
         description: if true restore index info
         type: boolean
+      restorePlan:
+        $ref: '#/definitions/backuppb.RestorePlan'
       skipCreateCollection:
         description: if true, will skip collection, use when collection exist, restore
           index or data
@@ -676,6 +678,13 @@ definitions:
       state_code:
         $ref: '#/definitions/backuppb.RestoreTaskStateCode'
     type: object
+  backuppb.RestoreCollectionMapping:
+    properties:
+      source:
+        type: string
+      target:
+        type: string
+    type: object
   backuppb.RestoreCollectionTaskResponse:
     properties:
       end_time:
@@ -694,6 +703,35 @@ definitions:
         type: string
       target_db_name:
         type: string
+    type: object
+  backuppb.RestoreFilter:
+    properties:
+      colls:
+        items:
+          type: string
+        type: array
+    type: object
+  backuppb.RestoreMapping:
+    properties:
+      colls:
+        items:
+          $ref: '#/definitions/backuppb.RestoreCollectionMapping'
+        type: array
+      source:
+        type: string
+      target:
+        type: string
+      withProp:
+        type: boolean
+    type: object
+  backuppb.RestorePlan:
+    properties:
+      filter:
+        additionalProperties:
+          $ref: '#/definitions/backuppb.RestoreFilter'
+        type: object
+      mapping:
+        $ref: '#/definitions/backuppb.RestoreMapping'
     type: object
   backuppb.RestoreTaskStateCode:
     enum:
