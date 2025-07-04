@@ -314,6 +314,29 @@ message RestoreBackupRequest {
   bool truncateBinlogByTs = 22;
   // determine which database and collections to restore after rename
   google.protobuf.Value db_collections_after_rename = 23;
+
+  RestorePlan restorePlan = 24;
+}
+
+message RestorePlan {
+  repeated RestoreMapping mapping = 1;
+  map<string, RestoreFilter> filter = 2;
+}
+
+message RestoreMapping {
+  string source = 1;
+  string target = 2;
+  bool withProp = 3;
+  repeated RestoreCollectionMapping colls = 4;
+}
+
+message RestoreCollectionMapping {
+  string source = 1;
+  string target = 2;
+}
+
+message RestoreFilter {
+  repeated string colls = 1;
 }
 
 message RestorePartitionTask {
@@ -375,6 +398,7 @@ message RestoreDatabaseTask {
   string id = 1;
   DatabaseBackupInfo db_backup = 2;
   string target_db_name = 3;
+  bool withProp = 4;
 }
 
 message RestoreBackupTaskResponse {
