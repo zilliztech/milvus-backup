@@ -9,6 +9,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 
+	"github.com/samber/lo/mutable"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
@@ -123,6 +124,9 @@ func (c *CopyObjectsTask) Prepare(_ context.Context) error {
 }
 
 func (c *CopyObjectsTask) Execute(ctx context.Context) error {
+	// shuffle to avoid hot region
+	mutable.Shuffle(c.opt.Attrs)
+
 	g, subCtx := errgroup.WithContext(ctx)
 	for _, attr := range c.opt.Attrs {
 		if err := c.opt.Sem.Acquire(subCtx, 1); err != nil {
