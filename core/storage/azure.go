@@ -161,7 +161,7 @@ func (a *AzureClient) CopyObject(ctx context.Context, i CopyObjectInput) error {
 		return fmt.Errorf("storage: azure copy object src client is not azure")
 	}
 
-	srcURL := fmt.Sprintf("https://%s.blob.core.windows.net/%s/%s", srcCli.cfg.Credential.AK, srcCli.cfg.Bucket, i.SrcKey)
+	srcURL := fmt.Sprintf("https://%s.blob.%s/%s/%s", srcCli.cfg.Credential.AzureAccountName, srcCli.cfg.Endpoint, srcCli.cfg.Bucket, i.SrcKey)
 	// if src and dest are in different account, we need to generate SAS token
 	if a.cfg.Credential.AK != srcCli.cfg.Credential.AK {
 		srcSAS, err := a.getSAS(ctx, srcCli)
