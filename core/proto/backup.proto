@@ -172,7 +172,7 @@ message CreateBackupRequest {
   // if true, stop GC to avoid the data compacted and GCed during backup, use it when the data to backup is very large.
   bool gc_pause_enable = 8;
   // gc pause seconds, set it larger than the time cost of backup
-  int32 gc_pause_seconds = 9;
+  int32 gc_pause_seconds = 9 [deprecated=true];
   // gc pause API address
   string gc_pause_address = 10;
   // whether backup RBAC

@@ -69,15 +69,26 @@ type MockClient_BucketExist_Call struct {
 }
 
 // BucketExist is a helper method to define mock.On call
-//   - ctx
-//   - prefix
+//   - ctx context.Context
+//   - prefix string
 func (_e *MockClient_Expecter) BucketExist(ctx interface{}, prefix interface{}) *MockClient_BucketExist_Call {
 	return &MockClient_BucketExist_Call{Call: _e.mock.On("BucketExist", ctx, prefix)}
 }
 
 func (_c *MockClient_BucketExist_Call) Run(run func(ctx context.Context, prefix string)) *MockClient_BucketExist_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
 	})
 	return _c
 }
@@ -159,15 +170,26 @@ type MockClient_CopyObject_Call struct {
 }
 
 // CopyObject is a helper method to define mock.On call
-//   - ctx
-//   - i
+//   - ctx context.Context
+//   - i CopyObjectInput
 func (_e *MockClient_Expecter) CopyObject(ctx interface{}, i interface{}) *MockClient_CopyObject_Call {
 	return &MockClient_CopyObject_Call{Call: _e.mock.On("CopyObject", ctx, i)}
 }
 
 func (_c *MockClient_CopyObject_Call) Run(run func(ctx context.Context, i CopyObjectInput)) *MockClient_CopyObject_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(CopyObjectInput))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 CopyObjectInput
+		if args[1] != nil {
+			arg1 = args[1].(CopyObjectInput)
+		}
+		run(
+			arg0,
+			arg1,
+		)
 	})
 	return _c
 }
@@ -205,14 +227,20 @@ type MockClient_CreateBucket_Call struct {
 }
 
 // CreateBucket is a helper method to define mock.On call
-//   - ctx
+//   - ctx context.Context
 func (_e *MockClient_Expecter) CreateBucket(ctx interface{}) *MockClient_CreateBucket_Call {
 	return &MockClient_CreateBucket_Call{Call: _e.mock.On("CreateBucket", ctx)}
 }
 
 func (_c *MockClient_CreateBucket_Call) Run(run func(ctx context.Context)) *MockClient_CreateBucket_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
 	})
 	return _c
 }
@@ -250,15 +278,26 @@ type MockClient_DeleteObject_Call struct {
 }
 
 // DeleteObject is a helper method to define mock.On call
-//   - ctx
-//   - key
+//   - ctx context.Context
+//   - key string
 func (_e *MockClient_Expecter) DeleteObject(ctx interface{}, key interface{}) *MockClient_DeleteObject_Call {
 	return &MockClient_DeleteObject_Call{Call: _e.mock.On("DeleteObject", ctx, key)}
 }
 
 func (_c *MockClient_DeleteObject_Call) Run(run func(ctx context.Context, key string)) *MockClient_DeleteObject_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
 	})
 	return _c
 }
@@ -307,15 +346,26 @@ type MockClient_GetObject_Call struct {
 }
 
 // GetObject is a helper method to define mock.On call
-//   - ctx
-//   - key
+//   - ctx context.Context
+//   - key string
 func (_e *MockClient_Expecter) GetObject(ctx interface{}, key interface{}) *MockClient_GetObject_Call {
 	return &MockClient_GetObject_Call{Call: _e.mock.On("GetObject", ctx, key)}
 }
 
 func (_c *MockClient_GetObject_Call) Run(run func(ctx context.Context, key string)) *MockClient_GetObject_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
 	})
 	return _c
 }
@@ -362,15 +412,26 @@ type MockClient_HeadObject_Call struct {
 }
 
 // HeadObject is a helper method to define mock.On call
-//   - ctx
-//   - key
+//   - ctx context.Context
+//   - key string
 func (_e *MockClient_Expecter) HeadObject(ctx interface{}, key interface{}) *MockClient_HeadObject_Call {
 	return &MockClient_HeadObject_Call{Call: _e.mock.On("HeadObject", ctx, key)}
 }
 
 func (_c *MockClient_HeadObject_Call) Run(run func(ctx context.Context, key string)) *MockClient_HeadObject_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		run(
+			arg0,
+			arg1,
+		)
 	})
 	return _c
 }
@@ -419,16 +480,32 @@ type MockClient_ListPrefix_Call struct {
 }
 
 // ListPrefix is a helper method to define mock.On call
-//   - ctx
-//   - prefix
-//   - recursive
+//   - ctx context.Context
+//   - prefix string
+//   - recursive bool
 func (_e *MockClient_Expecter) ListPrefix(ctx interface{}, prefix interface{}, recursive interface{}) *MockClient_ListPrefix_Call {
 	return &MockClient_ListPrefix_Call{Call: _e.mock.On("ListPrefix", ctx, prefix, recursive)}
 }
 
 func (_c *MockClient_ListPrefix_Call) Run(run func(ctx context.Context, prefix string, recursive bool)) *MockClient_ListPrefix_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(string), args[2].(bool))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 bool
+		if args[2] != nil {
+			arg2 = args[2].(bool)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
 	})
 	return _c
 }
@@ -466,15 +543,26 @@ type MockClient_UploadObject_Call struct {
 }
 
 // UploadObject is a helper method to define mock.On call
-//   - ctx
-//   - i
+//   - ctx context.Context
+//   - i UploadObjectInput
 func (_e *MockClient_Expecter) UploadObject(ctx interface{}, i interface{}) *MockClient_UploadObject_Call {
 	return &MockClient_UploadObject_Call{Call: _e.mock.On("UploadObject", ctx, i)}
 }
 
 func (_c *MockClient_UploadObject_Call) Run(run func(ctx context.Context, i UploadObjectInput)) *MockClient_UploadObject_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		run(args[0].(context.Context), args[1].(UploadObjectInput))
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 UploadObjectInput
+		if args[1] != nil {
+			arg1 = args[1].(UploadObjectInput)
+		}
+		run(
+			arg0,
+			arg1,
+		)
 	})
 	return _c
 }
