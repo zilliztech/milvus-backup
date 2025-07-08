@@ -1129,6 +1129,9 @@ const docTemplate = `{
                     "description": "if true restore index info",
                     "type": "boolean"
                 },
+                "restorePlan": {
+                    "$ref": "#/definitions/backuppb.RestorePlan"
+                },
                 "skipCreateCollection": {
                     "description": "if true, will skip collection, use when collection exist, restore index or data",
                     "type": "boolean"
@@ -1216,6 +1219,17 @@ const docTemplate = `{
                 }
             }
         },
+        "backuppb.RestoreCollectionMapping": {
+            "type": "object",
+            "properties": {
+                "source": {
+                    "type": "string"
+                },
+                "target": {
+                    "type": "string"
+                }
+            }
+        },
         "backuppb.RestoreCollectionTaskResponse": {
             "type": "object",
             "properties": {
@@ -1242,6 +1256,51 @@ const docTemplate = `{
                 },
                 "target_db_name": {
                     "type": "string"
+                }
+            }
+        },
+        "backuppb.RestoreFilter": {
+            "type": "object",
+            "properties": {
+                "colls": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                }
+            }
+        },
+        "backuppb.RestoreMapping": {
+            "type": "object",
+            "properties": {
+                "colls": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/backuppb.RestoreCollectionMapping"
+                    }
+                },
+                "source": {
+                    "type": "string"
+                },
+                "target": {
+                    "type": "string"
+                },
+                "withProp": {
+                    "type": "boolean"
+                }
+            }
+        },
+        "backuppb.RestorePlan": {
+            "type": "object",
+            "properties": {
+                "filter": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/backuppb.RestoreFilter"
+                    }
+                },
+                "mapping": {
+                    "$ref": "#/definitions/backuppb.RestoreMapping"
                 }
             }
         },

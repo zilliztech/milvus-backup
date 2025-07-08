@@ -133,7 +133,7 @@ func (b *BackupContext) executeRestoreBackupTask(ctx context.Context, backupBuck
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	restoreBackupTask := restore.NewTask(
+	restoreBackupTask, err := restore.NewTask(
 		request,
 		backupPath,
 		backupBucketName,
@@ -143,6 +143,10 @@ func (b *BackupContext) executeRestoreBackupTask(ctx context.Context, backupBuck
 		b.getMilvusStorageClient(),
 		b.getMilvusClient(),
 		b.getRestfulClient())
+
+	if err != nil {
+		return fmt.Errorf("backup: new restore task fail, err: %w", err)
+	}
 
 	if err := restoreBackupTask.Prepare(ctx); err != nil {
 		return fmt.Errorf("backup: build restore collection task fail, err: %w", err)
