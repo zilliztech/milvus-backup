@@ -203,32 +203,24 @@ func (r *RestfulClient) GetSegmentInfo(ctx context.Context, db string, collID, s
 	getReq := getSegmentInfoReq{DbName: db, CollectionID: collID, SegmentIDs: []int64{segID}}
 	var getResp getSegmentInfoResp
 
-	err := retry.Do(ctx, func() error {
-		resp, err := r.cli.R().
-			SetContext(ctx).
-			SetBody(getReq).
-			SetSuccessResult(&getResp).
-			Post("/v2/vectordb/segments/describe")
-		if err != nil {
-			return fmt.Errorf("client: failed to get segment info via restful: %w", err)
-		}
-		log.Debug("get segment info via restful", zap.Any("getResp", resp))
-		if resp.IsErrorState() {
-			return fmt.Errorf("client: failed to get segment info via restful: %v", resp)
-		}
-
-		if len(getResp.Data.SegmentInfos) == 0 {
-			return fmt.Errorf("client: no segment info found for segment id %d", segID)
-		}
-		if getResp.Code != 0 {
-			return fmt.Errorf("client: failed to get segment info via restful: %v", getResp)
-		}
-
-		return nil
-	})
-
+	resp, err := r.cli.R().
+		SetContext(ctx).
+		SetBody(getReq).
+		SetSuccessResult(&getResp).
+		Post("/v2/vectordb/segments/describe")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("client: failed to get segment info via restful: %w", err)
+	}
+	log.Debug("get segment info via restful", zap.Any("getResp", resp))
+	if resp.IsErrorState() {
+		return nil, fmt.Errorf("client: failed to get segment info via restful: %v", resp)
+	}
+
+	if len(getResp.Data.SegmentInfos) == 0 {
+		return nil, fmt.Errorf("client: no segment info found for segment id %d", segID)
+	}
+	if getResp.Code != 0 {
+		return nil, fmt.Errorf("client: failed to get segment info via restful: %v", getResp)
 	}
 
 	return &getResp.Data.SegmentInfos[0], nil
