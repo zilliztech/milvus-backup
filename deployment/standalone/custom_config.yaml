@@ -3,6 +3,3 @@ log:
 dataNode:
   segment:
     insertBufSize: 4096 # 4KB
-common:
-  storage:
-    enablev2: true
