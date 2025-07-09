@@ -110,7 +110,7 @@ func NewMilvusStorage(ctx context.Context, params *paramtable.BackupParams) (Cli
 
 func NewClient(ctx context.Context, cfg Config) (Client, error) {
 	switch cfg.Provider {
-	case paramtable.CloudProviderAli, paramtable.CloudProviderAliyun:
+	case paramtable.CloudProviderAli, paramtable.CloudProviderAliyun, paramtable.CloudProviderAlibaba:
 		return newAliyunClient(cfg)
 	case paramtable.CloudProviderAWS, paramtable.S3, paramtable.Minio:
 		return newMinioClient(cfg)

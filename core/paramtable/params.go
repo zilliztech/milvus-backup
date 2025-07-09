@@ -243,6 +243,7 @@ const (
 	CloudProviderGCPNative    = "gcpnative"
 	CloudProviderAli          = "ali"
 	CloudProviderAliyun       = "aliyun"
+	CloudProviderAlibaba      = "alibaba"
 	CloudProviderAzure        = "azure"
 	CloudProviderTencent      = "tencent"
 	CloudProviderTencentShort = "tc"
@@ -257,6 +258,7 @@ var supportedStorageType = map[string]bool{
 	CloudProviderGCPNative:    true,
 	CloudProviderAli:          true,
 	CloudProviderAliyun:       true,
+	CloudProviderAlibaba:      true,
 	CloudProviderAzure:        true,
 	CloudProviderTencent:      true,
 	CloudProviderTencentShort: true,
