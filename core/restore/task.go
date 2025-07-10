@@ -32,7 +32,8 @@ type Task struct {
 
 	task *backuppb.RestoreBackupTask
 
-	copySem *semaphore.Weighted
+	copySem       *semaphore.Weighted
+	bulkInsertSem *semaphore.Weighted
 
 	backupStorage storage.Client
 	milvusStorage storage.Client
@@ -72,7 +73,8 @@ func NewTask(
 		params:  params,
 		taskMgr: taskmgr.DefaultMgr,
 
-		copySem: semaphore.NewWeighted(params.BackupCfg.BackupCopyDataParallelism),
+		copySem:       semaphore.NewWeighted(params.BackupCfg.BackupCopyDataParallelism),
+		bulkInsertSem: semaphore.NewWeighted(params.BackupCfg.ImportJobParallelism),
 
 		backupStorage: backupStorage,
 		milvusStorage: milvusStorage,
@@ -304,6 +306,7 @@ func (t *Task) newRestoreCollTask(collTask *backuppb.RestoreCollectionTask) *Col
 		backupStorage: t.backupStorage,
 		milvusStorage: t.milvusStorage,
 		copySem:       t.copySem,
+		bulkInsertSem: t.bulkInsertSem,
 		grpcCli:       t.grpc,
 		restfulCli:    t.restful,
 	}

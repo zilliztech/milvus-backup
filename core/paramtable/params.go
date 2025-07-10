@@ -40,6 +40,7 @@ type BackupConfig struct {
 	BackupCollectionParallelism int
 	BackupCopyDataParallelism   int64
 	RestoreParallelism          int
+	ImportJobParallelism        int64
 
 	KeepTempFiles bool
 
@@ -54,6 +55,7 @@ func (p *BackupConfig) init(base *BaseTable) {
 	p.initBackupCollectionParallelism()
 	p.initRestoreParallelism()
 	p.initBackupCopyDataParallelism()
+	p.initImportJobParallelism()
 	p.initKeepTempFiles()
 	p.initGcPauseEnable()
 	p.initGcPauseAddress()
@@ -80,6 +82,11 @@ func (p *BackupConfig) initRestoreParallelism() {
 func (p *BackupConfig) initBackupCopyDataParallelism() {
 	size := p.Base.ParseIntWithDefault("backup.parallelism.copydata", 128)
 	p.BackupCopyDataParallelism = int64(size)
+}
+
+func (p *BackupConfig) initImportJobParallelism() {
+	num := p.Base.ParseIntWithDefault("backup.parallelism.importJob", 768)
+	p.ImportJobParallelism = int64(num)
 }
 
 func (p *BackupConfig) initKeepTempFiles() {
