@@ -144,6 +144,10 @@ jobs:
         run: |
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.target_image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          if [ "${{ matrix.target_image_tag }}" == "master-latest" ]; then
+            yq -i '.common.storage.enablev2 = true' custom_config.yaml
+          fi
+          cat custom_config.yaml || true
           docker-compose up -d
           bash ../../scripts/check_healthy.sh
           docker-compose ps -a
@@ -247,6 +251,10 @@ jobs:
           docker-compose down
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.target_image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          if [ "${{ matrix.target_image_tag }}" == "master-latest" ]; then
+            yq -i '.common.storage.enablev2 = true' custom_config.yaml
+          fi
+          cat custom_config.yaml || true
           docker-compose up -d
           bash ../../scripts/check_healthy.sh
           docker-compose ps -a
@@ -322,6 +330,10 @@ jobs:
         run: |
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          if [ "${{ matrix.image_tag }}" == "master-latest" ]; then
+            yq -i '.common.storage.enablev2 = true' custom_config.yaml
+          fi
+          cat custom_config.yaml || true
           docker-compose up -d
           bash ../../scripts/check_healthy.sh
           docker-compose ps -a
@@ -614,6 +626,10 @@ jobs:
           fi
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          if [ "${{ matrix.image_tag }}" == "master-latest" ]; then
+            yq -i '.common.storage.enablev2 = true' custom_config.yaml
+          fi
+          cat custom_config.yaml || true
           docker-compose up -d
           bash ../../scripts/check_healthy.sh
           docker-compose ps -a
