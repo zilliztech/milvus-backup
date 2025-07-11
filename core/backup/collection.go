@@ -12,6 +12,7 @@ import (
 	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
 	"github.com/samber/lo"
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 	"google.golang.org/protobuf/proto"
 
@@ -26,6 +27,8 @@ import (
 )
 
 const _allPartitionID = -1
+
+const _maxSegmentParallelism = 1024
 
 type CollectionOpt struct {
 	BackupID string
@@ -690,17 +693,29 @@ func (ct *CollectionTask) backupDML(ctx context.Context) error {
 }
 
 func (ct *CollectionTask) backupSegments(ctx context.Context, segments []*backuppb.SegmentBackupInfo) error {
-	ct.logger.Info("start to backup segments")
+	ct.logger.Info("start to backup segments", zap.Int("segment_num", len(segments)))
+	g, subCtx := errgroup.WithContext(ctx)
+	g.SetLimit(_maxSegmentParallelism)
 	for _, seg := range segments {
-		if err := ct.backupSegment(ctx, seg); err != nil {
-			return fmt.Errorf("backup: copy segment %w", err)
-		}
+		g.Go(func() error {
+			if err := ct.backupSegment(subCtx, seg); err != nil {
+				return fmt.Errorf("backup: copy segment %w", err)
+			}
+
+			return nil
+		})
 	}
+
+	if err := g.Wait(); err != nil {
+		return fmt.Errorf("backup: wait segment worker pool %w", err)
+	}
+
+	ct.logger.Info("backup segments done")
 
 	return nil
 }
 
-func (ct *CollectionTask) backupInsertLogs(ctx context.Context, seg *backuppb.SegmentBackupInfo) error {
+func (ct *CollectionTask) insertLogsAttrs(seg *backuppb.SegmentBackupInfo) ([]storage.CopyAttr, error) {
 	opts := []mpath.Option{
 		mpath.CollectionID(seg.GetCollectionId()),
 		mpath.PartitionID(seg.GetPartitionId()),
@@ -715,7 +730,7 @@ func (ct *CollectionTask) backupInsertLogs(ctx context.Context, seg *backuppb.Se
 		for _, binlog := range field.GetBinlogs() {
 			destKey := mpath.Join(destDir, mpath.FieldID(field.FieldID), mpath.LogID(binlog.LogId))
 			if destKey == binlog.LogPath {
-				return fmt.Errorf("backup: dest key %s is same as src key %s", destKey, binlog.LogPath)
+				return nil, fmt.Errorf("backup: dest key %s is same as src key %s", destKey, binlog.LogPath)
 			}
 
 			srcAttr := storage.ObjectAttr{Key: binlog.LogPath, Length: binlog.LogSize}
@@ -724,22 +739,10 @@ func (ct *CollectionTask) backupInsertLogs(ctx context.Context, seg *backuppb.Se
 		attrs = append(attrs, fieldAttrs...)
 	}
 
-	opt := storage.CopyObjectsOpt{
-		Src:          ct.milvusStorage,
-		Dest:         ct.backupStorage,
-		Attrs:        attrs,
-		CopyByServer: ct.crossStorage,
-		Sem:          ct.copySem,
-	}
-	cpTask := storage.NewCopyObjectsTask(opt)
-	if err := cpTask.Execute(ctx); err != nil {
-		return fmt.Errorf("backup: copy insert logs %w", err)
-	}
-
-	return nil
+	return attrs, nil
 }
 
-func (ct *CollectionTask) backupDeltaLogs(ctx context.Context, seg *backuppb.SegmentBackupInfo) error {
+func (ct *CollectionTask) deltaLogAttrs(seg *backuppb.SegmentBackupInfo) ([]storage.CopyAttr, error) {
 	opts := []mpath.Option{
 		mpath.CollectionID(seg.GetCollectionId()),
 		mpath.PartitionID(seg.GetPartitionId()),
@@ -756,7 +759,7 @@ func (ct *CollectionTask) backupDeltaLogs(ctx context.Context, seg *backuppb.Seg
 		for _, binlog := range field.GetBinlogs() {
 			destKey := mpath.Join(destDir, mpath.LogID(binlog.LogId))
 			if destKey == binlog.LogPath {
-				return fmt.Errorf("backup: dest key %s is same as src key %s", destKey, binlog.LogPath)
+				return nil, fmt.Errorf("backup: dest key %s is same as src key %s", destKey, binlog.LogPath)
 			}
 
 			srcAttr := storage.ObjectAttr{Key: binlog.LogPath, Length: binlog.LogSize}
@@ -765,6 +768,21 @@ func (ct *CollectionTask) backupDeltaLogs(ctx context.Context, seg *backuppb.Seg
 		attrs = append(attrs, fieldAttrs...)
 	}
 
+	return attrs, nil
+}
+
+func (ct *CollectionTask) backupSegment(ctx context.Context, seg *backuppb.SegmentBackupInfo) error {
+	ct.logger.Info("backup segment", zap.Int64("segment_id", seg.GetSegmentId()))
+	insertAttrs, err := ct.insertLogsAttrs(seg)
+	if err != nil {
+		return fmt.Errorf("backup: backup insert logs %w", err)
+	}
+	deltaAttrs, err := ct.deltaLogAttrs(seg)
+	if err != nil {
+		return fmt.Errorf("backup: backup delta logs %w", err)
+	}
+
+	attrs := append(insertAttrs, deltaAttrs...)
 	opt := storage.CopyObjectsOpt{
 		Src:          ct.milvusStorage,
 		Dest:         ct.backupStorage,
@@ -774,19 +792,7 @@ func (ct *CollectionTask) backupDeltaLogs(ctx context.Context, seg *backuppb.Seg
 	}
 	cpTask := storage.NewCopyObjectsTask(opt)
 	if err := cpTask.Execute(ctx); err != nil {
-		return fmt.Errorf("backup: copy delta logs %w", err)
-	}
-
-	return nil
-}
-
-func (ct *CollectionTask) backupSegment(ctx context.Context, seg *backuppb.SegmentBackupInfo) error {
-	ct.logger.Info("backup segment", zap.Int64("segment_id", seg.GetSegmentId()))
-	if err := ct.backupInsertLogs(ctx, seg); err != nil {
-		return fmt.Errorf("backup: backup insert logs %w", err)
-	}
-	if err := ct.backupDeltaLogs(ctx, seg); err != nil {
-		return fmt.Errorf("backup: backup delta logs %w", err)
+		return fmt.Errorf("backup: copy insert logs %w", err)
 	}
 
 	// TODO: now l0 segment not under partition, update l0 segment backuped to true will cause nil pointer error
@@ -795,5 +801,6 @@ func (ct *CollectionTask) backupSegment(ctx context.Context, seg *backuppb.Segme
 	}
 	ct.meta.UpdateSegment(seg.PartitionId, seg.SegmentId, meta.SetSegmentBackuped(true))
 
+	ct.logger.Info("backup segment done", zap.Int64("segment_id", seg.GetSegmentId()))
 	return nil
 }
