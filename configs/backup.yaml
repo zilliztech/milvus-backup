@@ -80,13 +80,16 @@ minio:
 backup:
   maxSegmentGroupSize: 2G
 
-  parallelism: 
+  parallelism:
     # collection level parallelism to backup
     backupCollection: 4
     # thread pool to copy data. reduce it if blocks your storage's network bandwidth
     copydata: 128
     # Collection level parallelism to restore
     restoreCollection: 2
+    # max number of import job to run in parallel,
+    # should be less than milvus's config dataCoord.import.maxImportJobNum
+    importJobNum: 768
   
   # keep temporary files during restore, only use to debug 
   keepTempFiles: false
