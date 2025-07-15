@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/samber/lo/mutable"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 
-	"github.com/samber/lo/mutable"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 

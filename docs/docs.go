@@ -558,7 +558,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "gc_pause_seconds": {
-                    "description": "gc pause seconds, set it larger than the time cost of backup",
+                    "description": "gc pause seconds, set it larger than the time cost of backup\n\nDeprecated: Marked as deprecated in backup.proto.",
                     "type": "integer"
                 },
                 "meta_only": {
@@ -594,7 +594,10 @@ const docTemplate = `{
                 101,
                 102,
                 103,
-                104
+                104,
+                105,
+                106,
+                200
             ],
             "x-enum-comments": {
                 "DataType_VarChar": "variable-length strings with a specified maximum length"
@@ -616,7 +619,10 @@ const docTemplate = `{
                 "DataType_FloatVector",
                 "DataType_Float16Vector",
                 "DataType_BFloat16Vector",
-                "DataType_SparseFloatVector"
+                "DataType_SparseFloatVector",
+                "DataType_Int8Vector",
+                "DataType_ArrayOfVector",
+                "DataType_ArrayOfStruct"
             ]
         },
         "backuppb.DatabaseBackupInfo": {
@@ -1300,7 +1306,10 @@ const docTemplate = `{
                     }
                 },
                 "mapping": {
-                    "$ref": "#/definitions/backuppb.RestoreMapping"
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/backuppb.RestoreMapping"
+                    }
                 }
             }
         },

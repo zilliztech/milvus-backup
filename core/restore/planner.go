@@ -491,6 +491,7 @@ func (p *planner) Plan(backup *backuppb.BackupInfo) ([]*backuppb.RestoreDatabase
 	collNSs = lo.Map(collTasks, func(coll *backuppb.RestoreCollectionTask, _ int) string {
 		return namespace.New(coll.GetTargetDbName(), coll.GetTargetCollectionName()).String()
 	})
+	p.logger.Info("collections task after filtering", zap.Strings("coll_names", collNSs))
 
 	return dbTasks, collTasks
 }

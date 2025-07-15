@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"strconv"
 	"time"
 
@@ -235,7 +236,7 @@ func restfulAuth(username, password string) string {
 }
 
 func NewRestful(cfg *paramtable.MilvusConfig) (*RestfulClient, error) {
-	host := fmt.Sprintf("%s:%s", cfg.Address, cfg.Port)
+	host := net.JoinHostPort(cfg.Address, cfg.Port)
 	log.Info("new milvus restful client", zap.String("host", host))
 
 	var baseURL string

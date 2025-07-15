@@ -51,8 +51,6 @@ type CollectionTask struct {
 	copySem       *semaphore.Weighted
 	bulkInsertSem *semaphore.Weighted
 
-	restoreParallelism int
-
 	backupPath     string
 	backupRootPath string
 	backupStorage  storage.Client

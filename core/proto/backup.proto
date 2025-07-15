@@ -505,6 +505,10 @@ enum DataType {
   Float16Vector = 102;
   BFloat16Vector = 103;
   SparseFloatVector = 104;
+  Int8Vector = 105;
+  ArrayOfVector = 106;
+
+  ArrayOfStruct = 200;
 }
 
 enum FieldState {

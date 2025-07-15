@@ -35,9 +35,11 @@ func TestTransCred(t *testing.T) {
 
 	cred, err = transCred(&paramtable.MilvusConfig{TLSMode: 1})
 	assert.NoError(t, err)
+	assert.NotNil(t, cred)
 
 	cred, err = transCred(&paramtable.MilvusConfig{TLSMode: 2})
 	assert.NoError(t, err)
+	assert.NotNil(t, cred)
 }
 
 func TestIsUnimplemented(t *testing.T) {
