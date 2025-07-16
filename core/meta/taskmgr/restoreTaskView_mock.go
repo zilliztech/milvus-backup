@@ -8,9 +8,8 @@ import (
 	"time"
 
 	mock "github.com/stretchr/testify/mock"
-
-	"github.com/zilliztech/milvus-backup/core/namespace"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/namespace"
 )
 
 // NewMockRestoreTaskView creates a new instance of MockRestoreTaskView. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.

@@ -1,4 +1,4 @@
-package common
+package aimd
 
 import (
 	"context"
@@ -8,9 +8,9 @@ import (
 	"go.uber.org/atomic"
 )
 
-// AIMDLimiter is an implementation of Additive Increase Multiplicative Decrease algorithm.
+// Limiter is an implementation of Additive Increase Multiplicative Decrease algorithm.
 // It uses leaky bucket to limit the rate.
-type AIMDLimiter struct {
+type Limiter struct {
 	minRPS float64
 	maxRPS float64
 	curRPS atomic.Float64
@@ -20,8 +20,8 @@ type AIMDLimiter struct {
 	stop chan struct{}
 }
 
-func NewAIMDLimiter(minRPS, maxRPS, initRPS float64) *AIMDLimiter {
-	a := &AIMDLimiter{
+func NewLimiter(minRPS, maxRPS, initRPS float64) *Limiter {
+	a := &Limiter{
 		minRPS: minRPS,
 		maxRPS: maxRPS,
 		bucket: make(chan struct{}),
@@ -34,7 +34,7 @@ func NewAIMDLimiter(minRPS, maxRPS, initRPS float64) *AIMDLimiter {
 	return a
 }
 
-func (a *AIMDLimiter) loop() {
+func (a *Limiter) loop() {
 	for {
 		every := time.Duration(float64(time.Second) / a.curRPS.Load())
 		select {
@@ -48,7 +48,7 @@ func (a *AIMDLimiter) loop() {
 
 // putToken tries to put a token into the bucket.
 // It returns true if the token is put successfully.
-func (a *AIMDLimiter) putToken() {
+func (a *Limiter) putToken() {
 	select {
 	case a.bucket <- struct{}{}:
 	case <-a.stop:
@@ -56,7 +56,7 @@ func (a *AIMDLimiter) putToken() {
 	}
 }
 
-func (a *AIMDLimiter) Wait(ctx context.Context) error {
+func (a *Limiter) Wait(ctx context.Context) error {
 	select {
 	case <-a.bucket:
 		return nil
@@ -65,7 +65,7 @@ func (a *AIMDLimiter) Wait(ctx context.Context) error {
 	}
 }
 
-func (a *AIMDLimiter) Success() {
+func (a *Limiter) Success() {
 	curRPS := a.curRPS.Load()
 	if curRPS >= a.maxRPS {
 		return
@@ -77,7 +77,7 @@ func (a *AIMDLimiter) Success() {
 	}
 }
 
-func (a *AIMDLimiter) Failure() {
+func (a *Limiter) Failure() {
 	oldRPS := a.curRPS.Load()
 	newRPS := oldRPS / 2
 	if newRPS <= a.minRPS {
@@ -91,5 +91,5 @@ func (a *AIMDLimiter) Failure() {
 	a.curRPS.Store(newRPS)
 }
 
-func (a *AIMDLimiter) CurRPS() float64 { return a.curRPS.Load() }
-func (a *AIMDLimiter) Stop()           { close(a.stop) }
+func (a *Limiter) CurRPS() float64 { return a.curRPS.Load() }
+func (a *Limiter) Stop()           { close(a.stop) }

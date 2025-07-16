@@ -6,19 +6,20 @@ import (
 	"path"
 	"time"
 
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/meta/taskmgr"
-	"github.com/zilliztech/milvus-backup/core/pbconv"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore"
 	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/pbconv"
 )
 
 func (b *BackupContext) RestoreBackup(ctx context.Context, request *backuppb.RestoreBackupRequest) *backuppb.RestoreBackupResponse {
 	if request.GetRequestId() == "" {
-		request.RequestId = utils.UUID()
+		request.RequestId = uuid.NewString()
 	}
 	log.Info("receive RestoreBackupRequest", zap.Any("request", request))
 

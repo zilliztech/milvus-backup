@@ -28,11 +28,11 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/zilliztech/milvus-backup/core/namespace"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
-	"github.com/zilliztech/milvus-backup/internal/common"
+	"github.com/zilliztech/milvus-backup/internal/aimd"
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/util/retry"
+	"github.com/zilliztech/milvus-backup/internal/namespace"
+	"github.com/zilliztech/milvus-backup/internal/retry"
 	"github.com/zilliztech/milvus-backup/version"
 )
 
@@ -137,21 +137,21 @@ func isRateLimitError(err error) bool {
 }
 
 type limiters struct {
-	flush *common.AIMDLimiter
+	flush *aimd.Limiter
 
-	createCollection *common.AIMDLimiter
-	createPartition  *common.AIMDLimiter
-	createDatabase   *common.AIMDLimiter
-	createIndex      *common.AIMDLimiter
+	createCollection *aimd.Limiter
+	createPartition  *aimd.Limiter
+	createDatabase   *aimd.Limiter
+	createIndex      *aimd.Limiter
 }
 
 func newLimiters() limiters {
 	return limiters{
-		flush:            common.NewAIMDLimiter(0.01, 50, 5),
-		createCollection: common.NewAIMDLimiter(1, 100, 5),
-		createPartition:  common.NewAIMDLimiter(1, 100, 5),
-		createDatabase:   common.NewAIMDLimiter(1, 100, 5),
-		createIndex:      common.NewAIMDLimiter(1, 100, 5),
+		flush:            aimd.NewLimiter(0.01, 50, 5),
+		createCollection: aimd.NewLimiter(1, 100, 5),
+		createPartition:  aimd.NewLimiter(1, 100, 5),
+		createDatabase:   aimd.NewLimiter(1, 100, 5),
+		createIndex:      aimd.NewLimiter(1, 100, 5),
 	}
 }
 

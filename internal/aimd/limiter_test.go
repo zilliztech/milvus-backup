@@ -1,4 +1,4 @@
-package common
+package aimd
 
 import (
 	"context"
@@ -8,7 +8,7 @@ import (
 )
 
 func TestAIMDLimiter_CurrentRPS(t *testing.T) {
-	limiter := NewAIMDLimiter(1, 10, 5)
+	limiter := NewLimiter(1, 10, 5)
 	defer limiter.Stop()
 
 	assert.Equal(t, 5.0, limiter.CurRPS())
@@ -16,7 +16,7 @@ func TestAIMDLimiter_CurrentRPS(t *testing.T) {
 
 func TestAIMDLimiter_Success(t *testing.T) {
 	t.Run("IncreaseRPS", func(t *testing.T) {
-		limiter := NewAIMDLimiter(1, 10, 5)
+		limiter := NewLimiter(1, 10, 5)
 		defer limiter.Stop()
 
 		limiter.Success()
@@ -24,7 +24,7 @@ func TestAIMDLimiter_Success(t *testing.T) {
 	})
 
 	t.Run("MaxRPS", func(t *testing.T) {
-		limiter := NewAIMDLimiter(1, 10, 5)
+		limiter := NewLimiter(1, 10, 5)
 		defer limiter.Stop()
 
 		for i := 0; i < 10; i++ {
@@ -36,7 +36,7 @@ func TestAIMDLimiter_Success(t *testing.T) {
 
 func TestAIMDLimiter_OnFailure(t *testing.T) {
 	t.Run("DecreaseRPS", func(t *testing.T) {
-		limiter := NewAIMDLimiter(1, 10, 5)
+		limiter := NewLimiter(1, 10, 5)
 		defer limiter.Stop()
 
 		limiter.Failure()
@@ -44,7 +44,7 @@ func TestAIMDLimiter_OnFailure(t *testing.T) {
 	})
 
 	t.Run("MinRPS", func(t *testing.T) {
-		limiter := NewAIMDLimiter(1, 10, 5)
+		limiter := NewLimiter(1, 10, 5)
 		defer limiter.Stop()
 
 		for i := 0; i < 10; i++ {
@@ -56,7 +56,7 @@ func TestAIMDLimiter_OnFailure(t *testing.T) {
 
 func TestAIMDLimiter_Wait(t *testing.T) {
 	t.Run("ContextCancelled", func(t *testing.T) {
-		limiter := NewAIMDLimiter(1, 10, 5)
+		limiter := NewLimiter(1, 10, 5)
 		defer limiter.Stop()
 
 		ctx, cancel := context.WithCancel(context.Background())

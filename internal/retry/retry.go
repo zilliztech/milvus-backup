@@ -13,12 +13,12 @@ package retry
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/util/errorutil"
 )
 
 // Do will run function with retry mechanism.
@@ -31,25 +31,25 @@ func Do(ctx context.Context, fn func() error, opts ...Option) error {
 	for _, opt := range opts {
 		opt(c)
 	}
-	var el errorutil.ErrorList
+
+	var err error
 
 	for i := uint(0); i < c.attempts; i++ {
-		if err := fn(); err != nil {
+		if innerErr := fn(); innerErr != nil {
 			if i%10 == 0 {
 				log.Debug("retry func failed", zap.Uint("retry time", i), zap.Error(err))
 			}
 
-			el = append(el, err)
-
-			if ok := IsUnRecoverable(err); ok {
-				return el
+			if IsUnRecoverable(innerErr) {
+				return innerErr
 			}
+
+			err = errors.Join(err, innerErr)
 
 			select {
 			case <-time.After(c.sleep):
 			case <-ctx.Done():
-				el = append(el, ctx.Err())
-				return el
+				return errors.Join(err, ctx.Err())
 			}
 
 			c.sleep *= 2
@@ -60,7 +60,8 @@ func Do(ctx context.Context, fn func() error, opts ...Option) error {
 			return nil
 		}
 	}
-	return el
+
+	return err
 }
 
 type unrecoverableError struct {
@@ -75,6 +76,7 @@ func Unrecoverable(err error) error {
 
 // IsUnRecoverable is used to judge whether the error is wrapped by unrecoverableError.
 func IsUnRecoverable(err error) bool {
-	_, isUnrecoverable := err.(unrecoverableError)
+	var ue unrecoverableError
+	isUnrecoverable := errors.As(err, &ue)
 	return isUnrecoverable
 }
