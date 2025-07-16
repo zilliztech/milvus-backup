@@ -241,7 +241,7 @@ jobs:
         timeout-minutes: 5
         shell: bash
         run: |
-          python example/prepare_data_for_two_stages.py --stage 1
+          python example/prepare_data.py --stage 1
 
       - name: Upgrade Milvus
         timeout-minutes: 15
@@ -263,7 +263,7 @@ jobs:
         timeout-minutes: 5
         shell: bash
         run: |
-          python example/prepare_data_for_two_stages.py --stage 2
+          python example/prepare_data.py --stage 2
 
       - name: Backup
         timeout-minutes: 5
@@ -277,7 +277,8 @@ jobs:
         timeout-minutes: 5
         shell: bash
         run: |
-          ./milvus-backup restore -n my_backup -s _recover
+          ./milvus-backup restore -n my_backup -c hello_milvus -s _recover
+          ./milvus-backup restore -n my_backup -c hello_milvus2 -s _recover
       - name: Verify data
         timeout-minutes: 5
         shell: bash
