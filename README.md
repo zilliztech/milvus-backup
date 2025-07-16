@@ -9,6 +9,26 @@ Milvus-Backup is a tool that allows users to backup and restore Milvus data. Thi
 
 The Milvus-backup process has negligible impact on the performance of Milvus. Milvus cluster is fully functional and can operate normally while backup and restoration are in progress.
 
+## Compatibility
+
+The table below shows which Milvus versions can restore backups created from other versions:
+
+| Backup From ↓ \ Restore To → | 2.4 | 2.5 |
+|------------------------------|-----|-----|
+| 2.2                          | ✅  | ✅  |
+| 2.3                          | ✅  | ✅  |
+| 2.4                          | ✅  | ✅  |
+| 2.5                          | ❌  | ✅  |
+
+> ✅ = Supported  ❌ = Not supported
+>
+> **Rules:**
+> - Backup is supported from **Milvus 2.2+**
+> - Restore is supported **to Milvus 2.4+**
+> - A backup can only be restored to **the same or newer Milvus versions**
+> - For example, backups created in Milvus 2.5 **cannot** be restored to 2.4
+
+
 ## Installation
 
 * Download binary from [release page](https://github.com/zilliztech/milvus-backup/releases). Usually the latest is recommended.
@@ -142,6 +162,9 @@ For more details, refer to the [backup.yaml](configs/backup.yaml) configuration 
 1. [Cross Storage Backup](docs/user_guide/cross_storage.md): Data is read from the source storage and written to a different storage through the Milvus-backup service. Such as, S3 -> local, S3 a -> S3 b. 
 
 2. [RBAC Backup&Restore](docs/user_guide/rbac.md): Enable backup and restore RBAC meta with extra parameter.
+
+3. [Segment Merging Restore](docs/user_guide/mul_seg_restore.md): In segment merging restore mode (v2 restore), multiple segments are grouped into a single job and restored together. This significantly improves restore performance, especially in scenarios with many small segments.
+
 
 ## Examples
 
