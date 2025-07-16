@@ -216,7 +216,10 @@ definitions:
           backup, use it when the data to backup is very large.
         type: boolean
       gc_pause_seconds:
-        description: gc pause seconds, set it larger than the time cost of backup
+        description: |-
+          gc pause seconds, set it larger than the time cost of backup
+
+          Deprecated: Marked as deprecated in backup.proto.
         type: integer
       meta_only:
         description: only backup meta, including collection schema and index info
@@ -247,6 +250,9 @@ definitions:
     - 102
     - 103
     - 104
+    - 105
+    - 106
+    - 200
     type: integer
     x-enum-comments:
       DataType_VarChar: variable-length strings with a specified maximum length
@@ -268,6 +274,9 @@ definitions:
     - DataType_Float16Vector
     - DataType_BFloat16Vector
     - DataType_SparseFloatVector
+    - DataType_Int8Vector
+    - DataType_ArrayOfVector
+    - DataType_ArrayOfStruct
   backuppb.DatabaseBackupInfo:
     properties:
       db_id:
@@ -731,7 +740,9 @@ definitions:
           $ref: '#/definitions/backuppb.RestoreFilter'
         type: object
       mapping:
-        $ref: '#/definitions/backuppb.RestoreMapping'
+        items:
+          $ref: '#/definitions/backuppb.RestoreMapping'
+        type: array
     type: object
   backuppb.RestoreTaskStateCode:
     enum:
