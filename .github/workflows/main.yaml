@@ -237,11 +237,11 @@ jobs:
           bash ../../scripts/check_healthy.sh
           docker-compose ps -a
 
-      - name: Prepare data
+      - name: Prepare data stage 1
         timeout-minutes: 5
         shell: bash
         run: |
-          python example/prepare_data.py
+          python example/prepare_data_for_two_stages.py --stage 1
 
       - name: Upgrade Milvus
         timeout-minutes: 15
@@ -258,6 +258,13 @@ jobs:
           docker-compose up -d
           bash ../../scripts/check_healthy.sh
           docker-compose ps -a
+      
+      - name: Prepare data stage 2
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python example/prepare_data_for_two_stages.py --stage 2
+
       - name: Backup
         timeout-minutes: 5
         shell: bash
