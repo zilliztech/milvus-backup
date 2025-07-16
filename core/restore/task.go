@@ -12,11 +12,11 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/client/milvus"
 	"github.com/zilliztech/milvus-backup/core/meta/taskmgr"
-	"github.com/zilliztech/milvus-backup/core/namespace"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/storage"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/namespace"
 )
 
 type Task struct {

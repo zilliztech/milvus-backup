@@ -4,8 +4,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zilliztech/milvus-backup/core/namespace"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/namespace"
 )
 
 type RestoreTaskOpt func(task *RestoreTask)

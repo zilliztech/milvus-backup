@@ -8,8 +8,8 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/types/known/structpb"
 
-	"github.com/zilliztech/milvus-backup/core/namespace"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/namespace"
 )
 
 func TestDefaultRenamer(t *testing.T) {

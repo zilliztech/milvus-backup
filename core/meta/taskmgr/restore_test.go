@@ -6,8 +6,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/zilliztech/milvus-backup/core/namespace"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/namespace"
 )
 
 func TestRestoreCollectionTask_Progress(t *testing.T) {

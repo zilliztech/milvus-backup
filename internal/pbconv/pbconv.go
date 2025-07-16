@@ -1,12 +1,17 @@
 package pbconv
 
 import (
+	"encoding/base64"
+	"fmt"
+
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
+	"github.com/milvus-io/milvus-proto/go-api/v2/msgpb"
 	"github.com/samber/lo"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/zilliztech/milvus-backup/core/meta/taskmgr"
-	"github.com/zilliztech/milvus-backup/core/namespace"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/namespace"
 )
 
 func BakKVToMilvusKV(kv []*backuppb.KeyValuePair, skipKeys ...string) []*commonpb.KeyValuePair {
@@ -69,4 +74,25 @@ func RestoreTaskViewToResp(view taskmgr.RestoreTaskView) *backuppb.RestoreBackup
 		Progress:               view.Progress(),
 		CollectionRestoreTasks: collTaskResps,
 	}
+}
+
+func Base64MsgPosition(position *msgpb.MsgPosition) (string, error) {
+	positionByte, err := proto.Marshal(position)
+	if err != nil {
+		return "", fmt.Errorf("utils: encode msg position %w", err)
+	}
+	return base64.StdEncoding.EncodeToString(positionByte), nil
+}
+
+func Base64DecodeMsgPosition(position string) (*msgpb.MsgPosition, error) {
+	decodeBytes, err := base64.StdEncoding.DecodeString(position)
+	if err != nil {
+		return nil, fmt.Errorf("utils: base64 decode msg position %w", err)
+	}
+
+	var msgPosition msgpb.MsgPosition
+	if err = proto.Unmarshal(decodeBytes, &msgPosition); err != nil {
+		return nil, fmt.Errorf("utils: unmarshal msg position %w", err)
+	}
+	return &msgPosition, nil
 }

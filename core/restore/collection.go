@@ -22,14 +22,13 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/client/milvus"
 	"github.com/zilliztech/milvus-backup/core/meta/taskmgr"
-	"github.com/zilliztech/milvus-backup/core/namespace"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
-	"github.com/zilliztech/milvus-backup/core/pbconv"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/storage"
 	"github.com/zilliztech/milvus-backup/core/storage/mpath"
-	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/namespace"
+	"github.com/zilliztech/milvus-backup/internal/pbconv"
 )
 
 const (
@@ -900,7 +899,7 @@ func (ct *CollectionTask) backupTS(vch string) (uint64, error) {
 	if !ok {
 		return 0, fmt.Errorf("restore_collection: failed to get vch %s checkpoint", vch)
 	}
-	pos, err := utils.Base64DecodeMsgPosition(posStr)
+	pos, err := pbconv.Base64DecodeMsgPosition(posStr)
 	if err != nil {
 		return 0, fmt.Errorf("restore_collection: failed to decode checkpoint: %w", err)
 	}

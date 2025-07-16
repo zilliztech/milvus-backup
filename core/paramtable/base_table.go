@@ -27,7 +27,6 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	memkv "github.com/zilliztech/milvus-backup/internal/kv/mem"
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/util/logutil"
 )
 
 const (
@@ -388,7 +387,6 @@ func (gp *BaseTable) SetLogConfig() {
 		} else {
 			cfg.GrpcLevel = strings.ToUpper(grpclog)
 		}
-		logutil.SetupLogger(&cfg)
 		defer log.Sync()
 	}
 }

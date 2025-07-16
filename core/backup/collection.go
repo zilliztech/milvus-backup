@@ -18,12 +18,11 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/client/milvus"
 	"github.com/zilliztech/milvus-backup/core/meta"
-	"github.com/zilliztech/milvus-backup/core/pbconv"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/storage"
 	"github.com/zilliztech/milvus-backup/core/storage/mpath"
-	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/pbconv"
 )
 
 const _allPartitionID = -1
@@ -386,7 +385,7 @@ func (ct *CollectionTask) addDMLPositionToMeta(flushResp *milvuspb.FlushResponse
 	channelCheckpoints := make(map[string]string, len(flushResp.GetChannelCps()))
 	var maxChannelBackupTimeStamp uint64
 	for vch, checkpoint := range flushResp.GetChannelCps() {
-		cp, err := utils.Base64MsgPosition(checkpoint)
+		cp, err := pbconv.Base64MsgPosition(checkpoint)
 		if err != nil {
 			ct.logger.Error("backup: encode msg position", zap.Error(err))
 			continue

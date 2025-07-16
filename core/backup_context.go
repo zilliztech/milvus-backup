@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/sync/semaphore"
@@ -16,11 +17,10 @@ import (
 	"github.com/zilliztech/milvus-backup/core/meta"
 	"github.com/zilliztech/milvus-backup/core/meta/taskmgr"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
-	"github.com/zilliztech/milvus-backup/core/pbconv"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/storage"
-	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/pbconv"
 )
 
 const (
@@ -153,7 +153,7 @@ func (b *BackupContext) getBackupStorageClient() storage.Client {
 
 func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBackupRequest) *backuppb.BackupInfoResponse {
 	if request.GetRequestId() == "" {
-		request.RequestId = utils.UUID()
+		request.RequestId = uuid.NewString()
 	}
 	log.Info("receive GetBackupRequest",
 		zap.String("requestId", request.GetRequestId()),
@@ -245,7 +245,7 @@ func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBack
 
 func (b *BackupContext) ListBackups(ctx context.Context, request *backuppb.ListBackupsRequest) *backuppb.ListBackupsResponse {
 	if request.GetRequestId() == "" {
-		request.RequestId = utils.UUID()
+		request.RequestId = uuid.NewString()
 	}
 	log.Info("receive ListBackupsRequest",
 		zap.String("requestId", request.GetRequestId()),
@@ -322,7 +322,7 @@ func (b *BackupContext) ListBackups(ctx context.Context, request *backuppb.ListB
 
 func (b *BackupContext) DeleteBackup(ctx context.Context, request *backuppb.DeleteBackupRequest) *backuppb.DeleteBackupResponse {
 	if request.GetRequestId() == "" {
-		request.RequestId = utils.UUID()
+		request.RequestId = uuid.NewString()
 	}
 	log.Info("receive DeleteBackupRequest",
 		zap.String("requestId", request.GetRequestId()),
@@ -471,7 +471,7 @@ func (b *BackupContext) readBackup(ctx context.Context, bucketName string, backu
 
 func (b *BackupContext) GetRestore(ctx context.Context, request *backuppb.GetRestoreStateRequest) *backuppb.RestoreBackupResponse {
 	if request.GetRequestId() == "" {
-		request.RequestId = utils.UUID()
+		request.RequestId = uuid.NewString()
 	}
 	log.Info("receive GetRestoreStateRequest",
 		zap.String("requestId", request.GetRequestId()),

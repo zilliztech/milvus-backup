@@ -13,7 +13,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/util/retry"
+	"github.com/zilliztech/milvus-backup/internal/retry"
 )
 
 type ImportState string
