@@ -10,6 +10,10 @@ Milvus-Backup is a tool that allows users to backup and restore Milvus data. Thi
 The Milvus-backup process has negligible impact on the performance of Milvus. Milvus cluster is fully functional and can operate normally while backup and restoration are in progress.
 
 ## Compatibility
+Always use the **[latest release](https://github.com/zilliztech/milvus-backup/releases)** of `milvus-backup`, which is backward-compatible with Milvus **v2.2 and above**.
+
+> The backup tool is designed to automatically adapt to version differences in Milvus.  
+> Using the latest version ensures best compatibility, performance, and bug fixes.
 
 The table below shows which Milvus versions can restore backups created from other versions:
 
