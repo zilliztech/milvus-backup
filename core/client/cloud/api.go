@@ -65,6 +65,7 @@ type ApplyStageResp struct {
 	Endpoint    string      `json:"endpoint"`
 	Region      string      `json:"region"`
 	UploadPath  string      `json:"uploadPath"`
+	StageName   string      `json:"stageName"`
 }
 
 func (a *ApplyStageResp) String() string {
@@ -138,27 +139,8 @@ func (a *APIClient) ApplyStage(ctx context.Context, clusterID, dir string) (*App
 }
 
 type Source struct {
-	AccessKey string `json:"accessKey"`
-	SecretKey string `json:"secretKey"`
-	Token     string `json:"token"`
-
-	BucketName string `json:"bucketName"`
-	Cloud      string `json:"cloud"`
-	Path       string `json:"path"`
-	Region     string `json:"region"`
-}
-
-func (s *Source) String() string {
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("accessKey: %s, ", mask(s.AccessKey)))
-	sb.WriteString(fmt.Sprintf("secretKey: %s, ", mask(s.SecretKey)))
-	sb.WriteString(fmt.Sprintf("token: %s, ", mask(s.Token)))
-	sb.WriteString(fmt.Sprintf("bucketName: %s, ", mask(s.BucketName)))
-	sb.WriteString(fmt.Sprintf("cloud: %s, ", s.Cloud))
-	sb.WriteString(fmt.Sprintf("path: %s, ", mask(s.Path)))
-	sb.WriteString(fmt.Sprintf("region: %s", s.Region))
-
-	return sb.String()
+	StageName string `json:"stageName"`
+	DataPath  string `json:"dataPath"`
 }
 
 type Destination struct {
@@ -174,21 +156,13 @@ type Migrate struct {
 	Destination Destination `json:"destination"`
 }
 
-func (m *Migrate) String() string {
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("source: %s, ", m.Source.String()))
-	sb.WriteString(fmt.Sprintf("destination: %s", m.Destination.String()))
-
-	return sb.String()
-}
-
 type MigrateResp struct {
 	JobID string `json:"jobId"`
 }
 
 func (a *APIClient) Migrate(ctx context.Context, source Source, dest Destination) (string, error) {
 	in := Migrate{Source: source, Destination: dest}
-	a.logger.Debug("send migrate request", zap.String("request", in.String()))
+	a.logger.Debug("send migrate request", zap.Any("request", in))
 
 	var migrateResp common[MigrateResp]
 	resp, err := a.cli.R().

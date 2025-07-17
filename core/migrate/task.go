@@ -22,7 +22,7 @@ var _ minioCred.Provider = (*stage)(nil)
 
 type stage struct {
 	clusterID string
-	taskID    string
+	prefix    string
 
 	cloudCli cloud.Client
 
@@ -32,14 +32,14 @@ type stage struct {
 	logger *zap.Logger
 }
 
-func newStage(clusterID, taskID string, cloudCli cloud.Client) *stage {
+func newStage(clusterID, prefix string, cloudCli cloud.Client) *stage {
 	return &stage{
 		clusterID: clusterID,
-		taskID:    taskID,
+		prefix:    prefix,
 
 		cloudCli: cloudCli,
 
-		logger: log.L().With(zap.String("cluster_id", clusterID), zap.String("task_id", taskID)),
+		logger: log.L().With(zap.String("cluster_id", clusterID), zap.String("prefix", prefix)),
 	}
 }
 
@@ -81,9 +81,8 @@ func (s *stage) IsExpired() bool {
 
 func (s *stage) apply(ctx context.Context) error {
 	s.logger.Info("apply stage, it will take about 10 seconds")
-	// use taskID as dir
 	start := time.Now()
-	resp, err := s.cloudCli.ApplyStage(ctx, s.clusterID, s.taskID)
+	resp, err := s.cloudCli.ApplyStage(ctx, s.clusterID, s.prefix)
 	if err != nil {
 		return fmt.Errorf("migrate: apply stage %w", err)
 	}
@@ -156,6 +155,7 @@ func NewTask(taskID, backupName, clusterID string, params *paramtable.BackupPara
 		backupDir:     backupDir,
 		backupStorage: backupStorage,
 
+		// use taskID as stage prefix
 		stage:   newStage(clusterID, taskID, cloudCli),
 		copySem: semaphore.NewWeighted(params.BackupCfg.BackupCopyDataParallelism),
 	}, nil
@@ -210,15 +210,7 @@ func (t *Task) copyToCloud(ctx context.Context) error {
 }
 
 func (t *Task) startMigrate(ctx context.Context) error {
-	src := cloud.Source{
-		AccessKey:  t.stage.resp.Credentials.TmpAK,
-		SecretKey:  t.stage.resp.Credentials.TmpSK,
-		Token:      t.stage.resp.Credentials.SessionToken,
-		BucketName: t.stage.resp.BucketName,
-		Cloud:      t.stage.resp.Cloud,
-		Path:       t.stage.resp.UploadPath,
-		Region:     t.stage.resp.Region,
-	}
+	src := cloud.Source{StageName: t.stage.resp.StageName, DataPath: t.stage.prefix}
 
 	t.logger.Info("trigger migrate job")
 	dest := cloud.Destination{ClusterID: t.clusterID}
