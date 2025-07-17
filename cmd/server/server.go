@@ -69,9 +69,7 @@ func NewCmd(opt *root.Options) *cobra.Command {
 		Short: "server subcommand start milvus-backup RESTAPI server.",
 
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var params paramtable.BackupParams
-			params.GlobalInitWithYaml(opt.Config)
-			params.Init()
+			params := opt.InitGlobalVars()
 
 			if err := o.complete(); err != nil {
 				return err
@@ -81,7 +79,7 @@ func NewCmd(opt *root.Options) *cobra.Command {
 				return err
 			}
 
-			return o.run(&params)
+			return o.run(params)
 		},
 	}
 

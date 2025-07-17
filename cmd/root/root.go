@@ -6,11 +6,24 @@ import (
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/zilliztech/milvus-backup/core/paramtable"
+	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
 type Options struct {
 	Config        string
 	YamlOverrides []string
+}
+
+func (o *Options) InitGlobalVars() *paramtable.BackupParams {
+	var params paramtable.BackupParams
+	params.GlobalInitWithYaml(o.Config)
+	params.Init()
+
+	log.InitLogger(&params.LogCfg)
+
+	return &params
 }
 
 func NewCmd(opt *Options) *cobra.Command {

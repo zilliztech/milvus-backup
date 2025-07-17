@@ -5,10 +5,10 @@ import (
 	"strings"
 )
 
-// BackupParams
 type BackupParams struct {
 	BaseTable
 
+	LogCfg      LogConfig
 	HTTPCfg     HTTPConfig
 	CloudConfig CloudConfig
 	MilvusCfg   MilvusConfig
@@ -16,15 +16,10 @@ type BackupParams struct {
 	BackupCfg   BackupConfig
 }
 
-func (p *BackupParams) InitOnce() {
-	p.once.Do(func() {
-		p.Init()
-	})
-}
-
 func (p *BackupParams) Init() {
 	p.BaseTable.Init()
 
+	p.LogCfg.init(&p.BaseTable)
 	p.HTTPCfg.init(&p.BaseTable)
 	p.CloudConfig.init(&p.BaseTable)
 	p.MilvusCfg.init(&p.BaseTable)
@@ -523,6 +518,43 @@ func (p *MinioConfig) initCrossStorage() {
 	if err != nil {
 		panic("parse bool CrossStorage:" + err.Error())
 	}
+}
+
+type LogConfig struct {
+	Base *BaseTable
+
+	Level   string
+	Console bool
+	File    struct {
+		RootPath string
+	}
+}
+
+func (p *LogConfig) init(base *BaseTable) {
+	p.Base = base
+
+	p.initLevel()
+	p.initConsole()
+	p.initFileRootPath()
+}
+
+func (p *LogConfig) initLevel() {
+	level := p.Base.LoadWithDefault("log.level", DefaultLogLevel)
+	p.Level = level
+}
+
+func (p *LogConfig) initConsole() {
+	console := p.Base.LoadWithDefault("log.console", "true")
+	var err error
+	p.Console, err = strconv.ParseBool(console)
+	if err != nil {
+		panic("parse bool console:" + err.Error())
+	}
+}
+
+func (p *LogConfig) initFileRootPath() {
+	rootPath := p.Base.LoadWithDefault("log.file.rootPath", "logs/backup.log")
+	p.File.RootPath = rootPath
 }
 
 type HTTPConfig struct {

@@ -26,7 +26,6 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	memkv "github.com/zilliztech/milvus-backup/internal/kv/mem"
-	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
 const (
@@ -44,7 +43,7 @@ const (
 	DefaultMinioCloudProvider   = "aws"
 	DefaultMinioIAMEndpoint     = ""
 
-	DefaultLogLevel = "WARNING"
+	DefaultLogLevel = "INFO"
 
 	DefaultMinioBackupBucketName = "a-bucket"
 	DefaultMinioBackupRootPath   = "backup"
@@ -67,10 +66,6 @@ type BaseTable struct {
 	once      sync.Once
 	params    *memkv.MemoryKV
 	configDir string
-
-	RoleName   string
-	Log        log.Config
-	LogCfgFunc func(log.Config)
 }
 
 // GlobalInitWithYaml initializes the param table with the given yaml.
@@ -90,9 +85,6 @@ func (gp *BaseTable) Init() {
 	gp.configDir = gp.initConfPath()
 	gp.loadFromYaml(defaultYaml)
 	gp.tryLoadFromEnv()
-	gp.InitLogCfg()
-	gp.SetLogConfig()
-	gp.SetLogger()
 }
 
 // GetConfigDir returns the config directory
@@ -361,51 +353,6 @@ func (gp *BaseTable) ParseDataSizeWithDefault(key string, defaultValue string) (
 		return 0, err
 	}
 	return size, nil
-}
-
-// InitLogCfg init log of the base table
-func (gp *BaseTable) InitLogCfg() {
-	gp.Log = log.Config{}
-	format := gp.LoadWithDefault("log.format", "text")
-	gp.Log.Format = format
-	level := gp.LoadWithDefault("log.level", "info")
-	gp.Log.Level = level
-	gp.Log.Console = gp.ParseBool("log.console", false)
-	gp.Log.File.Filename = gp.LoadWithDefault("log.file.rootPath", "backup.log")
-	gp.Log.File.MaxSize = gp.ParseIntWithDefault("log.file.maxSize", 300)
-	gp.Log.File.MaxBackups = gp.ParseIntWithDefault("log.file.maxBackups", 20)
-	gp.Log.File.MaxDays = gp.ParseIntWithDefault("log.file.maxAge", 10)
-}
-
-// SetLogConfig set log config of the base table
-func (gp *BaseTable) SetLogConfig() {
-	gp.LogCfgFunc = func(cfg log.Config) {
-		var err error
-		grpclog, err := gp.Load("grpc.log.level")
-		if err != nil {
-			cfg.GrpcLevel = DefaultLogLevel
-		} else {
-			cfg.GrpcLevel = strings.ToUpper(grpclog)
-		}
-		defer log.Sync()
-	}
-}
-
-// SetLogger
-func (gp *BaseTable) SetLogger() {
-	rootPath, err := gp.Load("log.file.rootPath")
-	if err != nil {
-		panic(err)
-	}
-	if rootPath != "" {
-		gp.Log.File.Filename = rootPath
-	} else {
-		gp.Log.File.Filename = ""
-	}
-
-	if gp.LogCfgFunc != nil {
-		gp.LogCfgFunc(gp.Log)
-	}
 }
 
 func (gp *BaseTable) loadMinioConfig() {

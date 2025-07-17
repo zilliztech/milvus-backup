@@ -17,11 +17,9 @@ func newBackupYamlCmd(opt *root.Options) *cobra.Command {
 		Short: "backup_yaml is a subcommand to check.  It prints the current backup config file in yaml format to stdio.",
 
 		Run: func(cmd *cobra.Command, args []string) {
-			var params paramtable.BackupParams
-			params.GlobalInitWithYaml(opt.Config)
-			params.Init()
+			params := opt.InitGlobalVars()
 
-			printParams(&params)
+			printParams(params)
 		},
 	}
 

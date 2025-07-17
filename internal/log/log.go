@@ -35,6 +35,8 @@ import (
 	"os"
 	"sync/atomic"
 
+	"github.com/zilliztech/milvus-backup/core/paramtable"
+
 	"github.com/uber/jaeger-client-go/utils"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -58,8 +60,24 @@ func init() {
 	_globalR.Store(r)
 }
 
+func InitLogger(params *paramtable.LogConfig) {
+	cfg := &Config{
+		Level:   params.Level,
+		Console: params.Console,
+		File: FileLogConfig{
+			RootPath: params.File.RootPath,
+		},
+	}
+
+	lg, p, err := initLogger(cfg)
+	if err != nil {
+		panic(err)
+	}
+	ReplaceGlobals(lg, p)
+}
+
 // InitLogger initializes a zap logger.
-func InitLogger(cfg *Config, opts ...zap.Option) (*zap.Logger, *ZapProperties, error) {
+func initLogger(cfg *Config, opts ...zap.Option) (*zap.Logger, *ZapProperties, error) {
 	outputs := make([]zapcore.WriteSyncer, 0)
 	if len(cfg.File.Filename) > 0 {
 		lg, err := initFileLog(&cfg.File)
@@ -129,7 +147,7 @@ func initFileLog(cfg *FileLogConfig) (*lumberjack.Logger, error) {
 
 func newStdLogger() (*zap.Logger, *ZapProperties) {
 	conf := &Config{Level: "info", File: FileLogConfig{}}
-	lg, r, _ := InitLogger(conf, zap.AddCallerSkip(1))
+	lg, r, _ := initLogger(conf, zap.AddCallerSkip(1))
 	return lg, r
 }
 
@@ -156,13 +174,4 @@ func ReplaceGlobals(logger *zap.Logger, props *ZapProperties) {
 	_globalL.Store(logger)
 	_globalS.Store(logger.Sugar())
 	_globalP.Store(props)
-}
-
-// Sync flushes any buffered log entries.
-func Sync() error {
-	err := L().Sync()
-	if err != nil {
-		return err
-	}
-	return S().Sync()
 }

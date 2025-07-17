@@ -6,6 +6,7 @@ package restore
 
 import (
 	mock "github.com/stretchr/testify/mock"
+
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 )
 

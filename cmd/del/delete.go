@@ -53,15 +53,13 @@ func NewCmd(opt *root.Options) *cobra.Command {
 		Short: "delete backup by name.",
 
 		RunE: func(cmd *cobra.Command, args []string) error {
-			var params paramtable.BackupParams
-			params.GlobalInitWithYaml(opt.Config)
-			params.Init()
+			params := opt.InitGlobalVars()
 
 			if err := o.validate(); err != nil {
 				return err
 			}
 
-			err := o.run(cmd, &params)
+			err := o.run(cmd, params)
 			cobra.CheckErr(err)
 
 			return nil
