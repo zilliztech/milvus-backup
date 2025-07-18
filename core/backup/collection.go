@@ -563,15 +563,16 @@ func (ct *CollectionTask) getSegmentInfoByListFile(ctx context.Context, seg *mil
 	ct.logger.Info("get delta logs done", zap.Int("count", len(deltaLogs)))
 
 	return &backuppb.SegmentBackupInfo{
-		SegmentId:    seg.GetSegmentID(),
-		CollectionId: seg.GetCollectionID(),
-		PartitionId:  seg.GetPartitionID(),
-		NumOfRows:    seg.GetNumRows(),
-		GroupId:      ct.groupID(seg),
-		IsL0:         seg.GetLevel() == commonpb.SegmentLevel_L0,
-		Binlogs:      insertLogs,
-		Deltalogs:    deltaLogs,
-		Size:         iSize + dSize,
+		SegmentId:      seg.GetSegmentID(),
+		CollectionId:   seg.GetCollectionID(),
+		PartitionId:    seg.GetPartitionID(),
+		NumOfRows:      seg.GetNumRows(),
+		StorageVersion: seg.GetStorageVersion(),
+		GroupId:        ct.groupID(seg),
+		IsL0:           seg.GetLevel() == commonpb.SegmentLevel_L0,
+		Binlogs:        insertLogs,
+		Deltalogs:      deltaLogs,
+		Size:           iSize + dSize,
 	}, nil
 }
 
@@ -613,16 +614,17 @@ func (ct *CollectionTask) getSegmentInfoByAPI(ctx context.Context, seg *milvuspb
 	}
 
 	bakSeg := &backuppb.SegmentBackupInfo{
-		SegmentId:    seg.GetSegmentID(),
-		CollectionId: seg.GetCollectionID(),
-		PartitionId:  seg.GetPartitionID(),
-		NumOfRows:    seg.GetNumRows(),
-		Binlogs:      insertLogs,
-		Deltalogs:    deltaLogs,
-		GroupId:      ct.groupID(seg),
-		IsL0:         seg.GetLevel() == commonpb.SegmentLevel_L0,
-		Size:         iSize + dSize,
-		VChannel:     segInfo.VChannel,
+		SegmentId:      seg.GetSegmentID(),
+		CollectionId:   seg.GetCollectionID(),
+		PartitionId:    seg.GetPartitionID(),
+		NumOfRows:      seg.GetNumRows(),
+		StorageVersion: seg.GetStorageVersion(),
+		Binlogs:        insertLogs,
+		Deltalogs:      deltaLogs,
+		GroupId:        ct.groupID(seg),
+		IsL0:           seg.GetLevel() == commonpb.SegmentLevel_L0,
+		Size:           iSize + dSize,
+		VChannel:       segInfo.VChannel,
 	}
 
 	return bakSeg, nil

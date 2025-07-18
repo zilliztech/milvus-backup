@@ -47,6 +47,7 @@ type CollectionTask struct {
 	taskTracker *taskmgr.Mgr
 	targetNS    namespace.NS
 
+	crossStorage  bool
 	copySem       *semaphore.Weighted
 	bulkInsertSem *semaphore.Weighted
 
@@ -110,6 +111,7 @@ func newCollectionTask(opt collectionTaskOpt) *CollectionTask {
 		taskTracker: taskTracker,
 		targetNS:    targetNS,
 
+		crossStorage:  opt.params.MinioCfg.CrossStorage,
 		copySem:       opt.copySem,
 		bulkInsertSem: opt.bulkInsertSem,
 
@@ -666,7 +668,7 @@ func (ct *CollectionTask) copyAndRewriteDir(ctx context.Context, b batch) (batch
 	isSameBucket := ct.milvusStorage.Config().Bucket == ct.backupStorage.Config().Bucket
 	isSameStorage := ct.backupStorage.Config().Provider == ct.milvusStorage.Config().Provider
 	// if milvus bucket and backup bucket are not the same, should copy the data first
-	if isSameBucket && isSameStorage {
+	if isSameBucket && isSameStorage && !ct.crossStorage {
 		ct.logger.Info("milvus and backup store in the same bucket, no need to copy the data")
 		return b, nil
 	}
@@ -912,18 +914,28 @@ func (ct *CollectionTask) backupTS(vch string) (uint64, error) {
 	return ts, nil
 }
 
+type batchKey struct {
+	vch string
+	sv  int64
+}
+
 func (ct *CollectionTask) notL0SegBatchesWithGroupID(ctx context.Context, notL0Segs []*backuppb.SegmentBackupInfo) ([]batch, error) {
-	vchSegs := lo.GroupBy(notL0Segs, func(seg *backuppb.SegmentBackupInfo) string { return seg.GetVChannel() })
+	// group by vchannel and storage version
+	segBatch := lo.GroupBy(notL0Segs, func(seg *backuppb.SegmentBackupInfo) batchKey {
+		return batchKey{vch: seg.GetVChannel(), sv: seg.GetStorageVersion()}
+	})
 
 	var batches []batch
-	for vch, segs := range vchSegs {
+	for key, segs := range segBatch {
+		ts, err := ct.backupTS(key.vch)
+		if err != nil {
+			return nil, fmt.Errorf("restore_collection: get vch %s ts: %w", key.vch, err)
+		}
+
+		// because the restful api has a limitation on the number of segments in one request,
+		// we need to chunk the segments into multiple batches
 		chunkedSegs := lo.Chunk(segs, _bulkInsertRestfulAPIChunkSize)
 		for _, chunk := range chunkedSegs {
-			ts, err := ct.backupTS(vch)
-			if err != nil {
-				return nil, fmt.Errorf("restore_collection: get vch %s ts: %w", vch, err)
-			}
-
 			dirs := make([]partitionDir, 0, len(chunk))
 			for _, seg := range chunk {
 				opts := []mpath.Option{
@@ -939,7 +951,7 @@ func (ct *CollectionTask) notL0SegBatchesWithGroupID(ctx context.Context, notL0S
 				dirs = append(dirs, dir)
 			}
 
-			b := batch{timestamp: ts, partitionDirs: dirs}
+			b := batch{timestamp: ts, partitionDirs: dirs, storageVersion: key.sv}
 			batches = append(batches, b)
 		}
 	}
@@ -1007,8 +1019,9 @@ type partitionDir struct {
 }
 
 type batch struct {
-	isL0      bool
-	timestamp uint64
+	isL0           bool
+	timestamp      uint64
+	storageVersion int64
 
 	partitionDirs []partitionDir
 }
@@ -1067,6 +1080,7 @@ func (ct *CollectionTask) bulkInsertViaGrpc(ctx context.Context, partitionName s
 				Paths:          toPaths(dir),
 				BackupTS:       b.timestamp,
 				IsL0:           b.isL0,
+				StorageVersion: b.storageVersion,
 			}
 
 			jobID, err := ct.grpcCli.BulkInsert(subCtx, in)
@@ -1134,6 +1148,7 @@ func (ct *CollectionTask) bulkInsertViaRestful(ctx context.Context, partition st
 		Paths:          paths,
 		BackupTS:       b.timestamp,
 		IsL0:           b.isL0,
+		StorageVersion: b.storageVersion,
 	}
 
 	jobID, err := ct.restfulCli.BulkInsert(ctx, in)

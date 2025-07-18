@@ -611,27 +611,38 @@ type GrpcBulkInsertInput struct {
 	Paths          []string // offset 0 is path to insertLog file, offset 1 is path to deleteLog file
 	BackupTS       uint64
 	IsL0           bool
+	StorageVersion int64
 }
 
-func (g *GrpcClient) BulkInsert(ctx context.Context, input GrpcBulkInsertInput) (int64, error) {
-	ctx = g.newCtxWithDB(ctx, input.DB)
-	var opts []*commonpb.KeyValuePair
-	if input.BackupTS > 0 {
-		opts = append(opts, &commonpb.KeyValuePair{Key: "end_ts", Value: strconv.FormatUint(input.BackupTS, 10)})
+func (in *GrpcBulkInsertInput) opts() []*commonpb.KeyValuePair {
+	opts := []*commonpb.KeyValuePair{{Key: "skip_disk_quota_check", Value: "true"}}
+
+	if in.BackupTS > 0 {
+		opts = append(opts, &commonpb.KeyValuePair{Key: "end_ts", Value: strconv.FormatUint(in.BackupTS, 10)})
 	}
-	if input.IsL0 {
+
+	if in.IsL0 {
 		opts = append(opts, &commonpb.KeyValuePair{Key: "l0_import", Value: "true"})
 	} else {
 		opts = append(opts, &commonpb.KeyValuePair{Key: "backup", Value: "true"})
 	}
-	skipOpt := &commonpb.KeyValuePair{Key: "skip_disk_quota_check", Value: "true"}
-	opts = append(opts, skipOpt)
+
+	if in.StorageVersion > 0 {
+		opt := &commonpb.KeyValuePair{Key: "storage_version", Value: strconv.FormatInt(in.StorageVersion, 10)}
+		opts = append(opts, opt)
+	}
+
+	return opts
+}
+
+func (g *GrpcClient) BulkInsert(ctx context.Context, input GrpcBulkInsertInput) (int64, error) {
+	ctx = g.newCtxWithDB(ctx, input.DB)
 
 	in := &milvuspb.ImportRequest{
 		CollectionName: input.CollectionName,
 		PartitionName:  input.PartitionName,
 		Files:          input.Paths,
-		Options:        opts,
+		Options:        input.opts(),
 	}
 	resp, err := g.srv.Import(ctx, in)
 	if err := checkResponse(resp, err); err != nil {

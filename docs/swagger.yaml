@@ -799,6 +799,8 @@ definitions:
         items:
           $ref: '#/definitions/backuppb.FieldBinlog'
         type: array
+      storage_version:
+        type: integer
       v_channel:
         type: string
     type: object
