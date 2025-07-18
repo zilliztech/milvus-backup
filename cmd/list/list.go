@@ -42,11 +42,8 @@ func NewCmd(opt *root.Options) *cobra.Command {
 		Short: "list subcommand shows all backup in the cluster.",
 
 		Run: func(cmd *cobra.Command, args []string) {
-			var params paramtable.BackupParams
-			params.GlobalInitWithYaml(opt.Config)
-			params.Init()
-
-			err := o.run(cmd, &params)
+			params := opt.InitGlobalVars()
+			err := o.run(cmd, params)
 			cobra.CheckErr(err)
 		},
 	}

@@ -7,7 +7,6 @@ import (
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core"
-	"github.com/zilliztech/milvus-backup/core/paramtable"
 )
 
 func NewCmd(opt *root.Options) *cobra.Command {
@@ -16,14 +15,11 @@ func NewCmd(opt *root.Options) *cobra.Command {
 		Short: "check if the connects is right.",
 
 		Run: func(cmd *cobra.Command, args []string) {
-			var params paramtable.BackupParams
-			params.GlobalInitWithYaml(opt.Config)
-			params.Init()
+			params := opt.InitGlobalVars()
 
-			ctx := context.Background()
-			backupContext := core.CreateBackupContext(ctx, &params)
+			backupContext := core.CreateBackupContext(context.Background(), params)
 
-			resp := backupContext.Check(ctx)
+			resp := backupContext.Check(context.Background())
 			cmd.Println(resp)
 		},
 	}
