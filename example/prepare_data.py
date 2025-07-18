@@ -1,13 +1,12 @@
-# hello_milvus.py demonstrates the basic operations of PyMilvus, a Python SDK of Milvus.
-# 1. connect to Milvus
-# 2. create collection
-# 3. insert data
-# 4. create index
-# 5. search, query, and hybrid search on entities
-# 6. delete entities by PK
-# 7. drop collection
+# prepare_data.py - Prepare test data for Milvus backup/restore testing
+# Supports two scenarios:
+# 1. Single-stage: All data inserted at once (for testing backup/restore of old version data)
+# 2. Multi-stage: Data inserted in stages (for testing cross-version backup/restore with incremental data)
+#
+# Usage:
+#   Single-stage mode (default): python prepare_data.py
+#   Multi-stage mode: python prepare_data.py --stage 1  # then later: --stage 2
 import time
-import os
 import numpy as np
 from pymilvus import (
     connections,
@@ -19,9 +18,9 @@ import argparse
 
 
 
-def main(uri="http://127.0.0.1:19530", token="root:Milvus"):
+def main(uri="http://127.0.0.1:19530", token="root:Milvus", stage=None, total_entities=3000):
     fmt = "\n=== {:30} ===\n"
-    num_entities, dim = 3000, 8
+    dim = 8
 
     #################################################################################
     # 1. connect to Milvus
@@ -66,46 +65,54 @@ def main(uri="http://127.0.0.1:19530", token="root:Milvus"):
 
     ################################################################################
     # 3. insert data
-    # We are going to insert 3000 rows of data into `hello_milvus`
+    # We are going to insert rows of data into the collection
     # Data to be inserted must be organized in fields.
     #
     # The insert() method returns:
     # - either automatically generated primary keys by Milvus if auto_id=True in the schema;
     # - or the existing primary key field from the entities if auto_id=False in the schema.
 
-    print(fmt.format("Start inserting entities"))
-    rng = np.random.default_rng(seed=19530)
-    # Prepare data
-    pk_list = [i for i in range(num_entities)]
-    random_list = rng.random(num_entities).tolist()
-    var_list = [str(i) for i in range(num_entities)]
-    embeddings_list = rng.random((num_entities, dim))
-    
-    # Split data into 10 batches for insertion
-    batch_size = num_entities // 10
-    if batch_size == 0:
-        batch_size = 1
+    # Only insert data to hello_milvus when stage is None or 1
+    if stage != 2:
+        print(fmt.format("Start inserting entities to hello_milvus"))
+        rng = np.random.default_rng(seed=19530)
         
-    for j in range(10):
-        start_idx = j * batch_size
-        end_idx = (j + 1) * batch_size if j < 9 else num_entities
-        if start_idx >= num_entities:
-            break
+        # hello_milvus always inserts all data when inserting
+        num_entities = total_entities
+        pk_list = [i for i in range(num_entities)]
+        random_list = rng.random(num_entities).tolist()
+        var_list = [str(i) for i in range(num_entities)]  # Always use original format
+        embeddings_list = rng.random((num_entities, dim))
+        
+        # Split data into 10 batches for insertion
+        batch_size = num_entities // 10
+        if batch_size == 0:
+            batch_size = 1
             
-        # Prepare batch data
-        batch_entities = [
-            pk_list[start_idx:end_idx],
-            random_list[start_idx:end_idx],
-            var_list[start_idx:end_idx],
-            embeddings_list[start_idx:end_idx].tolist() if isinstance(embeddings_list, np.ndarray) else embeddings_list[start_idx:end_idx]
-        ]
-        
-        # Insert batch data
-        insert_result = hello_milvus.insert(batch_entities)
-        time.sleep(1)  # Add delay to prevent inserting too quickly
-        print(f"epoch {j+1}/10")
-    hello_milvus.flush()
-    print(f"Number of entities in hello_milvus: {hello_milvus.num_entities}")  # check the num_entites
+        for j in range(10):
+            start_idx = j * batch_size
+            end_idx = (j + 1) * batch_size if j < 9 else num_entities
+            if start_idx >= num_entities:
+                break
+                
+            # Prepare batch data
+            batch_entities = [
+                pk_list[start_idx:end_idx],
+                random_list[start_idx:end_idx],
+                var_list[start_idx:end_idx],
+                embeddings_list[start_idx:end_idx].tolist() if isinstance(embeddings_list, np.ndarray) else embeddings_list[start_idx:end_idx]
+            ]
+            
+            # Insert batch data
+            hello_milvus.insert(batch_entities)
+            time.sleep(1)  # Add delay to prevent inserting too quickly
+            print(f"epoch {j+1}/10")
+        hello_milvus.flush()
+    else:
+        print("Stage 2: Skipping data insertion to hello_milvus")
+        rng = np.random.default_rng(seed=19530)  # Initialize rng for hello_milvus2
+    
+    print(f"Number of entities in hello_milvus: {hello_milvus.num_entities}")
 
     # create another collection
     fields2 = [
@@ -120,23 +127,49 @@ def main(uri="http://127.0.0.1:19530", token="root:Milvus"):
     print(fmt.format("Create collection `hello_milvus2`"))
     hello_milvus2 = Collection("hello_milvus2", schema2, consistency_level="Strong")
 
+    # For hello_milvus2, apply stage-based data generation
+    if stage is None:
+        # Original scenario: all data in one go
+        num_entities2 = total_entities
+        entity_offset2 = 0
+    elif stage == 1:
+        # Multi-stage scenario: first half of data
+        num_entities2 = total_entities // 2
+        entity_offset2 = 0
+    else:  # stage == 2
+        # Multi-stage scenario: second half of data
+        num_entities2 = total_entities - (total_entities // 2)
+        entity_offset2 = total_entities // 2
+    
+    if stage is None:
+        var_list2 = [str(i) for i in range(num_entities2)]  # Original format
+    else:
+        var_list2 = [f"stage{stage}_entity_{i + entity_offset2}" for i in range(num_entities2)]
+    
     entities2 = [
-        rng.random(num_entities).tolist(),  # field random, only supports list
-        [str(i) for i in range(num_entities)],
-        rng.random((num_entities, dim)),  # field embeddings, supports numpy.ndarray and list
+        rng.random(num_entities2).tolist(),  # field random, only supports list
+        var_list2,
+        rng.random((num_entities2, dim)),  # field embeddings, supports numpy.ndarray and list
     ]
 
-    insert_result2 = hello_milvus2.insert(entities2)
+    hello_milvus2.insert(entities2)
     hello_milvus2.flush()
-    insert_result2 = hello_milvus2.insert(entities2)
+    hello_milvus2.insert(entities2)
     hello_milvus2.flush()
 
-    print(f"Number of entities in hello_milvus2: {hello_milvus2.num_entities}")  # check the num_entities
+    if stage is None:
+        print(f"Number of entities in hello_milvus2: {hello_milvus2.num_entities}")
+    else:
+        print(f"Stage {stage} - Number of entities in hello_milvus2: {hello_milvus2.num_entities}")
+        print(fmt.format(f"Stage {stage} completed for hello_milvus2"))
+        print(f"Stage {stage} inserted {num_entities2} entities starting from offset {entity_offset2}")
 
 
 if __name__ == "__main__":
-    args = argparse.ArgumentParser(description="prepare data")
+    args = argparse.ArgumentParser(description="prepare data for backup/restore testing")
     args.add_argument("--uri", type=str, default="http://127.0.0.1:19530", help="Milvus server uri")
     args.add_argument("--token", type=str, default="root:Milvus", help="Milvus server token")
+    args.add_argument("--stage", type=int, choices=[1, 2], required=False, help="Stage 1 or 2 for multi-stage data preparation (only affects hello_milvus2). Omit for single-stage mode")
+    args.add_argument("--total-entities", type=int, default=3000, help="Total number of entities (hello_milvus always gets all, hello_milvus2 respects stage)")
     args = args.parse_args()
-    main(args.uri, args.token)
+    main(args.uri, args.token, args.stage, args.total_entities)
