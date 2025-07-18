@@ -1385,6 +1385,9 @@ const docTemplate = `{
                         "$ref": "#/definitions/backuppb.FieldBinlog"
                     }
                 },
+                "storage_version": {
+                    "type": "integer"
+                },
                 "v_channel": {
                     "type": "string"
                 }
