@@ -32,6 +32,27 @@ type RestfulBulkInsertInput struct {
 	Paths          [][]string // offset 0 is path to insertLog file, offset 1 is path to deleteLog file
 	BackupTS       uint64
 	IsL0           bool
+	StorageVersion int64
+}
+
+func (in *RestfulBulkInsertInput) opts() map[string]string {
+	opts := map[string]string{"skip_disk_quota_check": "true"}
+
+	if in.BackupTS > 0 {
+		opts["end_ts"] = strconv.FormatUint(in.BackupTS, 10)
+	}
+
+	if in.IsL0 {
+		opts["l0_import"] = "true"
+	} else {
+		opts["backup"] = "true"
+	}
+
+	if in.StorageVersion > 0 {
+		opts["storage_version"] = strconv.FormatInt(in.StorageVersion, 10)
+	}
+
+	return opts
 }
 
 type ImportDetail struct {
@@ -132,23 +153,12 @@ type RestfulClient struct {
 }
 
 func (r *RestfulClient) BulkInsert(ctx context.Context, input RestfulBulkInsertInput) (string, error) {
-	opts := make(map[string]string)
-	if input.BackupTS > 0 {
-		opts["end_ts"] = strconv.FormatUint(input.BackupTS, 10)
-	}
-	if input.IsL0 {
-		opts["l0_import"] = "true"
-	} else {
-		opts["backup"] = "true"
-	}
-	opts["skip_disk_quota_check"] = "true"
-
 	createReq := createImportReq{
 		DbName:         input.DB,
 		CollectionName: input.CollectionName,
 		PartitionName:  input.PartitionName,
 		Files:          input.Paths,
-		Options:        opts,
+		Options:        input.opts(),
 	}
 	var createResp createImportResp
 	log.Info("send create import job via restful", zap.Any("createReq", createReq))

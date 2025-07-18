@@ -14,7 +14,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/imroc/req/v3 v3.51.0
-	github.com/milvus-io/milvus-proto/go-api/v2 v2.5.11
+	github.com/milvus-io/milvus-proto/go-api/v2 v2.6.0-rc.1.0.20250716031043-88051c3893ce
 	github.com/minio/minio-go/v7 v7.0.91
 	github.com/samber/lo v1.50.0
 	github.com/spf13/cast v1.8.0
