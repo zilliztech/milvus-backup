@@ -101,6 +101,7 @@ message SegmentBackupInfo {
   bool backuped = 10;
   bool is_l0 = 11;
   string v_channel = 12;
+  int64 storage_version = 13;
 }
 
 /**
