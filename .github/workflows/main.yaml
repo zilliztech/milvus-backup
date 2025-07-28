@@ -144,6 +144,10 @@ jobs:
         run: |
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.target_image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          if [ "${{ matrix.target_image_tag }}" == "master-latest" ]; then
+            yq -i '.common.storage.enablev2 = true' custom_config.yaml
+          fi
+          cat custom_config.yaml || true
           docker-compose up -d
           bash ../../scripts/check_healthy.sh
           docker-compose ps -a
@@ -233,11 +237,11 @@ jobs:
           bash ../../scripts/check_healthy.sh
           docker-compose ps -a
 
-      - name: Prepare data
+      - name: Prepare data stage 1
         timeout-minutes: 5
         shell: bash
         run: |
-          python example/prepare_data.py
+          python example/prepare_data.py --stage 1
 
       - name: Upgrade Milvus
         timeout-minutes: 15
@@ -247,9 +251,20 @@ jobs:
           docker-compose down
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.target_image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          if [ "${{ matrix.target_image_tag }}" == "master-latest" ]; then
+            yq -i '.common.storage.enablev2 = true' custom_config.yaml
+          fi
+          cat custom_config.yaml || true
           docker-compose up -d
           bash ../../scripts/check_healthy.sh
           docker-compose ps -a
+      
+      - name: Prepare data stage 2
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python example/prepare_data.py --stage 2
+
       - name: Backup
         timeout-minutes: 5
         shell: bash
@@ -262,7 +277,8 @@ jobs:
         timeout-minutes: 5
         shell: bash
         run: |
-          ./milvus-backup restore -n my_backup -s _recover
+          ./milvus-backup restore -n my_backup -c hello_milvus -s _recover
+          ./milvus-backup restore -n my_backup -c hello_milvus2 -s _recover
       - name: Verify data
         timeout-minutes: 5
         shell: bash
@@ -322,6 +338,10 @@ jobs:
         run: |
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          if [ "${{ matrix.image_tag }}" == "master-latest" ]; then
+            yq -i '.common.storage.enablev2 = true' custom_config.yaml
+          fi
+          cat custom_config.yaml || true
           docker-compose up -d
           bash ../../scripts/check_healthy.sh
           docker-compose ps -a
@@ -614,6 +634,10 @@ jobs:
           fi
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          if [ "${{ matrix.image_tag }}" == "master-latest" ]; then
+            yq -i '.common.storage.enablev2 = true' custom_config.yaml
+          fi
+          cat custom_config.yaml || true
           docker-compose up -d
           bash ../../scripts/check_healthy.sh
           docker-compose ps -a
