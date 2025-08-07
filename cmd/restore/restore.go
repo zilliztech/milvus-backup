@@ -15,15 +15,21 @@ import (
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/utils"
+	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/namespace"
 )
 
 type options struct {
-	backupName            string
-	collectionNames       string
+	backupName string
+
 	renameSuffix          string
 	renameCollectionNames string
-	databases             string
-	databaseCollections   string
+
+	filter string
+
+	databases           string
+	databaseCollections string
+	collectionNames     string
 
 	metaOnly             bool
 	restoreIndex         bool
@@ -49,16 +55,30 @@ func (o *options) validate() error {
 		return errors.New("drop_exist_collection and skip_create_collection cannot be true at the same time")
 	}
 
+	if len(o.collectionNames) != 0 {
+		log.Warn("collection_names is deprecated, please use --filter instead")
+	}
+	if len(o.databases) != 0 {
+		log.Warn("databases is deprecated, please use --filter instead")
+	}
+	if len(o.databaseCollections) != 0 {
+		log.Warn("database_collections is deprecated, please use --filter instead")
+	}
+
 	return nil
 }
 
 func (o *options) addFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.backupName, "name", "n", "", "backup name to restore")
-	cmd.Flags().StringVarP(&o.collectionNames, "collections", "c", "", "collectionNames to restore")
+
 	cmd.Flags().StringVarP(&o.renameSuffix, "suffix", "s", "", "add a suffix to collection name to restore")
 	cmd.Flags().StringVarP(&o.renameCollectionNames, "rename", "r", "", "rename collections to new names, format: db1.collection1:db2.collection1_new,db1.collection2:db2.collection2_new")
-	cmd.Flags().StringVarP(&o.databases, "databases", "d", "", "databases to restore, if not set, restore all databases")
-	cmd.Flags().StringVarP(&o.databaseCollections, "database_collections", "a", "", "databases and collections to restore, json format: {\"db1\":[\"c1\", \"c2\"],\"db2\":[]}")
+
+	cmd.Flags().StringVarP(&o.filter, "filter", "", "", "specify which collections to restore, example: db1.coll1,db2.coll2")
+
+	cmd.Flags().StringVarP(&o.collectionNames, "collections", "c", "", "[DEPRECATED]! collectionNames to restore")
+	cmd.Flags().StringVarP(&o.databases, "databases", "d", "", "[DEPRECATED]! databases to restore, if not set, restore all databases")
+	cmd.Flags().StringVarP(&o.databaseCollections, "database_collections", "a", "", "[DEPRECATED]! databases and collections to restore, json format: {\"db1\":[\"c1\", \"c2\"],\"db2\":[]}")
 
 	cmd.Flags().BoolVarP(&o.metaOnly, "meta_only", "", false, "if true, restore meta only")
 	cmd.Flags().BoolVarP(&o.restoreIndex, "restore_index", "", false, "if true, restore index")
@@ -70,7 +90,39 @@ func (o *options) addFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVarP(&o.useV2Restore, "use_v2_restore", "", false, "if true, use multi-segment merged restore")
 }
 
+func parseFilter(filter string) (map[string]*backuppb.RestoreFilter, error) {
+	if len(filter) == 0 {
+		return nil, nil
+	}
+
+	filterMap := make(map[string]*backuppb.RestoreFilter)
+	nsStrs := strings.Split(filter, ",")
+	for _, nsStr := range nsStrs {
+		ns, err := namespace.Parse(nsStr)
+		if err != nil {
+			return nil, fmt.Errorf("parse namespace: %w", err)
+		}
+
+		if _, ok := filterMap[ns.DBName()]; !ok {
+			filterMap[ns.DBName()] = &backuppb.RestoreFilter{}
+		}
+
+		filterMap[ns.DBName()].Colls = append(filterMap[ns.DBName()].Colls, ns.CollName())
+	}
+
+	return filterMap, nil
+}
+
 func (o *options) toRequest() (*backuppb.RestoreBackupRequest, error) {
+	var plan *backuppb.RestorePlan
+	if len(o.filter) != 0 {
+		filter, err := parseFilter(o.filter)
+		if err != nil {
+			return nil, err
+		}
+		plan = &backuppb.RestorePlan{Filter: filter}
+	}
+
 	var colls []string
 	if o.collectionNames != "" {
 		colls = strings.Split(o.collectionNames, ",")
@@ -118,6 +170,7 @@ func (o *options) toRequest() (*backuppb.RestoreBackupRequest, error) {
 		SkipCreateCollection: o.skipCreateCollection,
 		Rbac:                 o.rbac,
 		UseV2Restore:         o.useV2Restore,
+		RestorePlan:          plan,
 	}, nil
 }
 
