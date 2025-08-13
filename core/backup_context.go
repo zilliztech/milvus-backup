@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"path"
 	"sync"
@@ -19,6 +18,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/storage"
+	"github.com/zilliztech/milvus-backup/core/storage/mpath"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 )
@@ -190,20 +190,12 @@ func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBack
 			resp.Msg = "success"
 			resp.Data = fullBackupInfo
 		} else {
-			var backupBucketName string
-			var backupPath string
-			if request.GetBucketName() == "" || request.GetPath() == "" {
-				backupBucketName = b.backupBucketName
-				backupPath = b.backupRootPath + meta.SEPERATOR + request.GetBackupName()
-			} else {
-				backupBucketName = request.GetBucketName()
-				backupPath = request.GetPath() + meta.SEPERATOR + request.GetBackupName()
-			}
-			backup, err := b.readBackupV2(ctx, backupBucketName, backupPath)
+			backupDir := mpath.BackupDir(b.backupRootPath, request.GetBackupName())
+			backup, err := meta.Read(ctx, backupDir, b.getBackupStorageClient())
 			if err != nil {
 				log.Warn("Fail to read backup",
-					zap.String("backupBucketName", backupBucketName),
-					zap.String("backupPath", backupPath),
+					zap.String("backupBucketName", b.params.MinioCfg.BackupBucketName),
+					zap.String("backup_dir", backupDir),
 					zap.Error(err))
 				resp.Code = backuppb.ResponseCode_Fail
 				resp.Msg = err.Error()
@@ -383,90 +375,6 @@ func (b *BackupContext) DeleteBackup(ctx context.Context, request *backuppb.Dele
 		zap.String("requestId", resp.GetRequestId()),
 		zap.Int32("code", int32(resp.GetCode())))
 	return resp
-}
-
-// read backup
-// 1. first read backup from full meta
-// 2. if full meta not exist, which means backup is a very old version, read from seperate files
-func (b *BackupContext) readBackupV2(ctx context.Context, bucketName string, backupPath string) (*backuppb.BackupInfo, error) {
-	backupMetaDirPath := backupPath + meta.SEPERATOR + meta.META_PREFIX
-	fullMetaPath := backupMetaDirPath + meta.SEPERATOR + meta.FULL_META_FILE
-	exist, err := storage.Exist(ctx, b.getBackupStorageClient(), fullMetaPath)
-	if err != nil {
-		log.Error("check full meta file failed", zap.String("path", fullMetaPath), zap.Error(err))
-		return nil, err
-	}
-	if exist {
-		backupMetaBytes, err := storage.Read(ctx, b.getBackupStorageClient(), fullMetaPath)
-		if err != nil {
-			log.Error("Read backup meta failed", zap.String("path", fullMetaPath), zap.Error(err))
-			return nil, err
-		}
-		backupInfo := &backuppb.BackupInfo{}
-		err = json.Unmarshal(backupMetaBytes, backupInfo)
-		if err != nil {
-			log.Error("Read backup meta failed", zap.String("path", fullMetaPath), zap.Error(err))
-			return nil, err
-		}
-		return backupInfo, nil
-	} else {
-		return b.readBackup(ctx, bucketName, backupPath)
-	}
-}
-
-// read backup from seperated meta files
-func (b *BackupContext) readBackup(ctx context.Context, bucketName string, backupPath string) (*backuppb.BackupInfo, error) {
-	backupMetaDirPath := backupPath + meta.SEPERATOR + meta.META_PREFIX
-	backupMetaPath := backupMetaDirPath + meta.SEPERATOR + meta.BACKUP_META_FILE
-	collectionMetaPath := backupMetaDirPath + meta.SEPERATOR + meta.COLLECTION_META_FILE
-	partitionMetaPath := backupMetaDirPath + meta.SEPERATOR + meta.PARTITION_META_FILE
-	segmentMetaPath := backupMetaDirPath + meta.SEPERATOR + meta.SEGMENT_META_FILE
-
-	exist, err := storage.Exist(ctx, b.getBackupStorageClient(), backupMetaPath)
-	if err != nil {
-		log.Error("check backup meta file failed", zap.String("path", backupMetaPath), zap.Error(err))
-		return nil, err
-	}
-	if !exist {
-		log.Warn("read backup meta file not exist", zap.String("path", backupMetaPath), zap.Error(err))
-		return nil, err
-	}
-
-	backupMetaBytes, err := storage.Read(ctx, b.getBackupStorageClient(), backupMetaPath)
-	if err != nil {
-		log.Error("Read backup meta failed", zap.String("path", backupMetaPath), zap.Error(err))
-		return nil, err
-	}
-	collectionBackupMetaBytes, err := storage.Read(ctx, b.getBackupStorageClient(), collectionMetaPath)
-	if err != nil {
-		log.Error("Read collection meta failed", zap.String("path", collectionMetaPath), zap.Error(err))
-		return nil, err
-	}
-	partitionBackupMetaBytes, err := storage.Read(ctx, b.getBackupStorageClient(), partitionMetaPath)
-	if err != nil {
-		log.Error("Read partition meta failed", zap.String("path", partitionMetaPath), zap.Error(err))
-		return nil, err
-	}
-	segmentBackupMetaBytes, err := storage.Read(ctx, b.getBackupStorageClient(), segmentMetaPath)
-	if err != nil {
-		log.Error("Read segment meta failed", zap.String("path", segmentMetaPath), zap.Error(err))
-		return nil, err
-	}
-
-	completeBackupMetas := &meta.BackupMetaBytes{
-		BackupMetaBytes:     backupMetaBytes,
-		CollectionMetaBytes: collectionBackupMetaBytes,
-		PartitionMetaBytes:  partitionBackupMetaBytes,
-		SegmentMetaBytes:    segmentBackupMetaBytes,
-	}
-
-	backupInfo, err := meta.Deserialize(completeBackupMetas)
-	if err != nil {
-		log.Error("Fail to deserialize backup info", zap.String("backupPath", backupPath), zap.Error(err))
-		return nil, err
-	}
-
-	return backupInfo, nil
 }
 
 func (b *BackupContext) GetRestore(ctx context.Context, request *backuppb.GetRestoreStateRequest) *backuppb.RestoreBackupResponse {
