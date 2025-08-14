@@ -246,6 +246,7 @@ const (
 	CloudProviderAli          = "ali"
 	CloudProviderAliyun       = "aliyun"
 	CloudProviderAlibaba      = "alibaba"
+	CloudProviderAliCloud     = "alicloud"
 	CloudProviderAzure        = "azure"
 	CloudProviderTencent      = "tencent"
 	CloudProviderTencentShort = "tc"
@@ -261,6 +262,7 @@ var supportedStorageType = map[string]bool{
 	CloudProviderAli:          true,
 	CloudProviderAliyun:       true,
 	CloudProviderAlibaba:      true,
+	CloudProviderAliCloud:     true,
 	CloudProviderAzure:        true,
 	CloudProviderTencent:      true,
 	CloudProviderTencentShort: true,
