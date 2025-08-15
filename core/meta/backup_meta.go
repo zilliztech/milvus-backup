@@ -2,7 +2,6 @@ package meta
 
 import (
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"github.com/golang/protobuf/proto"
@@ -140,80 +139,6 @@ func Serialize(backup *backuppb.BackupInfo) (*BackupMetaBytes, error) {
 		SegmentMetaBytes:    segmentBackupMetaBytes,
 		FullMetaBytes:       fullMetaBytes,
 	}, nil
-}
-
-// levelToTree rebuild complete tree structure BackupInfo from backup-collection-partition-segment 4-level structure
-func levelToTree(level *LeveledBackupInfo) (*backuppb.BackupInfo, error) {
-	backupInfo := &backuppb.BackupInfo{
-		Id:              level.backupLevel.GetId(),
-		StateCode:       level.backupLevel.GetStateCode(),
-		ErrorMessage:    level.backupLevel.GetErrorMessage(),
-		StartTime:       level.backupLevel.GetStartTime(),
-		EndTime:         level.backupLevel.GetEndTime(),
-		Progress:        level.backupLevel.GetProgress(),
-		Name:            level.backupLevel.GetName(),
-		BackupTimestamp: level.backupLevel.GetBackupTimestamp(),
-		MilvusVersion:   level.backupLevel.GetMilvusVersion(),
-	}
-	segmentDict := make(map[string][]*backuppb.SegmentBackupInfo, len(level.segmentLevel.GetInfos()))
-	for _, segment := range level.segmentLevel.GetInfos() {
-		unqiueId := fmt.Sprintf("%d-%d", segment.GetCollectionId(), segment.GetPartitionId())
-		segmentDict[unqiueId] = append(segmentDict[unqiueId], segment)
-	}
-
-	partitionDict := make(map[int64][]*backuppb.PartitionBackupInfo, len(level.partitionLevel.GetInfos()))
-	for _, partition := range level.partitionLevel.GetInfos() {
-		unqiueId := partition.GetCollectionId()
-		partition.SegmentBackups = segmentDict[fmt.Sprintf("%d-%d", partition.GetCollectionId(), partition.GetPartitionId())]
-		var size int64 = 0
-		for _, seg := range partition.SegmentBackups {
-			size += seg.Size
-		}
-		partition.Size = size
-		partitionDict[unqiueId] = append(partitionDict[unqiueId], partition)
-	}
-
-	var backupSize int64 = 0
-	for _, collection := range level.collectionLevel.GetInfos() {
-		collPartitions := partitionDict[collection.GetCollectionId()]
-		var size int64 = 0
-		for _, part := range collPartitions {
-			size += part.GetSize()
-		}
-		collection.PartitionBackups = partitionDict[collection.GetCollectionId()]
-		collection.Size = size
-		backupSize += size
-	}
-
-	backupInfo.Size = backupSize
-	backupInfo.CollectionBackups = level.collectionLevel.GetInfos()
-	return backupInfo, nil
-}
-
-func Deserialize(backup *BackupMetaBytes) (*backuppb.BackupInfo, error) {
-	backupInfo := &backuppb.BackupInfo{}
-	if err := json.Unmarshal(backup.BackupMetaBytes, backupInfo); err != nil {
-		return nil, err
-	}
-	collectionLevel := &backuppb.CollectionLevelBackupInfo{}
-	if err := json.Unmarshal(backup.CollectionMetaBytes, collectionLevel); err != nil {
-		return nil, err
-	}
-	partitionLevel := &backuppb.PartitionLevelBackupInfo{}
-	if err := json.Unmarshal(backup.PartitionMetaBytes, partitionLevel); err != nil {
-		return nil, err
-	}
-	segmentLevel := &backuppb.SegmentLevelBackupInfo{}
-	if err := json.Unmarshal(backup.SegmentMetaBytes, segmentLevel); err != nil {
-		return nil, err
-	}
-
-	return levelToTree(&LeveledBackupInfo{
-		collectionLevel: collectionLevel,
-		partitionLevel:  partitionLevel,
-		segmentLevel:    segmentLevel,
-		backupLevel:     backupInfo,
-	})
 }
 
 func BackupPathToName(backupRootPath, path string) string {
