@@ -1,113 +1,79 @@
-package core
+package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
-
-	"github.com/zilliztech/milvus-backup/core/meta"
 
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 	"go.uber.org/zap"
 
+	"github.com/zilliztech/milvus-backup/core"
+	"github.com/zilliztech/milvus-backup/core/meta"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
-const (
-	HELLO_API          = "/hello"
-	CREATE_BACKUP_API  = "/create"
-	LIST_BACKUPS_API   = "/list"
-	GET_BACKUP_API     = "/get_backup"
-	DELETE_BACKUP_API  = "/delete"
-	RESTORE_BACKUP_API = "/restore"
-	GET_RESTORE_API    = "/get_restore"
-
-	API_V1_PREFIX = "/api/v1"
-
-	DOCS_API = "/docs/*any"
-
-	CHECK_API = "/check"
-)
-
 // Server is the Backup Server
 type Server struct {
-	backupContext *BackupContext
+	backupContext *core.BackupContext
 	engine        *gin.Engine
-	config        *BackupConfig
+	config        *config
+	params        *paramtable.BackupParams
 }
 
-func NewServer(ctx context.Context, params *paramtable.BackupParams, opts ...BackupOption) (*Server, error) {
-	c := newDefaultBackupConfig()
+func New(ctx context.Context, params *paramtable.BackupParams, opts ...Option) (*Server, error) {
+	cfg := newDefaultConfig()
 	for _, opt := range opts {
-		opt(c)
+		opt(cfg)
 	}
-	backupContext := CreateBackupContext(ctx, params)
+
+	backupContext := core.CreateBackupContext(ctx, params)
 	err := backupContext.Start()
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("server: start backup context: %w", err)
 	}
-	return &Server{
-		backupContext: backupContext,
-		config:        c,
-	}, nil
+
+	s := &Server{backupContext: backupContext, config: cfg, params: params}
+	s.initEngine()
+
+	return s, nil
 }
 
-func (s *Server) Init() {
-	s.registerHTTPServer()
-}
-
-func (s *Server) Start() {
+func (s *Server) Run() error {
 	err := s.engine.Run(s.config.port)
 	if err != nil {
-		log.Error("Failed to start server", zap.Error(err))
-		panic(err)
+		return fmt.Errorf("server: run http server: %w", err)
 	}
-	log.Info("Start backup server backend")
+
+	return nil
 }
 
 // registerHTTPServer register the http server, panic when failed
-func (s *Server) registerHTTPServer() {
-	if !s.backupContext.params.HTTPCfg.DebugMode {
+func (s *Server) initEngine() {
+	if !s.params.HTTPCfg.DebugMode {
 		gin.SetMode(gin.ReleaseMode)
 	}
-	ginHandler := gin.Default()
-	apiv1 := ginHandler.Group(API_V1_PREFIX)
-	ginHandler.Any("", wrapHandler(handleHello))
-	NewHandlers(s.backupContext).RegisterRoutesTo(apiv1)
-	http.Handle("/", ginHandler)
-	s.engine = ginHandler
-}
 
-func handleHello(c *gin.Context) (any, error) {
-	c.String(200, "Hello, This is backup service")
-	return nil, nil
-}
+	engine := gin.Default()
+	s.engine = engine
 
-type Handlers struct {
-	backupContext *BackupContext
-}
+	engine.Any("", wrapHandler(s.handleHello))
 
-// NewHandlers creates a new Handlers
-func NewHandlers(backupContext *BackupContext) *Handlers {
-	return &Handlers{
-		backupContext: backupContext,
-	}
-}
+	apiv1 := engine.Group("/api/v1")
 
-// RegisterRouters registers routes to given router
-func (h *Handlers) RegisterRoutesTo(router gin.IRouter) {
-	router.GET(HELLO_API, wrapHandler(handleHello))
-	router.POST(CREATE_BACKUP_API, wrapHandler(h.handleCreateBackup))
-	router.GET(LIST_BACKUPS_API, wrapHandler(h.handleListBackups))
-	router.GET(GET_BACKUP_API, wrapHandler(h.handleGetBackup))
-	router.DELETE(DELETE_BACKUP_API, wrapHandler(h.handleDeleteBackup))
-	router.POST(RESTORE_BACKUP_API, wrapHandler(h.handleRestoreBackup))
-	router.GET(GET_RESTORE_API, wrapHandler(h.handleGetRestore))
-	router.GET(CHECK_API, wrapHandler(h.handleCheck))
-	router.GET(DOCS_API, ginSwagger.WrapHandler(swaggerFiles.Handler))
+	apiv1.GET("/hello", wrapHandler(s.handleHello))
+	apiv1.POST("/create", wrapHandler(s.handleCreateBackup))
+	apiv1.GET("/list", wrapHandler(s.handleListBackups))
+	apiv1.GET("/get_backup", wrapHandler(s.handleGetBackup))
+	apiv1.DELETE("/delete", wrapHandler(s.handleDeleteBackup))
+	apiv1.POST("/restore", wrapHandler(s.handleRestoreBackup))
+	apiv1.GET("/get_restore", wrapHandler(s.handleGetRestore))
+	apiv1.GET("/check", wrapHandler(s.handleCheck))
+	apiv1.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 }
 
 // handlerFunc handles http request with gin context
@@ -120,6 +86,11 @@ func wrapHandler(handle handlerFunc) gin.HandlerFunc {
 	}
 }
 
+func (s *Server) handleHello(c *gin.Context) (any, error) {
+	c.String(200, "Hello, This is backup service")
+	return nil, nil
+}
+
 // CreateBackup Create backup interface
 // @Summary Create backup interface
 // @Description Create a backup with the given name and collections
@@ -130,15 +101,15 @@ func wrapHandler(handle handlerFunc) gin.HandlerFunc {
 // @Param object body backuppb.CreateBackupRequest   true  "CreateBackupRequest JSON"
 // @Success 200 {object} backuppb.BackupInfoResponse
 // @Router /create [post]
-func (h *Handlers) handleCreateBackup(c *gin.Context) (interface{}, error) {
-	requestBody := backuppb.CreateBackupRequest{}
+func (s *Server) handleCreateBackup(c *gin.Context) (interface{}, error) {
+	var requestBody backuppb.CreateBackupRequest
 	if err := c.ShouldBindJSON(&requestBody); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
 		return nil, nil
 	}
 	requestBody.RequestId = c.GetHeader("request_id")
-	resp := h.backupContext.CreateBackup(h.backupContext.ctx, &requestBody)
-	if h.backupContext.params.HTTPCfg.SimpleResponse {
+	resp := s.backupContext.CreateBackup(context.Background(), &requestBody)
+	if s.params.HTTPCfg.SimpleResponse {
 		resp = meta.SimpleBackupResponse(resp)
 	}
 	c.JSON(http.StatusOK, resp)
@@ -154,13 +125,13 @@ func (h *Handlers) handleCreateBackup(c *gin.Context) (interface{}, error) {
 // @Param collection_name query string false "collection_name"
 // @Success 200 {object} backuppb.ListBackupsResponse
 // @Router /list [get]
-func (h *Handlers) handleListBackups(c *gin.Context) (interface{}, error) {
+func (s *Server) handleListBackups(c *gin.Context) (interface{}, error) {
 	req := backuppb.ListBackupsRequest{
 		RequestId:      c.GetHeader("request_id"),
 		CollectionName: c.Query("collection_name"),
 	}
-	resp := h.backupContext.ListBackups(h.backupContext.ctx, &req)
-	if h.backupContext.params.HTTPCfg.SimpleResponse {
+	resp := s.backupContext.ListBackups(context.Background(), &req)
+	if s.params.HTTPCfg.SimpleResponse {
 		resp = meta.SimpleListBackupsResponse(resp)
 	}
 	c.JSON(http.StatusOK, resp)
@@ -177,14 +148,14 @@ func (h *Handlers) handleListBackups(c *gin.Context) (interface{}, error) {
 // @Param backup_id query string true "backup_id"
 // @Success 200 {object} backuppb.BackupInfoResponse
 // @Router /get_backup [get]
-func (h *Handlers) handleGetBackup(c *gin.Context) (interface{}, error) {
+func (s *Server) handleGetBackup(c *gin.Context) (interface{}, error) {
 	req := backuppb.GetBackupRequest{
 		RequestId:  c.GetHeader("request_id"),
 		BackupName: c.Query("backup_name"),
 		BackupId:   c.Query("backup_id"),
 	}
-	resp := h.backupContext.GetBackup(h.backupContext.ctx, &req)
-	if h.backupContext.params.HTTPCfg.SimpleResponse {
+	resp := s.backupContext.GetBackup(context.Background(), &req)
+	if s.params.HTTPCfg.SimpleResponse {
 		resp = meta.SimpleBackupResponse(resp)
 	}
 	c.JSON(http.StatusOK, resp)
@@ -200,12 +171,12 @@ func (h *Handlers) handleGetBackup(c *gin.Context) (interface{}, error) {
 // @Param backup_name query string true "backup_name"
 // @Success 200 {object} backuppb.DeleteBackupResponse
 // @Router /delete [delete]
-func (h *Handlers) handleDeleteBackup(c *gin.Context) (interface{}, error) {
+func (s *Server) handleDeleteBackup(c *gin.Context) (interface{}, error) {
 	req := backuppb.DeleteBackupRequest{
 		RequestId:  c.GetHeader("request_id"),
 		BackupName: c.Query("backup_name"),
 	}
-	resp := h.backupContext.DeleteBackup(h.backupContext.ctx, &req)
+	resp := s.backupContext.DeleteBackup(context.Background(), &req)
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
@@ -220,7 +191,7 @@ func (h *Handlers) handleDeleteBackup(c *gin.Context) (interface{}, error) {
 // @Param object body backuppb.RestoreBackupRequest   true  "RestoreBackupRequest JSON"
 // @Success 200 {object} backuppb.RestoreBackupResponse
 // @Router /restore [post]
-func (h *Handlers) handleRestoreBackup(c *gin.Context) (interface{}, error) {
+func (s *Server) handleRestoreBackup(c *gin.Context) (interface{}, error) {
 	requestBody := backuppb.RestoreBackupRequest{
 		// default setting
 		MetaOnly: false,
@@ -232,7 +203,7 @@ func (h *Handlers) handleRestoreBackup(c *gin.Context) (interface{}, error) {
 	}
 
 	requestBody.RequestId = c.GetHeader("request_id")
-	resp := h.backupContext.RestoreBackup(h.backupContext.ctx, &requestBody)
+	resp := s.backupContext.RestoreBackup(context.Background(), &requestBody)
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
@@ -246,19 +217,19 @@ func (h *Handlers) handleRestoreBackup(c *gin.Context) (interface{}, error) {
 // @param id query string true "id"
 // @Success 200 {object} backuppb.RestoreBackupResponse
 // @Router /get_restore [get]
-func (h *Handlers) handleGetRestore(c *gin.Context) (interface{}, error) {
+func (s *Server) handleGetRestore(c *gin.Context) (interface{}, error) {
 	req := backuppb.GetRestoreStateRequest{
 		RequestId: c.GetHeader("request_id"),
 		Id:        c.Query("id"),
 	}
-	resp := h.backupContext.GetRestore(h.backupContext.ctx, &req)
+	resp := s.backupContext.GetRestore(context.Background(), &req)
 	log.Info("End to GetRestoreStateRequest", zap.Any("resp", resp))
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
 
-func (h *Handlers) handleCheck(c *gin.Context) (interface{}, error) {
-	resp := h.backupContext.Check(h.backupContext.ctx)
+func (s *Server) handleCheck(c *gin.Context) (interface{}, error) {
+	resp := s.backupContext.Check(context.Background())
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }

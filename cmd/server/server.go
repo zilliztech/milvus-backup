@@ -9,8 +9,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
-	"github.com/zilliztech/milvus-backup/core"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
+	"github.com/zilliztech/milvus-backup/core/server"
 )
 
 const (
@@ -51,13 +51,14 @@ func (o *options) addFlags(cmd *cobra.Command) {
 }
 
 func (o *options) run(params *paramtable.BackupParams) error {
-	ctx := context.Background()
-	server, err := core.NewServer(ctx, params, core.Port(o.port))
+	srv, err := server.New(context.Background(), params, server.Port(o.port))
 	if err != nil {
-		return fmt.Errorf("fail to create backup server, %s", err.Error())
+		return fmt.Errorf("fail to create server, %w", err)
 	}
-	server.Init()
-	server.Start()
+
+	if err := srv.Run(); err != nil {
+		return fmt.Errorf("fail to run server, %w", err)
+	}
 
 	return nil
 }
