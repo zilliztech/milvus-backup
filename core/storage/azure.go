@@ -298,6 +298,14 @@ func (hierIter *AzureObjectHierarchyIterator) HasNext() bool {
 		hierIter.currPage = append(hierIter.currPage, ObjectAttr{Key: *prefix.Name})
 	}
 	hierIter.nextIdx = 0
+
+	// in some cases, the page may be empty, but the pager.More() is still true
+	// don't know why, so we need to check the currPage length
+	// if the currPage is empty, it means there is no more page
+	if len(hierIter.currPage) == 0 {
+		return false
+	}
+
 	return true
 }
 
