@@ -17,9 +17,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
-	"go.uber.org/zap"
-
-	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
 var _ io.ReadCloser = (*AzureReader)(nil)
@@ -228,6 +225,8 @@ type AzureObjectFlatIterator struct {
 
 	currPage []ObjectAttr
 	nextIdx  int
+
+	err error
 }
 
 func (flatIter *AzureObjectFlatIterator) HasNext() bool {
@@ -244,7 +243,7 @@ func (flatIter *AzureObjectFlatIterator) HasNext() bool {
 	// try to get next page
 	page, err := flatIter.pager.NextPage(context.Background())
 	if err != nil {
-		log.Warn("failed to get next page", zap.Error(err))
+		flatIter.err = err
 		return false
 	}
 	flatIter.currPage = flatIter.currPage[:0]
@@ -257,6 +256,10 @@ func (flatIter *AzureObjectFlatIterator) HasNext() bool {
 }
 
 func (flatIter *AzureObjectFlatIterator) Next() (ObjectAttr, error) {
+	if flatIter.err != nil {
+		return ObjectAttr{}, flatIter.err
+	}
+
 	attr := flatIter.currPage[flatIter.nextIdx]
 	flatIter.nextIdx += 1
 
@@ -270,10 +273,12 @@ type AzureObjectHierarchyIterator struct {
 
 	currPage []ObjectAttr
 	nextIdx  int
+
+	err error
 }
 
 func (hierIter *AzureObjectHierarchyIterator) HasNext() bool {
-	// current page has more entries
+	// current page still has more entries
 	if hierIter.nextIdx < len(hierIter.currPage) {
 		return true
 	}
@@ -286,8 +291,10 @@ func (hierIter *AzureObjectHierarchyIterator) HasNext() bool {
 	// try to get next page
 	page, err := hierIter.pager.NextPage(context.Background())
 	if err != nil {
-		log.Warn("failed to get next page", zap.Error(err))
-		return false
+		// put error into err field, it will be returned in next call of Next()
+		// so we need to return true here, the caller will check err in Next()
+		hierIter.err = err
+		return true
 	}
 	hierIter.currPage = hierIter.currPage[:0]
 	for _, blob := range page.Segment.BlobItems {
@@ -302,6 +309,10 @@ func (hierIter *AzureObjectHierarchyIterator) HasNext() bool {
 }
 
 func (hierIter *AzureObjectHierarchyIterator) Next() (ObjectAttr, error) {
+	if hierIter.err != nil {
+		return ObjectAttr{}, hierIter.err
+	}
+
 	attr := hierIter.currPage[hierIter.nextIdx]
 	hierIter.nextIdx += 1
 
@@ -317,43 +328,16 @@ func (a *AzureClient) ListPrefix(_ context.Context, prefix string, recursive boo
 
 func (a *AzureClient) listPrefixRecursive(prefix string) (*AzureObjectFlatIterator, error) {
 	pager := a.cli.NewListBlobsFlatPager(a.cfg.Bucket, &azblob.ListBlobsFlatOptions{Prefix: to.Ptr(prefix)})
-	page, err := pager.NextPage(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("storage: azure list prefix %w", err)
-	}
 
-	var currPage []ObjectAttr
-	if page.Segment != nil {
-		for _, blob := range page.Segment.BlobItems {
-			attr := ObjectAttr{Key: *blob.Name, Length: *blob.Properties.ContentLength}
-			currPage = append(currPage, attr)
-		}
-	}
-
-	return &AzureObjectFlatIterator{cli: a, pager: pager, currPage: currPage}, nil
+	return &AzureObjectFlatIterator{cli: a, pager: pager}, nil
 }
 
 func (a *AzureClient) listPrefixNonRecursive(prefix string) (*AzureObjectHierarchyIterator, error) {
 	pager := a.cli.ServiceClient().
 		NewContainerClient(a.cfg.Bucket).
 		NewListBlobsHierarchyPager("/", &container.ListBlobsHierarchyOptions{Prefix: to.Ptr(prefix)})
-	page, err := pager.NextPage(context.Background())
-	if err != nil {
-		return nil, fmt.Errorf("storage: azure list prefix %w", err)
-	}
 
-	var currPage []ObjectAttr
-	if page.Segment != nil {
-		for _, blob := range page.Segment.BlobItems {
-			attr := ObjectAttr{Key: *blob.Name, Length: *blob.Properties.ContentLength}
-			currPage = append(currPage, attr)
-		}
-		for _, pre := range page.Segment.BlobPrefixes {
-			currPage = append(currPage, ObjectAttr{Key: *pre.Name})
-		}
-	}
-
-	return &AzureObjectHierarchyIterator{cli: a, pager: pager, currPage: currPage}, nil
+	return &AzureObjectHierarchyIterator{cli: a, pager: pager}, nil
 }
 
 func (a *AzureClient) DeleteObject(ctx context.Context, prefix string) error {
