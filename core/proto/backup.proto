@@ -340,16 +340,6 @@ message RestoreFilter {
   repeated string colls = 1;
 }
 
-message RestorePartitionTask {
-  string id = 1;
-  RestoreTaskStateCode state_code = 2;
-  string errorMessage = 3;
-  int64 start_time = 4;
-  int64 end_time = 5;
-  int32 progress = 6;
-  PartitionBackupInfo part_backup = 7;
-}
-
 message RestoreCollectionTaskResponse {
   string id = 1;
   RestoreTaskStateCode state_code = 2;
@@ -361,47 +351,6 @@ message RestoreCollectionTaskResponse {
   string target_collection_name = 8;
 }
 
-message RestoreCollectionTask {
-  string id = 1;
-  RestoreTaskStateCode state_code = 2 [deprecated=true];
-  string errorMessage = 3 [deprecated=true];
-  int64 start_time = 4 [deprecated=true];
-  int64 end_time = 5 [deprecated=true];
-  CollectionBackupInfo coll_backup = 6;
-  string target_collection_name = 7;
-  repeated RestorePartitionTask partition_restore_tasks = 8 [deprecated=true];
-  int64 restored_size = 9 [deprecated=true];
-  int64 to_restore_size = 10;
-  int32 progress = 11 [deprecated=true];
-  string target_db_name = 12;
-  // if true only restore meta
-  bool metaOnly = 13;
-  // if true restore index info
-  bool restoreIndex = 14;
-  // if true use autoindex when restore vector index
-  bool useAutoIndex = 15;
-  // if true drop the collections
-  bool dropExistCollection = 16;
-  // if true drop index info
-  bool dropExistIndex = 17;
-  // if true will skip create collections
-  bool skipCreateCollection = 18;
-  bool skipDiskQuotaCheck = 19 [deprecated=true]; // when restore, skip disk quota check will always be true
-  // target max shard number
-  int32 maxShardNum = 20;
-  SkipParams skipParams = 21;
-  bool useV2Restore = 22;
-  // if true, truncate binlog by timestamp, for cdc
-  bool truncateBinlogByTs = 23;
-}
-
-message RestoreDatabaseTask {
-  string id = 1;
-  DatabaseBackupInfo db_backup = 2;
-  string target_db_name = 3;
-  bool withProp = 4;
-}
-
 message RestoreBackupTaskResponse {
   string id = 1;
   RestoreTaskStateCode state_code = 2;
@@ -410,19 +359,6 @@ message RestoreBackupTaskResponse {
   int64 end_time = 5;
   int32 progress = 6;
   repeated RestoreCollectionTaskResponse collection_restore_tasks = 7;
-}
-
-message RestoreBackupTask {
-  string id = 1;
-  RestoreTaskStateCode state_code = 2;
-  string errorMessage = 3;
-  int64 start_time = 4;
-  int64 end_time = 5;
-  repeated RestoreCollectionTask collection_restore_tasks = 6;
-  int64 restored_size = 7;
-  int64 to_restore_size = 8;
-  int32 progress = 9;
-  repeated RestoreDatabaseTask database_restore_tasks = 10;
 }
 
 message RestoreBackupResponse {

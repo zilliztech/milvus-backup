@@ -22,7 +22,6 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/client/milvus"
 	"github.com/zilliztech/milvus-backup/core/meta/taskmgr"
-	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/storage"
 	"github.com/zilliztech/milvus-backup/core/storage/mpath"
@@ -39,19 +38,20 @@ const (
 
 type tearDownFn func(ctx context.Context) error
 
-type CollectionTask struct {
-	task *backuppb.RestoreCollectionTask
+type collectionTask struct {
+	taskID string
 
-	parentTaskID string
+	collBackup *backuppb.CollectionBackupInfo
+	option     *Option
 
-	taskTracker *taskmgr.Mgr
-	targetNS    namespace.NS
+	taskMgr  *taskmgr.Mgr
+	targetNS namespace.NS
 
 	crossStorage  bool
 	copySem       *semaphore.Weighted
 	bulkInsertSem *semaphore.Weighted
 
-	backupPath     string
+	backupDir      string
 	backupRootPath string
 	backupStorage  storage.Client
 
@@ -73,13 +73,17 @@ type CollectionTask struct {
 	logger *zap.Logger
 }
 
-type collectionTaskOpt struct {
-	task *backuppb.RestoreCollectionTask
+type collectionTaskArgs struct {
+	taskID string
 
-	params *paramtable.BackupParams
+	targetNS   namespace.NS
+	collBackup *backuppb.CollectionBackupInfo
+	option     *Option
+	taskMgr    *taskmgr.Mgr
 
-	parentTaskID string
-	backupPath   string
+	backupRootPath string
+	backupDir      string
+	crossStorage   bool
 
 	backupStorage storage.Client
 	milvusStorage storage.Client
@@ -91,38 +95,40 @@ type collectionTaskOpt struct {
 	restfulCli milvus.Restful
 }
 
-func newCollectionTask(opt collectionTaskOpt) *CollectionTask {
-	srcNS := namespace.New(opt.task.GetCollBackup().GetDbName(), opt.task.GetCollBackup().GetCollectionName())
-	targetNS := namespace.New(opt.task.GetTargetDbName(), opt.task.GetTargetCollectionName())
+func newCollectionTask(args collectionTaskArgs) *collectionTask {
+	srcNS := namespace.New(args.collBackup.GetDbName(), args.collBackup.GetCollectionName())
 
 	logger := log.With(
-		zap.String("restore_task_id", opt.task.GetId()),
+		zap.String("restore_task_id", args.taskID),
 		zap.String("backup_ns", srcNS.String()),
-		zap.String("target_ns", targetNS.String()))
+		zap.String("target_ns", args.targetNS.String()))
 
-	taskTracker := taskmgr.DefaultMgr
-	taskTracker.UpdateRestoreTask(opt.parentTaskID, taskmgr.AddRestoreCollTask(targetNS, opt.task.GetToRestoreSize()))
+	size := lo.SumBy(args.collBackup.GetPartitionBackups(), func(partition *backuppb.PartitionBackupInfo) int64 {
+		return partition.GetSize()
+	})
+	args.taskMgr.UpdateRestoreTask(args.taskID, taskmgr.AddRestoreCollTask(args.targetNS, size))
 
-	return &CollectionTask{
-		task: opt.task,
+	return &collectionTask{
+		taskID: args.taskID,
 
-		parentTaskID: opt.parentTaskID,
+		targetNS:   args.targetNS,
+		collBackup: args.collBackup,
+		option:     args.option,
 
-		taskTracker: taskTracker,
-		targetNS:    targetNS,
+		taskMgr: args.taskMgr,
 
-		crossStorage:  opt.params.MinioCfg.CrossStorage,
-		copySem:       opt.copySem,
-		bulkInsertSem: opt.bulkInsertSem,
+		crossStorage:  args.crossStorage,
+		copySem:       args.copySem,
+		bulkInsertSem: args.bulkInsertSem,
 
-		backupPath:     opt.backupPath,
-		backupRootPath: opt.params.MinioCfg.BackupRootPath,
+		backupDir:      args.backupDir,
+		backupRootPath: args.backupRootPath,
 
-		backupStorage: opt.backupStorage,
-		milvusStorage: opt.milvusStorage,
+		backupStorage: args.backupStorage,
+		milvusStorage: args.milvusStorage,
 
-		grpcCli:    opt.grpcCli,
-		restfulCli: opt.restfulCli,
+		grpcCli:    args.grpcCli,
+		restfulCli: args.restfulCli,
 
 		vchTimestamp: struct {
 			mu    sync.RWMutex
@@ -135,8 +141,8 @@ func newCollectionTask(opt collectionTaskOpt) *CollectionTask {
 	}
 }
 
-func (ct *CollectionTask) Execute(ctx context.Context) error {
-	ct.taskTracker.UpdateRestoreTask(ct.parentTaskID, taskmgr.SetRestoreCollExecuting(ct.targetNS))
+func (ct *collectionTask) Execute(ctx context.Context) error {
+	ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.SetRestoreCollExecuting(ct.targetNS))
 
 	// tear down restore task
 	defer func() {
@@ -145,20 +151,19 @@ func (ct *CollectionTask) Execute(ctx context.Context) error {
 		}
 	}()
 
-	err := ct.privateExecute(ctx)
-	if err != nil {
+	if err := ct.privateExecute(ctx); err != nil {
 		ct.logger.Error("restore collection failed", zap.Error(err))
-		ct.taskTracker.UpdateRestoreTask(ct.parentTaskID, taskmgr.SetRestoreCollFail(ct.targetNS, err))
+		ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.SetRestoreCollFail(ct.targetNS, err))
 		return err
 	}
 
 	ct.logger.Info("restore collection success")
-	ct.taskTracker.UpdateRestoreTask(ct.parentTaskID, taskmgr.SetRestoreCollSuccess(ct.targetNS))
+	ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.SetRestoreCollSuccess(ct.targetNS))
 
 	return nil
 }
 
-func (ct *CollectionTask) privateExecute(ctx context.Context) error {
+func (ct *collectionTask) privateExecute(ctx context.Context) error {
 	ct.logger.Info("start restore collection")
 
 	// restore collection schema
@@ -185,14 +190,14 @@ func (ct *CollectionTask) privateExecute(ctx context.Context) error {
 	return nil
 }
 
-func (ct *CollectionTask) restoreData(ctx context.Context) error {
-	if ct.task.GetMetaOnly() {
+func (ct *collectionTask) restoreData(ctx context.Context) error {
+	if ct.option.MetaOnly {
 		ct.logger.Info("skip restore data")
 		return nil
 	}
 
 	// restore collection data
-	if ct.task.UseV2Restore {
+	if ct.option.UseV2Restore {
 		if err := ct.restoreDataV2(ctx); err != nil {
 			return fmt.Errorf("restore_collection: restore data v2: %w", err)
 		}
@@ -205,11 +210,11 @@ func (ct *CollectionTask) restoreData(ctx context.Context) error {
 	return nil
 }
 
-func (ct *CollectionTask) restoreDataV2(ctx context.Context) error {
+func (ct *collectionTask) restoreDataV2(ctx context.Context) error {
 	// restore partition segment
-	ct.logger.Info("start restore partition segment", zap.Int("partition_num", len(ct.task.GetCollBackup().GetPartitionBackups())))
+	ct.logger.Info("start restore partition segment", zap.Int("partition_num", len(ct.collBackup.GetPartitionBackups())))
 	g, subCtx := errgroup.WithContext(ctx)
-	for _, part := range ct.task.GetCollBackup().GetPartitionBackups() {
+	for _, part := range ct.collBackup.GetPartitionBackups() {
 		g.Go(func() error {
 			if err := ct.restorePartitionV2(subCtx, part); err != nil {
 				return fmt.Errorf("restore_collection: restore partition v2: %w", err)
@@ -222,19 +227,19 @@ func (ct *CollectionTask) restoreDataV2(ctx context.Context) error {
 	}
 
 	// restore all partition l0 segment
-	ct.logger.Info("start restore all partition L0 segment", zap.Int("l0_segments", len(ct.task.GetCollBackup().GetL0Segments())))
-	if err := ct.restoreL0SegV2(ctx, "", ct.task.GetCollBackup().GetL0Segments()); err != nil {
+	ct.logger.Info("start restore all partition L0 segment", zap.Int("l0_segments", len(ct.collBackup.GetL0Segments())))
+	if err := ct.restoreL0SegV2(ctx, "", ct.collBackup.GetL0Segments()); err != nil {
 		return fmt.Errorf("restore_collection: restore global L0 segment: %w", err)
 	}
 
 	return nil
 }
 
-func (ct *CollectionTask) restoreDataV1(ctx context.Context) error {
+func (ct *collectionTask) restoreDataV1(ctx context.Context) error {
 	// restore partition segment
-	ct.logger.Info("start restore partition segment", zap.Int("partition_num", len(ct.task.GetCollBackup().GetPartitionBackups())))
+	ct.logger.Info("start restore partition segment", zap.Int("partition_num", len(ct.collBackup.GetPartitionBackups())))
 	g, subCtx := errgroup.WithContext(ctx)
-	for _, part := range ct.task.GetCollBackup().GetPartitionBackups() {
+	for _, part := range ct.collBackup.GetPartitionBackups() {
 		g.Go(func() error {
 			if err := ct.restorePartitionV1(subCtx, part); err != nil {
 				return fmt.Errorf("restore_collection: restore partition data v1: %w", err)
@@ -247,15 +252,15 @@ func (ct *CollectionTask) restoreDataV1(ctx context.Context) error {
 	}
 
 	// restore all partition l0 segment
-	ct.logger.Info("start restore all partition L0 segment", zap.Int("l0_segments", len(ct.task.GetCollBackup().GetL0Segments())))
-	if err := ct.restoreL0SegV1(ctx, "", ct.task.GetCollBackup().GetL0Segments()); err != nil {
+	ct.logger.Info("start restore all partition L0 segment", zap.Int("l0_segments", len(ct.collBackup.GetL0Segments())))
+	if err := ct.restoreL0SegV1(ctx, "", ct.collBackup.GetL0Segments()); err != nil {
 		return fmt.Errorf("restore_collection: restore global L0 segment: %w", err)
 	}
 
 	return nil
 }
 
-func (ct *CollectionTask) tearDown(ctx context.Context) error {
+func (ct *collectionTask) tearDown(ctx context.Context) error {
 	ct.tearDownFn.mu.Lock()
 	defer ct.tearDownFn.mu.Unlock()
 
@@ -275,44 +280,44 @@ func (ct *CollectionTask) tearDown(ctx context.Context) error {
 	return nil
 }
 
-func (ct *CollectionTask) dropExistedColl(ctx context.Context) error {
-	if !ct.task.GetDropExistCollection() {
+func (ct *collectionTask) dropExistedColl(ctx context.Context) error {
+	if !ct.option.DropExistCollection {
 		ct.logger.Info("skip drop existed collection")
 		return nil
 	}
 
 	ct.logger.Info("start drop existed collection")
-	exist, err := ct.grpcCli.HasCollection(ctx, ct.task.GetTargetDbName(), ct.task.GetTargetCollectionName())
+	exist, err := ct.grpcCli.HasCollection(ctx, ct.targetNS.DBName(), ct.targetNS.CollName())
 	if err != nil {
-		return fmt.Errorf("restore_collection: failed to check collection exist: %w", err)
+		return fmt.Errorf("restore_collection: check collection exist: %w", err)
 	}
 	if !exist {
 		ct.logger.Info("collection not exist, skip drop collection")
 		return nil
 	}
 
-	if err := ct.grpcCli.DropCollection(ctx, ct.task.GetTargetDbName(), ct.task.TargetCollectionName); err != nil {
+	if err := ct.grpcCli.DropCollection(ctx, ct.targetNS.DBName(), ct.targetNS.CollName()); err != nil {
 		return fmt.Errorf("restore_collection: failed to drop collection: %w", err)
 	}
 
 	return nil
 }
 
-func (ct *CollectionTask) shardNum() int32 {
+func (ct *collectionTask) shardNum() int32 {
 	// overwrite shardNum by request parameter
-	shardNum := ct.task.GetCollBackup().GetShardsNum()
-	if shardNum > ct.task.GetMaxShardNum() && ct.task.GetMaxShardNum() != 0 {
-		shardNum = ct.task.GetMaxShardNum()
+	shardNum := ct.collBackup.GetShardsNum()
+	if ct.option.MaxShardNum > 0 && shardNum > ct.option.MaxShardNum {
+		shardNum = ct.option.MaxShardNum
 		ct.logger.Info("overwrite shardNum by request parameter",
-			zap.Int32("oldShardNum", ct.task.GetCollBackup().GetShardsNum()),
-			zap.Int32("newShardNum", shardNum))
+			zap.Int32("old", ct.collBackup.GetShardsNum()),
+			zap.Int32("new", shardNum))
 	}
 
 	return shardNum
 }
 
-func (ct *CollectionTask) createColl(ctx context.Context) error {
-	if ct.task.GetSkipCreateCollection() {
+func (ct *collectionTask) createColl(ctx context.Context) error {
+	if ct.option.SkipCreateCollection {
 		ct.logger.Info("skip create collection")
 		return nil
 	}
@@ -326,22 +331,22 @@ func (ct *CollectionTask) createColl(ctx context.Context) error {
 	functions := ct.functions()
 	ct.logger.Info("restore collection functions", zap.Any("functions", functions))
 	schema := &schemapb.CollectionSchema{
-		Name:               ct.task.GetTargetCollectionName(),
-		Description:        ct.task.GetCollBackup().GetSchema().GetDescription(),
-		AutoID:             ct.task.GetCollBackup().GetSchema().GetAutoID(),
+		Name:               ct.targetNS.CollName(),
+		Description:        ct.collBackup.GetSchema().GetDescription(),
+		AutoID:             ct.collBackup.GetSchema().GetAutoID(),
 		Functions:          functions,
 		Fields:             fields,
-		EnableDynamicField: ct.task.GetCollBackup().GetSchema().GetEnableDynamicField(),
-		Properties:         pbconv.BakKVToMilvusKV(ct.task.GetCollBackup().GetSchema().GetProperties()),
+		EnableDynamicField: ct.collBackup.GetSchema().GetEnableDynamicField(),
+		Properties:         pbconv.BakKVToMilvusKV(ct.collBackup.GetSchema().GetProperties()),
 	}
 
 	opt := milvus.CreateCollectionInput{
-		DB:           ct.task.GetTargetDbName(),
+		DB:           ct.targetNS.DBName(),
 		Schema:       schema,
-		ConsLevel:    commonpb.ConsistencyLevel(ct.task.GetCollBackup().GetConsistencyLevel()),
+		ConsLevel:    commonpb.ConsistencyLevel(ct.collBackup.GetConsistencyLevel()),
 		ShardNum:     ct.shardNum(),
 		PartitionNum: ct.partitionNum(),
-		Properties:   pbconv.BakKVToMilvusKV(ct.task.GetCollBackup().GetProperties(), ct.task.SkipParams.GetCollectionProperties()...),
+		Properties:   pbconv.BakKVToMilvusKV(ct.collBackup.GetProperties(), ct.option.SkipParams.CollectionProperties...),
 	}
 	if err := ct.grpcCli.CreateCollection(ctx, opt); err != nil {
 		return fmt.Errorf("restore_collection: call create collection api after retry: %w", err)
@@ -350,7 +355,7 @@ func (ct *CollectionTask) createColl(ctx context.Context) error {
 	return nil
 }
 
-func (ct *CollectionTask) getDefaultValue(field *backuppb.FieldSchema) (*schemapb.ValueField, error) {
+func (ct *collectionTask) getDefaultValue(field *backuppb.FieldSchema) (*schemapb.ValueField, error) {
 	// try to use DefaultValueBase64 first
 	if field.GetDefaultValueBase64() != "" {
 		bytes, err := base64.StdEncoding.DecodeString(field.GetDefaultValueBase64())
@@ -377,8 +382,8 @@ func (ct *CollectionTask) getDefaultValue(field *backuppb.FieldSchema) (*schemap
 	return nil, nil
 }
 
-func (ct *CollectionTask) fields() ([]*schemapb.FieldSchema, error) {
-	bakFields := ct.task.GetCollBackup().GetSchema().GetFields()
+func (ct *collectionTask) fields() ([]*schemapb.FieldSchema, error) {
+	bakFields := ct.collBackup.GetSchema().GetFields()
 	fields := make([]*schemapb.FieldSchema, 0, len(bakFields))
 
 	for _, bakField := range bakFields {
@@ -394,8 +399,8 @@ func (ct *CollectionTask) fields() ([]*schemapb.FieldSchema, error) {
 			AutoID:           bakField.GetAutoID(),
 			Description:      bakField.GetDescription(),
 			DataType:         schemapb.DataType(bakField.GetDataType()),
-			TypeParams:       pbconv.BakKVToMilvusKV(bakField.GetTypeParams(), ct.task.SkipParams.GetFieldTypeParams()...),
-			IndexParams:      pbconv.BakKVToMilvusKV(bakField.GetIndexParams(), ct.task.SkipParams.GetFieldIndexParams()...),
+			TypeParams:       pbconv.BakKVToMilvusKV(bakField.GetTypeParams(), ct.option.SkipParams.FieldTypeParams...),
+			IndexParams:      pbconv.BakKVToMilvusKV(bakField.GetIndexParams(), ct.option.SkipParams.FieldIndexParams...),
 			IsDynamic:        bakField.GetIsDynamic(),
 			IsPartitionKey:   bakField.GetIsPartitionKey(),
 			Nullable:         bakField.GetNullable(),
@@ -413,9 +418,9 @@ func (ct *CollectionTask) fields() ([]*schemapb.FieldSchema, error) {
 // partitionNum returns the partition number of the collection
 // if partition key was set, return the length of partition in backup
 // else return 0
-func (ct *CollectionTask) partitionNum() int {
+func (ct *collectionTask) partitionNum() int {
 	var hasPartitionKey bool
-	for _, field := range ct.task.GetCollBackup().GetSchema().GetFields() {
+	for _, field := range ct.collBackup.GetSchema().GetFields() {
 		if field.GetIsPartitionKey() {
 			hasPartitionKey = true
 			break
@@ -423,14 +428,14 @@ func (ct *CollectionTask) partitionNum() int {
 	}
 
 	if hasPartitionKey {
-		return len(ct.task.GetCollBackup().GetPartitionBackups())
+		return len(ct.collBackup.GetPartitionBackups())
 	}
 
 	return 0
 }
 
-func (ct *CollectionTask) functions() []*schemapb.FunctionSchema {
-	bakFuncs := ct.task.GetCollBackup().GetSchema().GetFunctions()
+func (ct *collectionTask) functions() []*schemapb.FunctionSchema {
+	bakFuncs := ct.collBackup.GetSchema().GetFunctions()
 	functions := make([]*schemapb.FunctionSchema, 0, len(bakFuncs))
 	for _, bakFunc := range bakFuncs {
 		fun := &schemapb.FunctionSchema{
@@ -450,23 +455,23 @@ func (ct *CollectionTask) functions() []*schemapb.FunctionSchema {
 	return functions
 }
 
-func (ct *CollectionTask) dropExistedIndex(ctx context.Context) error {
-	if !ct.task.GetDropExistIndex() {
+func (ct *collectionTask) dropExistedIndex(ctx context.Context) error {
+	if !ct.option.DropExistIndex {
 		ct.logger.Info("skip drop existed index")
 		return nil
 	}
 
 	ct.logger.Info("start drop existed index")
-	indexes, err := ct.grpcCli.ListIndex(ctx, ct.task.GetTargetDbName(), ct.task.GetTargetCollectionName())
+	indexes, err := ct.grpcCli.ListIndex(ctx, ct.targetNS.DBName(), ct.targetNS.CollName())
 	if err != nil {
-		log.Error("fail in DescribeIndex", zap.Error(err))
+		log.Error("fail in list index", zap.Error(err))
 		return nil
 	}
 
 	for _, index := range indexes {
-		err = ct.grpcCli.DropIndex(ctx, ct.task.GetTargetDbName(), ct.task.TargetCollectionName, index.IndexName)
+		err = ct.grpcCli.DropIndex(ctx, ct.targetNS.DBName(), ct.targetNS.CollName(), index.IndexName)
 		if err != nil {
-			return fmt.Errorf("restore_collection: failed to drop index %s: %w", index.IndexName, err)
+			return fmt.Errorf("restore_collection: drop index %s: %w", index.IndexName, err)
 		}
 		ct.logger.Info("drop index", zap.String("field_name", index.FieldName),
 			zap.String("index_name", index.IndexName))
@@ -475,15 +480,15 @@ func (ct *CollectionTask) dropExistedIndex(ctx context.Context) error {
 	return nil
 }
 
-func (ct *CollectionTask) createIndex(ctx context.Context) error {
-	if !ct.task.GetRestoreIndex() {
-		ct.logger.Info("skip restore index")
+func (ct *collectionTask) createIndex(ctx context.Context) error {
+	if !ct.option.RebuildIndex {
+		ct.logger.Info("skip rebuild index")
 		return nil
 	}
-	ct.logger.Info("start restore index")
+	ct.logger.Info("start rebuild index")
 
 	vectorFields := make(map[string]struct{})
-	for _, field := range ct.task.GetCollBackup().GetSchema().GetFields() {
+	for _, field := range ct.collBackup.GetSchema().GetFields() {
 		typStr, ok := schemapb.DataType_name[int32(field.DataType)]
 		if !ok {
 			return fmt.Errorf("restore_collection: invalid field data type %d", field.DataType)
@@ -494,7 +499,7 @@ func (ct *CollectionTask) createIndex(ctx context.Context) error {
 		}
 	}
 
-	indexes := ct.task.GetCollBackup().GetIndexInfos()
+	indexes := ct.collBackup.GetIndexInfos()
 	var vectorIndexes, scalarIndexes []*backuppb.IndexInfo
 	for _, index := range indexes {
 		if _, ok := vectorFields[index.GetFieldName()]; ok {
@@ -544,7 +549,7 @@ func hasSpecialChar(indexName string) bool {
 	return false
 }
 
-func (ct *CollectionTask) restoreScalarFieldIdx(ctx context.Context, indexes []*backuppb.IndexInfo) error {
+func (ct *collectionTask) restoreScalarFieldIdx(ctx context.Context, indexes []*backuppb.IndexInfo) error {
 	for _, index := range indexes {
 		ct.logger.Info("source index",
 			zap.String("indexName", index.GetIndexName()),
@@ -559,8 +564,8 @@ func (ct *CollectionTask) restoreScalarFieldIdx(ctx context.Context, indexes []*
 		}
 
 		opt := milvus.CreateIndexInput{
-			DB:             ct.task.GetTargetDbName(),
-			CollectionName: ct.task.GetTargetCollectionName(),
+			DB:             ct.targetNS.DBName(),
+			CollectionName: ct.targetNS.CollName(),
 			FieldName:      index.GetFieldName(),
 			IndexName:      indexName,
 			Params:         index.GetParams(),
@@ -573,14 +578,14 @@ func (ct *CollectionTask) restoreScalarFieldIdx(ctx context.Context, indexes []*
 	return nil
 }
 
-func (ct *CollectionTask) restoreVectorFieldIdx(ctx context.Context, indexes []*backuppb.IndexInfo) error {
+func (ct *collectionTask) restoreVectorFieldIdx(ctx context.Context, indexes []*backuppb.IndexInfo) error {
 	for _, index := range indexes {
 		ct.logger.Info("source  index",
 			zap.String("indexName", index.GetIndexName()),
 			zap.Any("params", index.GetParams()))
 
 		var params map[string]string
-		if ct.task.GetUseAutoIndex() {
+		if ct.option.UseAutoIndex {
 			ct.logger.Info("use auto index", zap.String("fieldName", index.GetFieldName()))
 			params = map[string]string{"index_type": "AUTOINDEX", "metric_type": index.GetParams()["metric_type"]}
 		} else {
@@ -592,8 +597,8 @@ func (ct *CollectionTask) restoreVectorFieldIdx(ctx context.Context, indexes []*
 		}
 
 		opt := milvus.CreateIndexInput{
-			DB:             ct.task.GetTargetDbName(),
-			CollectionName: ct.task.GetTargetCollectionName(),
+			DB:             ct.targetNS.DBName(),
+			CollectionName: ct.targetNS.CollName(),
 			FieldName:      index.GetFieldName(),
 			IndexName:      index.GetIndexName(),
 			Params:         params,
@@ -606,7 +611,7 @@ func (ct *CollectionTask) restoreVectorFieldIdx(ctx context.Context, indexes []*
 	return nil
 }
 
-func (ct *CollectionTask) cleanTempFiles(dir string) tearDownFn {
+func (ct *collectionTask) cleanTempFiles(dir string) tearDownFn {
 	return func(ctx context.Context) error {
 		if len(dir) == 0 {
 			return errors.New("restore_collection: empty temporary file dir")
@@ -621,10 +626,10 @@ func (ct *CollectionTask) cleanTempFiles(dir string) tearDownFn {
 	}
 }
 
-func (ct *CollectionTask) createPartition(ctx context.Context, partitionName string) error {
+func (ct *collectionTask) createPartition(ctx context.Context, partitionName string) error {
 	// pre-check whether partition exist, if not create it
 	ct.logger.Debug("check partition exist", zap.String("partition_name", partitionName))
-	exist, err := ct.grpcCli.HasPartition(ctx, ct.task.GetTargetDbName(), ct.task.GetTargetCollectionName(), partitionName)
+	exist, err := ct.grpcCli.HasPartition(ctx, ct.targetNS.DBName(), ct.targetNS.CollName(), partitionName)
 	if err != nil {
 		return fmt.Errorf("restore_collection: failed to check partition exist: %w", err)
 	}
@@ -633,7 +638,7 @@ func (ct *CollectionTask) createPartition(ctx context.Context, partitionName str
 		return nil
 	}
 
-	err = ct.grpcCli.CreatePartition(ctx, ct.task.GetTargetDbName(), ct.task.GetTargetCollectionName(), partitionName)
+	err = ct.grpcCli.CreatePartition(ctx, ct.targetNS.DBName(), ct.targetNS.CollName(), partitionName)
 	if err != nil {
 		ct.logger.Debug("create partition failed", zap.String("partition_name", partitionName), zap.Error(err))
 		return fmt.Errorf("restore_collection: failed to create partition: %w", err)
@@ -642,7 +647,7 @@ func (ct *CollectionTask) createPartition(ctx context.Context, partitionName str
 	return nil
 }
 
-func (ct *CollectionTask) copyToMilvusBucket(ctx context.Context, tempDir, srcPrefix string) (string, error) {
+func (ct *collectionTask) copyToMilvusBucket(ctx context.Context, tempDir, srcPrefix string) (string, error) {
 	ct.logger.Info("milvus and backup store in different bucket, copy the data first", zap.String("temp_dir", tempDir))
 	dest := path.Join(tempDir, strings.Replace(srcPrefix, ct.backupRootPath, "", 1)) + "/"
 	opt := storage.CopyPrefixOpt{
@@ -664,7 +669,7 @@ func (ct *CollectionTask) copyToMilvusBucket(ctx context.Context, tempDir, srcPr
 	return dest, nil
 }
 
-func (ct *CollectionTask) copyAndRewriteDir(ctx context.Context, b batch) (batch, error) {
+func (ct *collectionTask) copyAndRewriteDir(ctx context.Context, b batch) (batch, error) {
 	isSameBucket := ct.milvusStorage.Config().Bucket == ct.backupStorage.Config().Bucket
 	isSameStorage := ct.backupStorage.Config().Provider == ct.milvusStorage.Config().Provider
 	// if milvus bucket and backup bucket are not the same, should copy the data first
@@ -673,7 +678,7 @@ func (ct *CollectionTask) copyAndRewriteDir(ctx context.Context, b batch) (batch
 		return b, nil
 	}
 
-	tempDir := fmt.Sprintf("restore-temp-%s-%s-%s/", ct.parentTaskID, ct.task.GetTargetDbName(), ct.task.GetTargetCollectionName())
+	tempDir := fmt.Sprintf("restore-temp-%s-%s-%s/", ct.taskID, ct.targetNS.DBName(), ct.targetNS.CollName())
 	for i, dir := range b.partitionDirs {
 		// insert log
 		if len(dir.insertLogDir) != 0 {
@@ -702,7 +707,7 @@ func (ct *CollectionTask) copyAndRewriteDir(ctx context.Context, b batch) (batch
 	return b, nil
 }
 
-func (ct *CollectionTask) restoreNotL0SegV1(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
+func (ct *collectionTask) restoreNotL0SegV1(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
 	notL0SegBatches, err := ct.notL0SegmentBatches(ctx, part)
 	if err != nil {
 		return fmt.Errorf("restore_collection: get not L0 groups: %w", err)
@@ -729,7 +734,7 @@ func toPaths(dir partitionDir) []string {
 	return []string{dir.insertLogDir, dir.deltaLogDir}
 }
 
-func (ct *CollectionTask) restoreNotL0SegV2(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
+func (ct *collectionTask) restoreNotL0SegV2(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
 	batches, err := ct.notL0SegmentBatches(ctx, part)
 	if err != nil {
 		return fmt.Errorf("restore_collection: get not L0 groups: %w", err)
@@ -762,7 +767,7 @@ func (ct *CollectionTask) restoreNotL0SegV2(ctx context.Context, part *backuppb.
 	return nil
 }
 
-func (ct *CollectionTask) restoreL0SegV1(ctx context.Context, partitionName string, l0Segs []*backuppb.SegmentBackupInfo) error {
+func (ct *collectionTask) restoreL0SegV1(ctx context.Context, partitionName string, l0Segs []*backuppb.SegmentBackupInfo) error {
 	batches, err := ct.l0SegmentBatches(l0Segs)
 	if err != nil {
 		return fmt.Errorf("restore_collection: get L0 batches: %w", err)
@@ -781,7 +786,7 @@ func (ct *CollectionTask) restoreL0SegV1(ctx context.Context, partitionName stri
 	return nil
 }
 
-func (ct *CollectionTask) restoreL0SegV2(ctx context.Context, partitionName string, l0Segs []*backuppb.SegmentBackupInfo) error {
+func (ct *collectionTask) restoreL0SegV2(ctx context.Context, partitionName string, l0Segs []*backuppb.SegmentBackupInfo) error {
 	batches, err := ct.l0SegmentBatches(l0Segs)
 	if err != nil {
 		return fmt.Errorf("restore_collection: get L0 batches: %w", err)
@@ -815,7 +820,7 @@ func (ct *CollectionTask) restoreL0SegV2(ctx context.Context, partitionName stri
 	return nil
 }
 
-func (ct *CollectionTask) restorePartitionV1(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
+func (ct *collectionTask) restorePartitionV1(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
 	ct.logger.Info("start restore partition", zap.String("partition", part.GetPartitionName()))
 
 	if err := ct.createPartition(ctx, part.GetPartitionName()); err != nil {
@@ -840,7 +845,7 @@ func (ct *CollectionTask) restorePartitionV1(ctx context.Context, part *backuppb
 	return nil
 }
 
-func (ct *CollectionTask) restorePartitionV2(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
+func (ct *collectionTask) restorePartitionV2(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
 	ct.logger.Info("start restore partition v2", zap.String("partition", part.GetPartitionName()))
 
 	if err := ct.createPartition(ctx, part.GetPartitionName()); err != nil {
@@ -861,13 +866,13 @@ func (ct *CollectionTask) restorePartitionV2(ctx context.Context, part *backuppb
 	return nil
 }
 
-func (ct *CollectionTask) notL0SegBatchesWithoutGroupID(ctx context.Context, part *backuppb.PartitionBackupInfo) ([]batch, error) {
-	if ct.task.GetTruncateBinlogByTs() {
+func (ct *collectionTask) notL0SegBatchesWithoutGroupID(ctx context.Context, part *backuppb.PartitionBackupInfo) ([]batch, error) {
+	if ct.option.TruncateBinlogByTs {
 		return nil, fmt.Errorf("restore: truncate binlog by ts is not supported if group id is not set in backup")
 	}
 
 	opts := []mpath.Option{
-		mpath.CollectionID(ct.task.GetCollBackup().GetCollectionId()),
+		mpath.CollectionID(ct.collBackup.GetCollectionId()),
 		mpath.PartitionID(part.GetPartitionId()),
 	}
 	partDir, err := ct.buildBackupPartitionDir(ctx, part.GetSize(), opts...)
@@ -879,8 +884,8 @@ func (ct *CollectionTask) notL0SegBatchesWithoutGroupID(ctx context.Context, par
 	return []batch{{partitionDirs: []partitionDir{partDir}}}, nil
 }
 
-func (ct *CollectionTask) backupTS(vch string) (uint64, error) {
-	if !ct.task.GetTruncateBinlogByTs() {
+func (ct *collectionTask) backupTS(vch string) (uint64, error) {
+	if !ct.option.TruncateBinlogByTs {
 		return 0, nil
 	}
 
@@ -897,7 +902,7 @@ func (ct *CollectionTask) backupTS(vch string) (uint64, error) {
 	ct.vchTimestamp.mu.RUnlock()
 
 	// slow path, if the timestamp is not cached, get it from backup
-	posStr, ok := ct.task.GetCollBackup().GetChannelCheckpoints()[vch]
+	posStr, ok := ct.collBackup.GetChannelCheckpoints()[vch]
 	if !ok {
 		return 0, fmt.Errorf("restore_collection: failed to get vch %s checkpoint", vch)
 	}
@@ -919,7 +924,7 @@ type batchKey struct {
 	sv  int64
 }
 
-func (ct *CollectionTask) notL0SegBatchesWithGroupID(ctx context.Context, notL0Segs []*backuppb.SegmentBackupInfo) ([]batch, error) {
+func (ct *collectionTask) notL0SegBatchesWithGroupID(ctx context.Context, notL0Segs []*backuppb.SegmentBackupInfo) ([]batch, error) {
 	// group by vchannel and storage version
 	segBatch := lo.GroupBy(notL0Segs, func(seg *backuppb.SegmentBackupInfo) batchKey {
 		return batchKey{vch: seg.GetVChannel(), sv: seg.GetStorageVersion()}
@@ -939,7 +944,7 @@ func (ct *CollectionTask) notL0SegBatchesWithGroupID(ctx context.Context, notL0S
 			dirs := make([]partitionDir, 0, len(chunk))
 			for _, seg := range chunk {
 				opts := []mpath.Option{
-					mpath.CollectionID(ct.task.GetCollBackup().GetCollectionId()),
+					mpath.CollectionID(ct.collBackup.GetCollectionId()),
 					mpath.PartitionID(seg.GetPartitionId()),
 					mpath.GroupID(seg.GetGroupId()),
 				}
@@ -961,7 +966,7 @@ func (ct *CollectionTask) notL0SegBatchesWithGroupID(ctx context.Context, notL0S
 	return batches, nil
 }
 
-func (ct *CollectionTask) notL0SegmentBatches(ctx context.Context, part *backuppb.PartitionBackupInfo) ([]batch, error) {
+func (ct *collectionTask) notL0SegmentBatches(ctx context.Context, part *backuppb.PartitionBackupInfo) ([]batch, error) {
 	var withGroupID bool
 	notL0Segs := make([]*backuppb.SegmentBackupInfo, 0, len(part.GetSegmentBackups()))
 	for _, seg := range part.GetSegmentBackups() {
@@ -986,7 +991,7 @@ func (ct *CollectionTask) notL0SegmentBatches(ctx context.Context, part *backupp
 	}
 }
 
-func (ct *CollectionTask) l0SegmentBatches(l0Segs []*backuppb.SegmentBackupInfo) ([]batch, error) {
+func (ct *collectionTask) l0SegmentBatches(l0Segs []*backuppb.SegmentBackupInfo) ([]batch, error) {
 	// due to github.com/milvus-io/milvus/issues/43212 we cannot put multiple l0 segments into one bulk insert job
 	// so we need to put each l0 segment into one batch
 	batches := make([]batch, 0, len(l0Segs))
@@ -997,12 +1002,12 @@ func (ct *CollectionTask) l0SegmentBatches(l0Segs []*backuppb.SegmentBackupInfo)
 		}
 
 		opts := []mpath.Option{
-			mpath.CollectionID(ct.task.GetCollBackup().CollectionId),
+			mpath.CollectionID(ct.collBackup.GetCollectionId()),
 			mpath.PartitionID(seg.GetPartitionId()),
 			mpath.SegmentID(seg.GetSegmentId()),
 		}
 
-		deltaLogDir := mpath.BackupDeltaLogDir(ct.backupPath, opts...)
+		deltaLogDir := mpath.BackupDeltaLogDir(ct.backupDir, opts...)
 		dirs := []partitionDir{{deltaLogDir: deltaLogDir, size: seg.GetSize()}}
 
 		batches = append(batches, batch{isL0: true, timestamp: ts, partitionDirs: dirs})
@@ -1026,7 +1031,7 @@ type batch struct {
 	partitionDirs []partitionDir
 }
 
-func (ct *CollectionTask) checkBulkInsertViaGrpc(ctx context.Context, jobID int64) error {
+func (ct *collectionTask) checkBulkInsertViaGrpc(ctx context.Context, jobID int64) error {
 	// wait for bulk insert job done
 	var lastProgress int
 	lastUpdateTime := time.Now()
@@ -1046,7 +1051,7 @@ func (ct *CollectionTask) checkBulkInsertViaGrpc(ctx context.Context, jobID int6
 			return nil
 		default:
 			currentProgress := getProcess(state.Infos)
-			ct.taskTracker.UpdateRestoreTask(ct.parentTaskID, taskmgr.UpdateRestoreImportJob(ct.targetNS, strconv.FormatInt(jobID, 10), currentProgress))
+			ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.UpdateRestoreImportJob(ct.targetNS, strconv.FormatInt(jobID, 10), currentProgress))
 			if currentProgress > lastProgress {
 				lastUpdateTime = time.Now()
 			} else if time.Since(lastUpdateTime) >= _bulkInsertTimeout {
@@ -1061,7 +1066,7 @@ func (ct *CollectionTask) checkBulkInsertViaGrpc(ctx context.Context, jobID int6
 	return errors.New("restore_collection: walk into unreachable code")
 }
 
-func (ct *CollectionTask) bulkInsertViaGrpc(ctx context.Context, partitionName string, b batch) error {
+func (ct *collectionTask) bulkInsertViaGrpc(ctx context.Context, partitionName string, b batch) error {
 	g, subCtx := errgroup.WithContext(ctx)
 	for _, dir := range b.partitionDirs {
 		if err := ct.bulkInsertSem.Acquire(ctx, 1); err != nil {
@@ -1074,8 +1079,8 @@ func (ct *CollectionTask) bulkInsertViaGrpc(ctx context.Context, partitionName s
 			paths := toPaths(dir)
 			ct.logger.Info("start bulk insert via grpc", zap.Strings("paths", paths), zap.String("partition", partitionName))
 			in := milvus.GrpcBulkInsertInput{
-				DB:             ct.task.GetTargetDbName(),
-				CollectionName: ct.task.GetTargetCollectionName(),
+				DB:             ct.targetNS.DBName(),
+				CollectionName: ct.targetNS.CollName(),
 				PartitionName:  partitionName,
 				Paths:          toPaths(dir),
 				BackupTS:       b.timestamp,
@@ -1087,7 +1092,7 @@ func (ct *CollectionTask) bulkInsertViaGrpc(ctx context.Context, partitionName s
 			if err != nil {
 				return fmt.Errorf("restore_collection: failed to bulk insert via grpc: %w", err)
 			}
-			ct.taskTracker.UpdateRestoreTask(ct.parentTaskID,
+			ct.taskMgr.UpdateRestoreTask(ct.taskID,
 				taskmgr.AddRestoreImportJob(ct.targetNS, strconv.FormatInt(jobID, 10), dir.size))
 			ct.logger.Info("create bulk insert via grpc success", zap.Int64("job_id", jobID))
 			return ct.checkBulkInsertViaGrpc(subCtx, jobID)
@@ -1101,12 +1106,12 @@ func (ct *CollectionTask) bulkInsertViaGrpc(ctx context.Context, partitionName s
 	return nil
 }
 
-func (ct *CollectionTask) checkBulkInsertViaRestful(ctx context.Context, jobID string) error {
+func (ct *collectionTask) checkBulkInsertViaRestful(ctx context.Context, jobID string) error {
 	// wait for bulk insert job done
 	var lastProgress int
 	lastUpdateTime := time.Now()
 	for range time.Tick(_bulkInsertCheckInterval) {
-		resp, err := ct.restfulCli.GetBulkInsertState(ctx, ct.task.GetTargetDbName(), jobID)
+		resp, err := ct.restfulCli.GetBulkInsertState(ctx, ct.targetNS.DBName(), jobID)
 		if err != nil {
 			return fmt.Errorf("restore_collection: failed to get bulk insert state: %w", err)
 		}
@@ -1119,11 +1124,11 @@ func (ct *CollectionTask) checkBulkInsertViaRestful(ctx context.Context, jobID s
 			return fmt.Errorf("restore_collection: bulk insert failed: %s", resp.Data.Reason)
 		case string(milvus.ImportStateCompleted):
 			ct.logger.Info("bulk insert task success", zap.String("job_id", jobID))
-			ct.taskTracker.UpdateRestoreTask(ct.parentTaskID, taskmgr.UpdateRestoreImportJob(ct.targetNS, jobID, 100))
+			ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.UpdateRestoreImportJob(ct.targetNS, jobID, 100))
 			return nil
 		default:
 			currentProgress := resp.Data.Progress
-			ct.taskTracker.UpdateRestoreTask(ct.parentTaskID, taskmgr.UpdateRestoreImportJob(ct.targetNS, jobID, currentProgress))
+			ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.UpdateRestoreImportJob(ct.targetNS, jobID, currentProgress))
 			if currentProgress > lastProgress {
 				lastUpdateTime = time.Now()
 			} else if time.Since(lastUpdateTime) >= _bulkInsertTimeout {
@@ -1138,12 +1143,12 @@ func (ct *CollectionTask) checkBulkInsertViaRestful(ctx context.Context, jobID s
 	return errors.New("restore_collection: walk into unreachable code")
 }
 
-func (ct *CollectionTask) bulkInsertViaRestful(ctx context.Context, partition string, b batch) error {
+func (ct *collectionTask) bulkInsertViaRestful(ctx context.Context, partition string, b batch) error {
 	ct.logger.Info("start bulk insert via restful", zap.Int("batch_num", len(b.partitionDirs)), zap.String("partition", partition))
 	paths := lo.Map(b.partitionDirs, func(dir partitionDir, _ int) []string { return toPaths(dir) })
 	in := milvus.RestfulBulkInsertInput{
-		DB:             ct.task.GetTargetDbName(),
-		CollectionName: ct.task.GetTargetCollectionName(),
+		DB:             ct.targetNS.DBName(),
+		CollectionName: ct.targetNS.CollName(),
 		PartitionName:  partition,
 		Paths:          paths,
 		BackupTS:       b.timestamp,
@@ -1158,7 +1163,7 @@ func (ct *CollectionTask) bulkInsertViaRestful(ctx context.Context, partition st
 	ct.logger.Info("create bulk insert via restful success", zap.String("job_id", jobID))
 
 	size := lo.SumBy(b.partitionDirs, func(dir partitionDir) int64 { return dir.size })
-	ct.taskTracker.UpdateRestoreTask(ct.parentTaskID, taskmgr.AddRestoreImportJob(ct.targetNS, jobID, size))
+	ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.AddRestoreImportJob(ct.targetNS, jobID, size))
 	if err := ct.checkBulkInsertViaRestful(ctx, jobID); err != nil {
 		return fmt.Errorf("restore_collection: check bulk insert via restful: %w", err)
 	}
@@ -1191,9 +1196,9 @@ func getFailedReason(infos []*commonpb.KeyValuePair) string {
 	return ""
 }
 
-func (ct *CollectionTask) buildBackupPartitionDir(ctx context.Context, size int64, pathOpt ...mpath.Option) (partitionDir, error) {
-	insertLogDir := mpath.BackupInsertLogDir(ct.backupPath, pathOpt...)
-	deltaLogDir := mpath.BackupDeltaLogDir(ct.backupPath, pathOpt...)
+func (ct *collectionTask) buildBackupPartitionDir(ctx context.Context, size int64, pathOpt ...mpath.Option) (partitionDir, error) {
+	insertLogDir := mpath.BackupInsertLogDir(ct.backupDir, pathOpt...)
+	deltaLogDir := mpath.BackupDeltaLogDir(ct.backupDir, pathOpt...)
 
 	exist, err := storage.Exist(ctx, ct.backupStorage, deltaLogDir)
 	if err != nil {

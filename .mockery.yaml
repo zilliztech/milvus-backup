@@ -17,4 +17,4 @@ packages:
 
   github.com/zilliztech/milvus-backup/core/restore:
     interfaces:
-      collMapper:
+      CollMapper:

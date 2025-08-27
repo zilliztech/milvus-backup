@@ -127,7 +127,7 @@ func (b *BackupContext) getRestfulClient() milvus.Restful {
 
 func (b *BackupContext) getMilvusStorageClient() storage.Client {
 	if b.milvusStorageClient == nil {
-		cli, err := storage.NewMilvusStorage(b.ctx, b.params)
+		cli, err := storage.NewMilvusStorage(b.ctx, &b.params.MinioCfg)
 		if err != nil {
 			log.Error("failed to initial milvus storage client", zap.Error(err))
 			panic(err)
@@ -140,7 +140,7 @@ func (b *BackupContext) getMilvusStorageClient() storage.Client {
 
 func (b *BackupContext) getBackupStorageClient() storage.Client {
 	if b.backupStorageClient == nil {
-		cli, err := storage.NewBackupStorage(b.ctx, b.params)
+		cli, err := storage.NewBackupStorage(b.ctx, &b.params.MinioCfg)
 		if err != nil {
 			log.Error("failed to initial backup storage client", zap.Error(err))
 			panic(err)
@@ -191,7 +191,7 @@ func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBack
 			resp.Data = fullBackupInfo
 		} else {
 			backupDir := mpath.BackupDir(b.backupRootPath, request.GetBackupName())
-			backup, err := meta.Read(ctx, backupDir, b.getBackupStorageClient())
+			backup, err := meta.Read(ctx, b.getBackupStorageClient(), backupDir)
 			if err != nil {
 				log.Warn("Fail to read backup",
 					zap.String("backupBucketName", b.params.MinioCfg.BackupBucketName),

@@ -137,7 +137,7 @@ func NewTask(taskID, backupName, clusterID string, params *paramtable.BackupPara
 	logger := log.L().With(zap.String("task_id", taskID))
 	cloudCli := cloud.NewClient(params.CloudConfig.Address, params.CloudConfig.APIKey)
 
-	backupStorage, err := storage.NewBackupStorage(context.Background(), params)
+	backupStorage, err := storage.NewBackupStorage(context.Background(), &params.MinioCfg)
 	if err != nil {
 		return nil, fmt.Errorf("migrate: new backup storage %w", err)
 	}
@@ -163,7 +163,7 @@ func NewTask(taskID, backupName, clusterID string, params *paramtable.BackupPara
 
 func (t *Task) Prepare(ctx context.Context) error {
 	t.logger.Info("try to read backup meta info")
-	backupInfo, err := meta.Read(ctx, t.backupDir, t.backupStorage)
+	backupInfo, err := meta.Read(ctx, t.backupStorage, t.backupDir)
 	if err != nil {
 		return fmt.Errorf("migrate: read backup meta info %w", err)
 	}

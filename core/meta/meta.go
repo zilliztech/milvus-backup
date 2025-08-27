@@ -111,7 +111,7 @@ func readFromLevel(ctx context.Context, backupDir string, cli storage.Client) (*
 	return levelToTree(level), nil
 }
 
-func Read(ctx context.Context, backupDir string, cli storage.Client) (*backuppb.BackupInfo, error) {
+func Read(ctx context.Context, cli storage.Client, backupDir string) (*backuppb.BackupInfo, error) {
 	exist, err := storage.Exist(ctx, cli, mpath.MetaKey(backupDir, mpath.FullMeta))
 	if err != nil {
 		return nil, fmt.Errorf("meta: check full meta exist %w", err)
@@ -121,4 +121,9 @@ func Read(ctx context.Context, backupDir string, cli storage.Client) (*backuppb.
 	} else {
 		return readFromLevel(ctx, backupDir, cli)
 	}
+}
+
+func Exist(ctx context.Context, cli storage.Client, backupDir string) (bool, error) {
+	key := mpath.MetaKey(backupDir, mpath.BackupMeta)
+	return storage.Exist(ctx, cli, key)
 }

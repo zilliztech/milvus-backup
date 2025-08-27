@@ -70,7 +70,7 @@ func (s *Server) initEngine() {
 	apiv1.GET("/list", wrapHandler(s.handleListBackups))
 	apiv1.GET("/get_backup", wrapHandler(s.handleGetBackup))
 	apiv1.DELETE("/delete", wrapHandler(s.handleDeleteBackup))
-	apiv1.POST("/restore", wrapHandler(s.handleRestoreBackup))
+	apiv1.POST("/restore", s.handleRestoreBackup)
 	apiv1.GET("/get_restore", wrapHandler(s.handleGetRestore))
 	apiv1.GET("/check", wrapHandler(s.handleCheck))
 	apiv1.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
@@ -177,33 +177,6 @@ func (s *Server) handleDeleteBackup(c *gin.Context) (interface{}, error) {
 		BackupName: c.Query("backup_name"),
 	}
 	resp := s.backupContext.DeleteBackup(context.Background(), &req)
-	c.JSON(http.StatusOK, resp)
-	return nil, nil
-}
-
-// RestoreBackup Restore interface
-// @Summary Restore interface
-// @Description Submit a request to restore the data from backup
-// @Tags Restore
-// @Accept application/json
-// @Produce application/json
-// @Param request_id header string false "request_id"
-// @Param object body backuppb.RestoreBackupRequest   true  "RestoreBackupRequest JSON"
-// @Success 200 {object} backuppb.RestoreBackupResponse
-// @Router /restore [post]
-func (s *Server) handleRestoreBackup(c *gin.Context) (interface{}, error) {
-	requestBody := backuppb.RestoreBackupRequest{
-		// default setting
-		MetaOnly: false,
-	}
-	//c.BindJSON(&json)
-	if err := c.ShouldBindJSON(&requestBody); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
-		return nil, nil
-	}
-
-	requestBody.RequestId = c.GetHeader("request_id")
-	resp := s.backupContext.RestoreBackup(context.Background(), &requestBody)
 	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }

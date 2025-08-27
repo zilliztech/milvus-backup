@@ -87,7 +87,6 @@ func TestRestoreCollectionTask_Getters(t *testing.T) {
 func TestRestoreTask_Progress(t *testing.T) {
 	t.Run("Normal", func(t *testing.T) {
 		task := &RestoreTask{
-			totalSize: 100,
 			collTask: map[namespace.NS]*restoreCollectionTask{
 				namespace.New("db1", "coll1"): {totalSize: 10, importJob: map[string]*importJob{
 					"job1": {totalSize: 10, progress: 100},
@@ -101,7 +100,7 @@ func TestRestoreTask_Progress(t *testing.T) {
 			},
 		}
 
-		assert.Equal(t, int32(20), task.Progress())
+		assert.Equal(t, int32(33), task.Progress())
 	})
 
 	t.Run("TaskSuccess", func(t *testing.T) {
@@ -111,14 +110,12 @@ func TestRestoreTask_Progress(t *testing.T) {
 	})
 
 	t.Run("ZeroTotalSize", func(t *testing.T) {
-		task := &RestoreTask{totalSize: 0}
-
+		task := &RestoreTask{}
 		assert.Equal(t, int32(1), task.Progress())
 	})
 
 	t.Run("ZeroRestoredSize", func(t *testing.T) {
 		task := &RestoreTask{
-			totalSize: 100,
 			collTask: map[namespace.NS]*restoreCollectionTask{
 				namespace.New("db1", "coll1"): {totalSize: 10, importJob: map[string]*importJob{
 					"job1": {totalSize: 10, progress: 0},
@@ -160,7 +157,11 @@ func TestRestoreTask_Getters(t *testing.T) {
 	})
 
 	t.Run("TotalSize", func(t *testing.T) {
-		task := &RestoreTask{totalSize: 100}
+		task := &RestoreTask{
+			collTask: map[namespace.NS]*restoreCollectionTask{
+				namespace.New("db1", "coll1"): {totalSize: 100},
+			},
+		}
 
 		assert.Equal(t, int64(100), task.TotalSize())
 	})

@@ -3,7 +3,6 @@ package restore
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/samber/lo"
 	"go.uber.org/zap"
@@ -19,18 +18,142 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 )
 
+type DBMapping struct {
+	Target   string
+	WithProp bool
+}
+
+type CollFilter struct {
+	AllowAll bool
+	CollName map[string]struct{}
+}
+
+type SkipParams struct {
+	CollectionProperties []string
+
+	FieldIndexParams []string
+	FieldTypeParams  []string
+
+	IndexParams []string
+}
+
+type Plan struct {
+	// There is no need to do filtering before mapping.
+	// It is mainly for backward compatibility and can be
+	// removed after the dbCollection parameter is completely deprecated.
+	DBBackupFilter   map[string]struct{}
+	CollBackupFilter map[string]CollFilter
+
+	// mapping
+	DBMapper   map[string][]DBMapping
+	CollMapper CollMapper
+
+	// filter after mapping
+	DBTaskFilter   map[string]struct{}
+	CollTaskFilter map[string]CollFilter // dbName -> collFilter
+}
+
+// CollMapper is the interface for renaming collection.
+type CollMapper interface {
+	// TagetNS renames the given namespace (database and collection) according to the renaming rules.
+	TagetNS(ns namespace.NS) []namespace.NS
+}
+
+var _ CollMapper = (*DefaultCollMapper)(nil)
+
+// DefaultCollMapper is the default collMapper that returns the original namespace.
+type DefaultCollMapper struct{}
+
+func NewDefaultCollMapper() *DefaultCollMapper                      { return &DefaultCollMapper{} }
+func (r *DefaultCollMapper) TagetNS(ns namespace.NS) []namespace.NS { return []namespace.NS{ns} }
+
+var _ CollMapper = (*SuffixMapper)(nil)
+
+// SuffixMapper mapping the collection by adding a suffix.
+type SuffixMapper struct {
+	suffix string
+}
+
+func NewSuffixMapper(suffix string) *SuffixMapper { return &SuffixMapper{suffix: suffix} }
+
+func (s *SuffixMapper) TagetNS(ns namespace.NS) []namespace.NS {
+	return []namespace.NS{namespace.New(ns.DBName(), ns.CollName()+s.suffix)}
+}
+
+var _ CollMapper = (*TableMapper)(nil)
+
+// TableMapper generates target namespace from source namespace by lookup a mapping table.
+type TableMapper struct {
+	DBWildcard map[string]string         // dbName -> newDbName, from db1.*:db2.*
+	NSMapping  map[string][]namespace.NS // dbName.collName -> newCollName, from db1.coll1:db2.coll2 and coll1:coll2
+}
+
+func (r *TableMapper) TagetNS(ns namespace.NS) []namespace.NS {
+	if newNSes, ok := r.NSMapping[ns.String()]; ok {
+		return newNSes
+	}
+
+	if newDBName, ok := r.DBWildcard[ns.DBName()]; ok {
+		return []namespace.NS{namespace.New(newDBName, ns.CollName())}
+	}
+
+	return []namespace.NS{ns}
+}
+
+type Option struct {
+	// Index related options
+	DropExistIndex bool
+	RebuildIndex   bool
+	UseAutoIndex   bool
+
+	// Collection schema related options
+	DropExistCollection  bool
+	SkipCreateCollection bool
+	MaxShardNum          int32
+	SkipParams           SkipParams
+
+	// data related options
+	MetaOnly           bool
+	UseV2Restore       bool
+	TruncateBinlogByTs bool
+
+	RestoreRBAC bool
+}
+
+type TaskArgs struct {
+	TaskID string
+
+	Backup *backuppb.BackupInfo
+
+	Plan   *Plan
+	Option *Option
+
+	Params *paramtable.BackupParams
+
+	BackupDir      string
+	BackupRootPath string
+	BackupStorage  storage.Client
+	MilvusStorage  storage.Client
+
+	Grpc    milvus.Grpc
+	Restful milvus.Restful
+}
+
 type Task struct {
 	logger *zap.Logger
+	taskID string
 
-	request *backuppb.RestoreBackupRequest
-	backup  *backuppb.BackupInfo
+	backup *backuppb.BackupInfo
 
-	planner *planner
+	dbTasks   []*databaseTask
+	collTasks []*collectionTask
 
-	params  *paramtable.BackupParams
+	plan   *Plan
+	option *Option
+
+	params *paramtable.BackupParams
+
 	taskMgr *taskmgr.Mgr
-
-	task *backuppb.RestoreBackupTask
 
 	copySem       *semaphore.Weighted
 	bulkInsertSem *semaphore.Weighted
@@ -41,70 +164,209 @@ type Task struct {
 	grpc    milvus.Grpc
 	restful milvus.Restful
 
-	backupBucketName string
-	backupPath       string
+	backupDir      string
+	backupRootPath string
 }
 
-func NewTask(
-	request *backuppb.RestoreBackupRequest,
-	backupPath string,
-	backupBucketName string,
-	params *paramtable.BackupParams,
-	info *backuppb.BackupInfo,
-	backupStorage storage.Client,
-	milvusStorage storage.Client,
-	grpcCli milvus.Grpc,
-	restfulCli milvus.Restful,
-) (*Task, error) {
-	logger := log.L().With(zap.String("backup_name", info.GetName()))
-	p, err := newPlanner(request)
-	if err != nil {
-		return nil, fmt.Errorf("restore: create planner %w", err)
-	}
+func NewTask(args TaskArgs) (*Task, error) {
+	logger := log.L().With(zap.String("backup_name", args.Backup.GetName()))
 
 	return &Task{
+		taskID: args.TaskID,
+
 		logger: logger,
 
-		request: request,
-		backup:  info,
+		backup: args.Backup,
+		plan:   args.Plan,
 
-		planner: p,
+		option: args.Option,
+		params: args.Params,
 
-		params:  params,
 		taskMgr: taskmgr.DefaultMgr,
 
-		copySem:       semaphore.NewWeighted(params.BackupCfg.BackupCopyDataParallelism),
-		bulkInsertSem: semaphore.NewWeighted(params.BackupCfg.ImportJobParallelism),
+		copySem:       semaphore.NewWeighted(args.Params.BackupCfg.BackupCopyDataParallelism),
+		bulkInsertSem: semaphore.NewWeighted(args.Params.BackupCfg.ImportJobParallelism),
 
-		backupStorage: backupStorage,
-		milvusStorage: milvusStorage,
+		backupStorage: args.BackupStorage,
+		milvusStorage: args.MilvusStorage,
 
-		grpc:    grpcCli,
-		restful: restfulCli,
+		grpc:    args.Grpc,
+		restful: args.Restful,
 
-		backupBucketName: backupBucketName,
-		backupPath:       backupPath,
+		backupDir: args.BackupDir,
 	}, nil
 }
 
-func (t *Task) newRestoreTaskPB() (*backuppb.RestoreBackupTask, error) {
-	dbTasks, collTasks := t.planner.Plan(t.backup)
+func (t *Task) newDBAndCollTasks(backup *backuppb.BackupInfo) ([]*databaseTask, []*collectionTask) {
+	dbNames := lo.Map(backup.GetDatabaseBackups(), func(db *backuppb.DatabaseBackupInfo, _ int) string { return db.GetDbName() })
+	t.logger.Info("databases in backup", zap.Strings("db_names", dbNames))
+	collNSs := lo.Map(backup.GetCollectionBackups(), func(coll *backuppb.CollectionBackupInfo, _ int) string {
+		return namespace.New(coll.GetDbName(), coll.GetCollectionName()).String()
+	})
+	t.logger.Info("collections in backup", zap.Strings("coll_names", collNSs))
 
-	size := lo.SumBy(collTasks, func(coll *backuppb.RestoreCollectionTask) int64 { return coll.ToRestoreSize })
-	task := &backuppb.RestoreBackupTask{
-		Id:                     t.request.GetId(),
-		StartTime:              time.Now().Unix(),
-		ToRestoreSize:          size,
-		DatabaseRestoreTasks:   dbTasks,
-		CollectionRestoreTasks: collTasks,
+	// filter backup
+	dbBackups := t.filterDBBackup(backup.GetDatabaseBackups())
+	collBackups := t.filterCollBackup(backup.GetCollectionBackups())
+	dbNames = lo.Map(dbBackups, func(db *backuppb.DatabaseBackupInfo, _ int) string { return db.GetDbName() })
+	t.logger.Info("databases backup after filtering", zap.Strings("db_names", dbNames))
+	collNSs = lo.Map(collBackups, func(coll *backuppb.CollectionBackupInfo, _ int) string {
+		return namespace.New(coll.GetDbName(), coll.GetCollectionName()).String()
+	})
+	t.logger.Info("collections backup after filtering", zap.Strings("coll_names", collNSs))
+
+	// generate restore tasks
+	dbTasks := t.newDBTasks(dbBackups)
+	collTasks := t.newCollTasks(collBackups)
+	dbNames = lo.Map(dbTasks, func(db *databaseTask, _ int) string { return db.targetName })
+	t.logger.Info("databases task after mapping", zap.Strings("db_names", dbNames))
+	collNSs = lo.Map(collTasks, func(coll *collectionTask, _ int) string { return coll.targetNS.String() })
+	t.logger.Info("collections task after mapping", zap.Strings("ns", collNSs))
+
+	// filter task
+	dbTasks = t.filterDBTask(dbTasks)
+	collTasks = t.filterCollTask(collTasks)
+	dbNames = lo.Map(dbTasks, func(db *databaseTask, _ int) string { return db.targetName })
+	t.logger.Info("databases task after filtering", zap.Strings("db_names", dbNames))
+	collNSs = lo.Map(collTasks, func(coll *collectionTask, _ int) string { return coll.targetNS.String() })
+	t.logger.Info("collections task after filtering", zap.Strings("coll_names", collNSs))
+
+	return dbTasks, collTasks
+}
+
+func (t *Task) filterDBBackup(dbBackups []*backuppb.DatabaseBackupInfo) []*backuppb.DatabaseBackupInfo {
+	if len(t.plan.DBBackupFilter) == 0 {
+		return dbBackups
 	}
 
-	return task, nil
+	return lo.Filter(dbBackups, func(dbBackup *backuppb.DatabaseBackupInfo, _ int) bool {
+		_, ok := t.plan.DBBackupFilter[dbBackup.GetDbName()]
+		return ok
+	})
+}
+
+func (t *Task) filterCollBackup(collBackups []*backuppb.CollectionBackupInfo) []*backuppb.CollectionBackupInfo {
+	if len(t.plan.CollBackupFilter) == 0 {
+		return collBackups
+	}
+
+	return lo.Filter(collBackups, func(collBackup *backuppb.CollectionBackupInfo, _ int) bool {
+		filter, ok := t.plan.CollBackupFilter[collBackup.GetDbName()]
+		if !ok {
+			return false
+		}
+
+		if filter.AllowAll {
+			return true
+		}
+
+		_, ok = filter.CollName[collBackup.GetCollectionName()]
+		return ok
+	})
+}
+
+func (t *Task) newDBTask(dbBak *backuppb.DatabaseBackupInfo) []*databaseTask {
+	mappings, ok := t.plan.DBMapper[dbBak.GetDbName()]
+	if !ok {
+		t.logger.Debug("no mapping for database, restore directly", zap.String("db_name", dbBak.GetDbName()))
+		task := newDatabaseTask(t.grpc, dbBak, dbBak.GetDbName())
+		return []*databaseTask{task}
+	}
+
+	tasks := make([]*databaseTask, 0, len(mappings))
+	for _, mapping := range mappings {
+		t.logger.Debug("generate restore database task", zap.String("source", dbBak.GetDbName()), zap.String("target", mapping.Target))
+		task := newDatabaseTask(t.grpc, dbBak, mapping.Target)
+		tasks = append(tasks, task)
+	}
+
+	return tasks
+}
+
+func (t *Task) newDBTasks(dbBackups []*backuppb.DatabaseBackupInfo) []*databaseTask {
+	var dbTasks []*databaseTask
+	for _, dbBackup := range dbBackups {
+		tasks := t.newDBTask(dbBackup)
+		dbTasks = append(dbTasks, tasks...)
+	}
+
+	return dbTasks
+}
+
+func (t *Task) newCollTask(collBackup *backuppb.CollectionBackupInfo) []*collectionTask {
+	sourceNS := namespace.New(collBackup.GetDbName(), collBackup.GetCollectionName())
+	targetNSes := t.plan.CollMapper.TagetNS(sourceNS)
+
+	tasks := make([]*collectionTask, 0, len(targetNSes))
+	for _, targetNS := range targetNSes {
+		t.logger.Debug("generate restore collection task", zap.String("source", sourceNS.String()), zap.String("target", targetNS.String()))
+		args := collectionTaskArgs{
+			taskID:         t.taskID,
+			taskMgr:        t.taskMgr,
+			targetNS:       targetNS,
+			collBackup:     collBackup,
+			option:         t.option,
+			backupRootPath: t.backupDir,
+			crossStorage:   t.params.MinioCfg.CrossStorage,
+			backupDir:      t.backupDir,
+			backupStorage:  t.backupStorage,
+			milvusStorage:  t.milvusStorage,
+			copySem:        t.copySem,
+			bulkInsertSem:  t.bulkInsertSem,
+			grpcCli:        t.grpc,
+			restfulCli:     t.restful,
+		}
+
+		tasks = append(tasks, newCollectionTask(args))
+	}
+
+	return tasks
+}
+
+func (t *Task) newCollTasks(collBackups []*backuppb.CollectionBackupInfo) []*collectionTask {
+	var dbNameCollNameTask []*collectionTask
+	for _, collBackup := range collBackups {
+		tasks := t.newCollTask(collBackup)
+		dbNameCollNameTask = append(dbNameCollNameTask, tasks...)
+	}
+
+	return dbNameCollNameTask
+}
+
+func (t *Task) filterDBTask(dbTask []*databaseTask) []*databaseTask {
+	if len(t.plan.DBTaskFilter) == 0 {
+		return dbTask
+	}
+
+	return lo.Filter(dbTask, func(task *databaseTask, _ int) bool {
+		_, ok := t.plan.DBTaskFilter[task.targetName]
+		return ok
+	})
+}
+
+func (t *Task) filterCollTask(collTask []*collectionTask) []*collectionTask {
+	if len(t.plan.CollTaskFilter) == 0 {
+		return collTask
+	}
+
+	return lo.Filter(collTask, func(task *collectionTask, _ int) bool {
+		filter, ok := t.plan.CollTaskFilter[task.targetNS.DBName()]
+		if !ok {
+			return false
+		}
+
+		if filter.AllowAll {
+			return true
+		}
+
+		_, ok = filter.CollName[task.targetNS.CollName()]
+		return ok
+	})
 }
 
 // checkCollsExist check if the collection exist in target milvus, if collection exist, return error.
-func (t *Task) checkCollsExist(ctx context.Context, task *backuppb.RestoreBackupTask) error {
-	for _, collTask := range task.GetCollectionRestoreTasks() {
+func (t *Task) checkCollsExist(ctx context.Context) error {
+	for _, collTask := range t.collTasks {
 		if err := t.checkCollExist(ctx, collTask); err != nil {
 			return err
 		}
@@ -113,80 +375,71 @@ func (t *Task) checkCollsExist(ctx context.Context, task *backuppb.RestoreBackup
 	return nil
 }
 
-func (t *Task) checkCollExist(ctx context.Context, task *backuppb.RestoreCollectionTask) error {
-	has, err := t.grpc.HasCollection(ctx, task.GetTargetDbName(), task.GetTargetCollectionName())
+func (t *Task) checkCollExist(ctx context.Context, task *collectionTask) error {
+	has, err := t.grpc.HasCollection(ctx, task.targetNS.DBName(), task.targetNS.CollName())
 	if err != nil {
 		return fmt.Errorf("restore: check collection %w", err)
 	}
 
-	if task.SkipCreateCollection && task.DropExistCollection {
-		return fmt.Errorf("restore: skip create and drop exist collection can not be true at the same time collection %s", task.GetTargetCollectionName())
+	if t.option.SkipCreateCollection && t.option.DropExistCollection {
+		return fmt.Errorf("restore: skip create and drop exist collection can not be true at the same time collection %s", task.targetNS.String())
 	}
 
 	// collection not exist and not create collection
-	if !has && task.GetSkipCreateCollection() {
-		return fmt.Errorf("restore: collection not exist, database %s collection %s", task.GetTargetDbName(), task.GetTargetCollectionName())
+	if !has && t.option.SkipCreateCollection {
+		return fmt.Errorf("restore: collection not exist, database %s collection %s", task.targetNS.DBName(), task.targetNS.CollName())
 	}
 
 	// collection existed and not drop collection
-	if has && !task.GetSkipCreateCollection() && !task.GetDropExistCollection() {
-		return fmt.Errorf("restore: collection already exist, database %s collection %s", task.GetTargetDbName(), task.GetTargetCollectionName())
+	if has && !t.option.SkipCreateCollection && !t.option.DropExistCollection {
+		return fmt.Errorf("restore: collection already exist, database %s collection %s", task.targetNS.DBName(), task.targetNS.CollName())
 	}
 
 	return nil
 }
 
 func (t *Task) Prepare(_ context.Context) error {
-	task, err := t.newRestoreTaskPB()
-	if err != nil {
-		return fmt.Errorf("restore: create restore task %w", err)
-	}
+	t.taskMgr.AddRestoreTask(t.taskID)
 
-	t.task = task
-
-	t.taskMgr.AddRestoreTask(task.GetId(), task.GetToRestoreSize())
-	opts := make([]taskmgr.RestoreTaskOpt, 0, len(task.GetCollectionRestoreTasks()))
-	for _, collTask := range task.GetCollectionRestoreTasks() {
-		targetNS := namespace.New(collTask.GetTargetDbName(), collTask.GetTargetCollectionName())
-		opts = append(opts, taskmgr.AddRestoreCollTask(targetNS, collTask.GetToRestoreSize()))
-	}
-	t.taskMgr.UpdateRestoreTask(task.GetId(), opts...)
+	dbTasks, collTasks := t.newDBAndCollTasks(t.backup)
+	t.dbTasks = dbTasks
+	t.collTasks = collTasks
 
 	return nil
 }
 
 func (t *Task) Execute(ctx context.Context) error {
-	if err := t.privateExecute(ctx, t.task); err != nil {
+	if err := t.privateExecute(ctx); err != nil {
 		t.logger.Error("restore task failed", zap.Error(err))
-		t.taskMgr.UpdateRestoreTask(t.task.GetId(), taskmgr.SetRestoreFail(err))
+		t.taskMgr.UpdateRestoreTask(t.taskID, taskmgr.SetRestoreFail(err))
 		return fmt.Errorf("restore: execute %w", err)
 	}
 
 	t.logger.Info("restore task finished")
-	t.taskMgr.UpdateRestoreTask(t.task.GetId(), taskmgr.SetRestoreSuccess())
+	t.taskMgr.UpdateRestoreTask(t.taskID, taskmgr.SetRestoreSuccess())
 	return nil
 }
 
-func (t *Task) privateExecute(ctx context.Context, task *backuppb.RestoreBackupTask) error {
+func (t *Task) privateExecute(ctx context.Context) error {
 	if err := t.runRBACTask(ctx); err != nil {
 		return err
 	}
 
-	t.taskMgr.UpdateRestoreTask(task.GetId(), taskmgr.SetRestoreExecuting())
+	t.taskMgr.UpdateRestoreTask(t.taskID, taskmgr.SetRestoreExecuting())
 
-	if err := t.runDBTask(ctx, task); err != nil {
+	if err := t.runDBTasks(ctx); err != nil {
 		return fmt.Errorf("restore: run database task %w", err)
 	}
 
-	if err := t.prepareDB(ctx, task); err != nil {
+	if err := t.prepareDB(ctx); err != nil {
 		return fmt.Errorf("restore: prepare database %w", err)
 	}
 
-	if err := t.checkCollsExist(ctx, task); err != nil {
+	if err := t.checkCollsExist(ctx); err != nil {
 		return fmt.Errorf("restore: check collection exist %w", err)
 	}
 
-	if err := t.runCollTask(ctx, task); err != nil {
+	if err := t.runCollTasks(ctx); err != nil {
 		return fmt.Errorf("restore: run collection task %w", err)
 	}
 
@@ -194,7 +447,7 @@ func (t *Task) privateExecute(ctx context.Context, task *backuppb.RestoreBackupT
 }
 
 func (t *Task) runRBACTask(ctx context.Context) error {
-	if !t.request.GetRbac() {
+	if !t.option.RestoreRBAC {
 		t.logger.Info("skip restore RBAC")
 		return nil
 	}
@@ -208,7 +461,7 @@ func (t *Task) runRBACTask(ctx context.Context) error {
 	return nil
 }
 
-func (t *Task) runDBTask(ctx context.Context, task *backuppb.RestoreBackupTask) error {
+func (t *Task) runDBTasks(ctx context.Context) error {
 	t.logger.Info("start restore database")
 
 	// if the database is existed, skip restore
@@ -219,21 +472,19 @@ func (t *Task) runDBTask(ctx context.Context, task *backuppb.RestoreBackupTask) 
 	t.logger.Debug("list databases", zap.Strings("databases", dbs))
 	dbInTarget := lo.SliceToMap(dbs, func(db string) (string, struct{}) { return db, struct{}{} })
 
-	for _, dbTask := range task.GetDatabaseRestoreTasks() {
+	for _, dbTask := range t.dbTasks {
 		// We do not support db renaming yet.
 		// The db in the source backup cannot be repeated,
 		// so there is no need to deduplicate targetDBName.
-		if _, ok := dbInTarget[dbTask.GetTargetDbName()]; ok {
-			t.logger.Debug("skip restore database", zap.String("db_name", dbTask.GetTargetDbName()))
+		if _, ok := dbInTarget[dbTask.targetName]; ok {
+			t.logger.Info("skip restore database", zap.String("db_name", dbTask.targetName))
 			continue
 		}
-		t.logger.Info("restore database", zap.String("source", dbTask.GetDbBackup().GetDbName()),
-			zap.String("target", dbTask.GetTargetDbName()))
-		dt := NewDatabaseTask(t.grpc, dbTask)
-		if err := dt.Execute(ctx); err != nil {
+
+		if err := dbTask.Execute(ctx); err != nil {
 			return fmt.Errorf("restore: restore database %w", err)
 		}
-		t.logger.Debug("finish restore database", zap.String("db_name", dbTask.GetTargetDbName()))
+		t.logger.Debug("finish restore database", zap.String("db_name", dbTask.targetName))
 	}
 
 	t.logger.Info("finish restore all database")
@@ -242,15 +493,15 @@ func (t *Task) runDBTask(ctx context.Context, task *backuppb.RestoreBackupTask) 
 }
 
 // prepareDB create database if not exist, for restore collection task.
-func (t *Task) prepareDB(ctx context.Context, task *backuppb.RestoreBackupTask) error {
+func (t *Task) prepareDB(ctx context.Context) error {
 	dbInTarget, err := t.grpc.ListDatabases(ctx)
 	if err != nil {
 		return fmt.Errorf("restore: list databases %w", err)
 	}
 
 	dbs := make(map[string]struct{})
-	for _, collTask := range task.GetCollectionRestoreTasks() {
-		dbs[collTask.GetTargetDbName()] = struct{}{}
+	for _, collTask := range t.collTasks {
+		dbs[collTask.targetNS.DBName()] = struct{}{}
 	}
 	dbsNeedToRestores := lo.Keys(dbs)
 
@@ -265,15 +516,12 @@ func (t *Task) prepareDB(ctx context.Context, task *backuppb.RestoreBackupTask) 
 	return nil
 }
 
-func (t *Task) runCollTask(ctx context.Context, task *backuppb.RestoreBackupTask) error {
+func (t *Task) runCollTasks(ctx context.Context) error {
 	t.logger.Info("start restore collection")
 
 	g, subCtx := errgroup.WithContext(ctx)
 	g.SetLimit(t.params.BackupCfg.RestoreParallelism)
-	collTaskMetas := task.GetCollectionRestoreTasks()
-	for _, collTaskMeta := range collTaskMetas {
-		collTask := t.newRestoreCollTask(collTaskMeta)
-
+	for _, collTask := range t.collTasks {
 		g.Go(func() error {
 			logger := t.logger.With(zap.String("target_ns", collTask.targetNS.String()))
 			if err := collTask.Execute(subCtx); err != nil {
@@ -290,26 +538,12 @@ func (t *Task) runCollTask(ctx context.Context, task *backuppb.RestoreBackupTask
 		return fmt.Errorf("restore: wait collection worker pool %w", err)
 	}
 
-	duration := time.Now().Sub(time.Unix(task.GetStartTime(), 0))
-	t.logger.Info("finish restore all collections",
-		zap.Int("collection_num", len(t.backup.GetCollectionBackups())),
+	task, err := t.taskMgr.GetRestoreTask(t.taskID)
+	if err != nil {
+		return fmt.Errorf("restore: get restore task %w", err)
+	}
+	duration := task.EndTime().Sub(task.StartTime())
+	t.logger.Info("finish restore all collections", zap.Int("collection_num", len(t.collTasks)),
 		zap.Duration("duration", duration))
 	return nil
-}
-
-func (t *Task) newRestoreCollTask(collTask *backuppb.RestoreCollectionTask) *CollectionTask {
-	opt := collectionTaskOpt{
-		task:          collTask,
-		params:        t.params,
-		parentTaskID:  t.task.GetId(),
-		backupPath:    t.backupPath,
-		backupStorage: t.backupStorage,
-		milvusStorage: t.milvusStorage,
-		copySem:       t.copySem,
-		bulkInsertSem: t.bulkInsertSem,
-		grpcCli:       t.grpc,
-		restfulCli:    t.restful,
-	}
-
-	return newCollectionTask(opt)
 }
