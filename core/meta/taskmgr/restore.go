@@ -146,17 +146,15 @@ type RestoreTask struct {
 
 	startTime time.Time
 	endTime   time.Time
-	totalSize int64
 
 	collTask map[namespace.NS]*restoreCollectionTask
 }
 
-func newRestoreTask(id string, totalSize int64) *RestoreTask {
+func newRestoreTask(id string) *RestoreTask {
 	return &RestoreTask{
 		id:        id,
 		stateCode: backuppb.RestoreTaskStateCode_INITIAL,
 		startTime: time.Now(),
-		totalSize: totalSize,
 		collTask:  make(map[namespace.NS]*restoreCollectionTask),
 	}
 }
@@ -209,11 +207,11 @@ func (t *RestoreTask) Progress() int32 {
 	}
 
 	// avoid divide by zero
-	if t.totalSize == 0 {
+	if t.totalSize() == 0 {
 		return 1
 	}
 
-	progress := int32(float64(restoredSize) / float64(t.totalSize) * 100)
+	progress := int32(float64(restoredSize) / float64(t.totalSize()) * 100)
 	// don't return zero,
 	if progress == 0 {
 		return 1
@@ -222,11 +220,20 @@ func (t *RestoreTask) Progress() int32 {
 	return progress
 }
 
+func (t *RestoreTask) totalSize() int64 {
+	size := int64(0)
+	for _, task := range t.collTask {
+		size += task.TotalSize()
+	}
+
+	return size
+}
+
 func (t *RestoreTask) TotalSize() int64 {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	return t.totalSize
+	return t.totalSize()
 }
 
 func (t *RestoreTask) CollTasks() map[namespace.NS]RestoreCollTaskView {

@@ -23,11 +23,11 @@ type Mgr struct {
 	migrateTask map[string]*MigrateTask
 }
 
-func (t *Mgr) AddRestoreTask(taskID string, totalSize int64) {
+func (t *Mgr) AddRestoreTask(taskID string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	t.restoreTask[taskID] = newRestoreTask(taskID, totalSize)
+	t.restoreTask[taskID] = newRestoreTask(taskID)
 }
 
 func (t *Mgr) UpdateRestoreTask(taskID string, opts ...RestoreTaskOpt) {

@@ -16,9 +16,12 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/client/milvus"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/namespace"
 )
 
-func newTestCollectionTask() *CollectionTask { return &CollectionTask{logger: zap.NewNop()} }
+func newTestCollectionTask() *collectionTask {
+	return &collectionTask{logger: zap.NewNop(), option: &Option{}}
+}
 
 func TestGetFailedReason(t *testing.T) {
 	t.Run("Normal", func(t *testing.T) {
@@ -47,13 +50,14 @@ func TestGetProcess(t *testing.T) {
 func TestCollectionTask_shardNum(t *testing.T) {
 	t.Run("Normal", func(t *testing.T) {
 		ct := newTestCollectionTask()
-		ct.task = &backuppb.RestoreCollectionTask{CollBackup: &backuppb.CollectionBackupInfo{ShardsNum: 10}}
+		ct.collBackup = &backuppb.CollectionBackupInfo{ShardsNum: 10}
 		assert.Equal(t, int32(10), ct.shardNum())
 	})
 
 	t.Run("OverwriteByRequest", func(t *testing.T) {
 		ct := newTestCollectionTask()
-		ct.task = &backuppb.RestoreCollectionTask{CollBackup: &backuppb.CollectionBackupInfo{ShardsNum: 10}, MaxShardNum: 5}
+		ct.collBackup = &backuppb.CollectionBackupInfo{ShardsNum: 10}
+		ct.option.MaxShardNum = 5
 		assert.Equal(t, int32(5), ct.shardNum())
 	})
 }
@@ -61,30 +65,27 @@ func TestCollectionTask_shardNum(t *testing.T) {
 func TestCollectionTask_createColl(t *testing.T) {
 	t.Run("Skip", func(t *testing.T) {
 		ct := newTestCollectionTask()
-		ct.task = &backuppb.RestoreCollectionTask{SkipCreateCollection: true}
+		ct.option.SkipCreateCollection = true
 		err := ct.createColl(context.Background())
 		assert.NoError(t, err)
 	})
 
 	t.Run("Normal", func(t *testing.T) {
 		ct := newTestCollectionTask()
-		ct.task = &backuppb.RestoreCollectionTask{
-			TargetDbName:         "db1",
-			TargetCollectionName: "coll1",
-			CollBackup: &backuppb.CollectionBackupInfo{
-				Schema: &backuppb.CollectionSchema{
-					Fields:             []*backuppb.FieldSchema{{Name: "field", DataType: backuppb.DataType_Int64, IsPrimaryKey: true}},
-					Properties:         []*backuppb.KeyValuePair{{Key: "key", Value: "val"}},
-					Functions:          []*backuppb.FunctionSchema{{Name: "func", InputFieldNames: []string{"hello"}}},
-					EnableDynamicField: true,
-					AutoID:             true,
-					Description:        "desc",
-				},
-				ShardsNum:        10,
-				ConsistencyLevel: backuppb.ConsistencyLevel_Bounded,
-				PartitionBackups: []*backuppb.PartitionBackupInfo{{PartitionName: "part1"}},
-				Properties:       []*backuppb.KeyValuePair{{Key: "key1", Value: "val1"}},
+		ct.targetNS = namespace.New("db1", "coll1")
+		ct.collBackup = &backuppb.CollectionBackupInfo{
+			Schema: &backuppb.CollectionSchema{
+				Fields:             []*backuppb.FieldSchema{{Name: "field", DataType: backuppb.DataType_Int64, IsPrimaryKey: true}},
+				Properties:         []*backuppb.KeyValuePair{{Key: "key", Value: "val"}},
+				Functions:          []*backuppb.FunctionSchema{{Name: "func", InputFieldNames: []string{"hello"}}},
+				EnableDynamicField: true,
+				AutoID:             true,
+				Description:        "desc",
 			},
+			ShardsNum:        10,
+			ConsistencyLevel: backuppb.ConsistencyLevel_Bounded,
+			PartitionBackups: []*backuppb.PartitionBackupInfo{{PartitionName: "part1"}},
+			Properties:       []*backuppb.KeyValuePair{{Key: "key1", Value: "val1"}},
 		}
 
 		cli := milvus.NewMockGrpc(t)
@@ -166,7 +167,7 @@ func TestToPaths(t *testing.T) {
 
 func TestL0SegmentBatches(t *testing.T) {
 	ct := newTestCollectionTask()
-	ct.task = &backuppb.RestoreCollectionTask{CollBackup: &backuppb.CollectionBackupInfo{CollectionId: 1}}
+	ct.collBackup = &backuppb.CollectionBackupInfo{CollectionId: 1}
 
 	segs := make([]*backuppb.SegmentBackupInfo, 0, 10)
 	for i := 0; i < 10; i++ {

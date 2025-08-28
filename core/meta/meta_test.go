@@ -107,3 +107,32 @@ func TestReadFromLevel(t *testing.T) {
 		}
 	}
 }
+
+func TestExist(t *testing.T) {
+	t.Run("Exist", func(t *testing.T) {
+		objs := []storage.ObjectAttr{
+			{Key: "backup/backup1/meta/backup_meta.json", Length: 1},
+		}
+		iter := storage.NewMockObjectIterator(objs)
+		cli := storage.NewMockClient(t)
+		cli.EXPECT().
+			ListPrefix(mock.Anything, "backup/backup1/meta/backup_meta.json", false).
+			Return(iter, nil)
+
+		exist, err := Exist(context.Background(), cli, "backup/backup1")
+		assert.NoError(t, err)
+		assert.True(t, exist)
+	})
+
+	t.Run("NotExist", func(t *testing.T) {
+		iter := storage.NewMockObjectIterator([]storage.ObjectAttr{})
+		cli := storage.NewMockClient(t)
+		cli.EXPECT().
+			ListPrefix(mock.Anything, "backup/backup1/meta/backup_meta.json", false).
+			Return(iter, nil)
+
+		exist, err := Exist(context.Background(), cli, "backup/backup1")
+		assert.NoError(t, err)
+		assert.False(t, exist)
+	})
+}
