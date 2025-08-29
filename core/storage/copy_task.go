@@ -73,7 +73,7 @@ func (c *CopyPrefixTask) Execute(ctx context.Context) error {
 			continue
 		}
 
-		if err := c.opt.Sem.Acquire(subCtx, 1); err != nil {
+		if err := c.opt.Sem.Acquire(ctx, 1); err != nil {
 			return fmt.Errorf("storage: copy prefix acquire semaphore %w", err)
 		}
 		g.Go(func() error {
@@ -129,7 +129,7 @@ func (c *CopyObjectsTask) Execute(ctx context.Context) error {
 
 	g, subCtx := errgroup.WithContext(ctx)
 	for _, attr := range c.opt.Attrs {
-		if err := c.opt.Sem.Acquire(subCtx, 1); err != nil {
+		if err := c.opt.Sem.Acquire(ctx, 1); err != nil {
 			return fmt.Errorf("storage: copy objects acquire semaphore %w", err)
 		}
 		g.Go(func() error {

@@ -793,7 +793,7 @@ func (ct *CollectionTask) backupSegment(ctx context.Context, seg *backuppb.Segme
 	}
 	cpTask := storage.NewCopyObjectsTask(opt)
 	if err := cpTask.Execute(ctx); err != nil {
-		return fmt.Errorf("backup: copy insert logs %w", err)
+		return fmt.Errorf("backup: copy bin logs %w", err)
 	}
 
 	// TODO: now l0 segment not under partition, update l0 segment backuped to true will cause nil pointer error
