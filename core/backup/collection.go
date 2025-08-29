@@ -802,6 +802,5 @@ func (ct *CollectionTask) backupSegment(ctx context.Context, seg *backuppb.Segme
 	}
 	ct.meta.UpdateSegment(seg.PartitionId, seg.SegmentId, meta.SetSegmentBackuped(true))
 
-	ct.logger.Info("backup segment done", zap.Int64("segment_id", seg.GetSegmentId()))
 	return nil
 }
