@@ -124,6 +124,7 @@ message BackupInfo {
   RBACMeta rbac_meta = 12;
   RPCChannelInfo rpc_channel_info = 13;
   repeated DatabaseBackupInfo database_backups = 14;
+  int64 meta_size = 15;
 }
 
 message RPCChannelInfo {

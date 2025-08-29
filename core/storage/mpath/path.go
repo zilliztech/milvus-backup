@@ -28,6 +28,8 @@ import (
 // backup meta path
 // ${root}/meta/${file_type}.json
 
+const _separator = "/"
+
 const _metaPrefix = "meta"
 
 type MetaType string
@@ -45,11 +47,14 @@ func MetaKey(backupDir string, mateType MetaType) string {
 	return path.Join(backupDir, _metaPrefix, string(mateType))
 }
 
+func MetaDir(backupRoot, backupName string) string {
+	return path.Join(BackupDir(backupRoot, backupName), _metaPrefix) + _separator
+}
+
 const (
 	_binlogPrefix    = "binlogs"
 	_insertLogPrefix = "insert_log"
 	_deltaLogPrefix  = "delta_log"
-	_separator       = "/"
 )
 
 func Join(base string, options ...Option) string {
