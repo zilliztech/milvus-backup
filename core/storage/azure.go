@@ -17,6 +17,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
+	"github.com/zilliztech/milvus-backup/internal/retry"
 )
 
 var _ io.ReadCloser = (*AzureReader)(nil)
@@ -158,36 +159,38 @@ func (a *AzureClient) CopyObject(ctx context.Context, i CopyObjectInput) error {
 		return fmt.Errorf("storage: azure copy object src client is not azure")
 	}
 
-	srcURL := fmt.Sprintf("https://%s.blob.%s/%s/%s", srcCli.cfg.Credential.AzureAccountName, srcCli.cfg.Endpoint, srcCli.cfg.Bucket, i.SrcKey)
-	// if src and dest are in different account, we need to generate SAS token
-	if a.cfg.Credential.AK != srcCli.cfg.Credential.AK {
-		srcSAS, err := a.getSAS(ctx, srcCli)
-		if err != nil {
-			return err
-		}
-		srcURL += "?" + srcSAS.Encode()
-	}
-
-	blobCli := a.cli.ServiceClient().NewContainerClient(a.cfg.Bucket).NewBlockBlobClient(i.DestKey)
-	// we need to abort the previous copy operation before copy from url
-	abortErr := func() error {
-		blobProperties, err := blobCli.BlobClient().GetProperties(ctx, nil)
-		if err != nil {
-			return fmt.Errorf("storage: azure get properties %w", err)
-		}
-		if blobProperties.CopyID != nil {
-			if _, err = blobCli.AbortCopyFromURL(ctx, *blobProperties.CopyID, nil); err != nil {
-				return fmt.Errorf("storage: azure abort copy from url %w", err)
+	return retry.Do(ctx, func() error {
+		srcURL := fmt.Sprintf("https://%s.blob.%s/%s/%s", srcCli.cfg.Credential.AzureAccountName, srcCli.cfg.Endpoint, srcCli.cfg.Bucket, i.SrcKey)
+		// if src and dest are in different account, we need to generate SAS token
+		if a.cfg.Credential.AK != srcCli.cfg.Credential.AK {
+			srcSAS, err := a.getSAS(ctx, srcCli)
+			if err != nil {
+				return err
 			}
+			srcURL += "?" + srcSAS.Encode()
 		}
+
+		blobCli := a.cli.ServiceClient().NewContainerClient(a.cfg.Bucket).NewBlockBlobClient(i.DestKey)
+		// we need to abort the previous copy operation before copy from url
+		abortErr := func() error {
+			blobProperties, err := blobCli.BlobClient().GetProperties(ctx, nil)
+			if err != nil {
+				return fmt.Errorf("storage: azure get properties %w", err)
+			}
+			if blobProperties.CopyID != nil {
+				if _, err = blobCli.AbortCopyFromURL(ctx, *blobProperties.CopyID, nil); err != nil {
+					return fmt.Errorf("storage: azure abort copy from url %w", err)
+				}
+			}
+			return nil
+		}()
+
+		if _, err := blobCli.CopyFromURL(ctx, srcURL, nil); err != nil {
+			return fmt.Errorf("storage: azure copy from url %w abort previous %w", err, abortErr)
+		}
+
 		return nil
-	}()
-
-	if _, err := blobCli.CopyFromURL(ctx, srcURL, nil); err != nil {
-		return fmt.Errorf("storage: azure copy from url %w abort previous %w", err, abortErr)
-	}
-
-	return nil
+	})
 }
 
 func (a *AzureClient) HeadObject(ctx context.Context, key string) (ObjectAttr, error) {
