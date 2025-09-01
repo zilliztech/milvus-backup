@@ -18,6 +18,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/restore"
 	"github.com/zilliztech/milvus-backup/core/storage"
+	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 )
 
@@ -29,8 +30,10 @@ type options struct {
 	databases             string
 	databaseCollections   string
 
+	restoreIndex bool
+	rebuildIndex bool
+
 	metaOnly             bool
-	restoreIndex         bool
 	useAutoIndex         bool
 	dropExistCollection  bool
 	dropExistIndex       bool
@@ -65,6 +68,10 @@ func (o *options) validate() error {
 		return errors.New("drop_exist_collection and skip_create_collection cannot be true at the same time")
 	}
 
+	if o.restoreIndex {
+		log.Warn("restore_index is deprecated, use rebuild_index instead")
+	}
+
 	return nil
 }
 
@@ -77,8 +84,11 @@ func (o *options) addFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.databases, "databases", "d", "", "databases to restore, if not set, restore all databases")
 	cmd.Flags().StringVarP(&o.databaseCollections, "database_collections", "a", "", "databases and collections to restore, json format: {\"db1\":[\"c1\", \"c2\"],\"db2\":[]}")
 
+	cmd.Flags().BoolVarP(&o.restoreIndex, "restore_index", "", false, "[DEPRECATED] Use --rebuild_index instead. restore index info")
+	cmd.Flags().BoolVarP(&o.rebuildIndex, "rebuild_index", "", false, "Rebuild index from meta information.")
+
 	cmd.Flags().BoolVarP(&o.metaOnly, "meta_only", "", false, "if true, restore meta only")
-	cmd.Flags().BoolVarP(&o.restoreIndex, "restore_index", "", false, "if true, restore index")
+
 	cmd.Flags().BoolVarP(&o.useAutoIndex, "use_auto_index", "", false, "if true, replace vector index with autoindex")
 	cmd.Flags().BoolVarP(&o.dropExistCollection, "drop_exist_collection", "", false, "if true, drop existing target collection before create")
 	cmd.Flags().BoolVarP(&o.dropExistIndex, "drop_exist_index", "", false, "if true, drop existing index of target collection before create")
@@ -88,9 +98,11 @@ func (o *options) addFlags(cmd *cobra.Command) {
 }
 
 func (o *options) toOption() *restore.Option {
+	rebuildIndex := o.restoreIndex || o.rebuildIndex
+
 	return &restore.Option{
 		DropExistIndex:       o.dropExistIndex,
-		RebuildIndex:         o.restoreIndex,
+		RebuildIndex:         rebuildIndex,
 		UseAutoIndex:         o.useAutoIndex,
 		DropExistCollection:  o.dropExistCollection,
 		SkipCreateCollection: o.skipCreateCollection,
