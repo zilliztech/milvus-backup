@@ -11,6 +11,50 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 )
 
+func TestRestoreHandler_validate(t *testing.T) {
+	t.Run("Valid", func(t *testing.T) {
+		request := &backuppb.RestoreBackupRequest{BackupName: "backup"}
+		h := newRestoreHandler(request, nil)
+		err := h.validate()
+		assert.NoError(t, err)
+	})
+
+	t.Run("BackupNameEmpty", func(t *testing.T) {
+		request := &backuppb.RestoreBackupRequest{}
+		h := newRestoreHandler(request, nil)
+		err := h.validate()
+		assert.Error(t, err)
+	})
+
+	t.Run("DropAndNotCreate", func(t *testing.T) {
+		request := &backuppb.RestoreBackupRequest{BackupName: "backup", DropExistCollection: true, SkipCreateCollection: true}
+		h := newRestoreHandler(request, nil)
+		err := h.validate()
+		assert.Error(t, err)
+	})
+
+	t.Run("RestorePlanAndCollectionSuffix", func(t *testing.T) {
+		request := &backuppb.RestoreBackupRequest{BackupName: "backup", RestorePlan: &backuppb.RestorePlan{}, CollectionSuffix: "_suffix"}
+		h := newRestoreHandler(request, nil)
+		err := h.validate()
+		assert.Error(t, err)
+	})
+
+	t.Run("RestorePlanAndCollectionRenames", func(t *testing.T) {
+		request := &backuppb.RestoreBackupRequest{BackupName: "backup", RestorePlan: &backuppb.RestorePlan{}, CollectionRenames: map[string]string{"db1.coll1": "db2.coll2"}}
+		h := newRestoreHandler(request, nil)
+		err := h.validate()
+		assert.Error(t, err)
+	})
+
+	t.Run("InvalidCollectionSuffix", func(t *testing.T) {
+		request := &backuppb.RestoreBackupRequest{BackupName: "backup", CollectionSuffix: "invalid-suffix"}
+		h := newRestoreHandler(request, nil)
+		err := h.validate()
+		assert.Error(t, err)
+	})
+}
+
 func TestInferRuleType(t *testing.T) {
 	// rule 1
 	rule, err := inferRuleType("db1.*", "db2.*")

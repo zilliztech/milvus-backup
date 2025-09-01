@@ -3,6 +3,7 @@ package restore
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/samber/lo"
 	"go.uber.org/zap"
@@ -542,7 +543,7 @@ func (t *Task) runCollTasks(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("restore: get restore task %w", err)
 	}
-	duration := task.EndTime().Sub(task.StartTime())
+	duration := time.Now().Sub(task.StartTime())
 	t.logger.Info("finish restore all collections", zap.Int("collection_num", len(t.collTasks)),
 		zap.Duration("duration", duration))
 	return nil
