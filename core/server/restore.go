@@ -103,11 +103,15 @@ func (h *restoreHandler) run(ctx context.Context) *backuppb.RestoreBackupRespons
 }
 
 func (h *restoreHandler) validate() error {
-	if h.request.GetRestorePlan() != nil && len(h.request.GetCollectionSuffix()) == 0 {
+	if len(h.request.GetBackupName()) == 0 {
+		return errors.New("backup name is required")
+	}
+
+	if h.request.GetRestorePlan() != nil && len(h.request.GetCollectionSuffix()) != 0 {
 		return errors.New("restore plan and collection suffix cannot be set at the same time")
 	}
 
-	if h.request.GetRestorePlan() != nil && len(h.request.GetCollectionRenames()) == 0 {
+	if h.request.GetRestorePlan() != nil && len(h.request.GetCollectionRenames()) != 0 {
 		return errors.New("restore plan and collection renames cannot be set at the same time")
 	}
 
@@ -115,10 +119,6 @@ func (h *restoreHandler) validate() error {
 		if has := validate.HasSpecialChar(h.request.GetCollectionSuffix()); has {
 			return errors.New("only alphanumeric characters and underscores are allowed in collection suffix")
 		}
-	}
-
-	if len(h.request.GetBackupName()) == 0 {
-		return errors.New("backup name is required")
 	}
 
 	if h.request.GetDropExistCollection() && h.request.GetSkipCreateCollection() {
@@ -293,10 +293,6 @@ func newOptionFromRequest(request *backuppb.RestoreBackupRequest) *restore.Optio
 }
 
 func newPlanFromRequest(request *backuppb.RestoreBackupRequest) (*restore.Plan, error) {
-	if request.GetRestorePlan() != nil {
-		return newPlanFromRequest(request)
-	}
-
 	dbFilter, err := newDBBackupFilter(request)
 	if err != nil {
 		return nil, fmt.Errorf("restore: create db backup filter: %w", err)
