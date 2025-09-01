@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/samber/lo"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"golang.org/x/sync/semaphore"
@@ -189,6 +190,17 @@ func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBack
 			resp.Code = backuppb.ResponseCode_Success
 			resp.Msg = "success"
 			resp.Data = fullBackupInfo
+			if resp.Data.GetStateCode() == backuppb.BackupTaskStateCode_BACKUP_SUCCESS {
+				metaDir := mpath.MetaDir(b.backupRootPath, request.GetBackupName())
+				_, sizes, err := storage.ListPrefixFlat(ctx, b.getBackupStorageClient(), metaDir, true)
+				if err != nil {
+					log.Warn("Fail to list backup directory", zap.Error(err))
+					resp.Code = backuppb.ResponseCode_Fail
+					resp.Msg = err.Error()
+				} else {
+					resp.Data.MetaSize = lo.Sum(sizes)
+				}
+			}
 		} else {
 			backupDir := mpath.BackupDir(b.backupRootPath, request.GetBackupName())
 			backup, err := meta.Read(ctx, b.getBackupStorageClient(), backupDir)
@@ -206,6 +218,15 @@ func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBack
 				resp.Code = backuppb.ResponseCode_Request_Object_Not_Found
 				resp.Msg = "not found"
 			} else {
+				metaDir := mpath.MetaDir(b.backupRootPath, request.GetBackupName())
+				_, sizes, err := storage.ListPrefixFlat(ctx, b.getBackupStorageClient(), metaDir, true)
+				if err != nil {
+					log.Warn("Fail to list backup directory", zap.Error(err))
+					resp.Code = backuppb.ResponseCode_Fail
+					resp.Msg = err.Error()
+				} else {
+					resp.Data.MetaSize = lo.Sum(sizes)
+				}
 				resp.Code = backuppb.ResponseCode_Success
 				resp.Msg = "success"
 			}

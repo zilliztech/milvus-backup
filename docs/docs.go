@@ -279,6 +279,9 @@ const docTemplate = `{
                 "id": {
                     "type": "string"
                 },
+                "meta_size": {
+                    "type": "integer"
+                },
                 "milvus_version": {
                     "type": "string"
                 },
