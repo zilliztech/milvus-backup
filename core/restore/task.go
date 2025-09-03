@@ -543,7 +543,7 @@ func (t *Task) runCollTasks(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("restore: get restore task %w", err)
 	}
-	duration := time.Now().Sub(task.StartTime())
+	duration := time.Since(task.StartTime())
 	t.logger.Info("finish restore all collections", zap.Int("collection_num", len(t.collTasks)),
 		zap.Duration("duration", duration))
 	return nil

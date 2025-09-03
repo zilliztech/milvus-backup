@@ -17,6 +17,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
+
 	"github.com/zilliztech/milvus-backup/internal/retry"
 )
 
@@ -81,6 +82,9 @@ func newAzureClient(cfg Config) (*AzureClient, error) {
 			return nil, fmt.Errorf("storage: new azure client %w", err)
 		}
 		sasCli, err := service.NewClientWithSharedKeyCredential(ep, cred, nil)
+		if err != nil {
+			return nil, fmt.Errorf("storage: new azure service client %w", err)
+		}
 		return &AzureClient{cfg: cfg, cli: cli, sasCli: sasCli}, nil
 	default:
 		return nil, fmt.Errorf("storage: azure unsupported credential type: %s", cfg.Credential.Type.String())

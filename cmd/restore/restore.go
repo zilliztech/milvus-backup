@@ -217,22 +217,6 @@ func (o *options) dbCollectionsToFilter() (map[string]struct{}, map[string]resto
 	return dbFilter, collFilter, nil
 }
 
-func (o *options) toMapper() (restore.CollMapper, error) {
-	if o.renameCollectionNames != "" {
-		mapper, err := o.renameCollectionNamesToMapper()
-		if err != nil {
-			return nil, fmt.Errorf("create table renamer %w", err)
-		}
-		return mapper, nil
-	}
-
-	if o.renameSuffix != "" {
-		return restore.NewSuffixMapper(o.renameSuffix), nil
-	}
-
-	return restore.NewDefaultCollMapper(), nil
-}
-
 func (o *options) renameCollectionNamesToMapper() (*restore.TableMapper, error) {
 	renames := strings.Split(o.renameCollectionNames, ",")
 	renameMap := make(map[string]string)
