@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -55,7 +56,9 @@ var _ Client = (*AzureClient)(nil)
 
 func newAzureClient(cfg Config) (*AzureClient, error) {
 	// backwards compatible, don't know why we kept the "blob" in the code instead of letting it be input externally.
-	ep := fmt.Sprintf("https://%s.blob.%s", cfg.Credential.AzureAccountName, cfg.Endpoint)
+	// Remove standard HTTPS port :443 from endpoint if present
+	endpoint := strings.TrimSuffix(cfg.Endpoint, ":443")
+	ep := fmt.Sprintf("https://%s.blob.%s", cfg.Credential.AzureAccountName, endpoint)
 	switch cfg.Credential.Type {
 	case IAM:
 		cred, err := azidentity.NewDefaultAzureCredential(nil)
@@ -164,15 +167,16 @@ func (a *AzureClient) CopyObject(ctx context.Context, i CopyObjectInput) error {
 	}
 
 	return retry.Do(ctx, func() error {
-		srcURL := fmt.Sprintf("https://%s.blob.%s/%s/%s", srcCli.cfg.Credential.AzureAccountName, srcCli.cfg.Endpoint, srcCli.cfg.Bucket, i.SrcKey)
-		// if src and dest are in different account, we need to generate SAS token
-		if a.cfg.Credential.AK != srcCli.cfg.Credential.AK {
-			srcSAS, err := a.getSAS(ctx, srcCli)
-			if err != nil {
-				return err
-			}
-			srcURL += "?" + srcSAS.Encode()
+		// Remove standard HTTPS port :443 from endpoint if present
+		endpoint := strings.TrimSuffix(srcCli.cfg.Endpoint, ":443")
+		srcURL := fmt.Sprintf("https://%s.blob.%s/%s/%s", srcCli.cfg.Credential.AzureAccountName, endpoint, srcCli.cfg.Bucket, i.SrcKey)
+		// Azure CopyFromURL always requires authentication for the source URL, even for same account
+		// Generate SAS token for source URL
+		srcSAS, err := a.getSAS(ctx, srcCli)
+		if err != nil {
+			return err
 		}
+		srcURL += "?" + srcSAS.Encode()
 
 		blobCli := a.cli.ServiceClient().NewContainerClient(a.cfg.Bucket).NewBlockBlobClient(i.DestKey)
 		// we need to abort the previous copy operation before copy from url
@@ -259,6 +263,12 @@ func (flatIter *AzureObjectFlatIterator) HasNext() bool {
 		flatIter.currPage = append(flatIter.currPage, attr)
 	}
 	flatIter.nextIdx = 0
+	
+	// If the page is empty, continue checking for more pages
+	if len(flatIter.currPage) == 0 {
+		return flatIter.HasNext()
+	}
+	
 	return true
 }
 
@@ -312,6 +322,12 @@ func (hierIter *AzureObjectHierarchyIterator) HasNext() bool {
 		hierIter.currPage = append(hierIter.currPage, ObjectAttr{Key: *prefix.Name})
 	}
 	hierIter.nextIdx = 0
+	
+	// If the page is empty, continue checking for more pages
+	if len(hierIter.currPage) == 0 {
+		return hierIter.HasNext()
+	}
+	
 	return true
 }
 
