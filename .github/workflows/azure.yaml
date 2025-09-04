@@ -2,6 +2,7 @@ name: Test Azure Storage
 
 on:
   push:
+    branches: [master, main]
     paths:
       - 'core/storage/azure.go'
       - '.github/workflows/azure.yaml'
@@ -69,6 +70,14 @@ jobs:
           sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.3/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
           sudo chmod +x /usr/local/bin/docker-compose
       
+      - name: Set unique paths
+        id: paths
+        run: |
+          UNIQUE_SUFFIX="${{ github.run_id }}-${{ github.job }}"
+          echo "milvus_root=milvus/azure-instance-${UNIQUE_SUFFIX}" >> $GITHUB_OUTPUT
+          echo "backup_root=backup-${UNIQUE_SUFFIX}" >> $GITHUB_OUTPUT
+          echo "unique_suffix=${UNIQUE_SUFFIX}" >> $GITHUB_OUTPUT
+      
       - name: Milvus deploy
         timeout-minutes: 15
         shell: bash
@@ -77,6 +86,15 @@ jobs:
           AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
           AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
         run: |
+          # Update Milvus config with unique root path
+          yq -i ".minio.rootPath = \"${{ steps.paths.outputs.milvus_root }}\"" user-az-storage.yaml
+          
+          # Update backup config with unique paths
+          cp ../../deployment/milvus_backup_config/backup-azure.yaml configs/backup.yaml
+          yq -i ".minio.rootPath = \"${{ steps.paths.outputs.milvus_root }}\"" configs/backup.yaml
+          yq -i ".minio.backupRootPath = \"${{ steps.paths.outputs.backup_root }}\"" configs/backup.yaml
+          
+          # Deploy Milvus
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose-az-storage.yml
           yq -i ".services.etcd.image=\"quay.io/coreos/etcd:v3.5.5\"" docker-compose-az-storage.yml  
@@ -93,9 +111,9 @@ jobs:
         run: |
           # Install Azure CLI if not available
           which az || (curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash)
-          # Clean up existing data
-          az storage blob delete-batch --account-name "$AZURE_STORAGE_ACCOUNT" --account-key "$AZURE_STORAGE_KEY" --source milvus-data --pattern "milvus/azure-instance/*" || true
-          az storage blob delete-batch --account-name "$AZURE_STORAGE_ACCOUNT" --account-key "$AZURE_STORAGE_KEY" --source milvus-data --pattern "backup/*" || true
+          # Clean up existing data for this specific run
+          az storage blob delete-batch --account-name "$AZURE_STORAGE_ACCOUNT" --account-key "$AZURE_STORAGE_KEY" --source milvus-data --pattern "${{ steps.paths.outputs.milvus_root }}/*" || true
+          az storage blob delete-batch --account-name "$AZURE_STORAGE_ACCOUNT" --account-key "$AZURE_STORAGE_KEY" --source milvus-data --pattern "${{ steps.paths.outputs.backup_root }}/*" || true
       
       - name: Prepare data
         timeout-minutes: 5
@@ -142,6 +160,6 @@ jobs:
           AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
           AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
         run: |
-          # Clean up test data regardless of test result
-          az storage blob delete-batch --account-name "$AZURE_STORAGE_ACCOUNT" --account-key "$AZURE_STORAGE_KEY" --source milvus-data --pattern "milvus/azure-instance/*" || true
-          az storage blob delete-batch --account-name "$AZURE_STORAGE_ACCOUNT" --account-key "$AZURE_STORAGE_KEY" --source milvus-data --pattern "backup/*" || true
+          # Clean up test data for this specific run regardless of test result
+          az storage blob delete-batch --account-name "$AZURE_STORAGE_ACCOUNT" --account-key "$AZURE_STORAGE_KEY" --source milvus-data --pattern "${{ steps.paths.outputs.milvus_root }}/*" || true
+          az storage blob delete-batch --account-name "$AZURE_STORAGE_ACCOUNT" --account-key "$AZURE_STORAGE_KEY" --source milvus-data --pattern "${{ steps.paths.outputs.backup_root }}/*" || true
