@@ -99,9 +99,6 @@ jobs:
           # Update Milvus config with unique root path
           yq -i ".minio.rootPath = \"${{ steps.paths.outputs.milvus_root }}\"" user-az-storage.yaml
           
-          # Copy updated backup config
-          cp ../../configs/backup.yaml configs/backup.yaml
-          
           # Deploy Milvus
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose-az-storage.yml
