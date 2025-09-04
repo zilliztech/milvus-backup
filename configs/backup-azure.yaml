@@ -1,0 +1,101 @@
+# Configures the system log output.
+log:
+  level: info # Only supports debug, info, warn, error, panic, or fatal. Default 'info'.
+  console: true # whether print log to console
+  file:
+    rootPath: "logs/backup.log"
+
+http:
+  simpleResponse: true
+
+# Zilliz Cloud config.
+# If you want to migrate data to Zilliz Cloud, you need to configure the following parameters.
+# Otherwise, you can ignore it.
+cloud:
+  address: https://api.cloud.zilliz.com
+  apikey: <your-api-key>
+
+# milvus proxy address, compatible to milvus.yaml
+milvus:
+  address: localhost
+  port: 19530
+  user: "root"
+  password: "Milvus"
+
+  # tls mode values [0, 1, 2]
+  # 0 is close, 1 is one-way authentication, 2 is mutual authentication
+  tlsMode: 0
+  # tls cert path for validate server, will be used when tlsMode is 1 or 2
+  caCertPath: ""
+  serverName: ""
+  # mutual tls cert path, for server to validate client.
+  # Will be used when tlsMode is 2
+  # for backward compatibility, if not set, will use tlsmode 1.
+  # WARN: in future version, if user set tlsmode 2, but not set mtlsCertPath, will cause error.
+  mtlsCertPath: ""
+  mtlsKeyPath: ""
+
+  # Milvus replicate msg channel name, default is by-dev-replicate-msg
+  rpcChannelName: "by-dev-replicate-msg"
+
+# Related configuration of minio, which is responsible for data persistence for Milvus.
+minio:
+  # Milvus storage configs, make them the same with milvus config
+  storageType: "azure" # support storage type: local, minio, s3, aws, gcp, ali(aliyun), azure, tc(tencent), gcpnative
+  # You can use "gcpnative" for the Google Cloud Platform provider. Uses service account credentials for authentication.
+  address: core.windows.net # Address of MinIO/S3
+  port: 443   # Port of MinIO/S3
+  region: "westus2"      # region of MinIO/S3
+  accessKeyID: ""  # accessKeyID of MinIO/S3
+  secretAccessKey: "" # MinIO/S3 encryption string
+  token: ""     # token of MinIO/S3
+  gcpCredentialJSON: "/path/to/json-key-file" # The JSON content contains the gcs service account credentials.
+  # Used only for the "gcpnative" cloud provider.
+  useSSL: true # Access to MinIO/S3 with SSL
+  useIAM: false
+  iamEndpoint: ""
+  bucketName: "milvus-data" # Milvus Bucket name in MinIO/S3, make it the same as your milvus instance
+  rootPath: "milvus/azure-instance" # Milvus storage root path in MinIO/S3, make it the same as your milvus instance
+
+  # Backup storage configs, the storage you want to put the backup data
+  backupStorageType: "azure" # support storage type: local, minio, s3, aws, gcp, ali(aliyun), azure, tc(tencent)
+  backupAddress: core.windows.net # Address of MinIO/S3
+  backupRegion: "westus2"   # region of MinIO/S3
+  backupPort: 443   # Port of MinIO/S3
+  backupAccessKeyID: ""  # accessKeyID of MinIO/S3
+  backupSecretAccessKey: "" # MinIO/S3 encryption string
+  backupToken: ""       # token of MinIO/S3
+  backupGcpCredentialJSON: "/path/to/json-key-file" # The JSON content contains the gcs service account credentials.
+  # Used only for the "gcpnative" cloud provider.
+  backupBucketName: "milvus-data" # Bucket name to store backup data. Backup data will store to backupBucketName/backupRootPath
+  backupRootPath: "backup" # Rootpath to store backup data. Backup data will store to backupBucketName/backupRootPath
+  backupUseSSL: true # Access to MinIO/S3 with SSL
+
+  # If you need to back up or restore data between two different storage systems, direct client-side copying is not supported. 
+  # Set this option to true to enable data transfer through Milvus Backup.
+  # Note: This option will be automatically set to true if `minio.storageType` and `minio.backupStorageType` differ.
+  # However, if they are the same but belong to different services, you must manually set this option to `true`.
+  crossStorage: "false"
+  
+backup:
+  maxSegmentGroupSize: 2G
+
+  parallelism:
+    # collection level parallelism to backup
+    backupCollection: 4
+    # thread pool to copy data. reduce it if blocks your storage's network bandwidth
+    copydata: 128
+    # Collection level parallelism to restore
+    restoreCollection: 2
+    # max number of import job to run in parallel,
+    # should be less than milvus's config dataCoord.import.maxImportJobNum
+    importJobNum: 768
+  
+  # keep temporary files during restore, only use to debug 
+  keepTempFiles: false
+  
+  # Pause GC during backup through Milvus Http API. 
+  gcPause:
+    enable: true
+    address: http://localhost:9091
+    

@@ -1,0 +1,174 @@
+name: Test Azure Storage
+
+on:
+  push:
+    branches: [master, main]
+    paths:
+      - 'core/storage/azure.go'
+      - '.github/workflows/azure.yaml'
+  pull_request:
+    paths:
+      - 'core/storage/azure.go'
+      - '.github/workflows/azure.yaml'
+  schedule:
+    # Run every Monday at 2:00 AM UTC
+    - cron: '0 2 * * 1'
+  workflow_dispatch:
+
+env:
+  go-version: 1.24
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+
+  test-backup-restore-cli-azure-storage:
+    name: Backup and restore cli with azure storage
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        deploy_tools: [docker-compose]
+        milvus_mode: [standalone]
+        another_milvus_mode: [standalone]
+        cloud_storage: [azure]
+        image_tag: [2.5-latest]
+      
+    steps:
+      - uses: actions/checkout@v5
+      
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: pip
+      
+      - uses: actions/setup-go@v5
+        name: Set up Go ${{ env.go-version }}
+        with:
+          go-version: ${{ env.go-version }}
+          cache: true
+
+      - name: Copy backup config
+        timeout-minutes: 5
+        working-directory: configs
+        shell: bash
+        run: |
+          cp backup-azure.yaml backup.yaml
+
+      - name: Build
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          go get
+          go build
+      
+      - name: Install dependency
+        timeout-minutes: 5
+        working-directory: tests
+        shell: bash
+        run: |
+          pip install -r requirements.txt --trusted-host https://test.pypi.org
+          sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.3/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
+          sudo chmod +x /usr/local/bin/docker-compose
+      
+      - name: Set unique paths
+        id: paths
+        run: |
+          UNIQUE_SUFFIX="${{ github.run_id }}-${{ github.job }}"
+          echo "milvus_root=milvus/azure-instance-${UNIQUE_SUFFIX}" >> $GITHUB_OUTPUT
+          echo "backup_root=backup-${UNIQUE_SUFFIX}" >> $GITHUB_OUTPUT
+          echo "unique_suffix=${UNIQUE_SUFFIX}" >> $GITHUB_OUTPUT
+      
+      - name: Update backup config
+        timeout-minutes: 5
+        shell: bash
+        working-directory: configs
+        run: |
+          # Update backup config with unique paths
+          cp backup-azure.yaml backup.yaml
+          yq -i ".minio.rootPath = \"${{ steps.paths.outputs.milvus_root }}\"" backup.yaml
+          yq -i ".minio.backupRootPath = \"${{ steps.paths.outputs.backup_root }}\"" backup.yaml
+
+      - name: Milvus deploy
+        timeout-minutes: 15
+        shell: bash
+        working-directory: deployment/${{ matrix.milvus_mode }}
+        env:
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+        run: |
+          # Update Milvus config with unique root path
+          yq -i ".minio.rootPath = \"${{ steps.paths.outputs.milvus_root }}\"" user-az-storage.yaml
+          
+          # Deploy Milvus
+          tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
+          yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose-az-storage.yml
+          yq -i ".services.etcd.image=\"quay.io/coreos/etcd:v3.5.5\"" docker-compose-az-storage.yml  
+          docker-compose -f docker-compose-az-storage.yml up -d --wait || true
+          docker-compose -f docker-compose-az-storage.yml ps
+          docker-compose -f docker-compose-az-storage.yml logs
+      
+      - name: Clean up Azure storage (before test)
+        timeout-minutes: 5
+        shell: bash
+        env:
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+        run: |
+          # Install Azure CLI if not available
+          which az || (curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash)
+          # Clean up existing data for this specific run
+          az storage blob delete-batch --account-name "$AZURE_STORAGE_ACCOUNT" --account-key "$AZURE_STORAGE_KEY" --source milvus-data --pattern "${{ steps.paths.outputs.milvus_root }}/*" || true
+          az storage blob delete-batch --account-name "$AZURE_STORAGE_ACCOUNT" --account-key "$AZURE_STORAGE_KEY" --source milvus-data --pattern "${{ steps.paths.outputs.backup_root }}/*" || true
+      
+      - name: Prepare data
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python example/prepare_data.py
+      
+      - name: Backup
+        timeout-minutes: 5
+        shell: bash
+        env:
+          MINIO_ACCESS_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          MINIO_SECRET_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+          MINIO_BACKUP_ACCESS_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          MINIO_BACKUP_SECRET_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+        run: |
+          ./milvus-backup check
+          ./milvus-backup list
+          ./milvus-backup create -n my_backup
+          ./milvus-backup list
+        
+      - name: Restore backup
+        timeout-minutes: 5
+        shell: bash
+        env:
+          MINIO_ACCESS_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          MINIO_SECRET_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+          MINIO_BACKUP_ACCESS_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          MINIO_BACKUP_SECRET_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+        run: |
+          ./milvus-backup restore -n my_backup -s _recover
+      
+      - name: Verify data
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python example/verify_data.py
+      
+      - name: Clean up Azure storage (after test)
+        if: always()
+        timeout-minutes: 5
+        shell: bash
+        env:
+          AZURE_STORAGE_ACCOUNT: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+        run: |
+          # Clean up test data for this specific run regardless of test result
+          az storage blob delete-batch --account-name "$AZURE_STORAGE_ACCOUNT" --account-key "$AZURE_STORAGE_KEY" --source milvus-data --pattern "${{ steps.paths.outputs.milvus_root }}/*" || true
+          az storage blob delete-batch --account-name "$AZURE_STORAGE_ACCOUNT" --account-key "$AZURE_STORAGE_KEY" --source milvus-data --pattern "${{ steps.paths.outputs.backup_root }}/*" || true

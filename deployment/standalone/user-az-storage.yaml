@@ -1,0 +1,13 @@
+common:
+  storageType: remote
+messageQueue: rocksmq
+minio:
+  address: core.windows.net
+  bucketName: milvus-data
+  cloudProvider: azure
+  port: 443
+  region: westus2
+  rootPath: milvus/azure-instance
+  useIAM: false
+  useSSL: true
+  useVirtualHost: true
