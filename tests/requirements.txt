@@ -57,4 +57,4 @@ jaxlib==0.4.13
 bm25s==0.2.0
 jieba==0.42.1
 
-deepdiff == 6.7.1
+deepdiff == 8.6.1
