@@ -78,6 +78,16 @@ jobs:
           echo "backup_root=backup-${UNIQUE_SUFFIX}" >> $GITHUB_OUTPUT
           echo "unique_suffix=${UNIQUE_SUFFIX}" >> $GITHUB_OUTPUT
       
+      - name: Update backup config
+        timeout-minutes: 5
+        shell: bash
+        working-directory: configs
+        run: |
+          # Update backup config with unique paths
+          cp backup-azure.yaml backup.yaml
+          yq -i ".minio.rootPath = \"${{ steps.paths.outputs.milvus_root }}\"" backup.yaml
+          yq -i ".minio.backupRootPath = \"${{ steps.paths.outputs.backup_root }}\"" backup.yaml
+
       - name: Milvus deploy
         timeout-minutes: 15
         shell: bash
@@ -89,10 +99,8 @@ jobs:
           # Update Milvus config with unique root path
           yq -i ".minio.rootPath = \"${{ steps.paths.outputs.milvus_root }}\"" user-az-storage.yaml
           
-          # Update backup config with unique paths
-          cp ../../deployment/milvus_backup_config/backup-azure.yaml configs/backup.yaml
-          yq -i ".minio.rootPath = \"${{ steps.paths.outputs.milvus_root }}\"" configs/backup.yaml
-          yq -i ".minio.backupRootPath = \"${{ steps.paths.outputs.backup_root }}\"" configs/backup.yaml
+          # Copy updated backup config
+          cp ../../configs/backup.yaml configs/backup.yaml
           
           # Deploy Milvus
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
