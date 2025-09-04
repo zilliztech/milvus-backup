@@ -1440,7 +1440,7 @@ class TestRestoreBackup(TestcaseBase):
         self._connect()
         name_origin = cf.gen_unique_str(prefix)
         back_up_name = cf.gen_unique_str(backup_prefix)
-        dim = 768
+        dim = 384
         fields = [
             cf.gen_int64_field(name="int64", is_primary=True),
             cf.gen_string_field(name="text"),
