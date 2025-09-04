@@ -251,15 +251,22 @@ func (flatIter *AzureObjectFlatIterator) HasNext() bool {
 	page, err := flatIter.pager.NextPage(context.Background())
 	if err != nil {
 		flatIter.err = err
-		return false
+		// put error into err field, it will be returned in next call of Next()
+		// so we need to return true here, the caller will check err in Next()
+		return true
 	}
-	flatIter.currPage = flatIter.currPage[:0]
 	for _, blob := range page.Segment.BlobItems {
 		attr := ObjectAttr{Key: *blob.Name, Length: *blob.Properties.ContentLength}
 		flatIter.currPage = append(flatIter.currPage, attr)
 	}
+
+	flatIter.currPage = flatIter.currPage[:0]
 	flatIter.nextIdx = 0
-	return true
+
+	// When prefix is empty or there are no matching items, Azure Blob Storage's
+	// pager may still return More() as true despite the actual page content being
+	// empty.
+	return len(flatIter.currPage) > 0
 }
 
 func (flatIter *AzureObjectFlatIterator) Next() (ObjectAttr, error) {
@@ -303,7 +310,6 @@ func (hierIter *AzureObjectHierarchyIterator) HasNext() bool {
 		hierIter.err = err
 		return true
 	}
-	hierIter.currPage = hierIter.currPage[:0]
 	for _, blob := range page.Segment.BlobItems {
 		attr := ObjectAttr{Key: *blob.Name, Length: *blob.Properties.ContentLength}
 		hierIter.currPage = append(hierIter.currPage, attr)
@@ -311,8 +317,14 @@ func (hierIter *AzureObjectHierarchyIterator) HasNext() bool {
 	for _, prefix := range page.Segment.BlobPrefixes {
 		hierIter.currPage = append(hierIter.currPage, ObjectAttr{Key: *prefix.Name})
 	}
+
+	hierIter.currPage = hierIter.currPage[:0]
 	hierIter.nextIdx = 0
-	return true
+
+	// When prefix is empty or there are no matching items, Azure Blob Storage's
+	// pager may still return More() as true despite the actual page content being
+	// empty.
+	return len(hierIter.currPage) > 0
 }
 
 func (hierIter *AzureObjectHierarchyIterator) Next() (ObjectAttr, error) {
