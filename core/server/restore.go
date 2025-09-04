@@ -50,7 +50,6 @@ func (s *Server) handleRestoreBackup(c *gin.Context) {
 	resp := h.run(context.Background())
 
 	c.JSON(http.StatusOK, resp)
-	return
 }
 
 type restoreHandler struct {
