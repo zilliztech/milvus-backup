@@ -52,12 +52,12 @@ services:
     container_name: text-embeddings-inference
     image: ghcr.io/huggingface/text-embeddings-inference:cpu-1.6
     environment:
-      - MODEL_ID=BAAI/bge-base-en-v1.5
+      - MODEL_ID=sentence-transformers/all-MiniLM-L6-v2
     volumes:
       - ${DOCKER_VOLUME_DIRECTORY:-.}/volumes/embeddings-data:/data
     ports:
       - "80:80"
-    command: --model-id BAAI/bge-base-en-v1.5
+    command: --model-id sentence-transformers/all-MiniLM-L6-v2
     pull_policy: always
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:80/health"]
