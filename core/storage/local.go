@@ -127,8 +127,21 @@ func (l *localIterator) Next() (ObjectAttr, error) {
 }
 
 func (l *LocalClient) ListPrefix(_ context.Context, prefix string, recursive bool) (ObjectIterator, error) {
+	// check if prefix is a file
+	info, err := os.Stat(prefix)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return &localIterator{}, nil
+		}
+		return nil, fmt.Errorf("storage: local list prefix stat %w", err)
+	}
+
+	// if prefix is a file, return it directly
+	if !info.IsDir() {
+		return &localIterator{entries: []ObjectAttr{{Key: prefix, Length: info.Size()}}}, nil
+	}
+
 	var entries []ObjectAttr
-	var err error
 	if recursive {
 		entries, err = l.listRecursive(prefix)
 	} else {
@@ -156,7 +169,7 @@ func (l *LocalClient) listRecursive(prefix string) ([]ObjectAttr, error) {
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("storage: local list prefix %w", err)
+		return nil, fmt.Errorf("storage: local list prefix recursive %w", err)
 	}
 	return entries, nil
 }
@@ -164,7 +177,7 @@ func (l *LocalClient) listRecursive(prefix string) ([]ObjectAttr, error) {
 func (l *LocalClient) listNonRecursive(prefix string) ([]ObjectAttr, error) {
 	infos, err := os.ReadDir(prefix)
 	if err != nil {
-		return nil, fmt.Errorf("storage: local list prefix %w", err)
+		return nil, fmt.Errorf("storage: local list prefix non recursive %w", err)
 	}
 
 	entries := make([]ObjectAttr, 0, len(infos))

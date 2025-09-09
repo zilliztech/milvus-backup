@@ -125,6 +125,37 @@ func TestLocalClient_ListPrefix(t *testing.T) {
 		assert.NoError(t, err)
 	}
 
+	t.Run("PrefixIsFile", func(t *testing.T) {
+		cli := &LocalClient{}
+		iter, err := cli.ListPrefix(context.Background(), path.Join(dir, "backup", "meta", "test.txt"), false)
+		assert.NoError(t, err)
+
+		assert.True(t, iter.HasNext())
+		entry, err := iter.Next()
+		assert.NoError(t, err)
+		assert.Equal(t, path.Join(dir, "backup", "meta", "test.txt"), entry.Key)
+		assert.Equal(t, int64(1), entry.Length)
+
+		iter, err = cli.ListPrefix(context.Background(), path.Join(dir, "backup", "meta", "test.txt"), true)
+		assert.NoError(t, err)
+		assert.True(t, iter.HasNext())
+		entry, err = iter.Next()
+		assert.NoError(t, err)
+		assert.Equal(t, path.Join(dir, "backup", "meta", "test.txt"), entry.Key)
+		assert.Equal(t, int64(1), entry.Length)
+	})
+
+	t.Run("Empty", func(t *testing.T) {
+		cli := &LocalClient{}
+		iter, err := cli.ListPrefix(context.Background(), path.Join(dir, "not_exist"), false)
+		assert.NoError(t, err)
+		assert.False(t, iter.HasNext())
+
+		iter, err = cli.ListPrefix(context.Background(), path.Join(dir, "not_exist"), true)
+		assert.NoError(t, err)
+		assert.False(t, iter.HasNext())
+	})
+
 	t.Run("Recursive", func(t *testing.T) {
 		cli := &LocalClient{}
 		iter, err := cli.ListPrefix(context.Background(), path.Join(dir, "backup"), true)
