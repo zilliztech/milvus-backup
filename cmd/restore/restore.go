@@ -24,11 +24,13 @@ import (
 
 type options struct {
 	backupName            string
-	collectionNames       string
 	renameSuffix          string
 	renameCollectionNames string
-	databases             string
-	databaseCollections   string
+
+	collectionNames     string
+	databases           string
+	databaseCollections string
+	filter              string
 
 	restoreIndex bool
 	rebuildIndex bool
@@ -46,6 +48,20 @@ func (o *options) validate() error {
 	// TODO: add more validation
 	if o.backupName == "" {
 		return errors.New("backup name is required")
+	}
+
+	if o.collectionNames != "" || o.databases != "" || o.databaseCollections != "" {
+		log.Warn("collection_names, databases and database_collections are deprecated, use filter instead !")
+	}
+
+	if o.filter != "" && o.collectionNames != "" {
+		return errors.New("filter and collection_names cannot be set at the same time")
+	}
+	if o.filter != "" && o.databases != "" {
+		return errors.New("filter and databases cannot be set at the same time")
+	}
+	if o.filter != "" && o.databaseCollections != "" {
+		return errors.New("filter and database_collections cannot be set at the same time")
 	}
 
 	if o.collectionNames != "" && o.databaseCollections != "" {
@@ -78,11 +94,13 @@ func (o *options) validate() error {
 func (o *options) addFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.backupName, "name", "n", "", "backup name to restore")
 
-	cmd.Flags().StringVarP(&o.collectionNames, "collections", "c", "", "collectionNames to restore")
+	cmd.Flags().StringVarP(&o.databases, "databases", "d", "", "[DEPRECATED] Use --filter instead. databases to restore, if not set, restore all databases")
+	cmd.Flags().StringVarP(&o.databaseCollections, "database_collections", "a", "", "[DEPRECATED] Use --filter instead. databases and collections to restore, json format: {\"db1\":[\"c1\", \"c2\"],\"db2\":[]}")
+	cmd.Flags().StringVarP(&o.collectionNames, "collections", "c", "", "[DEPRECATED] Use --filter instead. collectionNames to restore")
+	cmd.Flags().StringVarP(&o.filter, "filter", "", "", "Specify which collections to restore, if not set, restore all collections in backup. example: db1.coll1,db2.coll2")
+
 	cmd.Flags().StringVarP(&o.renameSuffix, "suffix", "s", "", "add a suffix to collection name to restore")
 	cmd.Flags().StringVarP(&o.renameCollectionNames, "rename", "r", "", "rename collections to new names, format: db1.collection1:db2.collection1_new,db1.collection2:db2.collection2_new")
-	cmd.Flags().StringVarP(&o.databases, "databases", "d", "", "databases to restore, if not set, restore all databases")
-	cmd.Flags().StringVarP(&o.databaseCollections, "database_collections", "a", "", "databases and collections to restore, json format: {\"db1\":[\"c1\", \"c2\"],\"db2\":[]}")
 
 	cmd.Flags().BoolVarP(&o.restoreIndex, "restore_index", "", false, "[DEPRECATED] Use --rebuild_index instead. restore index info")
 	cmd.Flags().BoolVarP(&o.rebuildIndex, "rebuild_index", "", false, "Rebuild index from meta information.")
@@ -112,17 +130,59 @@ func (o *options) toOption() *restore.Option {
 	}
 }
 
+func (o *options) toTaskFilter() (map[string]struct{}, map[string]restore.CollFilter, error) {
+	if o.filter == "" {
+		return nil, nil, nil
+	}
+
+	filterStrs := strings.Split(o.filter, ",")
+	dbFilter := make(map[string]struct{})
+	collFilter := make(map[string]restore.CollFilter)
+
+	for _, filterStr := range filterStrs {
+		ruleType, err := inferFilterRuleType(filterStr)
+		if err != nil {
+			return nil, nil, err
+		}
+
+		switch ruleType {
+		case 1:
+			db := filterStr[:len(filterStr)-2]
+			dbFilter[db] = struct{}{}
+			collFilter[db] = restore.CollFilter{AllowAll: true}
+		case 2, 3:
+			ns, err := namespace.Parse(filterStr)
+			if err != nil {
+				return nil, nil, fmt.Errorf("invalid collection name %s", filterStr)
+			}
+
+			dbFilter[ns.DBName()] = struct{}{}
+			if _, ok := collFilter[ns.DBName()]; !ok {
+				collFilter[ns.DBName()] = restore.CollFilter{CollName: make(map[string]struct{})}
+			}
+			collFilter[ns.DBName()].CollName[ns.CollName()] = struct{}{}
+		case 4:
+			db := filterStr[:len(filterStr)-1]
+			dbFilter[db] = struct{}{}
+		default:
+			return nil, nil, fmt.Errorf("invalid filter rule: %s", filterStr)
+		}
+	}
+
+	return dbFilter, collFilter, nil
+}
+
 func (o *options) toBackupFilter() (map[string]struct{}, map[string]restore.CollFilter, error) {
 	if o.collectionNames != "" {
-		return o.collectionNamesToFilter()
+		return o.collectionNamesToBackupFilter()
 	}
 
 	if o.databases != "" {
-		return o.databasesToFilter()
+		return o.databasesToBackupFilter()
 	}
 
 	if o.databaseCollections != "" {
-		return o.dbCollectionsToFilter()
+		return o.dbCollectionsToBackupFilter()
 	}
 
 	return nil, nil, nil
@@ -151,6 +211,11 @@ func (o *options) toPlan() (*restore.Plan, error) {
 		return nil, err
 	}
 
+	dbTaskFilter, collTaskFilter, err := o.toTaskFilter()
+	if err != nil {
+		return nil, err
+	}
+
 	return &restore.Plan{
 		DBBackupFilter:   dbFilter,
 		CollBackupFilter: collFilter,
@@ -158,11 +223,12 @@ func (o *options) toPlan() (*restore.Plan, error) {
 		// not support db mapping now
 		CollMapper: collMapper,
 
-		// not support db task filter now
+		DBTaskFilter:   dbTaskFilter,
+		CollTaskFilter: collTaskFilter,
 	}, nil
 }
 
-func (o *options) collectionNamesToFilter() (map[string]struct{}, map[string]restore.CollFilter, error) {
+func (o *options) collectionNamesToBackupFilter() (map[string]struct{}, map[string]restore.CollFilter, error) {
 	dbFilter := make(map[string]struct{})
 	collFilter := make(map[string]restore.CollFilter)
 
@@ -180,7 +246,7 @@ func (o *options) collectionNamesToFilter() (map[string]struct{}, map[string]res
 	return dbFilter, collFilter, nil
 }
 
-func (o *options) databasesToFilter() (map[string]struct{}, map[string]restore.CollFilter, error) {
+func (o *options) databasesToBackupFilter() (map[string]struct{}, map[string]restore.CollFilter, error) {
 	dbFilter := make(map[string]struct{})
 	collFilter := make(map[string]restore.CollFilter)
 
@@ -193,7 +259,7 @@ func (o *options) databasesToFilter() (map[string]struct{}, map[string]restore.C
 	return dbFilter, collFilter, nil
 }
 
-func (o *options) dbCollectionsToFilter() (map[string]struct{}, map[string]restore.CollFilter, error) {
+func (o *options) dbCollectionsToBackupFilter() (map[string]struct{}, map[string]restore.CollFilter, error) {
 	dbColls := make(map[string][]string)
 	if err := json.Unmarshal([]byte(o.databaseCollections), &dbColls); err != nil {
 		return nil, nil, fmt.Errorf("unmarshal dbCollections: %w", err)
@@ -310,11 +376,13 @@ func (o *options) run(cmd *cobra.Command, params *paramtable.BackupParams) error
 	return nil
 }
 
-// rename map format: key: oldName, value: newName
-// rule 1. key: db1.* value: db2.*
-// rule 2. key: db1.coll1 value: db2.coll2
-// rule 3. key: coll1 value: coll2 , under default db
-// rule 4. key: db1. value: db2.
+// mapping and filter format:
+// mapping: key: oldName, value: newName
+//
+// rule 1. key: db1.*
+// rule 2. key: db1.coll1
+// rule 3. key: coll1, means use default db
+// rule 4. key: db1.
 
 var (
 	_rule1Regex = regexp.MustCompile(`^(\w+)\.\*$`)
@@ -323,7 +391,27 @@ var (
 	_rule4Regex = regexp.MustCompile(`^(\w+)\.$`)
 )
 
-func inferRuleType(k, v string) (int, error) {
+func inferFilterRuleType(rule string) (int, error) {
+	if _rule1Regex.MatchString(rule) {
+		return 1, nil
+	}
+
+	if _rule2Regex.MatchString(rule) {
+		return 2, nil
+	}
+
+	if _rule3Regex.MatchString(rule) {
+		return 3, nil
+	}
+
+	if _rule4Regex.MatchString(rule) {
+		return 4, nil
+	}
+
+	return 0, fmt.Errorf("restore: invalid filter rule: %s", rule)
+}
+
+func inferMapperRuleType(k, v string) (int, error) {
 	if _rule1Regex.MatchString(k) && _rule1Regex.MatchString(v) {
 		return 1, nil
 	}
@@ -340,7 +428,7 @@ func inferRuleType(k, v string) (int, error) {
 		return 4, nil
 	}
 
-	return 0, fmt.Errorf("restore: invalid rename rule: %s -> %s", k, v)
+	return 0, fmt.Errorf("restore: invalid mapper rule: %s -> %s", k, v)
 }
 
 // newRenameGenerator creates a new mapRenamer with the given rename map.
@@ -350,7 +438,7 @@ func newTableMapperFromCollRename(collRename map[string]string) (*restore.TableM
 	dbWildcard := make(map[string]string)
 
 	for k, v := range collRename {
-		rule, err := inferRuleType(k, v)
+		rule, err := inferMapperRuleType(k, v)
 		if err != nil {
 			return nil, err
 		}
