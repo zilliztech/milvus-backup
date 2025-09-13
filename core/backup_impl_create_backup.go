@@ -113,43 +113,74 @@ func (b *BackupContext) CreateBackup(ctx context.Context, request *backuppb.Crea
 	}
 }
 
-func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backuppb.CreateBackupRequest, backupInfo *backuppb.BackupInfo) error {
+func (b *BackupContext) executeCreateBackup(
+	ctx context.Context,
+	request *backuppb.CreateBackupRequest,
+	backupInfo *backuppb.BackupInfo,
+) (retErr error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.meta.UpdateBackup(backupInfo.GetId(), meta.SetStateCode(backuppb.BackupTaskStateCode_BACKUP_EXECUTING))
 
-	task, err := backup.NewTask(backupInfo.GetId(),
+	id := backupInfo.GetId()
+
+	defer func() {
+		if werr := b.writeBackupInfoMeta(ctx, id); werr != nil {
+			if retErr == nil {
+				log.Error("backup succeeded but persisting meta failed",
+					zap.String("requestId", request.GetRequestId()),
+					zap.String("backupName", request.GetBackupName()),
+					zap.Strings("collections", request.GetCollectionNames()),
+					zap.Bool("async", request.GetAsync()),
+					zap.Error(werr),
+				)
+				retErr = werr
+			} else {
+				log.Error("fail to write backup meta", zap.Error(werr))
+			}
+		}
+	}()
+
+	b.meta.UpdateBackup(id, meta.SetStateCode(backuppb.BackupTaskStateCode_BACKUP_EXECUTING))
+
+	task, err := backup.NewTask(
+		id,
 		b.getMilvusStorageClient(),
 		b.getBackupStorageClient(),
 		request, b.params,
 		b.getMilvusClient(),
 		b.getRestfulClient(),
-		b.meta)
+		b.meta,
+	)
 	if err != nil {
-		b.meta.UpdateBackup(backupInfo.GetId(), meta.SetStateCode(backuppb.BackupTaskStateCode_BACKUP_FAIL), meta.SetErrorMessage(err.Error()))
+		b.meta.UpdateBackup(id,
+			meta.SetStateCode(backuppb.BackupTaskStateCode_BACKUP_FAIL),
+			meta.SetErrorMessage(err.Error()),
+		)
 		log.Error("fail to create backup task", zap.Error(err))
 		return fmt.Errorf("fail to create backup task: %w", err)
 	}
 
 	if err := task.Execute(ctx); err != nil {
-		b.meta.UpdateBackup(backupInfo.GetId(), meta.SetStateCode(backuppb.BackupTaskStateCode_BACKUP_FAIL), meta.SetErrorMessage(err.Error()))
+		b.meta.UpdateBackup(id,
+			meta.SetStateCode(backuppb.BackupTaskStateCode_BACKUP_FAIL),
+			meta.SetErrorMessage(err.Error()),
+		)
 		log.Error("fail to execute backup task", zap.Error(err))
 		return fmt.Errorf("fail to execute backup task: %w", err)
 	}
 
-	if err := b.writeBackupInfoMeta(ctx, backupInfo.GetId()); err != nil {
-		b.meta.UpdateBackup(backupInfo.Id, meta.SetStateCode(backuppb.BackupTaskStateCode_BACKUP_FAIL),
-			meta.SetErrorMessage(err.Error()))
-		return err
-	}
+	b.meta.UpdateBackup(id,
+		meta.SetStateCode(backuppb.BackupTaskStateCode_BACKUP_SUCCESS),
+		meta.SetEndTime(time.Now().UnixMilli()),
+	)
+
 	log.Info("finish backup all info",
 		zap.String("requestId", request.GetRequestId()),
 		zap.String("backupName", request.GetBackupName()),
 		zap.Strings("collections", request.GetCollectionNames()),
-		zap.Bool("async", request.GetAsync()))
+		zap.Bool("async", request.GetAsync()),
+	)
 
-	b.meta.UpdateBackup(backupInfo.GetId(), meta.SetStateCode(backuppb.BackupTaskStateCode_BACKUP_SUCCESS),
-		meta.SetEndTime(time.Now().UnixMilli()))
 	return nil
 }
 
