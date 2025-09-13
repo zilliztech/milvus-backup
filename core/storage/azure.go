@@ -263,12 +263,12 @@ func (flatIter *AzureObjectFlatIterator) HasNext() bool {
 		flatIter.currPage = append(flatIter.currPage, attr)
 	}
 	flatIter.nextIdx = 0
-	
+
 	// If the page is empty, continue checking for more pages
 	if len(flatIter.currPage) == 0 {
 		return flatIter.HasNext()
 	}
-	
+
 	return true
 }
 
@@ -322,12 +322,12 @@ func (hierIter *AzureObjectHierarchyIterator) HasNext() bool {
 		hierIter.currPage = append(hierIter.currPage, ObjectAttr{Key: *prefix.Name})
 	}
 	hierIter.nextIdx = 0
-	
+
 	// If the page is empty, continue checking for more pages
 	if len(hierIter.currPage) == 0 {
 		return hierIter.HasNext()
 	}
-	
+
 	return true
 }
 
