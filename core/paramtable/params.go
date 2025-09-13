@@ -528,7 +528,11 @@ type LogConfig struct {
 	Level   string
 	Console bool
 	File    struct {
-		RootPath string
+		RootPath   string
+		Filename   string
+		MaxSize    int
+		MaxDays    int
+		MaxBackups int
 	}
 }
 
@@ -538,6 +542,10 @@ func (p *LogConfig) init(base *BaseTable) {
 	p.initLevel()
 	p.initConsole()
 	p.initFileRootPath()
+	p.initFilename()
+	p.initFileMaxSize()
+	p.initFileMaxDays()
+	p.initFileMaxBackups()
 }
 
 func (p *LogConfig) initLevel() {
@@ -555,8 +563,40 @@ func (p *LogConfig) initConsole() {
 }
 
 func (p *LogConfig) initFileRootPath() {
-	rootPath := p.Base.LoadWithDefault("log.file.rootPath", "logs/backup.log")
+	rootPath := p.Base.LoadWithDefault("log.file.rootPath", "logs")
 	p.File.RootPath = rootPath
+}
+
+func (p *LogConfig) initFilename() {
+	filename := p.Base.LoadWithDefault("log.file.filename", "backup.log")
+	p.File.Filename = filename
+}
+
+func (p *LogConfig) initFileMaxSize() {
+	maxSizeStr := p.Base.LoadWithDefault("log.file.maxSize", "300")
+	maxSize, err := strconv.Atoi(maxSizeStr)
+	if err != nil {
+		panic("parse int log.file.maxSize:" + err.Error())
+	}
+	p.File.MaxSize = maxSize
+}
+
+func (p *LogConfig) initFileMaxDays() {
+	maxDaysStr := p.Base.LoadWithDefault("log.file.maxDays", "0")
+	maxDays, err := strconv.Atoi(maxDaysStr)
+	if err != nil {
+		panic("parse int log.file.maxDays:" + err.Error())
+	}
+	p.File.MaxDays = maxDays
+}
+
+func (p *LogConfig) initFileMaxBackups() {
+	maxBackupsStr := p.Base.LoadWithDefault("log.file.maxBackups", "0")
+	maxBackups, err := strconv.Atoi(maxBackupsStr)
+	if err != nil {
+		panic("parse int log.file.maxBackups:" + err.Error())
+	}
+	p.File.MaxBackups = maxBackups
 }
 
 type HTTPConfig struct {
