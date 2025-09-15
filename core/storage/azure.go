@@ -246,7 +246,7 @@ func (flatIter *AzureObjectFlatIterator) HasNext() bool {
 		return true
 	}
 
-	// current page is the last page
+	// Notice: the first call to `pager.More()` returns `true` even if the current prefix has no content.
 	if !flatIter.pager.More() {
 		return false
 	}
@@ -258,17 +258,22 @@ func (flatIter *AzureObjectFlatIterator) HasNext() bool {
 		return false
 	}
 	flatIter.currPage = flatIter.currPage[:0]
+	flatIter.nextIdx = 0
 	for _, blob := range page.Segment.BlobItems {
 		attr := ObjectAttr{Key: *blob.Name, Length: *blob.Properties.ContentLength}
 		flatIter.currPage = append(flatIter.currPage, attr)
 	}
-	flatIter.nextIdx = 0
-	
-	// If the page is empty, continue checking for more pages
+
+	// - In Azure's SDK, the first call to `pager.More()` returns `true` even if the current prefix has no content.
+	// - `ListBlobsHierarchy` can yield empty pages (no blobs and no prefixes).
+	// - To ensure the iterator reports `true` only when there is actual content, we keep fetching pages recursively
+	//   until either:
+	//   • `currPage` becomes non-empty, or
+	//   • `pager.More()` returns `false`.
 	if len(flatIter.currPage) == 0 {
 		return flatIter.HasNext()
 	}
-	
+
 	return true
 }
 
@@ -300,7 +305,7 @@ func (hierIter *AzureObjectHierarchyIterator) HasNext() bool {
 		return true
 	}
 
-	// no more page
+	// Notice: the first call to `pager.More()` returns `true` even if the current prefix has no content.
 	if !hierIter.pager.More() {
 		return false
 	}
@@ -314,6 +319,7 @@ func (hierIter *AzureObjectHierarchyIterator) HasNext() bool {
 		return true
 	}
 	hierIter.currPage = hierIter.currPage[:0]
+	hierIter.nextIdx = 0
 	for _, blob := range page.Segment.BlobItems {
 		attr := ObjectAttr{Key: *blob.Name, Length: *blob.Properties.ContentLength}
 		hierIter.currPage = append(hierIter.currPage, attr)
@@ -321,13 +327,17 @@ func (hierIter *AzureObjectHierarchyIterator) HasNext() bool {
 	for _, prefix := range page.Segment.BlobPrefixes {
 		hierIter.currPage = append(hierIter.currPage, ObjectAttr{Key: *prefix.Name})
 	}
-	hierIter.nextIdx = 0
-	
-	// If the page is empty, continue checking for more pages
+
+	// - In Azure's SDK, the first call to `pager.More()` returns `true` even if the current prefix has no content.
+	// - `ListBlobsHierarchy` can yield empty pages (no blobs and no prefixes).
+	// - To ensure the iterator reports `true` only when there is actual content, we keep fetching pages recursively
+	//   until either:
+	//   • `currPage` becomes non-empty, or
+	//   • `pager.More()` returns `false`.
 	if len(hierIter.currPage) == 0 {
 		return hierIter.HasNext()
 	}
-	
+
 	return true
 }
 
@@ -371,7 +381,7 @@ func (a *AzureClient) DeleteObject(ctx context.Context, prefix string) error {
 	return nil
 }
 
-func (a *AzureClient) BucketExist(ctx context.Context, prefix string) (bool, error) {
+func (a *AzureClient) BucketExist(ctx context.Context, _ string) (bool, error) {
 	_, err := a.cli.ServiceClient().NewContainerClient(a.cfg.Bucket).
 		GetProperties(ctx, &container.GetPropertiesOptions{})
 
