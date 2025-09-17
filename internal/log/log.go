@@ -33,6 +33,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"sync/atomic"
 
 	"github.com/zilliztech/milvus-backup/core/paramtable"
@@ -65,7 +66,11 @@ func InitLogger(params *paramtable.LogConfig) {
 		Level:   params.Level,
 		Console: params.Console,
 		File: FileLogConfig{
-			RootPath: params.File.RootPath,
+			RootPath:   params.File.RootPath,
+			Filename:   params.File.Filename,
+			MaxSize:    params.File.MaxSize,
+			MaxDays:    params.File.MaxDays,
+			MaxBackups: params.File.MaxBackups,
 		},
 	}
 
@@ -126,11 +131,21 @@ func InitLoggerWithWriteSyncer(cfg *Config, output zapcore.WriteSyncer, opts ...
 
 // initFileLog initializes file based logging options.
 func initFileLog(cfg *FileLogConfig) (*lumberjack.Logger, error) {
+	filename := cfg.Filename
+	if cfg.RootPath != "" && !filepath.IsAbs(filename) {
+		filename = filepath.Join(cfg.RootPath, filename)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(filename), 0o755); err != nil {
+		return nil, fmt.Errorf("create log dir: %w", err)
+	}
+
 	if st, err := os.Stat(cfg.Filename); err == nil {
 		if st.IsDir() {
 			return nil, errors.New("can't use directory as log file name")
 		}
 	}
+
 	if cfg.MaxSize == 0 {
 		cfg.MaxSize = defaultLogMaxSize
 	}
