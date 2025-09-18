@@ -541,7 +541,6 @@ func (p *LogConfig) init(base *BaseTable) {
 
 	p.initLevel()
 	p.initConsole()
-	p.initFileRootPath()
 	p.initFilename()
 	p.initFileMaxSize()
 	p.initFileMaxDays()
@@ -562,13 +561,8 @@ func (p *LogConfig) initConsole() {
 	}
 }
 
-func (p *LogConfig) initFileRootPath() {
-	rootPath := p.Base.LoadWithDefault("log.file.rootPath", "logs")
-	p.File.RootPath = rootPath
-}
-
 func (p *LogConfig) initFilename() {
-	filename := p.Base.LoadWithDefault("log.file.filename", "backup.log")
+	filename := p.Base.LoadWithDefault("log.file.filename", "logs/backup.log")
 	p.File.Filename = filename
 }
 
