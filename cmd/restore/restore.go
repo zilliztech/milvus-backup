@@ -18,6 +18,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/restore"
 	"github.com/zilliztech/milvus-backup/core/storage"
+	"github.com/zilliztech/milvus-backup/core/storage/mpath"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 )
@@ -322,7 +323,7 @@ func (o *options) toArgs(params *paramtable.BackupParams) (restore.TaskArgs, err
 		return restore.TaskArgs{}, fmt.Errorf("create milvus restful client: %w", err)
 	}
 
-	backupDir := meta.BackupDirPath(params.MinioCfg.BackupRootPath, o.backupName)
+	backupDir := mpath.BackupDir(params.MinioCfg.BackupRootPath, o.backupName)
 	exist, err := meta.Exist(context.Background(), backupStorage, backupDir)
 	if err != nil {
 		return restore.TaskArgs{}, fmt.Errorf("check backup exist: %w", err)
@@ -342,7 +343,7 @@ func (o *options) toArgs(params *paramtable.BackupParams) (restore.TaskArgs, err
 		Plan:           plan,
 		Option:         o.toOption(),
 		Params:         params,
-		BackupDir:      meta.BackupDirPath(params.MinioCfg.BackupRootPath, o.backupName),
+		BackupDir:      mpath.BackupDir(params.MinioCfg.BackupRootPath, o.backupName),
 		BackupRootPath: params.MinioCfg.BackupRootPath,
 		BackupStorage:  backupStorage,
 		MilvusStorage:  milvusStorage,

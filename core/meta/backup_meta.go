@@ -10,14 +10,7 @@ import (
 )
 
 const (
-	META_PREFIX          = "meta"
-	BACKUP_META_FILE     = "backup_meta.json"
-	COLLECTION_META_FILE = "collection_meta.json"
-	PARTITION_META_FILE  = "partition_meta.json"
-	SEGMENT_META_FILE    = "segment_meta.json"
-	FULL_META_FILE       = "full_meta.json"
-	CP_META_FILE         = "channel_cp_meta.json"
-	SEPERATOR            = "/"
+	SEPERATOR = "/"
 
 	LoadState_NotExist = "NotExist"
 	LoadState_NotLoad  = "NotLoad"
@@ -143,38 +136,6 @@ func Serialize(backup *backuppb.BackupInfo) (*BackupMetaBytes, error) {
 
 func BackupPathToName(backupRootPath, path string) string {
 	return strings.Replace(strings.Replace(path, backupRootPath+SEPERATOR, "", 1), SEPERATOR, "", 1)
-}
-
-func BackupDirPath(backupRootPath, backupName string) string {
-	return backupRootPath + SEPERATOR + backupName + SEPERATOR
-}
-
-func BackupMetaDirPath(backupRootPath, backupName string) string {
-	return backupRootPath + SEPERATOR + backupName + SEPERATOR + META_PREFIX
-}
-
-func BackupMetaPath(backupRootPath, backupName string) string {
-	return BackupMetaDirPath(backupRootPath, backupName) + SEPERATOR + BACKUP_META_FILE
-}
-
-func CollectionMetaPath(backupRootPath, backupName string) string {
-	return BackupMetaDirPath(backupRootPath, backupName) + SEPERATOR + COLLECTION_META_FILE
-}
-
-func PartitionMetaPath(backupRootPath, backupName string) string {
-	return BackupMetaDirPath(backupRootPath, backupName) + SEPERATOR + PARTITION_META_FILE
-}
-
-func SegmentMetaPath(backupRootPath, backupName string) string {
-	return BackupMetaDirPath(backupRootPath, backupName) + SEPERATOR + SEGMENT_META_FILE
-}
-
-func FullMetaPath(backupRootPath, backupName string) string {
-	return BackupMetaDirPath(backupRootPath, backupName) + SEPERATOR + FULL_META_FILE
-}
-
-func ChannelCPMetaPath(backupRootPath, backupName string) string {
-	return BackupMetaDirPath(backupRootPath, backupName) + SEPERATOR + CP_META_FILE
 }
 
 func SimpleListBackupsResponse(input *backuppb.ListBackupsResponse) *backuppb.ListBackupsResponse {

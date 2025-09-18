@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/samber/lo"
 	"go.uber.org/zap"
 	"golang.org/x/exp/maps"
 	"golang.org/x/sync/errgroup"
@@ -27,68 +28,92 @@ const (
 		"but may lead to inconsistency when reconnecting to CDC for incremental data replication."
 )
 
+type TaskArgs struct {
+	TaskID string
+
+	MilvusStorage storage.Client
+
+	BackupStorage storage.Client
+	BackupDir     string
+
+	Request *backuppb.CreateBackupRequest
+	Params  *paramtable.BackupParams
+
+	Grpc    milvus.Grpc
+	Restful milvus.Restful
+	Manage  milvus.Manage
+
+	Meta *meta.MetaManager
+}
+
 type Task struct {
-	backupID string
+	taskID string
 
 	logger *zap.Logger
 
-	milvusStorage storage.Client
-	backupStorage storage.Client
-	copySem       *semaphore.Weighted
+	milvusStorage  storage.Client
+	milvusRootPath string
 
-	params *paramtable.BackupParams
+	backupStorage storage.Client
+	backupDir     string
+
+	collSem *semaphore.Weighted
+
+	crossStorage bool
+	copySem      *semaphore.Weighted
 
 	grpc    milvus.Grpc
 	restful milvus.Restful
+	manage  milvus.Manage
 
-	gcCtrl *gcController
+	gcCtrl  *gcController
+	pauseGC bool
 
 	meta *meta.MetaManager
+
+	rpcChannelName string
 
 	request *backuppb.CreateBackupRequest
 }
 
-func NewTask(
-	backupID string,
-	MilvusStorage storage.Client,
-	BackupStorage storage.Client,
-	request *backuppb.CreateBackupRequest,
-	params *paramtable.BackupParams,
-	grpc milvus.Grpc,
-	restful milvus.Restful,
-	meta *meta.MetaManager,
-) (*Task, error) {
-	logger := log.L().With(zap.String("backup_id", backupID))
-	gcCtrl, err := newGCController(request, params)
-	if err != nil {
-		return nil, fmt.Errorf("backup: new gc controller: %w", err)
+func NewTask(args TaskArgs) (*Task, error) {
+	logger := log.L().With(zap.String("task_id", args.TaskID))
+
+	crossStorage := args.Params.MinioCfg.CrossStorage
+	if args.BackupStorage.Config().Provider != args.MilvusStorage.Config().Provider {
+		crossStorage = true
 	}
 
+	pauseGC := args.Request.GetGcPauseEnable() || args.Params.BackupCfg.GcPauseEnable
+
 	return &Task{
-		backupID: backupID,
+		taskID: args.TaskID,
 
 		logger: logger,
 
-		milvusStorage: MilvusStorage,
-		backupStorage: BackupStorage,
-		copySem:       semaphore.NewWeighted(params.BackupCfg.BackupCopyDataParallelism),
+		milvusStorage:  args.MilvusStorage,
+		milvusRootPath: args.Params.MinioCfg.RootPath,
 
-		params: params,
+		backupStorage: args.BackupStorage,
+		backupDir:     args.BackupDir,
 
-		grpc:    grpc,
-		restful: restful,
+		collSem: semaphore.NewWeighted(int64(args.Params.BackupCfg.BackupCollectionParallelism)),
 
-		gcCtrl: gcCtrl,
+		crossStorage: crossStorage,
+		copySem:      semaphore.NewWeighted(args.Params.BackupCfg.BackupCopyDataParallelism),
 
-		meta: meta,
+		grpc:    args.Grpc,
+		restful: args.Restful,
 
-		request: request,
+		gcCtrl:  newGCController(args.Manage),
+		pauseGC: pauseGC,
+
+		meta: args.Meta,
+
+		rpcChannelName: args.Params.MilvusCfg.RPCChanelName,
+
+		request: args.Request,
 	}, nil
-}
-
-type collection struct {
-	DBName   string
-	CollName string
 }
 
 func (t *Task) Execute(ctx context.Context) error {
@@ -100,8 +125,10 @@ func (t *Task) Execute(ctx context.Context) error {
 }
 
 func (t *Task) privateExecute(ctx context.Context) error {
-	t.gcCtrl.Pause(ctx)
-	defer t.gcCtrl.Resume(ctx)
+	if t.pauseGC {
+		t.gcCtrl.Pause(ctx)
+		defer t.gcCtrl.Resume(ctx)
+	}
 
 	dbNames, collections, err := t.listDBAndCollection(ctx)
 	if err != nil {
@@ -122,18 +149,22 @@ func (t *Task) privateExecute(ctx context.Context) error {
 
 	t.runRPCChannelPOSTask(ctx)
 
+	if err := t.writeMeta(ctx); err != nil {
+		return fmt.Errorf("backup: write meta: %w", err)
+	}
+
 	t.logger.Info("backup successfully")
 	return nil
 }
 
-func (t *Task) listDBAndCollectionFromDBCollections(ctx context.Context, dbCollectionsStr string) ([]string, []collection, error) {
+func (t *Task) listDBAndCollectionFromDBCollections(ctx context.Context, dbCollectionsStr string) ([]string, []namespace.NS, error) {
 	var dbCollections meta.DbCollections
 	if err := json.Unmarshal([]byte(dbCollectionsStr), &dbCollections); err != nil {
 		return nil, nil, fmt.Errorf("backup: unmarshal dbCollections: %w", err)
 	}
 
 	var dbNames []string
-	var collections []collection
+	var nss []namespace.NS
 	for db, colls := range dbCollections {
 		if db == "" {
 			db = namespace.DefaultDBName
@@ -159,16 +190,16 @@ func (t *Task) listDBAndCollectionFromDBCollections(ctx context.Context, dbColle
 				return nil, nil, fmt.Errorf("backup: collection %s does not exist", ns)
 			}
 			t.logger.Debug("need backup collection", zap.String("db", db), zap.String("collection", coll))
-			collections = append(collections, collection{DBName: db, CollName: coll})
+			nss = append(nss, ns)
 		}
 	}
 
-	return dbNames, collections, nil
+	return dbNames, nss, nil
 }
 
-func (t *Task) listDBAndCollectionFromCollectionNames(ctx context.Context, collectionNames []string) ([]string, []collection, error) {
+func (t *Task) listDBAndCollectionFromCollectionNames(ctx context.Context, collectionNames []string) ([]string, []namespace.NS, error) {
 	dbNames := make(map[string]struct{})
-	var collections []collection
+	nss := make([]namespace.NS, 0, len(collectionNames))
 	for _, collectionName := range collectionNames {
 		dbName := namespace.DefaultDBName
 		if strings.Contains(collectionName, ".") {
@@ -185,15 +216,15 @@ func (t *Task) listDBAndCollectionFromCollectionNames(ctx context.Context, colle
 		if !exist {
 			return nil, nil, fmt.Errorf("backup: collection %s.%s does not exist", dbName, collectionName)
 		}
-		collections = append(collections, collection{DBName: dbName, CollName: collectionName})
+		nss = append(nss, namespace.New(dbName, collectionName))
 	}
 
-	return maps.Keys(dbNames), collections, nil
+	return maps.Keys(dbNames), nss, nil
 }
 
-func (t *Task) listDBAndCollectionFromAPI(ctx context.Context) ([]string, []collection, error) {
+func (t *Task) listDBAndCollectionFromAPI(ctx context.Context) ([]string, []namespace.NS, error) {
 	var dbNames []string
-	var collections []collection
+	var nss []namespace.NS
 	// compatible to milvus under v2.2.8 without database support
 	if t.grpc.HasFeature(milvus.MultiDatabase) {
 		t.logger.Info("the milvus server support multi database")
@@ -210,7 +241,7 @@ func (t *Task) listDBAndCollectionFromAPI(ctx context.Context) ([]string, []coll
 			}
 			for _, coll := range resp.CollectionNames {
 				t.logger.Debug("need backup collection", zap.String("db", db), zap.String("collection", coll))
-				collections = append(collections, collection{DBName: db, CollName: coll})
+				nss = append(nss, namespace.New(db, coll))
 			}
 		}
 	} else {
@@ -222,57 +253,57 @@ func (t *Task) listDBAndCollectionFromAPI(ctx context.Context) ([]string, []coll
 		}
 		for _, coll := range resp.CollectionNames {
 			t.logger.Debug("need backup collection", zap.String("db", namespace.DefaultDBName), zap.String("collection", coll))
-			collections = append(collections, collection{DBName: namespace.DefaultDBName, CollName: coll})
+			nss = append(nss, namespace.New(namespace.DefaultDBName, coll))
 		}
 	}
 
-	return dbNames, collections, nil
+	return dbNames, nss, nil
 }
 
 // listDBAndCollection lists the database and collection names to be backed up.
 // 1. Use dbCollection in the request if it is not empty.
 // 2. If dbCollection is empty, use collectionNames in the request.
 // 3. If collectionNames is empty, list all databases and collections.
-func (t *Task) listDBAndCollection(ctx context.Context) ([]string, []collection, error) {
+func (t *Task) listDBAndCollection(ctx context.Context) ([]string, []namespace.NS, error) {
 	dbCollectionsStr := utils.GetDBCollections(t.request.GetDbCollections())
 	t.logger.Debug("get dbCollections from request", zap.String("dbCollections", dbCollectionsStr))
 
 	// 1. dbCollections
 	if dbCollectionsStr != "" {
 		t.logger.Info("read need backup db and collection from dbCollection", zap.String("dbCollections", dbCollectionsStr))
-		dbNames, collections, err := t.listDBAndCollectionFromDBCollections(ctx, dbCollectionsStr)
+		dbNames, nss, err := t.listDBAndCollectionFromDBCollections(ctx, dbCollectionsStr)
 		if err != nil {
 			return nil, nil, fmt.Errorf("backup: list db and collection from dbCollections: %w", err)
 		}
-		t.logger.Info("list db and collection from dbCollections done", zap.Strings("dbNames", dbNames), zap.Any("collections", collections))
-		return dbNames, collections, nil
+		t.logger.Info("list db and collection from dbCollections done", zap.Strings("dbNames", dbNames), zap.Any("nss", nss))
+		return dbNames, nss, nil
 	}
 
 	// 2. collectionNames
 	if len(t.request.GetCollectionNames()) > 0 {
 		t.logger.Info("read need backup db and collection from collectionNames", zap.Strings("collectionNames", t.request.GetCollectionNames()))
-		dbNames, collections, err := t.listDBAndCollectionFromCollectionNames(ctx, t.request.GetCollectionNames())
+		dbNames, nss, err := t.listDBAndCollectionFromCollectionNames(ctx, t.request.GetCollectionNames())
 		if err != nil {
 			return nil, nil, fmt.Errorf("backup: list db and collection from collectionNames: %w", err)
 		}
-		t.logger.Info("list db and collection from collectionNames done", zap.Strings("dbNames", dbNames), zap.Any("collections", collections))
-		return dbNames, collections, nil
+		t.logger.Info("list db and collection from collectionNames done", zap.Strings("dbNames", dbNames), zap.Any("nss", nss))
+		return dbNames, nss, nil
 	}
 
 	// 3. list all databases and collections
 	t.logger.Info("read need backup db and collection from API")
-	dbNames, collections, err := t.listDBAndCollectionFromAPI(ctx)
+	dbNames, nss, err := t.listDBAndCollectionFromAPI(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("backup: list db and collection from API: %w", err)
 	}
-	t.logger.Info("list db and collection from API done", zap.Strings("dbNames", dbNames), zap.Any("collections", collections))
+	t.logger.Info("list db and collection from API done", zap.Strings("dbNames", dbNames), zap.Any("nss", nss))
 
-	return dbNames, collections, nil
+	return dbNames, nss, nil
 }
 
 func (t *Task) runDBTask(ctx context.Context, dbNames []string) error {
 	for _, dbName := range dbNames {
-		dbTask := NewDatabaseTask(t.backupID, dbName, t.grpc, t.meta)
+		dbTask := NewDatabaseTask(t.taskID, dbName, t.grpc, t.meta)
 		if err := dbTask.Execute(ctx); err != nil {
 			return fmt.Errorf("backup: execute db task %s: %w", dbName, err)
 		}
@@ -283,41 +314,40 @@ func (t *Task) runDBTask(ctx context.Context, dbNames []string) error {
 	return nil
 }
 
-func (t *Task) newCollectionTaskOpt() CollectionOpt {
-	backupDir := mpath.BackupDir(t.params.MinioCfg.BackupRootPath, t.request.GetBackupName())
-
-	crossStorage := t.params.MinioCfg.CrossStorage
-	if t.backupStorage.Config().Provider != t.milvusStorage.Config().Provider {
-		crossStorage = true
-	}
-
-	return CollectionOpt{
-		BackupID:       t.request.GetRequestId(),
+func (t *Task) newCollectionTaskArgs() collectionTaskArgs {
+	return collectionTaskArgs{
+		TaskID:         t.request.GetRequestId(),
 		MetaOnly:       t.request.GetMetaOnly(),
 		SkipFlush:      t.request.GetForce(),
 		MilvusStorage:  t.milvusStorage,
-		MilvusRootPath: t.params.MinioCfg.RootPath,
-		CrossStorage:   crossStorage,
+		MilvusRootPath: t.milvusRootPath,
+		CrossStorage:   t.crossStorage,
 		BackupStorage:  t.backupStorage,
 		CopySem:        t.copySem,
-		BackupDir:      backupDir,
+		BackupDir:      t.backupDir,
 		Meta:           t.meta,
 		Grpc:           t.grpc,
 		Restful:        t.restful,
 	}
 }
 
-func (t *Task) runCollTask(ctx context.Context, collections []collection) error {
-	t.logger.Info("start backup all collections", zap.Any("collections", collections))
-	opt := t.newCollectionTaskOpt()
+func (t *Task) runCollTask(ctx context.Context, nss []namespace.NS) error {
+	nsStrs := lo.Map(nss, func(coll namespace.NS, _ int) string { return coll.String() })
+	t.logger.Info("start backup all collections", zap.Int("count", len(nss)), zap.Strings("ns", nsStrs))
+	args := t.newCollectionTaskArgs()
 
 	g, subCtx := errgroup.WithContext(ctx)
-	g.SetLimit(t.params.BackupCfg.BackupCollectionParallelism)
-	for _, coll := range collections {
+	for _, ns := range nss {
+		if err := t.copySem.Acquire(ctx, 1); err != nil {
+			return fmt.Errorf("backup: acquire semaphore: %w", err)
+		}
+
 		g.Go(func() error {
-			task := NewCollectionTask(coll.DBName, coll.CollName, opt)
+			defer t.copySem.Release(1)
+
+			task := NewCollectionTask(ns, args)
 			if err := task.Execute(subCtx); err != nil {
-				return fmt.Errorf("create: backup collection %s.%s failed, err: %w", coll.DBName, coll.CollName, err)
+				return fmt.Errorf("create: backup collection %s, err: %w", ns, err)
 			}
 
 			return nil
@@ -339,7 +369,7 @@ func (t *Task) runRBACTask(ctx context.Context) error {
 		return nil
 	}
 
-	rt := NewRBACTask(t.backupID, t.meta, t.grpc)
+	rt := NewRBACTask(t.taskID, t.meta, t.grpc)
 	if err := rt.Execute(ctx); err != nil {
 		return fmt.Errorf("backup: execute rbac task: %w", err)
 	}
@@ -349,10 +379,64 @@ func (t *Task) runRBACTask(ctx context.Context) error {
 
 func (t *Task) runRPCChannelPOSTask(ctx context.Context) {
 	t.logger.Info("start backup rpc channel pos")
-	rpcPosTask := NewRPCChannelPOSTask(t.backupID, t.params.MilvusCfg.RPCChanelName, t.grpc, t.meta)
+	rpcPosTask := newRPCChannelPOSTask(t.taskID, t.rpcChannelName, t.grpc, t.meta)
 	if err := rpcPosTask.Execute(ctx); err != nil {
 		t.logger.Warn(_rpcChWarnMessage, zap.Error(err))
 		return
 	}
 	t.logger.Info("backup rpc channel pos done")
+}
+
+func (t *Task) writeMeta(ctx context.Context) error {
+	backupInfo := t.meta.GetFullMeta(t.taskID)
+	output, err := meta.Serialize(backupInfo)
+	if err != nil {
+		return err
+	}
+
+	collectionBackups := backupInfo.GetCollectionBackups()
+	collectionPositions := make(map[string][]*backuppb.ChannelPosition)
+	for _, collectionBackup := range collectionBackups {
+		collectionCPs := make([]*backuppb.ChannelPosition, 0, len(collectionBackup.GetChannelCheckpoints()))
+		for vCh, position := range collectionBackup.GetChannelCheckpoints() {
+			collectionCPs = append(collectionCPs, &backuppb.ChannelPosition{
+				Name:     vCh,
+				Position: position,
+			})
+		}
+		collectionPositions[collectionBackup.GetCollectionName()] = collectionCPs
+	}
+	channelCPsBytes, err := json.Marshal(collectionPositions)
+	if err != nil {
+		return err
+	}
+
+	err = storage.Write(ctx, t.backupStorage, mpath.MetaKey(t.backupDir, mpath.BackupMeta), output.BackupMetaBytes)
+	if err != nil {
+		return fmt.Errorf("backup: write backup meta: %w", err)
+	}
+	err = storage.Write(ctx, t.backupStorage, mpath.MetaKey(t.backupDir, mpath.CollectionMeta), output.CollectionMetaBytes)
+	if err != nil {
+		return fmt.Errorf("backup: write collection meta: %w", err)
+	}
+	err = storage.Write(ctx, t.backupStorage, mpath.MetaKey(t.backupDir, mpath.PartitionMeta), output.PartitionMetaBytes)
+	if err != nil {
+		return fmt.Errorf("backup: write partition meta: %w", err)
+	}
+	err = storage.Write(ctx, t.backupStorage, mpath.MetaKey(t.backupDir, mpath.SegmentMeta), output.SegmentMetaBytes)
+	if err != nil {
+		return fmt.Errorf("backup: write segment meta: %w", err)
+	}
+	err = storage.Write(ctx, t.backupStorage, mpath.MetaKey(t.backupDir, mpath.ChannelCPMeta), channelCPsBytes)
+	if err != nil {
+		return err
+	}
+
+	err = storage.Write(ctx, t.backupStorage, mpath.MetaKey(t.backupDir, mpath.FullMeta), output.FullMetaBytes)
+	if err != nil {
+		return fmt.Errorf("backup: write full meta: %w", err)
+	}
+
+	log.Info("finish writeBackupInfoMeta")
+	return nil
 }

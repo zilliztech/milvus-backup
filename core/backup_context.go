@@ -364,7 +364,7 @@ func (b *BackupContext) DeleteBackup(ctx context.Context, request *backuppb.Dele
 		BackupName: request.GetBackupName(),
 	})
 	// always trigger a remove to make sure it is deleted
-	err := storage.DeletePrefix(ctx, b.getBackupStorageClient(), meta.BackupDirPath(b.backupRootPath, request.GetBackupName()))
+	err := storage.DeletePrefix(ctx, b.getBackupStorageClient(), mpath.BackupDir(b.backupRootPath, request.GetBackupName()))
 
 	if getResp.GetCode() == backuppb.ResponseCode_Request_Object_Not_Found {
 		resp.Code = backuppb.ResponseCode_Request_Object_Not_Found

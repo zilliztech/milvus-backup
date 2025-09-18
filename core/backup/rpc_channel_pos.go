@@ -11,8 +11,8 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
-type RPCChannelPOSTask struct {
-	backupID       string
+type rpcChannelPOSTask struct {
+	taskID         string
 	rpcChannelName string
 
 	grpc   milvus.Grpc
@@ -20,19 +20,19 @@ type RPCChannelPOSTask struct {
 	logger *zap.Logger
 }
 
-func NewRPCChannelPOSTask(backupID, rpcChannelName string, grpc milvus.Grpc, meta *meta.MetaManager) *RPCChannelPOSTask {
-	return &RPCChannelPOSTask{
-		backupID: backupID,
+func newRPCChannelPOSTask(taskID, rpcChannelName string, grpc milvus.Grpc, meta *meta.MetaManager) *rpcChannelPOSTask {
+	return &rpcChannelPOSTask{
+		taskID: taskID,
 
 		rpcChannelName: rpcChannelName,
 
 		grpc:   grpc,
-		logger: log.L().With(zap.String("backup_id", backupID)),
+		logger: log.L().With(zap.String("task_id", taskID)),
 		meta:   meta,
 	}
 }
 
-func (rt *RPCChannelPOSTask) Execute(ctx context.Context) error {
+func (rt *rpcChannelPOSTask) Execute(ctx context.Context) error {
 	rt.logger.Info("try to get rpc channel pos", zap.String("rpc_channel", rt.rpcChannelName))
 	pos, err := rt.grpc.ReplicateMessage(ctx, rt.rpcChannelName)
 	if err != nil {
@@ -41,7 +41,7 @@ func (rt *RPCChannelPOSTask) Execute(ctx context.Context) error {
 
 	rt.logger.Info("get rpc channel pos done", zap.String("pos", pos))
 
-	rt.meta.UpdateBackup(rt.backupID, meta.SetRPCChannelPos(rt.rpcChannelName, pos))
+	rt.meta.UpdateBackup(rt.taskID, meta.SetRPCChannelPos(rt.rpcChannelName, pos))
 
 	return nil
 }

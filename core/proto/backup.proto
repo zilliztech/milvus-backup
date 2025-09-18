@@ -179,6 +179,8 @@ message CreateBackupRequest {
   string gc_pause_address = 10;
   // whether backup RBAC
   bool rbac = 11;
+  // backup root path
+  string backup_root_path = 12;
 }
 
 /**

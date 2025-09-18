@@ -22,6 +22,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/storage"
 	"github.com/zilliztech/milvus-backup/core/storage/mpath"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 )
 
@@ -29,8 +30,8 @@ const _allPartitionID = -1
 
 const _maxSegmentParallelism = 1024
 
-type CollectionOpt struct {
-	BackupID string
+type collectionTaskArgs struct {
+	TaskID string
 
 	MetaOnly  bool
 	SkipFlush bool
@@ -51,10 +52,9 @@ type CollectionOpt struct {
 }
 
 type CollectionTask struct {
-	backupID string
+	taskID string
 
-	dbName   string
-	collName string
+	ns namespace.NS
 
 	collID int64
 
@@ -78,33 +78,29 @@ type CollectionTask struct {
 	logger *zap.Logger
 }
 
-func NewCollectionTask(dbName, collName string, opt CollectionOpt) *CollectionTask {
-	logger := log.L().With(
-		zap.String("db_name", dbName),
-		zap.String("collection_name", collName),
-		zap.String("backup_id", opt.BackupID))
+func NewCollectionTask(ns namespace.NS, args collectionTaskArgs) *CollectionTask {
+	logger := log.L().With(zap.String("task_id", args.TaskID), zap.String("ns", ns.String()))
 	return &CollectionTask{
-		backupID: opt.BackupID,
+		taskID: args.TaskID,
 
-		dbName:   dbName,
-		collName: collName,
+		ns: ns,
 
-		metaOnly:  opt.MetaOnly,
-		skipFlush: opt.SkipFlush,
+		metaOnly:  args.MetaOnly,
+		skipFlush: args.SkipFlush,
 
-		milvusStorage:  opt.MilvusStorage,
-		milvusRootPath: opt.MilvusRootPath,
+		milvusStorage:  args.MilvusStorage,
+		milvusRootPath: args.MilvusRootPath,
 
-		crossStorage: opt.CrossStorage,
-		copySem:      opt.CopySem,
+		crossStorage: args.CrossStorage,
+		copySem:      args.CopySem,
 
-		backupStorage: opt.BackupStorage,
-		backupDir:     opt.BackupDir,
+		backupStorage: args.BackupStorage,
+		backupDir:     args.BackupDir,
 
-		meta: opt.Meta,
+		meta: args.Meta,
 
-		grpc:    opt.Grpc,
-		restful: opt.Restful,
+		grpc:    args.Grpc,
+		restful: args.Restful,
 
 		logger: logger,
 	}
@@ -224,7 +220,7 @@ func (ct *CollectionTask) getPartLoadState(ctx context.Context, collLoadState st
 	}
 
 	for _, partName := range partitionNames {
-		progress, err := ct.grpc.GetLoadingProgress(ctx, ct.dbName, partName)
+		progress, err := ct.grpc.GetLoadingProgress(ctx, ct.ns.DBName(), partName)
 		if err != nil {
 			return nil, fmt.Errorf("backup: get loading progress %w", err)
 		}
@@ -242,7 +238,7 @@ func (ct *CollectionTask) getPartLoadState(ctx context.Context, collLoadState st
 }
 
 func (ct *CollectionTask) getCollLoadState(ctx context.Context) (string, error) {
-	progress, err := ct.grpc.GetLoadingProgress(ctx, ct.dbName, ct.collName)
+	progress, err := ct.grpc.GetLoadingProgress(ctx, ct.ns.DBName(), ct.ns.CollName())
 	if err != nil {
 		return "", fmt.Errorf("backup: get loading progress %w", err)
 	}
@@ -260,7 +256,7 @@ func (ct *CollectionTask) getCollLoadState(ctx context.Context) (string, error) 
 func (ct *CollectionTask) backupPartitionDDL(ctx context.Context, collID int64, collLoadState string) ([]*backuppb.PartitionBackupInfo, error) {
 	ct.logger.Info("start backup partition ddl of collection")
 
-	resp, err := ct.grpc.ShowPartitions(context.Background(), ct.dbName, ct.collName)
+	resp, err := ct.grpc.ShowPartitions(context.Background(), ct.ns.DBName(), ct.ns.CollName())
 	if err != nil {
 		return nil, fmt.Errorf("backup: show partitions %w", err)
 	}
@@ -293,7 +289,7 @@ func (ct *CollectionTask) backupPartitionDDL(ctx context.Context, collID int64, 
 
 func (ct *CollectionTask) backupIndexes(ctx context.Context) ([]*backuppb.IndexInfo, error) {
 	ct.logger.Info("start backup indexes of collection")
-	indexes, err := ct.grpc.ListIndex(ctx, ct.dbName, ct.collName)
+	indexes, err := ct.grpc.ListIndex(ctx, ct.ns.DBName(), ct.ns.CollName())
 	if err != nil && !strings.Contains(err.Error(), "index not found") {
 		return nil, fmt.Errorf("backup: list index %w", err)
 	}
@@ -319,7 +315,7 @@ func (ct *CollectionTask) backupIndexes(ctx context.Context) ([]*backuppb.IndexI
 func (ct *CollectionTask) backupDDL(ctx context.Context) error {
 	ct.logger.Info("start to backup ddl of collection")
 
-	descResp, err := ct.grpc.DescribeCollection(ctx, ct.dbName, ct.collName)
+	descResp, err := ct.grpc.DescribeCollection(ctx, ct.ns.DBName(), ct.ns.CollName())
 	if err != nil {
 		return fmt.Errorf("backup: describe collection %w", err)
 	}
@@ -341,7 +337,7 @@ func (ct *CollectionTask) backupDDL(ctx context.Context) error {
 	}
 
 	backupInfo := &backuppb.CollectionBackupInfo{
-		Id:               ct.backupID,
+		Id:               ct.taskID,
 		StateCode:        backuppb.BackupTaskStateCode_BACKUP_INITIAL,
 		StartTime:        time.Now().Unix(),
 		CollectionId:     descResp.GetCollectionID(),
@@ -371,7 +367,7 @@ func (ct *CollectionTask) flushCollection(ctx context.Context) (*milvuspb.FlushR
 
 	ct.logger.Info("start to flush collection")
 	start := time.Now()
-	resp, err := ct.grpc.Flush(ctx, ct.dbName, ct.collName)
+	resp, err := ct.grpc.Flush(ctx, ct.ns.DBName(), ct.ns.CollName())
 	if err != nil {
 		return nil, fmt.Errorf("backup: flush collection %w", err)
 	}
@@ -397,10 +393,10 @@ func (ct *CollectionTask) addDMLPositionToMeta(flushResp *milvuspb.FlushResponse
 			maxChannelBackupTimeStamp = checkpoint.GetTimestamp()
 		}
 	}
-	ct.meta.UpdateCollection(ct.backupID, ct.collID,
+	ct.meta.UpdateCollection(ct.taskID, ct.collID,
 		meta.SetCollectionChannelCheckpoints(channelCheckpoints),
 		meta.SetCollectionBackupTimestamp(maxChannelBackupTimeStamp),
-		meta.SetCollectionBackupPhysicalTimestamp(uint64(flushResp.GetCollSealTimes()[ct.collName])))
+		meta.SetCollectionBackupPhysicalTimestamp(uint64(flushResp.GetCollSealTimes()[ct.ns.CollName()])))
 }
 
 func (ct *CollectionTask) getSegment(ctx context.Context, seg *milvuspb.PersistentSegmentInfo) (*backuppb.SegmentBackupInfo, error) {
@@ -591,7 +587,7 @@ func (ct *CollectionTask) groupID(seg *milvuspb.PersistentSegmentInfo) int64 {
 // see: https://github.com/milvus-io/milvus/pull/40464
 func (ct *CollectionTask) getSegmentInfoByAPI(ctx context.Context, seg *milvuspb.PersistentSegmentInfo) (*backuppb.SegmentBackupInfo, error) {
 	ct.logger.Info("try get segment info via proxy node", zap.Int64("segment_id", seg.SegmentID))
-	segInfo, err := ct.restful.GetSegmentInfo(ctx, ct.dbName, seg.CollectionID, seg.SegmentID)
+	segInfo, err := ct.restful.GetSegmentInfo(ctx, ct.ns.DBName(), seg.CollectionID, seg.SegmentID)
 	if err != nil {
 		return nil, fmt.Errorf("backup: get segment info %w", err)
 	}
@@ -632,7 +628,7 @@ func (ct *CollectionTask) getSegmentInfoByAPI(ctx context.Context, seg *milvuspb
 
 func (ct *CollectionTask) getSegments(ctx context.Context) ([]*backuppb.SegmentBackupInfo, error) {
 	ct.logger.Info("start get segments of collection")
-	segments, err := ct.grpc.GetPersistentSegmentInfo(ctx, ct.dbName, ct.collName)
+	segments, err := ct.grpc.GetPersistentSegmentInfo(ctx, ct.ns.DBName(), ct.ns.CollName())
 	if err != nil {
 		return nil, fmt.Errorf("backup: get persistent segment info %w", err)
 	}
@@ -666,7 +662,7 @@ func (ct *CollectionTask) getSegments(ctx context.Context) ([]*backuppb.SegmentB
 func (ct *CollectionTask) addSegmentToMeta(segments []*backuppb.SegmentBackupInfo) {
 	for _, seg := range segments {
 		if seg.GetIsL0() && seg.GetPartitionId() == _allPartitionID {
-			ct.meta.UpdateCollection(ct.backupID, seg.GetCollectionId(), meta.AddL0Segment(seg))
+			ct.meta.UpdateCollection(ct.taskID, seg.GetCollectionId(), meta.AddL0Segment(seg))
 		} else {
 			ct.meta.AddSegment(seg)
 		}
