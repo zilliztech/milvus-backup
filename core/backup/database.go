@@ -11,7 +11,7 @@ import (
 )
 
 type DatabaseTask struct {
-	backupID string
+	taskID string
 
 	dbName string
 
@@ -19,8 +19,8 @@ type DatabaseTask struct {
 	grpc milvus.Grpc
 }
 
-func NewDatabaseTask(backupID, dbName string, grpc milvus.Grpc, meta *meta.MetaManager) *DatabaseTask {
-	return &DatabaseTask{backupID: backupID, dbName: dbName, meta: meta, grpc: grpc}
+func NewDatabaseTask(taskID, dbName string, grpc milvus.Grpc, meta *meta.MetaManager) *DatabaseTask {
+	return &DatabaseTask{taskID: taskID, dbName: dbName, meta: meta, grpc: grpc}
 }
 
 func (dt *DatabaseTask) Execute(ctx context.Context) error {
@@ -38,7 +38,7 @@ func (dt *DatabaseTask) Execute(ctx context.Context) error {
 	}
 
 	bakDB := &backuppb.DatabaseBackupInfo{DbName: dt.dbName, DbId: dbID, Properties: properties}
-	dt.meta.UpdateBackup(dt.backupID, meta.AddDatabase(bakDB))
+	dt.meta.UpdateBackup(dt.taskID, meta.AddDatabase(bakDB))
 
 	return nil
 }

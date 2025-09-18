@@ -2,14 +2,11 @@ package backup
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/client/milvus"
-	"github.com/zilliztech/milvus-backup/core/paramtable"
-	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
@@ -21,38 +18,18 @@ const _gcWarnMessage = "Pause GC Failed," +
 var _defaultPauseDuration = 1 * time.Hour
 
 type gcController struct {
-	enable bool
-
 	manage milvus.Manage
 	stop   chan struct{}
 
 	logger *zap.Logger
 }
 
-func newGCController(request *backuppb.CreateBackupRequest, params *paramtable.BackupParams) (*gcController, error) {
-	if !request.GetGcPauseEnable() && !params.BackupCfg.GcPauseEnable {
-		return &gcController{enable: false}, nil
-	}
-
-	var addr string
-	if len(request.GetGcPauseAddress()) != 0 {
-		addr = request.GetGcPauseAddress()
-	} else if len(params.BackupCfg.GcPauseAddress) != 0 {
-		addr = params.BackupCfg.GcPauseAddress
-	} else {
-		return nil, errors.New("enable gc pause but no address provided")
-	}
-
-	manage := milvus.NewManage(addr)
+func newGCController(manage milvus.Manage) *gcController {
 	logger := log.L().With(zap.String("component", "gc-pauser"))
-	return &gcController{enable: true, manage: manage, logger: logger, stop: make(chan struct{})}, nil
+	return &gcController{manage: manage, logger: logger, stop: make(chan struct{})}
 }
 
 func (t *gcController) Pause(ctx context.Context) {
-	if !t.enable {
-		return
-	}
-
 	resp, err := t.manage.PauseGC(ctx, int32(_defaultPauseDuration.Seconds()))
 	if err != nil {
 		t.logger.Warn(_gcWarnMessage, zap.Error(err), zap.String("resp", resp))
@@ -82,10 +59,6 @@ func (t *gcController) renewalLease() {
 }
 
 func (t *gcController) Resume(ctx context.Context) {
-	if !t.enable {
-		return
-	}
-
 	select {
 	case t.stop <- struct{}{}:
 	default:

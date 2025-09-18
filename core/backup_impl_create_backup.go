@@ -2,18 +2,19 @@ package core
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/google/uuid"
-
 	"github.com/zilliztech/milvus-backup/core/backup"
+	"github.com/zilliztech/milvus-backup/core/client/milvus"
 	"github.com/zilliztech/milvus-backup/core/meta"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/storage"
+	"github.com/zilliztech/milvus-backup/core/storage/mpath"
 	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
@@ -22,14 +23,7 @@ func (b *BackupContext) CreateBackup(ctx context.Context, request *backuppb.Crea
 	if request.GetRequestId() == "" {
 		request.RequestId = uuid.NewString()
 	}
-	log.Info("receive CreateBackupRequest",
-		zap.String("requestId", request.GetRequestId()),
-		zap.String("backupName", request.GetBackupName()),
-		zap.Strings("collections", request.GetCollectionNames()),
-		zap.String("databaseCollections", utils.GetDBCollections(request.GetDbCollections())),
-		zap.Bool("async", request.GetAsync()),
-		zap.Bool("force", request.GetForce()),
-		zap.Bool("metaOnly", request.GetMetaOnly()))
+	log.Info("receive CreateBackupRequest", zap.Any("request", request))
 
 	resp := &backuppb.BackupInfoResponse{
 		RequestId: request.GetRequestId(),
@@ -47,23 +41,6 @@ func (b *BackupContext) CreateBackup(ctx context.Context, request *backuppb.Crea
 	// backup name validate
 	if request.GetBackupName() == "" {
 		request.BackupName = "backup_" + fmt.Sprint(time.Now().UTC().Format("2006_01_02_15_04_05_")) + fmt.Sprint(time.Now().Nanosecond())
-	}
-	if request.GetBackupName() != "" {
-		exist, err := storage.Exist(ctx, b.getBackupStorageClient(), b.backupRootPath+meta.SEPERATOR+request.GetBackupName())
-		if err != nil {
-			errMsg := fmt.Sprintf("fail to check whether exist backup with name: %s", request.GetBackupName())
-			log.Error(errMsg, zap.Error(err))
-			resp.Code = backuppb.ResponseCode_Fail
-			resp.Msg = errMsg + "/n" + err.Error()
-			return resp
-		}
-		if exist {
-			errMsg := fmt.Sprintf("backup already exist with the name: %s", request.GetBackupName())
-			log.Error(errMsg)
-			resp.Code = backuppb.ResponseCode_Parameter_Error
-			resp.Msg = errMsg
-			return resp
-		}
 	}
 	err := utils.ValidateType(request.GetBackupName(), BackupName)
 	if err != nil {
@@ -118,13 +95,43 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 	defer b.mu.Unlock()
 	b.meta.UpdateBackup(backupInfo.GetId(), meta.SetStateCode(backuppb.BackupTaskStateCode_BACKUP_EXECUTING))
 
-	task, err := backup.NewTask(backupInfo.GetId(),
-		b.getMilvusStorageClient(),
-		b.getBackupStorageClient(),
-		request, b.params,
-		b.getMilvusClient(),
-		b.getRestfulClient(),
-		b.meta)
+	backupRootPath := b.params.MinioCfg.BackupRootPath
+	if request.GetBackupRootPath() != "" {
+		log.Info("use backup root path from request", zap.String("path", request.GetBackupRootPath()))
+		backupRootPath = request.GetBackupRootPath()
+	}
+	exist, err := storage.Exist(ctx, b.getBackupStorageClient(), mpath.BackupDir(backupRootPath, request.GetBackupName()))
+	if err != nil {
+		return fmt.Errorf("fail to check whether exist backup with name: %s", request.GetBackupName())
+	}
+	if exist {
+		return fmt.Errorf("backup with name %s already exist", request.GetBackupName())
+	}
+
+	var addr string
+	if len(request.GetGcPauseAddress()) != 0 {
+		addr = request.GetGcPauseAddress()
+	} else if len(b.params.BackupCfg.GcPauseAddress) != 0 {
+		addr = b.params.BackupCfg.GcPauseAddress
+	} else {
+		return errors.New("enable gc pause but no address provided")
+	}
+	manage := milvus.NewManage(addr)
+
+	args := backup.TaskArgs{
+		TaskID:        backupInfo.GetId(),
+		MilvusStorage: b.getMilvusStorageClient(),
+		BackupStorage: b.getBackupStorageClient(),
+		BackupDir:     mpath.BackupDir(backupRootPath, request.GetBackupName()),
+		Request:       request,
+		Params:        b.params,
+		Grpc:          b.getMilvusClient(),
+		Restful:       b.getRestfulClient(),
+		Manage:        manage,
+		Meta:          b.meta,
+	}
+
+	task, err := backup.NewTask(args)
 	if err != nil {
 		b.meta.UpdateBackup(backupInfo.GetId(), meta.SetStateCode(backuppb.BackupTaskStateCode_BACKUP_FAIL), meta.SetErrorMessage(err.Error()))
 		log.Error("fail to create backup task", zap.Error(err))
@@ -137,11 +144,6 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 		return fmt.Errorf("fail to execute backup task: %w", err)
 	}
 
-	if err := b.writeBackupInfoMeta(ctx, backupInfo.GetId()); err != nil {
-		b.meta.UpdateBackup(backupInfo.Id, meta.SetStateCode(backuppb.BackupTaskStateCode_BACKUP_FAIL),
-			meta.SetErrorMessage(err.Error()))
-		return err
-	}
 	log.Info("finish backup all info",
 		zap.String("requestId", request.GetRequestId()),
 		zap.String("backupName", request.GetBackupName()),
@@ -150,60 +152,5 @@ func (b *BackupContext) executeCreateBackup(ctx context.Context, request *backup
 
 	b.meta.UpdateBackup(backupInfo.GetId(), meta.SetStateCode(backuppb.BackupTaskStateCode_BACKUP_SUCCESS),
 		meta.SetEndTime(time.Now().UnixMilli()))
-	return nil
-}
-
-func (b *BackupContext) writeBackupInfoMeta(ctx context.Context, id string) error {
-	// TODO: move to backup package
-	backupInfo := b.meta.GetFullMeta(id)
-	output, _ := meta.Serialize(backupInfo)
-
-	collectionBackups := backupInfo.GetCollectionBackups()
-	collectionPositions := make(map[string][]*backuppb.ChannelPosition)
-	for _, collectionBackup := range collectionBackups {
-		collectionCPs := make([]*backuppb.ChannelPosition, 0, len(collectionBackup.GetChannelCheckpoints()))
-		for vCh, position := range collectionBackup.GetChannelCheckpoints() {
-			collectionCPs = append(collectionCPs, &backuppb.ChannelPosition{
-				Name:     vCh,
-				Position: position,
-			})
-		}
-		collectionPositions[collectionBackup.GetCollectionName()] = collectionCPs
-	}
-	channelCPsBytes, err := json.Marshal(collectionPositions)
-	if err != nil {
-		return err
-	}
-	log.Debug("channel cp meta", zap.String("value", string(channelCPsBytes)))
-
-	err = storage.Write(ctx, b.getBackupStorageClient(), meta.BackupMetaPath(b.backupRootPath, backupInfo.GetName()), output.BackupMetaBytes)
-	if err != nil {
-		return err
-	}
-	err = storage.Write(ctx, b.getBackupStorageClient(), meta.CollectionMetaPath(b.backupRootPath, backupInfo.GetName()), output.CollectionMetaBytes)
-	if err != nil {
-		return err
-	}
-	err = storage.Write(ctx, b.getBackupStorageClient(), meta.PartitionMetaPath(b.backupRootPath, backupInfo.GetName()), output.PartitionMetaBytes)
-	if err != nil {
-		return err
-	}
-	err = storage.Write(ctx, b.getBackupStorageClient(), meta.SegmentMetaPath(b.backupRootPath, backupInfo.GetName()), output.SegmentMetaBytes)
-	if err != nil {
-		return err
-	}
-	err = storage.Write(ctx, b.getBackupStorageClient(), meta.FullMetaPath(b.backupRootPath, backupInfo.GetName()), output.FullMetaBytes)
-	if err != nil {
-		return err
-	}
-	err = storage.Write(ctx, b.getBackupStorageClient(), meta.ChannelCPMetaPath(b.backupRootPath, backupInfo.GetName()), channelCPsBytes)
-	if err != nil {
-		return err
-	}
-
-	log.Info("finish writeBackupInfoMeta",
-		zap.String("path", meta.BackupDirPath(b.backupRootPath, backupInfo.GetName())),
-		zap.String("backupName", backupInfo.GetName()),
-		zap.String("backup meta", string(output.BackupMetaBytes)))
 	return nil
 }

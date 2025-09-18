@@ -23,11 +23,11 @@ func TestTask_runRBACTask(t *testing.T) {
 		metaMgr.AddBackup(&backuppb.BackupInfo{Id: "backup1"})
 
 		task := &Task{
-			request:  &backuppb.CreateBackupRequest{Rbac: true},
-			logger:   zap.NewNop(),
-			backupID: "backup1",
-			meta:     metaMgr,
-			grpc:     cli,
+			request: &backuppb.CreateBackupRequest{Rbac: true},
+			logger:  zap.NewNop(),
+			taskID:  "backup1",
+			meta:    metaMgr,
+			grpc:    cli,
 		}
 		err := task.runRBACTask(context.Background())
 		assert.NoError(t, err)

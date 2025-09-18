@@ -15,21 +15,21 @@ import (
 )
 
 type RBACTask struct {
-	backupID string
-	meta     *meta.MetaManager
+	taskID string
+	meta   *meta.MetaManager
 
 	grpcCli milvus.Grpc
 
 	logger *zap.Logger
 }
 
-func NewRBACTask(backupID string, meta *meta.MetaManager, grpcCli milvus.Grpc) *RBACTask {
-	logger := log.L().With(zap.String("backup_id", backupID))
+func NewRBACTask(taskID string, meta *meta.MetaManager, grpcCli milvus.Grpc) *RBACTask {
+	logger := log.L().With(zap.String("task_id", taskID))
 	return &RBACTask{
-		backupID: backupID,
-		meta:     meta,
-		grpcCli:  grpcCli,
-		logger:   logger,
+		taskID:  taskID,
+		meta:    meta,
+		grpcCli: grpcCli,
+		logger:  logger,
 	}
 }
 
@@ -53,7 +53,7 @@ func (rt *RBACTask) Execute(ctx context.Context) error {
 		PrivilegeGroups: rt.privilegeGroups(resp.GetRBACMeta().GetPrivilegeGroups()),
 	}
 
-	rt.meta.UpdateBackup(rt.backupID, meta.SetRBACMeta(rbacPb))
+	rt.meta.UpdateBackup(rt.taskID, meta.SetRBACMeta(rbacPb))
 
 	rt.logger.Info("backup RBAC done")
 	return nil

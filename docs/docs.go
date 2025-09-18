@@ -537,6 +537,10 @@ const docTemplate = `{
                     "description": "backup name, will generate one if not set",
                     "type": "string"
                 },
+                "backup_root_path": {
+                    "description": "backup root path",
+                    "type": "string"
+                },
                 "collection_names": {
                     "description": "collection names to backup, empty to backup all",
                     "type": "array",
