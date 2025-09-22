@@ -59,6 +59,10 @@ In order to use Milvus-Backup, access to Milvus proxy and Minio cluster is requi
 > |bucketName|a-bucket|milvus-bucket|
 > |rootPath|files|file|
 
+> [!NOTE]
+>
+> There is also an option to override values in `backup.yaml` using environment variables. Please refer [env_variables.md](docs/user_guide/env_variables.md) to know more.
+
 ### Command Line
 
 Milvus-backup establish CLI based on cobra. Use the following command to see all the usage.
