@@ -7,7 +7,10 @@ import (
 	"io"
 	"strings"
 
+	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
 const _deleteConcurrent = 10
@@ -54,6 +57,7 @@ func DeletePrefix(ctx context.Context, cli Client, prefix string) error {
 		}
 
 		g.Go(func() error {
+			log.Debug("delete object", zap.String("key", attr.Key))
 			return cli.DeleteObject(subCtx, attr.Key)
 		})
 	}
