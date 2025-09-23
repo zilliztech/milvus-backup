@@ -165,8 +165,7 @@ type Task struct {
 	grpc    milvus.Grpc
 	restful milvus.Restful
 
-	backupDir      string
-	backupRootPath string
+	backupDir string
 }
 
 func NewTask(args TaskArgs) (*Task, error) {
@@ -309,6 +308,7 @@ func (t *Task) newCollTask(collBackup *backuppb.CollectionBackupInfo) []*collect
 			option:         t.option,
 			backupRootPath: t.backupDir,
 			crossStorage:   t.params.MinioCfg.CrossStorage,
+			keepTempFiles:  t.params.BackupCfg.KeepTempFiles,
 			backupDir:      t.backupDir,
 			backupStorage:  t.backupStorage,
 			milvusStorage:  t.milvusStorage,

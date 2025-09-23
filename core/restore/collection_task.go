@@ -48,6 +48,7 @@ type collectionTask struct {
 	targetNS namespace.NS
 
 	crossStorage  bool
+	keepTempFiles bool
 	copySem       *semaphore.Weighted
 	bulkInsertSem *semaphore.Weighted
 
@@ -83,6 +84,7 @@ type collectionTaskArgs struct {
 
 	backupRootPath string
 	backupDir      string
+	keepTempFiles  bool
 	crossStorage   bool
 
 	backupStorage storage.Client
@@ -117,10 +119,11 @@ func newCollectionTask(args collectionTaskArgs) *collectionTask {
 
 		taskMgr: args.taskMgr,
 
-		crossStorage:  args.crossStorage,
 		copySem:       args.copySem,
 		bulkInsertSem: args.bulkInsertSem,
 
+		crossStorage:   args.crossStorage,
+		keepTempFiles:  args.keepTempFiles,
 		backupDir:      args.backupDir,
 		backupRootPath: args.backupRootPath,
 
@@ -261,19 +264,21 @@ func (ct *collectionTask) restoreDataV1(ctx context.Context) error {
 }
 
 func (ct *collectionTask) tearDown(ctx context.Context) error {
+	if ct.keepTempFiles {
+		ct.logger.Info("skip clean temporary files")
+		return nil
+	}
+
 	ct.tearDownFn.mu.Lock()
 	defer ct.tearDownFn.mu.Unlock()
 
 	ct.logger.Info("restore task tear down")
 
 	slices.Reverse(ct.tearDownFn.fns)
-
-	if len(ct.tearDownFn.fns) != 0 {
-		for _, fn := range ct.tearDownFn.fns {
-			if err := fn(ctx); err != nil {
-				ct.logger.Error("tear down restore task failed", zap.Error(err))
-				return err
-			}
+	for _, fn := range ct.tearDownFn.fns {
+		if err := fn(ctx); err != nil {
+			ct.logger.Error("tear down restore task failed", zap.Error(err))
+			return err
 		}
 	}
 
