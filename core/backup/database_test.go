@@ -29,7 +29,7 @@ func TestDatabaseTask_Execute(t *testing.T) {
 		}, nil).Once()
 
 		metaMgr := meta.NewMetaManager()
-		metaMgr.AddBackup(&backuppb.BackupInfo{Id: "backup1"})
+		metaMgr.AddBackup("backup1", &backuppb.BackupInfo{})
 
 		task := NewDatabaseTask("backup1", "db1", cli, metaMgr)
 		err := task.Execute(context.Background())
@@ -46,7 +46,7 @@ func TestDatabaseTask_Execute(t *testing.T) {
 		cli.EXPECT().HasFeature(milvus.DescribeDatabase).Return(false).Once()
 
 		metaMgr := meta.NewMetaManager()
-		metaMgr.AddBackup(&backuppb.BackupInfo{Id: "backup1"})
+		metaMgr.AddBackup("backup1", &backuppb.BackupInfo{})
 
 		task := NewDatabaseTask("backup1", namespace.DefaultDBName, cli, metaMgr)
 		err := task.Execute(context.Background())

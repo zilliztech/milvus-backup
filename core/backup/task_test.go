@@ -20,7 +20,7 @@ func TestTask_runRBACTask(t *testing.T) {
 		cli.EXPECT().BackupRBAC(mock.Anything).Return(&milvuspb.BackupRBACMetaResponse{}, nil).Once()
 
 		metaMgr := meta.NewMetaManager()
-		metaMgr.AddBackup(&backuppb.BackupInfo{Id: "backup1"})
+		metaMgr.AddBackup("backup1", &backuppb.BackupInfo{})
 
 		task := &Task{
 			request: &backuppb.CreateBackupRequest{Rbac: true},
