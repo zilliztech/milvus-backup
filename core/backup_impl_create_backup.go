@@ -65,7 +65,7 @@ func (b *BackupContext) CreateBackup(ctx context.Context, request *backuppb.Crea
 		Name:          request.GetBackupName(),
 		MilvusVersion: milvusVersion,
 	}
-	b.meta.AddBackup(info)
+	b.meta.AddBackup(info.GetId(), info)
 
 	if request.Async {
 		go b.executeCreateBackup(ctx, request, info)

@@ -281,7 +281,7 @@ func (ct *CollectionTask) backupPartitionDDL(ctx context.Context, collID int64, 
 			LoadState:     loadState[resp.GetPartitionNames()[idx]],
 		}
 		bakPartitions = append(bakPartitions, bakPartition)
-		ct.meta.AddPartition(bakPartition)
+		ct.meta.AddPartition(ct.taskID, bakPartition)
 	}
 
 	return bakPartitions, nil
@@ -352,7 +352,7 @@ func (ct *CollectionTask) backupDDL(ctx context.Context) error {
 		PartitionBackups: partitions,
 		Properties:       pbconv.MilvusKVToBakKV(descResp.GetProperties()),
 	}
-	ct.meta.AddCollection(backupInfo)
+	ct.meta.AddCollection(ct.taskID, backupInfo)
 
 	ct.collID = descResp.GetCollectionID()
 
@@ -664,7 +664,7 @@ func (ct *CollectionTask) addSegmentToMeta(segments []*backuppb.SegmentBackupInf
 		if seg.GetIsL0() && seg.GetPartitionId() == _allPartitionID {
 			ct.meta.UpdateCollection(ct.taskID, seg.GetCollectionId(), meta.AddL0Segment(seg))
 		} else {
-			ct.meta.AddSegment(seg)
+			ct.meta.AddSegment(ct.taskID, seg)
 		}
 	}
 }
@@ -796,7 +796,7 @@ func (ct *CollectionTask) backupSegment(ctx context.Context, seg *backuppb.Segme
 	if seg.GetPartitionId() == _allPartitionID {
 		return nil
 	}
-	ct.meta.UpdateSegment(seg.PartitionId, seg.SegmentId, meta.SetSegmentBackuped(true))
+	ct.meta.UpdateSegment(ct.taskID, seg.PartitionId, seg.SegmentId, meta.SetSegmentBackuped(true))
 
 	return nil
 }
