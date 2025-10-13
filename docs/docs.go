@@ -597,6 +597,9 @@ const docTemplate = `{
                 21,
                 22,
                 23,
+                24,
+                25,
+                26,
                 100,
                 101,
                 102,
@@ -604,9 +607,11 @@ const docTemplate = `{
                 104,
                 105,
                 106,
-                200
+                200,
+                201
             ],
             "x-enum-comments": {
+                "DataType_ArrayOfStruct": "internal types, not used in user interface",
                 "DataType_VarChar": "variable-length strings with a specified maximum length"
             },
             "x-enum-varnames": [
@@ -621,7 +626,10 @@ const docTemplate = `{
                 "DataType_String",
                 "DataType_VarChar",
                 "DataType_Array",
-                "DataType_Json",
+                "DataType_JSON",
+                "DataType_Geometry",
+                "DataType_Text",
+                "DataType_Timestamptz",
                 "DataType_BinaryVector",
                 "DataType_FloatVector",
                 "DataType_Float16Vector",
@@ -629,7 +637,8 @@ const docTemplate = `{
                 "DataType_SparseFloatVector",
                 "DataType_Int8Vector",
                 "DataType_ArrayOfVector",
-                "DataType_ArrayOfStruct"
+                "DataType_ArrayOfStruct",
+                "DataType_Struct"
             ]
         },
         "backuppb.DatabaseBackupInfo": {

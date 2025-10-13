@@ -436,10 +436,12 @@ enum DataType {
 
   String = 20;
   VarChar = 21; // variable-length strings with a specified maximum length
-
   Array = 22;
-  Json = 23;
-  
+  JSON = 23;
+  Geometry = 24;
+  Text = 25;
+  Timestamptz = 26;
+
   BinaryVector = 100;
   FloatVector = 101;
   Float16Vector = 102;
@@ -448,7 +450,8 @@ enum DataType {
   Int8Vector = 105;
   ArrayOfVector = 106;
 
-  ArrayOfStruct = 200;
+  ArrayOfStruct = 200;  // internal types, not used in user interface
+  Struct = 201;
 }
 
 enum FieldState {
