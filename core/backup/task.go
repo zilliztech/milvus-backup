@@ -338,12 +338,12 @@ func (t *Task) runCollTask(ctx context.Context, nss []namespace.NS) error {
 
 	g, subCtx := errgroup.WithContext(ctx)
 	for _, ns := range nss {
-		if err := t.copySem.Acquire(ctx, 1); err != nil {
-			return fmt.Errorf("backup: acquire semaphore: %w", err)
+		if err := t.collSem.Acquire(ctx, 1); err != nil {
+			return fmt.Errorf("backup: acquire collection semaphore: %w", err)
 		}
 
 		g.Go(func() error {
-			defer t.copySem.Release(1)
+			defer t.collSem.Release(1)
 
 			task := NewCollectionTask(ns, args)
 			if err := task.Execute(subCtx); err != nil {
