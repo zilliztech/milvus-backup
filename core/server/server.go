@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/gin-contrib/pprof"
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
@@ -59,6 +60,8 @@ func (s *Server) initEngine() {
 	}
 
 	engine := gin.Default()
+	pprof.Register(engine)
+
 	s.engine = engine
 
 	engine.Any("", wrapHandler(s.handleHello))
