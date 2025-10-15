@@ -296,7 +296,10 @@ func (t *Task) listDBAndCollection(ctx context.Context) ([]string, []namespace.N
 	if err != nil {
 		return nil, nil, fmt.Errorf("backup: list db and collection from API: %w", err)
 	}
-	t.logger.Info("list db and collection from API done", zap.Strings("dbNames", dbNames), zap.Any("nss", nss))
+
+	t.logger.Info("list db and collection from API done",
+		zap.Strings("dbNames", dbNames),
+		zap.Strings("nss", lo.Map(nss, func(ns namespace.NS, _ int) string { return ns.String() })))
 
 	return dbNames, nss, nil
 }
