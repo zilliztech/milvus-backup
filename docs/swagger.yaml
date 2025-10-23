@@ -171,6 +171,10 @@ definitions:
         items:
           $ref: '#/definitions/backuppb.KeyValuePair'
         type: array
+      struct_array_fields:
+        items:
+          $ref: '#/definitions/backuppb.StructArrayFieldSchema'
+        type: array
     type: object
   backuppb.ConsistencyLevel:
     enum:
@@ -836,6 +840,19 @@ definitions:
         items:
           type: string
         type: array
+    type: object
+  backuppb.StructArrayFieldSchema:
+    properties:
+      description:
+        type: string
+      fieldID:
+        type: integer
+      fields:
+        items:
+          $ref: '#/definitions/backuppb.FieldSchema'
+        type: array
+      name:
+        type: string
     type: object
   backuppb.UserEntity:
     properties:

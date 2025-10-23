@@ -502,6 +502,12 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/backuppb.KeyValuePair"
                     }
+                },
+                "struct_array_fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/backuppb.StructArrayFieldSchema"
+                    }
                 }
             }
         },
@@ -1435,6 +1441,26 @@ const docTemplate = `{
                     "items": {
                         "type": "string"
                     }
+                }
+            }
+        },
+        "backuppb.StructArrayFieldSchema": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "fieldID": {
+                    "type": "integer"
+                },
+                "fields": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/backuppb.FieldSchema"
+                    }
+                },
+                "name": {
+                    "type": "string"
                 }
             }
         },

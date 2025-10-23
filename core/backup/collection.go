@@ -185,6 +185,27 @@ func (ct *CollectionTask) convFunctions(funs []*schemapb.FunctionSchema) []*back
 	return bakFuns
 }
 
+func (ct *CollectionTask) convStructArrayFields(fieldSchemas []*schemapb.StructArrayFieldSchema) ([]*backuppb.StructArrayFieldSchema, error) {
+	bakFields := make([]*backuppb.StructArrayFieldSchema, 0, len(fieldSchemas))
+	for _, fieldSchema := range fieldSchemas {
+		fields, err := ct.convFields(fieldSchema.GetFields())
+		if err != nil {
+			return nil, fmt.Errorf("backup: convert struct array fields %w", err)
+		}
+
+		bakField := &backuppb.StructArrayFieldSchema{
+			FieldID:     fieldSchema.GetFieldID(),
+			Name:        fieldSchema.GetName(),
+			Description: fieldSchema.GetDescription(),
+			Fields:      fields,
+		}
+
+		bakFields = append(bakFields, bakField)
+	}
+
+	return bakFields, nil
+}
+
 func (ct *CollectionTask) convSchema(schema *schemapb.CollectionSchema) (*backuppb.CollectionSchema, error) {
 	fields, err := ct.convFields(schema.Fields)
 	if err != nil {
@@ -195,6 +216,12 @@ func (ct *CollectionTask) convSchema(schema *schemapb.CollectionSchema) (*backup
 	functions := ct.convFunctions(schema.Functions)
 	ct.logger.Info("collection functions", zap.Any("functions", functions))
 
+	structArrayFields, err := ct.convStructArrayFields(schema.StructArrayFields)
+	if err != nil {
+		return nil, fmt.Errorf("backup: convert struct array fields %w", err)
+	}
+	ct.logger.Info("collection struct array fields", zap.Any("struct_array_fields", structArrayFields))
+
 	bakSchema := &backuppb.CollectionSchema{
 		Name:               schema.GetName(),
 		Description:        schema.GetDescription(),
@@ -203,6 +230,7 @@ func (ct *CollectionTask) convSchema(schema *schemapb.CollectionSchema) (*backup
 		Properties:         pbconv.MilvusKVToBakKV(schema.GetProperties()),
 		EnableDynamicField: schema.GetEnableDynamicField(),
 		Functions:          functions,
+		StructArrayFields:  structArrayFields,
 	}
 
 	return bakSchema, nil
