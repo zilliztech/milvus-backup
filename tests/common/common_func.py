@@ -287,6 +287,22 @@ def gen_binary_vec_field(
     return binary_vec_field
 
 
+def gen_geometry_field(
+    name=ct.default_geometry_field_name,
+    is_primary=False,
+    description=ct.default_desc,
+    **kwargs
+):
+    geometry_field, _ = ApiFieldSchemaWrapper().init_field_schema(
+        name=name,
+        dtype=DataType.GEOMETRY,
+        description=description,
+        is_primary=is_primary,
+        **kwargs
+    )
+    return geometry_field
+
+
 def gen_default_collection_schema(
     description=ct.default_desc,
     primary_field=ct.default_int64_field_name,
@@ -484,6 +500,51 @@ def gen_binary_vectors(num, dim):
         # packs a binary-valued array into bits in a unit8 array, and bytes array_of_ints
         binary_vectors.append(bytes(np.packbits(raw_vector, axis=-1).tolist()))
     return raw_vectors, binary_vectors
+
+
+def gen_wkt_geometry(nb, bounds=(0, 100, 0, 100)):
+    """
+    Generate WKT (Well-Known Text) geometry data for testing
+    :param nb: number of geometries to generate
+    :param bounds: tuple of (min_x, max_x, min_y, max_y) for coordinate bounds
+    :return: list of WKT geometry strings
+    """
+    min_x, max_x, min_y, max_y = bounds
+    geometries = []
+    geometry_types = ['POINT', 'LINESTRING', 'POLYGON']
+
+    for i in range(nb):
+        geom_type = geometry_types[i % len(geometry_types)]
+
+        if geom_type == 'POINT':
+            x = random.uniform(min_x, max_x)
+            y = random.uniform(min_y, max_y)
+            wkt = f"POINT ({x:.2f} {y:.2f})"
+
+        elif geom_type == 'LINESTRING':
+            num_points = random.randint(2, 5)
+            points = []
+            for _ in range(num_points):
+                x = random.uniform(min_x, max_x)
+                y = random.uniform(min_y, max_y)
+                points.append(f"{x:.2f} {y:.2f}")
+            wkt = f"LINESTRING ({', '.join(points)})"
+
+        elif geom_type == 'POLYGON':
+            num_points = random.randint(3, 5)
+            points = []
+            for _ in range(num_points):
+                x = random.uniform(min_x, max_x)
+                y = random.uniform(min_y, max_y)
+                points.append(f"{x:.2f} {y:.2f}")
+            # Close the polygon by repeating the first point
+            first_point = points[0]
+            points.append(first_point)
+            wkt = f"POLYGON (({', '.join(points)}))"
+
+        geometries.append(wkt)
+
+    return geometries
 
 
 def gen_default_dataframe_data(nb=ct.default_nb, dim=ct.default_dim, start=0, nullable=False):
