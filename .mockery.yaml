@@ -1,7 +1,7 @@
 template: testify
 filename: "{{.InterfaceName | camelcase | firstLower }}_mock.go"
 packages:
-  github.com/zilliztech/milvus-backup/core/meta/taskmgr:
+  github.com/zilliztech/milvus-backup/internal/taskmgr:
     interfaces:
       RestoreCollTaskView:
       RestoreTaskView:

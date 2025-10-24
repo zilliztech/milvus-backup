@@ -10,9 +10,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/zilliztech/milvus-backup/core/meta/taskmgr"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
+	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 func TestBakKVToMilvusKV(t *testing.T) {

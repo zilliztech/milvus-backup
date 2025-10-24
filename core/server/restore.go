@@ -16,7 +16,6 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/client/milvus"
 	"github.com/zilliztech/milvus-backup/core/meta"
-	"github.com/zilliztech/milvus-backup/core/meta/taskmgr"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore"
@@ -26,6 +25,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
+	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 	"github.com/zilliztech/milvus-backup/internal/validate"
 )
 
