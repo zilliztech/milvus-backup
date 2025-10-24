@@ -5,23 +5,6 @@ import "google/protobuf/struct.proto"; // proto define
 
 option go_package="github.com/zilliztech/milvus-backup/core/proto/backuppb";
 
-service MilvusBackupService {
-  // Create backup
-  rpc CreateBackup(CreateBackupRequest) returns (BackupInfoResponse) {}
-  // Get backup with the chosen name
-  rpc GetBackup(GetBackupRequest) returns (BackupInfoResponse) {}
-  // List backups that contains the given collection name, if collection is not given, return all backups in the cluster
-  rpc ListBackups(ListBackupsRequest) returns (ListBackupsResponse) {}
-  // Delete backup by given backup name
-  rpc DeleteBackup(DeleteBackupRequest) returns (DeleteBackupResponse) {}
-  // Restore backup to milvus, return backup restore report
-  rpc RestoreBackup(RestoreBackupRequest) returns (RestoreBackupResponse) {}
-  // Get restore state by given id
-  rpc GetRestore(GetRestoreStateRequest) returns (RestoreBackupResponse) {}
-  // Check connections
-  rpc Check(CheckRequest) returns (CheckResponse) {}
- }
-
 enum ResponseCode {
   Success = 0;
   Not_Support = 1;
@@ -526,16 +509,6 @@ message StructArrayFieldSchema {
   repeated FieldSchema fields = 4;
 
   // TODO: STRUCT type may also need to support Function in the future
-}
-
-message CheckRequest {
-}
-
-message CheckResponse {
-  // response code. 0 means success. others are fail
-  ResponseCode code = 1;
-  // error msg if fail
-  string msg = 2;
 }
 
 message MsgPosition {
