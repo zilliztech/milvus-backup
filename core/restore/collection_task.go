@@ -327,7 +327,7 @@ func (ct *collectionTask) createColl(ctx context.Context) error {
 		return nil
 	}
 
-	fields, err := ct.fields()
+	fields, err := ct.convFields(ct.collBackup.GetSchema().GetFields())
 	if err != nil {
 		return fmt.Errorf("restore_collection: failed to get fields: %w", err)
 	}
@@ -335,6 +335,12 @@ func (ct *collectionTask) createColl(ctx context.Context) error {
 
 	functions := ct.functions()
 	ct.logger.Info("restore collection functions", zap.Any("functions", functions))
+
+	structArrayFields, err := ct.structArrayFields()
+	if err != nil {
+		return fmt.Errorf("restore_collection: failed to get struct array fields: %w", err)
+	}
+
 	schema := &schemapb.CollectionSchema{
 		Name:               ct.targetNS.CollName(),
 		Description:        ct.collBackup.GetSchema().GetDescription(),
@@ -343,6 +349,7 @@ func (ct *collectionTask) createColl(ctx context.Context) error {
 		Fields:             fields,
 		EnableDynamicField: ct.collBackup.GetSchema().GetEnableDynamicField(),
 		Properties:         pbconv.BakKVToMilvusKV(ct.collBackup.GetSchema().GetProperties()),
+		StructArrayFields:  structArrayFields,
 	}
 
 	opt := milvus.CreateCollectionInput{
@@ -387,8 +394,7 @@ func (ct *collectionTask) getDefaultValue(field *backuppb.FieldSchema) (*schemap
 	return nil, nil
 }
 
-func (ct *collectionTask) fields() ([]*schemapb.FieldSchema, error) {
-	bakFields := ct.collBackup.GetSchema().GetFields()
+func (ct *collectionTask) convFields(bakFields []*backuppb.FieldSchema) ([]*schemapb.FieldSchema, error) {
 	fields := make([]*schemapb.FieldSchema, 0, len(bakFields))
 
 	for _, bakField := range bakFields {
@@ -458,6 +464,28 @@ func (ct *collectionTask) functions() []*schemapb.FunctionSchema {
 	}
 
 	return functions
+}
+
+func (ct *collectionTask) structArrayFields() ([]*schemapb.StructArrayFieldSchema, error) {
+	bakFields := ct.collBackup.GetSchema().GetStructArrayFields()
+	structArrayFields := make([]*schemapb.StructArrayFieldSchema, 0, len(bakFields))
+	for _, bakField := range bakFields {
+		fields, err := ct.convFields(bakField.GetFields())
+		if err != nil {
+			return nil, fmt.Errorf("restore_collection: failed to convert struct array fields: %w", err)
+		}
+
+		structArrayField := &schemapb.StructArrayFieldSchema{
+			FieldID:     bakField.GetFieldID(),
+			Name:        bakField.GetName(),
+			Description: bakField.GetDescription(),
+			Fields:      fields,
+		}
+
+		structArrayFields = append(structArrayFields, structArrayField)
+	}
+
+	return structArrayFields, nil
 }
 
 func (ct *collectionTask) dropExistedIndex(ctx context.Context) error {

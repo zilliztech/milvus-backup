@@ -516,6 +516,16 @@ message CollectionSchema {
   bool enable_dynamic_field = 5; // mark whether this table has the dynamic field function enabled.
   repeated KeyValuePair properties = 6;
   repeated FunctionSchema functions = 7;
+  repeated StructArrayFieldSchema struct_array_fields = 9;
+}
+
+message StructArrayFieldSchema {
+  int64 fieldID = 1;
+  string name = 2;
+  string description = 3;
+  repeated FieldSchema fields = 4;
+
+  // TODO: STRUCT type may also need to support Function in the future
 }
 
 message CheckRequest {
