@@ -8,8 +8,8 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/core/storage"
-	"github.com/zilliztech/milvus-backup/core/storage/mpath"
+	"github.com/zilliztech/milvus-backup/internal/storage"
+	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 )
 
 func readFromFull(ctx context.Context, backupDir string, cli storage.Client) (*backuppb.BackupInfo, error) {
