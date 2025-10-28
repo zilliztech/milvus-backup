@@ -123,7 +123,7 @@ jobs:
 
       - name: Upload logs
         if: ${{ ! success() }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: logs-${{ matrix.deploy_tools }}-${{ matrix.milvus_mode }}
           path: |
