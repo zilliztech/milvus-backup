@@ -43,11 +43,11 @@ jobs:
         deploy_tools: [docker-compose]
         milvus_mode: [standalone]
         another_milvus_mode: [standalone]
-        source_image_tag: [v2.2.16, v2.3.22, 2.4-latest, 2.5-latest]
-        target_image_tag: [master-latest, 2.5-latest]
+        source_image_tag: [v2.2.16, v2.3.22, v2.4.23, v2.5.20, 2.6-latest]
+        target_image_tag: [master-latest, 2.6-latest]
         exclude:
-          - source_image_tag: 2.5-latest
-            target_image_tag: 2.5-latest
+          - source_image_tag: 2.6-latest
+            target_image_tag: 2.6-latest
 
     steps:
       - uses: actions/checkout@v5
@@ -77,8 +77,6 @@ jobs:
         shell: bash
         run: |
           pip install -r requirements.txt --trusted-host https://test.pypi.org
-          sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.3/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-          sudo chmod +x /usr/local/bin/docker-compose
 
       - name: Milvus deploy
         timeout-minutes: 15
@@ -87,9 +85,22 @@ jobs:
         run: |
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.source_image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
-          docker-compose up -d
-          bash ../../scripts/check_healthy.sh
-          docker-compose ps -a
+          mkdir -p volumes/etcd volumes/minio volumes/milvus
+          sudo chmod -R 777 volumes
+          sudo docker compose -f docker-compose.yml up -d --wait
+          sudo docker compose -f docker-compose.yml ps -a
+
+      - name: Export docker-compose status after deploy
+        if: ${{ always() }}
+        shell: bash
+        working-directory: deployment/${{ matrix.milvus_mode }}
+        run: |
+          echo "=== Docker Compose Status ==="
+          sudo docker compose -f docker-compose.yml ps -a || true
+          echo "=== Standalone Container Full Logs ==="
+          sudo docker compose -f docker-compose.yml logs standalone || true
+          echo "=== All Containers Status ==="
+          sudo docker ps -a || true
 
       - name: Prepare data
         timeout-minutes: 5
@@ -134,7 +145,7 @@ jobs:
         shell: bash
         working-directory: deployment/${{ matrix.milvus_mode }}
         run: |
-          docker-compose down
+          sudo docker compose -f docker-compose.yml down
           sudo rm -rf volumes
 
       - name: Deploy Another Milvus
@@ -148,9 +159,22 @@ jobs:
             yq -i '.common.storage.enablev2 = true' custom_config.yaml
           fi
           cat custom_config.yaml || true
-          docker-compose up -d
-          bash ../../scripts/check_healthy.sh
-          docker-compose ps -a
+          mkdir -p volumes/etcd volumes/minio volumes/milvus
+          sudo chmod -R 777 volumes
+          sudo docker compose -f docker-compose.yml up -d --wait
+          sudo docker compose -f docker-compose.yml ps -a
+
+      - name: Export docker-compose status after another deploy
+        if: ${{ always() }}
+        shell: bash
+        working-directory: deployment/${{ matrix.another_milvus_mode }}
+        run: |
+          echo "=== Docker Compose Status ==="
+          sudo docker compose -f docker-compose.yml ps -a || true
+          echo "=== Standalone Container Full Logs ==="
+          sudo docker compose -f docker-compose.yml logs standalone || true
+          echo "=== All Containers Status ==="
+          sudo docker ps -a || true
 
       - name: Copy Backup to Another Milvus
         timeout-minutes: 5
@@ -188,11 +212,11 @@ jobs:
         deploy_tools: [docker-compose]
         milvus_mode: [standalone]
         another_milvus_mode: [standalone]
-        source_image_tag: [2.4-latest, 2.5-latest]
-        target_image_tag: [master-latest, 2.5-latest]
+        source_image_tag: [2.5-latest, 2.5-latest]
+        target_image_tag: [master-latest, 2.6-latest]
         exclude:
-          - source_image_tag: 2.5-latest
-            target_image_tag: 2.5-latest
+          - source_image_tag: 2.6-latest
+            target_image_tag: 2.6-latest
 
     steps:
       - uses: actions/checkout@v5
@@ -222,8 +246,6 @@ jobs:
         shell: bash
         run: |
           pip install -r requirements.txt --trusted-host https://test.pypi.org
-          sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.3/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-          sudo chmod +x /usr/local/bin/docker-compose
 
       - name: Milvus deploy
 
@@ -233,9 +255,22 @@ jobs:
         run: |
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.source_image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
-          docker-compose up -d
-          bash ../../scripts/check_healthy.sh
-          docker-compose ps -a
+          mkdir -p volumes/etcd volumes/minio volumes/milvus
+          sudo chmod -R 777 volumes
+          sudo docker compose -f docker-compose.yml up -d --wait
+          sudo docker compose -f docker-compose.yml ps -a
+
+      - name: Export docker-compose status after initial deploy
+        if: ${{ always() }}
+        shell: bash
+        working-directory: deployment/${{ matrix.milvus_mode }}
+        run: |
+          echo "=== Docker Compose Status ==="
+          sudo docker compose -f docker-compose.yml ps -a || true
+          echo "=== Standalone Container Full Logs ==="
+          sudo docker compose -f docker-compose.yml logs standalone || true
+          echo "=== All Containers Status ==="
+          sudo docker ps -a || true
 
       - name: Prepare data stage 1
         timeout-minutes: 5
@@ -248,17 +283,29 @@ jobs:
         shell: bash
         working-directory: deployment/${{ matrix.another_milvus_mode }}
         run: |
-          docker-compose down
+          sudo docker compose -f docker-compose.yml down
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.target_image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
           if [ "${{ matrix.target_image_tag }}" == "master-latest" ]; then
             yq -i '.common.storage.enablev2 = true' custom_config.yaml
           fi
           cat custom_config.yaml || true
-          docker-compose up -d
-          bash ../../scripts/check_healthy.sh
-          docker-compose ps -a
-      
+          sudo chmod -R 777 volumes
+          sudo docker compose -f docker-compose.yml up -d --wait
+          sudo docker compose -f docker-compose.yml ps -a
+
+      - name: Export docker-compose status after upgrade
+        if: ${{ always() }}
+        shell: bash
+        working-directory: deployment/${{ matrix.another_milvus_mode }}
+        run: |
+          echo "=== Docker Compose Status ==="
+          sudo docker compose -f docker-compose.yml ps -a || true
+          echo "=== Standalone Container Full Logs ==="
+          sudo docker compose -f docker-compose.yml logs standalone || true
+          echo "=== All Containers Status ==="
+          sudo docker ps -a || true
+
       - name: Prepare data stage 2
         timeout-minutes: 5
         shell: bash
@@ -327,8 +374,6 @@ jobs:
         shell: bash
         run: |
           pip install -r requirements.txt --trusted-host https://test.pypi.org
-          sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.3/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-          sudo chmod +x /usr/local/bin/docker-compose
 
       - name: Milvus deploy
 
@@ -342,9 +387,22 @@ jobs:
             yq -i '.common.storage.enablev2 = true' custom_config.yaml
           fi
           cat custom_config.yaml || true
-          docker-compose up -d
-          bash ../../scripts/check_healthy.sh
-          docker-compose ps -a
+          mkdir -p volumes/etcd volumes/minio volumes/milvus
+          sudo chmod -R 777 volumes
+          sudo docker compose -f docker-compose.yml up -d --wait
+          sudo docker compose -f docker-compose.yml ps -a
+
+      - name: Export docker-compose status after deploy
+        if: ${{ always() }}
+        shell: bash
+        working-directory: deployment/${{ matrix.milvus_mode }}
+        run: |
+          echo "=== Docker Compose Status ==="
+          sudo docker compose -f docker-compose.yml ps -a || true
+          echo "=== Standalone Container Full Logs ==="
+          sudo docker compose -f docker-compose.yml logs standalone || true
+          echo "=== All Containers Status ==="
+          sudo docker ps -a || true
 
       - name: Prepare data
         timeout-minutes: 5
@@ -389,7 +447,7 @@ jobs:
         shell: bash
         working-directory: deployment/${{ matrix.milvus_mode }}
         run: |
-          docker-compose down
+          sudo docker compose -f docker-compose.yml down
           sudo rm -rf volumes
 
       - name: Deploy Another Milvus
@@ -397,9 +455,22 @@ jobs:
         shell: bash
         working-directory: deployment/${{ matrix.another_milvus_mode }}
         run: |
-          docker-compose up -d
-          bash ../../scripts/check_healthy.sh
-          docker-compose ps -a
+          mkdir -p volumes/etcd volumes/minio volumes/milvus
+          sudo chmod -R 777 volumes
+          sudo docker compose -f docker-compose.yml up -d --wait
+          sudo docker compose -f docker-compose.yml ps -a
+
+      - name: Export docker-compose status after another deploy
+        if: ${{ always() }}
+        shell: bash
+        working-directory: deployment/${{ matrix.another_milvus_mode }}
+        run: |
+          echo "=== Docker Compose Status ==="
+          sudo docker compose -f docker-compose.yml ps -a || true
+          echo "=== Standalone Container Full Logs ==="
+          sudo docker compose -f docker-compose.yml logs standalone || true
+          echo "=== All Containers Status ==="
+          sudo docker ps -a || true
 
       - name: Copy Backup to Another Milvus
         timeout-minutes: 5
@@ -477,8 +548,6 @@ jobs:
         shell: bash
         run: |
           pip install -r requirements.txt --trusted-host https://test.pypi.org
-          sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.3/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-          sudo chmod +x /usr/local/bin/docker-compose
       - name: Milvus deploy
 
         timeout-minutes: 15
@@ -509,9 +578,10 @@ jobs:
           if [ ${{ matrix.deploy_tools}} == "docker-compose" ]; then
             tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
             yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
-            docker-compose up -d
-            bash ../../scripts/check_healthy.sh
-            docker-compose ps -a
+            mkdir -p volumes/etcd volumes/minio volumes/milvus
+            sudo chmod -R 777 volumes
+            sudo docker compose -f docker-compose.yml up -d --wait
+            sudo docker compose -f docker-compose.yml ps -a
           fi
       - name: Prepare data
         timeout-minutes: 5
@@ -580,10 +650,10 @@ jobs:
       matrix:
         deploy_tools: [docker-compose]
         milvus_mode: [standalone]
-        image_tag: [master-latest, 2.5-latest]
+        image_tag: [master-latest, 2.6-latest]
         case_tag: [L0, L1, L2, MASTER, RBAC]
         exclude:
-          - image_tag: 2.5-latest
+          - image_tag: 2.6-latest
             case_tag: MASTER
 
     steps:
@@ -617,8 +687,6 @@ jobs:
         shell: bash
         run: |
           pip install -r requirements.txt --trusted-host https://test.pypi.org
-          sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.3/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-          sudo chmod +x /usr/local/bin/docker-compose
 
       - name: Milvus deploy
 
@@ -638,18 +706,19 @@ jobs:
             yq -i '.common.storage.enablev2 = true' custom_config.yaml
           fi
           cat custom_config.yaml || true
-          docker-compose up -d
-          bash ../../scripts/check_healthy.sh
-          docker-compose ps -a
+          mkdir -p volumes/etcd volumes/minio volumes/milvus
+          sudo chmod -R 777 volumes
+          sudo docker compose -f docker-compose.yml up -d --wait
+          sudo docker compose -f docker-compose.yml ps -a
 
       - name: Start backup server
         timeout-minutes: 5
         shell: bash
         working-directory: build/deployment
         run: |
-          docker-compose up -d
+          sudo docker compose -f docker-compose.yml up -d --wait
           sleep 10
-          docker-compose ps -a
+          sudo docker compose -f docker-compose.yml ps -a
 
       - name: Run test
         timeout-minutes: 120
@@ -662,7 +731,7 @@ jobs:
         shell: bash
         working-directory: deployment/${{ matrix.milvus_mode }}
         run: |
-          docker-compose ps -a || true
+          sudo docker compose -f docker-compose.yml ps -a || true
 
       - name: Export Milvus logs
         if: ${{ always() }}
@@ -679,7 +748,7 @@ jobs:
         shell: bash
         working-directory: build/deployment
         run: |
-          docker-compose logs > /tmp/ci_logs/backup_server.log 2>&1 || true
+          sudo docker compose -f docker-compose.yml logs > /tmp/ci_logs/backup_server.log 2>&1 || true
 
       - name: Upload logs
         if: ${{ ! success() }}
