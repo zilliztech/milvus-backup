@@ -1665,6 +1665,15 @@ class TestRestoreBackup(TestcaseBase):
             ]
             collection_w.insert(data=data_with_dynamic)
 
+        # create index for geometry field
+        index_params = self.milvus_client.prepare_index_params()
+        index_params.add_index(
+            field_name="geometry",
+            index_name="geometry_index",
+            index_type="RTREE",
+        )
+        self.milvus_client.create_index(collection_name=name_origin, index_params=index_params)
+        log.info(f"Created index for {name_origin} geometry field")
         res = self.client.create_backup(
             {
                 "async": False,
@@ -1692,6 +1701,7 @@ class TestRestoreBackup(TestcaseBase):
                 "backup_name": back_up_name,
                 "collection_names": [name_origin],
                 "collection_suffix": suffix,
+                "restoreIndex": True,
             }
         )
         log.info(f"restore_backup: {res}")
@@ -1701,6 +1711,7 @@ class TestRestoreBackup(TestcaseBase):
         self.compare_collections(
             name_origin, name_origin + suffix, output_fields=output_fields
         )
+        self.compare_indexes(name_origin, name_origin + suffix)
         res = self.client.delete_backup(back_up_name)
         res = self.client.list_backup()
         if "data" in res:
@@ -1835,6 +1846,7 @@ class TestRestoreBackup(TestcaseBase):
                 "backup_name": back_up_name,
                 "collection_names": [name_origin],
                 "collection_suffix": suffix,
+                "restoreIndex": True,
             }
         )
         log.info(f"restore_backup: {res}")
@@ -1843,18 +1855,7 @@ class TestRestoreBackup(TestcaseBase):
         res, _ = self.utility_wrap.list_collections()
         assert name_origin + suffix in res
 
-        # Create index for restored collection's struct array vector field
         restored_name = name_origin + suffix
-        index_params_restored = self.milvus_client.prepare_index_params()
-        index_params_restored.add_index(
-            field_name="clips[clip_embedding]",
-            index_name="clips_vector_index",
-            index_type="HNSW",
-            metric_type="MAX_SIM",
-            params={"M": 16, "efConstruction": 200}
-        )
-        self.milvus_client.create_index(collection_name=restored_name, index_params=index_params_restored)
-        log.info(f"Created index for restored collection {restored_name} clips[clip_embedding] field")
 
         # Load collections to make them queryable
         self.milvus_client.load_collection(collection_name=name_origin)
