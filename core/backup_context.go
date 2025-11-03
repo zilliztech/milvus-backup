@@ -25,13 +25,8 @@ import (
 )
 
 const (
-	BackupName             = "BACKUP_NAME"
-	CollectionRenameSuffix = "COLLECTION_RENAME_SUFFIX"
-	RPS                    = 1000
+	BackupName = "BACKUP_NAME"
 )
-
-// makes sure BackupContext implements `Backup`
-var _ Backup = (*BackupContext)(nil)
 
 type BackupContext struct {
 	ctx context.Context
@@ -330,71 +325,6 @@ func (b *BackupContext) ListBackups(ctx context.Context, request *backuppb.ListB
 		zap.Int32("code", int32(resp.GetCode())),
 		zap.String("msg", resp.GetMsg()),
 		zap.Strings("data: list_backup_names", backupNames))
-	return resp
-}
-
-func (b *BackupContext) DeleteBackup(ctx context.Context, request *backuppb.DeleteBackupRequest) *backuppb.DeleteBackupResponse {
-	if request.GetRequestId() == "" {
-		request.RequestId = uuid.NewString()
-	}
-	log.Info("receive DeleteBackupRequest",
-		zap.String("requestId", request.GetRequestId()),
-		zap.String("backupName", request.GetBackupName()))
-
-	resp := &backuppb.DeleteBackupResponse{
-		RequestId: request.GetRequestId(),
-	}
-
-	if !b.started {
-		err := b.Start()
-		if err != nil {
-			resp.Code = backuppb.ResponseCode_Fail
-			resp.Msg = err.Error()
-			return resp
-		}
-	}
-
-	if request.GetBackupName() == "" {
-		resp.Code = backuppb.ResponseCode_Parameter_Error
-		resp.Msg = "empty backup name"
-		return resp
-	}
-
-	getResp := b.GetBackup(b.ctx, &backuppb.GetBackupRequest{
-		BackupName: request.GetBackupName(),
-	})
-	// always trigger a remove to make sure it is deleted
-	err := storage.DeletePrefix(ctx, b.getBackupStorageClient(), mpath.BackupDir(b.backupRootPath, request.GetBackupName()))
-
-	if getResp.GetCode() == backuppb.ResponseCode_Request_Object_Not_Found {
-		resp.Code = backuppb.ResponseCode_Request_Object_Not_Found
-		resp.Msg = getResp.GetMsg()
-		return resp
-	} else if getResp.GetCode() != backuppb.ResponseCode_Success {
-		log.Error("fail in GetBackup", zap.String("msg", getResp.GetMsg()))
-		resp.Code = backuppb.ResponseCode_Fail
-		resp.Msg = getResp.GetMsg()
-		return resp
-	} else if getResp.GetData() == nil {
-		errMsg := fmt.Sprintf("backup does not exist: %s", request.GetBackupName())
-		log.Warn(errMsg)
-		resp.Code = backuppb.ResponseCode_Request_Object_Not_Found
-		resp.Msg = errMsg
-		return resp
-	}
-
-	if err != nil {
-		log.Error("Fail to delete backup", zap.String("backupName", request.GetBackupName()), zap.Error(err))
-		resp.Code = backuppb.ResponseCode_Fail
-		resp.Msg = getResp.GetMsg()
-		return resp
-	}
-
-	resp.Code = backuppb.ResponseCode_Success
-	resp.Msg = "success"
-	log.Info("return DeleteBackupResponse",
-		zap.String("requestId", resp.GetRequestId()),
-		zap.Int32("code", int32(resp.GetCode())))
 	return resp
 }
 

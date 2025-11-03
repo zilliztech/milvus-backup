@@ -165,25 +165,6 @@ func (s *Server) handleGetBackup(c *gin.Context) (interface{}, error) {
 	return nil, nil
 }
 
-// DeleteBackup Delete backup interface
-// @Summary Delete backup interface
-// @Description Delete a backup with the given name
-// @Tags Backup
-// @Produce application/json
-// @Param request_id header string false "request_id"
-// @Param backup_name query string true "backup_name"
-// @Success 200 {object} backuppb.DeleteBackupResponse
-// @Router /delete [delete]
-func (s *Server) handleDeleteBackup(c *gin.Context) (interface{}, error) {
-	req := backuppb.DeleteBackupRequest{
-		RequestId:  c.GetHeader("request_id"),
-		BackupName: c.Query("backup_name"),
-	}
-	resp := s.backupContext.DeleteBackup(context.Background(), &req)
-	c.JSON(http.StatusOK, resp)
-	return nil, nil
-}
-
 // GetRestore Get restore interface
 // @Summary Get restore interface
 // @Description Get restore task state with the given id
