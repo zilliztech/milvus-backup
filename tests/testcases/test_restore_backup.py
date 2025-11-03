@@ -1609,7 +1609,7 @@ class TestRestoreBackup(TestcaseBase):
 
     @pytest.mark.parametrize("include_partition_key", [True])
     @pytest.mark.parametrize("include_dynamic", [True])
-    @pytest.mark.tags(CaseLabel.L2)
+    @pytest.mark.tags(CaseLabel.MASTER)
     def test_milvus_restore_back_with_geometry_datatype(self, include_dynamic, include_partition_key):
         """Test backup and restore with GEOMETRY data type"""
         self._connect()
@@ -1665,6 +1665,15 @@ class TestRestoreBackup(TestcaseBase):
             ]
             collection_w.insert(data=data_with_dynamic)
 
+        # create index for geometry field
+        index_params = self.milvus_client.prepare_index_params()
+        index_params.add_index(
+            field_name="geometry",
+            index_name="geometry_index",
+            index_type="RTREE",
+        )
+        self.milvus_client.create_index(collection_name=name_origin, index_params=index_params)
+        log.info(f"Created index for {name_origin} geometry field")
         res = self.client.create_backup(
             {
                 "async": False,
@@ -1692,6 +1701,7 @@ class TestRestoreBackup(TestcaseBase):
                 "backup_name": back_up_name,
                 "collection_names": [name_origin],
                 "collection_suffix": suffix,
+                "restoreIndex": True,
             }
         )
         log.info(f"restore_backup: {res}")
@@ -1701,6 +1711,187 @@ class TestRestoreBackup(TestcaseBase):
         self.compare_collections(
             name_origin, name_origin + suffix, output_fields=output_fields
         )
+        self.compare_indexes(name_origin, name_origin + suffix)
+        res = self.client.delete_backup(back_up_name)
+        res = self.client.list_backup()
+        if "data" in res:
+            all_backup = [r["name"] for r in res["data"]]
+        else:
+            all_backup = []
+        assert back_up_name not in all_backup
+
+    @pytest.mark.parametrize("include_partition_key", [True])
+    @pytest.mark.parametrize("include_dynamic", [True])
+    @pytest.mark.tags(CaseLabel.MASTER)
+    def test_milvus_restore_back_with_struct_array_datatype(self, include_dynamic, include_partition_key):
+        """Test backup and restore with struct array data type (multi-vector embeddings)"""
+        self._connect()
+        name_origin = cf.gen_unique_str(prefix)
+        back_up_name = cf.gen_unique_str(backup_prefix)
+
+        # Configuration for multi-vector embeddings (similar to ColBERT)
+        DIM = 48
+        MAX_TOKENS = 100
+        AVG_TOKENS = 60
+        nb = 3000
+
+        # Create schema with struct array field for multi-vector embeddings
+        schema = self.milvus_client.create_schema(auto_id=False, enable_dynamic_field=include_dynamic)
+        schema.add_field(field_name="id", datatype=DataType.INT64, is_primary=True)
+
+        # Add partition key field if needed
+        if include_partition_key:
+            schema.add_field(field_name="key", datatype=DataType.INT64, is_partition_key=True)
+
+        # Add JSON field
+        schema.add_field(field_name="json", datatype=DataType.JSON)
+
+        # Create struct schema for multi-vector embeddings
+        struct_schema = self.milvus_client.create_struct_field_schema()
+        struct_schema.add_field("clip_embedding", DataType.FLOAT_VECTOR, dim=DIM)
+
+        # Add struct array field to main schema
+        schema.add_field(
+            "clips",
+            datatype=DataType.ARRAY,
+            element_type=DataType.STRUCT,
+            struct_schema=struct_schema,
+            max_capacity=MAX_TOKENS,
+        )
+
+        # Create collection
+        self.milvus_client.create_collection(collection_name=name_origin, schema=schema)
+
+        # Generate and insert data
+        data = []
+        for i in range(nb):
+            # Random number of tokens per document (normal distribution around avg)
+            num_tokens = int(np.random.normal(AVG_TOKENS, 15))
+            num_tokens = max(10, min(MAX_TOKENS, num_tokens))  # Clamp to [10, MAX_TOKENS]
+
+            # Generate random embeddings for this document
+            doc_embeddings = np.random.randn(num_tokens, DIM).astype(np.float32)
+
+            # Convert to list of structs format
+            clips = []
+            for j in range(num_tokens):
+                clip_struct = {"clip_embedding": doc_embeddings[j].tolist()}
+                clips.append(clip_struct)
+
+            row = {
+                "id": i,
+                "json": {f"key_{str(i)}": i},
+                "clips": clips
+            }
+
+            if include_partition_key:
+                row["key"] = i % 3
+
+            if include_dynamic:
+                row[f"dynamic_{str(i)}"] = i
+
+            data.append(row)
+
+        # Insert data in batches
+        batch_size = 500
+        for i in range(0, nb, batch_size):
+            self.milvus_client.insert(collection_name=name_origin, data=data[i:i+batch_size])
+
+        # Flush to ensure all data is persisted
+        self.milvus_client.flush(collection_name=name_origin)
+
+        # Create index for struct array vector field
+        index_params = self.milvus_client.prepare_index_params()
+        index_params.add_index(
+            field_name="clips[clip_embedding]",
+            index_name="clips_vector_index",
+            index_type="HNSW",
+            metric_type="MAX_SIM",
+            params={"M": 16, "efConstruction": 200}
+        )
+        self.milvus_client.create_index(collection_name=name_origin, index_params=index_params)
+        log.info(f"Created index for clips[clip_embedding] field")
+
+        # Create backup
+        res = self.client.create_backup(
+            {
+                "async": False,
+                "backup_name": back_up_name,
+                "collection_names": [name_origin],
+            }
+        )
+        log.info(f"create_backup {res}")
+
+        # Verify backup exists
+        res = self.client.list_backup()
+        log.info(f"list_backup {res}")
+        if "data" in res:
+            all_backup = [r["name"] for r in res["data"]]
+        else:
+            all_backup = []
+        assert back_up_name in all_backup
+
+        # Verify backup details
+        backup = self.client.get_backup(back_up_name)
+        assert backup["data"]["name"] == back_up_name
+        backup_collections = [
+            backup["collection_name"] for backup in backup["data"]["collection_backups"]
+        ]
+        assert name_origin in backup_collections
+
+        # Restore backup
+        res = self.client.restore_backup(
+            {
+                "async": False,
+                "backup_name": back_up_name,
+                "collection_names": [name_origin],
+                "collection_suffix": suffix,
+                "restoreIndex": True,
+            }
+        )
+        log.info(f"restore_backup: {res}")
+
+        # Verify restored collection exists
+        res, _ = self.utility_wrap.list_collections()
+        assert name_origin + suffix in res
+
+        restored_name = name_origin + suffix
+
+        # Load collections to make them queryable
+        self.milvus_client.load_collection(collection_name=name_origin)
+        self.milvus_client.load_collection(collection_name=restored_name)
+        log.info(f"Loaded collections: {name_origin} and {restored_name}")
+
+        # Verify struct array data integrity by querying
+        original_result = self.milvus_client.query(
+            collection_name=name_origin,
+            filter="id >= 0",
+            output_fields=["id", "clips"],
+            limit=nb
+        )
+
+        restored_result = self.milvus_client.query(
+            collection_name=name_origin + suffix,
+            filter="id >= 0",
+            output_fields=["id", "clips"],
+            limit=nb
+        )
+
+        # Verify same number of results
+        assert len(original_result) == len(restored_result)
+
+        # Verify struct array content matches
+        for orig, restored in zip(original_result, restored_result):
+            assert orig["id"] == restored["id"]
+            assert len(orig["clips"]) == len(restored["clips"])
+            for orig_clip, restored_clip in zip(orig["clips"], restored["clips"]):
+                assert len(orig_clip["clip_embedding"]) == len(restored_clip["clip_embedding"])
+                # Compare embeddings
+                orig_emb = np.array(orig_clip["clip_embedding"])
+                restored_emb = np.array(restored_clip["clip_embedding"])
+                np.testing.assert_array_almost_equal(orig_emb, restored_emb, decimal=5)
+
+        # Clean up backup
         res = self.client.delete_backup(back_up_name)
         res = self.client.list_backup()
         if "data" in res:
