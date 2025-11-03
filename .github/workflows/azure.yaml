@@ -67,8 +67,6 @@ jobs:
         shell: bash
         run: |
           pip install -r requirements.txt --trusted-host https://test.pypi.org
-          sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.3/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-          sudo chmod +x /usr/local/bin/docker-compose
       
       - name: Set unique paths
         id: paths
@@ -98,14 +96,16 @@ jobs:
         run: |
           # Update Milvus config with unique root path
           yq -i ".minio.rootPath = \"${{ steps.paths.outputs.milvus_root }}\"" user-az-storage.yaml
-          
+
           # Deploy Milvus
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose-az-storage.yml
-          yq -i ".services.etcd.image=\"quay.io/coreos/etcd:v3.5.5\"" docker-compose-az-storage.yml  
-          docker-compose -f docker-compose-az-storage.yml up -d --wait || true
-          docker-compose -f docker-compose-az-storage.yml ps
-          docker-compose -f docker-compose-az-storage.yml logs
+          yq -i ".services.etcd.image=\"quay.io/coreos/etcd:v3.5.5\"" docker-compose-az-storage.yml
+          mkdir -p volumes/etcd volumes/minio volumes/milvus
+          sudo chmod -R 777 volumes
+          sudo docker compose -f docker-compose-az-storage.yml up -d --wait || true
+          sudo docker compose -f docker-compose-az-storage.yml ps
+          sudo docker compose -f docker-compose-az-storage.yml logs
       
       - name: Clean up Azure storage (before test)
         timeout-minutes: 5

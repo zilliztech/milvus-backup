@@ -50,8 +50,6 @@ jobs:
         shell: bash
         run: |
           pip install -r requirements.txt --trusted-host https://test.pypi.org
-          sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.3/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-          sudo chmod +x /usr/local/bin/docker-compose
 
       - name: Milvus deploy
 
@@ -67,9 +65,14 @@ jobs:
           fi
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.milvus_version }}-latest) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
-          docker-compose up -d
-          bash ../../scripts/check_healthy.sh
-          docker-compose ps -a
+          if [ "${{ matrix.milvus_version }}" == "master" ]; then
+            yq -i '.common.storage.enablev2 = true' custom_config.yaml
+          fi
+          cat custom_config.yaml || true
+          mkdir -p volumes/etcd volumes/minio volumes/milvus
+          sudo chmod -R 777 volumes
+          sudo docker compose -f docker-compose.yml up -d --wait
+          sudo docker compose -f docker-compose.yml ps -a
 
       - name: Start server
         timeout-minutes: 5
@@ -94,7 +97,7 @@ jobs:
         shell: bash
         working-directory: deployment/standalone
         run: |
-          docker-compose ps -a || true
+          sudo docker compose -f docker-compose.yml ps -a || true
           kubectl get pods -n default || true
 
       - name: Export logs
@@ -171,8 +174,6 @@ jobs:
         shell: bash
         run: |
           pip install -r requirements.txt --trusted-host https://test.pypi.org
-          sudo curl -L "https://github.com/docker/compose/releases/download/v2.20.3/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-          sudo chmod +x /usr/local/bin/docker-compose
       - name: Milvus deploy
 
         timeout-minutes: 15
@@ -194,9 +195,10 @@ jobs:
           fi
 
           if [ ${{ matrix.deploy_tools}} == "docker-compose" ]; then
-            docker-compose up -d
-            bash ../../scripts/check_healthy.sh
-            docker-compose ps -a
+            mkdir -p volumes/etcd volumes/minio volumes/milvus
+            sudo chmod -R 777 volumes
+            sudo docker compose -f docker-compose.yml up -d --wait
+            sudo docker compose -f docker-compose.yml ps -a
           fi
       - name: Prepare data
         timeout-minutes: 5
