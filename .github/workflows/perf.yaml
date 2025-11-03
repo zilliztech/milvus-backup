@@ -37,7 +37,7 @@ jobs:
 
       - name: Creating kind cluster
         if: ${{ matrix.deploy_tools == 'helm' }}
-        uses: helm/kind-action@v1.12.0
+        uses: helm/kind-action@v1.13.0
 
       - name: Build
         timeout-minutes: 5
