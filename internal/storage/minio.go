@@ -54,7 +54,7 @@ func (m *MinioClient) CopyObject(ctx context.Context, i CopyObjectInput) error {
 	src := minio.CopySrcOptions{Bucket: srcCli.cfg.Bucket, Object: i.SrcKey}
 	return retry.Do(ctx, func() error {
 		if _, err := m.cli.CopyObject(ctx, dst, src); err != nil {
-			return fmt.Errorf("storage: %s copy from %s / %s  to %s / %s %w", m.cfg.Provider, i.SrcKey, m.cfg.Bucket, m.cfg.Bucket, i.DestKey, err)
+			return fmt.Errorf("storage: %s copy from %s / %s  to %s / %s %w", m.cfg.Provider, srcCli.cfg.Bucket, i.SrcKey, m.cfg.Bucket, i.DestKey, err)
 		}
 		return nil
 	})
