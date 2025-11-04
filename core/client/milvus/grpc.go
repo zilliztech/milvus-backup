@@ -480,9 +480,21 @@ func (g *GrpcClient) ShowPartitions(ctx context.Context, db, collName string) (*
 
 func (g *GrpcClient) GetLoadingProgress(ctx context.Context, db, collName string, partitionNames ...string) (int64, error) {
 	ctx = g.newCtxWithDB(ctx, db)
-	resp, err := g.srv.GetLoadingProgress(ctx, &milvuspb.GetLoadingProgressRequest{CollectionName: collName, PartitionNames: partitionNames})
+	var resp *milvuspb.GetLoadingProgressResponse
+
+	err := retry.Do(ctx, func() error {
+		var err error
+		req := &milvuspb.GetLoadingProgressRequest{CollectionName: collName, PartitionNames: partitionNames}
+		resp, err = g.srv.GetLoadingProgress(ctx, req)
+		if err != nil {
+			return fmt.Errorf("client: get loading progress: %w", err)
+		}
+
+		return nil
+	})
+
 	if err != nil {
-		return 0, fmt.Errorf("client: get loading progress failed: %w", err)
+		return 0, fmt.Errorf("client: get loading progress after retry: %w", err)
 	}
 
 	return resp.GetProgress(), nil
