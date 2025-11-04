@@ -70,7 +70,7 @@ func (s *Server) initEngine() {
 
 	apiv1.GET("/hello", wrapHandler(s.handleHello))
 	apiv1.POST("/create", wrapHandler(s.handleCreateBackup))
-	apiv1.GET("/list", wrapHandler(s.handleListBackups))
+	apiv1.GET("/list", s.handleListBackups)
 	apiv1.GET("/get_backup", wrapHandler(s.handleGetBackup))
 	apiv1.DELETE("/delete", wrapHandler(s.handleDeleteBackup))
 	apiv1.POST("/restore", s.handleRestoreBackup)
@@ -114,28 +114,6 @@ func (s *Server) handleCreateBackup(c *gin.Context) (interface{}, error) {
 	resp := s.backupContext.CreateBackup(context.Background(), &requestBody)
 	if s.params.HTTPCfg.SimpleResponse {
 		resp = meta.SimpleBackupResponse(resp)
-	}
-	c.JSON(http.StatusOK, resp)
-	return nil, nil
-}
-
-// ListBackups List Backups interface
-// @Summary List Backups interface
-// @Description List all backups in current storage
-// @Tags Backup
-// @Produce application/json
-// @Param request_id header string false "request_id"
-// @Param collection_name query string false "collection_name"
-// @Success 200 {object} backuppb.ListBackupsResponse
-// @Router /list [get]
-func (s *Server) handleListBackups(c *gin.Context) (interface{}, error) {
-	req := backuppb.ListBackupsRequest{
-		RequestId:      c.GetHeader("request_id"),
-		CollectionName: c.Query("collection_name"),
-	}
-	resp := s.backupContext.ListBackups(context.Background(), &req)
-	if s.params.HTTPCfg.SimpleResponse {
-		resp = meta.SimpleListBackupsResponse(resp)
 	}
 	c.JSON(http.StatusOK, resp)
 	return nil, nil

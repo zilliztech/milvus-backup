@@ -210,7 +210,14 @@ message ListBackupsResponse {
   // error msg if fail
   string msg = 3;
   // backup info entities
-  repeated BackupInfo data = 4;
+  repeated BackupSummary data = 4;
+}
+
+message BackupSummary {
+  string id = 1;
+  string name = 2;
+  int64 size = 3;
+  string milvus_version = 4;
 }
 
 message DeleteBackupRequest {

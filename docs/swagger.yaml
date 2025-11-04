@@ -56,6 +56,17 @@ definitions:
         description: uuid of the request to response
         type: string
     type: object
+  backuppb.BackupSummary:
+    properties:
+      id:
+        type: string
+      milvus_version:
+        type: string
+      name:
+        type: string
+      size:
+        type: integer
+    type: object
   backuppb.BackupTaskStateCode:
     enum:
     - 0
@@ -489,7 +500,7 @@ definitions:
       data:
         description: backup info entities
         items:
-          $ref: '#/definitions/backuppb.BackupInfo'
+          $ref: '#/definitions/backuppb.BackupSummary'
         type: array
       msg:
         description: error msg if fail

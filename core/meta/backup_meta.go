@@ -2,7 +2,6 @@ package meta
 
 import (
 	"encoding/json"
-	"strings"
 
 	"github.com/golang/protobuf/proto"
 
@@ -132,33 +131,6 @@ func Serialize(backup *backuppb.BackupInfo) (*BackupMetaBytes, error) {
 		SegmentMetaBytes:    segmentBackupMetaBytes,
 		FullMetaBytes:       fullMetaBytes,
 	}, nil
-}
-
-func BackupPathToName(backupRootPath, path string) string {
-	return strings.Replace(strings.Replace(path, backupRootPath+SEPERATOR, "", 1), SEPERATOR, "", 1)
-}
-
-func SimpleListBackupsResponse(input *backuppb.ListBackupsResponse) *backuppb.ListBackupsResponse {
-	simpleBackupInfos := make([]*backuppb.BackupInfo, 0)
-	for _, backup := range input.GetData() {
-		simpleBackupInfos = append(simpleBackupInfos, &backuppb.BackupInfo{
-			Id:              backup.GetId(),
-			Name:            backup.GetName(),
-			StateCode:       backup.GetStateCode(),
-			ErrorMessage:    backup.GetErrorMessage(),
-			BackupTimestamp: backup.GetBackupTimestamp(),
-			Size:            backup.GetSize(),
-			StartTime:       backup.GetStartTime(),
-			EndTime:         backup.GetEndTime(),
-			MilvusVersion:   backup.GetMilvusVersion(),
-		})
-	}
-	return &backuppb.ListBackupsResponse{
-		RequestId: input.GetRequestId(),
-		Code:      input.GetCode(),
-		Msg:       input.GetMsg(),
-		Data:      simpleBackupInfos,
-	}
 }
 
 func SimpleBackupResponse(input *backuppb.BackupInfoResponse) *backuppb.BackupInfoResponse {

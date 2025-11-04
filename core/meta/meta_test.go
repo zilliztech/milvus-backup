@@ -136,3 +136,49 @@ func TestExist(t *testing.T) {
 		assert.False(t, exist)
 	})
 }
+
+func TestList(t *testing.T) {
+	cli := storage.NewMockClient(t)
+
+	keys := []storage.ObjectAttr{{Key: "root/backup1"}, {Key: "root/backup2"}}
+	backupRootIter := storage.NewMockObjectIterator(keys)
+	cli.EXPECT().
+		ListPrefix(mock.Anything, "root/", false).
+		Return(backupRootIter, nil)
+
+	backup1 := &backuppb.BackupInfo{Id: "a", Name: "backup1", Size: 100, MilvusVersion: "1.0.0"}
+	backup1Bytes, err := json.Marshal(backup1)
+	assert.NoError(t, err)
+
+	backup1MetaIter := storage.NewMockObjectIterator([]storage.ObjectAttr{
+		{Key: "root/backup1/meta/full_meta.json", Length: int64(len(backup1Bytes))},
+	})
+	cli.EXPECT().
+		ListPrefix(mock.Anything, "root/backup1/meta/full_meta.json", false).
+		Return(backup1MetaIter, nil)
+	cli.EXPECT().
+		GetObject(mock.Anything, "root/backup1/meta/full_meta.json").
+		Return(&storage.Object{Length: int64(len(backup1Bytes)), Body: io.NopCloser(bytes.NewReader(backup1Bytes))}, nil)
+
+	backup2 := &backuppb.BackupInfo{Id: "b", Name: "backup2", Size: 200, MilvusVersion: "2.0.0"}
+	backup2Bytes, err := json.Marshal(backup2)
+	assert.NoError(t, err)
+
+	backup2MetaIter := storage.NewMockObjectIterator([]storage.ObjectAttr{
+		{Key: "root/backup2/meta/full_meta.json", Length: int64(len(backup2Bytes))},
+	})
+	cli.EXPECT().
+		ListPrefix(mock.Anything, "root/backup2/meta/full_meta.json", false).
+		Return(backup2MetaIter, nil)
+	cli.EXPECT().
+		GetObject(mock.Anything, "root/backup2/meta/full_meta.json").
+		Return(&storage.Object{Length: int64(len(backup2Bytes)), Body: io.NopCloser(bytes.NewReader(backup2Bytes))}, nil)
+
+	summaries, err := List(context.Background(), cli, "root")
+	assert.NoError(t, err)
+	expected := []*backuppb.BackupSummary{
+		{Id: "a", Name: "backup1", Size: 100, MilvusVersion: "1.0.0"},
+		{Id: "b", Name: "backup2", Size: 200, MilvusVersion: "2.0.0"},
+	}
+	assert.ElementsMatch(t, expected, summaries)
+}
