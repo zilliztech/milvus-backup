@@ -93,6 +93,10 @@ func BackupDir(backupRoot string, backupName string) string {
 	return path.Join(backupRoot, backupName) + _separator
 }
 
+func BackupRootDir(backupRoot string) string {
+	return path.Clean(backupRoot) + _separator
+}
+
 type opt struct {
 	collectionID    int64
 	setCollectionID bool

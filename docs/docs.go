@@ -337,6 +337,23 @@ const docTemplate = `{
                 }
             }
         },
+        "backuppb.BackupSummary": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "milvus_version": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "size": {
+                    "type": "integer"
+                }
+            }
+        },
         "backuppb.BackupTaskStateCode": {
             "type": "integer",
             "enum": [
@@ -948,7 +965,7 @@ const docTemplate = `{
                     "description": "backup info entities",
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/backuppb.BackupInfo"
+                        "$ref": "#/definitions/backuppb.BackupSummary"
                     }
                 },
                 "msg": {

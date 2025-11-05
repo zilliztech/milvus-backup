@@ -286,3 +286,14 @@ func TestBackupDir(t *testing.T) {
 	r = BackupDir("root/subdir", "name")
 	assert.Equal(t, "root/subdir/name/", r)
 }
+
+func TestBackupRootDir(t *testing.T) {
+	r := BackupRootDir("root")
+	assert.Equal(t, "root/", r)
+
+	r = BackupRootDir("root/subdir")
+	assert.Equal(t, "root/subdir/", r)
+
+	r = BackupRootDir("root/subdir/")
+	assert.Equal(t, "root/subdir/", r)
+}
