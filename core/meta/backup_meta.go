@@ -79,11 +79,6 @@ func treeToLevel(backup *backuppb.BackupInfo) (LeveledBackupInfo, error) {
 	backup.Size = backupSize
 	backupLevel := &backuppb.BackupInfo{
 		Id:              backup.GetId(),
-		StateCode:       backup.GetStateCode(),
-		ErrorMessage:    backup.GetErrorMessage(),
-		StartTime:       backup.GetStartTime(),
-		EndTime:         backup.GetEndTime(),
-		Progress:        backup.GetProgress(),
 		Name:            backup.GetName(),
 		BackupTimestamp: backup.GetBackupTimestamp(),
 		Size:            backup.GetSize(),
@@ -131,30 +126,6 @@ func Serialize(backup *backuppb.BackupInfo) (*BackupMetaBytes, error) {
 		SegmentMetaBytes:    segmentBackupMetaBytes,
 		FullMetaBytes:       fullMetaBytes,
 	}, nil
-}
-
-func SimpleBackupResponse(input *backuppb.BackupInfoResponse) *backuppb.BackupInfoResponse {
-	backup := input.GetData()
-	if backup == nil {
-		return input
-	}
-
-	collections := make([]*backuppb.CollectionBackupInfo, 0)
-	for _, coll := range backup.GetCollectionBackups() {
-		// clone and remove PartitionBackups, avoid updating here every time we add a field in CollectionBackupInfo
-		clonedCollectionBackup := proto.Clone(coll).(*backuppb.CollectionBackupInfo)
-		clonedCollectionBackup.PartitionBackups = nil
-		// clonedCollectionBackup.Schema = nil // schema is needed by cloud
-		collections = append(collections, clonedCollectionBackup)
-	}
-	simpleBackupInfo := proto.Clone(backup).(*backuppb.BackupInfo)
-	simpleBackupInfo.CollectionBackups = collections
-	return &backuppb.BackupInfoResponse{
-		RequestId: input.GetRequestId(),
-		Code:      input.GetCode(),
-		Msg:       input.GetMsg(),
-		Data:      simpleBackupInfo,
-	}
 }
 
 type DbCollections = map[string][]string

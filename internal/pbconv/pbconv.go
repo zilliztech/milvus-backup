@@ -96,3 +96,54 @@ func Base64DecodeMsgPosition(position string) (*msgpb.MsgPosition, error) {
 	}
 	return &msgPosition, nil
 }
+
+func NewBackupInfoBrief(task taskmgr.BackupTaskView, backup *backuppb.BackupInfo, metaSize int64) *backuppb.BackupInfoBrief {
+	brief := &backuppb.BackupInfoBrief{MetaSize: metaSize}
+
+	if task != nil {
+		brief.Name = task.Name()
+		brief.Id = task.ID()
+		brief.StateCode = task.StateCode()
+		brief.ErrorMessage = task.ErrorMessage()
+		brief.StartTime = task.StartTime().Unix()
+		brief.EndTime = task.EndTime().Unix()
+		brief.Progress = task.Progress()
+	}
+
+	if backup != nil {
+		brief.Name = backup.GetName()
+		brief.BackupTimestamp = backup.GetBackupTimestamp()
+		brief.CollectionBackups = newCollBackupBrief(backup.GetCollectionBackups())
+		brief.Size = backup.GetSize()
+		brief.MilvusVersion = backup.GetMilvusVersion()
+		brief.RpcChannelInfo = backup.GetRpcChannelInfo()
+		brief.DatabaseBackups = backup.GetDatabaseBackups()
+	}
+
+	return brief
+}
+
+func newCollBackupBrief(colls []*backuppb.CollectionBackupInfo) []*backuppb.CollectionBackupInfoBrief {
+	briefs := make([]*backuppb.CollectionBackupInfoBrief, 0, len(colls))
+	for _, coll := range colls {
+		brief := &backuppb.CollectionBackupInfoBrief{
+			Id:                      coll.GetId(),
+			CollectionId:            coll.GetCollectionId(),
+			DbName:                  coll.GetDbName(),
+			CollectionName:          coll.GetCollectionName(),
+			Schema:                  coll.GetSchema(),
+			ShardsNum:               coll.GetShardsNum(),
+			BackupTimestamp:         coll.GetBackupTimestamp(),
+			Size:                    coll.GetSize(),
+			HasIndex:                coll.GetHasIndex(),
+			IndexInfos:              coll.GetIndexInfos(),
+			LoadState:               coll.GetLoadState(),
+			BackupPhysicalTimestamp: coll.GetBackupPhysicalTimestamp(),
+			ChannelCheckpoints:      coll.GetChannelCheckpoints(),
+			Properties:              coll.GetProperties(),
+		}
+		briefs = append(briefs, brief)
+	}
+
+	return briefs
+}

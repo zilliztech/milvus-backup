@@ -7,6 +7,7 @@ import (
 	"io"
 	"strings"
 
+	"github.com/samber/lo"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
@@ -14,6 +15,15 @@ import (
 )
 
 const _deleteConcurrent = 10
+
+func Size(ctx context.Context, cli Client, prefix string) (int64, error) {
+	_, sizes, err := ListPrefixFlat(ctx, cli, prefix, true)
+	if err != nil {
+		return 0, err
+	}
+
+	return lo.Sum(sizes), nil
+}
 
 func ListPrefixFlat(ctx context.Context, cli Client, prefix string, recursive bool) ([]string, []int64, error) {
 	iter, err := cli.ListPrefix(ctx, prefix, recursive)

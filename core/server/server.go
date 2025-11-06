@@ -12,7 +12,6 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core"
-	"github.com/zilliztech/milvus-backup/core/meta"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/log"
@@ -69,9 +68,9 @@ func (s *Server) initEngine() {
 	apiv1 := engine.Group("/api/v1")
 
 	apiv1.GET("/hello", wrapHandler(s.handleHello))
-	apiv1.POST("/create", wrapHandler(s.handleCreateBackup))
+	apiv1.POST("/create", s.handleCreateBackup)
 	apiv1.GET("/list", s.handleListBackups)
-	apiv1.GET("/get_backup", wrapHandler(s.handleGetBackup))
+	apiv1.GET("/get_backup", s.handleGetBackup)
 	apiv1.DELETE("/delete", wrapHandler(s.handleDeleteBackup))
 	apiv1.POST("/restore", s.handleRestoreBackup)
 	apiv1.GET("/get_restore", wrapHandler(s.handleGetRestore))
@@ -91,55 +90,6 @@ func wrapHandler(handle handlerFunc) gin.HandlerFunc {
 
 func (s *Server) handleHello(c *gin.Context) (any, error) {
 	c.String(200, "Hello, This is backup service")
-	return nil, nil
-}
-
-// CreateBackup Create backup interface
-// @Summary Create backup interface
-// @Description Create a backup with the given name and collections
-// @Tags Backup
-// @Accept application/json
-// @Produce application/json
-// @Param request_id header string false "request_id"
-// @Param object body backuppb.CreateBackupRequest   true  "CreateBackupRequest JSON"
-// @Success 200 {object} backuppb.BackupInfoResponse
-// @Router /create [post]
-func (s *Server) handleCreateBackup(c *gin.Context) (interface{}, error) {
-	var requestBody backuppb.CreateBackupRequest
-	if err := c.ShouldBindJSON(&requestBody); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
-		return nil, nil
-	}
-	requestBody.RequestId = c.GetHeader("request_id")
-	resp := s.backupContext.CreateBackup(context.Background(), &requestBody)
-	if s.params.HTTPCfg.SimpleResponse {
-		resp = meta.SimpleBackupResponse(resp)
-	}
-	c.JSON(http.StatusOK, resp)
-	return nil, nil
-}
-
-// RestoreBackup Get backup interface
-// @Summary Get backup interface
-// @Description Get the backup with the given name or id
-// @Tags Backup
-// @Produce application/json
-// @Param request_id header string false "request_id"
-// @Param backup_name query string true "backup_name"
-// @Param backup_id query string true "backup_id"
-// @Success 200 {object} backuppb.BackupInfoResponse
-// @Router /get_backup [get]
-func (s *Server) handleGetBackup(c *gin.Context) (interface{}, error) {
-	req := backuppb.GetBackupRequest{
-		RequestId:  c.GetHeader("request_id"),
-		BackupName: c.Query("backup_name"),
-		BackupId:   c.Query("backup_id"),
-	}
-	resp := s.backupContext.GetBackup(context.Background(), &req)
-	if s.params.HTTPCfg.SimpleResponse {
-		resp = meta.SimpleBackupResponse(resp)
-	}
-	c.JSON(http.StatusOK, resp)
 	return nil, nil
 }
 

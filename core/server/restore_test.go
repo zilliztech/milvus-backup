@@ -290,7 +290,7 @@ func TestNewCollBackupFilter(t *testing.T) {
 }
 
 func TestNewDBTaskFilterFromPlan(t *testing.T) {
-	plan := &backuppb.RestorePlan{Filter: map[string]*backuppb.RestoreFilter{
+	plan := &backuppb.RestorePlan{Filter: map[string]*backuppb.CollFilter{
 		"db1": {Colls: []string{"coll1", "coll2"}},
 		"db2": {Colls: []string{"coll3", "coll4"}},
 	}}
@@ -307,7 +307,7 @@ func TestNewDBTaskFilter(t *testing.T) {
 				Kind: &structpb.Value_StringValue{StringValue: `{"db1":[],"db2":["coll1","coll2"], "": ["coll3"]}`},
 			},
 			RestorePlan: &backuppb.RestorePlan{
-				Filter: map[string]*backuppb.RestoreFilter{
+				Filter: map[string]*backuppb.CollFilter{
 					"db1": {Colls: []string{"coll1", "coll2"}},
 					"db2": {Colls: []string{"coll3", "coll4"}},
 				},
@@ -335,7 +335,7 @@ func TestNewDBTaskFilter(t *testing.T) {
 }
 
 func TestNewCollTaskFilterFromPlan(t *testing.T) {
-	plan := &backuppb.RestorePlan{Filter: map[string]*backuppb.RestoreFilter{
+	plan := &backuppb.RestorePlan{Filter: map[string]*backuppb.CollFilter{
 		"db1": {Colls: []string{"coll1", "coll2"}},
 		"db2": {Colls: []string{"coll3", "coll4"}},
 	}}
@@ -364,7 +364,7 @@ func TestNewCollTaskFilter(t *testing.T) {
 				Kind: &structpb.Value_StringValue{StringValue: `{"db1":[],"db2":["coll1","coll2"], "": ["coll3"]}`},
 			},
 			RestorePlan: &backuppb.RestorePlan{
-				Filter: map[string]*backuppb.RestoreFilter{
+				Filter: map[string]*backuppb.CollFilter{
 					"db1": {Colls: []string{"coll1", "coll2"}},
 					"db2": {Colls: []string{"coll3", "coll4"}},
 				},

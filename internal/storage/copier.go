@@ -52,14 +52,22 @@ type remoteCopier struct {
 	src  Client
 	dest Client
 
+	opt copierOpt
+
 	logger *zap.Logger
 }
 
 func (rp *remoteCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
 	rp.logger.Debug("copy object", zap.String("src", copyAttr.Src.Key), zap.String("dest", copyAttr.DestKey))
 	i := CopyObjectInput{SrcCli: rp.src, SrcKey: copyAttr.Src.Key, DestKey: copyAttr.DestKey}
+
+	start := time.Now()
 	if err := rp.dest.CopyObject(ctx, i); err != nil {
 		return fmt.Errorf("storage: remote copier copy object %w", err)
+	}
+	if rp.opt.traceFn != nil {
+		cost := time.Since(start)
+		rp.opt.traceFn(copyAttr.Src.Length, cost)
 	}
 
 	return nil
@@ -104,8 +112,10 @@ func newCopier(src, dest Client, copyByServer bool, opt copierOpt) copier {
 		zap.String("src", src.Config().Bucket),
 		zap.String("dest", dest.Config().Bucket),
 	)
+
 	if copyByServer {
 		return &serverCopier{src: src, dest: dest, opt: opt, logger: logger.With(zap.String("copier", "server"))}
 	}
-	return &remoteCopier{src: src, dest: dest, logger: logger.With(zap.String("copier", "remote"))}
+
+	return &remoteCopier{src: src, dest: dest, opt: opt, logger: logger.With(zap.String("copier", "remote"))}
 }

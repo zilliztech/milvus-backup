@@ -47,8 +47,8 @@ func MetaKey(backupDir string, mateType MetaType) string {
 	return path.Join(backupDir, _metaPrefix, string(mateType))
 }
 
-func MetaDir(backupRoot, backupName string) string {
-	return path.Join(BackupDir(backupRoot, backupName), _metaPrefix) + _separator
+func MetaDir(backupDir string) string {
+	return path.Join(backupDir, _metaPrefix) + _separator
 }
 
 const (

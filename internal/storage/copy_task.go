@@ -102,6 +102,8 @@ type CopyObjectsOpt struct {
 
 	Sem *semaphore.Weighted
 
+	TraceFn TraceFn
+
 	CopyByServer bool
 }
 
@@ -115,7 +117,7 @@ func NewCopyObjectsTask(opt CopyObjectsOpt) *CopyObjectsTask {
 	return &CopyObjectsTask{
 		opt: opt,
 
-		copier: newCopier(opt.Src, opt.Dest, opt.CopyByServer, copierOpt{}),
+		copier: newCopier(opt.Src, opt.Dest, opt.CopyByServer, copierOpt{traceFn: opt.TraceFn}),
 	}
 }
 

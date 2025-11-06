@@ -118,15 +118,13 @@ const docTemplate = `{
                         "type": "string",
                         "description": "backup_name",
                         "name": "backup_name",
-                        "in": "query",
-                        "required": true
+                        "in": "query"
                     },
                     {
                         "type": "string",
                         "description": "backup_id",
                         "name": "backup_id",
-                        "in": "query",
-                        "required": true
+                        "in": "query"
                     }
                 ],
                 "responses": {
@@ -250,18 +248,16 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "backuppb.BackupInfo": {
+        "backuppb.BackupInfoBrief": {
             "type": "object",
             "properties": {
                 "backup_timestamp": {
-                    "description": "backup timestamp",
                     "type": "integer"
                 },
                 "collection_backups": {
-                    "description": "array of collection backup",
                     "type": "array",
                     "items": {
-                        "$ref": "#/definitions/backuppb.CollectionBackupInfo"
+                        "$ref": "#/definitions/backuppb.CollectionBackupInfoBrief"
                     }
                 },
                 "database_backups": {
@@ -277,22 +273,22 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "id": {
+                    "description": "from task",
                     "type": "string"
                 },
                 "meta_size": {
+                    "description": "sum of all meta files size",
                     "type": "integer"
                 },
                 "milvus_version": {
                     "type": "string"
                 },
                 "name": {
+                    "description": "from backup meta",
                     "type": "string"
                 },
                 "progress": {
                     "type": "integer"
-                },
-                "rbac_meta": {
-                    "$ref": "#/definitions/backuppb.RBACMeta"
                 },
                 "rpc_channel_info": {
                     "$ref": "#/definitions/backuppb.RPCChannelInfo"
@@ -323,7 +319,7 @@ const docTemplate = `{
                     "description": "backup info entity",
                     "allOf": [
                         {
-                            "$ref": "#/definitions/backuppb.BackupInfo"
+                            "$ref": "#/definitions/backuppb.BackupInfoBrief"
                         }
                     ]
                 },
@@ -363,6 +359,9 @@ const docTemplate = `{
                 3,
                 4
             ],
+            "x-enum-comments": {
+                "BackupTaskStateCode_BACKUP_INITIAL": "pending"
+            },
             "x-enum-varnames": [
                 "BackupTaskStateCode_BACKUP_INITIAL",
                 "BackupTaskStateCode_BACKUP_EXECUTING",
@@ -371,33 +370,18 @@ const docTemplate = `{
                 "BackupTaskStateCode_BACKUP_TIMEOUT"
             ]
         },
-        "backuppb.Binlog": {
+        "backuppb.CollFilter": {
             "type": "object",
             "properties": {
-                "entries_num": {
-                    "description": "Deprecated: Marked as deprecated in backup.proto.",
-                    "type": "integer"
-                },
-                "log_id": {
-                    "type": "integer"
-                },
-                "log_path": {
-                    "type": "string"
-                },
-                "log_size": {
-                    "type": "integer"
-                },
-                "timestamp_from": {
-                    "description": "Deprecated: Marked as deprecated in backup.proto.",
-                    "type": "integer"
-                },
-                "timestamp_to": {
-                    "description": "Deprecated: Marked as deprecated in backup.proto.",
-                    "type": "integer"
+                "colls": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },
-        "backuppb.CollectionBackupInfo": {
+        "backuppb.CollectionBackupInfoBrief": {
             "type": "object",
             "properties": {
                 "backup_physical_timestamp": {
@@ -420,16 +404,7 @@ const docTemplate = `{
                 "collection_name": {
                     "type": "string"
                 },
-                "consistency_level": {
-                    "$ref": "#/definitions/backuppb.ConsistencyLevel"
-                },
                 "db_name": {
-                    "type": "string"
-                },
-                "end_time": {
-                    "type": "integer"
-                },
-                "errorMessage": {
                     "type": "string"
                 },
                 "has_index": {
@@ -444,23 +419,8 @@ const docTemplate = `{
                         "$ref": "#/definitions/backuppb.IndexInfo"
                     }
                 },
-                "l0_segments": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/backuppb.SegmentBackupInfo"
-                    }
-                },
                 "load_state": {
                     "type": "string"
-                },
-                "partition_backups": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/backuppb.PartitionBackupInfo"
-                    }
-                },
-                "progress": {
-                    "type": "integer"
                 },
                 "properties": {
                     "type": "array",
@@ -476,12 +436,6 @@ const docTemplate = `{
                 },
                 "size": {
                     "type": "integer"
-                },
-                "start_time": {
-                    "type": "integer"
-                },
-                "state_code": {
-                    "$ref": "#/definitions/backuppb.BackupTaskStateCode"
                 }
             }
         },
@@ -528,27 +482,6 @@ const docTemplate = `{
                 }
             }
         },
-        "backuppb.ConsistencyLevel": {
-            "type": "integer",
-            "enum": [
-                0,
-                1,
-                2,
-                3,
-                4
-            ],
-            "x-enum-comments": {
-                "ConsistencyLevel_Customized": "Users pass their own ` + "`" + `guarantee_timestamp` + "`" + `.",
-                "ConsistencyLevel_Session": "default in PyMilvus"
-            },
-            "x-enum-varnames": [
-                "ConsistencyLevel_Strong",
-                "ConsistencyLevel_Session",
-                "ConsistencyLevel_Bounded",
-                "ConsistencyLevel_Eventually",
-                "ConsistencyLevel_Customized"
-            ]
-        },
         "backuppb.CreateBackupRequest": {
             "type": "object",
             "properties": {
@@ -565,15 +498,22 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "collection_names": {
-                    "description": "collection names to backup, empty to backup all",
+                    "description": "collection names to backup, empty to backup all\n\nDeprecated: Marked as deprecated in backup.proto.",
                     "type": "array",
                     "items": {
                         "type": "string"
                     }
                 },
                 "db_collections": {
-                    "description": "database and collections to backup. A json string. To support database. 2023.7.7",
+                    "description": "database and collections to backup. A json string. To support database. 2023.7.7\n\nDeprecated: Marked as deprecated in backup.proto.",
                     "type": "string"
+                },
+                "filter": {
+                    "description": "filter for backup",
+                    "type": "object",
+                    "additionalProperties": {
+                        "$ref": "#/definitions/backuppb.CollFilter"
+                    }
                 },
                 "force": {
                     "description": "force backup skip flush, Should make sure data has been stored into disk when using it",
@@ -699,20 +639,6 @@ const docTemplate = `{
                 "requestId": {
                     "description": "uuid of the request to response",
                     "type": "string"
-                }
-            }
-        },
-        "backuppb.FieldBinlog": {
-            "type": "object",
-            "properties": {
-                "binlogs": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/backuppb.Binlog"
-                    }
-                },
-                "fieldID": {
-                    "type": "integer"
                 }
             }
         },
@@ -871,54 +797,6 @@ const docTemplate = `{
                 "FunctionType_TextEmbedding"
             ]
         },
-        "backuppb.GrantEntity": {
-            "type": "object",
-            "properties": {
-                "db_name": {
-                    "description": "db name",
-                    "type": "string"
-                },
-                "grantor": {
-                    "description": "privilege",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/backuppb.GrantorEntity"
-                        }
-                    ]
-                },
-                "object": {
-                    "description": "object",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/backuppb.ObjectEntity"
-                        }
-                    ]
-                },
-                "object_name": {
-                    "description": "object name",
-                    "type": "string"
-                },
-                "role": {
-                    "description": "role",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/backuppb.RoleEntity"
-                        }
-                    ]
-                }
-            }
-        },
-        "backuppb.GrantorEntity": {
-            "type": "object",
-            "properties": {
-                "privilege": {
-                    "$ref": "#/definitions/backuppb.PrivilegeEntity"
-                },
-                "user": {
-                    "$ref": "#/definitions/backuppb.UserEntity"
-                }
-            }
-        },
         "backuppb.IndexInfo": {
             "type": "object",
             "properties": {
@@ -975,96 +853,6 @@ const docTemplate = `{
                 "requestId": {
                     "description": "uuid of the request to response",
                     "type": "string"
-                }
-            }
-        },
-        "backuppb.ObjectEntity": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string"
-                }
-            }
-        },
-        "backuppb.PartitionBackupInfo": {
-            "type": "object",
-            "properties": {
-                "collection_id": {
-                    "type": "integer"
-                },
-                "load_state": {
-                    "type": "string"
-                },
-                "partition_id": {
-                    "type": "integer"
-                },
-                "partition_name": {
-                    "type": "string"
-                },
-                "segment_backups": {
-                    "description": "array of segment backup",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/backuppb.SegmentBackupInfo"
-                    }
-                },
-                "size": {
-                    "type": "integer"
-                }
-            }
-        },
-        "backuppb.PrivilegeEntity": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string"
-                }
-            }
-        },
-        "backuppb.PrivilegeGroupInfo": {
-            "type": "object",
-            "properties": {
-                "group_name": {
-                    "type": "string"
-                },
-                "privileges": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/backuppb.PrivilegeEntity"
-                    }
-                }
-            }
-        },
-        "backuppb.RBACMeta": {
-            "type": "object",
-            "properties": {
-                "grants": {
-                    "description": "(role, object, previledge)",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/backuppb.GrantEntity"
-                    }
-                },
-                "privilege_groups": {
-                    "description": "privilege group",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/backuppb.PrivilegeGroupInfo"
-                    }
-                },
-                "roles": {
-                    "description": "role",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/backuppb.RoleEntity"
-                    }
-                },
-                "users": {
-                    "description": "user",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/backuppb.UserInfo"
-                    }
                 }
             }
         },
@@ -1304,17 +1092,6 @@ const docTemplate = `{
                 }
             }
         },
-        "backuppb.RestoreFilter": {
-            "type": "object",
-            "properties": {
-                "colls": {
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                }
-            }
-        },
         "backuppb.RestoreMapping": {
             "type": "object",
             "properties": {
@@ -1341,7 +1118,7 @@ const docTemplate = `{
                 "filter": {
                     "type": "object",
                     "additionalProperties": {
-                        "$ref": "#/definitions/backuppb.RestoreFilter"
+                        "$ref": "#/definitions/backuppb.CollFilter"
                     }
                 },
                 "mapping": {
@@ -1368,69 +1145,6 @@ const docTemplate = `{
                 "RestoreTaskStateCode_FAIL",
                 "RestoreTaskStateCode_TIMEOUT"
             ]
-        },
-        "backuppb.RoleEntity": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string"
-                }
-            }
-        },
-        "backuppb.SegmentBackupInfo": {
-            "type": "object",
-            "properties": {
-                "backuped": {
-                    "type": "boolean"
-                },
-                "binlogs": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/backuppb.FieldBinlog"
-                    }
-                },
-                "collection_id": {
-                    "type": "integer"
-                },
-                "deltalogs": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/backuppb.FieldBinlog"
-                    }
-                },
-                "group_id": {
-                    "description": "The group ID is a virtual partition ID.\nThe Milvus BulkInsert interface requires a partition prefix,\nbut passing multiple segments is a more suitable option.\nTherefore, a virtual partition ID is used here to enable the functionality of importing multiple segments.",
-                    "type": "integer"
-                },
-                "is_l0": {
-                    "type": "boolean"
-                },
-                "num_of_rows": {
-                    "type": "integer"
-                },
-                "partition_id": {
-                    "type": "integer"
-                },
-                "segment_id": {
-                    "type": "integer"
-                },
-                "size": {
-                    "type": "integer"
-                },
-                "statslogs": {
-                    "description": "Deprecated: Marked as deprecated in backup.proto.",
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/backuppb.FieldBinlog"
-                    }
-                },
-                "storage_version": {
-                    "type": "integer"
-                },
-                "v_channel": {
-                    "type": "string"
-                }
-            }
         },
         "backuppb.SkipParams": {
             "type": "object",
@@ -1477,31 +1191,6 @@ const docTemplate = `{
                     }
                 },
                 "name": {
-                    "type": "string"
-                }
-            }
-        },
-        "backuppb.UserEntity": {
-            "type": "object",
-            "properties": {
-                "name": {
-                    "type": "string"
-                }
-            }
-        },
-        "backuppb.UserInfo": {
-            "type": "object",
-            "properties": {
-                "password": {
-                    "type": "string"
-                },
-                "roles": {
-                    "type": "array",
-                    "items": {
-                        "$ref": "#/definitions/backuppb.RoleEntity"
-                    }
-                },
-                "user": {
                     "type": "string"
                 }
             }

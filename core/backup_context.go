@@ -8,9 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/samber/lo"
 	"go.uber.org/zap"
-	"go.uber.org/zap/zapcore"
 	"golang.org/x/sync/semaphore"
 
 	"github.com/zilliztech/milvus-backup/core/client/milvus"
@@ -20,7 +18,6 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 	"github.com/zilliztech/milvus-backup/internal/storage"
-	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
@@ -147,110 +144,6 @@ func (b *BackupContext) getBackupStorageClient() storage.Client {
 	return b.backupStorageClient
 }
 
-func (b *BackupContext) GetBackup(ctx context.Context, request *backuppb.GetBackupRequest) *backuppb.BackupInfoResponse {
-	if request.GetRequestId() == "" {
-		request.RequestId = uuid.NewString()
-	}
-	log.Info("receive GetBackupRequest",
-		zap.String("requestId", request.GetRequestId()),
-		zap.String("backupName", request.GetBackupName()),
-		zap.String("backupId", request.GetBackupId()),
-		zap.String("bucketName", request.GetBucketName()),
-		zap.String("path", request.GetPath()))
-
-	resp := &backuppb.BackupInfoResponse{
-		RequestId: request.GetRequestId(),
-	}
-
-	if !b.started {
-		err := b.Start()
-		if err != nil {
-			resp.Code = backuppb.ResponseCode_Fail
-			resp.Msg = err.Error()
-		}
-	}
-
-	if request.GetBackupId() == "" && request.GetBackupName() == "" {
-		resp.Code = backuppb.ResponseCode_Parameter_Error
-		resp.Msg = "empty backup name and backup id, please set a backup name or id"
-	} else if request.GetBackupId() != "" {
-		backupInfo := b.meta.GetFullMeta(request.GetBackupId())
-		resp.Code = backuppb.ResponseCode_Success
-		resp.Msg = "success"
-		resp.Data = backupInfo
-	} else if request.GetBackupName() != "" {
-		backupInfo := b.meta.GetBackupByName(request.GetBackupName())
-		if backupInfo != nil {
-			fullBackupInfo := b.meta.GetFullMeta(backupInfo.Id)
-			resp.Code = backuppb.ResponseCode_Success
-			resp.Msg = "success"
-			resp.Data = fullBackupInfo
-			if resp.Data.GetStateCode() == backuppb.BackupTaskStateCode_BACKUP_SUCCESS {
-				metaDir := mpath.MetaDir(b.backupRootPath, request.GetBackupName())
-				_, sizes, err := storage.ListPrefixFlat(ctx, b.getBackupStorageClient(), metaDir, true)
-				if err != nil {
-					log.Warn("Fail to list backup directory", zap.Error(err))
-					resp.Code = backuppb.ResponseCode_Fail
-					resp.Msg = err.Error()
-				} else {
-					resp.Data.MetaSize = lo.Sum(sizes)
-				}
-			}
-		} else {
-			backupDir := mpath.BackupDir(b.backupRootPath, request.GetBackupName())
-			backup, err := meta.Read(ctx, b.getBackupStorageClient(), backupDir)
-			if err != nil {
-				log.Warn("Fail to read backup",
-					zap.String("backupBucketName", b.params.MinioCfg.BackupBucketName),
-					zap.String("backup_dir", backupDir),
-					zap.Error(err))
-				resp.Code = backuppb.ResponseCode_Fail
-				resp.Msg = err.Error()
-			}
-
-			resp.Data = backup
-			if backup == nil {
-				resp.Code = backuppb.ResponseCode_Request_Object_Not_Found
-				resp.Msg = "not found"
-			} else {
-				metaDir := mpath.MetaDir(b.backupRootPath, request.GetBackupName())
-				_, sizes, err := storage.ListPrefixFlat(ctx, b.getBackupStorageClient(), metaDir, true)
-				if err != nil {
-					log.Warn("Fail to list backup directory", zap.Error(err))
-					resp.Code = backuppb.ResponseCode_Fail
-					resp.Msg = err.Error()
-				} else {
-					resp.Data.MetaSize = lo.Sum(sizes)
-				}
-				resp.Code = backuppb.ResponseCode_Success
-				resp.Msg = "success"
-			}
-		}
-	}
-
-	if request.WithoutDetail {
-		resp = meta.SimpleBackupResponse(resp)
-	}
-
-	if log.GetLevel() == zapcore.DebugLevel {
-		log.Debug("finish GetBackupRequest",
-			zap.String("requestId", request.GetRequestId()),
-			zap.String("backupName", request.GetBackupName()),
-			zap.String("backupId", request.GetBackupId()),
-			zap.String("bucketName", request.GetBucketName()),
-			zap.String("path", request.GetPath()))
-	} else {
-		log.Info("finish GetBackupRequest",
-			zap.String("requestId", request.GetRequestId()),
-			zap.String("backupName", request.GetBackupName()),
-			zap.String("backupId", request.GetBackupId()),
-			zap.String("bucketName", request.GetBucketName()),
-			zap.String("path", request.GetPath()))
-	}
-
-	return resp
-}
-
 func (b *BackupContext) GetRestore(ctx context.Context, request *backuppb.GetRestoreStateRequest) *backuppb.RestoreBackupResponse {
 	if request.GetRequestId() == "" {
 		request.RequestId = uuid.NewString()
@@ -268,7 +161,6 @@ func (b *BackupContext) GetRestore(ctx context.Context, request *backuppb.GetRes
 	}
 
 	taskView, err := taskmgr.DefaultMgr.GetRestoreTask(request.GetId())
-	log.Warn("get restore task", zap.String("task_id", request.GetId()), zap.Error(err))
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = "restore id not exist in context"

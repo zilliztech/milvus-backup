@@ -26,6 +26,25 @@ func (m *mockObjectIterator) Next() (ObjectAttr, error) {
 	return obj, nil
 }
 
+func TestSize(t *testing.T) {
+	cli := NewMockClient(t)
+
+	objs := []ObjectAttr{
+		{Key: "a/b/c", Length: 1},
+		{Key: "a/b/d", Length: 2},
+		{Key: "a/b/e", Length: 3},
+		{Key: "a/b/f", Length: 4},
+	}
+
+	cli.EXPECT().
+		ListPrefix(context.Background(), "a/b/", true).
+		Return(&mockObjectIterator{objs: objs}, nil)
+
+	size, err := Size(context.Background(), cli, "a/b/")
+	assert.NoError(t, err)
+	assert.Equal(t, int64(10), size)
+}
+
 func TestListPrefixFlat(t *testing.T) {
 	cli := NewMockClient(t)
 
