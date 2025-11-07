@@ -29,11 +29,11 @@ message DatabaseBackupInfo {
 
 message CollectionBackupInfo {
   string id = 1;
-  BackupTaskStateCode state_code = 2;
-  string errorMessage = 3;
-  int64 start_time = 4;
-  int64 end_time = 5;
-  int32 progress = 6;
+  BackupTaskStateCode state_code = 2 [deprecated=true];
+  string errorMessage = 3 [deprecated=true];
+  int64 start_time = 4 [deprecated=true];
+  int64 end_time = 5 [deprecated=true];
+  int32 progress = 6 [deprecated=true];
   int64 collection_id = 7;
   string db_name = 8;
   string collection_name = 9;
@@ -92,11 +92,11 @@ message SegmentBackupInfo {
  */
 message BackupInfo {
   string id = 1;
-  BackupTaskStateCode state_code = 2;
-  string errorMessage = 3;
-  int64 start_time = 4;
-  int64 end_time = 5;
-  int32 progress = 6;
+  BackupTaskStateCode state_code = 2 [deprecated=true];
+  string errorMessage = 3 [deprecated=true];
+  int64 start_time = 4 [deprecated=true];
+  int64 end_time = 5 [deprecated=true];
+  int32 progress = 6 [deprecated=true];
   string name = 7;
   // backup timestamp
   uint64 backup_timestamp = 8;
@@ -145,11 +145,11 @@ message CreateBackupRequest {
   // backup name, will generate one if not set
   string backup_name = 2;
   // collection names to backup, empty to backup all
-  repeated string collection_names = 3;
+  repeated string collection_names = 3 [deprecated=true];
   // async or not
   bool async = 4;
   // database and collections to backup. A json string. To support database. 2023.7.7
-  google.protobuf.Value db_collections = 5;
+  google.protobuf.Value db_collections = 5 [deprecated=true];
   // force backup skip flush, Should make sure data has been stored into disk when using it
   bool force = 6;
   // only backup meta, including collection schema and index info
@@ -164,6 +164,8 @@ message CreateBackupRequest {
   bool rbac = 11;
   // backup root path
   string backup_root_path = 12;
+  // filter for backup
+  map<string, CollFilter> filter = 13;
 }
 
 /**
@@ -177,7 +179,48 @@ message BackupInfoResponse {
   // error msg if fail
   string msg = 3;
   // backup info entity
-  BackupInfo data = 4;
+  BackupInfoBrief data = 4;
+}
+
+message BackupInfoBrief {
+  // from task
+  string id = 1;
+  BackupTaskStateCode state_code = 2;
+  string errorMessage = 3;
+  int64 start_time = 4;
+  int64 end_time = 5;
+  int32 progress = 6;
+
+  // from backup meta
+  string name = 7;
+  uint64 backup_timestamp = 8;
+  repeated CollectionBackupInfoBrief collection_backups = 9;
+  int64 size = 10;
+  string milvus_version = 11;
+  RPCChannelInfo rpc_channel_info = 13;
+  repeated DatabaseBackupInfo database_backups = 14;
+
+  // sum of all meta files size
+  int64 meta_size = 15;
+}
+
+message CollectionBackupInfoBrief {
+  string id = 1;
+  int64 collection_id = 2;
+  string db_name = 3;
+  string collection_name = 4;
+  CollectionSchema schema = 5;
+  int32 shards_num = 6;
+  // logical time of backup, used for restore
+  uint64 backup_timestamp = 7;
+  int64 size = 8;
+  bool has_index = 9;
+  repeated IndexInfo index_infos = 10;
+  string load_state = 11;
+  // physical unix time of backup
+  uint64 backup_physical_timestamp = 12;
+  map<string, string> channel_checkpoints = 13;
+  repeated KeyValuePair properties = 14;
 }
 
 message GetBackupRequest {
@@ -192,7 +235,7 @@ message GetBackupRequest {
   // if bucket_name and path is set. will override bucket/path in config.
   string path = 5;
   // if true, return simple response without too much detail to display
-  bool without_detail = 6;
+  bool without_detail = 6 [deprecated=true];
 }
 
 message ListBackupsRequest {
@@ -237,7 +280,7 @@ message DeleteBackupResponse {
 }
 
 enum BackupTaskStateCode {
-  BACKUP_INITIAL = 0;
+  BACKUP_INITIAL = 0;  // pending
   BACKUP_EXECUTING = 1;
   BACKUP_SUCCESS = 2;
   BACKUP_FAIL = 3;
@@ -314,7 +357,7 @@ message RestoreBackupRequest {
 
 message RestorePlan {
   repeated RestoreMapping mapping = 1;
-  map<string, RestoreFilter> filter = 2;
+  map<string, CollFilter> filter = 2;
 }
 
 message RestoreMapping {
@@ -329,7 +372,7 @@ message RestoreCollectionMapping {
   string target = 2;
 }
 
-message RestoreFilter {
+message CollFilter {
   repeated string colls = 1;
 }
 

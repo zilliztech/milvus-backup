@@ -8,9 +8,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
-	"github.com/zilliztech/milvus-backup/core"
+	"github.com/zilliztech/milvus-backup/core/meta"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
-	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/pbconv"
+	"github.com/zilliztech/milvus-backup/internal/storage"
+	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 )
 
 type options struct {
@@ -20,7 +22,7 @@ type options struct {
 
 func (o *options) addFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.backupName, "name", "n", "", "get backup with this name")
-	cmd.Flags().BoolVarP(&o.detail, "detail", "d", false, "get complete backup info")
+	cmd.Flags().BoolVarP(&o.detail, "detail", "d", false, "[DEPRECATED] get complete backup info")
 }
 
 func (o *options) validate() error {
@@ -32,23 +34,30 @@ func (o *options) validate() error {
 
 func (o *options) run(cmd *cobra.Command, params *paramtable.BackupParams) error {
 	ctx := context.Background()
-	backupContext := core.CreateBackupContext(ctx, params)
-	resp := backupContext.GetBackup(ctx, &backuppb.GetBackupRequest{
-		BackupName:    o.backupName,
-		WithoutDetail: !o.detail,
-	})
 
-	if resp.GetCode() != backuppb.ResponseCode_Success {
-		return fmt.Errorf("get backup failed: %s", resp.GetMsg())
+	backupStorage, err := storage.NewBackupStorage(ctx, &params.MinioCfg)
+	if err != nil {
+		return fmt.Errorf("create backup storage: %w", err)
 	}
 
-	output, err := json.MarshalIndent(resp.GetData(), "", "    ")
+	backupDir := mpath.BackupDir(params.MinioCfg.BackupRootPath, o.backupName)
+	backupInfo, err := meta.Read(ctx, backupStorage, backupDir)
+	if err != nil {
+		return fmt.Errorf("read backup meta: %w", err)
+	}
+
+	metaSize, err := storage.Size(ctx, backupStorage, mpath.MetaDir(backupDir))
+	if err != nil {
+		return fmt.Errorf("get meta size: %w", err)
+	}
+
+	brief := pbconv.NewBackupInfoBrief(nil, backupInfo, metaSize)
+	output, err := json.MarshalIndent(brief, "", "    ")
 	if err != nil {
 		return fmt.Errorf("fail to marshal backup info: %w", err)
 	}
 
 	cmd.Println(string(output))
-	cmd.Println(resp.GetCode())
 
 	return nil
 }

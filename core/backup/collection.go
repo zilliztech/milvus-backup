@@ -24,6 +24,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
+	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 const _allPartitionID = -1
@@ -46,6 +47,8 @@ type collectionTaskArgs struct {
 	CrossStorage bool
 
 	Meta *meta.MetaManager
+
+	TaskMgr *taskmgr.Mgr
 
 	Grpc    milvus.Grpc
 	Restful milvus.Restful
@@ -72,6 +75,8 @@ type CollectionTask struct {
 
 	meta *meta.MetaManager
 
+	taskMgr *taskmgr.Mgr
+
 	grpc    milvus.Grpc
 	restful milvus.Restful
 
@@ -80,6 +85,9 @@ type CollectionTask struct {
 
 func NewCollectionTask(ns namespace.NS, args collectionTaskArgs) *CollectionTask {
 	logger := log.L().With(zap.String("task_id", args.TaskID), zap.String("ns", ns.String()))
+
+	args.TaskMgr.UpdateBackupTask(args.TaskID, taskmgr.AddBackupCollTask(ns))
+
 	return &CollectionTask{
 		taskID: args.TaskID,
 
@@ -99,6 +107,8 @@ func NewCollectionTask(ns namespace.NS, args collectionTaskArgs) *CollectionTask
 
 		meta: args.Meta,
 
+		taskMgr: args.TaskMgr,
+
 		grpc:    args.Grpc,
 		restful: args.Restful,
 
@@ -108,6 +118,20 @@ func NewCollectionTask(ns namespace.NS, args collectionTaskArgs) *CollectionTask
 }
 
 func (ct *CollectionTask) Execute(ctx context.Context) error {
+	ct.taskMgr.UpdateBackupTask(ct.taskID, taskmgr.SetBackupCollExecuting(ct.ns))
+	ct.logger.Info("start backup collection")
+
+	if err := ct.privateExecute(ctx); err != nil {
+		ct.taskMgr.UpdateBackupTask(ct.taskID, taskmgr.SetBackupCollFail(ct.ns, err))
+		return err
+	}
+
+	ct.taskMgr.UpdateBackupTask(ct.taskID, taskmgr.SetBackupCollSuccess(ct.ns))
+	ct.logger.Info("backup collection done")
+	return nil
+}
+
+func (ct *CollectionTask) privateExecute(ctx context.Context) error {
 	if err := ct.backupDDL(ctx); err != nil {
 		return fmt.Errorf("backup: backup ddl %w", err)
 	}
@@ -366,8 +390,6 @@ func (ct *CollectionTask) backupDDL(ctx context.Context) error {
 
 	backupInfo := &backuppb.CollectionBackupInfo{
 		Id:               ct.taskID,
-		StateCode:        backuppb.BackupTaskStateCode_BACKUP_INITIAL,
-		StartTime:        time.Now().Unix(),
 		CollectionId:     descResp.GetCollectionID(),
 		DbName:           descResp.GetDbName(),
 		CollectionName:   descResp.GetCollectionName(),
@@ -682,6 +704,9 @@ func (ct *CollectionTask) getSegments(ctx context.Context) ([]*backuppb.SegmentB
 		bakSegs = append(bakSegs, bakSeg)
 	}
 
+	size := lo.SumBy(bakSegs, func(seg *backuppb.SegmentBackupInfo) int64 { return seg.GetSize() })
+	ct.taskMgr.UpdateBackupTask(ct.taskID, taskmgr.SetBackupCollTotalSize(ct.ns, size))
+
 	ct.addSegmentToMeta(bakSegs)
 
 	return bakSegs, nil
@@ -814,6 +839,9 @@ func (ct *CollectionTask) backupSegment(ctx context.Context, seg *backuppb.Segme
 		Attrs:        attrs,
 		CopyByServer: ct.crossStorage,
 		Sem:          ct.copySem,
+		TraceFn: func(size int64, cost time.Duration) {
+			ct.taskMgr.UpdateBackupTask(ct.taskID, taskmgr.IncBackupCollCopiedSize(ct.ns, size, cost))
+		},
 	}
 	cpTask := storage.NewCopyObjectsTask(opt)
 	if err := cpTask.Execute(ctx); err != nil {

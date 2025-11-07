@@ -1,14 +1,12 @@
 basePath: /api/v1
 definitions:
-  backuppb.BackupInfo:
+  backuppb.BackupInfoBrief:
     properties:
       backup_timestamp:
-        description: backup timestamp
         type: integer
       collection_backups:
-        description: array of collection backup
         items:
-          $ref: '#/definitions/backuppb.CollectionBackupInfo'
+          $ref: '#/definitions/backuppb.CollectionBackupInfoBrief'
         type: array
       database_backups:
         items:
@@ -19,17 +17,18 @@ definitions:
       errorMessage:
         type: string
       id:
+        description: from task
         type: string
       meta_size:
+        description: sum of all meta files size
         type: integer
       milvus_version:
         type: string
       name:
+        description: from backup meta
         type: string
       progress:
         type: integer
-      rbac_meta:
-        $ref: '#/definitions/backuppb.RBACMeta'
       rpc_channel_info:
         $ref: '#/definitions/backuppb.RPCChannelInfo'
       size:
@@ -47,7 +46,7 @@ definitions:
         description: response code. 0 means success. others are fail
       data:
         allOf:
-        - $ref: '#/definitions/backuppb.BackupInfo'
+        - $ref: '#/definitions/backuppb.BackupInfoBrief'
         description: backup info entity
       msg:
         description: error msg if fail
@@ -75,31 +74,22 @@ definitions:
     - 3
     - 4
     type: integer
+    x-enum-comments:
+      BackupTaskStateCode_BACKUP_INITIAL: pending
     x-enum-varnames:
     - BackupTaskStateCode_BACKUP_INITIAL
     - BackupTaskStateCode_BACKUP_EXECUTING
     - BackupTaskStateCode_BACKUP_SUCCESS
     - BackupTaskStateCode_BACKUP_FAIL
     - BackupTaskStateCode_BACKUP_TIMEOUT
-  backuppb.Binlog:
+  backuppb.CollFilter:
     properties:
-      entries_num:
-        description: 'Deprecated: Marked as deprecated in backup.proto.'
-        type: integer
-      log_id:
-        type: integer
-      log_path:
-        type: string
-      log_size:
-        type: integer
-      timestamp_from:
-        description: 'Deprecated: Marked as deprecated in backup.proto.'
-        type: integer
-      timestamp_to:
-        description: 'Deprecated: Marked as deprecated in backup.proto.'
-        type: integer
+      colls:
+        items:
+          type: string
+        type: array
     type: object
-  backuppb.CollectionBackupInfo:
+  backuppb.CollectionBackupInfoBrief:
     properties:
       backup_physical_timestamp:
         description: physical unix time of backup
@@ -115,13 +105,7 @@ definitions:
         type: integer
       collection_name:
         type: string
-      consistency_level:
-        $ref: '#/definitions/backuppb.ConsistencyLevel'
       db_name:
-        type: string
-      end_time:
-        type: integer
-      errorMessage:
         type: string
       has_index:
         type: boolean
@@ -131,18 +115,8 @@ definitions:
         items:
           $ref: '#/definitions/backuppb.IndexInfo'
         type: array
-      l0_segments:
-        items:
-          $ref: '#/definitions/backuppb.SegmentBackupInfo'
-        type: array
       load_state:
         type: string
-      partition_backups:
-        items:
-          $ref: '#/definitions/backuppb.PartitionBackupInfo'
-        type: array
-      progress:
-        type: integer
       properties:
         items:
           $ref: '#/definitions/backuppb.KeyValuePair'
@@ -153,10 +127,6 @@ definitions:
         type: integer
       size:
         type: integer
-      start_time:
-        type: integer
-      state_code:
-        $ref: '#/definitions/backuppb.BackupTaskStateCode'
     type: object
   backuppb.CollectionSchema:
     properties:
@@ -187,23 +157,6 @@ definitions:
           $ref: '#/definitions/backuppb.StructArrayFieldSchema'
         type: array
     type: object
-  backuppb.ConsistencyLevel:
-    enum:
-    - 0
-    - 1
-    - 2
-    - 3
-    - 4
-    type: integer
-    x-enum-comments:
-      ConsistencyLevel_Customized: Users pass their own `guarantee_timestamp`.
-      ConsistencyLevel_Session: default in PyMilvus
-    x-enum-varnames:
-    - ConsistencyLevel_Strong
-    - ConsistencyLevel_Session
-    - ConsistencyLevel_Bounded
-    - ConsistencyLevel_Eventually
-    - ConsistencyLevel_Customized
   backuppb.CreateBackupRequest:
     properties:
       async:
@@ -216,14 +169,24 @@ definitions:
         description: backup root path
         type: string
       collection_names:
-        description: collection names to backup, empty to backup all
+        description: |-
+          collection names to backup, empty to backup all
+
+          Deprecated: Marked as deprecated in backup.proto.
         items:
           type: string
         type: array
       db_collections:
-        description: database and collections to backup. A json string. To support
-          database. 2023.7.7
+        description: |-
+          database and collections to backup. A json string. To support database. 2023.7.7
+
+          Deprecated: Marked as deprecated in backup.proto.
         type: string
+      filter:
+        additionalProperties:
+          $ref: '#/definitions/backuppb.CollFilter'
+        description: filter for backup
+        type: object
       force:
         description: force backup skip flush, Should make sure data has been stored
           into disk when using it
@@ -330,15 +293,6 @@ definitions:
         description: uuid of the request to response
         type: string
     type: object
-  backuppb.FieldBinlog:
-    properties:
-      binlogs:
-        items:
-          $ref: '#/definitions/backuppb.Binlog'
-        type: array
-      fieldID:
-        type: integer
-    type: object
   backuppb.FieldSchema:
     properties:
       autoID:
@@ -443,34 +397,6 @@ definitions:
     - FunctionType_Unknown
     - FunctionType_BM25
     - FunctionType_TextEmbedding
-  backuppb.GrantEntity:
-    properties:
-      db_name:
-        description: db name
-        type: string
-      grantor:
-        allOf:
-        - $ref: '#/definitions/backuppb.GrantorEntity'
-        description: privilege
-      object:
-        allOf:
-        - $ref: '#/definitions/backuppb.ObjectEntity'
-        description: object
-      object_name:
-        description: object name
-        type: string
-      role:
-        allOf:
-        - $ref: '#/definitions/backuppb.RoleEntity'
-        description: role
-    type: object
-  backuppb.GrantorEntity:
-    properties:
-      privilege:
-        $ref: '#/definitions/backuppb.PrivilegeEntity'
-      user:
-        $ref: '#/definitions/backuppb.UserEntity'
-    type: object
   backuppb.IndexInfo:
     properties:
       field_name:
@@ -508,66 +434,6 @@ definitions:
       requestId:
         description: uuid of the request to response
         type: string
-    type: object
-  backuppb.ObjectEntity:
-    properties:
-      name:
-        type: string
-    type: object
-  backuppb.PartitionBackupInfo:
-    properties:
-      collection_id:
-        type: integer
-      load_state:
-        type: string
-      partition_id:
-        type: integer
-      partition_name:
-        type: string
-      segment_backups:
-        description: array of segment backup
-        items:
-          $ref: '#/definitions/backuppb.SegmentBackupInfo'
-        type: array
-      size:
-        type: integer
-    type: object
-  backuppb.PrivilegeEntity:
-    properties:
-      name:
-        type: string
-    type: object
-  backuppb.PrivilegeGroupInfo:
-    properties:
-      group_name:
-        type: string
-      privileges:
-        items:
-          $ref: '#/definitions/backuppb.PrivilegeEntity'
-        type: array
-    type: object
-  backuppb.RBACMeta:
-    properties:
-      grants:
-        description: (role, object, previledge)
-        items:
-          $ref: '#/definitions/backuppb.GrantEntity'
-        type: array
-      privilege_groups:
-        description: privilege group
-        items:
-          $ref: '#/definitions/backuppb.PrivilegeGroupInfo'
-        type: array
-      roles:
-        description: role
-        items:
-          $ref: '#/definitions/backuppb.RoleEntity'
-        type: array
-      users:
-        description: user
-        items:
-          $ref: '#/definitions/backuppb.UserInfo'
-        type: array
     type: object
   backuppb.RPCChannelInfo:
     properties:
@@ -742,13 +608,6 @@ definitions:
       target_db_name:
         type: string
     type: object
-  backuppb.RestoreFilter:
-    properties:
-      colls:
-        items:
-          type: string
-        type: array
-    type: object
   backuppb.RestoreMapping:
     properties:
       colls:
@@ -766,7 +625,7 @@ definitions:
     properties:
       filter:
         additionalProperties:
-          $ref: '#/definitions/backuppb.RestoreFilter'
+          $ref: '#/definitions/backuppb.CollFilter'
         type: object
       mapping:
         items:
@@ -787,52 +646,6 @@ definitions:
     - RestoreTaskStateCode_SUCCESS
     - RestoreTaskStateCode_FAIL
     - RestoreTaskStateCode_TIMEOUT
-  backuppb.RoleEntity:
-    properties:
-      name:
-        type: string
-    type: object
-  backuppb.SegmentBackupInfo:
-    properties:
-      backuped:
-        type: boolean
-      binlogs:
-        items:
-          $ref: '#/definitions/backuppb.FieldBinlog'
-        type: array
-      collection_id:
-        type: integer
-      deltalogs:
-        items:
-          $ref: '#/definitions/backuppb.FieldBinlog'
-        type: array
-      group_id:
-        description: |-
-          The group ID is a virtual partition ID.
-          The Milvus BulkInsert interface requires a partition prefix,
-          but passing multiple segments is a more suitable option.
-          Therefore, a virtual partition ID is used here to enable the functionality of importing multiple segments.
-        type: integer
-      is_l0:
-        type: boolean
-      num_of_rows:
-        type: integer
-      partition_id:
-        type: integer
-      segment_id:
-        type: integer
-      size:
-        type: integer
-      statslogs:
-        description: 'Deprecated: Marked as deprecated in backup.proto.'
-        items:
-          $ref: '#/definitions/backuppb.FieldBinlog'
-        type: array
-      storage_version:
-        type: integer
-      v_channel:
-        type: string
-    type: object
   backuppb.SkipParams:
     properties:
       collectionProperties:
@@ -863,22 +676,6 @@ definitions:
           $ref: '#/definitions/backuppb.FieldSchema'
         type: array
       name:
-        type: string
-    type: object
-  backuppb.UserEntity:
-    properties:
-      name:
-        type: string
-    type: object
-  backuppb.UserInfo:
-    properties:
-      password:
-        type: string
-      roles:
-        items:
-          $ref: '#/definitions/backuppb.RoleEntity'
-        type: array
-      user:
         type: string
     type: object
   backuppb.ValueField:
@@ -957,12 +754,10 @@ paths:
       - description: backup_name
         in: query
         name: backup_name
-        required: true
         type: string
       - description: backup_id
         in: query
         name: backup_id
-        required: true
         type: string
       produces:
       - application/json

@@ -71,7 +71,7 @@ func (h *delHandler) validate() error {
 func (h *delHandler) initClient(ctx context.Context) error {
 	backupStorage, err := storage.NewBackupStorage(ctx, &h.params.MinioCfg)
 	if err != nil {
-		return fmt.Errorf("delete: create backup storage: %w", err)
+		return fmt.Errorf("server: create backup storage: %w", err)
 	}
 
 	h.backupStorage = backupStorage

@@ -24,11 +24,3 @@ func GetDBCollections(val *structpb.Value) string {
 		return ""
 	}
 }
-
-func WrapDBCollections(dbCollections string) *structpb.Value {
-	return &structpb.Value{
-		Kind: &structpb.Value_StringValue{
-			StringValue: dbCollections,
-		},
-	}
-}

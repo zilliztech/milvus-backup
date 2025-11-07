@@ -14,12 +14,11 @@ func TestMetaKey(t *testing.T) {
 }
 
 func TestMetaDir(t *testing.T) {
-	backupRoot := "base/backup"
-	backupName := "backup1"
+	backupDir := "base/backup/backup1"
 
 	expect := "base/backup/backup1/meta/"
 
-	r := MetaDir(backupRoot, backupName)
+	r := MetaDir(backupDir)
 	assert.Equal(t, expect, r)
 }
 
