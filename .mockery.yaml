@@ -6,7 +6,7 @@ packages:
       RestoreCollTaskView:
       RestoreTaskView:
 
-  github.com/zilliztech/milvus-backup/core/client/milvus:
+  github.com/zilliztech/milvus-backup/internal/client/milvus:
     interfaces:
       Grpc:
       Manage:

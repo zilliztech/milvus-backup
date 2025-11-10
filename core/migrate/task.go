@@ -6,12 +6,13 @@ import (
 	"time"
 
 	minioCred "github.com/minio/minio-go/v7/pkg/credentials"
+
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
 
-	"github.com/zilliztech/milvus-backup/core/client/cloud"
 	"github.com/zilliztech/milvus-backup/core/meta"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
+	"github.com/zilliztech/milvus-backup/internal/client/cloud"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
