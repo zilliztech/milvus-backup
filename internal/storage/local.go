@@ -28,7 +28,7 @@ func (l *LocalClient) CopyObject(_ context.Context, i CopyObjectInput) error {
 		return fmt.Errorf("storage: local copy object only support local client")
 	}
 
-	srcDir := filepath.Dir(i.SrcKey)
+	srcDir := filepath.Dir(i.SrcAttr.Key)
 	srcDirInfo, err := os.Stat(srcDir)
 	if err != nil {
 		return fmt.Errorf("storage: local copy object get src parent dir info %w", err)
@@ -39,7 +39,7 @@ func (l *LocalClient) CopyObject(_ context.Context, i CopyObjectInput) error {
 		return fmt.Errorf("storage: local copy object create dest parent dir %w", err)
 	}
 
-	src, err := os.Open(i.SrcKey)
+	src, err := os.Open(i.SrcAttr.Key)
 	if err != nil {
 		return fmt.Errorf("storage: local copy object open src file %w", err)
 	}
@@ -54,7 +54,7 @@ func (l *LocalClient) CopyObject(_ context.Context, i CopyObjectInput) error {
 		return fmt.Errorf("storage: local copy object copy file %w", err)
 	}
 
-	srcStat, err := os.Stat(i.SrcKey)
+	srcStat, err := os.Stat(i.SrcAttr.Key)
 	if err != nil {
 		return fmt.Errorf("storage: local copy object get src file stat %w", err)
 	}

@@ -169,7 +169,7 @@ func (a *AzureClient) CopyObject(ctx context.Context, i CopyObjectInput) error {
 	return retry.Do(ctx, func() error {
 		// Remove standard HTTPS port :443 from endpoint if present
 		endpoint := strings.TrimSuffix(srcCli.cfg.Endpoint, ":443")
-		srcURL := fmt.Sprintf("https://%s.blob.%s/%s/%s", srcCli.cfg.Credential.AzureAccountName, endpoint, srcCli.cfg.Bucket, i.SrcKey)
+		srcURL := fmt.Sprintf("https://%s.blob.%s/%s/%s", srcCli.cfg.Credential.AzureAccountName, endpoint, srcCli.cfg.Bucket, i.SrcAttr.Key)
 		// Azure CopyFromURL always requires authentication for the source URL, even for same account
 		// Generate SAS token for source URL
 		srcSAS, err := a.getSAS(ctx, srcCli)

@@ -48,11 +48,11 @@ func (gcm *GCPNativeClient) CopyObject(ctx context.Context, i CopyObjectInput) e
 		return fmt.Errorf("storage: gcp native copy object only support gcp native client")
 	}
 
-	srcObj := gcm.client.Bucket(srcCli.cfg.Bucket).Object(i.SrcKey)
+	srcObj := gcm.client.Bucket(srcCli.cfg.Bucket).Object(i.SrcAttr.Key)
 	dstObj := gcm.client.Bucket(gcm.cfg.Bucket).Object(i.DestKey)
 
 	if _, err := dstObj.CopierFrom(srcObj).Run(ctx); err != nil {
-		return fmt.Errorf("storage: gcp native copy object from %s to %s: %w", i.SrcKey, i.DestKey, err)
+		return fmt.Errorf("storage: gcp native copy object from %s to %s: %w", i.SrcAttr.Key, i.DestKey, err)
 	}
 
 	return nil

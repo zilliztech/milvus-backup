@@ -42,7 +42,7 @@ func TestRemoteCopier_Copy(t *testing.T) {
 	src := NewMockClient(t)
 	rp := &remoteCopier{src: src, dest: dest, logger: zap.NewNop()}
 
-	in := CopyObjectInput{SrcCli: src, SrcKey: "a/b", DestKey: "c/d"}
+	in := CopyObjectInput{SrcCli: src, SrcAttr: ObjectAttr{Key: "a/b"}, DestKey: "c/d"}
 	dest.EXPECT().CopyObject(mock.Anything, in).Return(nil).Once()
 
 	attr := CopyAttr{Src: ObjectAttr{Key: "a/b"}, DestKey: "c/d"}

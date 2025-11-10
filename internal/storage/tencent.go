@@ -24,12 +24,7 @@ func newTencentClient(cfg Config) (*MinioClient, error) {
 		return nil, fmt.Errorf("storage: tencent unsupported credential type %v", cfg.Credential.Type)
 	}
 
-	cli, err := minio.New(cfg.Endpoint, &opts)
-	if err != nil {
-		return nil, fmt.Errorf("storage: new tencent client %w", err)
-	}
-
-	return &MinioClient{cli: cli, cfg: cfg}, nil
+	return newInternalMinio(cfg, &opts)
 }
 
 // tencentCredProvider implements "github.com/minio/minio-go/v7/pkg/credentials".Provider
