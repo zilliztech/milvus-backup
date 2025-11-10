@@ -101,7 +101,7 @@ func TestLocalClient_CopyObject(t *testing.T) {
 	destKey := path.Join(t.TempDir(), "backup", "test.txt")
 	cli := &LocalClient{}
 	assert.NoFileExists(t, destKey)
-	err = cli.CopyObject(context.Background(), CopyObjectInput{SrcCli: cli, SrcKey: srcKey, DestKey: destKey})
+	err = cli.CopyObject(context.Background(), CopyObjectInput{SrcCli: cli, SrcAttr: ObjectAttr{Key: srcKey, Length: 1}, DestKey: destKey})
 	assert.NoError(t, err)
 	assert.FileExists(t, destKey)
 }

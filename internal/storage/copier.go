@@ -59,7 +59,7 @@ type remoteCopier struct {
 
 func (rp *remoteCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
 	rp.logger.Debug("copy object", zap.String("src", copyAttr.Src.Key), zap.String("dest", copyAttr.DestKey))
-	i := CopyObjectInput{SrcCli: rp.src, SrcKey: copyAttr.Src.Key, DestKey: copyAttr.DestKey}
+	i := CopyObjectInput{SrcCli: rp.src, SrcAttr: copyAttr.Src, DestKey: copyAttr.DestKey}
 
 	start := time.Now()
 	if err := rp.dest.CopyObject(ctx, i); err != nil {

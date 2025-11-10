@@ -75,12 +75,11 @@ func (t *gcpHTTPTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 
 // newGCPClient returns a minio.Client which is compatible for GCS
 func newGCPClient(cfg Config) (*MinioClient, error) {
-	adderss := cfg.Endpoint
-	if adderss == "" {
-		adderss = _gcpEndpoint
+	if cfg.Endpoint == "" {
+		cfg.Endpoint = _gcpEndpoint
 	}
-	opts := minio.Options{Secure: cfg.UseSSL}
 
+	opts := minio.Options{Secure: cfg.UseSSL}
 	switch cfg.Credential.Type {
 	case IAM:
 		trans, err := newWrapHTTPTransport(opts.Secure)
@@ -106,10 +105,5 @@ func newGCPClient(cfg Config) (*MinioClient, error) {
 		return nil, fmt.Errorf("storage: gcp unsupported credential type %v", cfg.Credential.Type)
 	}
 
-	cli, err := minio.New(adderss, &opts)
-	if err != nil {
-		return nil, fmt.Errorf("storage: create gcp client %w", err)
-	}
-
-	return &MinioClient{cfg: cfg, cli: cli}, nil
+	return newInternalMinio(cfg, &opts)
 }

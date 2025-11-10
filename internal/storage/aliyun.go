@@ -27,12 +27,7 @@ func newAliyunClient(cfg Config) (*MinioClient, error) {
 		return nil, fmt.Errorf("storage: aliyun unsupported credential type: %s", cfg.Credential.Type.String())
 	}
 
-	cli, err := minio.New(cfg.Endpoint, &opts)
-	if err != nil {
-		return nil, fmt.Errorf("storage: create aliyun client: %w", err)
-	}
-
-	return &MinioClient{cfg: cfg, cli: cli}, nil
+	return newInternalMinio(cfg, &opts)
 }
 
 // CredentialProvider implements "github.com/minio/minio-go/v7/pkg/credentials".Provider

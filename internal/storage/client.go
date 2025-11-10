@@ -8,8 +8,10 @@ import (
 )
 
 type CopyObjectInput struct {
-	SrcCli  Client
-	SrcKey  string
+	SrcCli Client
+
+	SrcAttr ObjectAttr
+
 	DestKey string
 }
 
