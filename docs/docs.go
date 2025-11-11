@@ -542,6 +542,10 @@ const docTemplate = `{
                 "requestId": {
                     "description": "uuid of request, will generate one if not set",
                     "type": "string"
+                },
+                "with_ezk": {
+                    "description": "if true, backup ezk",
+                    "type": "boolean"
                 }
             }
         },
@@ -611,6 +615,9 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "db_name": {
+                    "type": "string"
+                },
+                "ezk": {
                     "type": "string"
                 },
                 "properties": {

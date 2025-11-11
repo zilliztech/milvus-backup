@@ -62,6 +62,19 @@ func TestCollectionTask_shardNum(t *testing.T) {
 	})
 }
 
+func TestCollectionTask_ezk(t *testing.T) {
+	t.Run("Normal", func(t *testing.T) {
+		ct := newTestCollectionTask()
+		ct.dbBackup = &backuppb.DatabaseBackupInfo{Ezk: "hello"}
+		assert.Equal(t, "hello", ct.ezk())
+	})
+
+	t.Run("WithoutEZK", func(t *testing.T) {
+		ct := newTestCollectionTask()
+		assert.Equal(t, "", ct.ezk())
+	})
+}
+
 func TestCollectionTask_createColl(t *testing.T) {
 	t.Run("Skip", func(t *testing.T) {
 		ct := newTestCollectionTask()

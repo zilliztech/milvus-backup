@@ -62,6 +62,7 @@ type Option struct {
 	SkipFlush  bool
 	MetaOnly   bool
 	BackupRBAC bool
+	BackupEZK  bool
 
 	// dbName -> CollFilter
 	Filter filter.Filter
@@ -349,7 +350,7 @@ func (t *Task) listDBAndNSS(ctx context.Context) ([]string, []namespace.NS, erro
 
 func (t *Task) runDBTask(ctx context.Context, dbNames []string) error {
 	for _, dbName := range dbNames {
-		dbTask := NewDatabaseTask(t.taskID, dbName, t.grpc, t.meta)
+		dbTask := NewDatabaseTask(t.taskID, dbName, t.option.BackupEZK, t.grpc, t.manage, t.meta)
 		if err := dbTask.Execute(ctx); err != nil {
 			return fmt.Errorf("backup: execute db task %s: %w", dbName, err)
 		}

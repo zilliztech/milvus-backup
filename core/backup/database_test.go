@@ -18,6 +18,7 @@ import (
 func TestDatabaseTask_Execute(t *testing.T) {
 	t.Run("SupportDescribeDatabase", func(t *testing.T) {
 		cli := milvus.NewMockGrpc(t)
+		manage := milvus.NewMockManage(t)
 
 		cli.EXPECT().HasFeature(milvus.DescribeDatabase).Return(true).Once()
 		cli.EXPECT().DescribeDatabase(mock.Anything, "db1").Return(&milvuspb.DescribeDatabaseResponse{
@@ -31,7 +32,7 @@ func TestDatabaseTask_Execute(t *testing.T) {
 		metaMgr := meta.NewMetaManager()
 		metaMgr.AddBackup("backup1", &backuppb.BackupInfo{})
 
-		task := NewDatabaseTask("backup1", "db1", cli, metaMgr)
+		task := NewDatabaseTask("backup1", "db1", false, cli, manage, metaMgr)
 		err := task.Execute(context.Background())
 		assert.NoError(t, err)
 
@@ -42,18 +43,67 @@ func TestDatabaseTask_Execute(t *testing.T) {
 
 	t.Run("NotSupportDescribeDatabase", func(t *testing.T) {
 		cli := milvus.NewMockGrpc(t)
+		manage := milvus.NewMockManage(t)
 
 		cli.EXPECT().HasFeature(milvus.DescribeDatabase).Return(false).Once()
 
 		metaMgr := meta.NewMetaManager()
 		metaMgr.AddBackup("backup1", &backuppb.BackupInfo{})
 
-		task := NewDatabaseTask("backup1", namespace.DefaultDBName, cli, metaMgr)
+		task := NewDatabaseTask("backup1", namespace.DefaultDBName, false, cli, manage, metaMgr)
 		err := task.Execute(context.Background())
 		assert.NoError(t, err)
 
 		assert.Equal(t, int64(0), metaMgr.GetBackup("backup1").GetDatabaseBackups()[0].GetDbId())
 		assert.Equal(t, namespace.DefaultDBName, metaMgr.GetBackup("backup1").GetDatabaseBackups()[0].GetDbName())
 		assert.Empty(t, metaMgr.GetBackup("backup1").GetDatabaseBackups()[0].GetProperties())
+	})
+
+	t.Run("BackupEZK", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		manage := milvus.NewMockManage(t)
+
+		cli.EXPECT().HasFeature(milvus.DescribeDatabase).Return(true).Once()
+		cli.EXPECT().DescribeDatabase(mock.Anything, "db1").Return(&milvuspb.DescribeDatabaseResponse{
+			DbID: 1,
+			Properties: []*commonpb.KeyValuePair{
+				{Key: "key1", Value: "value1"},
+				{Key: "key2", Value: "value2"},
+			},
+		}, nil).Once()
+
+		manage.EXPECT().GetEZK(mock.Anything, "db1").Return("ezk1", nil).Once()
+
+		metaMgr := meta.NewMetaManager()
+		metaMgr.AddBackup("backup1", &backuppb.BackupInfo{})
+
+		task := NewDatabaseTask("backup1", "db1", true, cli, manage, metaMgr)
+		err := task.Execute(context.Background())
+		assert.NoError(t, err)
+
+		assert.Equal(t, "ezk1", metaMgr.GetBackup("backup1").GetDatabaseBackups()[0].GetEzk())
+	})
+
+	t.Run("NotBackupEZK", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		manage := milvus.NewMockManage(t)
+
+		cli.EXPECT().HasFeature(milvus.DescribeDatabase).Return(true).Once()
+		cli.EXPECT().DescribeDatabase(mock.Anything, "db1").Return(&milvuspb.DescribeDatabaseResponse{
+			DbID: 1,
+			Properties: []*commonpb.KeyValuePair{
+				{Key: "key1", Value: "value1"},
+				{Key: "key2", Value: "value2"},
+			},
+		}, nil).Once()
+
+		metaMgr := meta.NewMetaManager()
+		metaMgr.AddBackup("backup1", &backuppb.BackupInfo{})
+
+		task := NewDatabaseTask("backup1", "db1", false, cli, manage, metaMgr)
+		err := task.Execute(context.Background())
+		assert.NoError(t, err)
+
+		assert.Equal(t, "", metaMgr.GetBackup("backup1").GetDatabaseBackups()[0].GetEzk())
 	})
 }

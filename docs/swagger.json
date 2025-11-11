@@ -535,6 +535,10 @@
                 "requestId": {
                     "description": "uuid of request, will generate one if not set",
                     "type": "string"
+                },
+                "with_ezk": {
+                    "description": "if true, backup ezk",
+                    "type": "boolean"
                 }
             }
         },
@@ -604,6 +608,9 @@
                     "type": "integer"
                 },
                 "db_name": {
+                    "type": "string"
+                },
+                "ezk": {
                     "type": "string"
                 },
                 "properties": {

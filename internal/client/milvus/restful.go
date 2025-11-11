@@ -33,6 +33,7 @@ type RestfulBulkInsertInput struct {
 	BackupTS       uint64
 	IsL0           bool
 	StorageVersion int64
+	EZK            string
 }
 
 func (in *RestfulBulkInsertInput) opts() map[string]string {
@@ -50,6 +51,10 @@ func (in *RestfulBulkInsertInput) opts() map[string]string {
 
 	if in.StorageVersion > 0 {
 		opts["storage_version"] = strconv.FormatInt(in.StorageVersion, 10)
+	}
+
+	if in.EZK != "" {
+		opts["ezk"] = in.EZK
 	}
 
 	return opts

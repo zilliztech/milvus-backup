@@ -217,7 +217,7 @@ func (t *Task) newDBAndCollTasks(backup *backuppb.BackupInfo) ([]*databaseTask, 
 
 	// generate restore tasks
 	dbTasks := t.newDBTasks(dbBackups)
-	collTasks := t.newCollTasks(collBackups)
+	collTasks := t.newCollTasks(dbBackups, collBackups)
 	dbNames = lo.Map(dbTasks, func(db *databaseTask, _ int) string { return db.targetName })
 	t.logger.Info("databases task after mapping", zap.Strings("db_names", dbNames))
 	collNSs = lo.Map(collTasks, func(coll *collectionTask, _ int) string { return coll.targetNS.String() })
@@ -293,7 +293,7 @@ func (t *Task) newDBTasks(dbBackups []*backuppb.DatabaseBackupInfo) []*databaseT
 	return dbTasks
 }
 
-func (t *Task) newCollTask(collBackup *backuppb.CollectionBackupInfo) []*collectionTask {
+func (t *Task) newCollTask(dbBackup *backuppb.DatabaseBackupInfo, collBackup *backuppb.CollectionBackupInfo) []*collectionTask {
 	sourceNS := namespace.New(collBackup.GetDbName(), collBackup.GetCollectionName())
 	targetNSes := t.plan.CollMapper.TagetNS(sourceNS)
 
@@ -304,6 +304,7 @@ func (t *Task) newCollTask(collBackup *backuppb.CollectionBackupInfo) []*collect
 			taskID:         t.taskID,
 			taskMgr:        t.taskMgr,
 			targetNS:       targetNS,
+			dbBackup:       dbBackup,
 			collBackup:     collBackup,
 			option:         t.option,
 			backupRootPath: t.backupDir,
@@ -324,14 +325,19 @@ func (t *Task) newCollTask(collBackup *backuppb.CollectionBackupInfo) []*collect
 	return tasks
 }
 
-func (t *Task) newCollTasks(collBackups []*backuppb.CollectionBackupInfo) []*collectionTask {
-	var dbNameCollNameTask []*collectionTask
+func (t *Task) newCollTasks(dbBackups []*backuppb.DatabaseBackupInfo, collBackups []*backuppb.CollectionBackupInfo) []*collectionTask {
+	nameDBBackup := lo.SliceToMap(dbBackups, func(dbBackup *backuppb.DatabaseBackupInfo) (string, *backuppb.DatabaseBackupInfo) {
+		return dbBackup.GetDbName(), dbBackup
+	})
+
+	collTasks := make([]*collectionTask, 0, len(collBackups))
 	for _, collBackup := range collBackups {
-		tasks := t.newCollTask(collBackup)
-		dbNameCollNameTask = append(dbNameCollNameTask, tasks...)
+		dbBackup := nameDBBackup[collBackup.GetDbName()]
+		tasks := t.newCollTask(dbBackup, collBackup)
+		collTasks = append(collTasks, tasks...)
 	}
 
-	return dbNameCollNameTask
+	return collTasks
 }
 
 func (t *Task) filterDBTask(dbTask []*databaseTask) []*databaseTask {

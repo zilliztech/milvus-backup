@@ -25,6 +25,7 @@ message DatabaseBackupInfo {
   string db_name = 1;
   int64 db_id = 2;
   repeated KeyValuePair properties = 3;
+  string ezk = 4;
 }
 
 message CollectionBackupInfo {
@@ -166,6 +167,8 @@ message CreateBackupRequest {
   string backup_root_path = 12;
   // filter for backup
   map<string, CollFilter> filter = 13;
+  // if true, backup ezk
+  bool with_ezk = 14;
 }
 
 /**
