@@ -24,8 +24,8 @@ const (
 )
 
 const (
-	// s3 doc say min part size is 5MB, but we use 100MB to avoid too many parts
-	_minPartSize      int64 = 100 * _MiB
+	// s3 doc say min part size is 5MB, but we use 10MB to avoid too many parts
+	_minPartSize      int64 = 10 * _MiB
 	_maxMultiCopySize int64 = 5 * _TiB
 	_maxParts         int64 = 10000
 
@@ -171,6 +171,7 @@ func (m *MinioClient) multiPartCopy(ctx context.Context, srcCli *MinioClient, i 
 		return fmt.Errorf("storage: %s new multipart upload %w", m.cfg.Provider, err)
 	}
 
+	// do not use if err := ...; err != nil { return err } because we need to abort the multipart upload when error
 	defer func() {
 		if err != nil {
 			m.logger.Error("multi part copy failed, abort multipart upload", zap.Error(err), zap.String("upload_id", uploadID))
@@ -201,12 +202,14 @@ func (m *MinioClient) multiPartCopy(ctx context.Context, srcCli *MinioClient, i 
 		})
 	}
 
-	if err := g.Wait(); err != nil {
+	err = g.Wait()
+	if err != nil {
 		return fmt.Errorf("storage: %s wait for copy part %w", m.cfg.Provider, err)
 	}
 
 	sort.Sort(sortableCompletedParts(completedParts))
-	if _, err := m.core.CompleteMultipartUpload(ctx, m.cfg.Bucket, i.DestKey, uploadID, completedParts, minio.PutObjectOptions{}); err != nil {
+	_, err = m.core.CompleteMultipartUpload(ctx, m.cfg.Bucket, i.DestKey, uploadID, completedParts, minio.PutObjectOptions{})
+	if err != nil {
 		return fmt.Errorf("storage: %s complete multipart upload %w", m.cfg.Provider, err)
 	}
 
