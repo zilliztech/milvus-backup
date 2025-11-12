@@ -204,6 +204,9 @@ func (b *BackupTask) EndTime() time.Time {
 }
 
 func (b *BackupTask) Progress() int32 {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
 	if b.stateCode == backuppb.BackupTaskStateCode_BACKUP_SUCCESS {
 		return 100
 	}
@@ -213,13 +216,14 @@ func (b *BackupTask) Progress() int32 {
 		backupSize += task.TotalSize() * int64(task.Progress()) / 100
 	}
 
+	totalSize := b.totalSize()
 	// avoid divide by zero
-	if b.totalSize() == 0 {
+	if totalSize == 0 {
 		return 1
 	}
 
-	progress := int32(float64(backupSize) / float64(b.totalSize()) * 100)
-	// don't return zero,
+	progress := int32(float64(backupSize) / float64(totalSize) * 100)
+	// don't return zero
 	if progress == 0 {
 		return 1
 	}
