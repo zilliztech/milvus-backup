@@ -41,10 +41,13 @@ type tearDownFn func(ctx context.Context) error
 type collectionTask struct {
 	taskID string
 
+	dbBackup   *backuppb.DatabaseBackupInfo
 	collBackup *backuppb.CollectionBackupInfo
-	option     *Option
 
-	taskMgr  *taskmgr.Mgr
+	option *Option
+
+	taskMgr *taskmgr.Mgr
+
 	targetNS namespace.NS
 
 	crossStorage  bool
@@ -77,10 +80,14 @@ type collectionTask struct {
 type collectionTaskArgs struct {
 	taskID string
 
-	targetNS   namespace.NS
+	dbBackup   *backuppb.DatabaseBackupInfo
 	collBackup *backuppb.CollectionBackupInfo
-	option     *Option
-	taskMgr    *taskmgr.Mgr
+
+	targetNS namespace.NS
+
+	option *Option
+
+	taskMgr *taskmgr.Mgr
 
 	backupRootPath string
 	backupDir      string
@@ -113,9 +120,12 @@ func newCollectionTask(args collectionTaskArgs) *collectionTask {
 	return &collectionTask{
 		taskID: args.taskID,
 
-		targetNS:   args.targetNS,
+		dbBackup:   args.dbBackup,
 		collBackup: args.collBackup,
-		option:     args.option,
+
+		option: args.option,
+
+		targetNS: args.targetNS,
 
 		taskMgr: args.taskMgr,
 
@@ -319,6 +329,14 @@ func (ct *collectionTask) shardNum() int32 {
 	}
 
 	return shardNum
+}
+
+func (ct *collectionTask) ezk() string {
+	if ct.dbBackup.GetEzk() != "" {
+		return ct.dbBackup.GetEzk()
+	}
+
+	return ""
 }
 
 func (ct *collectionTask) createColl(ctx context.Context) error {
@@ -1119,6 +1137,7 @@ func (ct *collectionTask) bulkInsertViaGrpc(ctx context.Context, partitionName s
 				BackupTS:       b.timestamp,
 				IsL0:           b.isL0,
 				StorageVersion: b.storageVersion,
+				EZK:            ct.ezk(),
 			}
 
 			jobID, err := ct.grpcCli.BulkInsert(subCtx, in)
@@ -1187,6 +1206,7 @@ func (ct *collectionTask) bulkInsertViaRestful(ctx context.Context, partition st
 		BackupTS:       b.timestamp,
 		IsL0:           b.isL0,
 		StorageVersion: b.storageVersion,
+		EZK:            ct.ezk(),
 	}
 
 	jobID, err := ct.restfulCli.BulkInsert(ctx, in)

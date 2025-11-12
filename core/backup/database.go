@@ -15,18 +15,20 @@ type DatabaseTask struct {
 
 	dbName string
 
-	meta *meta.MetaManager
-	grpc milvus.Grpc
+	backupEZK bool
+
+	meta   *meta.MetaManager
+	grpc   milvus.Grpc
+	manage milvus.Manage
 }
 
-func NewDatabaseTask(taskID, dbName string, grpc milvus.Grpc, meta *meta.MetaManager) *DatabaseTask {
-	return &DatabaseTask{taskID: taskID, dbName: dbName, meta: meta, grpc: grpc}
+func NewDatabaseTask(taskID, dbName string, backupEZK bool, grpc milvus.Grpc, manage milvus.Manage, meta *meta.MetaManager) *DatabaseTask {
+	return &DatabaseTask{taskID: taskID, dbName: dbName, backupEZK: backupEZK, meta: meta, grpc: grpc, manage: manage}
 }
 
 func (dt *DatabaseTask) Execute(ctx context.Context) error {
 	var properties []*backuppb.KeyValuePair
 	var dbID int64
-
 	// if milvus does not support database, skip describe database
 	if dt.grpc.HasFeature(milvus.DescribeDatabase) {
 		resp, err := dt.grpc.DescribeDatabase(ctx, dt.dbName)
@@ -38,6 +40,16 @@ func (dt *DatabaseTask) Execute(ctx context.Context) error {
 	}
 
 	bakDB := &backuppb.DatabaseBackupInfo{DbName: dt.dbName, DbId: dbID, Properties: properties}
+
+	if dt.backupEZK {
+		ezk, err := dt.manage.GetEZK(ctx, dt.dbName)
+		if err != nil {
+			return fmt.Errorf("backup: get ezk: %w", err)
+		}
+		properties = append(properties, &backuppb.KeyValuePair{Key: "ezk", Value: ezk})
+		bakDB.Ezk = ezk
+	}
+
 	dt.meta.UpdateBackup(dt.taskID, meta.AddDatabase(bakDB))
 
 	return nil

@@ -624,6 +624,7 @@ type GrpcBulkInsertInput struct {
 	BackupTS       uint64
 	IsL0           bool
 	StorageVersion int64
+	EZK            string
 }
 
 func (in *GrpcBulkInsertInput) opts() []*commonpb.KeyValuePair {
@@ -642,6 +643,10 @@ func (in *GrpcBulkInsertInput) opts() []*commonpb.KeyValuePair {
 	if in.StorageVersion > 0 {
 		opt := &commonpb.KeyValuePair{Key: "storage_version", Value: strconv.FormatInt(in.StorageVersion, 10)}
 		opts = append(opts, opt)
+	}
+
+	if in.EZK != "" {
+		opts = append(opts, &commonpb.KeyValuePair{Key: "ezk", Value: in.EZK})
 	}
 
 	return opts

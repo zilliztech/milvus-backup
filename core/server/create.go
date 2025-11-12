@@ -188,6 +188,7 @@ func (h *createBackupHandler) toOption(params *paramtable.BackupParams) (backup.
 		SkipFlush:  h.request.GetForce(),
 		MetaOnly:   h.request.GetMetaOnly(),
 		BackupRBAC: h.request.GetRbac(),
+		BackupEZK:  h.request.GetWithEzk(),
 		Filter:     f,
 	}, nil
 }

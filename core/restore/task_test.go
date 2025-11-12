@@ -249,8 +249,9 @@ func TestTask_newCollTasks(t *testing.T) {
 	task.taskID = "task1"
 	task.taskMgr = mgr
 
+	dbBackup := &backuppb.DatabaseBackupInfo{DbName: "db1"}
 	collBackup := &backuppb.CollectionBackupInfo{DbName: "db1", CollectionName: "coll1"}
-	tasks := task.newCollTask(collBackup)
+	tasks := task.newCollTask(dbBackup, collBackup)
 	assert.Len(t, tasks, 2)
 	nss := lo.Map(tasks, func(task *collectionTask, _ int) string { return task.targetNS.String() })
 	assert.ElementsMatch(t, []string{"db2.coll2", "db3.coll3"}, nss)
