@@ -5,6 +5,8 @@ packages:
     interfaces:
       RestoreCollTaskView:
       RestoreTaskView:
+      BackupCollTaskView:
+      BackupTaskView:
 
   github.com/zilliztech/milvus-backup/internal/client/milvus:
     interfaces:
