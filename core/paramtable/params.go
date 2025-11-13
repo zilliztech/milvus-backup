@@ -250,6 +250,7 @@ const (
 	CloudProviderAzure        = "azure"
 	CloudProviderTencent      = "tencent"
 	CloudProviderTencentShort = "tc"
+	CloudProviderHwc          = "hwc"
 )
 
 var supportedStorageType = map[string]bool{
@@ -266,6 +267,7 @@ var supportedStorageType = map[string]bool{
 	CloudProviderAzure:        true,
 	CloudProviderTencent:      true,
 	CloudProviderTencentShort: true,
+	CloudProviderHwc:          true,
 }
 
 type MinioConfig struct {

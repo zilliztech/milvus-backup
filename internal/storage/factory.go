@@ -122,6 +122,8 @@ func NewClient(ctx context.Context, cfg Config) (Client, error) {
 		return newGCPClient(cfg)
 	case paramtable.CloudProviderGCPNative:
 		return newGCPNativeClient(ctx, cfg)
+	case paramtable.CloudProviderHwc:
+		return NewHwcClient(cfg)
 	case paramtable.Local:
 		return newLocalClient(cfg), nil
 	default:
