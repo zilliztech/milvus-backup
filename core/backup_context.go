@@ -7,18 +7,14 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
 
 	"github.com/zilliztech/milvus-backup/core/meta"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
-	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/pbconv"
 	"github.com/zilliztech/milvus-backup/internal/storage"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 const (
@@ -142,35 +138,6 @@ func (b *BackupContext) getBackupStorageClient() storage.Client {
 		b.backupStorageClient = cli
 	}
 	return b.backupStorageClient
-}
-
-func (b *BackupContext) GetRestore(ctx context.Context, request *backuppb.GetRestoreStateRequest) *backuppb.RestoreBackupResponse {
-	if request.GetRequestId() == "" {
-		request.RequestId = uuid.NewString()
-	}
-	log.Info("receive GetRestoreStateRequest",
-		zap.String("requestId", request.GetRequestId()),
-		zap.String("task_id", request.GetId()))
-
-	resp := &backuppb.RestoreBackupResponse{RequestId: request.GetRequestId()}
-
-	if request.GetId() == "" {
-		resp.Code = backuppb.ResponseCode_Fail
-		resp.Msg = "empty restore id"
-		return resp
-	}
-
-	taskView, err := taskmgr.DefaultMgr.GetRestoreTask(request.GetId())
-	if err != nil {
-		resp.Code = backuppb.ResponseCode_Fail
-		resp.Msg = "restore id not exist in context"
-		return resp
-	}
-
-	resp.Code = backuppb.ResponseCode_Success
-	resp.Msg = "success"
-	resp.Data = pbconv.RestoreTaskViewToResp(taskView)
-	return resp
 }
 
 func (b *BackupContext) Check(ctx context.Context) string {

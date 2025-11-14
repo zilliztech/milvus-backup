@@ -47,7 +47,6 @@ import (
 )
 
 var _globalL, _globalP, _globalS, _globalR atomic.Value
-var rateLimiter *utils.ReconfigurableRateLimiter
 
 func init() {
 	l, p := newStdLogger()

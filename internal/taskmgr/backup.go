@@ -191,7 +191,7 @@ func (b *BackupTask) ErrorMessage() string {
 
 func (b *BackupTask) StartTime() time.Time {
 	b.mu.RLock()
-	b.mu.RUnlock()
+	defer b.mu.RUnlock()
 
 	return b.startTime
 }

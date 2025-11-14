@@ -48,7 +48,6 @@ func (s *Server) handleCreateBackup(c *gin.Context) {
 	resp := h.run(c.Request.Context())
 
 	c.JSON(http.StatusOK, resp)
-	return
 }
 
 type createBackupHandler struct {
