@@ -50,5 +50,4 @@ func (s *Server) handleListBackups(c *gin.Context) {
 	resp.Code = backuppb.ResponseCode_Success
 	resp.Data = summaries
 	c.JSON(200, resp)
-	return
 }

@@ -40,7 +40,10 @@ func NewCmd(opt *Options) *cobra.Command {
 		},
 		// TODO: remove this, the Override should be done in the paramtable, not by set env
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
-			setEnvs(opt.YamlOverrides)
+			if err := setEnvs(opt.YamlOverrides); err != nil {
+				cmd.Println(err)
+				os.Exit(1)
+			}
 		},
 	}
 
@@ -51,9 +54,13 @@ func NewCmd(opt *Options) *cobra.Command {
 }
 
 // Set environment variables from yamlOverrides
-func setEnvs(envs []string) {
+func setEnvs(envs []string) error {
 	for _, e := range envs {
 		env := strings.Split(e, "=")
-		os.Setenv(env[0], env[1])
+		if err := os.Setenv(env[0], env[1]); err != nil {
+			return err
+		}
 	}
+
+	return nil
 }

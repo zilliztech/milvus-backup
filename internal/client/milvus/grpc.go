@@ -116,13 +116,13 @@ func checkResponse(resp any, err error) error {
 		return err
 	}
 
-	switch resp.(type) {
+	switch res := resp.(type) {
 	case interface{ GetStatus() *commonpb.Status }:
-		if !statusOk(resp.(interface{ GetStatus() *commonpb.Status }).GetStatus()) {
+		if !statusOk(res.GetStatus()) {
 			return fmt.Errorf("client: operation failed: %v", resp.(interface{ GetStatus() *commonpb.Status }).GetStatus())
 		}
 	case *commonpb.Status:
-		if !statusOk(resp.(*commonpb.Status)) {
+		if !statusOk(res) {
 			return fmt.Errorf("client: operation failed: %v", resp.(*commonpb.Status))
 		}
 	}

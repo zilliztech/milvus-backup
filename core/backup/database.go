@@ -46,7 +46,6 @@ func (dt *DatabaseTask) Execute(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("backup: get ezk: %w", err)
 		}
-		properties = append(properties, &backuppb.KeyValuePair{Key: "ezk", Value: ezk})
 		bakDB.Ezk = ezk
 	}
 

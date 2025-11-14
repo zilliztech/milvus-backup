@@ -25,7 +25,7 @@ import (
 // @Param backup_name query string true "backup_name"
 // @Success 200 {object} backuppb.DeleteBackupResponse
 // @Router /delete [delete]
-func (s *Server) handleDeleteBackup(c *gin.Context) (interface{}, error) {
+func (s *Server) handleDeleteBackup(c *gin.Context) {
 	req := &backuppb.DeleteBackupRequest{
 		RequestId:  c.GetHeader("request_id"),
 		BackupName: c.Query("backup_name"),
@@ -35,8 +35,6 @@ func (s *Server) handleDeleteBackup(c *gin.Context) (interface{}, error) {
 	resp := h.run(c.Request.Context())
 
 	c.JSON(http.StatusOK, resp)
-
-	return nil, nil
 }
 
 type delHandler struct {

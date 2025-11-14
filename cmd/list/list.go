@@ -33,6 +33,10 @@ func (o *options) addFlags(cmd *cobra.Command) {
 
 func (o *options) run(cmd *cobra.Command, params *paramtable.BackupParams) error {
 	ctx := context.Background()
+	if err := o.validate(); err != nil {
+		return err
+	}
+
 	backupStorage, err := storage.NewBackupStorage(ctx, &params.MinioCfg)
 	if err != nil {
 		return fmt.Errorf("cmd: create backup storage %w", err)
