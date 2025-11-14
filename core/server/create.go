@@ -44,8 +44,10 @@ func (s *Server) handleCreateBackup(c *gin.Context) {
 	}
 	requestBody.RequestId = c.GetHeader("request_id")
 
+	log.Info("receive create backup request", zap.Any("request", &requestBody))
 	h := newCreateBackupHandler(&requestBody, s.params)
 	resp := h.run(c.Request.Context())
+	log.Info("response create backup response", zap.Any("resp", resp))
 
 	c.JSON(http.StatusOK, resp)
 }
@@ -115,8 +117,9 @@ func (h *createBackupHandler) toFilter() (filter.Filter, error) {
 		return h.filterToFilter()
 	}
 
-	if h.request.GetDbCollections() != nil {
-		return h.dbCollectionsToFilter()
+	dbCollectionsStr := utils.GetDBCollections(h.request.GetDbCollections())
+	if len(dbCollectionsStr) > 0 {
+		return h.dbCollectionsToFilter(dbCollectionsStr)
 	}
 
 	if len(h.request.GetCollectionNames()) > 0 {
@@ -126,8 +129,7 @@ func (h *createBackupHandler) toFilter() (filter.Filter, error) {
 	return filter.Filter{}, nil
 }
 
-func (h *createBackupHandler) dbCollectionsToFilter() (filter.Filter, error) {
-	dbCollectionsStr := utils.GetDBCollections(h.request.GetDbCollections())
+func (h *createBackupHandler) dbCollectionsToFilter(dbCollectionsStr string) (filter.Filter, error) {
 	var dbCollections map[string][]string
 	if err := json.Unmarshal([]byte(dbCollectionsStr), &dbCollections); err != nil {
 		return filter.Filter{}, fmt.Errorf("server: unmarshal dbCollections: %w", err)
