@@ -40,7 +40,6 @@ const (
 	PartitionMeta  MetaType = "partition_meta.json"
 	SegmentMeta    MetaType = "segment_meta.json"
 	FullMeta       MetaType = "full_meta.json"
-	ChannelCPMeta  MetaType = "channel_cp_meta.json"
 )
 
 func MetaKey(backupDir string, mateType MetaType) string {

@@ -6,7 +6,7 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/zilliztech/milvus-backup/core/meta"
+	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
@@ -15,20 +15,21 @@ type rpcChannelPOSTask struct {
 	taskID         string
 	rpcChannelName string
 
-	grpc   milvus.Grpc
-	meta   *meta.MetaManager
+	grpc        milvus.Grpc
+	metaBuilder *metaBuilder
+
 	logger *zap.Logger
 }
 
-func newRPCChannelPOSTask(taskID, rpcChannelName string, grpc milvus.Grpc, meta *meta.MetaManager) *rpcChannelPOSTask {
+func newRPCChannelPOSTask(taskID, rpcChannelName string, grpc milvus.Grpc, metaBuilder *metaBuilder) *rpcChannelPOSTask {
 	return &rpcChannelPOSTask{
 		taskID: taskID,
 
 		rpcChannelName: rpcChannelName,
 
-		grpc:   grpc,
-		logger: log.L().With(zap.String("task_id", taskID)),
-		meta:   meta,
+		grpc:        grpc,
+		logger:      log.L().With(zap.String("task_id", taskID)),
+		metaBuilder: metaBuilder,
 	}
 }
 
@@ -41,7 +42,7 @@ func (rt *rpcChannelPOSTask) Execute(ctx context.Context) error {
 
 	rt.logger.Info("get rpc channel pos done", zap.String("pos", pos))
 
-	rt.meta.UpdateBackup(rt.taskID, meta.SetRPCChannelPos(rt.rpcChannelName, pos))
+	rt.metaBuilder.setRPCChannelInfo(&backuppb.RPCChannelInfo{Name: rt.rpcChannelName, Position: pos})
 
 	return nil
 }

@@ -46,7 +46,7 @@ type collectionTaskArgs struct {
 	CopySem      *semaphore.Weighted
 	CrossStorage bool
 
-	Meta *meta.MetaManager
+	MetaBuilder *metaBuilder
 
 	TaskMgr *taskmgr.Mgr
 
@@ -58,8 +58,6 @@ type CollectionTask struct {
 	taskID string
 
 	ns namespace.NS
-
-	collID int64
 
 	metaOnly  bool
 	skipFlush bool
@@ -73,7 +71,8 @@ type CollectionTask struct {
 	crossStorage bool
 	copySem      *semaphore.Weighted
 
-	meta *meta.MetaManager
+	collBackup  *backuppb.CollectionBackupInfo
+	metaBuilder *metaBuilder
 
 	taskMgr *taskmgr.Mgr
 
@@ -105,7 +104,7 @@ func NewCollectionTask(ns namespace.NS, args collectionTaskArgs) *CollectionTask
 		backupStorage: args.BackupStorage,
 		backupDir:     args.BackupDir,
 
-		meta: args.Meta,
+		metaBuilder: args.MetaBuilder,
 
 		taskMgr: args.TaskMgr,
 
@@ -126,6 +125,7 @@ func (ct *CollectionTask) Execute(ctx context.Context) error {
 		return err
 	}
 
+	ct.metaBuilder.addCollection(ct.collBackup)
 	ct.taskMgr.UpdateBackupTask(ct.taskID, taskmgr.SetBackupCollSuccess(ct.ns))
 	ct.logger.Info("backup collection done")
 	return nil
@@ -263,7 +263,7 @@ func (ct *CollectionTask) convSchema(schema *schemapb.CollectionSchema) (*backup
 func (ct *CollectionTask) getPartLoadState(ctx context.Context, collLoadState string, partitionNames []string) (map[string]string, error) {
 	partLoadState := make(map[string]string, len(partitionNames))
 	// if the collection is loaded or not loaded, means all partitions are loaded or not loaded
-	if collLoadState == meta.LoadState_Loaded || collLoadState == meta.LoadState_NotLoad {
+	if collLoadState == meta.LoadStateLoaded || collLoadState == meta.LoadStateNotload {
 		for _, partitionName := range partitionNames {
 			partLoadState[partitionName] = collLoadState
 		}
@@ -279,11 +279,11 @@ func (ct *CollectionTask) getPartLoadState(ctx context.Context, collLoadState st
 
 		switch progress {
 		case 0:
-			partLoadState[partName] = meta.LoadState_NotLoad
+			partLoadState[partName] = meta.LoadStateNotload
 		case 100:
-			partLoadState[partName] = meta.LoadState_Loaded
+			partLoadState[partName] = meta.LoadStateLoaded
 		default:
-			partLoadState[partName] = meta.LoadState_Loading
+			partLoadState[partName] = meta.LoadStateLoading
 		}
 	}
 
@@ -297,13 +297,13 @@ func (ct *CollectionTask) getCollLoadState(ctx context.Context) (string, error) 
 	}
 
 	if progress == 0 {
-		return meta.LoadState_NotLoad, nil
+		return meta.LoadStateNotload, nil
 	}
 	if progress == 100 {
-		return meta.LoadState_Loaded, nil
+		return meta.LoadStateLoaded, nil
 	}
 
-	return meta.LoadState_Loading, nil
+	return meta.LoadStateLoading, nil
 }
 
 func (ct *CollectionTask) backupPartitionDDL(ctx context.Context, collID int64, collLoadState string) ([]*backuppb.PartitionBackupInfo, error) {
@@ -334,7 +334,6 @@ func (ct *CollectionTask) backupPartitionDDL(ctx context.Context, collID int64, 
 			LoadState:     loadState[resp.GetPartitionNames()[idx]],
 		}
 		bakPartitions = append(bakPartitions, bakPartition)
-		ct.meta.AddPartition(ct.taskID, bakPartition)
 	}
 
 	return bakPartitions, nil
@@ -389,7 +388,7 @@ func (ct *CollectionTask) backupDDL(ctx context.Context) error {
 		return fmt.Errorf("backup: backup partition ddl %w", err)
 	}
 
-	backupInfo := &backuppb.CollectionBackupInfo{
+	ct.collBackup = &backuppb.CollectionBackupInfo{
 		Id:               ct.taskID,
 		CollectionId:     descResp.GetCollectionID(),
 		DbName:           descResp.GetDbName(),
@@ -403,51 +402,41 @@ func (ct *CollectionTask) backupDDL(ctx context.Context) error {
 		PartitionBackups: partitions,
 		Properties:       pbconv.MilvusKVToBakKV(descResp.GetProperties()),
 	}
-	ct.meta.AddCollection(ct.taskID, backupInfo)
-
-	ct.collID = descResp.GetCollectionID()
 
 	return nil
 }
 
-func (ct *CollectionTask) flushCollection(ctx context.Context) (*milvuspb.FlushResponse, error) {
+func (ct *CollectionTask) backupPOS(ctx context.Context) error {
 	if ct.skipFlush {
 		ct.logger.Info("skip flush collection")
-		return nil, nil
+		return nil
 	}
 
 	ct.logger.Info("start to flush collection")
 	start := time.Now()
 	resp, err := ct.grpc.Flush(ctx, ct.ns.DBName(), ct.ns.CollName())
 	if err != nil {
-		return nil, fmt.Errorf("backup: flush collection %w", err)
+		return fmt.Errorf("backup: flush collection %w", err)
 	}
-
 	ct.logger.Info("flush collection done", zap.Any("resp", resp), zap.Duration("cost", time.Since(start)))
 
-	return resp, nil
-}
-
-func (ct *CollectionTask) addDMLPositionToMeta(flushResp *milvuspb.FlushResponse) {
-	channelCheckpoints := make(map[string]string, len(flushResp.GetChannelCps()))
-	var maxChannelBackupTimeStamp uint64
-	for vch, checkpoint := range flushResp.GetChannelCps() {
+	channelCPs := make(map[string]string, len(resp.GetChannelCps()))
+	var maxChannelBackupTS uint64
+	for vch, checkpoint := range resp.GetChannelCps() {
 		cp, err := pbconv.Base64MsgPosition(checkpoint)
 		if err != nil {
-			ct.logger.Error("backup: encode msg position", zap.Error(err))
-			continue
+			return fmt.Errorf("backup: encode msg position %w", err)
 		}
-		channelCheckpoints[vch] = cp
-		if maxChannelBackupTimeStamp == 0 {
-			maxChannelBackupTimeStamp = checkpoint.GetTimestamp()
-		} else if maxChannelBackupTimeStamp < checkpoint.GetTimestamp() {
-			maxChannelBackupTimeStamp = checkpoint.GetTimestamp()
-		}
+		channelCPs[vch] = cp
+
+		maxChannelBackupTS = max(maxChannelBackupTS, checkpoint.GetTimestamp())
 	}
-	ct.meta.UpdateCollection(ct.taskID, ct.collID,
-		meta.SetCollectionChannelCheckpoints(channelCheckpoints),
-		meta.SetCollectionBackupTimestamp(maxChannelBackupTimeStamp),
-		meta.SetCollectionBackupPhysicalTimestamp(uint64(flushResp.GetCollSealTimes()[ct.ns.CollName()])))
+
+	ct.collBackup.ChannelCheckpoints = channelCPs
+	ct.collBackup.BackupTimestamp = maxChannelBackupTS
+	ct.collBackup.BackupPhysicalTimestamp = uint64(resp.GetCollSealTimes()[ct.ns.CollName()])
+
+	return nil
 }
 
 func (ct *CollectionTask) getSegment(ctx context.Context, seg *milvuspb.PersistentSegmentInfo) (*backuppb.SegmentBackupInfo, error) {
@@ -705,51 +694,55 @@ func (ct *CollectionTask) getSegments(ctx context.Context) ([]*backuppb.SegmentB
 		bakSegs = append(bakSegs, bakSeg)
 	}
 
-	size := lo.SumBy(bakSegs, func(seg *backuppb.SegmentBackupInfo) int64 { return seg.GetSize() })
-	ct.taskMgr.UpdateBackupTask(ct.taskID, taskmgr.SetBackupCollTotalSize(ct.ns, size))
-
-	ct.addSegmentToMeta(bakSegs)
-
 	return bakSegs, nil
 }
 
-func (ct *CollectionTask) addSegmentToMeta(segments []*backuppb.SegmentBackupInfo) {
+func (ct *CollectionTask) backupSegmentsMeta(segments []*backuppb.SegmentBackupInfo) {
+	partIDPart := make(map[int64]*backuppb.PartitionBackupInfo, len(ct.collBackup.GetPartitionBackups()))
+	for _, part := range ct.collBackup.GetPartitionBackups() {
+		partIDPart[part.GetPartitionId()] = part
+	}
+
 	for _, seg := range segments {
 		if seg.GetIsL0() && seg.GetPartitionId() == _allPartitionID {
-			ct.meta.UpdateCollection(ct.taskID, seg.GetCollectionId(), meta.AddL0Segment(seg))
+			ct.collBackup.L0Segments = append(ct.collBackup.L0Segments, seg)
 		} else {
-			ct.meta.AddSegment(ct.taskID, seg)
+			part := partIDPart[seg.GetPartitionId()]
+			part.SegmentBackups = append(part.SegmentBackups, seg)
 		}
 	}
 }
 
 func (ct *CollectionTask) backupDML(ctx context.Context) error {
 	ct.logger.Info("start to backup dml of collection")
-	flushResp, err := ct.flushCollection(ctx)
-	if err != nil {
+	if err := ct.backupPOS(ctx); err != nil {
 		return fmt.Errorf("backup: backup dml %w", err)
 	}
-	ct.addDMLPositionToMeta(flushResp)
 
 	segments, err := ct.getSegments(ctx)
 	if err != nil {
 		return fmt.Errorf("backup: get segments %w", err)
 	}
 
-	if err := ct.backupSegments(ctx, segments); err != nil {
+	size := lo.SumBy(segments, func(seg *backuppb.SegmentBackupInfo) int64 { return seg.GetSize() })
+	ct.taskMgr.UpdateBackupTask(ct.taskID, taskmgr.SetBackupCollTotalSize(ct.ns, size))
+	ct.collBackup.Size = size
+	ct.backupSegmentsMeta(segments)
+
+	if err := ct.backupSegmentsData(ctx, segments); err != nil {
 		return fmt.Errorf("backup: backup segments %w", err)
 	}
 
 	return nil
 }
 
-func (ct *CollectionTask) backupSegments(ctx context.Context, segments []*backuppb.SegmentBackupInfo) error {
+func (ct *CollectionTask) backupSegmentsData(ctx context.Context, segments []*backuppb.SegmentBackupInfo) error {
 	ct.logger.Info("start to backup segments", zap.Int("segment_num", len(segments)))
 	g, subCtx := errgroup.WithContext(ctx)
 	g.SetLimit(_maxSegmentParallelism)
 	for _, seg := range segments {
 		g.Go(func() error {
-			if err := ct.backupSegment(subCtx, seg); err != nil {
+			if err := ct.backupSegmentData(subCtx, seg); err != nil {
 				return fmt.Errorf("backup: copy segment %w", err)
 			}
 
@@ -822,8 +815,8 @@ func (ct *CollectionTask) deltaLogAttrs(seg *backuppb.SegmentBackupInfo) ([]stor
 	return attrs, nil
 }
 
-func (ct *CollectionTask) backupSegment(ctx context.Context, seg *backuppb.SegmentBackupInfo) error {
-	ct.logger.Info("backup segment", zap.Int64("segment_id", seg.GetSegmentId()))
+func (ct *CollectionTask) backupSegmentData(ctx context.Context, seg *backuppb.SegmentBackupInfo) error {
+	ct.logger.Info("backup binlogs of segment", zap.Int64("segment_id", seg.GetSegmentId()))
 	insertAttrs, err := ct.insertLogsAttrs(seg)
 	if err != nil {
 		return fmt.Errorf("backup: backup insert logs %w", err)
@@ -849,11 +842,7 @@ func (ct *CollectionTask) backupSegment(ctx context.Context, seg *backuppb.Segme
 		return fmt.Errorf("backup: copy bin logs %w", err)
 	}
 
-	// TODO: now l0 segment not under partition, update l0 segment backuped to true will cause nil pointer error
-	if seg.GetPartitionId() == _allPartitionID {
-		return nil
-	}
-	ct.meta.UpdateSegment(ct.taskID, seg.PartitionId, seg.SegmentId, meta.SetSegmentBackuped(true))
+	ct.logger.Info("backup binlogs of segment done", zap.Int64("segment_id", seg.GetSegmentId()))
 
 	return nil
 }

@@ -217,7 +217,6 @@ func (h *createBackupHandler) toArgs() (backup.TaskArgs, error) {
 		Grpc:          h.milvusClient,
 		Restful:       h.restfulClient,
 		Manage:        h.manageClient,
-		Meta:          meta.NewMetaManager(),
 		TaskMgr:       taskmgr.DefaultMgr,
 	}, nil
 }

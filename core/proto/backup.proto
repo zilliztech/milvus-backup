@@ -82,7 +82,7 @@ message SegmentBackupInfo {
   // but passing multiple segments is a more suitable option.
   // Therefore, a virtual partition ID is used here to enable the functionality of importing multiple segments.
   int64 group_id = 9;
-  bool backuped = 10;
+  bool backuped = 10 [deprecated=true];
   bool is_l0 = 11;
   string v_channel = 12;
   int64 storage_version = 13;

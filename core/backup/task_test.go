@@ -9,8 +9,6 @@ import (
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
 
-	"github.com/zilliztech/milvus-backup/core/meta"
-	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
@@ -21,15 +19,12 @@ func TestTask_runRBACTask(t *testing.T) {
 		cli := milvus.NewMockGrpc(t)
 		cli.EXPECT().BackupRBAC(mock.Anything).Return(&milvuspb.BackupRBACMetaResponse{}, nil).Once()
 
-		metaMgr := meta.NewMetaManager()
-		metaMgr.AddBackup("backup1", &backuppb.BackupInfo{})
-
 		task := &Task{
-			option: Option{BackupRBAC: true},
-			logger: zap.NewNop(),
-			taskID: "backup1",
-			meta:   metaMgr,
-			grpc:   cli,
+			option:      Option{BackupRBAC: true},
+			logger:      zap.NewNop(),
+			taskID:      "backup1",
+			metaBuilder: newMetaBuilder("task1", "backup1"),
+			grpc:        cli,
 		}
 		err := task.runRBACTask(context.Background())
 		assert.NoError(t, err)
