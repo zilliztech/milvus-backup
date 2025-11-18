@@ -1,40 +1,30 @@
 package server
 
 import (
-	"context"
 	"fmt"
-	"net/http"
 
 	"github.com/gin-contrib/pprof"
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 
-	"github.com/zilliztech/milvus-backup/core"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 )
 
 // Server is the Backup Server
 type Server struct {
-	backupContext *core.BackupContext
-	engine        *gin.Engine
-	config        *config
-	params        *paramtable.BackupParams
+	engine *gin.Engine
+	config *config
+	params *paramtable.BackupParams
 }
 
-func New(ctx context.Context, params *paramtable.BackupParams, opts ...Option) (*Server, error) {
+func New(params *paramtable.BackupParams, opts ...Option) (*Server, error) {
 	cfg := newDefaultConfig()
 	for _, opt := range opts {
 		opt(cfg)
 	}
 
-	backupContext := core.CreateBackupContext(ctx, params)
-	err := backupContext.Start()
-	if err != nil {
-		return nil, fmt.Errorf("server: start backup context: %w", err)
-	}
-
-	s := &Server{backupContext: backupContext, config: cfg, params: params}
+	s := &Server{config: cfg, params: params}
 	s.initEngine()
 
 	return s, nil
@@ -77,9 +67,4 @@ func (s *Server) initEngine() {
 
 func (s *Server) handleHello(c *gin.Context) {
 	c.String(200, "Hello, This is backup service")
-}
-
-func (s *Server) handleCheck(c *gin.Context) {
-	resp := s.backupContext.Check(context.Background())
-	c.JSON(http.StatusOK, resp)
 }

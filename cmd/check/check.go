@@ -6,7 +6,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
-	"github.com/zilliztech/milvus-backup/core"
+	"github.com/zilliztech/milvus-backup/core/check"
+	"github.com/zilliztech/milvus-backup/internal/client/milvus"
+	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
 func NewCmd(opt *root.Options) *cobra.Command {
@@ -14,13 +16,32 @@ func NewCmd(opt *root.Options) *cobra.Command {
 		Use:   "check",
 		Short: "check if the connects is right.",
 
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := context.Background()
 			params := opt.InitGlobalVars()
 
-			backupContext := core.CreateBackupContext(context.Background(), params)
+			grpc, err := milvus.NewGrpc(&params.MilvusCfg)
+			cobra.CheckErr(err)
 
-			resp := backupContext.Check(context.Background())
-			cmd.Println(resp)
+			milvusStorage, err := storage.NewMilvusStorage(ctx, &params.MinioCfg)
+			cobra.CheckErr(err)
+
+			backupStorage, err := storage.NewBackupStorage(ctx, &params.MinioCfg)
+			cobra.CheckErr(err)
+
+			taskArgs := check.TaskArgs{
+				Params:        params,
+				Grpc:          grpc,
+				MilvusStorage: milvusStorage,
+				BackupStorage: backupStorage,
+				Output:        cmd.OutOrStdout(),
+			}
+
+			task := check.NewTask(taskArgs)
+			err = task.Execute(ctx)
+			cobra.CheckErr(err)
+
+			return nil
 		},
 	}
 
