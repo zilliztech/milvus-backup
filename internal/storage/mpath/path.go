@@ -69,6 +69,10 @@ func Join(base string, options ...Option) string {
 	return path.Join(elem...)
 }
 
+func MilvusRootDir(root string) string {
+	return path.Clean(root) + _separator
+}
+
 // MilvusInsertLogDir returns the directory for insert logs.
 func MilvusInsertLogDir(base string, opts ...Option) string {
 	return Join(path.Join(base, _insertLogPrefix), opts...) + _separator

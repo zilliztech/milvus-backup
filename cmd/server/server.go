@@ -1,7 +1,6 @@
 package server
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strconv"
@@ -51,7 +50,7 @@ func (o *options) addFlags(cmd *cobra.Command) {
 }
 
 func (o *options) run(params *paramtable.BackupParams) error {
-	srv, err := server.New(context.Background(), params, server.Port(o.port))
+	srv, err := server.New(params, server.Port(o.port))
 	if err != nil {
 		return fmt.Errorf("fail to create server, %w", err)
 	}
