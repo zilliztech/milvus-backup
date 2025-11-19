@@ -69,6 +69,10 @@ func Join(base string, options ...Option) string {
 }
 
 func MilvusRootDir(root string) string {
+	if root == "" {
+		return ""
+	}
+
 	return path.Clean(root) + _separator
 }
 
@@ -97,6 +101,10 @@ func BackupDir(backupRoot string, backupName string) string {
 }
 
 func BackupRootDir(backupRoot string) string {
+	if backupRoot == "" {
+		return ""
+	}
+
 	return path.Clean(backupRoot) + _separator
 }
 
