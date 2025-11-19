@@ -6,6 +6,36 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+func TestMilvusRootDir(t *testing.T) {
+	cases := []testCase{
+		{base: "", expected: ""},
+		{base: "base", expected: "base/"},
+		{base: "base/", expected: "base/"},
+		{base: "base/subdir", expected: "base/subdir/"},
+		{base: "base/subdir/", expected: "base/subdir/"},
+	}
+
+	for _, test := range cases {
+		r := MilvusRootDir(test.base)
+		assert.Equal(t, test.expected, r)
+	}
+}
+
+func TestBackupRootDir(t *testing.T) {
+	cases := []testCase{
+		{base: "", expected: ""},
+		{base: "base", expected: "base/"},
+		{base: "base/", expected: "base/"},
+		{base: "base/subdir", expected: "base/subdir/"},
+		{base: "base/subdir/", expected: "base/subdir/"},
+	}
+
+	for _, test := range cases {
+		r := BackupRootDir(test.base)
+		assert.Equal(t, test.expected, r)
+	}
+}
+
 func TestMetaKey(t *testing.T) {
 	backupDir := "base/backup/backup1"
 	expect := "base/backup/backup1/meta/backup_meta.json"
@@ -284,15 +314,4 @@ func TestBackupDir(t *testing.T) {
 
 	r = BackupDir("root/subdir", "name")
 	assert.Equal(t, "root/subdir/name/", r)
-}
-
-func TestBackupRootDir(t *testing.T) {
-	r := BackupRootDir("root")
-	assert.Equal(t, "root/", r)
-
-	r = BackupRootDir("root/subdir")
-	assert.Equal(t, "root/subdir/", r)
-
-	r = BackupRootDir("root/subdir/")
-	assert.Equal(t, "root/subdir/", r)
 }
