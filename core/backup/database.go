@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/zilliztech/milvus-backup/core/meta"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
@@ -17,13 +16,14 @@ type DatabaseTask struct {
 
 	backupEZK bool
 
-	meta   *meta.MetaManager
+	metaBuilder *metaBuilder
+
 	grpc   milvus.Grpc
 	manage milvus.Manage
 }
 
-func NewDatabaseTask(taskID, dbName string, backupEZK bool, grpc milvus.Grpc, manage milvus.Manage, meta *meta.MetaManager) *DatabaseTask {
-	return &DatabaseTask{taskID: taskID, dbName: dbName, backupEZK: backupEZK, meta: meta, grpc: grpc, manage: manage}
+func NewDatabaseTask(taskID, dbName string, backupEZK bool, grpc milvus.Grpc, manage milvus.Manage, builder *metaBuilder) *DatabaseTask {
+	return &DatabaseTask{taskID: taskID, dbName: dbName, backupEZK: backupEZK, metaBuilder: builder, grpc: grpc, manage: manage}
 }
 
 func (dt *DatabaseTask) Execute(ctx context.Context) error {
@@ -49,7 +49,7 @@ func (dt *DatabaseTask) Execute(ctx context.Context) error {
 		bakDB.Ezk = ezk
 	}
 
-	dt.meta.UpdateBackup(dt.taskID, meta.AddDatabase(bakDB))
+	dt.metaBuilder.addDatabase(bakDB)
 
 	return nil
 }

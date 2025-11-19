@@ -14,6 +14,12 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 )
 
+const (
+	LoadStateNotload = "NotLoad"
+	LoadStateLoading = "Loading"
+	LoadStateLoaded  = "Loaded"
+)
+
 func readFromFull(ctx context.Context, backupDir string, cli storage.Client) (*backuppb.BackupInfo, error) {
 	bytes, err := storage.Read(ctx, cli, mpath.MetaKey(backupDir, mpath.FullMeta))
 	if err != nil {

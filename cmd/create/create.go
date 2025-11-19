@@ -14,7 +14,6 @@ import (
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/backup"
-	"github.com/zilliztech/milvus-backup/core/meta"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/filter"
@@ -210,7 +209,6 @@ func (o *options) toArgs(params *paramtable.BackupParams) (backup.TaskArgs, erro
 		Grpc:          milvusClient,
 		Restful:       restfulClient,
 		Manage:        manage,
-		Meta:          meta.NewMetaManager(),
 		TaskMgr:       taskmgr.DefaultMgr,
 	}, nil
 }

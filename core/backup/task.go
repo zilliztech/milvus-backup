@@ -2,7 +2,6 @@ package backup
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"time"
 
@@ -11,9 +10,7 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 
-	"github.com/zilliztech/milvus-backup/core/meta"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
-	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
@@ -49,8 +46,6 @@ type TaskArgs struct {
 	Grpc    milvus.Grpc
 	Restful milvus.Restful
 	Manage  milvus.Manage
-
-	Meta *meta.MetaManager
 
 	TaskMgr *taskmgr.Mgr
 }
@@ -90,7 +85,7 @@ type Task struct {
 	restful milvus.Restful
 	manage  milvus.Manage
 
-	meta *meta.MetaManager
+	metaBuilder *metaBuilder
 
 	taskMgr *taskmgr.Mgr
 
@@ -107,6 +102,7 @@ func NewTask(args TaskArgs) *Task {
 		crossStorage = true
 	}
 
+	mb := newMetaBuilder(args.TaskID, args.Option.BackupName)
 	args.TaskMgr.AddBackupTask(args.TaskID, args.Option.BackupName)
 
 	return &Task{
@@ -131,7 +127,7 @@ func NewTask(args TaskArgs) *Task {
 		restful: args.Restful,
 		manage:  args.Manage,
 
-		meta: args.Meta,
+		metaBuilder: mb,
 
 		taskMgr: args.TaskMgr,
 
@@ -204,9 +200,7 @@ func (t *Task) privateExecute(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("backup: get milvus version: %w", err)
 	}
-
-	info := &backuppb.BackupInfo{Id: t.taskID, Name: t.option.BackupName, MilvusVersion: version}
-	t.meta.AddBackup(info.GetId(), info)
+	t.metaBuilder.setVersion(version)
 
 	if t.option.PauseGC {
 		t.pauseGC(ctx)
@@ -350,7 +344,7 @@ func (t *Task) listDBAndNSS(ctx context.Context) ([]string, []namespace.NS, erro
 
 func (t *Task) runDBTask(ctx context.Context, dbNames []string) error {
 	for _, dbName := range dbNames {
-		dbTask := NewDatabaseTask(t.taskID, dbName, t.option.BackupEZK, t.grpc, t.manage, t.meta)
+		dbTask := NewDatabaseTask(t.taskID, dbName, t.option.BackupEZK, t.grpc, t.manage, t.metaBuilder)
 		if err := dbTask.Execute(ctx); err != nil {
 			return fmt.Errorf("backup: execute db task %s: %w", dbName, err)
 		}
@@ -372,7 +366,7 @@ func (t *Task) newCollTaskArgs() collectionTaskArgs {
 		BackupStorage:  t.backupStorage,
 		CopySem:        t.copySem,
 		BackupDir:      t.backupDir,
-		Meta:           t.meta,
+		MetaBuilder:    t.metaBuilder,
 		TaskMgr:        t.taskMgr,
 		Grpc:           t.grpc,
 		Restful:        t.restful,
@@ -417,7 +411,7 @@ func (t *Task) runRBACTask(ctx context.Context) error {
 		return nil
 	}
 
-	rt := NewRBACTask(t.taskID, t.meta, t.grpc)
+	rt := NewRBACTask(t.taskID, t.metaBuilder, t.grpc)
 	if err := rt.Execute(ctx); err != nil {
 		return fmt.Errorf("backup: execute rbac task: %w", err)
 	}
@@ -427,7 +421,7 @@ func (t *Task) runRBACTask(ctx context.Context) error {
 
 func (t *Task) runRPCChannelPOSTask(ctx context.Context) {
 	t.logger.Info("start backup rpc channel pos")
-	rpcPosTask := newRPCChannelPOSTask(t.taskID, t.rpcChannelName, t.grpc, t.meta)
+	rpcPosTask := newRPCChannelPOSTask(t.taskID, t.rpcChannelName, t.grpc, t.metaBuilder)
 	if err := rpcPosTask.Execute(ctx); err != nil {
 		t.logger.Warn(_rpcChWarnMessage, zap.Error(err))
 		return
@@ -436,51 +430,38 @@ func (t *Task) runRPCChannelPOSTask(ctx context.Context) {
 }
 
 func (t *Task) writeMeta(ctx context.Context) error {
-	backupInfo := t.meta.GetFullMeta(t.taskID)
-	output, err := meta.Serialize(backupInfo)
+	backupMeta, err := t.metaBuilder.buildBackupMeta()
 	if err != nil {
-		return err
+		return fmt.Errorf("backup: build backup meta: %w", err)
 	}
-
-	collectionBackups := backupInfo.GetCollectionBackups()
-	collectionPositions := make(map[string][]*backuppb.ChannelPosition)
-	for _, collectionBackup := range collectionBackups {
-		collectionCPs := make([]*backuppb.ChannelPosition, 0, len(collectionBackup.GetChannelCheckpoints()))
-		for vCh, position := range collectionBackup.GetChannelCheckpoints() {
-			collectionCPs = append(collectionCPs, &backuppb.ChannelPosition{
-				Name:     vCh,
-				Position: position,
-			})
-		}
-		collectionPositions[collectionBackup.GetCollectionName()] = collectionCPs
-	}
-	channelCPsBytes, err := json.Marshal(collectionPositions)
-	if err != nil {
-		return err
-	}
-
-	err = storage.Write(ctx, t.backupStorage, mpath.MetaKey(t.backupDir, mpath.BackupMeta), output.BackupMetaBytes)
+	err = storage.Write(ctx, t.backupStorage, mpath.MetaKey(t.backupDir, mpath.BackupMeta), backupMeta)
 	if err != nil {
 		return fmt.Errorf("backup: write backup meta: %w", err)
 	}
-	err = storage.Write(ctx, t.backupStorage, mpath.MetaKey(t.backupDir, mpath.CollectionMeta), output.CollectionMetaBytes)
+
+	collectionMeta, err := t.metaBuilder.buildCollectionMeta()
+	if err != nil {
+		return fmt.Errorf("backup: build collection meta: %w", err)
+	}
+	err = storage.Write(ctx, t.backupStorage, mpath.MetaKey(t.backupDir, mpath.CollectionMeta), collectionMeta)
 	if err != nil {
 		return fmt.Errorf("backup: write collection meta: %w", err)
 	}
-	err = storage.Write(ctx, t.backupStorage, mpath.MetaKey(t.backupDir, mpath.PartitionMeta), output.PartitionMetaBytes)
+
+	partitionMeta, err := t.metaBuilder.buildPartitionMeta()
+	err = storage.Write(ctx, t.backupStorage, mpath.MetaKey(t.backupDir, mpath.PartitionMeta), partitionMeta)
 	if err != nil {
 		return fmt.Errorf("backup: write partition meta: %w", err)
 	}
-	err = storage.Write(ctx, t.backupStorage, mpath.MetaKey(t.backupDir, mpath.SegmentMeta), output.SegmentMetaBytes)
+
+	segmentMeta, err := t.metaBuilder.buildSegmentMeta()
+	err = storage.Write(ctx, t.backupStorage, mpath.MetaKey(t.backupDir, mpath.SegmentMeta), segmentMeta)
 	if err != nil {
 		return fmt.Errorf("backup: write segment meta: %w", err)
 	}
-	err = storage.Write(ctx, t.backupStorage, mpath.MetaKey(t.backupDir, mpath.ChannelCPMeta), channelCPsBytes)
-	if err != nil {
-		return err
-	}
 
-	err = storage.Write(ctx, t.backupStorage, mpath.MetaKey(t.backupDir, mpath.FullMeta), output.FullMetaBytes)
+	fullMeta, err := t.metaBuilder.buildFullMeta()
+	err = storage.Write(ctx, t.backupStorage, mpath.MetaKey(t.backupDir, mpath.FullMeta), fullMeta)
 	if err != nil {
 		return fmt.Errorf("backup: write full meta: %w", err)
 	}

@@ -463,7 +463,7 @@ func newDBMapper(plan *backuppb.RestorePlan) (map[string][]restore.DBMapping, er
 }
 
 func newDBFilterFromDBCollections(dbCollections string) (map[string]struct{}, error) {
-	dbColl := meta.DbCollections{}
+	dbColl := make(map[string][]string)
 	if err := json.Unmarshal([]byte(dbCollections), &dbColl); err != nil {
 		return nil, fmt.Errorf("restore: unmarshal dbCollections: %w", err)
 	}
@@ -504,7 +504,7 @@ func newDBBackupFilter(request *backuppb.RestoreBackupRequest) (map[string]struc
 }
 
 func newCollFilterFromDBCollections(dbCollections string) (map[string]restore.CollFilter, error) {
-	dbColls := meta.DbCollections{}
+	dbColls := make(map[string][]string)
 	if err := json.Unmarshal([]byte(dbCollections), &dbColls); err != nil {
 		return nil, fmt.Errorf("restore: unmarshal dbCollections: %w", err)
 	}
@@ -604,7 +604,7 @@ func newCollTaskFilterFromPlan(plan *backuppb.RestorePlan) map[string]restore.Co
 }
 
 func newCollTaskFilterFromDBCollections(dbCollections string) (map[string]restore.CollFilter, error) {
-	dbColl := meta.DbCollections{}
+	dbColl := make(map[string][]string)
 	if err := json.Unmarshal([]byte(dbCollections), &dbColl); err != nil {
 		return nil, fmt.Errorf("restore: unmarshal dbCollections: %w", err)
 	}

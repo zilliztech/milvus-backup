@@ -8,7 +8,6 @@ import (
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 
-	"github.com/zilliztech/milvus-backup/core/meta"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/log"
@@ -16,20 +15,21 @@ import (
 
 type RBACTask struct {
 	taskID string
-	meta   *meta.MetaManager
+
+	metaBuilder *metaBuilder
 
 	grpcCli milvus.Grpc
 
 	logger *zap.Logger
 }
 
-func NewRBACTask(taskID string, meta *meta.MetaManager, grpcCli milvus.Grpc) *RBACTask {
+func NewRBACTask(taskID string, metaBuilder *metaBuilder, grpcCli milvus.Grpc) *RBACTask {
 	logger := log.L().With(zap.String("task_id", taskID))
 	return &RBACTask{
-		taskID:  taskID,
-		meta:    meta,
-		grpcCli: grpcCli,
-		logger:  logger,
+		taskID:      taskID,
+		metaBuilder: metaBuilder,
+		grpcCli:     grpcCli,
+		logger:      logger,
 	}
 }
 
@@ -53,7 +53,7 @@ func (rt *RBACTask) Execute(ctx context.Context) error {
 		PrivilegeGroups: rt.privilegeGroups(resp.GetRBACMeta().GetPrivilegeGroups()),
 	}
 
-	rt.meta.UpdateBackup(rt.taskID, meta.SetRBACMeta(rbacPb))
+	rt.metaBuilder.setRBACMeta(rbacPb)
 
 	rt.logger.Info("backup RBAC done")
 	return nil
