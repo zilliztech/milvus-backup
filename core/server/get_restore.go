@@ -40,7 +40,7 @@ func (s *Server) handleGetRestore(c *gin.Context) {
 	}
 
 	taskView, err := taskmgr.DefaultMgr.GetRestoreTask(req.GetId())
-	if err != nil && !errors.Is(err, taskmgr.TaskNotFoundError) {
+	if err != nil && !errors.Is(err, taskmgr.ErrTaskNotFound) {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = "restore id not exist in task manager"
 		c.JSON(http.StatusOK, resp)

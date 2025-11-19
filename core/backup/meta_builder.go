@@ -11,8 +11,6 @@ import (
 type metaBuilder struct {
 	mu sync.Mutex
 
-	frozen bool
-
 	data *backuppb.BackupInfo
 }
 
