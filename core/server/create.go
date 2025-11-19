@@ -10,20 +10,19 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/zilliztech/milvus-backup/internal/pbconv"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
-
 	"github.com/zilliztech/milvus-backup/core/backup"
-	"github.com/zilliztech/milvus-backup/core/meta"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
+	"github.com/zilliztech/milvus-backup/internal/pbconv"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
+	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 // CreateBackup Create backup interface
@@ -64,8 +63,6 @@ type createBackupHandler struct {
 	backupStorage storage.Client
 
 	milvusStorage storage.Client
-
-	taskMgr *taskmgr.Mgr
 }
 
 func newCreateBackupHandler(request *backuppb.CreateBackupRequest, params *paramtable.BackupParams) *createBackupHandler {

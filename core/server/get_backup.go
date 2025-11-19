@@ -10,10 +10,10 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/zilliztech/milvus-backup/core/meta"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
@@ -87,7 +87,7 @@ func (h *getBackupHandler) initClient(ctx context.Context) error {
 func (h *getBackupHandler) getByName(ctx context.Context, backupName string) (*backuppb.BackupInfoBrief, error) {
 	// get task view from task manager
 	task, err := h.taskMgr.GetBackupTaskByName(backupName)
-	if err != nil && !errors.Is(err, taskmgr.TaskNotFoundError) {
+	if err != nil && !errors.Is(err, taskmgr.ErrTaskNotFound) {
 		return nil, fmt.Errorf("server: get backup task %w", err)
 	}
 

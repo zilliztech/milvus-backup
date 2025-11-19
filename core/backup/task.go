@@ -449,18 +449,27 @@ func (t *Task) writeMeta(ctx context.Context) error {
 	}
 
 	partitionMeta, err := t.metaBuilder.buildPartitionMeta()
+	if err != nil {
+		return fmt.Errorf("backup: build partition meta: %w", err)
+	}
 	err = storage.Write(ctx, t.backupStorage, mpath.MetaKey(t.backupDir, mpath.PartitionMeta), partitionMeta)
 	if err != nil {
 		return fmt.Errorf("backup: write partition meta: %w", err)
 	}
 
 	segmentMeta, err := t.metaBuilder.buildSegmentMeta()
+	if err != nil {
+		return fmt.Errorf("backup: build segment meta: %w", err)
+	}
 	err = storage.Write(ctx, t.backupStorage, mpath.MetaKey(t.backupDir, mpath.SegmentMeta), segmentMeta)
 	if err != nil {
 		return fmt.Errorf("backup: write segment meta: %w", err)
 	}
 
 	fullMeta, err := t.metaBuilder.buildFullMeta()
+	if err != nil {
+		return fmt.Errorf("backup: build full meta: %w", err)
+	}
 	err = storage.Write(ctx, t.backupStorage, mpath.MetaKey(t.backupDir, mpath.FullMeta), fullMeta)
 	if err != nil {
 		return fmt.Errorf("backup: write full meta: %w", err)

@@ -5,7 +5,7 @@ import (
 	"sync"
 )
 
-var TaskNotFoundError = errors.New("task not found")
+var ErrTaskNotFound = errors.New("task not found")
 
 var DefaultMgr = NewMgr()
 
@@ -56,7 +56,7 @@ func (m *Mgr) GetRestoreTask(taskID string) (RestoreTaskView, error) {
 
 	task, ok := m.restoreTask[taskID]
 	if !ok {
-		return nil, TaskNotFoundError
+		return nil, ErrTaskNotFound
 	}
 
 	return task, nil
@@ -85,7 +85,7 @@ func (m *Mgr) GetMigrateTask(taskID string) (*MigrateTask, error) {
 
 	task, ok := m.migrateTask[taskID]
 	if !ok {
-		return nil, TaskNotFoundError
+		return nil, ErrTaskNotFound
 	}
 
 	return task, nil
@@ -115,7 +115,7 @@ func (m *Mgr) GetBackupTask(taskID string) (BackupTaskView, error) {
 
 	task, ok := m.backupTask[taskID]
 	if !ok {
-		return nil, TaskNotFoundError
+		return nil, ErrTaskNotFound
 	}
 
 	return task, nil
@@ -127,12 +127,12 @@ func (m *Mgr) GetBackupTaskByName(backupName string) (BackupTaskView, error) {
 
 	taskID, ok := m.backupNameBackupID[backupName]
 	if !ok {
-		return nil, TaskNotFoundError
+		return nil, ErrTaskNotFound
 	}
 
 	task, ok := m.backupTask[taskID]
 	if !ok {
-		return nil, TaskNotFoundError
+		return nil, ErrTaskNotFound
 	}
 
 	return task, nil

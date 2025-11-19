@@ -16,10 +16,10 @@ import (
 	"golang.org/x/sync/semaphore"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/zilliztech/milvus-backup/core/meta"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 	"github.com/zilliztech/milvus-backup/internal/storage"
@@ -309,7 +309,7 @@ func (ct *CollectionTask) getCollLoadState(ctx context.Context) (string, error) 
 func (ct *CollectionTask) backupPartitionDDL(ctx context.Context, collID int64, collLoadState string) ([]*backuppb.PartitionBackupInfo, error) {
 	ct.logger.Info("start backup partition ddl of collection")
 
-	resp, err := ct.grpc.ShowPartitions(context.Background(), ct.ns.DBName(), ct.ns.CollName())
+	resp, err := ct.grpc.ShowPartitions(ctx, ct.ns.DBName(), ct.ns.CollName())
 	if err != nil {
 		return nil, fmt.Errorf("backup: show partitions %w", err)
 	}
