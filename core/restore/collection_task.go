@@ -1043,25 +1043,38 @@ func (ct *collectionTask) notL0SegmentBatches(ctx context.Context, part *backupp
 }
 
 func (ct *collectionTask) l0SegmentBatches(l0Segs []*backuppb.SegmentBackupInfo) ([]batch, error) {
-	// due to github.com/milvus-io/milvus/issues/43212 we cannot put multiple l0 segments into one bulk insert job
-	// so we need to put each l0 segment into one batch
-	batches := make([]batch, 0, len(l0Segs))
-	for _, seg := range l0Segs {
-		ts, err := ct.backupTS(seg.GetVChannel())
+	segBatch := lo.GroupBy(l0Segs, func(seg *backuppb.SegmentBackupInfo) batchKey {
+		return batchKey{vch: seg.GetVChannel(), sv: seg.GetStorageVersion()}
+	})
+
+	chunkSize := 1
+	if ct.grpcCli.HasFeature(milvus.MultiL0InOneJob) {
+		chunkSize = _bulkInsertRestfulAPIChunkSize
+	}
+
+	var batches []batch
+	for key, segs := range segBatch {
+		ts, err := ct.backupTS(key.vch)
 		if err != nil {
-			return nil, fmt.Errorf("restore_collection: get vch %s ts: %w", seg.GetVChannel(), err)
+			return nil, fmt.Errorf("restore_collection: get vch %s ts: %w", key.vch, err)
 		}
 
-		opts := []mpath.Option{
-			mpath.CollectionID(ct.collBackup.GetCollectionId()),
-			mpath.PartitionID(seg.GetPartitionId()),
-			mpath.SegmentID(seg.GetSegmentId()),
+		chunkedSegs := lo.Chunk(segs, chunkSize)
+		for _, chunk := range chunkedSegs {
+			dirs := make([]partitionDir, 0, len(chunk))
+			for _, seg := range chunk {
+				opts := []mpath.Option{
+					mpath.CollectionID(ct.collBackup.GetCollectionId()),
+					mpath.PartitionID(seg.GetPartitionId()),
+					mpath.SegmentID(seg.GetSegmentId()),
+				}
+
+				deltaLogDir := mpath.BackupDeltaLogDir(ct.backupDir, opts...)
+				dirs = append(dirs, partitionDir{deltaLogDir: deltaLogDir, size: seg.GetSize()})
+			}
+			b := batch{isL0: true, timestamp: ts, partitionDirs: dirs, storageVersion: key.sv}
+			batches = append(batches, b)
 		}
-
-		deltaLogDir := mpath.BackupDeltaLogDir(ct.backupDir, opts...)
-		dirs := []partitionDir{{deltaLogDir: deltaLogDir, size: seg.GetSize()}}
-
-		batches = append(batches, batch{isL0: true, timestamp: ts, partitionDirs: dirs})
 	}
 
 	return batches, nil
