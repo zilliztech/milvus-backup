@@ -28,6 +28,7 @@ build:
 gen:
 	./scripts/gen_swag.sh
 	./scripts/gen_proto.sh
+	go generate ./...
 
 gen-mock:
 	@echo "Generating mock files..."

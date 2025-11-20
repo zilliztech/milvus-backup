@@ -179,25 +179,57 @@ func TestToPaths(t *testing.T) {
 }
 
 func TestL0SegmentBatches(t *testing.T) {
-	ct := newTestCollectionTask()
-	ct.collBackup = &backuppb.CollectionBackupInfo{CollectionId: 1}
-
 	segs := make([]*backuppb.SegmentBackupInfo, 0, 10)
 	for i := 0; i < 10; i++ {
 		vch := fmt.Sprintf("vch%d", i%2)
-		seg := &backuppb.SegmentBackupInfo{SegmentId: int64(i), PartitionId: 1, VChannel: vch, Size: 1}
+		sv := int64(i % 2)
+		seg := &backuppb.SegmentBackupInfo{
+			SegmentId:      int64(i),
+			PartitionId:    1,
+			VChannel:       vch,
+			Size:           1,
+			StorageVersion: sv,
+		}
 		segs = append(segs, seg)
 	}
 
-	batches, err := ct.l0SegmentBatches(segs)
-	assert.NoError(t, err)
-	assert.Len(t, batches, 10)
+	t.Run("SingleL0InOneJob", func(t *testing.T) {
+		ct := newTestCollectionTask()
+		ct.collBackup = &backuppb.CollectionBackupInfo{CollectionId: 1}
+		grpcCli := milvus.NewMockGrpc(t)
+		grpcCli.EXPECT().HasFeature(milvus.MultiL0InOneJob).Return(false).Once()
+		ct.grpcCli = grpcCli
 
-	for _, b := range batches {
-		require.Len(t, b.partitionDirs, 1)
-		for _, dir := range b.partitionDirs {
-			require.Empty(t, dir.insertLogDir)
-			require.NotEmpty(t, dir.deltaLogDir)
+		batches, err := ct.l0SegmentBatches(segs)
+		assert.NoError(t, err)
+		assert.Len(t, batches, 10)
+
+		for _, b := range batches {
+			require.Len(t, b.partitionDirs, 1)
+			for _, dir := range b.partitionDirs {
+				require.Empty(t, dir.insertLogDir)
+				require.NotEmpty(t, dir.deltaLogDir)
+			}
 		}
-	}
+	})
+
+	t.Run("MultiL0InOneJob", func(t *testing.T) {
+		ct := newTestCollectionTask()
+		ct.collBackup = &backuppb.CollectionBackupInfo{CollectionId: 1}
+		grpcCli := milvus.NewMockGrpc(t)
+		grpcCli.EXPECT().HasFeature(milvus.MultiL0InOneJob).Return(true).Once()
+		ct.grpcCli = grpcCli
+
+		batches, err := ct.l0SegmentBatches(segs)
+		assert.NoError(t, err)
+		assert.Len(t, batches, 2)
+
+		for _, b := range batches {
+			require.Len(t, b.partitionDirs, 5)
+			for _, dir := range b.partitionDirs {
+				require.Empty(t, dir.insertLogDir)
+				require.NotEmpty(t, dir.deltaLogDir)
+			}
+		}
+	})
 }

@@ -13,11 +13,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Masterminds/semver/v3"
 	"github.com/golang/protobuf/proto"
 	grpcretry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
+	"github.com/samber/lo"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
@@ -36,12 +38,24 @@ import (
 	"github.com/zilliztech/milvus-backup/version"
 )
 
-type FeatureFlag uint64
+//go:generate stringer -type=FeatureFlag
+type FeatureFlag uint8
 
 const (
 	MultiDatabase FeatureFlag = 1 << iota
 	DescribeDatabase
+	MultiL0InOneJob
 )
+
+type featureTuple struct {
+	Constraints *semver.Constraints
+	Flag        FeatureFlag
+}
+
+var _featureTuples = []featureTuple{
+	{Constraints: lo.Must(semver.NewConstraint(">= 2.4.3-0")), Flag: DescribeDatabase},
+	{Constraints: lo.Must(semver.NewConstraint(">= 2.6.5-0")), Flag: MultiL0InOneJob},
+}
 
 func defaultDialOpt() []grpc.DialOption {
 	opts := []grpc.DialOption{
@@ -381,15 +395,23 @@ func (g *GrpcClient) checkFeature(ctx context.Context) error {
 		g.flags |= MultiDatabase
 	}
 
-	_, err = g.srv.DescribeDatabase(ctx, &milvuspb.DescribeDatabaseRequest{DbName: namespace.DefaultDBName})
+	ver, err := g.GetVersion(ctx)
 	if err != nil {
-		if isUnimplemented(err) {
-			g.logger.Info("the server does NOT support describe database")
+		return fmt.Errorf("client: get version: %w", err)
+	}
+	g.logger.Info("server version", zap.String("version", ver))
+	sem, err := semver.NewVersion(ver)
+	if err != nil {
+		return fmt.Errorf("client: parse version: %w", err)
+	}
+
+	for _, tuple := range _featureTuples {
+		if tuple.Constraints.Check(sem) {
+			g.logger.Info("server support feature", zap.String("feature", tuple.Flag.String()))
+			g.flags |= tuple.Flag
 		} else {
-			return fmt.Errorf("client: check describe database feature: %w", err)
+			g.logger.Info("server does NOT support feature", zap.String("feature", tuple.Flag.String()))
 		}
-	} else {
-		g.flags |= DescribeDatabase
 	}
 
 	return nil
