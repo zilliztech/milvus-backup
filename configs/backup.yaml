@@ -89,7 +89,7 @@ backup:
     restoreCollection: 2
     # max number of import job to run in parallel,
     # should be less than milvus's config dataCoord.import.maxImportJobNum
-    importJobNum: 768
+    importJob: 768
   
   # keep temporary files during restore, only use to debug 
   keepTempFiles: false
