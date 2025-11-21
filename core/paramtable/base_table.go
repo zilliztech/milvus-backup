@@ -49,14 +49,6 @@ const (
 	DefaultMinioBackupRootPath   = "backup"
 
 	DefaultStorageType = "minio"
-
-	DefaultMilvusAddress     = "localhost"
-	DefaultMilvusPort        = "19530"
-	DefaultMilvusTlsMode     = "0"
-	DefaultMilvusUser        = "root"
-	DefaultMilvusPassword    = "Milvus"
-	DefaultMilvusTLSCertPath = ""
-	DefaultMilvusServerName  = ""
 )
 
 var defaultYaml = DefaultBackupYaml
@@ -530,11 +522,6 @@ func (gp *BaseTable) loadMilvusConfig() {
 }
 
 func (gp *BaseTable) loadBackupConfig() {
-	backupMaxSegmentGroupSize := os.Getenv("BACKUP_MAX_SEGMENT_GROUP_SIZE")
-	if backupMaxSegmentGroupSize != "" {
-		_ = gp.Save("backup.maxSegmentGroupSize", backupMaxSegmentGroupSize)
-	}
-
 	backupParallelismBackupCollection := os.Getenv("BACKUP_PARALLELISM_BACKUP_COLLECTION")
 	if backupParallelismBackupCollection != "" {
 		_ = gp.Save("backup.parallelism.backupCollection", backupParallelismBackupCollection)
@@ -558,11 +545,6 @@ func (gp *BaseTable) loadBackupConfig() {
 	backupGCPauseEnable := os.Getenv("BACKUP_GC_PAUSE_ENABLE")
 	if backupGCPauseEnable != "" {
 		_ = gp.Save("backup.gcPause.enable", backupGCPauseEnable)
-	}
-
-	backupGCPauseSeconds := os.Getenv("BACKUP_GC_PAUSE_SECONDS")
-	if backupGCPauseSeconds != "" {
-		_ = gp.Save("backup.gcPause.seconds", backupGCPauseSeconds)
 	}
 
 	backupGCPauseAddress := os.Getenv("BACKUP_GC_PAUSE_ADDRESS")

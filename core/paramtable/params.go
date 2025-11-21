@@ -30,8 +30,6 @@ func (p *BackupParams) Init() {
 type BackupConfig struct {
 	Base *BaseTable
 
-	MaxSegmentGroupSize int64
-
 	BackupCollectionParallelism int
 	BackupCopyDataParallelism   int64
 	RestoreParallelism          int
@@ -46,7 +44,6 @@ type BackupConfig struct {
 func (p *BackupConfig) init(base *BaseTable) {
 	p.Base = base
 
-	p.initMaxSegmentGroupSize()
 	p.initBackupCollectionParallelism()
 	p.initRestoreParallelism()
 	p.initBackupCopyDataParallelism()
@@ -54,14 +51,6 @@ func (p *BackupConfig) init(base *BaseTable) {
 	p.initKeepTempFiles()
 	p.initGcPauseEnable()
 	p.initGcPauseAddress()
-}
-
-func (p *BackupConfig) initMaxSegmentGroupSize() {
-	size, err := p.Base.ParseDataSizeWithDefault("backup.maxSegmentGroupSize", "2g")
-	if err != nil {
-		panic(err)
-	}
-	p.MaxSegmentGroupSize = size
 }
 
 func (p *BackupConfig) initBackupCollectionParallelism() {

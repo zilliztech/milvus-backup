@@ -78,8 +78,6 @@ minio:
   crossStorage: "false"
   
 backup:
-  maxSegmentGroupSize: 2G
-
   parallelism:
     # collection level parallelism to backup
     backupCollection: 4
