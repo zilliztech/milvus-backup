@@ -45,6 +45,7 @@ const (
 	MultiDatabase FeatureFlag = 1 << iota
 	DescribeDatabase
 	MultiL0InOneJob
+	GetSegmentInfo
 )
 
 type featureTuple struct {
@@ -55,6 +56,7 @@ type featureTuple struct {
 var _featureTuples = []featureTuple{
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.4.3-0")), Flag: DescribeDatabase},
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.6.5-0")), Flag: MultiL0InOneJob},
+	{Constraints: lo.Must(semver.NewConstraint(">= 2.5.8-0")), Flag: GetSegmentInfo},
 }
 
 func defaultDialOpt() []grpc.DialOption {
@@ -609,7 +611,7 @@ func (g *GrpcClient) checkFlush(ctx context.Context, segIDs []int64, flushTS uin
 
 			cost := time.Since(start)
 			if cost > 30*time.Minute {
-				g.logger.Warn("waiting for the flush to complete took too much time!",
+				g.logger.Warn("waiting for the flush to complete took too much time! may milvus is not healthy",
 					zap.Duration("cost", cost),
 					zap.String("ns", ns.String()),
 					zap.Int64s("segment_ids", segIDs),

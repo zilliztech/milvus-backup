@@ -670,7 +670,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "default_value_proto": {
-                    "description": "json not support marshall oneof, so use proto string",
+                    "description": "Deprecated: Marked as deprecated in backup.proto.",
                     "type": "string"
                 },
                 "description": {

@@ -6,65 +6,115 @@ import (
 	"sync"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/namespace"
 )
 
 type metaBuilder struct {
 	mu sync.Mutex
 
 	data *backuppb.BackupInfo
+
+	// index
+	nsToCollID        map[namespace.NS]int64
+	collectionBackups map[int64]*backuppb.CollectionBackupInfo          // coll id - > collection backup info
+	partitionBackups  map[int64]map[int64]*backuppb.PartitionBackupInfo // coll id -> part id - > partition backup info
 }
 
 func newMetaBuilder(taskID, backupName string) *metaBuilder {
 	info := &backuppb.BackupInfo{Id: taskID, Name: backupName}
-	return &metaBuilder{data: info}
+	return &metaBuilder{
+		data: info,
+
+		nsToCollID:        make(map[namespace.NS]int64),
+		collectionBackups: make(map[int64]*backuppb.CollectionBackupInfo),
+		partitionBackups:  make(map[int64]map[int64]*backuppb.PartitionBackupInfo),
+	}
 }
 
-func (c *metaBuilder) setVersion(version string) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (builder *metaBuilder) setVersion(version string) {
+	builder.mu.Lock()
+	defer builder.mu.Unlock()
 
-	c.data.MilvusVersion = version
+	builder.data.MilvusVersion = version
 }
 
-func (c *metaBuilder) addDatabase(databaseBackup *backuppb.DatabaseBackupInfo) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (builder *metaBuilder) addDatabase(databaseBackup *backuppb.DatabaseBackupInfo) {
+	builder.mu.Lock()
+	defer builder.mu.Unlock()
 
-	c.data.DatabaseBackups = append(c.data.DatabaseBackups, databaseBackup)
+	builder.data.DatabaseBackups = append(builder.data.DatabaseBackups, databaseBackup)
 }
 
-func (c *metaBuilder) addCollection(collectionBackup *backuppb.CollectionBackupInfo) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (builder *metaBuilder) addCollection(ns namespace.NS, collectionBackup *backuppb.CollectionBackupInfo) {
+	builder.mu.Lock()
+	defer builder.mu.Unlock()
 
-	c.data.CollectionBackups = append(c.data.CollectionBackups, collectionBackup)
-	c.data.Size += collectionBackup.GetSize()
+	builder.data.CollectionBackups = append(builder.data.CollectionBackups, collectionBackup)
+	// add to index
+	builder.nsToCollID[ns] = collectionBackup.GetCollectionId()
+	builder.collectionBackups[collectionBackup.GetCollectionId()] = collectionBackup
+	for _, partition := range collectionBackup.GetPartitionBackups() {
+		if _, ok := builder.partitionBackups[collectionBackup.GetCollectionId()]; !ok {
+			builder.partitionBackups[collectionBackup.GetCollectionId()] = make(map[int64]*backuppb.PartitionBackupInfo)
+		}
+		builder.partitionBackups[collectionBackup.GetCollectionId()][partition.GetPartitionId()] = partition
+	}
 }
 
-func (c *metaBuilder) setRBACMeta(rbacMeta *backuppb.RBACMeta) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (builder *metaBuilder) addPOS(ns namespace.NS, channelCP map[string]string, maxChannelTS uint64, sealTime uint64) {
+	builder.mu.Lock()
+	defer builder.mu.Unlock()
 
-	c.data.RbacMeta = rbacMeta
+	collID := builder.nsToCollID[ns]
+	collBackup := builder.collectionBackups[collID]
+
+	collBackup.ChannelCheckpoints = channelCP
+	collBackup.BackupTimestamp = maxChannelTS
+	collBackup.BackupPhysicalTimestamp = sealTime
 }
 
-func (c *metaBuilder) setRPCChannelInfo(rpcChannelInfo *backuppb.RPCChannelInfo) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (builder *metaBuilder) addSegments(segments []*backuppb.SegmentBackupInfo) {
+	builder.mu.Lock()
+	defer builder.mu.Unlock()
 
-	c.data.RpcChannelInfo = rpcChannelInfo
+	for _, segment := range segments {
+		collBackup := builder.collectionBackups[segment.GetCollectionId()]
+		collBackup.Size += segment.GetSize()
+
+		if segment.GetIsL0() && segment.GetPartitionId() == _allPartitionID {
+			collBackup.L0Segments = append(collBackup.L0Segments, segment)
+		} else {
+			partBackup := builder.partitionBackups[segment.GetCollectionId()][segment.GetPartitionId()]
+			partBackup.SegmentBackups = append(partBackup.SegmentBackups, segment)
+			partBackup.Size += segment.GetSize()
+		}
+	}
 }
 
-func (c *metaBuilder) buildBackupMeta() ([]byte, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (builder *metaBuilder) setRBACMeta(rbacMeta *backuppb.RBACMeta) {
+	builder.mu.Lock()
+	defer builder.mu.Unlock()
+
+	builder.data.RbacMeta = rbacMeta
+}
+
+func (builder *metaBuilder) setRPCChannelInfo(rpcChannelInfo *backuppb.RPCChannelInfo) {
+	builder.mu.Lock()
+	defer builder.mu.Unlock()
+
+	builder.data.RpcChannelInfo = rpcChannelInfo
+}
+
+func (builder *metaBuilder) buildBackupMeta() ([]byte, error) {
+	builder.mu.Lock()
+	defer builder.mu.Unlock()
 
 	info := &backuppb.BackupInfo{
-		Id:              c.data.GetId(),
-		Name:            c.data.GetName(),
-		BackupTimestamp: c.data.GetBackupTimestamp(),
-		Size:            c.data.GetSize(),
-		MilvusVersion:   c.data.GetMilvusVersion(),
+		Id:              builder.data.GetId(),
+		Name:            builder.data.GetName(),
+		BackupTimestamp: builder.data.GetBackupTimestamp(),
+		Size:            builder.data.GetSize(),
+		MilvusVersion:   builder.data.GetMilvusVersion(),
 	}
 
 	data, err := json.Marshal(info)
@@ -75,11 +125,11 @@ func (c *metaBuilder) buildBackupMeta() ([]byte, error) {
 	return data, nil
 }
 
-func (c *metaBuilder) buildFullMeta() ([]byte, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (builder *metaBuilder) buildFullMeta() ([]byte, error) {
+	builder.mu.Lock()
+	defer builder.mu.Unlock()
 
-	data, err := json.Marshal(c.data)
+	data, err := json.Marshal(builder.data)
 	if err != nil {
 		return nil, fmt.Errorf("backup: build full meta: %w", err)
 	}
@@ -87,11 +137,11 @@ func (c *metaBuilder) buildFullMeta() ([]byte, error) {
 	return data, nil
 }
 
-func (c *metaBuilder) buildCollectionMeta() ([]byte, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (builder *metaBuilder) buildCollectionMeta() ([]byte, error) {
+	builder.mu.Lock()
+	defer builder.mu.Unlock()
 
-	info := &backuppb.CollectionLevelBackupInfo{Infos: c.data.CollectionBackups}
+	info := &backuppb.CollectionLevelBackupInfo{Infos: builder.data.CollectionBackups}
 	data, err := json.Marshal(info)
 	if err != nil {
 		return nil, fmt.Errorf("backup: build collection meta: %w", err)
@@ -100,12 +150,12 @@ func (c *metaBuilder) buildCollectionMeta() ([]byte, error) {
 	return data, nil
 }
 
-func (c *metaBuilder) buildPartitionMeta() ([]byte, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (builder *metaBuilder) buildPartitionMeta() ([]byte, error) {
+	builder.mu.Lock()
+	defer builder.mu.Unlock()
 
 	partitions := make([]*backuppb.PartitionBackupInfo, 0)
-	for _, collection := range c.data.CollectionBackups {
+	for _, collection := range builder.data.CollectionBackups {
 		partitions = append(partitions, collection.GetPartitionBackups()...)
 	}
 
@@ -118,12 +168,12 @@ func (c *metaBuilder) buildPartitionMeta() ([]byte, error) {
 	return data, nil
 }
 
-func (c *metaBuilder) buildSegmentMeta() ([]byte, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
+func (builder *metaBuilder) buildSegmentMeta() ([]byte, error) {
+	builder.mu.Lock()
+	defer builder.mu.Unlock()
 
 	segments := make([]*backuppb.SegmentBackupInfo, 0)
-	for _, collection := range c.data.CollectionBackups {
+	for _, collection := range builder.data.CollectionBackups {
 		for _, partition := range collection.GetPartitionBackups() {
 			segments = append(segments, partition.GetSegmentBackups()...)
 		}

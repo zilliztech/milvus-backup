@@ -524,7 +524,7 @@ message FieldSchema {
   bool is_dynamic = 12; // mark whether this field is the dynamic field
   bool is_partition_key = 13; // enable logic partitions
   bool nullable = 14;
-  string default_value_proto = 15; // json not support marshall oneof, so use proto string
+  string default_value_proto = 15 [deprecated=true]; // json not support marshall oneof, so use proto string
   bool is_function_output = 16;
   string default_value_base64 = 17;
 }

@@ -121,10 +121,6 @@ func NewCopyObjectsTask(opt CopyObjectsOpt) *CopyObjectsTask {
 	}
 }
 
-func (c *CopyObjectsTask) Prepare(_ context.Context) error {
-	return nil
-}
-
 func (c *CopyObjectsTask) Execute(ctx context.Context) error {
 	// shuffle to avoid hot region
 	mutable.Shuffle(c.opt.Attrs)

@@ -1,8 +1,8 @@
-package core
+package tasklet
 
 import "context"
 
-type Task interface {
+type Tasklet interface {
 	// Execute the task, can take long time
 	Execute(ctx context.Context) error
 }

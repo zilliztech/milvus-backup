@@ -5,21 +5,32 @@ import (
 	"sort"
 	"testing"
 
-	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
-	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
-	"github.com/zilliztech/milvus-backup/internal/pbconv"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 )
 
-func newTestCollectionTask() *CollectionTask { return &CollectionTask{logger: zap.NewNop()} }
+func newTestCollDMLTask() *collectionDMLTask { return &collectionDMLTask{logger: zap.NewNop()} }
+
+func TestCollDDLTask_groupID(t *testing.T) {
+	t.Run("NormalSegment", func(t *testing.T) {
+		task := newTestCollDMLTask()
+		groupID := task.groupID(&milvuspb.PersistentSegmentInfo{SegmentID: 100, PartitionID: 200})
+		assert.Equal(t, int64(100), groupID)
+	})
+
+	t.Run("AllPartitionSegment", func(t *testing.T) {
+		task := newTestCollDMLTask()
+		groupID := task.groupID(&milvuspb.PersistentSegmentInfo{SegmentID: 100, PartitionID: -1})
+		assert.Equal(t, int64(0), groupID)
+	})
+}
 
 func newMockStorage(t *testing.T, prefix string, objs []storage.ObjectAttr) storage.Client {
 	iter := storage.NewMockObjectIterator(objs)
@@ -29,39 +40,6 @@ func newMockStorage(t *testing.T, prefix string, objs []storage.ObjectAttr) stor
 		ListPrefix(mock.Anything, prefix, true).
 		Return(iter, nil)
 	return st
-}
-
-func TestCollectionTask_groupID(t *testing.T) {
-	t.Run("NormalSegment", func(t *testing.T) {
-		task := newTestCollectionTask()
-		groupID := task.groupID(&milvuspb.PersistentSegmentInfo{SegmentID: 100, PartitionID: 200})
-		assert.Equal(t, int64(100), groupID)
-	})
-
-	t.Run("AllPartitionSegment", func(t *testing.T) {
-		task := newTestCollectionTask()
-		groupID := task.groupID(&milvuspb.PersistentSegmentInfo{SegmentID: 100, PartitionID: -1})
-		assert.Equal(t, int64(0), groupID)
-	})
-}
-
-func TestCollectionTask_convSchema(t *testing.T) {
-	schema := &schemapb.CollectionSchema{
-		Name:               "name",
-		Description:        "description",
-		AutoID:             true,
-		EnableDynamicField: true,
-		Properties:         []*commonpb.KeyValuePair{{Key: "k1", Value: "v1"}, {Key: "k2", Value: "v2"}},
-	}
-
-	ct := newTestCollectionTask()
-	bakSchema, err := ct.convSchema(schema)
-	assert.NoError(t, err)
-	assert.Equal(t, schema.GetName(), bakSchema.GetName())
-	assert.Equal(t, schema.GetDescription(), bakSchema.GetDescription())
-	assert.Equal(t, schema.GetAutoID(), bakSchema.GetAutoID())
-	assert.Equal(t, schema.GetEnableDynamicField(), bakSchema.GetEnableDynamicField())
-	assert.ElementsMatch(t, schema.GetProperties(), pbconv.BakKVToMilvusKV(bakSchema.GetProperties()))
 }
 
 func TestCollectionTask_listInsertLogByListFile(t *testing.T) {
@@ -75,11 +53,11 @@ func TestCollectionTask_listInsertLogByListFile(t *testing.T) {
 		}
 
 		st := newMockStorage(t, dir, objs)
-		ct := newTestCollectionTask()
-		ct.milvusStorage = st
-		ct.milvusRootPath = "base"
+		dmlt := newTestCollDMLTask()
+		dmlt.milvusStorage = st
+		dmlt.milvusRootPath = "base"
 
-		fields, size, err := ct.listInsertLogByListFile(context.Background(), dir)
+		fields, size, err := dmlt.listInsertLogByListFile(context.Background(), dir)
 		assert.NoError(t, err)
 		assert.Equal(t, int64(10), size)
 		assert.Len(t, fields, 2)
@@ -106,11 +84,11 @@ func TestCollectionTask_listInsertLogByListFile(t *testing.T) {
 		}
 		st := newMockStorage(t, dir, objs)
 
-		ct := newTestCollectionTask()
-		ct.milvusStorage = st
-		ct.milvusRootPath = "base"
+		dmlt := newTestCollDMLTask()
+		dmlt.milvusStorage = st
+		dmlt.milvusRootPath = "base"
 
-		_, _, err := ct.listInsertLogByListFile(context.Background(), dir)
+		_, _, err := dmlt.listInsertLogByListFile(context.Background(), dir)
 		assert.Error(t, err)
 	})
 
@@ -126,11 +104,11 @@ func TestCollectionTask_listDeltaLogByListFile(t *testing.T) {
 	}
 	st := newMockStorage(t, dir, objs)
 
-	ct := newTestCollectionTask()
-	ct.milvusStorage = st
-	ct.milvusRootPath = "base"
+	dmlt := newTestCollDMLTask()
+	dmlt.milvusStorage = st
+	dmlt.milvusRootPath = "base"
 
-	fields, size, err := ct.listDeltaLogByListFile(context.Background(), dir)
+	fields, size, err := dmlt.listDeltaLogByListFile(context.Background(), dir)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(10), size)
 	assert.Len(t, fields, 1)
@@ -153,12 +131,12 @@ func TestCollectionTask_listInsertLogByAPI(t *testing.T) {
 		{Key: mpath.Join(dir, mpath.FieldID(2), mpath.LogID(2)), Length: 4},
 	}
 
-	ct := newTestCollectionTask()
-	ct.milvusStorage = newMockStorage(t, dir, objs)
-	ct.milvusRootPath = "base"
+	dmlt := newTestCollDMLTask()
+	dmlt.milvusStorage = newMockStorage(t, dir, objs)
+	dmlt.milvusRootPath = "base"
 
 	binlogs := []milvus.BinlogInfo{{FieldID: 1, LogIDs: []int64{1, 2}}, {FieldID: 2, LogIDs: []int64{1, 2}}}
-	fields, size, err := ct.listInsertLogByAPI(context.Background(), dir, binlogs)
+	fields, size, err := dmlt.listInsertLogByAPI(context.Background(), dir, binlogs)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(10), size)
 	assert.Len(t, fields, 2)
@@ -183,12 +161,12 @@ func TestCollectionTask_listDeltaLogByAPI(t *testing.T) {
 		{Key: mpath.Join(dir, mpath.LogID(2)), Length: 2},
 	}
 
-	ct := newTestCollectionTask()
-	ct.milvusStorage = newMockStorage(t, dir, objs)
-	ct.milvusRootPath = "base"
+	dmlt := newTestCollDMLTask()
+	dmlt.milvusStorage = newMockStorage(t, dir, objs)
+	dmlt.milvusRootPath = "base"
 
 	binlogs := []milvus.BinlogInfo{{FieldID: 1, LogIDs: []int64{1, 2}}}
-	fields, size, err := ct.listDeltaLogByAPI(context.Background(), dir, binlogs)
+	fields, size, err := dmlt.listDeltaLogByAPI(context.Background(), dir, binlogs)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(3), size)
 	assert.Len(t, fields, 1)

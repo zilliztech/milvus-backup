@@ -4,9 +4,10 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/protobuf/types/known/structpb"
+
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/filter"
-	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestCreateBackupHandler_dbCollectionsToFilter(t *testing.T) {
