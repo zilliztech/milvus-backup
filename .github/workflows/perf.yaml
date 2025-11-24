@@ -22,7 +22,7 @@ jobs:
         milvus_version: [master-latest, 2.4-latest]
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Set up Python 3.10
         uses: actions/setup-python@v6

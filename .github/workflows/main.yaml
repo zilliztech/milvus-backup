@@ -24,7 +24,7 @@ jobs:
     name: Unit test go
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       - name: Set up Go ${{ env.go-version }}
         uses: actions/setup-go@v6
         with:
@@ -50,7 +50,7 @@ jobs:
             target_image_tag: 2.6-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Set up Python 3.10
         uses: actions/setup-python@v6
@@ -219,7 +219,7 @@ jobs:
             target_image_tag: 2.6-latest
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Set up Python 3.10
         uses: actions/setup-python@v6
@@ -347,7 +347,7 @@ jobs:
         # mq_type: [pulsar, kafka]  # TODO: add pulsar and kafka
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Set up Python 3.10
         uses: actions/setup-python@v6
@@ -510,7 +510,7 @@ jobs:
         image_tag: [master-latest]
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Set up Python 3.10
         uses: actions/setup-python@v6
@@ -657,7 +657,7 @@ jobs:
             case_tag: MASTER
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
 
       - name: Set up Python 3.10
         uses: actions/setup-python@v6
