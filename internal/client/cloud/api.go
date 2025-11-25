@@ -21,9 +21,7 @@ type common[T any] struct {
 	Data    T      `json:"data"`
 }
 
-func (c *common[T]) code() int {
-	return c.Code
-}
+func (c *common[T]) code() int { return c.Code }
 
 type Credentials struct {
 	ExpireTime   string `json:"expireTime"`
@@ -33,9 +31,14 @@ type Credentials struct {
 }
 
 func mask(s string) string {
+	if len(s) == 0 {
+		return ""
+	}
+
 	if len(s) <= 6 {
 		return "****"
 	}
+
 	return s[:2] + "****" + s[len(s)-2:]
 }
 
@@ -57,7 +60,7 @@ func (c *Condition) String() string {
 	return fmt.Sprintf("maxContentLength: %d", c.MaxContentLength)
 }
 
-type ApplyStageResp struct {
+type ApplyVolumeResp struct {
 	BucketName  string      `json:"bucketName"`
 	Cloud       string      `json:"cloud"`
 	Condition   Condition   `json:"condition"`
@@ -68,7 +71,7 @@ type ApplyStageResp struct {
 	StageName   string      `json:"stageName"`
 }
 
-func (a *ApplyStageResp) String() string {
+func (a *ApplyVolumeResp) String() string {
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("bucketName: %s, ", mask(a.BucketName)))
 	sb.WriteString(fmt.Sprintf("cloud: %s, ", a.Cloud))
@@ -82,7 +85,7 @@ func (a *ApplyStageResp) String() string {
 }
 
 type Client interface {
-	ApplyStage(ctx context.Context, clusterID, dir string) (*ApplyStageResp, error)
+	ApplyVolume(ctx context.Context, clusterID, dir string) (*ApplyVolumeResp, error)
 	Migrate(ctx context.Context, source Source, dest Destination) (string, error)
 }
 
@@ -101,7 +104,7 @@ func NewClient(address, apikey string) *APIClient {
 	return &APIClient{cli: cli, logger: log.L()}
 }
 
-type applyStageReq struct {
+type applyVolumeReq struct {
 	ClusterID string `json:"clusterId"`
 	Path      string `json:"path"`
 }
@@ -120,19 +123,19 @@ func (a *APIClient) checkResp(httpResp *req.Response, resp statusCoder, err erro
 	return nil
 }
 
-func (a *APIClient) ApplyStage(ctx context.Context, clusterID, dir string) (*ApplyStageResp, error) {
-	in := applyStageReq{ClusterID: clusterID, Path: dir}
-	a.logger.Debug("send apply stage request", zap.Any("request", in))
+func (a *APIClient) ApplyVolume(ctx context.Context, clusterID, dir string) (*ApplyVolumeResp, error) {
+	in := applyVolumeReq{ClusterID: clusterID, Path: dir}
+	a.logger.Debug("send apply volume request", zap.Any("request", in))
 
-	var applyResp common[ApplyStageResp]
+	var applyResp common[ApplyVolumeResp]
 	resp, err := a.cli.R().
 		SetContext(ctx).
 		SetBody(in).
 		SetSuccessResult(&applyResp).
 		Post("/v2/stages/apply")
-	a.logger.Debug("apply stage response", zap.String("response", applyResp.Data.String()))
+	a.logger.Debug("apply volume response", zap.String("response", applyResp.Data.String()))
 	if err := a.checkResp(resp, &applyResp, err); err != nil {
-		return nil, fmt.Errorf("cloud: apply stage: %w", err)
+		return nil, fmt.Errorf("cloud: apply volume: %w", err)
 	}
 
 	return &applyResp.Data, nil

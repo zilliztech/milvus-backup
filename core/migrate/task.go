@@ -3,11 +3,12 @@ package migrate
 import (
 	"context"
 	"fmt"
+	"sync"
 	"time"
 
 	minioCred "github.com/minio/minio-go/v7/pkg/credentials"
-
 	"go.uber.org/zap"
+	"golang.org/x/oauth2"
 	"golang.org/x/sync/semaphore"
 
 	"github.com/zilliztech/milvus-backup/core/paramtable"
@@ -19,22 +20,28 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
-var _ minioCred.Provider = (*stage)(nil)
+var (
+	_ minioCred.Provider = (*volume)(nil)
+	_ oauth2.TokenSource = (*volume)(nil)
+)
 
-type stage struct {
+type volume struct {
 	clusterID string
 	prefix    string
 
 	cloudCli cloud.Client
 
-	expiration time.Time
-	resp       *cloud.ApplyStageResp
+	currentResp struct {
+		mu         sync.RWMutex
+		expiration time.Time
+		resp       *cloud.ApplyVolumeResp
+	}
 
 	logger *zap.Logger
 }
 
-func newStage(clusterID, prefix string, cloudCli cloud.Client) *stage {
-	return &stage{
+func newVolume(clusterID, prefix string, cloudCli cloud.Client) *volume {
+	return &volume{
 		clusterID: clusterID,
 		prefix:    prefix,
 
@@ -44,69 +51,122 @@ func newStage(clusterID, prefix string, cloudCli cloud.Client) *stage {
 	}
 }
 
-func (s *stage) RetrieveWithCredContext(_ *minioCred.CredContext) (minioCred.Value, error) {
-	return s.Retrieve()
+func (v *volume) RetrieveWithCredContext(_ *minioCred.CredContext) (minioCred.Value, error) {
+	return v.Retrieve()
 }
 
-func (s *stage) Retrieve() (minioCred.Value, error) {
-	s.logger.Debug("retrieve stage credential")
-	if !s.IsExpired() {
-		s.logger.Debug("stage credential not expired, return cached credential")
-		return minioCred.Value{
-			AccessKeyID:     s.resp.Credentials.TmpAK,
-			SecretAccessKey: s.resp.Credentials.TmpSK,
-			SessionToken:    s.resp.Credentials.SessionToken,
-			Expiration:      s.expiration,
-		}, nil
+func (v *volume) minioValue() minioCred.Value {
+	return minioCred.Value{
+		AccessKeyID:     v.currentResp.resp.Credentials.TmpAK,
+		SecretAccessKey: v.currentResp.resp.Credentials.TmpSK,
+		SessionToken:    v.currentResp.resp.Credentials.SessionToken,
+		Expiration:      v.currentResp.expiration,
+	}
+}
+
+func (v *volume) oauth2Token() *oauth2.Token {
+	return &oauth2.Token{AccessToken: v.currentResp.resp.Credentials.SessionToken, Expiry: v.currentResp.expiration}
+}
+
+func (v *volume) Retrieve() (minioCred.Value, error) {
+	v.logger.Debug("retrieve stage credential")
+	v.currentResp.mu.RLock()
+	if !v.IsExpired() {
+		v.logger.Debug("stage credential not expired, return cached credential")
+		v.currentResp.mu.RUnlock()
+		return v.minioValue(), nil
+	}
+	v.currentResp.mu.RUnlock()
+
+	// double check.
+	// maybe other thread has already applied for a new credential
+	v.currentResp.mu.Lock()
+	defer v.currentResp.mu.Unlock()
+	if !v.IsExpired() {
+		return v.minioValue(), nil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	s.logger.Info("stage credential expired, apply new credential")
-	if err := s.apply(ctx); err != nil {
+	v.logger.Info("stage credential expired, apply new credential")
+	if err := v.apply(ctx); err != nil {
 		return minioCred.Value{}, err
 	}
 
-	return minioCred.Value{
-		AccessKeyID:     s.resp.Credentials.TmpAK,
-		SecretAccessKey: s.resp.Credentials.TmpSK,
-		SessionToken:    s.resp.Credentials.SessionToken,
-		Expiration:      s.expiration,
-	}, nil
+	return v.minioValue(), nil
 }
 
-func (s *stage) IsExpired() bool {
-	return time.Now().After(s.expiration)
+func (v *volume) IsExpired() bool { return time.Now().After(v.currentResp.expiration) }
+
+func (v *volume) Token() (*oauth2.Token, error) {
+	v.logger.Debug("get volume token")
+
+	// first check if the token is still valid
+	v.currentResp.mu.RLock()
+	token := v.oauth2Token()
+	if token.Valid() {
+		v.currentResp.mu.RUnlock()
+		v.logger.Debug("volume token not expired, return cached token")
+		return token, nil
+	}
+	v.currentResp.mu.RUnlock()
+
+	// double check, maybe other thread has already applied for a new credential
+	v.currentResp.mu.Lock()
+	defer v.currentResp.mu.Unlock()
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	token = v.oauth2Token()
+	if token.Valid() {
+		return token, nil
+	}
+
+	if err := v.apply(ctx); err != nil {
+		return nil, fmt.Errorf("migrate: get volume token %w", err)
+	}
+	v.logger.Debug("get volume token done")
+
+	return v.oauth2Token(), nil
 }
 
-func (s *stage) apply(ctx context.Context) error {
-	s.logger.Info("apply stage, it will take about 10 seconds")
+func (v *volume) apply(ctx context.Context) error {
+	v.logger.Info("apply volume, it will take about 10 seconds")
 	start := time.Now()
-	resp, err := s.cloudCli.ApplyStage(ctx, s.clusterID, s.prefix)
+	resp, err := v.cloudCli.ApplyVolume(ctx, v.clusterID, v.prefix)
 	if err != nil {
 		return fmt.Errorf("migrate: apply stage %w", err)
 	}
-	s.logger.Info("apply stage done", zap.Duration("cost", time.Since(start)))
+	v.logger.Info("apply volume done", zap.Duration("cost", time.Since(start)))
 
 	expiration, err := time.Parse(time.RFC3339, resp.Credentials.ExpireTime)
 	if err != nil {
 		return fmt.Errorf("migrate: parse expire time %w", err)
 	}
 
-	s.resp = resp
-	s.expiration = expiration
+	v.currentResp.resp = resp
+	v.currentResp.expiration = expiration
 
 	return nil
 }
 
-func newStageStorage(ctx context.Context, stage *stage) (storage.Client, error) {
+func newVolumeStorage(ctx context.Context, vol *volume) (storage.Client, error) {
+	var cred storage.Credential
+	switch vol.currentResp.resp.Cloud {
+	case paramtable.CloudProviderGCP:
+		cred = storage.Credential{Type: storage.OAuth2TokenSource, OAuth2TokenSource: vol}
+	case paramtable.CloudProviderAWS:
+		cred = storage.Credential{Type: storage.MinioCredProvider, MinioCredProvider: vol}
+	default:
+		return nil, fmt.Errorf("migrate: unsupported cloud provider %s", vol.currentResp.resp.Cloud)
+	}
+
 	cfg := storage.Config{
-		Provider:   stage.resp.Cloud,
-		Endpoint:   stage.resp.Endpoint,
+		Provider:   vol.currentResp.resp.Cloud,
+		Endpoint:   vol.currentResp.resp.Endpoint,
 		UseSSL:     true,
-		Credential: storage.Credential{Type: storage.MinioCredProvider, MinioCredProvider: stage},
-		Bucket:     stage.resp.BucketName,
+		Credential: cred,
+		Bucket:     vol.currentResp.resp.BucketName,
 	}
 
 	cli, err := storage.NewClient(ctx, cfg)
@@ -130,15 +190,17 @@ type Task struct {
 	backupDir     string
 	backupStorage storage.Client
 
-	stage   *stage
+	volume  *volume
 	copySem *semaphore.Weighted
 }
 
 func NewTask(taskID, backupName, clusterID string, params *paramtable.BackupParams) (*Task, error) {
-	logger := log.L().With(zap.String("task_id", taskID))
+	logger := log.With(zap.String("task_id", taskID))
 	cloudCli := cloud.NewClient(params.CloudConfig.Address, params.CloudConfig.APIKey)
 
-	backupStorage, err := storage.NewBackupStorage(context.Background(), &params.MinioCfg)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	backupStorage, err := storage.NewBackupStorage(ctx, &params.MinioCfg)
 	if err != nil {
 		return nil, fmt.Errorf("migrate: new backup storage %w", err)
 	}
@@ -157,7 +219,7 @@ func NewTask(taskID, backupName, clusterID string, params *paramtable.BackupPara
 		backupStorage: backupStorage,
 
 		// use taskID as stage prefix
-		stage:   newStage(clusterID, taskID, cloudCli),
+		volume:  newVolume(clusterID, taskID, cloudCli),
 		copySem: semaphore.NewWeighted(params.BackupCfg.BackupCopyDataParallelism),
 	}, nil
 }
@@ -182,7 +244,7 @@ func (t *Task) Prepare(ctx context.Context) error {
 func (t *Task) copyToCloud(ctx context.Context) error {
 	t.logger.Info("copy backup to cloud")
 
-	destCli, err := newStageStorage(ctx, t.stage)
+	destCli, err := newVolumeStorage(ctx, t.volume)
 	if err != nil {
 		return fmt.Errorf("migrate: new stage storage %w", err)
 	}
@@ -191,7 +253,7 @@ func (t *Task) copyToCloud(ctx context.Context) error {
 		Src:        t.backupStorage,
 		Dest:       destCli,
 		SrcPrefix:  t.backupDir,
-		DestPrefix: t.stage.resp.UploadPath,
+		DestPrefix: t.volume.currentResp.resp.UploadPath,
 		Sem:        t.copySem,
 
 		TraceFn: func(size int64, cost time.Duration) {
@@ -211,7 +273,7 @@ func (t *Task) copyToCloud(ctx context.Context) error {
 }
 
 func (t *Task) startMigrate(ctx context.Context) error {
-	src := cloud.Source{StageName: t.stage.resp.StageName, DataPath: t.stage.prefix}
+	src := cloud.Source{StageName: t.volume.currentResp.resp.StageName, DataPath: t.volume.prefix}
 
 	t.logger.Info("trigger migrate job")
 	dest := cloud.Destination{ClusterID: t.clusterID}
@@ -226,7 +288,7 @@ func (t *Task) startMigrate(ctx context.Context) error {
 }
 
 func (t *Task) Execute(ctx context.Context) error {
-	if err := t.stage.apply(ctx); err != nil {
+	if err := t.volume.apply(ctx); err != nil {
 		return fmt.Errorf("migrate: apply stage %w", err)
 	}
 
