@@ -7,8 +7,9 @@ import (
 
 	"github.com/samber/lo"
 	"go.uber.org/zap"
-	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
+
+	"github.com/zilliztech/milvus-backup/core/tasklet"
 
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
@@ -73,13 +74,12 @@ type Task struct {
 	milvusStorage  storage.Client
 	milvusRootPath string
 
+	crossStorage bool
+
 	backupStorage storage.Client
 	backupDir     string
 
-	crossStorage bool
-
-	collSem *semaphore.Weighted
-	copySem *semaphore.Weighted
+	throttling concurrencyThrottling
 
 	grpc    milvus.Grpc
 	restful milvus.Restful
@@ -105,6 +105,12 @@ func NewTask(args TaskArgs) *Task {
 	mb := newMetaBuilder(args.TaskID, args.Option.BackupName)
 	args.TaskMgr.AddBackupTask(args.TaskID, args.Option.BackupName)
 
+	throttling := concurrencyThrottling{
+		CollSem: semaphore.NewWeighted(args.Params.BackupCfg.BackupCollectionParallelism),
+		SegSem:  semaphore.NewWeighted(args.Params.BackupCfg.BackupSegmentParallelism),
+		CopySem: semaphore.NewWeighted(args.Params.BackupCfg.BackupCopyDataParallelism),
+	}
+
 	return &Task{
 		taskID: args.TaskID,
 
@@ -115,13 +121,12 @@ func NewTask(args TaskArgs) *Task {
 		milvusStorage:  args.MilvusStorage,
 		milvusRootPath: args.Params.MinioCfg.RootPath,
 
+		crossStorage: crossStorage,
+
 		backupStorage: args.BackupStorage,
 		backupDir:     args.BackupDir,
 
-		crossStorage: crossStorage,
-
-		collSem: semaphore.NewWeighted(int64(args.Params.BackupCfg.BackupCollectionParallelism)),
-		copySem: semaphore.NewWeighted(args.Params.BackupCfg.BackupCopyDataParallelism),
+		throttling: throttling,
 
 		grpc:    args.Grpc,
 		restful: args.Restful,
@@ -184,8 +189,6 @@ func (t *Task) Execute(ctx context.Context) error {
 		return err
 	}
 
-	t.taskMgr.UpdateBackupTask(t.taskID, taskmgr.SetBackupExecuting())
-
 	if err := t.privateExecute(ctx); err != nil {
 		t.taskMgr.UpdateBackupTask(t.taskID, taskmgr.SetBackupFail(err))
 		return err
@@ -212,19 +215,19 @@ func (t *Task) privateExecute(ctx context.Context) error {
 		return fmt.Errorf("backup: list db and collection: %w", err)
 	}
 
-	if err := t.runDBTask(ctx, dbNames); err != nil {
+	if err := t.backupDatabase(ctx, dbNames); err != nil {
 		return fmt.Errorf("backup: run db task: %w", err)
 	}
 
-	if err := t.runCollTask(ctx, collections); err != nil {
+	if err := t.backupCollection(ctx, collections); err != nil {
 		return fmt.Errorf("backup: run collection task: %w", err)
 	}
 
-	if err := t.runRBACTask(ctx); err != nil {
+	if err := t.backupRBAC(ctx); err != nil {
 		return fmt.Errorf("backup: run rbac task: %w", err)
 	}
 
-	t.runRPCChannelPOSTask(ctx)
+	t.backupRPCChannelPOS(ctx)
 
 	if err := t.writeMeta(ctx); err != nil {
 		return fmt.Errorf("backup: write meta: %w", err)
@@ -240,7 +243,7 @@ func (t *Task) prepare(ctx context.Context) error {
 		return fmt.Errorf("backup: check whether exist backup with name: %s", t.option.BackupName)
 	}
 	if exist {
-		return fmt.Errorf("backup:backup with name %s already exist", t.option.BackupName)
+		return fmt.Errorf("backup: backup with name %s already exist", t.option.BackupName)
 	}
 
 	return nil
@@ -342,9 +345,12 @@ func (t *Task) listDBAndNSS(ctx context.Context) ([]string, []namespace.NS, erro
 	return dbNames, nss, nil
 }
 
-func (t *Task) runDBTask(ctx context.Context, dbNames []string) error {
+func (t *Task) backupDatabase(ctx context.Context, dbNames []string) error {
+	t.logger.Info("start backup databases", zap.Int("count", len(dbNames)))
+	t.taskMgr.UpdateBackupTask(t.taskID, taskmgr.SetBackupDatabaseExecuting())
+
 	for _, dbName := range dbNames {
-		dbTask := NewDatabaseTask(t.taskID, dbName, t.option.BackupEZK, t.grpc, t.manage, t.metaBuilder)
+		dbTask := newDatabaseTask(t.taskID, dbName, t.option.BackupEZK, t.grpc, t.manage, t.metaBuilder)
 		if err := dbTask.Execute(ctx); err != nil {
 			return fmt.Errorf("backup: execute db task %s: %w", dbName, err)
 		}
@@ -358,14 +364,12 @@ func (t *Task) runDBTask(ctx context.Context, dbNames []string) error {
 func (t *Task) newCollTaskArgs() collectionTaskArgs {
 	return collectionTaskArgs{
 		TaskID:         t.taskID,
-		MetaOnly:       t.option.MetaOnly,
-		SkipFlush:      t.option.SkipFlush,
 		MilvusStorage:  t.milvusStorage,
 		MilvusRootPath: t.milvusRootPath,
 		CrossStorage:   t.crossStorage,
 		BackupStorage:  t.backupStorage,
-		CopySem:        t.copySem,
 		BackupDir:      t.backupDir,
+		Throttling:     t.throttling,
 		MetaBuilder:    t.metaBuilder,
 		TaskMgr:        t.taskMgr,
 		Grpc:           t.grpc,
@@ -373,31 +377,24 @@ func (t *Task) newCollTaskArgs() collectionTaskArgs {
 	}
 }
 
-func (t *Task) runCollTask(ctx context.Context, nss []namespace.NS) error {
-	nsStrs := lo.Map(nss, func(coll namespace.NS, _ int) string { return coll.String() })
-	t.logger.Info("start backup all collections", zap.Int("count", len(nss)), zap.Strings("ns", nsStrs))
+func (t *Task) backupCollection(ctx context.Context, nss []namespace.NS) error {
+	t.logger.Info("start backup collections", zap.Int("count", len(nss)))
 	args := t.newCollTaskArgs()
 
-	g, subCtx := errgroup.WithContext(ctx)
-	for _, ns := range nss {
-		if err := t.collSem.Acquire(ctx, 1); err != nil {
-			return fmt.Errorf("backup: acquire collection semaphore: %w", err)
-		}
+	t.taskMgr.UpdateBackupTask(t.taskID, taskmgr.AddBackupCollTasks(nss))
+	t.taskMgr.UpdateBackupTask(t.taskID, taskmgr.SetBackupCollectionExecuting())
 
-		g.Go(func() error {
-			defer t.collSem.Release(1)
-
-			task := NewCollectionTask(ns, args)
-			if err := task.Execute(subCtx); err != nil {
-				return fmt.Errorf("create: backup collection %s, err: %w", ns, err)
-			}
-
-			return nil
-		})
+	var strategy tasklet.Tasklet
+	if t.option.MetaOnly {
+		strategy = newMetaOnlyStrategy(nss, args)
+	} else if t.option.SkipFlush {
+		strategy = newSkipFlushStrategy(nss, args)
+	} else {
+		strategy = newSerialFlushStrategy(nss, args)
 	}
 
-	if err := g.Wait(); err != nil {
-		return fmt.Errorf("backup: wait worker pool: %w", err)
+	if err := strategy.Execute(ctx); err != nil {
+		return fmt.Errorf("backup: execute collection strategy: %w", err)
 	}
 
 	t.logger.Info("backup all collections successfully")
@@ -405,7 +402,7 @@ func (t *Task) runCollTask(ctx context.Context, nss []namespace.NS) error {
 	return nil
 }
 
-func (t *Task) runRBACTask(ctx context.Context) error {
+func (t *Task) backupRBAC(ctx context.Context) error {
 	if !t.option.BackupRBAC {
 		t.logger.Info("skip backup rbac")
 		return nil
@@ -419,7 +416,7 @@ func (t *Task) runRBACTask(ctx context.Context) error {
 	return nil
 }
 
-func (t *Task) runRPCChannelPOSTask(ctx context.Context) {
+func (t *Task) backupRPCChannelPOS(ctx context.Context) {
 	t.logger.Info("start backup rpc channel pos")
 	rpcPosTask := newRPCChannelPOSTask(t.taskID, t.rpcChannelName, t.grpc, t.metaBuilder)
 	if err := rpcPosTask.Execute(ctx); err != nil {

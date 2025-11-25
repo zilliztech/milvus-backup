@@ -11,11 +11,13 @@ func _() {
 	_ = x[MultiDatabase-1]
 	_ = x[DescribeDatabase-2]
 	_ = x[MultiL0InOneJob-4]
+	_ = x[GetSegmentInfo-8]
 }
 
 const (
 	_FeatureFlag_name_0 = "MultiDatabaseDescribeDatabase"
 	_FeatureFlag_name_1 = "MultiL0InOneJob"
+	_FeatureFlag_name_2 = "GetSegmentInfo"
 )
 
 var (
@@ -29,6 +31,8 @@ func (i FeatureFlag) String() string {
 		return _FeatureFlag_name_0[_FeatureFlag_index_0[i]:_FeatureFlag_index_0[i+1]]
 	case i == 4:
 		return _FeatureFlag_name_1
+	case i == 8:
+		return _FeatureFlag_name_2
 	default:
 		return "FeatureFlag(" + strconv.FormatInt(int64(i), 10) + ")"
 	}

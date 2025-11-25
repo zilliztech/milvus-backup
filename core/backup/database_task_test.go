@@ -29,7 +29,7 @@ func TestDatabaseTask_Execute(t *testing.T) {
 
 		builder := newMetaBuilder("task1", "backup1")
 
-		task := NewDatabaseTask("backup1", "db1", false, cli, manage, builder)
+		task := newDatabaseTask("backup1", "db1", false, cli, manage, builder)
 		err := task.Execute(context.Background())
 		assert.NoError(t, err)
 
@@ -46,7 +46,7 @@ func TestDatabaseTask_Execute(t *testing.T) {
 
 		builder := newMetaBuilder("task1", "backup1")
 
-		task := NewDatabaseTask("backup1", namespace.DefaultDBName, false, cli, manage, builder)
+		task := newDatabaseTask("backup1", namespace.DefaultDBName, false, cli, manage, builder)
 		err := task.Execute(context.Background())
 		assert.NoError(t, err)
 
@@ -72,7 +72,7 @@ func TestDatabaseTask_Execute(t *testing.T) {
 
 		builder := newMetaBuilder("task1", "backup1")
 
-		task := NewDatabaseTask("backup1", "db1", true, cli, manage, builder)
+		task := newDatabaseTask("backup1", "db1", true, cli, manage, builder)
 		err := task.Execute(context.Background())
 		assert.NoError(t, err)
 		assert.Equal(t, "ezk1", builder.data.DatabaseBackups[0].GetEzk())
@@ -93,7 +93,7 @@ func TestDatabaseTask_Execute(t *testing.T) {
 
 		builder := newMetaBuilder("task1", "backup1")
 
-		task := NewDatabaseTask("backup1", "db1", false, cli, manage, builder)
+		task := newDatabaseTask("backup1", "db1", false, cli, manage, builder)
 		err := task.Execute(context.Background())
 		assert.NoError(t, err)
 		assert.Equal(t, "", builder.data.DatabaseBackups[0].GetEzk())

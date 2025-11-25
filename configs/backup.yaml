@@ -79,10 +79,14 @@ minio:
   
 backup:
   parallelism:
-    # collection level parallelism to backup
-    backupCollection: 4
-    # thread pool to copy data. reduce it if blocks your storage's network bandwidth
+    # number of threads to copy data. reduce it if blocks your storage's network bandwidth
     copydata: 128
+
+    # number of collections to backup in parallel.
+    backupCollection: 4
+    # number of segments to backup in parallel
+    backupSegment: 1024
+
     # Collection level parallelism to restore
     restoreCollection: 2
     # max number of import job to run in parallel,

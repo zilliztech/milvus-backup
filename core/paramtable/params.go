@@ -30,10 +30,12 @@ func (p *BackupParams) Init() {
 type BackupConfig struct {
 	Base *BaseTable
 
-	BackupCollectionParallelism int
+	BackupCollectionParallelism int64
+	BackupSegmentParallelism    int64
 	BackupCopyDataParallelism   int64
-	RestoreParallelism          int
-	ImportJobParallelism        int64
+
+	RestoreParallelism   int
+	ImportJobParallelism int64
 
 	KeepTempFiles bool
 
@@ -44,9 +46,11 @@ type BackupConfig struct {
 func (p *BackupConfig) init(base *BaseTable) {
 	p.Base = base
 
-	p.initBackupCollectionParallelism()
-	p.initRestoreParallelism()
 	p.initBackupCopyDataParallelism()
+	p.initBackupCollectionParallelism()
+	p.initBackupSegmentParallelism()
+
+	p.initRestoreCollectionParallelism()
 	p.initImportJobParallelism()
 	p.initKeepTempFiles()
 	p.initGcPauseEnable()
@@ -54,18 +58,23 @@ func (p *BackupConfig) init(base *BaseTable) {
 }
 
 func (p *BackupConfig) initBackupCollectionParallelism() {
-	size := p.Base.ParseIntWithDefault("backup.parallelism.backupCollection", 1)
-	p.BackupCollectionParallelism = size
+	num := p.Base.ParseIntWithDefault("backup.parallelism.backupCollection", 1)
+	p.BackupCollectionParallelism = int64(num)
 }
 
-func (p *BackupConfig) initRestoreParallelism() {
-	size := p.Base.ParseIntWithDefault("backup.parallelism.restoreCollection", 1)
-	p.RestoreParallelism = size
+func (p *BackupConfig) initBackupSegmentParallelism() {
+	num := p.Base.ParseIntWithDefault("backup.parallelism.backupSegment", 1024)
+	p.BackupSegmentParallelism = int64(num)
 }
 
 func (p *BackupConfig) initBackupCopyDataParallelism() {
-	size := p.Base.ParseIntWithDefault("backup.parallelism.copydata", 128)
-	p.BackupCopyDataParallelism = int64(size)
+	num := p.Base.ParseIntWithDefault("backup.parallelism.copydata", 128)
+	p.BackupCopyDataParallelism = int64(num)
+}
+
+func (p *BackupConfig) initRestoreCollectionParallelism() {
+	num := p.Base.ParseIntWithDefault("backup.parallelism.restoreCollection", 1)
+	p.RestoreParallelism = num
 }
 
 func (p *BackupConfig) initImportJobParallelism() {

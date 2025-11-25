@@ -26,13 +26,13 @@ func TestTask_runRBACTask(t *testing.T) {
 			metaBuilder: newMetaBuilder("task1", "backup1"),
 			grpc:        cli,
 		}
-		err := task.runRBACTask(context.Background())
+		err := task.backupRBAC(context.Background())
 		assert.NoError(t, err)
 	})
 
 	t.Run("Skip", func(t *testing.T) {
 		task := &Task{logger: zap.NewNop()}
-		err := task.runRBACTask(context.Background())
+		err := task.backupRBAC(context.Background())
 		assert.NoError(t, err)
 	})
 }

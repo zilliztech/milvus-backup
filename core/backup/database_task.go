@@ -9,7 +9,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 )
 
-type DatabaseTask struct {
+type databaseTask struct {
 	taskID string
 
 	dbName string
@@ -22,11 +22,11 @@ type DatabaseTask struct {
 	manage milvus.Manage
 }
 
-func NewDatabaseTask(taskID, dbName string, backupEZK bool, grpc milvus.Grpc, manage milvus.Manage, builder *metaBuilder) *DatabaseTask {
-	return &DatabaseTask{taskID: taskID, dbName: dbName, backupEZK: backupEZK, metaBuilder: builder, grpc: grpc, manage: manage}
+func newDatabaseTask(taskID, dbName string, backupEZK bool, grpc milvus.Grpc, manage milvus.Manage, builder *metaBuilder) *databaseTask {
+	return &databaseTask{taskID: taskID, dbName: dbName, backupEZK: backupEZK, metaBuilder: builder, grpc: grpc, manage: manage}
 }
 
-func (dt *DatabaseTask) Execute(ctx context.Context) error {
+func (dt *databaseTask) Execute(ctx context.Context) error {
 	var properties []*backuppb.KeyValuePair
 	var dbID int64
 	// if milvus does not support database, skip describe database
