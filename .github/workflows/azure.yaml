@@ -33,7 +33,7 @@ jobs:
         image_tag: [2.5-latest]
       
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
       
       - name: Set up Python 3.10
         uses: actions/setup-python@v6
