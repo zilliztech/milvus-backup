@@ -5,6 +5,7 @@ import (
 	"io"
 
 	minioCred "github.com/minio/minio-go/v7/pkg/credentials"
+	"golang.org/x/oauth2"
 )
 
 type CopyObjectInput struct {
@@ -65,6 +66,9 @@ type Credential struct {
 	// MinioCredential
 	MinioCredProvider minioCred.Provider
 
+	// OAuth2 TokenSource
+	OAuth2TokenSource oauth2.TokenSource
+
 	// Azure Specific
 	AzureAccountName string
 }
@@ -81,6 +85,8 @@ const (
 	// MinioCredProvider For S3 compatible storage (now only support minio, aws),
 	// pass a struct which implements minioCred.Provider
 	MinioCredProvider
+	// OAuth2TokenSource for some object storage which need OAuth2 to auth.
+	OAuth2TokenSource
 )
 
 func (c CredentialType) String() string {
@@ -93,6 +99,8 @@ func (c CredentialType) String() string {
 		return "GCPCredJSON"
 	case MinioCredProvider:
 		return "MinioCredProvider"
+	case OAuth2TokenSource:
+		return "OAuth2TokenSource"
 	case Unknown:
 		return "Unknown"
 	}

@@ -35,14 +35,13 @@ import (
 	"os"
 	"sync/atomic"
 
-	"github.com/zilliztech/milvus-backup/core/paramtable"
-
 	"github.com/uber/jaeger-client-go/utils"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest"
 	"gopkg.in/natefinch/lumberjack.v2"
 
+	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/internal/progressbar"
 )
 
