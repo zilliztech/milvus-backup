@@ -46,6 +46,7 @@ const (
 	DescribeDatabase
 	MultiL0InOneJob
 	GetSegmentInfo
+	FlushAll
 )
 
 type featureTuple struct {
@@ -57,6 +58,7 @@ var _featureTuples = []featureTuple{
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.4.3-0")), Flag: DescribeDatabase},
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.6.5-0")), Flag: MultiL0InOneJob},
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.5.8-0")), Flag: GetSegmentInfo},
+	{Constraints: lo.Must(semver.NewConstraint(">= 2.6.0-0")), Flag: FlushAll},
 }
 
 func defaultDialOpt() []grpc.DialOption {
@@ -105,6 +107,7 @@ type Grpc interface {
 	GetLoadingProgress(ctx context.Context, db, collName string, partitionNames ...string) (int64, error)
 	GetPersistentSegmentInfo(ctx context.Context, db, collName string) ([]*milvuspb.PersistentSegmentInfo, error)
 	Flush(ctx context.Context, db, collName string) (*milvuspb.FlushResponse, error)
+	FlushAll(ctx context.Context) (*milvuspb.FlushAllResponse, error)
 	ListCollections(ctx context.Context, db string) (*milvuspb.ShowCollectionsResponse, error)
 	HasCollection(ctx context.Context, db, collName string) (bool, error)
 	BulkInsert(ctx context.Context, input GrpcBulkInsertInput) (int64, error)
@@ -615,6 +618,59 @@ func (g *GrpcClient) checkFlush(ctx context.Context, segIDs []int64, flushTS uin
 					zap.Duration("cost", cost),
 					zap.String("ns", ns.String()),
 					zap.Int64s("segment_ids", segIDs),
+					zap.Uint64("flush_ts", flushTS))
+			}
+		}
+	}
+}
+
+func (g *GrpcClient) FlushAll(ctx context.Context) (*milvuspb.FlushAllResponse, error) {
+	ctx = g.newCtx(ctx)
+
+	var resp *milvuspb.FlushAllResponse
+	err := retry.Do(ctx, func() error {
+		innerResp, innerErr := g.srv.FlushAll(ctx, &milvuspb.FlushAllRequest{})
+		if err := checkResponse(innerResp, innerErr); err != nil {
+			return fmt.Errorf("client: flush all: %w", err)
+		}
+		resp = innerResp
+		return nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("client: flush all: %w", err)
+	}
+
+	if err := g.checkFlushAll(ctx, resp.GetFlushAllTs()); err != nil {
+		return nil, fmt.Errorf("client: check flush all: %w", err)
+	}
+
+	return resp, nil
+}
+
+func (g *GrpcClient) checkFlushAll(ctx context.Context, flushTS uint64) error {
+	start := time.Now()
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+			req := &milvuspb.GetFlushAllStateRequest{FlushAllTs: flushTS}
+			resp, err := g.srv.GetFlushAllState(ctx, req)
+			if err != nil {
+				return fmt.Errorf("client: get flush all state: %w", err)
+			}
+			if resp.GetFlushed() {
+				return nil
+			}
+
+			cost := time.Since(start)
+			if cost > 30*time.Minute {
+				g.logger.Warn("waiting for the flush to complete took too much time! may milvus is not healthy",
+					zap.Duration("cost", cost),
 					zap.Uint64("flush_ts", flushTS))
 			}
 		}

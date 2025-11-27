@@ -798,6 +798,68 @@ func (_c *MockGrpc_Flush_Call) RunAndReturn(run func(ctx context.Context, db str
 	return _c
 }
 
+// FlushAll provides a mock function for the type MockGrpc
+func (_mock *MockGrpc) FlushAll(ctx context.Context) (*milvuspb.FlushAllResponse, error) {
+	ret := _mock.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for FlushAll")
+	}
+
+	var r0 *milvuspb.FlushAllResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) (*milvuspb.FlushAllResponse, error)); ok {
+		return returnFunc(ctx)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context) *milvuspb.FlushAllResponse); ok {
+		r0 = returnFunc(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.FlushAllResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = returnFunc(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockGrpc_FlushAll_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'FlushAll'
+type MockGrpc_FlushAll_Call struct {
+	*mock.Call
+}
+
+// FlushAll is a helper method to define mock.On call
+//   - ctx context.Context
+func (_e *MockGrpc_Expecter) FlushAll(ctx interface{}) *MockGrpc_FlushAll_Call {
+	return &MockGrpc_FlushAll_Call{Call: _e.mock.On("FlushAll", ctx)}
+}
+
+func (_c *MockGrpc_FlushAll_Call) Run(run func(ctx context.Context)) *MockGrpc_FlushAll_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockGrpc_FlushAll_Call) Return(flushAllResponse *milvuspb.FlushAllResponse, err error) *MockGrpc_FlushAll_Call {
+	_c.Call.Return(flushAllResponse, err)
+	return _c
+}
+
+func (_c *MockGrpc_FlushAll_Call) RunAndReturn(run func(ctx context.Context) (*milvuspb.FlushAllResponse, error)) *MockGrpc_FlushAll_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetBulkInsertState provides a mock function for the type MockGrpc
 func (_mock *MockGrpc) GetBulkInsertState(ctx context.Context, taskID int64) (*milvuspb.GetImportStateResponse, error) {
 	ret := _mock.Called(ctx, taskID)
