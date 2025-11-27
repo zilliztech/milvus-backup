@@ -379,27 +379,37 @@ func (t *Task) newCollTaskArgs() collectionTaskArgs {
 
 func (t *Task) backupCollection(ctx context.Context, nss []namespace.NS) error {
 	t.logger.Info("start backup collections", zap.Int("count", len(nss)))
-	args := t.newCollTaskArgs()
 
 	t.taskMgr.UpdateBackupTask(t.taskID, taskmgr.AddBackupCollTasks(nss))
 	t.taskMgr.UpdateBackupTask(t.taskID, taskmgr.SetBackupCollectionExecuting())
 
-	var strategy tasklet.Tasklet
-	if t.option.MetaOnly {
-		strategy = newMetaOnlyStrategy(nss, args)
-	} else if t.option.SkipFlush {
-		strategy = newSkipFlushStrategy(nss, args)
-	} else {
-		strategy = newSerialFlushStrategy(nss, args)
-	}
-
-	if err := strategy.Execute(ctx); err != nil {
+	if err := t.pickCollectionStrategy(nss).Execute(ctx); err != nil {
 		return fmt.Errorf("backup: execute collection strategy: %w", err)
 	}
 
 	t.logger.Info("backup all collections successfully")
 
 	return nil
+}
+
+func (t *Task) pickCollectionStrategy(nss []namespace.NS) tasklet.Tasklet {
+	args := t.newCollTaskArgs()
+
+	if t.option.MetaOnly {
+		t.logger.Info("use meta only strategy")
+		return newMetaOnlyStrategy(nss, args)
+	}
+	if t.option.SkipFlush {
+		t.logger.Info("use skip flush strategy")
+		return newSkipFlushStrategy(nss, args)
+	}
+	if t.grpc.HasFeature(milvus.FlushAll) {
+		t.logger.Info("use bulk flush strategy")
+		return newBulkFlushStrategy(nss, args)
+	}
+
+	t.logger.Info("use serial flush strategy")
+	return newSerialFlushStrategy(nss, args)
 }
 
 func (t *Task) backupRBAC(ctx context.Context) error {
@@ -427,6 +437,8 @@ func (t *Task) backupRPCChannelPOS(ctx context.Context) {
 }
 
 func (t *Task) writeMeta(ctx context.Context) error {
+	t.logger.Info("start write meta")
+
 	backupMeta, err := t.metaBuilder.buildBackupMeta()
 	if err != nil {
 		return fmt.Errorf("backup: build backup meta: %w", err)
@@ -472,6 +484,6 @@ func (t *Task) writeMeta(ctx context.Context) error {
 		return fmt.Errorf("backup: write full meta: %w", err)
 	}
 
-	log.Info("finish writeBackupInfoMeta")
+	log.Info("finish write meta")
 	return nil
 }

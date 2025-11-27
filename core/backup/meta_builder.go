@@ -38,6 +38,13 @@ func (builder *metaBuilder) setVersion(version string) {
 	builder.data.MilvusVersion = version
 }
 
+func (builder *metaBuilder) setFlushAllTS(flushAllTS uint64) {
+	builder.mu.Lock()
+	defer builder.mu.Unlock()
+
+	builder.data.FlushAllTs = flushAllTS
+}
+
 func (builder *metaBuilder) addDatabase(databaseBackup *backuppb.DatabaseBackupInfo) {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
