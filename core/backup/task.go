@@ -9,9 +9,8 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
 
-	"github.com/zilliztech/milvus-backup/core/tasklet"
-
 	"github.com/zilliztech/milvus-backup/core/paramtable"
+	"github.com/zilliztech/milvus-backup/core/tasklet"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
@@ -439,51 +438,30 @@ func (t *Task) backupRPCChannelPOS(ctx context.Context) {
 func (t *Task) writeMeta(ctx context.Context) error {
 	t.logger.Info("start write meta")
 
-	backupMeta, err := t.metaBuilder.buildBackupMeta()
-	if err != nil {
-		return fmt.Errorf("backup: build backup meta: %w", err)
-	}
-	err = storage.Write(ctx, t.backupStorage, mpath.MetaKey(t.backupDir, mpath.BackupMeta), backupMeta)
-	if err != nil {
-		return fmt.Errorf("backup: write backup meta: %w", err)
+	type metaEntry struct {
+		Type mpath.MetaType
+		Fn   func() ([]byte, error)
 	}
 
-	collectionMeta, err := t.metaBuilder.buildCollectionMeta()
-	if err != nil {
-		return fmt.Errorf("backup: build collection meta: %w", err)
-	}
-	err = storage.Write(ctx, t.backupStorage, mpath.MetaKey(t.backupDir, mpath.CollectionMeta), collectionMeta)
-	if err != nil {
-		return fmt.Errorf("backup: write collection meta: %w", err)
-	}
-
-	partitionMeta, err := t.metaBuilder.buildPartitionMeta()
-	if err != nil {
-		return fmt.Errorf("backup: build partition meta: %w", err)
-	}
-	err = storage.Write(ctx, t.backupStorage, mpath.MetaKey(t.backupDir, mpath.PartitionMeta), partitionMeta)
-	if err != nil {
-		return fmt.Errorf("backup: write partition meta: %w", err)
+	entries := []metaEntry{
+		{Type: mpath.BackupMeta, Fn: t.metaBuilder.buildBackupMeta},
+		{Type: mpath.CollectionMeta, Fn: t.metaBuilder.buildCollectionMeta},
+		{Type: mpath.PartitionMeta, Fn: t.metaBuilder.buildPartitionMeta},
+		{Type: mpath.SegmentMeta, Fn: t.metaBuilder.buildSegmentMeta},
+		{Type: mpath.FullMeta, Fn: t.metaBuilder.buildFullMeta},
 	}
 
-	segmentMeta, err := t.metaBuilder.buildSegmentMeta()
-	if err != nil {
-		return fmt.Errorf("backup: build segment meta: %w", err)
-	}
-	err = storage.Write(ctx, t.backupStorage, mpath.MetaKey(t.backupDir, mpath.SegmentMeta), segmentMeta)
-	if err != nil {
-		return fmt.Errorf("backup: write segment meta: %w", err)
-	}
-
-	fullMeta, err := t.metaBuilder.buildFullMeta()
-	if err != nil {
-		return fmt.Errorf("backup: build full meta: %w", err)
-	}
-	err = storage.Write(ctx, t.backupStorage, mpath.MetaKey(t.backupDir, mpath.FullMeta), fullMeta)
-	if err != nil {
-		return fmt.Errorf("backup: write full meta: %w", err)
+	for _, entry := range entries {
+		data, err := entry.Fn()
+		if err != nil {
+			return fmt.Errorf("backup: build %s meta: %w", entry.Type, err)
+		}
+		err = storage.Write(ctx, t.backupStorage, mpath.MetaKey(t.backupDir, entry.Type), data)
+		if err != nil {
+			return fmt.Errorf("backup: write %s meta: %w", entry.Type, err)
+		}
 	}
 
-	log.Info("finish write meta")
+	t.logger.Info("finish write meta")
 	return nil
 }
