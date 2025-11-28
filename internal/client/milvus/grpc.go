@@ -317,19 +317,31 @@ func NewGrpc(cfg *paramtable.MilvusConfig) (*GrpcClient, error) {
 	return cli, nil
 }
 
-func (g *GrpcClient) newCtx(ctx context.Context) context.Context {
+func (g *GrpcClient) newAuthMD(ctx context.Context) metadata.MD {
+	md := metadata.MD{}
+	if outgoingMD, ok := metadata.FromOutgoingContext(ctx); ok {
+		md = outgoingMD.Copy()
+	}
+
 	if g.auth != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, authorizationHeader, g.auth)
+		md.Set(authorizationHeader, g.auth)
 	}
 	if g.identifier != "" {
-		ctx = metadata.AppendToOutgoingContext(ctx, identifierHeader, g.identifier)
+		md.Set(identifierHeader, g.identifier)
 	}
-	return ctx
+
+	return md
+}
+
+func (g *GrpcClient) newCtx(ctx context.Context) context.Context {
+	return metadata.NewOutgoingContext(ctx, g.newAuthMD(ctx))
 }
 
 func (g *GrpcClient) newCtxWithDB(ctx context.Context, db string) context.Context {
-	ctx = g.newCtx(ctx)
-	return metadata.AppendToOutgoingContext(ctx, databaseHeader, db)
+	md := g.newAuthMD(ctx)
+	md.Set(databaseHeader, db)
+
+	return metadata.NewOutgoingContext(ctx, md)
 }
 
 func (g *GrpcClient) connect(ctx context.Context) error {
