@@ -7,6 +7,27 @@ body:
     value: |
       Thanks for taking the time to fill out this bug report! Please fill the form in English!
       Please avoid pasting your complete backup configuration and ensure the security of your confidential information.
+      
+      Before submitting, please:
+      1. Confirm which Milvus-Backup version you are using.
+      2. Check whether the issue still exists in the latest released version.
+- type: input
+  attributes:
+    label: Milvus-Backup Version
+    description: The exact MilvusBackup version you are using. (e.g. v1.2.3 or commit hash)
+    placeholder: x.y.z
+  validations:
+    required: true
+- type: dropdown
+  attributes:
+    label: Can you reproduce this issue on the latest version?
+    description: Please check the latest released Milvus-Backup version.
+    options:
+      - "Yes, it also happens on the latest version"
+      - "No, it only happens on my current version"
+      - "Not tested on the latest version"
+  validations:
+    required: true
 - type: textarea
   attributes:
     label: Current Behavior
