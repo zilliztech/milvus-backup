@@ -85,6 +85,8 @@ func (builder *metaBuilder) addSegments(segments []*backuppb.SegmentBackupInfo) 
 	defer builder.mu.Unlock()
 
 	for _, segment := range segments {
+		builder.data.Size += segment.GetSize()
+
 		collBackup := builder.collectionBackups[segment.GetCollectionId()]
 		collBackup.Size += segment.GetSize()
 
@@ -148,7 +150,9 @@ func (builder *metaBuilder) buildCollectionMeta() ([]byte, error) {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
 
-	info := &backuppb.CollectionLevelBackupInfo{Infos: builder.data.CollectionBackups}
+	// TODO: don't know why we need segment info in collection meta. maybe just a bug.
+	// we should remove it in the future.
+	info := &backuppb.CollectionLevelBackupInfo{Infos: builder.data.GetCollectionBackups()}
 	data, err := json.Marshal(info)
 	if err != nil {
 		return nil, fmt.Errorf("backup: build collection meta: %w", err)
@@ -162,7 +166,7 @@ func (builder *metaBuilder) buildPartitionMeta() ([]byte, error) {
 	defer builder.mu.Unlock()
 
 	partitions := make([]*backuppb.PartitionBackupInfo, 0)
-	for _, collection := range builder.data.CollectionBackups {
+	for _, collection := range builder.data.GetCollectionBackups() {
 		partitions = append(partitions, collection.GetPartitionBackups()...)
 	}
 
@@ -180,7 +184,7 @@ func (builder *metaBuilder) buildSegmentMeta() ([]byte, error) {
 	defer builder.mu.Unlock()
 
 	segments := make([]*backuppb.SegmentBackupInfo, 0)
-	for _, collection := range builder.data.CollectionBackups {
+	for _, collection := range builder.data.GetCollectionBackups() {
 		for _, partition := range collection.GetPartitionBackups() {
 			segments = append(segments, partition.GetSegmentBackups()...)
 		}
