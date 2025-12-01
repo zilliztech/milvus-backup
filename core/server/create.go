@@ -174,17 +174,39 @@ func (h *createBackupHandler) filterToFilter() (filter.Filter, error) {
 	return f, nil
 }
 
+func (h *createBackupHandler) toStrategy() (backup.Strategy, error) {
+	if h.request.GetStrategy() != "" {
+		return backup.ParseStrategy(h.request.GetStrategy())
+	}
+
+	if h.request.GetForce() {
+		log.Warn("force option is deprecated, pls use strategy=skip_flush instead")
+		return backup.StrategySkipFlush, nil
+	}
+
+	if h.request.GetMetaOnly() {
+		log.Warn("meta_only option is deprecated, pls use strategy=meta_only instead")
+		return backup.StrategyMetaOnly, nil
+	}
+
+	return backup.StrategyAuto, nil
+}
+
 func (h *createBackupHandler) toOption(params *paramtable.BackupParams) (backup.Option, error) {
 	f, err := h.toFilter()
 	if err != nil {
 		return backup.Option{}, fmt.Errorf("server: build filter: %w", err)
 	}
 
+	strategy, err := h.toStrategy()
+	if err != nil {
+		return backup.Option{}, fmt.Errorf("server: build strategy: %w", err)
+	}
+
 	return backup.Option{
 		BackupName: h.request.GetBackupName(),
 		PauseGC:    h.request.GetGcPauseEnable() || params.BackupCfg.GcPauseEnable,
-		SkipFlush:  h.request.GetForce(),
-		MetaOnly:   h.request.GetMetaOnly(),
+		Strategy:   strategy,
 		BackupRBAC: h.request.GetRbac(),
 		BackupEZK:  h.request.GetWithEzk(),
 		Filter:     f,

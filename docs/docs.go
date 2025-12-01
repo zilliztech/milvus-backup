@@ -516,7 +516,7 @@ const docTemplate = `{
                     }
                 },
                 "force": {
-                    "description": "force backup skip flush, Should make sure data has been stored into disk when using it",
+                    "description": "force backup skip flush, Should make sure data has been stored into disk when using it\nDeprecated: set strategy=skip_flush instead\n\nDeprecated: Marked as deprecated in backup.proto.",
                     "type": "boolean"
                 },
                 "gc_pause_address": {
@@ -532,7 +532,7 @@ const docTemplate = `{
                     "type": "integer"
                 },
                 "meta_only": {
-                    "description": "only backup meta, including collection schema and index info",
+                    "description": "only backup meta, including collection schema and index info\nDeprecated: set strategy=meta_only instead\n\nDeprecated: Marked as deprecated in backup.proto.",
                     "type": "boolean"
                 },
                 "rbac": {
@@ -541,6 +541,10 @@ const docTemplate = `{
                 },
                 "requestId": {
                     "description": "uuid of request, will generate one if not set",
+                    "type": "string"
+                },
+                "strategy": {
+                    "description": "strategy for backup, one of [meta_only, skip_flush, bulk_flush, serial_flush], if not set will auto select",
                     "type": "string"
                 },
                 "with_ezk": {

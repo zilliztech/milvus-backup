@@ -58,7 +58,7 @@ var _featureTuples = []featureTuple{
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.4.3-0")), Flag: DescribeDatabase},
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.6.5-0")), Flag: MultiL0InOneJob},
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.5.8-0")), Flag: GetSegmentInfo},
-	{Constraints: lo.Must(semver.NewConstraint(">= 2.6.0-0")), Flag: FlushAll},
+	{Constraints: lo.Must(semver.NewConstraint(">= 2.6.7-0")), Flag: FlushAll},
 }
 
 func defaultDialOpt() []grpc.DialOption {
@@ -653,14 +653,14 @@ func (g *GrpcClient) FlushAll(ctx context.Context) (*milvuspb.FlushAllResponse, 
 		return nil, fmt.Errorf("client: flush all: %w", err)
 	}
 
-	if err := g.checkFlushAll(ctx, resp.GetFlushAllTs()); err != nil {
+	if err := g.checkFlushAll(ctx, resp.GetFlushAllTss()); err != nil {
 		return nil, fmt.Errorf("client: check flush all: %w", err)
 	}
 
 	return resp, nil
 }
 
-func (g *GrpcClient) checkFlushAll(ctx context.Context, flushTS uint64) error {
+func (g *GrpcClient) checkFlushAll(ctx context.Context, flushAllTss map[string]uint64) error {
 	start := time.Now()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -670,7 +670,7 @@ func (g *GrpcClient) checkFlushAll(ctx context.Context, flushTS uint64) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-			req := &milvuspb.GetFlushAllStateRequest{FlushAllTs: flushTS}
+			req := &milvuspb.GetFlushAllStateRequest{FlushAllTss: flushAllTss}
 			resp, err := g.srv.GetFlushAllState(ctx, req)
 			if err != nil {
 				return fmt.Errorf("client: get flush all state: %w", err)
@@ -683,7 +683,7 @@ func (g *GrpcClient) checkFlushAll(ctx context.Context, flushTS uint64) error {
 			if cost > 30*time.Minute {
 				g.logger.Warn("waiting for the flush to complete took too much time! may milvus is not healthy",
 					zap.Duration("cost", cost),
-					zap.Uint64("flush_ts", flushTS))
+					zap.Any("flush_all_tss", flushAllTss))
 			}
 		}
 	}

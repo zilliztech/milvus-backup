@@ -20,6 +20,8 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
+const _allPartitionID = -1
+
 type collectionDMLTask struct {
 	taskID string
 
