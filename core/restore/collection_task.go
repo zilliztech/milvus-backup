@@ -2,7 +2,6 @@ package restore
 
 import (
 	"context"
-	"encoding/base64"
 	"errors"
 	"fmt"
 	"path"
@@ -13,12 +12,10 @@ import (
 	"time"
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
-	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
@@ -179,20 +176,9 @@ func (ct *collectionTask) Execute(ctx context.Context) error {
 func (ct *collectionTask) privateExecute(ctx context.Context) error {
 	ct.logger.Info("start restore collection")
 
-	// restore collection schema
-	if err := ct.dropExistedColl(ctx); err != nil {
-		return fmt.Errorf("restore_collection: drop exist collection: %w", err)
-	}
-	if err := ct.createColl(ctx); err != nil {
-		return fmt.Errorf("restore_collection: create collection: %w", err)
-	}
-
-	// restore collection index
-	if err := ct.dropExistedIndex(ctx); err != nil {
-		return fmt.Errorf("restore_collection: drop exist index: %w", err)
-	}
-	if err := ct.createIndex(ctx); err != nil {
-		return fmt.Errorf("restore_collection: create index: %w", err)
+	ddlt := newCollectionDDLTask(ct.taskID, ct.option, ct.collBackup, ct.targetNS, ct.grpcCli)
+	if err := ddlt.Execute(ctx); err != nil {
+		return fmt.Errorf("restore_collection: restore collection ddl: %w", err)
 	}
 
 	// restore collection data
@@ -295,371 +281,12 @@ func (ct *collectionTask) tearDown(ctx context.Context) error {
 	return nil
 }
 
-func (ct *collectionTask) dropExistedColl(ctx context.Context) error {
-	if !ct.option.DropExistCollection {
-		ct.logger.Info("skip drop existed collection")
-		return nil
-	}
-
-	ct.logger.Info("start drop existed collection")
-	exist, err := ct.grpcCli.HasCollection(ctx, ct.targetNS.DBName(), ct.targetNS.CollName())
-	if err != nil {
-		return fmt.Errorf("restore_collection: check collection exist: %w", err)
-	}
-	if !exist {
-		ct.logger.Info("collection not exist, skip drop collection")
-		return nil
-	}
-
-	if err := ct.grpcCli.DropCollection(ctx, ct.targetNS.DBName(), ct.targetNS.CollName()); err != nil {
-		return fmt.Errorf("restore_collection: failed to drop collection: %w", err)
-	}
-
-	return nil
-}
-
-func (ct *collectionTask) shardNum() int32 {
-	// overwrite shardNum by request parameter
-	shardNum := ct.collBackup.GetShardsNum()
-	if ct.option.MaxShardNum > 0 && shardNum > ct.option.MaxShardNum {
-		shardNum = ct.option.MaxShardNum
-		ct.logger.Info("overwrite shardNum by request parameter",
-			zap.Int32("old", ct.collBackup.GetShardsNum()),
-			zap.Int32("new", shardNum))
-	}
-
-	return shardNum
-}
-
 func (ct *collectionTask) ezk() string {
 	if ct.dbBackup.GetEzk() != "" {
 		return ct.dbBackup.GetEzk()
 	}
 
 	return ""
-}
-
-func (ct *collectionTask) createColl(ctx context.Context) error {
-	if ct.option.SkipCreateCollection {
-		ct.logger.Info("skip create collection")
-		return nil
-	}
-
-	fields, err := ct.convFields(ct.collBackup.GetSchema().GetFields())
-	if err != nil {
-		return fmt.Errorf("restore_collection: failed to get fields: %w", err)
-	}
-	ct.logger.Info("restore collection fields", zap.Any("fields", fields))
-
-	functions := ct.functions()
-	ct.logger.Info("restore collection functions", zap.Any("functions", functions))
-
-	structArrayFields, err := ct.structArrayFields()
-	if err != nil {
-		return fmt.Errorf("restore_collection: failed to get struct array fields: %w", err)
-	}
-
-	schema := &schemapb.CollectionSchema{
-		Name:               ct.targetNS.CollName(),
-		Description:        ct.collBackup.GetSchema().GetDescription(),
-		AutoID:             ct.collBackup.GetSchema().GetAutoID(),
-		Functions:          functions,
-		Fields:             fields,
-		EnableDynamicField: ct.collBackup.GetSchema().GetEnableDynamicField(),
-		Properties:         pbconv.BakKVToMilvusKV(ct.collBackup.GetSchema().GetProperties()),
-		StructArrayFields:  structArrayFields,
-	}
-
-	opt := milvus.CreateCollectionInput{
-		DB:           ct.targetNS.DBName(),
-		Schema:       schema,
-		ConsLevel:    commonpb.ConsistencyLevel(ct.collBackup.GetConsistencyLevel()),
-		ShardNum:     ct.shardNum(),
-		PartitionNum: ct.partitionNum(),
-		Properties:   pbconv.BakKVToMilvusKV(ct.collBackup.GetProperties(), ct.option.SkipParams.CollectionProperties...),
-	}
-	if err := ct.grpcCli.CreateCollection(ctx, opt); err != nil {
-		return fmt.Errorf("restore_collection: call create collection api after retry: %w", err)
-	}
-
-	return nil
-}
-
-func (ct *collectionTask) getDefaultValue(field *backuppb.FieldSchema) (*schemapb.ValueField, error) {
-	// try to use DefaultValueBase64 first
-	if field.GetDefaultValueBase64() != "" {
-		bytes, err := base64.StdEncoding.DecodeString(field.GetDefaultValueBase64())
-		if err != nil {
-			return nil, fmt.Errorf("restore_collection: failed to decode default value base64: %w", err)
-		}
-		var defaultValue schemapb.ValueField
-		if err := proto.Unmarshal(bytes, &defaultValue); err != nil {
-			return nil, fmt.Errorf("restore_collection: failed to unmarshal default value: %w", err)
-		}
-		return &defaultValue, nil
-	}
-
-	// backward compatibility
-	if field.GetDefaultValueProto() != "" {
-		var defaultValue schemapb.ValueField
-		err := proto.Unmarshal([]byte(field.DefaultValueProto), &defaultValue)
-		if err != nil {
-			return nil, fmt.Errorf("restore_collection: failed to unmarshal default value: %w", err)
-		}
-		return &defaultValue, nil
-	}
-
-	return nil, nil
-}
-
-func (ct *collectionTask) convFields(bakFields []*backuppb.FieldSchema) ([]*schemapb.FieldSchema, error) {
-	fields := make([]*schemapb.FieldSchema, 0, len(bakFields))
-
-	for _, bakField := range bakFields {
-		defaultValue, err := ct.getDefaultValue(bakField)
-		if err != nil {
-			return nil, fmt.Errorf("restore_collection: failed to get default value: %w", err)
-		}
-
-		fieldRestore := &schemapb.FieldSchema{
-			FieldID:          bakField.GetFieldID(),
-			Name:             bakField.GetName(),
-			IsPrimaryKey:     bakField.GetIsPrimaryKey(),
-			AutoID:           bakField.GetAutoID(),
-			Description:      bakField.GetDescription(),
-			DataType:         schemapb.DataType(bakField.GetDataType()),
-			TypeParams:       pbconv.BakKVToMilvusKV(bakField.GetTypeParams(), ct.option.SkipParams.FieldTypeParams...),
-			IndexParams:      pbconv.BakKVToMilvusKV(bakField.GetIndexParams(), ct.option.SkipParams.FieldIndexParams...),
-			IsDynamic:        bakField.GetIsDynamic(),
-			IsPartitionKey:   bakField.GetIsPartitionKey(),
-			Nullable:         bakField.GetNullable(),
-			ElementType:      schemapb.DataType(bakField.GetElementType()),
-			IsFunctionOutput: bakField.GetIsFunctionOutput(),
-			DefaultValue:     defaultValue,
-		}
-
-		fields = append(fields, fieldRestore)
-	}
-
-	return fields, nil
-}
-
-// partitionNum returns the partition number of the collection
-// if partition key was set, return the length of partition in backup
-// else return 0
-func (ct *collectionTask) partitionNum() int {
-	var hasPartitionKey bool
-	for _, field := range ct.collBackup.GetSchema().GetFields() {
-		if field.GetIsPartitionKey() {
-			hasPartitionKey = true
-			break
-		}
-	}
-
-	if hasPartitionKey {
-		return len(ct.collBackup.GetPartitionBackups())
-	}
-
-	return 0
-}
-
-func (ct *collectionTask) functions() []*schemapb.FunctionSchema {
-	bakFuncs := ct.collBackup.GetSchema().GetFunctions()
-	functions := make([]*schemapb.FunctionSchema, 0, len(bakFuncs))
-	for _, bakFunc := range bakFuncs {
-		fun := &schemapb.FunctionSchema{
-			Name:             bakFunc.Name,
-			Id:               bakFunc.Id,
-			Description:      bakFunc.Description,
-			Type:             schemapb.FunctionType(bakFunc.Type),
-			InputFieldNames:  bakFunc.InputFieldNames,
-			InputFieldIds:    bakFunc.InputFieldIds,
-			OutputFieldNames: bakFunc.OutputFieldNames,
-			OutputFieldIds:   bakFunc.OutputFieldIds,
-			Params:           pbconv.BakKVToMilvusKV(bakFunc.Params),
-		}
-		functions = append(functions, fun)
-	}
-
-	return functions
-}
-
-func (ct *collectionTask) structArrayFields() ([]*schemapb.StructArrayFieldSchema, error) {
-	bakFields := ct.collBackup.GetSchema().GetStructArrayFields()
-	structArrayFields := make([]*schemapb.StructArrayFieldSchema, 0, len(bakFields))
-	for _, bakField := range bakFields {
-		fields, err := ct.convFields(bakField.GetFields())
-		if err != nil {
-			return nil, fmt.Errorf("restore_collection: failed to convert struct array fields: %w", err)
-		}
-
-		structArrayField := &schemapb.StructArrayFieldSchema{
-			FieldID:     bakField.GetFieldID(),
-			Name:        bakField.GetName(),
-			Description: bakField.GetDescription(),
-			Fields:      fields,
-		}
-
-		structArrayFields = append(structArrayFields, structArrayField)
-	}
-
-	return structArrayFields, nil
-}
-
-func (ct *collectionTask) dropExistedIndex(ctx context.Context) error {
-	if !ct.option.DropExistIndex {
-		ct.logger.Info("skip drop existed index")
-		return nil
-	}
-
-	ct.logger.Info("start drop existed index")
-	indexes, err := ct.grpcCli.ListIndex(ctx, ct.targetNS.DBName(), ct.targetNS.CollName())
-	if err != nil {
-		log.Error("fail in list index", zap.Error(err))
-		return nil
-	}
-
-	for _, index := range indexes {
-		err = ct.grpcCli.DropIndex(ctx, ct.targetNS.DBName(), ct.targetNS.CollName(), index.IndexName)
-		if err != nil {
-			return fmt.Errorf("restore_collection: drop index %s: %w", index.IndexName, err)
-		}
-		ct.logger.Info("drop index", zap.String("field_name", index.FieldName),
-			zap.String("index_name", index.IndexName))
-	}
-
-	return nil
-}
-
-func (ct *collectionTask) createIndex(ctx context.Context) error {
-	if !ct.option.RebuildIndex {
-		ct.logger.Info("skip rebuild index")
-		return nil
-	}
-	ct.logger.Info("start rebuild index")
-
-	vectorFields := make(map[string]struct{})
-	for _, field := range ct.collBackup.GetSchema().GetFields() {
-		typStr, ok := schemapb.DataType_name[int32(field.DataType)]
-		if !ok {
-			return fmt.Errorf("restore_collection: invalid field data type %d", field.DataType)
-		}
-
-		if strings.HasSuffix(strings.ToLower(typStr), "vector") {
-			vectorFields[field.Name] = struct{}{}
-		}
-	}
-
-	indexes := ct.collBackup.GetIndexInfos()
-	var vectorIndexes, scalarIndexes []*backuppb.IndexInfo
-	for _, index := range indexes {
-		if _, ok := vectorFields[index.GetFieldName()]; ok {
-			vectorIndexes = append(vectorIndexes, index)
-		} else {
-			scalarIndexes = append(scalarIndexes, index)
-		}
-	}
-
-	if err := ct.restoreVectorFieldIdx(ctx, vectorIndexes); err != nil {
-		return fmt.Errorf("restore_collection: restore vector field index: %w", err)
-	}
-	if err := ct.restoreScalarFieldIdx(ctx, scalarIndexes); err != nil {
-		return fmt.Errorf("restore_collection: restore scalar field index: %w", err)
-	}
-
-	return nil
-}
-
-// hasSpecialChar checks if the index name contains special characters
-// This function is mainly copied from milvus main repo
-func hasSpecialChar(indexName string) bool {
-	indexName = strings.TrimSpace(indexName)
-
-	if indexName == "" {
-		return false
-	}
-
-	isAlpha := func(c byte) bool {
-		return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z')
-	}
-	isNumber := func(c byte) bool {
-		return c >= '0' && c <= '9'
-	}
-	firstChar := indexName[0]
-	if firstChar != '_' && !isAlpha(firstChar) {
-		return true
-	}
-
-	indexNameSize := len(indexName)
-	for i := 1; i < indexNameSize; i++ {
-		c := indexName[i]
-		if c != '_' && !isAlpha(c) && !isNumber(c) {
-			return true
-		}
-	}
-	return false
-}
-
-func (ct *collectionTask) restoreScalarFieldIdx(ctx context.Context, indexes []*backuppb.IndexInfo) error {
-	for _, index := range indexes {
-		ct.logger.Info("source index",
-			zap.String("indexName", index.GetIndexName()),
-			zap.Any("params", index.GetParams()))
-
-		indexName := index.GetIndexName()
-		if hasSpecialChar(indexName) {
-			// Skip index name for JSON path index (eg. /a/b/c) in Milvus 2.5 due to special character issue
-			// If milvus changed the index name validation, we should also update this function
-			// TODO: Handle other special character cases if found in the future
-			indexName = ""
-		}
-
-		opt := milvus.CreateIndexInput{
-			DB:             ct.targetNS.DBName(),
-			CollectionName: ct.targetNS.CollName(),
-			FieldName:      index.GetFieldName(),
-			IndexName:      indexName,
-			Params:         index.GetParams(),
-		}
-		if err := ct.grpcCli.CreateIndex(ctx, opt); err != nil {
-			return fmt.Errorf("restore_collection: restore scalar idx %s: %w", index.GetIndexName(), err)
-		}
-	}
-
-	return nil
-}
-
-func (ct *collectionTask) restoreVectorFieldIdx(ctx context.Context, indexes []*backuppb.IndexInfo) error {
-	for _, index := range indexes {
-		ct.logger.Info("source  index",
-			zap.String("indexName", index.GetIndexName()),
-			zap.Any("params", index.GetParams()))
-
-		var params map[string]string
-		if ct.option.UseAutoIndex {
-			ct.logger.Info("use auto index", zap.String("fieldName", index.GetFieldName()))
-			params = map[string]string{"index_type": "AUTOINDEX", "metric_type": index.GetParams()["metric_type"]}
-		} else {
-			ct.logger.Info("use source index", zap.String("fieldName", index.GetFieldName()))
-			params = index.GetParams()
-			if params["index_type"] == "marisa-trie" {
-				params["index_type"] = "Trie"
-			}
-		}
-
-		opt := milvus.CreateIndexInput{
-			DB:             ct.targetNS.DBName(),
-			CollectionName: ct.targetNS.CollName(),
-			FieldName:      index.GetFieldName(),
-			IndexName:      index.GetIndexName(),
-			Params:         params,
-		}
-		if err := ct.grpcCli.CreateIndex(ctx, opt); err != nil {
-			return fmt.Errorf("restore_collection: restore vec idx %s: %w", index.GetIndexName(), err)
-		}
-	}
-
-	return nil
 }
 
 func (ct *collectionTask) cleanTempFiles(dir string) tearDownFn {
@@ -675,27 +302,6 @@ func (ct *collectionTask) cleanTempFiles(dir string) tearDownFn {
 
 		return nil
 	}
-}
-
-func (ct *collectionTask) createPartition(ctx context.Context, partitionName string) error {
-	// pre-check whether partition exist, if not create it
-	ct.logger.Debug("check partition exist", zap.String("partition_name", partitionName))
-	exist, err := ct.grpcCli.HasPartition(ctx, ct.targetNS.DBName(), ct.targetNS.CollName(), partitionName)
-	if err != nil {
-		return fmt.Errorf("restore_collection: failed to check partition exist: %w", err)
-	}
-	if exist {
-		ct.logger.Info("partition exist, skip create partition")
-		return nil
-	}
-
-	err = ct.grpcCli.CreatePartition(ctx, ct.targetNS.DBName(), ct.targetNS.CollName(), partitionName)
-	if err != nil {
-		ct.logger.Debug("create partition failed", zap.String("partition_name", partitionName), zap.Error(err))
-		return fmt.Errorf("restore_collection: failed to create partition: %w", err)
-	}
-	ct.logger.Debug("create partition success", zap.String("partition_name", partitionName))
-	return nil
 }
 
 func (ct *collectionTask) copyToMilvusBucket(ctx context.Context, tempDir, srcPrefix string) (string, error) {
@@ -872,12 +478,6 @@ func (ct *collectionTask) restoreL0SegV2(ctx context.Context, partitionName stri
 }
 
 func (ct *collectionTask) restorePartitionV1(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
-	ct.logger.Info("start restore partition", zap.String("partition", part.GetPartitionName()))
-
-	if err := ct.createPartition(ctx, part.GetPartitionName()); err != nil {
-		return fmt.Errorf("restore_collection: restore partition: %w", err)
-	}
-
 	ct.logger.Info("start restore not L0 segment", zap.String("partition_name", part.GetPartitionName()))
 	// restore not L0 data groups
 	if err := ct.restoreNotL0SegV1(ctx, part); err != nil {
@@ -897,12 +497,6 @@ func (ct *collectionTask) restorePartitionV1(ctx context.Context, part *backuppb
 }
 
 func (ct *collectionTask) restorePartitionV2(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
-	ct.logger.Info("start restore partition v2", zap.String("partition", part.GetPartitionName()))
-
-	if err := ct.createPartition(ctx, part.GetPartitionName()); err != nil {
-		return fmt.Errorf("restore_collection: restore partition: %w", err)
-	}
-
 	ct.logger.Info("start restore partition not L0 segment v2", zap.String("partition_name", part.GetPartitionName()))
 	if err := ct.restoreNotL0SegV2(ctx, part); err != nil {
 		return fmt.Errorf("restore_collection: restore not L0 groups: %w", err)
