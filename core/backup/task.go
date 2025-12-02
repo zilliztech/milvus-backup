@@ -53,9 +53,10 @@ type TaskArgs struct {
 type Option struct {
 	BackupName string
 
-	PauseGC    bool
-	SkipFlush  bool
-	MetaOnly   bool
+	PauseGC bool
+
+	Strategy Strategy
+
 	BackupRBAC bool
 	BackupEZK  bool
 
@@ -382,7 +383,11 @@ func (t *Task) backupCollection(ctx context.Context, nss []namespace.NS) error {
 	t.taskMgr.UpdateBackupTask(t.taskID, taskmgr.AddBackupCollTasks(nss))
 	t.taskMgr.UpdateBackupTask(t.taskID, taskmgr.SetBackupCollectionExecuting())
 
-	if err := t.pickCollectionStrategy(nss).Execute(ctx); err != nil {
+	strategy, err := t.selectStrategy(nss)
+	if err != nil {
+		return fmt.Errorf("backup: select strategy: %w", err)
+	}
+	if err := strategy.Execute(ctx); err != nil {
 		return fmt.Errorf("backup: execute collection strategy: %w", err)
 	}
 
@@ -391,24 +396,32 @@ func (t *Task) backupCollection(ctx context.Context, nss []namespace.NS) error {
 	return nil
 }
 
-func (t *Task) pickCollectionStrategy(nss []namespace.NS) tasklet.Tasklet {
+func (t *Task) selectStrategy(nss []namespace.NS) (tasklet.Tasklet, error) {
 	args := t.newCollTaskArgs()
 
-	if t.option.MetaOnly {
+	switch t.option.Strategy {
+	case StrategyAuto:
+		if t.grpc.HasFeature(milvus.FlushAll) {
+			t.logger.Info("use bulk flush strategy")
+			return newBulkFlushStrategy(nss, args), nil
+		}
+		t.logger.Info("use serial flush strategy")
+		return newSerialFlushStrategy(nss, args), nil
+	case StrategyMetaOnly:
 		t.logger.Info("use meta only strategy")
-		return newMetaOnlyStrategy(nss, args)
-	}
-	if t.option.SkipFlush {
+		return newMetaOnlyStrategy(nss, t.newCollTaskArgs()), nil
+	case StrategySkipFlush:
 		t.logger.Info("use skip flush strategy")
-		return newSkipFlushStrategy(nss, args)
-	}
-	if t.grpc.HasFeature(milvus.FlushAll) {
+		return newSkipFlushStrategy(nss, t.newCollTaskArgs()), nil
+	case StrategyBulkFlush:
 		t.logger.Info("use bulk flush strategy")
-		return newBulkFlushStrategy(nss, args)
+		return newBulkFlushStrategy(nss, t.newCollTaskArgs()), nil
+	case StrategySerialFlush:
+		t.logger.Info("use serial flush strategy")
+		return newSerialFlushStrategy(nss, t.newCollTaskArgs()), nil
+	default:
+		return nil, fmt.Errorf("backup: unsupported strategy: %s", t.option.Strategy)
 	}
-
-	t.logger.Info("use serial flush strategy")
-	return newSerialFlushStrategy(nss, args)
 }
 
 func (t *Task) backupRBAC(ctx context.Context) error {

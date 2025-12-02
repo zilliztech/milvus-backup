@@ -236,11 +236,6 @@ func (t *Task) Prepare(ctx context.Context) error {
 	return nil
 }
 
-// copyToCloud copy all backup files to cloud.
-// We use a separate copy logic here instead of using Storage.CopyPrefixTask
-// because the temporary AK/SK credentials obtained from apply stage have an expiration time.
-// If the copy fails due to expired credentials, we need to reapply for new credentials.
-// Implementing this retry logic in the copy task would make it too complex and specialized.
 func (t *Task) copyToCloud(ctx context.Context) error {
 	t.logger.Info("copy backup to cloud")
 

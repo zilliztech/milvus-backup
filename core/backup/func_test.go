@@ -14,6 +14,32 @@ func TestDefaultName(t *testing.T) {
 	assert.Equal(t, "backup_1970_01_01_00_01_40_100", name)
 }
 
+func TestSupportStrategy(t *testing.T) {
+	strategies := SupportStrategy()
+	assert.Len(t, strategies, len(_strategyMap))
+}
+
+func TestParseStrategy(t *testing.T) {
+	t.Run("Empty", func(t *testing.T) {
+		s, err := ParseStrategy("")
+		assert.NoError(t, err)
+		assert.Equal(t, StrategyAuto, s)
+	})
+
+	t.Run("Valid", func(t *testing.T) {
+		for _, strategy := range SupportStrategy() {
+			s, err := ParseStrategy(strategy)
+			assert.NoError(t, err)
+			assert.Equal(t, _strategyMap[strategy], s)
+		}
+	})
+
+	t.Run("Invalid", func(t *testing.T) {
+		_, err := ParseStrategy("invalid")
+		assert.Error(t, err)
+	})
+}
+
 func TestValidateName(t *testing.T) {
 	t.Run("Valid", func(t *testing.T) {
 		err := ValidateName("backup")

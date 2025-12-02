@@ -17,7 +17,16 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
-const _allPartitionID = -1
+//go:generate stringer -type=Strategy
+type Strategy int
+
+const (
+	StrategyAuto Strategy = iota
+	StrategyMetaOnly
+	StrategySkipFlush
+	StrategyBulkFlush
+	StrategySerialFlush
+)
 
 // concurrencyThrottling:
 // CollSem / SegSem / CopySem form a three-level semaphore hierarchy (collection -> segment -> copy).
@@ -291,6 +300,7 @@ func (bf *bulkFlushStrategy) Execute(ctx context.Context) error {
 
 func (bf *bulkFlushStrategy) flushAllAndBackupTS(ctx context.Context) error {
 	bf.logger.Info("start flush all")
+
 	start := time.Now()
 	resp, err := bf.args.Grpc.FlushAll(ctx)
 	if err != nil {
@@ -298,7 +308,7 @@ func (bf *bulkFlushStrategy) flushAllAndBackupTS(ctx context.Context) error {
 	}
 	bf.logger.Info("flush all done", zap.Any("resp", resp), zap.Duration("cost", time.Since(start)))
 
-	bf.args.MetaBuilder.setFlushAllTS(resp.GetFlushAllTs())
+	bf.args.MetaBuilder.setFlushAllTS(resp.GetFlushAllTss())
 
 	return nil
 }

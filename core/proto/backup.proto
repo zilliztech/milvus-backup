@@ -108,7 +108,7 @@ message BackupInfo {
   RBACMeta rbac_meta = 12;
   RPCChannelInfo rpc_channel_info = 13;
   repeated DatabaseBackupInfo database_backups = 14;
-  uint64 flush_all_ts = 15;
+  map<string, uint64> flush_all_tss = 15;
 }
 
 message RPCChannelInfo {
@@ -152,9 +152,11 @@ message CreateBackupRequest {
   // database and collections to backup. A json string. To support database. 2023.7.7
   google.protobuf.Value db_collections = 5 [deprecated=true];
   // force backup skip flush, Should make sure data has been stored into disk when using it
-  bool force = 6;
+  // Deprecated: set strategy=skip_flush instead
+  bool force = 6 [deprecated=true];
   // only backup meta, including collection schema and index info
-  bool meta_only = 7;
+  // Deprecated: set strategy=meta_only instead
+  bool meta_only = 7 [deprecated=true];
   // if true, stop GC to avoid the data compacted and GCed during backup, use it when the data to backup is very large.
   bool gc_pause_enable = 8;
   // gc pause seconds, set it larger than the time cost of backup
@@ -169,6 +171,8 @@ message CreateBackupRequest {
   map<string, CollFilter> filter = 13;
   // if true, backup ezk
   bool with_ezk = 14;
+  // strategy for backup, one of [meta_only, skip_flush, bulk_flush, serial_flush], if not set will auto select
+  string strategy = 15;
 }
 
 /**

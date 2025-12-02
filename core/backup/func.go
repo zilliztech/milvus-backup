@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/samber/lo"
+
 	"github.com/zilliztech/milvus-backup/internal/validate"
 )
 
@@ -25,7 +27,7 @@ func ValidateName(name string) error {
 		return fmt.Errorf("backup name length should not exceed %d", _maxNameLength)
 	}
 
-	firstRune := []rune(name)[0] // 正确得到第一个 Unicode 字符（rune）
+	firstRune := []rune(name)[0]
 	if firstRune != '_' && !validate.IsAlpha(firstRune) {
 		return errors.New("backup name should start with an underscore or letter")
 	}
@@ -35,4 +37,25 @@ func ValidateName(name string) error {
 	}
 
 	return nil
+}
+
+var _strategyMap = map[string]Strategy{
+	"meta_only":    StrategyMetaOnly,
+	"skip_flush":   StrategySkipFlush,
+	"bulk_flush":   StrategyBulkFlush,
+	"serial_flush": StrategySerialFlush,
+}
+
+func SupportStrategy() []string { return lo.Keys(_strategyMap) }
+
+func ParseStrategy(strategy string) (Strategy, error) {
+	if strategy == "" {
+		return StrategyAuto, nil
+	}
+
+	if s, ok := _strategyMap[strategy]; ok {
+		return s, nil
+	}
+
+	return StrategyAuto, fmt.Errorf("backup: invalid strategy %s", strategy)
 }
