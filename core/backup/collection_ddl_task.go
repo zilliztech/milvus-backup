@@ -162,6 +162,7 @@ func (ddlt *collectionDDLTask) backupIndexes(ctx context.Context) ([]*backuppb.I
 	for _, index := range indexes {
 		params := pbconv.MilvusKVToMap(index.GetParams())
 		bakIndex := &backuppb.IndexInfo{
+			IndexId:   index.GetIndexID(),
 			FieldName: index.GetFieldName(),
 			IndexName: index.GetIndexName(),
 			IndexType: params["index_type"],
@@ -281,18 +282,22 @@ func (ddlt *collectionDDLTask) Execute(ctx context.Context) error {
 	}
 
 	collBackup := &backuppb.CollectionBackupInfo{
-		Id:               ddlt.taskID,
-		CollectionId:     descResp.GetCollectionID(),
-		DbName:           descResp.GetDbName(),
-		CollectionName:   descResp.GetCollectionName(),
-		Schema:           schema,
-		ShardsNum:        descResp.GetShardsNum(),
-		ConsistencyLevel: backuppb.ConsistencyLevel(descResp.ConsistencyLevel),
-		HasIndex:         len(indexes) > 0,
-		IndexInfos:       indexes,
-		LoadState:        collLoadState,
-		PartitionBackups: partitions,
-		Properties:       pbconv.MilvusKVToBakKV(descResp.GetProperties()),
+		Id:                   ddlt.taskID,
+		CollectionId:         descResp.GetCollectionID(),
+		DbName:               descResp.GetDbName(),
+		CollectionName:       descResp.GetCollectionName(),
+		Schema:               schema,
+		ShardsNum:            descResp.GetShardsNum(),
+		ConsistencyLevel:     backuppb.ConsistencyLevel(descResp.ConsistencyLevel),
+		HasIndex:             len(indexes) > 0,
+		IndexInfos:           indexes,
+		LoadState:            collLoadState,
+		PartitionBackups:     partitions,
+		Properties:           pbconv.MilvusKVToBakKV(descResp.GetProperties()),
+		DbId:                 descResp.GetDbId(),
+		CreatedTimestamp:     descResp.GetCreatedTimestamp(),
+		VirtualChannelNames:  descResp.GetVirtualChannelNames(),
+		PhysicalChannelNames: descResp.GetPhysicalChannelNames(),
 	}
 
 	ddlt.metaBuilder.addCollection(ddlt.ns, collBackup)
