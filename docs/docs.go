@@ -814,6 +814,9 @@ const docTemplate = `{
                 "field_name": {
                     "type": "string"
                 },
+                "index_id": {
+                    "type": "integer"
+                },
                 "index_name": {
                     "type": "string"
                 },

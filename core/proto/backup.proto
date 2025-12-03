@@ -19,6 +19,7 @@ message IndexInfo {
   string index_name = 2;
   string index_type = 3;
   map<string, string> params = 4;
+  int64 index_id = 5;
 }
 
 message DatabaseBackupInfo {
@@ -53,6 +54,10 @@ message CollectionBackupInfo {
   map<string, string> channel_checkpoints = 20;
   repeated SegmentBackupInfo l0_segments = 21;
   repeated KeyValuePair properties = 22;
+  int64 db_id = 23;
+  uint64 created_timestamp = 24;
+  repeated string virtual_channel_names = 25;
+  repeated string physical_channel_names = 26;
 }
 
 message PartitionBackupInfo {
