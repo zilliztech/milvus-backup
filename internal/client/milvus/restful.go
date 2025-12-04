@@ -25,7 +25,7 @@ const (
 	ImportStateFailed    ImportState = "Failed"
 )
 
-type RestfulBulkInsertInput struct {
+type BulkInsertV2Input struct {
 	DB             string
 	CollectionName string
 	PartitionName  string
@@ -36,7 +36,7 @@ type RestfulBulkInsertInput struct {
 	EZK            string
 }
 
-func (in *RestfulBulkInsertInput) opts() map[string]string {
+func (in *BulkInsertV2Input) opts() map[string]string {
 	opts := map[string]string{"skip_disk_quota_check": "true"}
 
 	if in.BackupTS > 0 {
@@ -146,7 +146,7 @@ type SegmentInfo struct {
 }
 
 type Restful interface {
-	BulkInsert(ctx context.Context, input RestfulBulkInsertInput) (string, error)
+	BulkInsert(ctx context.Context, input BulkInsertV2Input) (string, error)
 	GetBulkInsertState(ctx context.Context, db, jobID string) (*GetProcessResp, error)
 	GetSegmentInfo(ctx context.Context, db string, collID, segID int64) (*SegmentInfo, error)
 }
@@ -157,7 +157,7 @@ type RestfulClient struct {
 	cli *req.Client
 }
 
-func (r *RestfulClient) BulkInsert(ctx context.Context, input RestfulBulkInsertInput) (string, error) {
+func (r *RestfulClient) BulkInsert(ctx context.Context, input BulkInsertV2Input) (string, error) {
 	createReq := createImportReq{
 		DbName:         input.DB,
 		CollectionName: input.CollectionName,

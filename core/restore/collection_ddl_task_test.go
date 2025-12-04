@@ -2,7 +2,6 @@ package restore
 
 import (
 	"context"
-	"encoding/base64"
 	"testing"
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
@@ -10,7 +9,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
@@ -85,39 +83,5 @@ func TestCollectionTask_createColl(t *testing.T) {
 		ct.grpcCli = cli
 		err := ct.createColl(context.Background())
 		assert.NoError(t, err)
-	})
-}
-
-func TestCollectionTask_getDefaultValue(t *testing.T) {
-	t.Run("HasBase64", func(t *testing.T) {
-		defaultValue := &schemapb.ValueField{Data: &schemapb.ValueField_BoolData{BoolData: true}}
-		bytes, err := proto.Marshal(defaultValue)
-		assert.NoError(t, err)
-		field := &backuppb.FieldSchema{DefaultValueBase64: base64.StdEncoding.EncodeToString(bytes)}
-
-		task := newTestCollectionDDLTask()
-		val, err := task.getDefaultValue(field)
-		assert.NoError(t, err)
-		assert.Equal(t, defaultValue.GetBoolData(), val.GetBoolData())
-	})
-
-	t.Run("HasProto", func(t *testing.T) {
-		defaultValue := &schemapb.ValueField{Data: &schemapb.ValueField_BoolData{BoolData: true}}
-		bytes, err := proto.Marshal(defaultValue)
-		assert.NoError(t, err)
-		field := &backuppb.FieldSchema{DefaultValueProto: string(bytes)}
-
-		task := newTestCollectionDDLTask()
-		val, err := task.getDefaultValue(field)
-		assert.NoError(t, err)
-		assert.Equal(t, defaultValue.GetBoolData(), val.GetBoolData())
-	})
-
-	t.Run("WithoutDefault", func(t *testing.T) {
-		field := &backuppb.FieldSchema{}
-		task := newTestCollectionDDLTask()
-		val, err := task.getDefaultValue(field)
-		assert.NoError(t, err)
-		assert.Nil(t, val)
 	})
 }

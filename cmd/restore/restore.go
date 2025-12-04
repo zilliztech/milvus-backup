@@ -490,5 +490,7 @@ func NewCmd(opt *root.Options) *cobra.Command {
 
 	o.addFlags(cmd)
 
+	cmd.AddCommand(newSecondaryCmd(opt))
+
 	return cmd
 }
