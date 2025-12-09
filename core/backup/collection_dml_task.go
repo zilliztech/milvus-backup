@@ -40,6 +40,8 @@ type collectionDMLTask struct {
 	grpc    milvus.Grpc
 	restful milvus.Restful
 
+	gcCtrl gcCtrl
+
 	taskMgr     *taskmgr.Mgr
 	metaBuilder *metaBuilder
 
@@ -68,6 +70,8 @@ func newCollDMLTask(ns namespace.NS, args collectionTaskArgs) *collectionDMLTask
 
 		taskMgr:     args.TaskMgr,
 		metaBuilder: args.MetaBuilder,
+
+		gcCtrl: args.gcCtrl,
 
 		logger: logger,
 	}
@@ -340,6 +344,13 @@ func (dmlt *collectionDMLTask) Execute(ctx context.Context) error {
 	dmlt.logger.Info("start to backup dml of collection")
 
 	dmlt.taskMgr.UpdateBackupTask(dmlt.taskID, taskmgr.SetBackupCollDMLPrepare(dmlt.ns))
+
+	describe, err := dmlt.grpc.DescribeCollection(ctx, dmlt.ns.DBName(), dmlt.ns.CollName())
+	if err != nil {
+		return fmt.Errorf("backup: describe collection %w", err)
+	}
+	dmlt.gcCtrl.PauseCollectionGC(ctx, describe.CollectionID)
+	defer dmlt.gcCtrl.ResumeCollectionGC(ctx, describe.CollectionID)
 
 	segments, err := dmlt.getSegments(ctx)
 	if err != nil {

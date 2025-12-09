@@ -104,8 +104,14 @@ func (_c *MockManage_GetEZK_Call) RunAndReturn(run func(ctx context.Context, dbN
 }
 
 // PauseGC provides a mock function for the type MockManage
-func (_mock *MockManage) PauseGC(ctx context.Context, sec int32) (string, error) {
-	ret := _mock.Called(ctx, sec)
+func (_mock *MockManage) PauseGC(ctx context.Context, opts ...Option[pauseGCOption]) (string, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, opts)
+	} else {
+		tmpRet = _mock.Called(ctx)
+	}
+	ret := tmpRet
 
 	if len(ret) == 0 {
 		panic("no return value specified for PauseGC")
@@ -113,16 +119,16 @@ func (_mock *MockManage) PauseGC(ctx context.Context, sec int32) (string, error)
 
 	var r0 string
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int32) (string, error)); ok {
-		return returnFunc(ctx, sec)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, ...Option[pauseGCOption]) (string, error)); ok {
+		return returnFunc(ctx, opts...)
 	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int32) string); ok {
-		r0 = returnFunc(ctx, sec)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, ...Option[pauseGCOption]) string); ok {
+		r0 = returnFunc(ctx, opts...)
 	} else {
 		r0 = ret.Get(0).(string)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, int32) error); ok {
-		r1 = returnFunc(ctx, sec)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, ...Option[pauseGCOption]) error); ok {
+		r1 = returnFunc(ctx, opts...)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -136,24 +142,27 @@ type MockManage_PauseGC_Call struct {
 
 // PauseGC is a helper method to define mock.On call
 //   - ctx context.Context
-//   - sec int32
-func (_e *MockManage_Expecter) PauseGC(ctx interface{}, sec interface{}) *MockManage_PauseGC_Call {
-	return &MockManage_PauseGC_Call{Call: _e.mock.On("PauseGC", ctx, sec)}
+//   - opts ...Option[pauseGCOption]
+func (_e *MockManage_Expecter) PauseGC(ctx interface{}, opts ...interface{}) *MockManage_PauseGC_Call {
+	return &MockManage_PauseGC_Call{Call: _e.mock.On("PauseGC",
+		append([]interface{}{ctx}, opts...)...)}
 }
 
-func (_c *MockManage_PauseGC_Call) Run(run func(ctx context.Context, sec int32)) *MockManage_PauseGC_Call {
+func (_c *MockManage_PauseGC_Call) Run(run func(ctx context.Context, opts ...Option[pauseGCOption])) *MockManage_PauseGC_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
-		var arg1 int32
-		if args[1] != nil {
-			arg1 = args[1].(int32)
+		var arg1 []Option[pauseGCOption]
+		var variadicArgs []Option[pauseGCOption]
+		if len(args) > 1 {
+			variadicArgs = args[1].([]Option[pauseGCOption])
 		}
+		arg1 = variadicArgs
 		run(
 			arg0,
-			arg1,
+			arg1...,
 		)
 	})
 	return _c
@@ -164,35 +173,32 @@ func (_c *MockManage_PauseGC_Call) Return(s string, err error) *MockManage_Pause
 	return _c
 }
 
-func (_c *MockManage_PauseGC_Call) RunAndReturn(run func(ctx context.Context, sec int32) (string, error)) *MockManage_PauseGC_Call {
+func (_c *MockManage_PauseGC_Call) RunAndReturn(run func(ctx context.Context, opts ...Option[pauseGCOption]) (string, error)) *MockManage_PauseGC_Call {
 	_c.Call.Return(run)
 	return _c
 }
 
 // ResumeGC provides a mock function for the type MockManage
-func (_mock *MockManage) ResumeGC(ctx context.Context) (string, error) {
-	ret := _mock.Called(ctx)
+func (_mock *MockManage) ResumeGC(ctx context.Context, opts ...Option[resumeGCOpt]) error {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, opts)
+	} else {
+		tmpRet = _mock.Called(ctx)
+	}
+	ret := tmpRet
 
 	if len(ret) == 0 {
 		panic("no return value specified for ResumeGC")
 	}
 
-	var r0 string
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context) (string, error)); ok {
-		return returnFunc(ctx)
-	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context) string); ok {
-		r0 = returnFunc(ctx)
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, ...Option[resumeGCOpt]) error); ok {
+		r0 = returnFunc(ctx, opts...)
 	} else {
-		r0 = ret.Get(0).(string)
+		r0 = ret.Error(0)
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context) error); ok {
-		r1 = returnFunc(ctx)
-	} else {
-		r1 = ret.Error(1)
-	}
-	return r0, r1
+	return r0
 }
 
 // MockManage_ResumeGC_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ResumeGC'
@@ -202,29 +208,38 @@ type MockManage_ResumeGC_Call struct {
 
 // ResumeGC is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MockManage_Expecter) ResumeGC(ctx interface{}) *MockManage_ResumeGC_Call {
-	return &MockManage_ResumeGC_Call{Call: _e.mock.On("ResumeGC", ctx)}
+//   - opts ...Option[resumeGCOpt]
+func (_e *MockManage_Expecter) ResumeGC(ctx interface{}, opts ...interface{}) *MockManage_ResumeGC_Call {
+	return &MockManage_ResumeGC_Call{Call: _e.mock.On("ResumeGC",
+		append([]interface{}{ctx}, opts...)...)}
 }
 
-func (_c *MockManage_ResumeGC_Call) Run(run func(ctx context.Context)) *MockManage_ResumeGC_Call {
+func (_c *MockManage_ResumeGC_Call) Run(run func(ctx context.Context, opts ...Option[resumeGCOpt])) *MockManage_ResumeGC_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
 			arg0 = args[0].(context.Context)
 		}
+		var arg1 []Option[resumeGCOpt]
+		var variadicArgs []Option[resumeGCOpt]
+		if len(args) > 1 {
+			variadicArgs = args[1].([]Option[resumeGCOpt])
+		}
+		arg1 = variadicArgs
 		run(
 			arg0,
+			arg1...,
 		)
 	})
 	return _c
 }
 
-func (_c *MockManage_ResumeGC_Call) Return(s string, err error) *MockManage_ResumeGC_Call {
-	_c.Call.Return(s, err)
+func (_c *MockManage_ResumeGC_Call) Return(err error) *MockManage_ResumeGC_Call {
+	_c.Call.Return(err)
 	return _c
 }
 
-func (_c *MockManage_ResumeGC_Call) RunAndReturn(run func(ctx context.Context) (string, error)) *MockManage_ResumeGC_Call {
+func (_c *MockManage_ResumeGC_Call) RunAndReturn(run func(ctx context.Context, opts ...Option[resumeGCOpt]) error) *MockManage_ResumeGC_Call {
 	_c.Call.Return(run)
 	return _c
 }

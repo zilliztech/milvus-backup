@@ -13,6 +13,7 @@ func _() {
 	_ = x[MultiL0InOneJob-4]
 	_ = x[GetSegmentInfo-8]
 	_ = x[FlushAll-16]
+	_ = x[CollectionLevelGCControl-32]
 }
 
 const (
@@ -20,6 +21,7 @@ const (
 	_FeatureFlag_name_1 = "MultiL0InOneJob"
 	_FeatureFlag_name_2 = "GetSegmentInfo"
 	_FeatureFlag_name_3 = "FlushAll"
+	_FeatureFlag_name_4 = "CollectionLevelGCControl"
 )
 
 var (
@@ -37,6 +39,8 @@ func (i FeatureFlag) String() string {
 		return _FeatureFlag_name_2
 	case i == 16:
 		return _FeatureFlag_name_3
+	case i == 32:
+		return _FeatureFlag_name_4
 	default:
 		return "FeatureFlag(" + strconv.FormatInt(int64(i), 10) + ")"
 	}

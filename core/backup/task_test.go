@@ -214,25 +214,3 @@ func TestTask_listDBAndNSS(t *testing.T) {
 		}, nss)
 	})
 }
-
-func TestTask_pauseGC(t *testing.T) {
-	manage := milvus.NewMockManage(t)
-	manage.EXPECT().PauseGC(mock.Anything, int32(_defaultPauseDuration.Seconds())).
-		Return("ok", nil).Once()
-
-	task := &Task{manage: manage, logger: zap.NewNop()}
-	task.pauseGC(context.Background())
-
-	// TODO: use syncTest to test the case
-}
-
-func TestGCController_Resume(t *testing.T) {
-
-	manage := milvus.NewMockManage(t)
-	manage.EXPECT().ResumeGC(mock.Anything).Return("ok", nil).Once()
-
-	task := &Task{manage: manage, logger: zap.NewNop()}
-	task.resumeGC(context.Background())
-
-	// TODO: use syncTest to test the case
-}

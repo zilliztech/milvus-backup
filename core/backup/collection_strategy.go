@@ -57,6 +57,8 @@ type collectionTaskArgs struct {
 
 	Grpc    milvus.Grpc
 	Restful milvus.Restful
+
+	gcCtrl gcCtrl
 }
 
 type collTask func(ctx context.Context) error
