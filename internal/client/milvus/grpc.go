@@ -39,7 +39,7 @@ import (
 )
 
 //go:generate stringer -type=FeatureFlag
-type FeatureFlag uint8
+type FeatureFlag uint16
 
 const (
 	MultiDatabase FeatureFlag = 1 << iota
@@ -47,6 +47,7 @@ const (
 	MultiL0InOneJob
 	GetSegmentInfo
 	FlushAll
+	CollectionLevelGCControl
 )
 
 type featureTuple struct {
@@ -58,7 +59,8 @@ var _featureTuples = []featureTuple{
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.4.3-0")), Flag: DescribeDatabase},
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.6.5-0")), Flag: MultiL0InOneJob},
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.5.8-0")), Flag: GetSegmentInfo},
-	{Constraints: lo.Must(semver.NewConstraint(">= 2.6.7-0")), Flag: FlushAll},
+	{Constraints: lo.Must(semver.NewConstraint(">= 2.6.8-0")), Flag: FlushAll},
+	{Constraints: lo.Must(semver.NewConstraint(">= 2.6.8-0")), Flag: CollectionLevelGCControl},
 }
 
 func defaultDialOpt() []grpc.DialOption {

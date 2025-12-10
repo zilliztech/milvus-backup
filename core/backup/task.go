@@ -3,7 +3,6 @@ package backup
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/samber/lo"
 	"go.uber.org/zap"
@@ -23,13 +22,7 @@ import (
 const (
 	_rpcChWarnMessage = "Failed to back up RPC channel position. This won't cause the backup to fail, " +
 		"but may lead to inconsistency when reconnecting to CDC for incremental data replication."
-	_gcWarnMessage = "Pause GC Failed," +
-		"This warn won't fail the backup process. " +
-		"Pause GC can protect data not to be GCed during backup, " +
-		"it is necessary to backup very large data(cost more than a hour)."
 )
-
-var _defaultPauseDuration = 1 * time.Hour
 
 type TaskArgs struct {
 	TaskID string
@@ -87,11 +80,23 @@ type Task struct {
 
 	metaBuilder *metaBuilder
 
+	gcCtrl gcCtrl
+
 	taskMgr *taskmgr.Mgr
 
 	rpcChannelName string
+}
 
-	stopGC chan struct{}
+func newGCCtrl(args TaskArgs) gcCtrl {
+	if !args.Option.PauseGC {
+		return &emptyGCCtrl{}
+	}
+
+	if args.Grpc.HasFeature(milvus.CollectionLevelGCControl) {
+		return newCollectionGCCtrl(args.TaskID, args.Manage)
+	}
+
+	return newClusterGCCtrl(args.TaskID, args.Manage)
 }
 
 func NewTask(args TaskArgs) *Task {
@@ -132,55 +137,13 @@ func NewTask(args TaskArgs) *Task {
 		restful: args.Restful,
 		manage:  args.Manage,
 
+		gcCtrl: newGCCtrl(args),
+
 		metaBuilder: mb,
 
 		taskMgr: args.TaskMgr,
 
 		rpcChannelName: args.Params.MilvusCfg.RPCChanelName,
-	}
-}
-
-func (t *Task) pauseGC(ctx context.Context) {
-	resp, err := t.manage.PauseGC(ctx, int32(_defaultPauseDuration.Seconds()))
-	if err != nil {
-		t.logger.Warn(_gcWarnMessage, zap.Error(err), zap.String("resp", resp))
-		return
-	}
-
-	t.logger.Info("pause gc success", zap.String("resp", resp))
-	go t.renewalGCLease()
-}
-
-func (t *Task) renewalGCLease() {
-	for {
-		select {
-		case <-time.After(_defaultPauseDuration / 2):
-			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-			resp, err := t.manage.PauseGC(ctx, int32(_defaultPauseDuration.Seconds()))
-			if err != nil {
-				t.logger.Warn("renewal pause gc lease failed", zap.Error(err), zap.String("resp", resp))
-			}
-			t.logger.Info("renewal pause gc lease done", zap.String("resp", resp))
-			cancel()
-		case <-t.stopGC:
-			t.logger.Info("stop renewal pause gc lease")
-			return
-		}
-	}
-}
-
-func (t *Task) resumeGC(ctx context.Context) {
-	select {
-	case t.stopGC <- struct{}{}:
-	default:
-		t.logger.Info("stop channel is full, maybe renewal lease goroutine not running")
-	}
-
-	resp, err := t.manage.ResumeGC(ctx)
-	if err != nil {
-		t.logger.Warn("resume gc failed", zap.Error(err), zap.String("resp", resp))
-	} else {
-		t.logger.Info("resume gc done", zap.String("resp", resp))
 	}
 }
 
@@ -205,10 +168,8 @@ func (t *Task) privateExecute(ctx context.Context) error {
 	}
 	t.metaBuilder.setVersion(version)
 
-	if t.option.PauseGC {
-		t.pauseGC(ctx)
-		defer t.resumeGC(ctx)
-	}
+	t.gcCtrl.PauseGC(ctx)
+	defer t.gcCtrl.ResumeGC(ctx)
 
 	dbNames, collections, err := t.listDBAndNSS(ctx)
 	if err != nil {
@@ -374,6 +335,7 @@ func (t *Task) newCollTaskArgs() collectionTaskArgs {
 		TaskMgr:        t.taskMgr,
 		Grpc:           t.grpc,
 		Restful:        t.restful,
+		gcCtrl:         t.gcCtrl,
 	}
 }
 
