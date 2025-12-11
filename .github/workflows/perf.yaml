@@ -9,7 +9,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  go-version: 1.24
+  go-version: 1.25
 
 jobs:
   test-backup-restore-api:
