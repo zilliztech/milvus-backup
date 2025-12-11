@@ -470,6 +470,10 @@ type IndexInfo struct {
 	IndexType string            `protobuf:"bytes,3,opt,name=index_type,json=indexType,proto3" json:"index_type,omitempty"`
 	Params    map[string]string `protobuf:"bytes,4,rep,name=params,proto3" json:"params,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
 	IndexId   int64             `protobuf:"varint,5,opt,name=index_id,json=indexId,proto3" json:"index_id,omitempty"`
+	// extra info from etcd
+	FieldId         int64           `protobuf:"varint,6,opt,name=field_id,json=fieldId,proto3" json:"field_id,omitempty"`
+	IndexParams     []*KeyValuePair `protobuf:"bytes,7,rep,name=index_params,json=indexParams,proto3" json:"index_params,omitempty"`
+	UserIndexParams []*KeyValuePair `protobuf:"bytes,8,rep,name=user_index_params,json=userIndexParams,proto3" json:"user_index_params,omitempty"`
 }
 
 func (x *IndexInfo) Reset() {
@@ -537,6 +541,27 @@ func (x *IndexInfo) GetIndexId() int64 {
 		return x.IndexId
 	}
 	return 0
+}
+
+func (x *IndexInfo) GetFieldId() int64 {
+	if x != nil {
+		return x.FieldId
+	}
+	return 0
+}
+
+func (x *IndexInfo) GetIndexParams() []*KeyValuePair {
+	if x != nil {
+		return x.IndexParams
+	}
+	return nil
+}
+
+func (x *IndexInfo) GetUserIndexParams() []*KeyValuePair {
+	if x != nil {
+		return x.UserIndexParams
+	}
+	return nil
 }
 
 type DatabaseBackupInfo struct {
@@ -4909,7 +4934,7 @@ var file_backup_proto_rawDesc = []byte{
 	0x6d, 0x69, 0x6c, 0x76, 0x75, 0x73, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x62, 0x61, 0x63,
 	0x6b, 0x75, 0x70, 0x1a, 0x1c, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x2f, 0x70, 0x72, 0x6f, 0x74,
 	0x6f, 0x62, 0x75, 0x66, 0x2f, 0x73, 0x74, 0x72, 0x75, 0x63, 0x74, 0x2e, 0x70, 0x72, 0x6f, 0x74,
-	0x6f, 0x22, 0x82, 0x02, 0x0a, 0x09, 0x49, 0x6e, 0x64, 0x65, 0x78, 0x49, 0x6e, 0x66, 0x6f, 0x12,
+	0x6f, 0x22, 0xb2, 0x03, 0x0a, 0x09, 0x49, 0x6e, 0x64, 0x65, 0x78, 0x49, 0x6e, 0x66, 0x6f, 0x12,
 	0x1d, 0x0a, 0x0a, 0x66, 0x69, 0x65, 0x6c, 0x64, 0x5f, 0x6e, 0x61, 0x6d, 0x65, 0x18, 0x01, 0x20,
 	0x01, 0x28, 0x09, 0x52, 0x09, 0x66, 0x69, 0x65, 0x6c, 0x64, 0x4e, 0x61, 0x6d, 0x65, 0x12, 0x1d,
 	0x0a, 0x0a, 0x69, 0x6e, 0x64, 0x65, 0x78, 0x5f, 0x6e, 0x61, 0x6d, 0x65, 0x18, 0x02, 0x20, 0x01,
@@ -4921,7 +4946,18 @@ var file_backup_proto_rawDesc = []byte{
 	0x75, 0x70, 0x2e, 0x49, 0x6e, 0x64, 0x65, 0x78, 0x49, 0x6e, 0x66, 0x6f, 0x2e, 0x50, 0x61, 0x72,
 	0x61, 0x6d, 0x73, 0x45, 0x6e, 0x74, 0x72, 0x79, 0x52, 0x06, 0x70, 0x61, 0x72, 0x61, 0x6d, 0x73,
 	0x12, 0x19, 0x0a, 0x08, 0x69, 0x6e, 0x64, 0x65, 0x78, 0x5f, 0x69, 0x64, 0x18, 0x05, 0x20, 0x01,
-	0x28, 0x03, 0x52, 0x07, 0x69, 0x6e, 0x64, 0x65, 0x78, 0x49, 0x64, 0x1a, 0x39, 0x0a, 0x0b, 0x50,
+	0x28, 0x03, 0x52, 0x07, 0x69, 0x6e, 0x64, 0x65, 0x78, 0x49, 0x64, 0x12, 0x19, 0x0a, 0x08, 0x66,
+	0x69, 0x65, 0x6c, 0x64, 0x5f, 0x69, 0x64, 0x18, 0x06, 0x20, 0x01, 0x28, 0x03, 0x52, 0x07, 0x66,
+	0x69, 0x65, 0x6c, 0x64, 0x49, 0x64, 0x12, 0x44, 0x0a, 0x0c, 0x69, 0x6e, 0x64, 0x65, 0x78, 0x5f,
+	0x70, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x18, 0x07, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x21, 0x2e, 0x6d,
+	0x69, 0x6c, 0x76, 0x75, 0x73, 0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x62, 0x61, 0x63, 0x6b,
+	0x75, 0x70, 0x2e, 0x4b, 0x65, 0x79, 0x56, 0x61, 0x6c, 0x75, 0x65, 0x50, 0x61, 0x69, 0x72, 0x52,
+	0x0b, 0x69, 0x6e, 0x64, 0x65, 0x78, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x12, 0x4d, 0x0a, 0x11,
+	0x75, 0x73, 0x65, 0x72, 0x5f, 0x69, 0x6e, 0x64, 0x65, 0x78, 0x5f, 0x70, 0x61, 0x72, 0x61, 0x6d,
+	0x73, 0x18, 0x08, 0x20, 0x03, 0x28, 0x0b, 0x32, 0x21, 0x2e, 0x6d, 0x69, 0x6c, 0x76, 0x75, 0x73,
+	0x2e, 0x70, 0x72, 0x6f, 0x74, 0x6f, 0x2e, 0x62, 0x61, 0x63, 0x6b, 0x75, 0x70, 0x2e, 0x4b, 0x65,
+	0x79, 0x56, 0x61, 0x6c, 0x75, 0x65, 0x50, 0x61, 0x69, 0x72, 0x52, 0x0f, 0x75, 0x73, 0x65, 0x72,
+	0x49, 0x6e, 0x64, 0x65, 0x78, 0x50, 0x61, 0x72, 0x61, 0x6d, 0x73, 0x1a, 0x39, 0x0a, 0x0b, 0x50,
 	0x61, 0x72, 0x61, 0x6d, 0x73, 0x45, 0x6e, 0x74, 0x72, 0x79, 0x12, 0x10, 0x0a, 0x03, 0x6b, 0x65,
 	0x79, 0x18, 0x01, 0x20, 0x01, 0x28, 0x09, 0x52, 0x03, 0x6b, 0x65, 0x79, 0x12, 0x14, 0x0a, 0x05,
 	0x76, 0x61, 0x6c, 0x75, 0x65, 0x18, 0x02, 0x20, 0x01, 0x28, 0x09, 0x52, 0x05, 0x76, 0x61, 0x6c,
@@ -5889,88 +5925,90 @@ var file_backup_proto_goTypes = []interface{}{
 }
 var file_backup_proto_depIdxs = []int32{
 	58, // 0: milvus.proto.backup.IndexInfo.params:type_name -> milvus.proto.backup.IndexInfo.ParamsEntry
-	40, // 1: milvus.proto.backup.DatabaseBackupInfo.properties:type_name -> milvus.proto.backup.KeyValuePair
-	44, // 2: milvus.proto.backup.CollectionBackupInfo.schema:type_name -> milvus.proto.backup.CollectionSchema
-	3,  // 3: milvus.proto.backup.CollectionBackupInfo.consistency_level:type_name -> milvus.proto.backup.ConsistencyLevel
-	10, // 4: milvus.proto.backup.CollectionBackupInfo.partition_backups:type_name -> milvus.proto.backup.PartitionBackupInfo
-	7,  // 5: milvus.proto.backup.CollectionBackupInfo.index_infos:type_name -> milvus.proto.backup.IndexInfo
-	59, // 6: milvus.proto.backup.CollectionBackupInfo.channel_checkpoints:type_name -> milvus.proto.backup.CollectionBackupInfo.ChannelCheckpointsEntry
-	11, // 7: milvus.proto.backup.CollectionBackupInfo.l0_segments:type_name -> milvus.proto.backup.SegmentBackupInfo
-	40, // 8: milvus.proto.backup.CollectionBackupInfo.properties:type_name -> milvus.proto.backup.KeyValuePair
-	11, // 9: milvus.proto.backup.PartitionBackupInfo.segment_backups:type_name -> milvus.proto.backup.SegmentBackupInfo
-	38, // 10: milvus.proto.backup.SegmentBackupInfo.binlogs:type_name -> milvus.proto.backup.FieldBinlog
-	38, // 11: milvus.proto.backup.SegmentBackupInfo.statslogs:type_name -> milvus.proto.backup.FieldBinlog
-	38, // 12: milvus.proto.backup.SegmentBackupInfo.deltalogs:type_name -> milvus.proto.backup.FieldBinlog
-	1,  // 13: milvus.proto.backup.BackupInfo.state_code:type_name -> milvus.proto.backup.BackupTaskStateCode
-	9,  // 14: milvus.proto.backup.BackupInfo.collection_backups:type_name -> milvus.proto.backup.CollectionBackupInfo
-	57, // 15: milvus.proto.backup.BackupInfo.rbac_meta:type_name -> milvus.proto.backup.RBACMeta
-	13, // 16: milvus.proto.backup.BackupInfo.rpc_channel_info:type_name -> milvus.proto.backup.RPCChannelInfo
-	8,  // 17: milvus.proto.backup.BackupInfo.database_backups:type_name -> milvus.proto.backup.DatabaseBackupInfo
-	60, // 18: milvus.proto.backup.BackupInfo.flush_all_tss:type_name -> milvus.proto.backup.BackupInfo.FlushAllTssEntry
-	9,  // 19: milvus.proto.backup.CollectionLevelBackupInfo.infos:type_name -> milvus.proto.backup.CollectionBackupInfo
-	10, // 20: milvus.proto.backup.PartitionLevelBackupInfo.infos:type_name -> milvus.proto.backup.PartitionBackupInfo
-	11, // 21: milvus.proto.backup.SegmentLevelBackupInfo.infos:type_name -> milvus.proto.backup.SegmentBackupInfo
-	65, // 22: milvus.proto.backup.CreateBackupRequest.db_collections:type_name -> google.protobuf.Value
-	61, // 23: milvus.proto.backup.CreateBackupRequest.filter:type_name -> milvus.proto.backup.CreateBackupRequest.FilterEntry
-	0,  // 24: milvus.proto.backup.BackupInfoResponse.code:type_name -> milvus.proto.backup.ResponseCode
-	19, // 25: milvus.proto.backup.BackupInfoResponse.data:type_name -> milvus.proto.backup.BackupInfoBrief
-	1,  // 26: milvus.proto.backup.BackupInfoBrief.state_code:type_name -> milvus.proto.backup.BackupTaskStateCode
-	20, // 27: milvus.proto.backup.BackupInfoBrief.collection_backups:type_name -> milvus.proto.backup.CollectionBackupInfoBrief
-	13, // 28: milvus.proto.backup.BackupInfoBrief.rpc_channel_info:type_name -> milvus.proto.backup.RPCChannelInfo
-	8,  // 29: milvus.proto.backup.BackupInfoBrief.database_backups:type_name -> milvus.proto.backup.DatabaseBackupInfo
-	44, // 30: milvus.proto.backup.CollectionBackupInfoBrief.schema:type_name -> milvus.proto.backup.CollectionSchema
-	7,  // 31: milvus.proto.backup.CollectionBackupInfoBrief.index_infos:type_name -> milvus.proto.backup.IndexInfo
-	62, // 32: milvus.proto.backup.CollectionBackupInfoBrief.channel_checkpoints:type_name -> milvus.proto.backup.CollectionBackupInfoBrief.ChannelCheckpointsEntry
-	40, // 33: milvus.proto.backup.CollectionBackupInfoBrief.properties:type_name -> milvus.proto.backup.KeyValuePair
-	0,  // 34: milvus.proto.backup.ListBackupsResponse.code:type_name -> milvus.proto.backup.ResponseCode
-	24, // 35: milvus.proto.backup.ListBackupsResponse.data:type_name -> milvus.proto.backup.BackupSummary
-	0,  // 36: milvus.proto.backup.DeleteBackupResponse.code:type_name -> milvus.proto.backup.ResponseCode
-	63, // 37: milvus.proto.backup.RestoreBackupRequest.collection_renames:type_name -> milvus.proto.backup.RestoreBackupRequest.CollectionRenamesEntry
-	65, // 38: milvus.proto.backup.RestoreBackupRequest.db_collections:type_name -> google.protobuf.Value
-	27, // 39: milvus.proto.backup.RestoreBackupRequest.skipParams:type_name -> milvus.proto.backup.SkipParams
-	65, // 40: milvus.proto.backup.RestoreBackupRequest.db_collections_after_rename:type_name -> google.protobuf.Value
-	30, // 41: milvus.proto.backup.RestoreBackupRequest.restorePlan:type_name -> milvus.proto.backup.RestorePlan
-	31, // 42: milvus.proto.backup.RestorePlan.mapping:type_name -> milvus.proto.backup.RestoreMapping
-	64, // 43: milvus.proto.backup.RestorePlan.filter:type_name -> milvus.proto.backup.RestorePlan.FilterEntry
-	32, // 44: milvus.proto.backup.RestoreMapping.colls:type_name -> milvus.proto.backup.RestoreCollectionMapping
-	2,  // 45: milvus.proto.backup.RestoreCollectionTaskResponse.state_code:type_name -> milvus.proto.backup.RestoreTaskStateCode
-	2,  // 46: milvus.proto.backup.RestoreBackupTaskResponse.state_code:type_name -> milvus.proto.backup.RestoreTaskStateCode
-	34, // 47: milvus.proto.backup.RestoreBackupTaskResponse.collection_restore_tasks:type_name -> milvus.proto.backup.RestoreCollectionTaskResponse
-	0,  // 48: milvus.proto.backup.RestoreBackupResponse.code:type_name -> milvus.proto.backup.ResponseCode
-	35, // 49: milvus.proto.backup.RestoreBackupResponse.data:type_name -> milvus.proto.backup.RestoreBackupTaskResponse
-	39, // 50: milvus.proto.backup.FieldBinlog.binlogs:type_name -> milvus.proto.backup.Binlog
-	5,  // 51: milvus.proto.backup.FieldSchema.data_type:type_name -> milvus.proto.backup.DataType
-	40, // 52: milvus.proto.backup.FieldSchema.type_params:type_name -> milvus.proto.backup.KeyValuePair
-	40, // 53: milvus.proto.backup.FieldSchema.index_params:type_name -> milvus.proto.backup.KeyValuePair
-	6,  // 54: milvus.proto.backup.FieldSchema.state:type_name -> milvus.proto.backup.FieldState
-	5,  // 55: milvus.proto.backup.FieldSchema.element_type:type_name -> milvus.proto.backup.DataType
-	41, // 56: milvus.proto.backup.FieldSchema.default_value:type_name -> milvus.proto.backup.ValueField
-	4,  // 57: milvus.proto.backup.FunctionSchema.type:type_name -> milvus.proto.backup.FunctionType
-	40, // 58: milvus.proto.backup.FunctionSchema.params:type_name -> milvus.proto.backup.KeyValuePair
-	42, // 59: milvus.proto.backup.CollectionSchema.fields:type_name -> milvus.proto.backup.FieldSchema
-	40, // 60: milvus.proto.backup.CollectionSchema.properties:type_name -> milvus.proto.backup.KeyValuePair
-	43, // 61: milvus.proto.backup.CollectionSchema.functions:type_name -> milvus.proto.backup.FunctionSchema
-	45, // 62: milvus.proto.backup.CollectionSchema.struct_array_fields:type_name -> milvus.proto.backup.StructArrayFieldSchema
-	42, // 63: milvus.proto.backup.StructArrayFieldSchema.fields:type_name -> milvus.proto.backup.FieldSchema
-	49, // 64: milvus.proto.backup.GrantorEntity.user:type_name -> milvus.proto.backup.UserEntity
-	51, // 65: milvus.proto.backup.GrantorEntity.privilege:type_name -> milvus.proto.backup.PrivilegeEntity
-	52, // 66: milvus.proto.backup.GrantPrivilegeEntity.entities:type_name -> milvus.proto.backup.GrantorEntity
-	48, // 67: milvus.proto.backup.GrantEntity.role:type_name -> milvus.proto.backup.RoleEntity
-	50, // 68: milvus.proto.backup.GrantEntity.object:type_name -> milvus.proto.backup.ObjectEntity
-	52, // 69: milvus.proto.backup.GrantEntity.grantor:type_name -> milvus.proto.backup.GrantorEntity
-	51, // 70: milvus.proto.backup.PrivilegeGroupInfo.privileges:type_name -> milvus.proto.backup.PrivilegeEntity
-	48, // 71: milvus.proto.backup.UserInfo.roles:type_name -> milvus.proto.backup.RoleEntity
-	56, // 72: milvus.proto.backup.RBACMeta.users:type_name -> milvus.proto.backup.UserInfo
-	48, // 73: milvus.proto.backup.RBACMeta.roles:type_name -> milvus.proto.backup.RoleEntity
-	54, // 74: milvus.proto.backup.RBACMeta.grants:type_name -> milvus.proto.backup.GrantEntity
-	55, // 75: milvus.proto.backup.RBACMeta.privilege_groups:type_name -> milvus.proto.backup.PrivilegeGroupInfo
-	33, // 76: milvus.proto.backup.CreateBackupRequest.FilterEntry.value:type_name -> milvus.proto.backup.CollFilter
-	33, // 77: milvus.proto.backup.RestorePlan.FilterEntry.value:type_name -> milvus.proto.backup.CollFilter
-	78, // [78:78] is the sub-list for method output_type
-	78, // [78:78] is the sub-list for method input_type
-	78, // [78:78] is the sub-list for extension type_name
-	78, // [78:78] is the sub-list for extension extendee
-	0,  // [0:78] is the sub-list for field type_name
+	40, // 1: milvus.proto.backup.IndexInfo.index_params:type_name -> milvus.proto.backup.KeyValuePair
+	40, // 2: milvus.proto.backup.IndexInfo.user_index_params:type_name -> milvus.proto.backup.KeyValuePair
+	40, // 3: milvus.proto.backup.DatabaseBackupInfo.properties:type_name -> milvus.proto.backup.KeyValuePair
+	44, // 4: milvus.proto.backup.CollectionBackupInfo.schema:type_name -> milvus.proto.backup.CollectionSchema
+	3,  // 5: milvus.proto.backup.CollectionBackupInfo.consistency_level:type_name -> milvus.proto.backup.ConsistencyLevel
+	10, // 6: milvus.proto.backup.CollectionBackupInfo.partition_backups:type_name -> milvus.proto.backup.PartitionBackupInfo
+	7,  // 7: milvus.proto.backup.CollectionBackupInfo.index_infos:type_name -> milvus.proto.backup.IndexInfo
+	59, // 8: milvus.proto.backup.CollectionBackupInfo.channel_checkpoints:type_name -> milvus.proto.backup.CollectionBackupInfo.ChannelCheckpointsEntry
+	11, // 9: milvus.proto.backup.CollectionBackupInfo.l0_segments:type_name -> milvus.proto.backup.SegmentBackupInfo
+	40, // 10: milvus.proto.backup.CollectionBackupInfo.properties:type_name -> milvus.proto.backup.KeyValuePair
+	11, // 11: milvus.proto.backup.PartitionBackupInfo.segment_backups:type_name -> milvus.proto.backup.SegmentBackupInfo
+	38, // 12: milvus.proto.backup.SegmentBackupInfo.binlogs:type_name -> milvus.proto.backup.FieldBinlog
+	38, // 13: milvus.proto.backup.SegmentBackupInfo.statslogs:type_name -> milvus.proto.backup.FieldBinlog
+	38, // 14: milvus.proto.backup.SegmentBackupInfo.deltalogs:type_name -> milvus.proto.backup.FieldBinlog
+	1,  // 15: milvus.proto.backup.BackupInfo.state_code:type_name -> milvus.proto.backup.BackupTaskStateCode
+	9,  // 16: milvus.proto.backup.BackupInfo.collection_backups:type_name -> milvus.proto.backup.CollectionBackupInfo
+	57, // 17: milvus.proto.backup.BackupInfo.rbac_meta:type_name -> milvus.proto.backup.RBACMeta
+	13, // 18: milvus.proto.backup.BackupInfo.rpc_channel_info:type_name -> milvus.proto.backup.RPCChannelInfo
+	8,  // 19: milvus.proto.backup.BackupInfo.database_backups:type_name -> milvus.proto.backup.DatabaseBackupInfo
+	60, // 20: milvus.proto.backup.BackupInfo.flush_all_tss:type_name -> milvus.proto.backup.BackupInfo.FlushAllTssEntry
+	9,  // 21: milvus.proto.backup.CollectionLevelBackupInfo.infos:type_name -> milvus.proto.backup.CollectionBackupInfo
+	10, // 22: milvus.proto.backup.PartitionLevelBackupInfo.infos:type_name -> milvus.proto.backup.PartitionBackupInfo
+	11, // 23: milvus.proto.backup.SegmentLevelBackupInfo.infos:type_name -> milvus.proto.backup.SegmentBackupInfo
+	65, // 24: milvus.proto.backup.CreateBackupRequest.db_collections:type_name -> google.protobuf.Value
+	61, // 25: milvus.proto.backup.CreateBackupRequest.filter:type_name -> milvus.proto.backup.CreateBackupRequest.FilterEntry
+	0,  // 26: milvus.proto.backup.BackupInfoResponse.code:type_name -> milvus.proto.backup.ResponseCode
+	19, // 27: milvus.proto.backup.BackupInfoResponse.data:type_name -> milvus.proto.backup.BackupInfoBrief
+	1,  // 28: milvus.proto.backup.BackupInfoBrief.state_code:type_name -> milvus.proto.backup.BackupTaskStateCode
+	20, // 29: milvus.proto.backup.BackupInfoBrief.collection_backups:type_name -> milvus.proto.backup.CollectionBackupInfoBrief
+	13, // 30: milvus.proto.backup.BackupInfoBrief.rpc_channel_info:type_name -> milvus.proto.backup.RPCChannelInfo
+	8,  // 31: milvus.proto.backup.BackupInfoBrief.database_backups:type_name -> milvus.proto.backup.DatabaseBackupInfo
+	44, // 32: milvus.proto.backup.CollectionBackupInfoBrief.schema:type_name -> milvus.proto.backup.CollectionSchema
+	7,  // 33: milvus.proto.backup.CollectionBackupInfoBrief.index_infos:type_name -> milvus.proto.backup.IndexInfo
+	62, // 34: milvus.proto.backup.CollectionBackupInfoBrief.channel_checkpoints:type_name -> milvus.proto.backup.CollectionBackupInfoBrief.ChannelCheckpointsEntry
+	40, // 35: milvus.proto.backup.CollectionBackupInfoBrief.properties:type_name -> milvus.proto.backup.KeyValuePair
+	0,  // 36: milvus.proto.backup.ListBackupsResponse.code:type_name -> milvus.proto.backup.ResponseCode
+	24, // 37: milvus.proto.backup.ListBackupsResponse.data:type_name -> milvus.proto.backup.BackupSummary
+	0,  // 38: milvus.proto.backup.DeleteBackupResponse.code:type_name -> milvus.proto.backup.ResponseCode
+	63, // 39: milvus.proto.backup.RestoreBackupRequest.collection_renames:type_name -> milvus.proto.backup.RestoreBackupRequest.CollectionRenamesEntry
+	65, // 40: milvus.proto.backup.RestoreBackupRequest.db_collections:type_name -> google.protobuf.Value
+	27, // 41: milvus.proto.backup.RestoreBackupRequest.skipParams:type_name -> milvus.proto.backup.SkipParams
+	65, // 42: milvus.proto.backup.RestoreBackupRequest.db_collections_after_rename:type_name -> google.protobuf.Value
+	30, // 43: milvus.proto.backup.RestoreBackupRequest.restorePlan:type_name -> milvus.proto.backup.RestorePlan
+	31, // 44: milvus.proto.backup.RestorePlan.mapping:type_name -> milvus.proto.backup.RestoreMapping
+	64, // 45: milvus.proto.backup.RestorePlan.filter:type_name -> milvus.proto.backup.RestorePlan.FilterEntry
+	32, // 46: milvus.proto.backup.RestoreMapping.colls:type_name -> milvus.proto.backup.RestoreCollectionMapping
+	2,  // 47: milvus.proto.backup.RestoreCollectionTaskResponse.state_code:type_name -> milvus.proto.backup.RestoreTaskStateCode
+	2,  // 48: milvus.proto.backup.RestoreBackupTaskResponse.state_code:type_name -> milvus.proto.backup.RestoreTaskStateCode
+	34, // 49: milvus.proto.backup.RestoreBackupTaskResponse.collection_restore_tasks:type_name -> milvus.proto.backup.RestoreCollectionTaskResponse
+	0,  // 50: milvus.proto.backup.RestoreBackupResponse.code:type_name -> milvus.proto.backup.ResponseCode
+	35, // 51: milvus.proto.backup.RestoreBackupResponse.data:type_name -> milvus.proto.backup.RestoreBackupTaskResponse
+	39, // 52: milvus.proto.backup.FieldBinlog.binlogs:type_name -> milvus.proto.backup.Binlog
+	5,  // 53: milvus.proto.backup.FieldSchema.data_type:type_name -> milvus.proto.backup.DataType
+	40, // 54: milvus.proto.backup.FieldSchema.type_params:type_name -> milvus.proto.backup.KeyValuePair
+	40, // 55: milvus.proto.backup.FieldSchema.index_params:type_name -> milvus.proto.backup.KeyValuePair
+	6,  // 56: milvus.proto.backup.FieldSchema.state:type_name -> milvus.proto.backup.FieldState
+	5,  // 57: milvus.proto.backup.FieldSchema.element_type:type_name -> milvus.proto.backup.DataType
+	41, // 58: milvus.proto.backup.FieldSchema.default_value:type_name -> milvus.proto.backup.ValueField
+	4,  // 59: milvus.proto.backup.FunctionSchema.type:type_name -> milvus.proto.backup.FunctionType
+	40, // 60: milvus.proto.backup.FunctionSchema.params:type_name -> milvus.proto.backup.KeyValuePair
+	42, // 61: milvus.proto.backup.CollectionSchema.fields:type_name -> milvus.proto.backup.FieldSchema
+	40, // 62: milvus.proto.backup.CollectionSchema.properties:type_name -> milvus.proto.backup.KeyValuePair
+	43, // 63: milvus.proto.backup.CollectionSchema.functions:type_name -> milvus.proto.backup.FunctionSchema
+	45, // 64: milvus.proto.backup.CollectionSchema.struct_array_fields:type_name -> milvus.proto.backup.StructArrayFieldSchema
+	42, // 65: milvus.proto.backup.StructArrayFieldSchema.fields:type_name -> milvus.proto.backup.FieldSchema
+	49, // 66: milvus.proto.backup.GrantorEntity.user:type_name -> milvus.proto.backup.UserEntity
+	51, // 67: milvus.proto.backup.GrantorEntity.privilege:type_name -> milvus.proto.backup.PrivilegeEntity
+	52, // 68: milvus.proto.backup.GrantPrivilegeEntity.entities:type_name -> milvus.proto.backup.GrantorEntity
+	48, // 69: milvus.proto.backup.GrantEntity.role:type_name -> milvus.proto.backup.RoleEntity
+	50, // 70: milvus.proto.backup.GrantEntity.object:type_name -> milvus.proto.backup.ObjectEntity
+	52, // 71: milvus.proto.backup.GrantEntity.grantor:type_name -> milvus.proto.backup.GrantorEntity
+	51, // 72: milvus.proto.backup.PrivilegeGroupInfo.privileges:type_name -> milvus.proto.backup.PrivilegeEntity
+	48, // 73: milvus.proto.backup.UserInfo.roles:type_name -> milvus.proto.backup.RoleEntity
+	56, // 74: milvus.proto.backup.RBACMeta.users:type_name -> milvus.proto.backup.UserInfo
+	48, // 75: milvus.proto.backup.RBACMeta.roles:type_name -> milvus.proto.backup.RoleEntity
+	54, // 76: milvus.proto.backup.RBACMeta.grants:type_name -> milvus.proto.backup.GrantEntity
+	55, // 77: milvus.proto.backup.RBACMeta.privilege_groups:type_name -> milvus.proto.backup.PrivilegeGroupInfo
+	33, // 78: milvus.proto.backup.CreateBackupRequest.FilterEntry.value:type_name -> milvus.proto.backup.CollFilter
+	33, // 79: milvus.proto.backup.RestorePlan.FilterEntry.value:type_name -> milvus.proto.backup.CollFilter
+	80, // [80:80] is the sub-list for method output_type
+	80, // [80:80] is the sub-list for method input_type
+	80, // [80:80] is the sub-list for extension type_name
+	80, // [80:80] is the sub-list for extension extendee
+	0,  // [0:80] is the sub-list for field type_name
 }
 
 func init() { file_backup_proto_init() }
