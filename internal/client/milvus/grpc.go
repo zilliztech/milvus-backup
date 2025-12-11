@@ -59,7 +59,7 @@ var _featureTuples = []featureTuple{
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.4.3-0")), Flag: DescribeDatabase},
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.6.5-0")), Flag: MultiL0InOneJob},
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.5.8-0")), Flag: GetSegmentInfo},
-	{Constraints: lo.Must(semver.NewConstraint(">= 2.6.8-0")), Flag: FlushAll},
+	{Constraints: lo.Must(semver.NewConstraint(">= 2.6.6-0")), Flag: FlushAll},
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.6.8-0")), Flag: CollectionLevelGCControl},
 }
 
@@ -122,12 +122,14 @@ type Grpc interface {
 	BackupRBAC(ctx context.Context) (*milvuspb.BackupRBACMetaResponse, error)
 	RestoreRBAC(ctx context.Context, rbacMeta *milvuspb.RBACMeta) error
 	ReplicateMessage(ctx context.Context, channelName string) (string, error)
+	CreateReplicateStream(sourceClusterID string) (milvuspb.MilvusService_CreateReplicateStreamClient, error)
 }
 
 const (
-	authorizationHeader = `authorization`
-	identifierHeader    = `identifier`
-	databaseHeader      = `dbname`
+	_authorizationHeader = `authorization`
+	_identifierHeader    = `identifier`
+	_databaseHeader      = `dbname`
+	_clusterIDHeader     = "cluster-id"
 )
 
 func statusOk(status *commonpb.Status) bool { return status.GetCode() == 0 }
@@ -276,7 +278,7 @@ func isUnimplemented(err error) bool {
 }
 
 func NewGrpc(cfg *paramtable.MilvusConfig) (*GrpcClient, error) {
-	logger := log.L().With(zap.String("component", "grpc-client"))
+	logger := log.L()
 
 	host := fmt.Sprintf("%s:%s", cfg.Address, cfg.Port)
 	logger.Info("New milvus grpc client", zap.String("host", host))
@@ -326,10 +328,10 @@ func (g *GrpcClient) newAuthMD(ctx context.Context) metadata.MD {
 	}
 
 	if g.auth != "" {
-		md.Set(authorizationHeader, g.auth)
+		md.Set(_authorizationHeader, g.auth)
 	}
 	if g.identifier != "" {
-		md.Set(identifierHeader, g.identifier)
+		md.Set(_identifierHeader, g.identifier)
 	}
 
 	return md
@@ -341,7 +343,7 @@ func (g *GrpcClient) newCtx(ctx context.Context) context.Context {
 
 func (g *GrpcClient) newCtxWithDB(ctx context.Context, db string) context.Context {
 	md := g.newAuthMD(ctx)
-	md.Set(databaseHeader, db)
+	md.Set(_databaseHeader, db)
 
 	return metadata.NewOutgoingContext(ctx, md)
 }
@@ -957,4 +959,16 @@ func (g *GrpcClient) ReplicateMessage(ctx context.Context, channelName string) (
 	}
 
 	return resp.GetPosition(), nil
+}
+
+func (g *GrpcClient) CreateReplicateStream(sourceClusterID string) (milvuspb.MilvusService_CreateReplicateStreamClient, error) {
+	md := g.newAuthMD(context.Background())
+	md.Set(_clusterIDHeader, sourceClusterID)
+
+	stream, err := g.srv.CreateReplicateStream(metadata.NewOutgoingContext(context.Background(), md))
+	if err != nil {
+		return nil, fmt.Errorf("client: create replicate stream failed: %w", err)
+	}
+
+	return stream, nil
 }

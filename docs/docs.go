@@ -245,6 +245,46 @@ const docTemplate = `{
                     }
                 }
             }
+        },
+        "/restore_secondary": {
+            "post": {
+                "description": "Submit a request to restore the data from backup",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Restore"
+                ],
+                "summary": "Restore interface",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "request_id",
+                        "name": "request_id",
+                        "in": "header"
+                    },
+                    {
+                        "description": "RestoreBackupRequest JSON",
+                        "name": "object",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/backuppb.RestoreSecondaryRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/backuppb.RestoreBackupResponse"
+                        }
+                    }
+                }
+            }
         }
     },
     "definitions": {
@@ -1140,6 +1180,31 @@ const docTemplate = `{
                     "items": {
                         "$ref": "#/definitions/backuppb.RestoreMapping"
                     }
+                }
+            }
+        },
+        "backuppb.RestoreSecondaryRequest": {
+            "type": "object",
+            "properties": {
+                "async": {
+                    "description": "async or not",
+                    "type": "boolean"
+                },
+                "backup_name": {
+                    "description": "backup name to restore",
+                    "type": "string"
+                },
+                "requestId": {
+                    "description": "uuid of request, will generate one if not set",
+                    "type": "string"
+                },
+                "sourceClusterID": {
+                    "description": "cdc source cluster id",
+                    "type": "string"
+                },
+                "targetClusterID": {
+                    "description": "cdc target cluster id",
+                    "type": "string"
                 }
             }
         },

@@ -805,7 +805,7 @@ func (ct *collectionTask) checkBulkInsertViaRestful(ctx context.Context, jobID s
 func (ct *collectionTask) bulkInsertViaRestful(ctx context.Context, partition string, b batch) error {
 	ct.logger.Info("start bulk insert via restful", zap.Int("batch_num", len(b.partitionDirs)), zap.String("partition", partition))
 	paths := lo.Map(b.partitionDirs, func(dir partitionDir, _ int) []string { return toPaths(dir) })
-	in := milvus.RestfulBulkInsertInput{
+	in := milvus.BulkInsertV2Input{
 		DB:             ct.targetNS.DBName(),
 		CollectionName: ct.targetNS.CollName(),
 		PartitionName:  partition,

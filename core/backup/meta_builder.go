@@ -38,11 +38,13 @@ func (builder *metaBuilder) setVersion(version string) {
 	builder.data.MilvusVersion = version
 }
 
-func (builder *metaBuilder) setFlushAllTS(flushAllTss map[string]uint64) {
+func (builder *metaBuilder) setClusterInfoAndTSS(cch string, pchs []string, flushAllTss map[string]uint64) {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
 
 	builder.data.FlushAllTss = flushAllTss
+	builder.data.PhysicalChannelNames = pchs
+	builder.data.ControlChannelName = cch
 }
 
 func (builder *metaBuilder) addDatabase(databaseBackup *backuppb.DatabaseBackupInfo) {

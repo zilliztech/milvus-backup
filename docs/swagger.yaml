@@ -650,6 +650,24 @@ definitions:
           $ref: '#/definitions/backuppb.RestoreMapping'
         type: array
     type: object
+  backuppb.RestoreSecondaryRequest:
+    properties:
+      async:
+        description: async or not
+        type: boolean
+      backup_name:
+        description: backup name to restore
+        type: string
+      requestId:
+        description: uuid of request, will generate one if not set
+        type: string
+      sourceClusterID:
+        description: cdc source cluster id
+        type: string
+      targetClusterID:
+        description: cdc target cluster id
+        type: string
+    type: object
   backuppb.RestoreTaskStateCode:
     enum:
     - 0
@@ -848,6 +866,32 @@ paths:
         required: true
         schema:
           $ref: '#/definitions/backuppb.RestoreBackupRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/backuppb.RestoreBackupResponse'
+      summary: Restore interface
+      tags:
+      - Restore
+  /restore_secondary:
+    post:
+      consumes:
+      - application/json
+      description: Submit a request to restore the data from backup
+      parameters:
+      - description: request_id
+        in: header
+        name: request_id
+        type: string
+      - description: RestoreBackupRequest JSON
+        in: body
+        name: object
+        required: true
+        schema:
+          $ref: '#/definitions/backuppb.RestoreSecondaryRequest'
       produces:
       - application/json
       responses:

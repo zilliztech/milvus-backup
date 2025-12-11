@@ -310,7 +310,10 @@ func (bf *bulkFlushStrategy) flushAllAndBackupTS(ctx context.Context) error {
 	}
 	bf.logger.Info("flush all done", zap.Any("resp", resp), zap.Duration("cost", time.Since(start)))
 
-	bf.args.MetaBuilder.setFlushAllTS(resp.GetFlushAllTss())
+	flushAllTss := resp.GetFlushAllTss()
+	pchs := resp.GetClusterInfo().GetPchannels()
+	cch := resp.GetClusterInfo().GetCchannel()
+	bf.args.MetaBuilder.setClusterInfoAndTSS(cch, pchs, flushAllTss)
 
 	return nil
 }

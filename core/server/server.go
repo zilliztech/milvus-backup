@@ -60,6 +60,7 @@ func (s *Server) initEngine() {
 	apiv1.GET("/get_backup", s.handleGetBackup)
 	apiv1.DELETE("/delete", s.handleDeleteBackup)
 	apiv1.POST("/restore", s.handleRestoreBackup)
+	apiv1.POST("/restore_secondary", s.handleRestoreSecondary)
 	apiv1.GET("/get_restore", s.handleGetRestore)
 	apiv1.GET("/check", s.handleCheck)
 	apiv1.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))

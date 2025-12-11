@@ -81,10 +81,10 @@ func TestGrpcClient_newCtx(t *testing.T) {
 		ctx := cli.newCtx(context.Background())
 		md, ok := metadata.FromOutgoingContext(ctx)
 		assert.True(t, ok)
-		assert.Equal(t, "auth", md.Get(authorizationHeader)[0])
-		assert.Len(t, md.Get(authorizationHeader), 1)
-		assert.Equal(t, "identifier", md.Get(identifierHeader)[0])
-		assert.Len(t, md.Get(identifierHeader), 1)
+		assert.Equal(t, "auth", md.Get(_authorizationHeader)[0])
+		assert.Len(t, md.Get(_authorizationHeader), 1)
+		assert.Equal(t, "identifier", md.Get(_identifierHeader)[0])
+		assert.Len(t, md.Get(_identifierHeader), 1)
 	})
 
 	t.Run("SetMultipleTimes", func(t *testing.T) {
@@ -93,10 +93,10 @@ func TestGrpcClient_newCtx(t *testing.T) {
 		ctx = cli.newCtx(ctx)
 		md, ok := metadata.FromOutgoingContext(ctx)
 		assert.True(t, ok)
-		assert.Equal(t, "auth", md.Get(authorizationHeader)[0])
-		assert.Len(t, md.Get(authorizationHeader), 1)
-		assert.Equal(t, "identifier", md.Get(identifierHeader)[0])
-		assert.Len(t, md.Get(identifierHeader), 1)
+		assert.Equal(t, "auth", md.Get(_authorizationHeader)[0])
+		assert.Len(t, md.Get(_authorizationHeader), 1)
+		assert.Equal(t, "identifier", md.Get(_identifierHeader)[0])
+		assert.Len(t, md.Get(_identifierHeader), 1)
 	})
 
 }
@@ -107,7 +107,7 @@ func TestGrpcClient_newCtxWithDB(t *testing.T) {
 		ctx := cli.newCtxWithDB(context.Background(), "db")
 		md, ok := metadata.FromOutgoingContext(ctx)
 		assert.True(t, ok)
-		assert.Equal(t, "db", md.Get(databaseHeader)[0])
+		assert.Equal(t, "db", md.Get(_databaseHeader)[0])
 	})
 
 	t.Run("SetMultipleTimes", func(t *testing.T) {
@@ -116,8 +116,8 @@ func TestGrpcClient_newCtxWithDB(t *testing.T) {
 		ctx = cli.newCtxWithDB(ctx, "db2")
 		md, ok := metadata.FromOutgoingContext(ctx)
 		assert.True(t, ok)
-		assert.Equal(t, "db2", md.Get(databaseHeader)[0])
-		assert.Len(t, md.Get(databaseHeader), 1)
+		assert.Equal(t, "db2", md.Get(_databaseHeader)[0])
+		assert.Len(t, md.Get(_databaseHeader), 1)
 	})
 }
 

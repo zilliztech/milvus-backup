@@ -75,12 +75,12 @@ func (h *restoreHandler) run(ctx context.Context) *backuppb.RestoreBackupRespons
 		return &backuppb.RestoreBackupResponse{Code: backuppb.ResponseCode_Parameter_Error, Msg: err.Error()}
 	}
 
-	if err := h.initClient(); err != nil {
+	if err := h.initClient(ctx); err != nil {
 		return &backuppb.RestoreBackupResponse{Code: backuppb.ResponseCode_Fail, Msg: err.Error()}
 	}
 
 	backupDir := mpath.BackupDir(h.backupRootPath, h.request.GetBackupName())
-	exist, err := h.checkExist(ctx, backupDir)
+	exist, err := meta.Exist(ctx, h.backupStorage, backupDir)
 	if err != nil {
 		return &backuppb.RestoreBackupResponse{Code: backuppb.ResponseCode_Fail, Msg: err.Error()}
 	}
@@ -138,7 +138,7 @@ func (h *restoreHandler) complete() {
 	}
 }
 
-func (h *restoreHandler) initClient() error {
+func (h *restoreHandler) initClient(ctx context.Context) error {
 	milvusClient, err := milvus.NewGrpc(&h.params.MilvusCfg)
 	if err != nil {
 		return fmt.Errorf("server: create milvus client: %w", err)
@@ -154,7 +154,7 @@ func (h *restoreHandler) initClient() error {
 		log.Info("use bucket name from request", zap.String("bucketName", h.request.GetBucketName()))
 		backupParams.BackupBucketName = h.request.GetBucketName()
 	}
-	backupStorage, err := storage.NewBackupStorage(context.Background(), &backupParams)
+	backupStorage, err := storage.NewBackupStorage(ctx, &backupParams)
 	if err != nil {
 		return fmt.Errorf("server: create backup storage: %w", err)
 	}
@@ -164,7 +164,7 @@ func (h *restoreHandler) initClient() error {
 		backupRootPath = h.request.GetPath()
 	}
 
-	milvusStorage, err := storage.NewMilvusStorage(context.Background(), &h.params.MinioCfg)
+	milvusStorage, err := storage.NewMilvusStorage(ctx, &h.params.MinioCfg)
 	if err != nil {
 		return fmt.Errorf("server: create milvus storage: %w", err)
 	}
@@ -177,15 +177,6 @@ func (h *restoreHandler) initClient() error {
 	h.backupRootPath = backupRootPath
 
 	return nil
-}
-
-func (h *restoreHandler) checkExist(ctx context.Context, backupDir string) (bool, error) {
-	exist, err := meta.Exist(ctx, h.backupStorage, backupDir)
-	if err != nil {
-		return false, fmt.Errorf("server: check backup exist: %w", err)
-	}
-
-	return exist, nil
 }
 
 func (h *restoreHandler) newTask(ctx context.Context, backupDir string) (*restore.Task, error) {
@@ -213,11 +204,11 @@ func (h *restoreHandler) newTask(ctx context.Context, backupDir string) (*restor
 	}
 	task, err := restore.NewTask(args)
 	if err != nil {
-		return nil, fmt.Errorf("backup: new restore task fail, err: %w", err)
+		return nil, fmt.Errorf("backup: new restore task: %w", err)
 	}
 
 	if err := task.Prepare(ctx); err != nil {
-		return nil, fmt.Errorf("backup: build restore collection task fail, err: %w", err)
+		return nil, fmt.Errorf("backup: build restore collection task: %w", err)
 	}
 
 	return task, nil

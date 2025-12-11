@@ -2,16 +2,15 @@ package restore
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"strings"
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
 	"go.uber.org/zap"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/core/restore/conv"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
@@ -102,12 +101,12 @@ func (ddlt *collectionDDLTask) createColl(ctx context.Context) error {
 	}
 	ddlt.logger.Info("restore collection fields", zap.Any("fields", fields))
 
-	functions := ddlt.functions()
+	functions := conv.Functions(ddlt.collBackup.GetSchema().GetFunctions())
 	ddlt.logger.Info("restore collection functions", zap.Any("functions", functions))
 
 	structArrayFields, err := ddlt.structArrayFields()
 	if err != nil {
-		return fmt.Errorf("restore: failed to get struct array fields: %w", err)
+		return fmt.Errorf("restore: conv struct array fields: %w", err)
 	}
 
 	schema := &schemapb.CollectionSchema{
@@ -140,7 +139,7 @@ func (ddlt *collectionDDLTask) convFields(bakFields []*backuppb.FieldSchema) ([]
 	fields := make([]*schemapb.FieldSchema, 0, len(bakFields))
 
 	for _, bakField := range bakFields {
-		defaultValue, err := ddlt.getDefaultValue(bakField)
+		defaultValue, err := conv.DefaultValue(bakField)
 		if err != nil {
 			return nil, fmt.Errorf("restore: failed to get default value: %w", err)
 		}
@@ -166,54 +165,6 @@ func (ddlt *collectionDDLTask) convFields(bakFields []*backuppb.FieldSchema) ([]
 	}
 
 	return fields, nil
-}
-
-func (ddlt *collectionDDLTask) getDefaultValue(field *backuppb.FieldSchema) (*schemapb.ValueField, error) {
-	// try to use DefaultValueBase64 first
-	if field.GetDefaultValueBase64() != "" {
-		bytes, err := base64.StdEncoding.DecodeString(field.GetDefaultValueBase64())
-		if err != nil {
-			return nil, fmt.Errorf("restore: failed to decode default value base64: %w", err)
-		}
-		var defaultValue schemapb.ValueField
-		if err := proto.Unmarshal(bytes, &defaultValue); err != nil {
-			return nil, fmt.Errorf("restore: failed to unmarshal default value: %w", err)
-		}
-		return &defaultValue, nil
-	}
-
-	// backward compatibility
-	if field.GetDefaultValueProto() != "" {
-		var defaultValue schemapb.ValueField
-		err := proto.Unmarshal([]byte(field.GetDefaultValueProto()), &defaultValue)
-		if err != nil {
-			return nil, fmt.Errorf("restore: failed to unmarshal default value: %w", err)
-		}
-		return &defaultValue, nil
-	}
-
-	return nil, nil
-}
-
-func (ddlt *collectionDDLTask) functions() []*schemapb.FunctionSchema {
-	bakFuncs := ddlt.collBackup.GetSchema().GetFunctions()
-	functions := make([]*schemapb.FunctionSchema, 0, len(bakFuncs))
-	for _, bakFunc := range bakFuncs {
-		fun := &schemapb.FunctionSchema{
-			Name:             bakFunc.Name,
-			Id:               bakFunc.Id,
-			Description:      bakFunc.Description,
-			Type:             schemapb.FunctionType(bakFunc.Type),
-			InputFieldNames:  bakFunc.InputFieldNames,
-			InputFieldIds:    bakFunc.InputFieldIds,
-			OutputFieldNames: bakFunc.OutputFieldNames,
-			OutputFieldIds:   bakFunc.OutputFieldIds,
-			Params:           pbconv.BakKVToMilvusKV(bakFunc.Params),
-		}
-		functions = append(functions, fun)
-	}
-
-	return functions
 }
 
 func (ddlt *collectionDDLTask) structArrayFields() ([]*schemapb.StructArrayFieldSchema, error) {

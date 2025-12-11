@@ -31,11 +31,11 @@ message DatabaseBackupInfo {
 
 message CollectionBackupInfo {
   string id = 1;
-  BackupTaskStateCode state_code = 2 [deprecated=true];
-  string errorMessage = 3 [deprecated=true];
-  int64 start_time = 4 [deprecated=true];
-  int64 end_time = 5 [deprecated=true];
-  int32 progress = 6 [deprecated=true];
+  // BackupTaskStateCode state_code = 2 [deprecated=true];
+  // string errorMessage = 3 [deprecated=true];
+  // int64 start_time = 4 [deprecated=true];
+  // int64 end_time = 5 [deprecated=true];
+  // int32 progress = 6 [deprecated=true];
   int64 collection_id = 7;
   string db_name = 8;
   string collection_name = 9;
@@ -99,10 +99,10 @@ message SegmentBackupInfo {
 message BackupInfo {
   string id = 1;
   BackupTaskStateCode state_code = 2 [deprecated=true];
-  string errorMessage = 3 [deprecated=true];
-  int64 start_time = 4 [deprecated=true];
-  int64 end_time = 5 [deprecated=true];
-  int32 progress = 6 [deprecated=true];
+  // string errorMessage = 3 [deprecated=true];
+  // int64 start_time = 4 [deprecated=true];
+  // int64 end_time = 5 [deprecated=true];
+  // int32 progress = 6 [deprecated=true];
   string name = 7;
   // backup timestamp
   uint64 backup_timestamp = 8;
@@ -114,6 +114,8 @@ message BackupInfo {
   RPCChannelInfo rpc_channel_info = 13;
   repeated DatabaseBackupInfo database_backups = 14;
   map<string, uint64> flush_all_tss = 15;
+  string control_channel_name = 16;
+  repeated string physical_channel_names = 17;
 }
 
 message RPCChannelInfo {
@@ -314,6 +316,19 @@ message SkipParams {
   repeated string fieldTypeParams = 3;
 
   repeated string indexParams = 4;
+}
+
+message RestoreSecondaryRequest {
+  // uuid of request, will generate one if not set
+  string requestId = 1;
+  // backup name to restore
+  string backup_name = 2;
+  // cdc source cluster id
+  string sourceClusterID = 3;
+  // cdc target cluster id
+  string targetClusterID = 4;
+  // async or not
+  bool async = 5;
 }
 
 message RestoreBackupRequest {

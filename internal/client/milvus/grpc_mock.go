@@ -450,6 +450,68 @@ func (_c *MockGrpc_CreatePartition_Call) RunAndReturn(run func(ctx context.Conte
 	return _c
 }
 
+// CreateReplicateStream provides a mock function for the type MockGrpc
+func (_mock *MockGrpc) CreateReplicateStream(sourceClusterID string) (milvuspb.MilvusService_CreateReplicateStreamClient, error) {
+	ret := _mock.Called(sourceClusterID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CreateReplicateStream")
+	}
+
+	var r0 milvuspb.MilvusService_CreateReplicateStreamClient
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(string) (milvuspb.MilvusService_CreateReplicateStreamClient, error)); ok {
+		return returnFunc(sourceClusterID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(string) milvuspb.MilvusService_CreateReplicateStreamClient); ok {
+		r0 = returnFunc(sourceClusterID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(milvuspb.MilvusService_CreateReplicateStreamClient)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(string) error); ok {
+		r1 = returnFunc(sourceClusterID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockGrpc_CreateReplicateStream_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CreateReplicateStream'
+type MockGrpc_CreateReplicateStream_Call struct {
+	*mock.Call
+}
+
+// CreateReplicateStream is a helper method to define mock.On call
+//   - sourceClusterID string
+func (_e *MockGrpc_Expecter) CreateReplicateStream(sourceClusterID interface{}) *MockGrpc_CreateReplicateStream_Call {
+	return &MockGrpc_CreateReplicateStream_Call{Call: _e.mock.On("CreateReplicateStream", sourceClusterID)}
+}
+
+func (_c *MockGrpc_CreateReplicateStream_Call) Run(run func(sourceClusterID string)) *MockGrpc_CreateReplicateStream_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 string
+		if args[0] != nil {
+			arg0 = args[0].(string)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockGrpc_CreateReplicateStream_Call) Return(milvusService_CreateReplicateStreamClient milvuspb.MilvusService_CreateReplicateStreamClient, err error) *MockGrpc_CreateReplicateStream_Call {
+	_c.Call.Return(milvusService_CreateReplicateStreamClient, err)
+	return _c
+}
+
+func (_c *MockGrpc_CreateReplicateStream_Call) RunAndReturn(run func(sourceClusterID string) (milvuspb.MilvusService_CreateReplicateStreamClient, error)) *MockGrpc_CreateReplicateStream_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // DescribeCollection provides a mock function for the type MockGrpc
 func (_mock *MockGrpc) DescribeCollection(ctx context.Context, db string, collName string) (*milvuspb.DescribeCollectionResponse, error) {
 	ret := _mock.Called(ctx, db, collName)

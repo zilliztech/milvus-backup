@@ -5,6 +5,7 @@ milvus-backup
 **/__pycache__/*
 **/.pytest_cache/*
 logs/
+examplebackup/
 
 dist/
 .DS_Store
