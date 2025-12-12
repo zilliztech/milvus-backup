@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
+	clientv3 "go.etcd.io/etcd/client/v3"
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/backup"
@@ -35,6 +36,8 @@ type options struct {
 	metaOnly bool
 
 	strategy string
+
+	backupIndexExtra bool
 
 	rbac bool
 }
@@ -87,6 +90,8 @@ func (o *options) addFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVarP(&o.force, "force", "f", false, "[DEPRECATED] use --strategy=skip_flush instead. force backup, will skip flush, should make sure data has been stored into disk when using it")
 	cmd.Flags().BoolVarP(&o.metaOnly, "meta_only", "", false, "[DEPRECATED] use --strategy=meta_only instead. only backup collection meta instead of data")
 	cmd.Flags().StringVarP(&o.strategy, "strategy", "", "", "backup strategy, one of [meta_only, skip_flush, bulk_flush, serial_flush], if not set will auto select")
+
+	cmd.Flags().BoolVarP(&o.backupIndexExtra, "backup_index_extra", "", false, "whether backup index extra info")
 
 	cmd.Flags().BoolVarP(&o.rbac, "rbac", "", false, "whether backup RBAC meta")
 }
@@ -206,7 +211,10 @@ func (o *options) toOption(params *paramtable.BackupParams) (backup.Option, erro
 		Strategy: strategy,
 
 		BackupRBAC: o.rbac,
-		Filter:     f,
+
+		BackupIndexExtra: o.backupIndexExtra,
+
+		Filter: f,
 	}, nil
 }
 
@@ -230,6 +238,17 @@ func (o *options) toArgs(params *paramtable.BackupParams) (backup.TaskArgs, erro
 	}
 	manage := milvus.NewManage(params.MilvusCfg.Address)
 
+	var etcdCli *clientv3.Client
+	if o.backupIndexExtra {
+		etcdCli, err = clientv3.New(clientv3.Config{
+			Endpoints:   []string{params.MilvusCfg.EtcdConfig.Endpoints},
+			DialTimeout: 5 * time.Second,
+		})
+		if err != nil {
+			return backup.TaskArgs{}, fmt.Errorf("create etcd client: %w", err)
+		}
+	}
+
 	backupDir := mpath.BackupDir(params.MinioCfg.BackupRootPath, o.backupName)
 	option, err := o.toOption(params)
 	if err != nil {
@@ -246,7 +265,10 @@ func (o *options) toArgs(params *paramtable.BackupParams) (backup.TaskArgs, erro
 		Grpc:          milvusClient,
 		Restful:       restfulClient,
 		Manage:        manage,
-		TaskMgr:       taskmgr.DefaultMgr,
+
+		EtcdCli: etcdCli,
+
+		TaskMgr: taskmgr.DefaultMgr,
 	}, nil
 }
 

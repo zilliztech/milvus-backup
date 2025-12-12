@@ -5,8 +5,11 @@ import (
 	"fmt"
 	"sync"
 
+	"github.com/milvus-io/milvus/pkg/v2/proto/indexpb"
+
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
+	"github.com/zilliztech/milvus-backup/internal/pbconv"
 )
 
 type metaBuilder struct {
@@ -99,6 +102,28 @@ func (builder *metaBuilder) addSegments(segments []*backuppb.SegmentBackupInfo) 
 			partBackup.SegmentBackups = append(partBackup.SegmentBackups, segment)
 			partBackup.Size += segment.GetSize()
 		}
+	}
+}
+
+func (builder *metaBuilder) addIndexExtraInfo(indexes []*indexpb.FieldIndex) {
+	builder.mu.Lock()
+	defer builder.mu.Unlock()
+
+	// group index by collection id and index id
+	indexMap := make(map[int64]map[int64]*backuppb.IndexInfo)
+	for _, coll := range builder.data.GetCollectionBackups() {
+		indexMap[coll.GetCollectionId()] = make(map[int64]*backuppb.IndexInfo)
+		for _, index := range coll.GetIndexInfos() {
+			indexMap[coll.GetCollectionId()][index.GetIndexId()] = index
+		}
+	}
+
+	for _, index := range indexes {
+		info := index.GetIndexInfo()
+		indexInfo := indexMap[info.GetCollectionID()][info.GetIndexID()]
+		indexInfo.FieldId = info.GetFieldID()
+		indexInfo.IndexParams = pbconv.MilvusKVToBakKV(info.GetIndexParams())
+		indexInfo.UserIndexParams = pbconv.MilvusKVToBakKV(info.GetUserIndexParams())
 	}
 }
 

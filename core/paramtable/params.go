@@ -97,6 +97,11 @@ func (p *BackupConfig) initGcPauseAddress() {
 	p.GcPauseAddress = address
 }
 
+type EtcdConfig struct {
+	Endpoints string
+	RootPath  string
+}
+
 type MilvusConfig struct {
 	Base *BaseTable
 
@@ -115,6 +120,8 @@ type MilvusConfig struct {
 	// tls credentials for validate client, eg: mTLS
 	MTLSCertPath string
 	MTLSKeyPath  string
+
+	EtcdConfig EtcdConfig
 
 	RPCChanelName string
 }
@@ -135,6 +142,9 @@ func (p *MilvusConfig) init(base *BaseTable) {
 
 	p.initMTLSCertPath()
 	p.initMTLSKeyPath()
+
+	p.initEtcdEndpoints()
+	p.initEtcdRootPath()
 
 	p.initRPCChanelName()
 }
@@ -199,6 +209,16 @@ func (p *MilvusConfig) initTLSMode() {
 	// for backward compatibility, if mTLS cert path is not set, use tls mode 1 instead of 2.
 	// WARN: This behavior will be removed in the version after v0.6.0
 	p.TLSMode = p.Base.ParseIntWithDefault("milvus.tlsMode", 0)
+}
+
+func (p *MilvusConfig) initEtcdEndpoints() {
+	endpoints := p.Base.LoadWithDefault("milvus.etcd.endpoints", "localhost:2379")
+	p.EtcdConfig.Endpoints = endpoints
+}
+
+func (p *MilvusConfig) initEtcdRootPath() {
+	rootPath := p.Base.LoadWithDefault("milvus.etcd.rootPath", "by-dev")
+	p.EtcdConfig.RootPath = rootPath
 }
 
 func (p *MilvusConfig) initRPCChanelName() {

@@ -38,6 +38,10 @@ milvus:
   # Milvus replicate msg channel name, default is by-dev-replicate-msg
   rpcChannelName: "by-dev-replicate-msg"
 
+  etcd:
+    endpoints: 127.0.0.1:2379 # you can set multiple endpoints, separated by comma, for example: "127.0.0.1:2379,127.0.0.1:2380,127.0.0.1:2381"
+    rootPath: "by-dev"
+
 # Related configuration of minio, which is responsible for data persistence for Milvus.
 minio:
   # Milvus storage configs, make them the same with milvus config

@@ -28,8 +28,8 @@ type secondaryOption struct {
 func (o *secondaryOption) addCmd(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.backupName, "name", "n", "", "backup name")
 
-	cmd.Flags().StringVarP(&o.sourceClusterID, "source-cluster-id", "", "", "source cluster id")
-	cmd.Flags().StringVarP(&o.targetClusterID, "target-cluster-id", "", "", "target cluster id")
+	cmd.Flags().StringVarP(&o.sourceClusterID, "source_cluster_id", "", "", "source cluster id")
+	cmd.Flags().StringVarP(&o.targetClusterID, "target_cluster_id", "", "", "target cluster id")
 }
 
 func (o *secondaryOption) validate() error {

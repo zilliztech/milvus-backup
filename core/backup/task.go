@@ -2,9 +2,11 @@ package backup
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/samber/lo"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
 
@@ -40,6 +42,8 @@ type TaskArgs struct {
 	Restful milvus.Restful
 	Manage  milvus.Manage
 
+	EtcdCli *clientv3.Client
+
 	TaskMgr *taskmgr.Mgr
 }
 
@@ -52,6 +56,8 @@ type Option struct {
 
 	BackupRBAC bool
 	BackupEZK  bool
+
+	BackupIndexExtra bool
 
 	// dbName -> CollFilter
 	Filter filter.Filter
@@ -77,6 +83,9 @@ type Task struct {
 	grpc    milvus.Grpc
 	restful milvus.Restful
 	manage  milvus.Manage
+
+	etcdCli      *clientv3.Client
+	etcdRootPath string
 
 	metaBuilder *metaBuilder
 
@@ -139,6 +148,9 @@ func NewTask(args TaskArgs) *Task {
 
 		gcCtrl: newGCCtrl(args),
 
+		etcdCli:      args.EtcdCli,
+		etcdRootPath: args.Params.MilvusCfg.EtcdConfig.RootPath,
+
 		metaBuilder: mb,
 
 		taskMgr: args.TaskMgr,
@@ -189,6 +201,10 @@ func (t *Task) privateExecute(ctx context.Context) error {
 	}
 
 	t.backupRPCChannelPOS(ctx)
+
+	if err := t.backupIndexExtraInfo(ctx); err != nil {
+		return fmt.Errorf("backup: run index extra info task: %w", err)
+	}
 
 	if err := t.writeMeta(ctx); err != nil {
 		return fmt.Errorf("backup: write meta: %w", err)
@@ -408,6 +424,26 @@ func (t *Task) backupRPCChannelPOS(ctx context.Context) {
 		return
 	}
 	t.logger.Info("backup rpc channel pos done")
+}
+
+func (t *Task) backupIndexExtraInfo(ctx context.Context) error {
+	if !t.option.BackupIndexExtra {
+		t.logger.Info("skip backup index extra info")
+		return nil
+	}
+
+	if t.etcdCli == nil {
+		return errors.New("backup: need backup etcd info but etcd client is nil")
+	}
+
+	t.logger.Info("start backup index extra info")
+
+	indexExtraTask := newCollectionIndexExtraTask(t.taskID, t.etcdCli, t.etcdRootPath, t.metaBuilder)
+	if err := indexExtraTask.Execute(ctx); err != nil {
+		return fmt.Errorf("backup: execute index extra task: %w", err)
+	}
+
+	return nil
 }
 
 func (t *Task) writeMeta(ctx context.Context) error {
