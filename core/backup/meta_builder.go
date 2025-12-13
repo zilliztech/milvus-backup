@@ -122,8 +122,13 @@ func (builder *metaBuilder) addIndexExtraInfo(indexes []*indexpb.FieldIndex) {
 		info := index.GetIndexInfo()
 		indexInfo := indexMap[info.GetCollectionID()][info.GetIndexID()]
 		indexInfo.FieldId = info.GetFieldID()
+		indexInfo.TypeParams = pbconv.MilvusKVToBakKV(info.GetTypeParams())
+		indexInfo.CreateTime = index.GetCreateTime()
 		indexInfo.IndexParams = pbconv.MilvusKVToBakKV(info.GetIndexParams())
 		indexInfo.UserIndexParams = pbconv.MilvusKVToBakKV(info.GetUserIndexParams())
+		indexInfo.IsAutoIndex = info.GetIsAutoIndex()
+		indexInfo.MinIndexVersion = info.GetMinIndexVersion()
+		indexInfo.MaxIndexVersion = info.GetMaxIndexVersion()
 	}
 }
 

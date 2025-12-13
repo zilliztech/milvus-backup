@@ -23,8 +23,13 @@ message IndexInfo {
 
   // extra info from etcd
   int64 field_id = 6;
-  repeated KeyValuePair index_params = 7;
-  repeated KeyValuePair user_index_params = 8;
+  uint64 create_time = 7;
+  repeated KeyValuePair type_params = 8;
+  repeated KeyValuePair index_params = 9;
+  repeated KeyValuePair user_index_params = 10;
+  bool is_auto_index = 11;
+  int32 min_index_version = 12;
+  int32 max_index_version = 13;
 }
 
 message DatabaseBackupInfo {
@@ -185,6 +190,7 @@ message CreateBackupRequest {
   bool with_ezk = 14;
   // strategy for backup, one of [meta_only, skip_flush, bulk_flush, serial_flush], if not set will auto select
   string strategy = 15;
+  bool with_index_extra = 16;
 }
 
 /**

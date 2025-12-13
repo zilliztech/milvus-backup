@@ -4,12 +4,13 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"time"
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
 	"github.com/milvus-io/milvus/pkg/v2/common"
+	"github.com/milvus-io/milvus/pkg/v2/proto/indexpb"
 	"github.com/milvus-io/milvus/pkg/v2/streaming/util/message"
-	"github.com/milvus-io/milvus/pkg/v2/util/funcutil"
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 
@@ -51,6 +52,62 @@ func newCollectionDDLTask(taskID string, backupInfo *backuppb.BackupInfo, dbBack
 func (ddlt *collectionDDLTask) Execute(ctx context.Context) error {
 	if err := ddlt.createColl(); err != nil {
 		return fmt.Errorf("collection: create collection: %w", err)
+	}
+
+	if err := ddlt.createIndexes(); err != nil {
+		return fmt.Errorf("collection: create indexes: %w", err)
+	}
+
+	time.Sleep(10)
+
+	return nil
+}
+
+func (ddlt *collectionDDLTask) createIndexes() error {
+	for _, index := range ddlt.collBackup.GetIndexInfos() {
+		if err := ddlt.createIndex(index); err != nil {
+			return fmt.Errorf("collection: create index: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (ddlt *collectionDDLTask) createIndex(index *backuppb.IndexInfo) error {
+	indexInfo := &indexpb.IndexInfo{
+		CollectionID:    ddlt.collBackup.GetCollectionId(),
+		FieldID:         index.GetFieldId(),
+		IndexName:       index.GetIndexName(),
+		IndexID:         index.GetIndexId(),
+		TypeParams:      pbconv.BakKVToMilvusKV(index.GetTypeParams()),
+		IndexParams:     pbconv.BakKVToMilvusKV(index.GetIndexParams()),
+		IsAutoIndex:     index.GetIsAutoIndex(),
+		UserIndexParams: pbconv.BakKVToMilvusKV(index.GetUserIndexParams()),
+		MinIndexVersion: index.GetMinIndexVersion(),
+		MaxIndexVersion: index.GetMaxIndexVersion(),
+	}
+	fieldIndex := &indexpb.FieldIndex{IndexInfo: indexInfo, CreateTime: index.GetCreateTime()}
+	body := &message.CreateIndexMessageBody{FieldIndex: fieldIndex}
+	header := &message.CreateIndexMessageHeader{
+		DbId:         ddlt.dbBackup.GetDbId(),
+		CollectionId: ddlt.collBackup.GetCollectionId(),
+		FieldId:      index.GetFieldId(),
+		IndexId:      index.GetIndexId(),
+		IndexName:    index.GetIndexName(),
+	}
+
+	builder := message.NewCreateIndexMessageBuilderV2().
+		WithHeader(header).
+		WithBody(body).
+		WithBroadcast([]string{ddlt.backupInfo.GetControlChannelName()})
+
+	broadcast := builder.MustBuildBroadcast().WithBroadcastID(rand.Uint64())
+	msgs := broadcast.SplitIntoMutableMessage()
+
+	for _, msg := range msgs {
+		if err := ddlt.streamCli.Send(msg); err != nil {
+			return fmt.Errorf("collection: broadcast create index: %w", err)
+		}
 	}
 
 	return nil
@@ -184,12 +241,10 @@ func (ddlt *collectionDDLTask) createColl() error {
 	}
 	ddlt.logger.Info("create collection", zap.Any("request", req))
 
-	cchName := funcutil.GetControlChannel("cdc-test-upstream-rootcoord-dml_0")
-
 	builder := message.NewCreateCollectionMessageBuilderV1().
 		WithHeader(header).
 		WithBody(req).
-		WithBroadcast(append(ddlt.collBackup.GetVirtualChannelNames(), cchName))
+		WithBroadcast(append(ddlt.collBackup.GetVirtualChannelNames(), ddlt.backupInfo.GetControlChannelName()))
 
 	broadcast := builder.MustBuildBroadcast().WithBroadcastID(rand.Uint64())
 	msgs := broadcast.SplitIntoMutableMessage()

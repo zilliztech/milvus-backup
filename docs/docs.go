@@ -590,6 +590,9 @@ const docTemplate = `{
                 "with_ezk": {
                     "description": "if true, backup ezk",
                     "type": "boolean"
+                },
+                "with_index_extra": {
+                    "type": "boolean"
                 }
             }
         },
@@ -851,6 +854,13 @@ const docTemplate = `{
         "backuppb.IndexInfo": {
             "type": "object",
             "properties": {
+                "create_time": {
+                    "type": "integer"
+                },
+                "field_id": {
+                    "description": "extra info from etcd",
+                    "type": "integer"
+                },
                 "field_name": {
                     "type": "string"
                 },
@@ -860,13 +870,40 @@ const docTemplate = `{
                 "index_name": {
                     "type": "string"
                 },
+                "index_params": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/backuppb.KeyValuePair"
+                    }
+                },
                 "index_type": {
                     "type": "string"
+                },
+                "is_auto_index": {
+                    "type": "boolean"
+                },
+                "max_index_version": {
+                    "type": "integer"
+                },
+                "min_index_version": {
+                    "type": "integer"
                 },
                 "params": {
                     "type": "object",
                     "additionalProperties": {
                         "type": "string"
+                    }
+                },
+                "type_params": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/backuppb.KeyValuePair"
+                    }
+                },
+                "user_index_params": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/backuppb.KeyValuePair"
                     }
                 }
             }
