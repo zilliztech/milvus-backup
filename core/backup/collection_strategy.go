@@ -2,12 +2,14 @@ package backup
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"time"
 
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/log"
@@ -310,10 +312,19 @@ func (bf *bulkFlushStrategy) flushAllAndBackupTS(ctx context.Context) error {
 	}
 	bf.logger.Info("flush all done", zap.Any("resp", resp), zap.Duration("cost", time.Since(start)))
 
-	flushAllTss := resp.GetFlushAllTss()
 	pchs := resp.GetClusterInfo().GetPchannels()
 	cch := resp.GetClusterInfo().GetCchannel()
-	bf.args.MetaBuilder.setClusterInfoAndTSS(cch, pchs, flushAllTss)
 
+	flushAllMsg := make(map[string]string, len(resp.GetFlushAllMsgs()))
+	for pch, msg := range resp.GetFlushAllMsgs() {
+		byts, err := proto.Marshal(msg)
+		if err != nil {
+			return fmt.Errorf("backup: marshal flush all msg %w", err)
+		}
+
+		flushAllMsg[pch] = base64.StdEncoding.EncodeToString(byts)
+	}
+
+	bf.args.MetaBuilder.setClusterInfoAndTSS(cch, pchs, flushAllMsg)
 	return nil
 }

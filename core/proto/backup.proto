@@ -123,7 +123,7 @@ message BackupInfo {
   RBACMeta rbac_meta = 12;
   RPCChannelInfo rpc_channel_info = 13;
   repeated DatabaseBackupInfo database_backups = 14;
-  map<string, uint64> flush_all_tss = 15;
+  map<string, string> flush_all_msgs_base64 = 15; // key is pchannel, value is base64 encoded ImmutableMessage
   string control_channel_name = 16;
   repeated string physical_channel_names = 17;
 }

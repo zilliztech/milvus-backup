@@ -416,8 +416,8 @@ github.com/mattn/goveralls v0.0.2/go.mod h1:8d1ZMHsd7fW6IRPKQh46F2WRpyib5/X4FOpe
 github.com/matttproud/golang_protobuf_extensions v1.0.1/go.mod h1:D8He9yQNgCq6Z5Ld7szi9bcBfOoFv/3dc6xSMkL2PC0=
 github.com/mediocregopher/radix/v3 v3.4.2/go.mod h1:8FL3F6UQRXHXIBSPUs5h0RybMF8i4n7wVopoX3x7Bv8=
 github.com/microcosm-cc/bluemonday v1.0.2/go.mod h1:iVP4YcDBq+n/5fb23BhYFvIMq/leAFZyRl6bYmGDlGc=
-github.com/milvus-io/milvus-proto/go-api/v2 v2.6.6-0.20251210104908-ad5ef48113d0 h1:udjz0PS1wIEdSDT02OSlJC10WnR3YjLo6P+dTDOhOjw=
-github.com/milvus-io/milvus-proto/go-api/v2 v2.6.6-0.20251210104908-ad5ef48113d0/go.mod h1:/6UT4zZl6awVeXLeE7UGDWZvXj3IWkRsh3mqsn0DiAs=
+github.com/milvus-io/milvus-proto/go-api/v2 v2.6.6-0.20251215075310-deda9c0dcece h1:s0TFMZBxADKSzIr7LW/TE3L/WgCuo7QOfzkYX92Xog0=
+github.com/milvus-io/milvus-proto/go-api/v2 v2.6.6-0.20251215075310-deda9c0dcece/go.mod h1:/6UT4zZl6awVeXLeE7UGDWZvXj3IWkRsh3mqsn0DiAs=
 github.com/milvus-io/milvus/pkg/v2 v2.6.4-0.20251211020913-b2c49d01978a h1:QBfo8x/UiFlXZ+ri/3HcnIyP6He75KyCXOwE0hMccec=
 github.com/milvus-io/milvus/pkg/v2 v2.6.4-0.20251211020913-b2c49d01978a/go.mod h1:I+fOJk0iqI6iRrAtyCKK1IpBbpssAL1qA0U7VPXCs9s=
 github.com/minio/crc64nvme v1.1.1 h1:8dwx/Pz49suywbO+auHCBpCtlW1OfpcLN7wYgVR6wAI=

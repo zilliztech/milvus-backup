@@ -57,3 +57,84 @@ func Functions(bakFuncs []*backuppb.FunctionSchema) []*schemapb.FunctionSchema {
 
 	return funcs
 }
+
+func Fields(bakFields []*backuppb.FieldSchema) ([]*schemapb.FieldSchema, error) {
+	fields := make([]*schemapb.FieldSchema, 0, len(bakFields))
+
+	for _, bakField := range bakFields {
+		defaultValue, err := DefaultValue(bakField)
+		if err != nil {
+			return nil, fmt.Errorf("conv: get default value: %w", err)
+		}
+
+		fieldRestore := &schemapb.FieldSchema{
+			FieldID:          bakField.GetFieldID(),
+			Name:             bakField.GetName(),
+			IsPrimaryKey:     bakField.GetIsPrimaryKey(),
+			AutoID:           bakField.GetAutoID(),
+			Description:      bakField.GetDescription(),
+			DataType:         schemapb.DataType(bakField.GetDataType()),
+			TypeParams:       pbconv.BakKVToMilvusKV(bakField.GetTypeParams()),
+			IndexParams:      pbconv.BakKVToMilvusKV(bakField.GetIndexParams()),
+			IsDynamic:        bakField.GetIsDynamic(),
+			IsPartitionKey:   bakField.GetIsPartitionKey(),
+			Nullable:         bakField.GetNullable(),
+			ElementType:      schemapb.DataType(bakField.GetElementType()),
+			IsFunctionOutput: bakField.GetIsFunctionOutput(),
+			DefaultValue:     defaultValue,
+		}
+
+		fields = append(fields, fieldRestore)
+	}
+
+	return fields, nil
+}
+
+func StructArrayFields(bakFields []*backuppb.StructArrayFieldSchema) ([]*schemapb.StructArrayFieldSchema, error) {
+	structArrayFields := make([]*schemapb.StructArrayFieldSchema, 0, len(bakFields))
+	for _, bakField := range bakFields {
+		fields, err := Fields(bakField.GetFields())
+		if err != nil {
+			return nil, fmt.Errorf("conv: convert struct array fields: %w", err)
+		}
+
+		structArrayField := &schemapb.StructArrayFieldSchema{
+			FieldID:     bakField.GetFieldID(),
+			Name:        bakField.GetName(),
+			Description: bakField.GetDescription(),
+			Fields:      fields,
+		}
+
+		structArrayFields = append(structArrayFields, structArrayField)
+	}
+
+	return structArrayFields, nil
+}
+
+func Schema(bakSchema *backuppb.CollectionSchema) (*schemapb.CollectionSchema, error) {
+	fields, err := Fields(bakSchema.GetFields())
+	if err != nil {
+		return nil, fmt.Errorf("conv: conv fields: %w", err)
+	}
+
+	functions := Functions(bakSchema.GetFunctions())
+
+	structArrayFields, err := StructArrayFields(bakSchema.GetStructArrayFields())
+	if err != nil {
+		return nil, fmt.Errorf("conv: conv struct array fields: %w", err)
+	}
+
+	properties := pbconv.BakKVToMilvusKV(bakSchema.GetProperties())
+
+	schema := &schemapb.CollectionSchema{
+		Name:               bakSchema.GetName(),
+		Description:        bakSchema.GetDescription(),
+		Functions:          functions,
+		Fields:             fields,
+		EnableDynamicField: bakSchema.GetEnableDynamicField(),
+		Properties:         properties,
+		StructArrayFields:  structArrayFields,
+	}
+
+	return schema, nil
+}

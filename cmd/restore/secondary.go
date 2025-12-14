@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
@@ -68,6 +67,11 @@ func (o *secondaryOption) toArgs(params *paramtable.BackupParams) (secondary.Tas
 		return secondary.TaskArgs{}, fmt.Errorf("create milvus grpc client: %w", err)
 	}
 
+	restfulClient, err := milvus.NewRestful(&params.MilvusCfg)
+	if err != nil {
+		return secondary.TaskArgs{}, fmt.Errorf("create milvus restful client: %w", err)
+	}
+
 	return secondary.TaskArgs{
 		TaskID: uuid.NewString(),
 
@@ -78,7 +82,9 @@ func (o *secondaryOption) toArgs(params *paramtable.BackupParams) (secondary.Tas
 		Params:        params,
 		BackupDir:     backupDir,
 		BackupStorage: backupStorage,
-		Grpc:          milvusClient,
+
+		Restful: restfulClient,
+		Grpc:    milvusClient,
 	}, nil
 }
 
@@ -96,8 +102,6 @@ func (o *secondaryOption) run(cmd *cobra.Command, params *paramtable.BackupParam
 	if err := task.Execute(context.Background()); err != nil {
 		return err
 	}
-
-	time.Sleep(10 * time.Second)
 
 	return nil
 }

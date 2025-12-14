@@ -56,6 +56,7 @@ type restoreSecondaryHandler struct {
 	request *backuppb.RestoreSecondaryRequest
 
 	milvusClient  milvus.Grpc
+	restfulClient milvus.Restful
 	backupStorage storage.Client
 }
 
@@ -127,6 +128,11 @@ func (h *restoreSecondaryHandler) initClient(ctx context.Context) error {
 		return fmt.Errorf("server: create milvus client: %w", err)
 	}
 
+	milvusRestful, err := milvus.NewRestful(&h.params.MilvusCfg)
+	if err != nil {
+		return fmt.Errorf("server: create milvus restful client: %w", err)
+	}
+
 	backupStorage, err := storage.NewBackupStorage(ctx, &h.params.MinioCfg)
 	if err != nil {
 		return fmt.Errorf("server: create backup storage: %w", err)
@@ -134,6 +140,7 @@ func (h *restoreSecondaryHandler) initClient(ctx context.Context) error {
 
 	h.milvusClient = milvusGrpc
 	h.backupStorage = backupStorage
+	h.restfulClient = milvusRestful
 	return nil
 }
 
@@ -153,7 +160,9 @@ func (h *restoreSecondaryHandler) newTask(ctx context.Context) (tasklet.Tasklet,
 		Params:        h.params,
 		BackupDir:     mpath.BackupDir(h.params.MinioCfg.BackupRootPath, h.request.GetBackupName()),
 		BackupStorage: h.backupStorage,
-		Grpc:          h.milvusClient,
+
+		Restful: h.restfulClient,
+		Grpc:    h.milvusClient,
 	}
 
 	task, err := secondary.NewTask(args)

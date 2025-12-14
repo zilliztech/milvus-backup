@@ -657,7 +657,16 @@ func (g *GrpcClient) FlushAll(ctx context.Context) (*milvuspb.FlushAllResponse, 
 		return nil, fmt.Errorf("client: flush all: %w", err)
 	}
 
-	if err := g.checkFlushAll(ctx, resp.GetFlushAllTss()); err != nil {
+	pchTS := make(map[string]uint64, len(resp.GetFlushAllMsgs()))
+	for pch, msg := range resp.GetFlushAllMsgs() {
+		tt, err := GetTT(msg)
+		if err != nil {
+			return nil, fmt.Errorf("client: get tt from flush all msg: %w", err)
+		}
+		pchTS[pch] = tt
+	}
+
+	if err := g.checkFlushAll(ctx, pchTS); err != nil {
 		return nil, fmt.Errorf("client: check flush all: %w", err)
 	}
 

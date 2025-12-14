@@ -41,11 +41,11 @@ func (builder *metaBuilder) setVersion(version string) {
 	builder.data.MilvusVersion = version
 }
 
-func (builder *metaBuilder) setClusterInfoAndTSS(cch string, pchs []string, flushAllTss map[string]uint64) {
+func (builder *metaBuilder) setClusterInfoAndTSS(cch string, pchs []string, flushAllTss map[string]string) {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
 
-	builder.data.FlushAllTss = flushAllTss
+	builder.data.FlushAllMsgsBase64 = flushAllTss
 	builder.data.PhysicalChannelNames = pchs
 	builder.data.ControlChannelName = cch
 }
