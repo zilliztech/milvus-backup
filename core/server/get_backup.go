@@ -35,6 +35,7 @@ func (s *Server) handleGetBackup(c *gin.Context) {
 		RequestId:  c.GetHeader("request_id"),
 		BackupName: c.Query("backup_name"),
 		BackupId:   c.Query("backup_id"),
+		Path:       c.Query("path"),
 	}
 
 	log.Info("receive get backup request", zap.Any("request", request))
@@ -136,7 +137,12 @@ func (h *getBackupHandler) get(ctx context.Context) *backuppb.BackupInfoResponse
 
 func (h *getBackupHandler) readFromStorage(ctx context.Context, backupName string) (*backuppb.BackupInfo, int64, error) {
 	// get backup meta from storage
-	backupDir := mpath.BackupDir(h.params.MinioCfg.BackupRootPath, backupName)
+	backupRootPath := h.params.MinioCfg.BackupRootPath
+	if h.request.GetPath() != "" {
+		backupRootPath = h.request.GetPath()
+	}
+
+	backupDir := mpath.BackupDir(backupRootPath, backupName)
 	exist, err := meta.Exist(ctx, h.backupStorage, backupDir)
 	if err != nil {
 		return nil, 0, fmt.Errorf("server: check backup exist %w", err)
