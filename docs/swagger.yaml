@@ -227,6 +227,8 @@ definitions:
       with_ezk:
         description: if true, backup ezk
         type: boolean
+      with_index_extra:
+        type: boolean
     type: object
   backuppb.DataType:
     enum:
@@ -415,18 +417,41 @@ definitions:
     - FunctionType_TextEmbedding
   backuppb.IndexInfo:
     properties:
+      create_time:
+        type: integer
+      field_id:
+        description: extra info from etcd
+        type: integer
       field_name:
         type: string
       index_id:
         type: integer
       index_name:
         type: string
+      index_params:
+        items:
+          $ref: '#/definitions/backuppb.KeyValuePair'
+        type: array
       index_type:
         type: string
+      is_auto_index:
+        type: boolean
+      max_index_version:
+        type: integer
+      min_index_version:
+        type: integer
       params:
         additionalProperties:
           type: string
         type: object
+      type_params:
+        items:
+          $ref: '#/definitions/backuppb.KeyValuePair'
+        type: array
+      user_index_params:
+        items:
+          $ref: '#/definitions/backuppb.KeyValuePair'
+        type: array
     type: object
   backuppb.KeyValuePair:
     properties:
