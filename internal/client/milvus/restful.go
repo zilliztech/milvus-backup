@@ -198,11 +198,11 @@ func (r *RestfulClient) GetBulkInsertState(ctx context.Context, dbName, jobID st
 			SetSuccessResult(&getResp).
 			Post("/v2/vectordb/jobs/import/describe")
 		if err != nil {
-			return fmt.Errorf("client: failed to get import job state via restful: %w", err)
+			return fmt.Errorf("client: get import job state via restful: %w", err)
 		}
 		log.Debug("get import job state via restful", zap.Any("getResp", resp))
 		if resp.IsErrorState() {
-			return fmt.Errorf("client: failed to get import job state via restful: %v", resp)
+			return fmt.Errorf("client: get import job state via restful: %v", resp)
 		}
 
 		return nil

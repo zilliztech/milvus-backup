@@ -2,16 +2,18 @@ package secondary
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 
+	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"go.uber.org/zap"
-
-	"github.com/zilliztech/milvus-backup/internal/namespace"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
@@ -29,11 +31,14 @@ type TaskArgs struct {
 	BackupDir     string
 	BackupStorage storage.Client
 
-	Grpc milvus.Grpc
+	Restful milvus.Restful
+	Grpc    milvus.Grpc
 }
 
 type Task struct {
 	args TaskArgs
+
+	tsAlloc *tsAlloc
 
 	streamCli milvus.Stream
 
@@ -43,15 +48,18 @@ type Task struct {
 }
 
 func NewTask(args TaskArgs) (*Task, error) {
-	streamCli, err := args.Grpc.CreateReplicateStream(args.SourceClusterID)
+	pchs := args.Backup.GetPhysicalChannelNames()
+	streamCli, err := milvus.NewStreamClient(args.TaskID, args.SourceClusterID, pchs, args.Grpc)
 	if err != nil {
-		return nil, fmt.Errorf("create replicate stream: %w", err)
+		return nil, fmt.Errorf("secondary: create stream client: %w", err)
 	}
 
 	return &Task{
 		args: args,
 
-		streamCli: milvus.NewStreamClient(args.SourceClusterID, streamCli),
+		tsAlloc: newTTAlloc(),
+
+		streamCli: streamCli,
 
 		taskMgr: taskmgr.DefaultMgr,
 
@@ -72,13 +80,28 @@ func (t *Task) Execute(ctx context.Context) error {
 		return fmt.Errorf("secondary: run collection tasks: %w", err)
 	}
 
+	if err := t.sendFlushAll(); err != nil {
+		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
+		return fmt.Errorf("secondary: send flush all: %w", err)
+	}
+
+	t.logger.Info("wait confirm")
+	t.streamCli.WaitConfirm()
+
 	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreSuccess())
 	return nil
 }
 
 func (t *Task) runDBTasks(ctx context.Context) error {
+	args := databaseTaskArgs{
+		TaskID:     t.args.TaskID,
+		BackupInfo: t.args.Backup,
+		TSAlloc:    t.tsAlloc,
+		StreamCli:  t.streamCli,
+	}
+
 	for _, db := range t.args.Backup.GetDatabaseBackups() {
-		task, err := newDatabaseTask(t.args.TaskID, t.args.Backup, db, t.streamCli)
+		task, err := newDatabaseTask(args, db)
 		if err != nil {
 			return fmt.Errorf("secondary: create database task: %w", err)
 		}
@@ -91,27 +114,113 @@ func (t *Task) runDBTasks(ctx context.Context) error {
 	return nil
 }
 
-func (t *Task) runCollTasks(ctx context.Context) error {
-	dbIDBackup := make(map[int64]*backuppb.DatabaseBackupInfo)
-	for _, db := range t.args.Backup.GetDatabaseBackups() {
-		dbIDBackup[db.GetDbId()] = db
-	}
-
-	for _, coll := range t.args.Backup.GetCollectionBackups() {
-		dbBackup := dbIDBackup[coll.GetDbId()]
-
-		ns := namespace.New(dbBackup.GetDbName(), coll.GetCollectionName())
-		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.AddRestoreCollTask(ns, coll.GetSize()))
-		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollExecuting(ns))
-
-		task := newCollectionDDLTask(t.args.TaskID, t.args.Backup, dbBackup, coll, t.streamCli)
-
-		if err := task.Execute(ctx); err != nil {
-			t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollFail(ns, err))
-			return fmt.Errorf("secondary: execute collection ddl task: %w", err)
+func (t *Task) dmlTaskArgs() (dmlTaskArgs, error) {
+	pchTS := make(map[string]uint64, len(t.args.Backup.GetFlushAllMsgsBase64()))
+	for pch, msgBase64 := range t.args.Backup.GetFlushAllMsgsBase64() {
+		msyBytes, err := base64.StdEncoding.DecodeString(msgBase64)
+		if err != nil {
+			return dmlTaskArgs{}, fmt.Errorf("secondary: decode flush all msg: %w", err)
 		}
 
-		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollSuccess(ns))
+		var msg commonpb.ImmutableMessage
+		if err := proto.Unmarshal(msyBytes, &msg); err != nil {
+			return dmlTaskArgs{}, fmt.Errorf("secondary: unmarshal flush all msg: %w", err)
+		}
+
+		ts, err := milvus.GetTT(&msg)
+		if err != nil {
+			return dmlTaskArgs{}, fmt.Errorf("secondary: get tt from flush all msg: %w", err)
+		}
+
+		pchTS[pch] = ts
 	}
+
+	return dmlTaskArgs{
+		TaskID: t.args.TaskID,
+
+		TSAlloc: t.tsAlloc,
+
+		PchTS: pchTS,
+
+		BackupStorage: t.args.BackupStorage,
+		BackupDir:     t.args.BackupDir,
+
+		StreamCli:  t.streamCli,
+		RestfulCli: t.args.Restful,
+	}, nil
+}
+
+func (t *Task) ddlTaskArgs(ctx context.Context) ddlTaskArgs {
+	return ddlTaskArgs{
+		TaskID:     t.args.TaskID,
+		BackupInfo: t.args.Backup,
+		StreamCli:  t.streamCli,
+		TSAlloc:    t.tsAlloc,
+	}
+}
+
+func (t *Task) runCollTask(ctx context.Context, dbBackup *backuppb.DatabaseBackupInfo, collBackup *backuppb.CollectionBackupInfo, ddlArgs ddlTaskArgs, dmlArgs dmlTaskArgs) error {
+	ns := namespace.New(dbBackup.GetDbName(), collBackup.GetCollectionName())
+	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.AddRestoreCollTask(ns, collBackup.GetSize()))
+	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollExecuting(ns))
+
+	ddlTask := newCollectionDDLTask(ddlArgs, dbBackup, collBackup)
+	if err := ddlTask.Execute(ctx); err != nil {
+		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollFail(ns, err))
+		return fmt.Errorf("secondary: execute collection ddl task: %w", err)
+	}
+
+	dmlTask := newCollectionDMLTask(dmlArgs, collBackup)
+	if err := dmlTask.Execute(ctx); err != nil {
+		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollFail(ns, err))
+		return fmt.Errorf("secondary: execute collection dml task: %w", err)
+	}
+
+	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollSuccess(ns))
+
+	return nil
+}
+
+func (t *Task) runCollTasks(ctx context.Context) error {
+	dbNameBackup := make(map[string]*backuppb.DatabaseBackupInfo, len(t.args.Backup.GetDatabaseBackups()))
+	for _, db := range t.args.Backup.GetDatabaseBackups() {
+		dbNameBackup[db.GetDbName()] = db
+	}
+
+	dmlArgs, err := t.dmlTaskArgs()
+	if err != nil {
+		return fmt.Errorf("secondary: get dml task args: %w", err)
+	}
+	ddlArgs := t.ddlTaskArgs(ctx)
+	for _, coll := range t.args.Backup.GetCollectionBackups() {
+		if err := t.runCollTask(ctx, dbNameBackup[coll.GetDbName()], coll, ddlArgs, dmlArgs); err != nil {
+			return fmt.Errorf("secondary: run collection task: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (t *Task) sendFlushAll() error {
+	t.logger.Info("send flush all msg")
+
+	for _, msgBase64 := range t.args.Backup.GetFlushAllMsgsBase64() {
+		msyBytes, err := base64.StdEncoding.DecodeString(msgBase64)
+		if err != nil {
+			return fmt.Errorf("secondary: decode flush all msg: %w", err)
+		}
+
+		var msg commonpb.ImmutableMessage
+		if err := proto.Unmarshal(msyBytes, &msg); err != nil {
+			return fmt.Errorf("secondary: unmarshal flush all msg: %w", err)
+		}
+
+		if err := t.streamCli.Send(&msg); err != nil {
+			return fmt.Errorf("secondary: send flush all msg: %w", err)
+		}
+	}
+
+	t.logger.Info("send flush all msg done")
+
 	return nil
 }

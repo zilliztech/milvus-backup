@@ -20,19 +20,32 @@ type databaseTask struct {
 	backupInfo *backuppb.BackupInfo
 	dbBackup   *backuppb.DatabaseBackupInfo
 
+	tsAlloc *tsAlloc
+
 	streamCli milvus.Stream
 	logger    *zap.Logger
 }
 
-func newDatabaseTask(taskID string, backupInfo *backuppb.BackupInfo, dbBackup *backuppb.DatabaseBackupInfo, streamCli milvus.Stream) (*databaseTask, error) {
-	task := &databaseTask{
-		taskID: taskID,
+type databaseTaskArgs struct {
+	TaskID string
 
-		backupInfo: backupInfo,
+	BackupInfo *backuppb.BackupInfo
+	TSAlloc    *tsAlloc
+
+	StreamCli milvus.Stream
+}
+
+func newDatabaseTask(args databaseTaskArgs, dbBackup *backuppb.DatabaseBackupInfo) (*databaseTask, error) {
+	task := &databaseTask{
+		taskID: args.TaskID,
+
+		backupInfo: args.BackupInfo,
 		dbBackup:   dbBackup,
 
-		streamCli: streamCli,
-		logger:    log.With(zap.String("task_id", taskID)),
+		tsAlloc: args.TSAlloc,
+
+		streamCli: args.StreamCli,
+		logger:    log.With(zap.String("task_id", args.TaskID)),
 	}
 
 	return task, nil
@@ -57,7 +70,13 @@ func (dbt *databaseTask) Execute(_ context.Context) error {
 	msgs := broadcast.SplitIntoMutableMessage()
 
 	for _, msg := range msgs {
-		if err := dbt.streamCli.Send(msg); err != nil {
+		ts := dbt.tsAlloc.Alloc()
+		immutableMessage := msg.WithTimeTick(ts).
+			WithLastConfirmed(newFakeMessageID(ts)).
+			IntoImmutableMessage(newFakeMessageID(ts)).
+			IntoImmutableMessageProto()
+
+		if err := dbt.streamCli.Send(immutableMessage); err != nil {
 			return fmt.Errorf("collection: broadcast create collection: %w", err)
 		}
 	}
