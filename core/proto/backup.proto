@@ -340,6 +340,8 @@ message RestoreSecondaryRequest {
   string targetClusterID = 4;
   // async or not
   bool async = 5;
+  // if bucket_name and path is set. will override bucket/path in config.
+  string path = 6;
 }
 
 message RestoreBackupRequest {

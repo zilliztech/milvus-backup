@@ -41,6 +41,8 @@ func (s *Server) handleRestoreSecondary(c *gin.Context) {
 		return
 	}
 
+	log.Info("receive restore secondary request", zap.Any("request", &request))
+
 	h := newRestoreSecondaryHandler(&request, s.params)
 	resp := h.run(c.Request.Context())
 
@@ -57,7 +59,9 @@ type restoreSecondaryHandler struct {
 
 	milvusClient  milvus.Grpc
 	restfulClient milvus.Restful
-	backupStorage storage.Client
+
+	backupStorage  storage.Client
+	backupRootPath string
 }
 
 func (h *restoreSecondaryHandler) validate() error {
@@ -98,7 +102,7 @@ func (h *restoreSecondaryHandler) run(ctx context.Context) *backuppb.RestoreBack
 		return resp
 	}
 
-	backupDir := mpath.BackupDir(h.params.MinioCfg.BackupRootPath, h.request.GetBackupName())
+	backupDir := mpath.BackupDir(h.backupRootPath, h.request.GetBackupName())
 	exist, err := meta.Exist(ctx, h.backupStorage, backupDir)
 	if err != nil {
 		return &backuppb.RestoreBackupResponse{Code: backuppb.ResponseCode_Fail, Msg: err.Error()}
@@ -116,7 +120,7 @@ func (h *restoreSecondaryHandler) run(ctx context.Context) *backuppb.RestoreBack
 	}
 
 	if h.request.GetAsync() {
-		return h.runAsync(ctx, task)
+		return h.runAsync(task)
 	}
 
 	return h.runSync(ctx, task)
@@ -138,14 +142,20 @@ func (h *restoreSecondaryHandler) initClient(ctx context.Context) error {
 		return fmt.Errorf("server: create backup storage: %w", err)
 	}
 
+	backupRootPath := h.params.MinioCfg.BackupRootPath
+	if len(h.request.GetPath()) != 0 {
+		backupRootPath = h.request.GetPath()
+	}
+
 	h.milvusClient = milvusGrpc
 	h.backupStorage = backupStorage
 	h.restfulClient = milvusRestful
+	h.backupRootPath = backupRootPath
 	return nil
 }
 
 func (h *restoreSecondaryHandler) newTask(ctx context.Context) (tasklet.Tasklet, error) {
-	backup, err := meta.Read(ctx, h.backupStorage, mpath.BackupDir(h.params.MinioCfg.BackupRootPath, h.request.GetBackupName()))
+	backup, err := meta.Read(ctx, h.backupStorage, mpath.BackupDir(h.backupRootPath, h.request.GetBackupName()))
 	if err != nil {
 		return nil, fmt.Errorf("server: read backup: %w", err)
 	}
@@ -158,11 +168,13 @@ func (h *restoreSecondaryHandler) newTask(ctx context.Context) (tasklet.Tasklet,
 
 		Backup:        backup,
 		Params:        h.params,
-		BackupDir:     mpath.BackupDir(h.params.MinioCfg.BackupRootPath, h.request.GetBackupName()),
+		BackupDir:     mpath.BackupDir(h.backupRootPath, h.request.GetBackupName()),
 		BackupStorage: h.backupStorage,
 
 		Restful: h.restfulClient,
 		Grpc:    h.milvusClient,
+
+		TaskMgr: taskmgr.DefaultMgr,
 	}
 
 	task, err := secondary.NewTask(args)
@@ -173,7 +185,7 @@ func (h *restoreSecondaryHandler) newTask(ctx context.Context) (tasklet.Tasklet,
 	return task, nil
 }
 
-func (h *restoreSecondaryHandler) runAsync(ctx context.Context, task tasklet.Tasklet) *backuppb.RestoreBackupResponse {
+func (h *restoreSecondaryHandler) runAsync(task tasklet.Tasklet) *backuppb.RestoreBackupResponse {
 	resp := &backuppb.RestoreBackupResponse{RequestId: h.request.GetRequestId()}
 
 	go func() {
@@ -182,8 +194,16 @@ func (h *restoreSecondaryHandler) runAsync(ctx context.Context, task tasklet.Tas
 		}
 	}()
 
+	taskView, err := taskmgr.DefaultMgr.GetRestoreTask(h.request.GetRequestId())
+	if err != nil {
+		resp.Code = backuppb.ResponseCode_Fail
+		resp.Msg = err.Error()
+		return resp
+	}
+
 	resp.Code = backuppb.ResponseCode_Success
 	resp.Msg = "restore backup is executing asynchronously"
+	resp.Data = pbconv.RestoreTaskViewToResp(taskView)
 	return resp
 }
 

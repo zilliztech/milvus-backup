@@ -1231,6 +1231,10 @@ const docTemplate = `{
                     "description": "backup name to restore",
                     "type": "string"
                 },
+                "path": {
+                    "description": "if bucket_name and path is set. will override bucket/path in config.",
+                    "type": "string"
+                },
                 "requestId": {
                     "description": "uuid of request, will generate one if not set",
                     "type": "string"

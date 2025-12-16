@@ -162,7 +162,6 @@ func (rt *RBACTask) privilegeGroups(curGroups []*milvuspb.PrivilegeGroupInfo) []
 		})
 		g := &milvuspb.PrivilegeGroupInfo{GroupName: group.GetGroupName(), Privileges: privileges}
 		groups = append(groups, g)
-
 	}
 
 	return groups

@@ -240,8 +240,9 @@ func (o *options) toArgs(params *paramtable.BackupParams) (backup.TaskArgs, erro
 
 	var etcdCli *clientv3.Client
 	if o.backupIndexExtra {
+		endpoints := strings.Split(params.MilvusCfg.EtcdConfig.Endpoints, ",")
 		etcdCli, err = clientv3.New(clientv3.Config{
-			Endpoints:   []string{params.MilvusCfg.EtcdConfig.Endpoints},
+			Endpoints:   endpoints,
 			DialTimeout: 5 * time.Second,
 		})
 		if err != nil {
