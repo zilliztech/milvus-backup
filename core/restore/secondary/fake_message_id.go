@@ -18,7 +18,7 @@ func newFakeMessageID(tt uint64) *fakeMessageID {
 }
 
 func (f *fakeMessageID) WALName() message.WALName {
-	return message.WALNameUnknown
+	return message.WALNameKafka
 }
 
 func (f *fakeMessageID) LT(id message.MessageID) bool {
@@ -51,8 +51,8 @@ func (f *fakeMessageID) Marshal() string {
 
 func (f *fakeMessageID) IntoProto() *commonpb.MessageID {
 	return &commonpb.MessageID{
-		Id:      fmt.Sprintf("%d", f.tt),
-		WALName: commonpb.WALName_Unknown,
+		Id:      message.EncodeUint64(f.tt),
+		WALName: commonpb.WALName_Kafka,
 	}
 }
 

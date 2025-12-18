@@ -5,9 +5,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/backup"
@@ -60,6 +63,8 @@ type createBackupHandler struct {
 	restfulClient milvus.Restful
 	manageClient  milvus.Manage
 
+	etcdClient *clientv3.Client
+
 	backupStorage storage.Client
 
 	milvusStorage storage.Client
@@ -99,6 +104,19 @@ func (h *createBackupHandler) initClient(ctx context.Context) error {
 		return err
 	}
 	h.restfulClient = restfulClient
+
+	var etcdCli *clientv3.Client
+	if h.request.GetWithIndexExtra() {
+		endpoints := strings.Split(h.params.MilvusCfg.EtcdConfig.Endpoints, ",")
+		etcdCli, err = clientv3.New(clientv3.Config{
+			Endpoints:   endpoints,
+			DialTimeout: 5 * time.Second,
+		})
+		if err != nil {
+			return fmt.Errorf("create etcd client: %w", err)
+		}
+	}
+	h.etcdClient = etcdCli
 
 	manageAddr := h.params.MilvusCfg.Address
 	if h.request.GetGcPauseAddress() != "" {
@@ -204,12 +222,13 @@ func (h *createBackupHandler) toOption(params *paramtable.BackupParams) (backup.
 	}
 
 	return backup.Option{
-		BackupName: h.request.GetBackupName(),
-		PauseGC:    h.request.GetGcPauseEnable() || params.BackupCfg.GcPauseEnable,
-		Strategy:   strategy,
-		BackupRBAC: h.request.GetRbac(),
-		BackupEZK:  h.request.GetWithEzk(),
-		Filter:     f,
+		BackupName:       h.request.GetBackupName(),
+		PauseGC:          h.request.GetGcPauseEnable() || params.BackupCfg.GcPauseEnable,
+		Strategy:         strategy,
+		BackupRBAC:       h.request.GetRbac(),
+		BackupEZK:        h.request.GetWithEzk(),
+		BackupIndexExtra: h.request.GetWithIndexExtra(),
+		Filter:           f,
 	}, nil
 }
 
@@ -236,6 +255,7 @@ func (h *createBackupHandler) toArgs() (backup.TaskArgs, error) {
 		Grpc:          h.milvusClient,
 		Restful:       h.restfulClient,
 		Manage:        h.manageClient,
+		EtcdCli:       h.etcdClient,
 		TaskMgr:       taskmgr.DefaultMgr,
 	}, nil
 }

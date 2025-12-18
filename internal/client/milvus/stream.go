@@ -67,8 +67,8 @@ func (s *StreamClient) Send(immutableMessage *commonpb.ImmutableMessage) error {
 	return nil
 }
 
-func (p *StreamClient) WaitConfirm() {
-	for _, cli := range p.pchClient {
+func (s *StreamClient) WaitConfirm() {
+	for _, cli := range s.pchClient {
 		cli.waitConfirm()
 	}
 }

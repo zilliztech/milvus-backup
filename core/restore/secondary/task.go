@@ -33,6 +33,8 @@ type TaskArgs struct {
 
 	Restful milvus.Restful
 	Grpc    milvus.Grpc
+
+	TaskMgr *taskmgr.Mgr
 }
 
 type Task struct {
@@ -54,6 +56,8 @@ func NewTask(args TaskArgs) (*Task, error) {
 		return nil, fmt.Errorf("secondary: create stream client: %w", err)
 	}
 
+	args.TaskMgr.AddRestoreTask(args.TaskID)
+
 	return &Task{
 		args: args,
 
@@ -61,15 +65,13 @@ func NewTask(args TaskArgs) (*Task, error) {
 
 		streamCli: streamCli,
 
-		taskMgr: taskmgr.DefaultMgr,
+		taskMgr: args.TaskMgr,
 
 		logger: log.With(zap.String("task_id", args.TaskID)),
 	}, nil
 }
 
 func (t *Task) Execute(ctx context.Context) error {
-	t.taskMgr.AddRestoreTask(t.args.TaskID)
-
 	if err := t.runDBTasks(ctx); err != nil {
 		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
 		return fmt.Errorf("secondary: run database tasks: %w", err)
@@ -89,6 +91,7 @@ func (t *Task) Execute(ctx context.Context) error {
 	t.streamCli.WaitConfirm()
 
 	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreSuccess())
+	t.logger.Info("restore done")
 	return nil
 }
 
