@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 	"strconv"
 	"time"
 
@@ -16,6 +16,8 @@ import (
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/zilliztech/milvus-backup/internal/namespace"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore/conv"
@@ -106,6 +108,8 @@ type collectionDMLTask struct {
 }
 
 func newCollectionDMLTask(args dmlTaskArgs, collBackup *backuppb.CollectionBackupInfo) *collectionDMLTask {
+	ns := namespace.New(collBackup.GetDbName(), collBackup.GetCollectionName())
+
 	return &collectionDMLTask{
 		taskID: args.TaskID,
 
@@ -120,7 +124,7 @@ func newCollectionDMLTask(args dmlTaskArgs, collBackup *backuppb.CollectionBacku
 		streamCli:  args.StreamCli,
 		restfulCli: args.RestfulCli,
 
-		logger: log.With(zap.String("task_id", args.TaskID)),
+		logger: log.With(zap.String("task_id", args.TaskID), zap.String("ns", ns.String())),
 	}
 }
 
@@ -383,7 +387,7 @@ func (dmlt *collectionDMLTask) buildImportFiles(b batch) []*msgpb.ImportFile {
 }
 
 func (dmlt *collectionDMLTask) sendImportMsg(partitionID int64, b batch) (int64, error) {
-	jobID := rand.Int63()
+	jobID := rand.Int64()
 	schema, err := conv.Schema(dmlt.collBackup.GetSchema())
 	if err != nil {
 		return 0, fmt.Errorf("secondary: convert schema: %w", err)

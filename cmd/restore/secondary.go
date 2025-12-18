@@ -15,6 +15,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
+	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 type secondaryOption struct {
@@ -85,6 +86,8 @@ func (o *secondaryOption) toArgs(params *paramtable.BackupParams) (secondary.Tas
 
 		Restful: restfulClient,
 		Grpc:    milvusClient,
+
+		TaskMgr: taskmgr.DefaultMgr,
 	}, nil
 }
 

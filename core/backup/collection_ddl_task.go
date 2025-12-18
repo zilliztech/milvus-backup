@@ -253,6 +253,32 @@ func (ddlt *collectionDDLTask) backupPartitionDDL(ctx context.Context, collID in
 	return bakPartitions, nil
 }
 
+func (ddlt *collectionDDLTask) backupReplicas(ctx context.Context) ([]*backuppb.ReplicaInfo, error) {
+	if !ddlt.grpc.HasFeature(milvus.GetReplicas) {
+		ddlt.logger.Info("current milvus server does not support get replicas")
+		return nil, nil
+	}
+
+	ddlt.logger.Info("start backup replicas of collection")
+	replicas, err := ddlt.grpc.GetReplicas(ctx, ddlt.ns.DBName(), ddlt.ns.CollName())
+	if err != nil {
+		return nil, fmt.Errorf("backup: get replicas %w", err)
+	}
+	ddlt.logger.Info("replicas of collection", zap.Any("replicas", replicas))
+
+	bakReplicas := make([]*backuppb.ReplicaInfo, 0, len(replicas.GetReplicas()))
+	for _, replica := range replicas.GetReplicas() {
+		bakReplica := &backuppb.ReplicaInfo{
+			ReplicaID:    replica.GetReplicaID(),
+			CollectionID: replica.GetCollectionID(),
+			PartitionIds: replica.GetPartitionIds(),
+		}
+		bakReplicas = append(bakReplicas, bakReplica)
+	}
+
+	return bakReplicas, nil
+}
+
 // Execute collects the collection DDL info, including schema, index and partition info.
 // The segment info is not collected here, will be collect later in DML task.
 func (ddlt *collectionDDLTask) Execute(ctx context.Context) error {
@@ -280,6 +306,10 @@ func (ddlt *collectionDDLTask) Execute(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("backup: backup partition ddl %w", err)
 	}
+	replicas, err := ddlt.backupReplicas(ctx)
+	if err != nil {
+		return fmt.Errorf("backup: backup replicas %w", err)
+	}
 
 	collBackup := &backuppb.CollectionBackupInfo{
 		Id:                   ddlt.taskID,
@@ -298,6 +328,7 @@ func (ddlt *collectionDDLTask) Execute(ctx context.Context) error {
 		CreatedTimestamp:     descResp.GetCreatedTimestamp(),
 		VirtualChannelNames:  descResp.GetVirtualChannelNames(),
 		PhysicalChannelNames: descResp.GetPhysicalChannelNames(),
+		Replicas:             replicas,
 	}
 
 	ddlt.metaBuilder.addCollection(ddlt.ns, collBackup)
