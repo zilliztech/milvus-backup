@@ -153,7 +153,7 @@ func (t *Task) dmlTaskArgs() (dmlTaskArgs, error) {
 	}, nil
 }
 
-func (t *Task) ddlTaskArgs(ctx context.Context) ddlTaskArgs {
+func (t *Task) ddlTaskArgs() ddlTaskArgs {
 	return ddlTaskArgs{
 		TaskID:     t.args.TaskID,
 		BackupInfo: t.args.Backup,
@@ -162,7 +162,7 @@ func (t *Task) ddlTaskArgs(ctx context.Context) ddlTaskArgs {
 	}
 }
 
-func (t *Task) runCollTask(ctx context.Context, dbBackup *backuppb.DatabaseBackupInfo, collBackup *backuppb.CollectionBackupInfo, ddlArgs ddlTaskArgs, dmlArgs dmlTaskArgs) error {
+func (t *Task) runCollTask(ctx context.Context, dbBackup *backuppb.DatabaseBackupInfo, collBackup *backuppb.CollectionBackupInfo, ddlArgs ddlTaskArgs, dmlArgs dmlTaskArgs, loadArgs loadTaskArgs) error {
 	ns := namespace.New(dbBackup.GetDbName(), collBackup.GetCollectionName())
 	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.AddRestoreCollTask(ns, collBackup.GetSize()))
 	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollExecuting(ns))
@@ -179,9 +179,24 @@ func (t *Task) runCollTask(ctx context.Context, dbBackup *backuppb.DatabaseBacku
 		return fmt.Errorf("secondary: execute collection dml task: %w", err)
 	}
 
+	loadTask := newCollectionLoadTask(loadArgs, dbBackup, collBackup)
+	if err := loadTask.Execute(ctx); err != nil {
+		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollFail(ns, err))
+		return fmt.Errorf("secondary: execute collection load task: %w", err)
+	}
+
 	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollSuccess(ns))
 
 	return nil
+}
+
+func (t *Task) loadTaskArgs() loadTaskArgs {
+	return loadTaskArgs{
+		TaskID:     t.args.TaskID,
+		BackupInfo: t.args.Backup,
+		StreamCli:  t.streamCli,
+		TSAlloc:    t.tsAlloc,
+	}
 }
 
 func (t *Task) runCollTasks(ctx context.Context) error {
@@ -194,9 +209,10 @@ func (t *Task) runCollTasks(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("secondary: get dml task args: %w", err)
 	}
-	ddlArgs := t.ddlTaskArgs(ctx)
+	ddlArgs := t.ddlTaskArgs()
+	loadArgs := t.loadTaskArgs()
 	for _, coll := range t.args.Backup.GetCollectionBackups() {
-		if err := t.runCollTask(ctx, dbNameBackup[coll.GetDbName()], coll, ddlArgs, dmlArgs); err != nil {
+		if err := t.runCollTask(ctx, dbNameBackup[coll.GetDbName()], coll, ddlArgs, dmlArgs, loadArgs); err != nil {
 			return fmt.Errorf("secondary: run collection task: %w", err)
 		}
 	}

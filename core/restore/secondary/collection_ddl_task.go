@@ -3,7 +3,7 @@ package secondary
 import (
 	"context"
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
@@ -12,6 +12,8 @@ import (
 	"github.com/milvus-io/milvus/pkg/v2/streaming/util/message"
 	"github.com/samber/lo"
 	"go.uber.org/zap"
+
+	"github.com/zilliztech/milvus-backup/internal/namespace"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore/conv"
@@ -46,6 +48,8 @@ type ddlTaskArgs struct {
 }
 
 func newCollectionDDLTask(args ddlTaskArgs, dbBackup *backuppb.DatabaseBackupInfo, collBackup *backuppb.CollectionBackupInfo) *collectionDDLTask {
+	ns := namespace.New(collBackup.GetDbName(), collBackup.GetCollectionName())
+
 	return &collectionDDLTask{
 		taskID: args.TaskID,
 
@@ -56,7 +60,7 @@ func newCollectionDDLTask(args ddlTaskArgs, dbBackup *backuppb.DatabaseBackupInf
 		tsAlloc: args.TSAlloc,
 
 		streamCli: args.StreamCli,
-		logger:    log.With(zap.String("task_id", args.TaskID)),
+		logger:    log.With(zap.String("task_id", args.TaskID), zap.String("ns", ns.String())),
 	}
 }
 
