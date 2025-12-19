@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
+
+	"github.com/zilliztech/milvus-backup/core/restore/conv"
 
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
@@ -428,11 +431,11 @@ func (t *Task) Execute(ctx context.Context) error {
 }
 
 func (t *Task) privateExecute(ctx context.Context) error {
-	if err := t.runRBACTask(ctx); err != nil {
+	t.taskMgr.UpdateRestoreTask(t.taskID, taskmgr.SetRestoreExecuting())
+
+	if err := t.restoreRBAC(ctx); err != nil {
 		return err
 	}
-
-	t.taskMgr.UpdateRestoreTask(t.taskID, taskmgr.SetRestoreExecuting())
 
 	if err := t.runDBTasks(ctx); err != nil {
 		return fmt.Errorf("restore: run database task %w", err)
@@ -453,16 +456,36 @@ func (t *Task) privateExecute(ctx context.Context) error {
 	return nil
 }
 
-func (t *Task) runRBACTask(ctx context.Context) error {
+func (t *Task) restoreRBAC(ctx context.Context) error {
 	if !t.option.RestoreRBAC {
 		t.logger.Info("skip restore RBAC")
 		return nil
 	}
 
-	t.logger.Info("start restore RBAC")
-	rt := NewRBACTask(t.grpc, t.backup.GetRbacMeta())
-	if err := rt.Execute(ctx); err != nil {
-		return fmt.Errorf("restore: restore RBAC %w", err)
+	curRBAC, err := t.grpc.BackupRBAC(ctx)
+	if err != nil {
+		return fmt.Errorf("restore: get current rbac: %w", err)
+	}
+
+	users := conv.Users(t.backup.GetRbacMeta().GetUsers(), curRBAC.GetRBACMeta().GetUsers())
+	roles := conv.Roles(t.backup.GetRbacMeta().GetRoles(), curRBAC.GetRBACMeta().GetRoles())
+	grants := conv.Grants(t.backup.GetRbacMeta().GetGrants(), curRBAC.GetRBACMeta().GetGrants())
+	privilegeGroups := conv.PrivilegeGroups(t.backup.GetRbacMeta().GetPrivilegeGroups(), curRBAC.GetRBACMeta().GetPrivilegeGroups())
+
+	rbacMeta := &milvuspb.RBACMeta{
+		Users:           users,
+		Roles:           roles,
+		Grants:          grants,
+		PrivilegeGroups: privilegeGroups,
+	}
+
+	t.logger.Info("insert rbac to milvus",
+		zap.Int("users", len(users)),
+		zap.Int("roles", len(roles)),
+		zap.Int("grants", len(grants)),
+		zap.Int("privilege_groups", len(privilegeGroups)))
+	if err := t.grpc.RestoreRBAC(ctx, rbacMeta); err != nil {
+		return fmt.Errorf("restore: restore rbac: %w", err)
 	}
 
 	return nil

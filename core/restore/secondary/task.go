@@ -4,10 +4,15 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"math/rand/v2"
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
+	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
+	"github.com/milvus-io/milvus/pkg/v2/streaming/util/message"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/zilliztech/milvus-backup/core/restore/conv"
 
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
@@ -80,6 +85,11 @@ func (t *Task) Execute(ctx context.Context) error {
 	if err := t.runCollTasks(ctx); err != nil {
 		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
 		return fmt.Errorf("secondary: run collection tasks: %w", err)
+	}
+
+	if err := t.sendRBACMsg(); err != nil {
+		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
+		return fmt.Errorf("secondary: send rbac msg: %w", err)
 	}
 
 	if err := t.sendFlushAll(); err != nil {
@@ -214,6 +224,47 @@ func (t *Task) runCollTasks(ctx context.Context) error {
 	for _, coll := range t.args.Backup.GetCollectionBackups() {
 		if err := t.runCollTask(ctx, dbNameBackup[coll.GetDbName()], coll, ddlArgs, dmlArgs, loadArgs); err != nil {
 			return fmt.Errorf("secondary: run collection task: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (t *Task) sendRBACMsg() error {
+	t.logger.Info("send rbac msg")
+	curRBAC, err := t.args.Grpc.BackupRBAC(context.Background())
+	if err != nil {
+		return fmt.Errorf("secondary: get current rbac: %w", err)
+	}
+
+	users := conv.Users(t.args.Backup.GetRbacMeta().GetUsers(), curRBAC.GetRBACMeta().GetUsers())
+	roles := conv.Roles(t.args.Backup.GetRbacMeta().GetRoles(), curRBAC.GetRBACMeta().GetRoles())
+	grants := conv.Grants(t.args.Backup.GetRbacMeta().GetGrants(), curRBAC.GetRBACMeta().GetGrants())
+	privilegeGroups := conv.PrivilegeGroups(t.args.Backup.GetRbacMeta().GetPrivilegeGroups(), curRBAC.GetRBACMeta().GetPrivilegeGroups())
+
+	rbacMeta := &milvuspb.RBACMeta{
+		Users:           users,
+		Roles:           roles,
+		Grants:          grants,
+		PrivilegeGroups: privilegeGroups,
+	}
+
+	builder := message.NewRestoreRBACMessageBuilderV2().
+		WithHeader(&message.RestoreRBACMessageHeader{}).
+		WithBody(&message.RestoreRBACMessageBody{RbacMeta: rbacMeta}).
+		WithBroadcast([]string{t.args.Backup.GetControlChannelName()})
+
+	broadcast := builder.MustBuildBroadcast().WithBroadcastID(rand.Uint64())
+	msgs := broadcast.SplitIntoMutableMessage()
+	for _, msg := range msgs {
+		ts := t.tsAlloc.Alloc()
+		immutableMessage := msg.WithTimeTick(ts).
+			WithLastConfirmed(newFakeMessageID(ts)).
+			IntoImmutableMessage(newFakeMessageID(ts)).
+			IntoImmutableMessageProto()
+
+		if err := t.streamCli.Send(immutableMessage); err != nil {
+			return fmt.Errorf("secondary: send rbac msg: %w", err)
 		}
 	}
 
