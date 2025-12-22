@@ -34,6 +34,56 @@ func TestCollectionDDLTask_shardNum(t *testing.T) {
 	})
 }
 
+func TestCollectionDDLTask_fields(t *testing.T) {
+	t.Run("WithDynamicField", func(t *testing.T) {
+		ddlt := newTestCollectionDDLTask()
+
+		ddlt.collBackup = &backuppb.CollectionBackupInfo{
+			Schema: &backuppb.CollectionSchema{
+				Fields: []*backuppb.FieldSchema{
+					{Name: "field1", FieldID: 1},
+					{Name: "field2", FieldID: 2},
+					{Name: "field3", FieldID: 3},
+					// $meta field's field id is 4
+					{Name: "field5", FieldID: 5},
+					{Name: "field6", FieldID: 6},
+				},
+				EnableDynamicField: true,
+			},
+		}
+
+		createFields, addFields, err := ddlt.fields()
+		assert.NoError(t, err)
+		assert.Len(t, createFields, 3)
+		assert.Len(t, addFields, 2)
+
+		assert.Equal(t, "field1", createFields[0].GetName())
+		assert.Equal(t, "field2", createFields[1].GetName())
+		assert.Equal(t, "field3", createFields[2].GetName())
+		assert.Equal(t, "field5", addFields[0].GetName())
+		assert.Equal(t, "field6", addFields[1].GetName())
+	})
+
+	t.Run("WithoutDynamicField", func(t *testing.T) {
+		ddlt := newTestCollectionDDLTask()
+
+		ddlt.collBackup = &backuppb.CollectionBackupInfo{
+			Schema: &backuppb.CollectionSchema{
+				Fields:             []*backuppb.FieldSchema{{Name: "field1", FieldID: 1}, {Name: "field2", FieldID: 2}},
+				EnableDynamicField: false,
+			},
+		}
+
+		createFields, addFields, err := ddlt.fields()
+		assert.NoError(t, err)
+		assert.Len(t, createFields, 2)
+		assert.Empty(t, addFields)
+
+		assert.Equal(t, "field1", createFields[0].GetName())
+		assert.Equal(t, "field2", createFields[1].GetName())
+	})
+}
+
 func TestCollectionTask_createColl(t *testing.T) {
 	t.Run("Skip", func(t *testing.T) {
 		ct := newTestCollectionDDLTask()
