@@ -1,8 +1,9 @@
 import sys
 import time
 import pytest
+import pymilvus
 from pymilvus import DefaultConfig, DataType, db, MilvusClient
-
+from pymilvus import utility
 sys.path.append("..")
 from base.connections_wrapper import ApiConnectionsWrapper
 from base.collection_wrapper import ApiCollectionWrapper
@@ -105,6 +106,7 @@ class TestcaseBase(Base):
             token=f"{user}:{password}",
         )
         self.milvus_uri = f"http://{host}:{port}"
+        log.info(f"milvus uri: {self.milvus_uri}")
         self.milvus_token = f"{user}:{password}"
 
     def _connect(self):
@@ -113,6 +115,12 @@ class TestcaseBase(Base):
             uri=self.milvus_uri,
             token=self.milvus_token
         )
+        log.info("--------------------------------")
+        log.info(f"milvus uri: {self.milvus_uri}")
+        sdk_version = pymilvus.__version__
+        log.info(f"sdk version: {sdk_version}")
+        server_version = utility.get_server_version()
+        log.info(f"server version: {server_version}")
         return res
 
     def init_collection_wrap(

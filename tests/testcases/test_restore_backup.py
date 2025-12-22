@@ -3,6 +3,7 @@ import pytest
 import json
 import numpy as np
 import jax.numpy as jnp
+import pandas as pd
 import random
 from collections import defaultdict
 from pymilvus import db, list_collections, Collection, DataType, Function, FunctionType
@@ -1958,3 +1959,286 @@ class TestRestoreBackup(TestcaseBase):
             restored_info.get("properties", {}).get("collection.ttl.seconds")
             == str(ttl_seconds)
         )
+
+    @pytest.mark.tags(CaseLabel.L1)
+    @pytest.mark.parametrize("with_default_value", [True, False])
+    def test_milvus_restore_backup_with_add_field(self, with_default_value):
+        """
+        Test backup/restore with dynamically added fields.
+
+        Steps:
+        1. Create collection with base schema
+        2. Insert initial data
+        3. Add multiple fields of different types (INT64, VARCHAR, FLOAT, BOOL, JSON)
+        4. Insert more data with the new fields populated
+        5. Create backup
+        6. Restore backup
+        7. Verify schema includes all added fields and data integrity
+        """
+        self._connect()
+        name_origin = cf.gen_unique_str(prefix)
+        back_up_name = cf.gen_unique_str(backup_prefix)
+        nb_initial = 1000
+        nb_after = 500
+        dim = 128
+
+        # Step 1: Create collection with base schema
+        fields = [
+            cf.gen_int64_field(name="int64", is_primary=True),
+            cf.gen_float_field(name="float", nullable=True),
+            cf.gen_string_field(name="varchar", nullable=True),
+            cf.gen_json_field(name="json", nullable=True),
+            cf.gen_float_vec_field(name="float_vector", dim=dim),
+        ]
+        default_schema = cf.gen_collection_schema(fields, enable_dynamic_field=True)
+        collection_w = self.init_collection_wrap(
+            name=name_origin, schema=default_schema, active_trace=True
+        )
+
+        # Step 2: Insert initial data
+        initial_data = [
+            [i for i in range(nb_initial)],  # int64
+            [float(i) for i in range(nb_initial)],  # float
+            [str(i) for i in range(nb_initial)],  # varchar
+            [{"key": i} for i in range(nb_initial)],  # json
+            [[np.float32(x) for x in range(dim)] for _ in range(nb_initial)],  # float_vector
+        ]
+        collection_w.insert(data=initial_data)
+        collection_w.flush()
+        log.info(f"Inserted {nb_initial} initial rows")
+
+        # Step 3: Add multiple fields of different types
+        # Define fields to add: (field_name, data_type, extra_kwargs)
+        # Note: FLOAT type default_value has type mismatch issue, use DOUBLE instead
+        fields_to_add = [
+            ("added_int64", DataType.INT64, {"nullable": True, "default_value": 0} if with_default_value else {"nullable": True}),
+            ("added_varchar", DataType.VARCHAR, {"nullable": True, "max_length": 256, "default_value": "default"} if with_default_value else {"nullable": True, "max_length": 256}),
+            ("added_double", DataType.DOUBLE, {"nullable": True, "default_value": 0.0} if with_default_value else {"nullable": True}),
+            ("added_bool", DataType.BOOL, {"nullable": True, "default_value": False} if with_default_value else {"nullable": True}),
+            ("added_json", DataType.JSON, {"nullable": True}),  # JSON does not support default_value
+        ]
+
+        added_field_names = []
+        for field_name, data_type, kwargs in fields_to_add:
+            self.milvus_client.add_collection_field(
+                collection_name=name_origin,
+                field_name=field_name,
+                data_type=data_type,
+                **kwargs
+            )
+            added_field_names.append(field_name)
+            log.info(f"Added field '{field_name}' with type {data_type.name}")
+
+        # Verify all fields were added to source collection
+        src_info = self.milvus_client.describe_collection(collection_name=name_origin)
+        src_field_names = [f["name"] for f in src_info["fields"]]
+        for field_name in added_field_names:
+            assert field_name in src_field_names, f"Field {field_name} not found in source collection"
+        log.info(f"All {len(added_field_names)} fields added successfully")
+        schema_info = self.milvus_client.describe_collection(collection_name=name_origin)
+        log.info(f"schema_info: {schema_info}")
+
+        # Step 4: Insert more data with the new fields populated
+        new_data = []
+        for i in range(nb_initial, nb_initial + nb_after):
+            row = {
+                "int64": i,
+                "float": float(i),
+                "varchar": str(i),
+                "json": {"key": i},
+                "float_vector": [np.float32(x) for x in range(dim)],
+                # New fields with values
+                "added_int64": i * 10,
+                "added_varchar": f"value_{i}",
+                "added_double": float(i) * 1.5,
+                "added_bool": i % 2 == 0,
+                "added_json": {"added_key": i, "nested": {"value": i * 2}},
+            }
+            new_data.append(row)
+        df = pd.DataFrame(new_data)
+        log.info(f"df: \n{df}")
+        # Use MilvusClient instead of ORM to ensure schema cache is updated
+        self.milvus_client.insert(collection_name=name_origin, data=new_data)
+        self.milvus_client.flush(collection_name=name_origin)
+        log.info(f"Inserted {nb_after} rows with new fields populated")
+
+        # Step 5: Create backup
+        res = self.client.create_backup({
+            "async": False,
+            "backup_name": back_up_name,
+            "collection_names": [name_origin],
+        })
+        log.info(f"create_backup response: {res}")
+        assert res.get("msg", "") == "success", f"Backup creation failed: {res}"
+
+        # Verify backup was created
+        backup = self.client.get_backup(back_up_name)
+        assert backup["data"]["name"] == back_up_name
+        backup_collections = [
+            b["collection_name"] for b in backup["data"]["collection_backups"]
+        ]
+        assert name_origin in backup_collections
+
+        # Step 6: Restore backup
+        res = self.client.restore_backup({
+            "async": False,
+            "backup_name": back_up_name,
+            "collection_names": [name_origin],
+            "collection_suffix": suffix,
+            "useV2Restore": True,
+        })
+        log.info(f"restore_backup response: {res}")
+        assert res.get("msg", "") == "success", f"Restore failed: {res}"
+
+        # Step 7: Verify restored collection
+        restored_name = name_origin + suffix
+        res, _ = self.utility_wrap.list_collections()
+        assert restored_name in res, f"Restored collection {restored_name} not found"
+
+        # Verify schema includes all added fields
+        restored_info = self.milvus_client.describe_collection(collection_name=restored_name)
+        restored_field_names = [f["name"] for f in restored_info["fields"]]
+        for field_name in added_field_names:
+            assert field_name in restored_field_names, \
+                f"Added field {field_name} not found in restored collection. Fields: {restored_field_names}"
+
+        # Verify data integrity using compare_collections
+        self.compare_collections(
+            name_origin,
+            restored_name,
+            verify_by_query=True,
+        )
+        log.info(f"Test passed: with_default_value={with_default_value}, added_fields={added_field_names}")
+
+    @pytest.mark.tags(CaseLabel.L1)
+    def test_milvus_restore_backup_with_alter_enable_dynamic_schema(self):
+        """
+        Test backup/restore when dynamic schema is enabled via alter_collection_properties.
+
+        Steps:
+        1. Create collection with enable_dynamic_field=False using MilvusClient
+        2. Insert initial data (static fields only)
+        3. Alter collection to enable dynamic schema via alter_collection_properties
+        4. Insert more data with additional dynamic fields
+        5. Create backup
+        6. Restore backup
+        7. Verify schema has dynamic field enabled and data integrity
+        """
+        # Connect
+        self._connect()
+        collection_name = cf.gen_unique_str(prefix)
+        back_up_name = cf.gen_unique_str(backup_prefix)
+        dim = 128
+        nb_initial = 1000
+        nb_after = 500
+
+        # Step 1: Create collection WITHOUT dynamic schema using MilvusClient
+        schema = self.milvus_client.create_schema(
+            auto_id=False,
+            enable_dynamic_field=False  # Start without dynamic schema
+        )
+        schema.add_field("id", DataType.INT64, is_primary=True)
+        schema.add_field("float_vector", DataType.FLOAT_VECTOR, dim=dim)
+        schema.add_field("varchar", DataType.VARCHAR, max_length=256, nullable=True)
+
+        self.milvus_client.create_collection(
+            collection_name=collection_name,
+            schema=schema,
+            consistency_level="Strong"  # Match ORM default for compare_collections
+        )
+        log.info(f"Created collection {collection_name} with enable_dynamic_field=False")
+
+        # Verify dynamic field is disabled
+        info = self.milvus_client.describe_collection(collection_name)
+        assert info.get("enable_dynamic_field", True) is False, \
+            f"Expected enable_dynamic_field=False, got {info}"
+
+        # Step 2: Insert initial data (static fields only)
+        initial_data = [
+            {
+                "id": i,
+                "float_vector": [np.float32(x) for x in range(dim)],
+                "varchar": f"initial_{i}",
+            }
+            for i in range(nb_initial)
+        ]
+        self.milvus_client.insert(collection_name, initial_data)
+        self.milvus_client.flush(collection_name)
+        log.info(f"Inserted {nb_initial} initial rows (static fields only)")
+
+        # Step 3: Alter collection to enable dynamic schema
+        # Reference: https://milvus.io/docs/modify-collection.md
+        self.milvus_client.alter_collection_properties(
+            collection_name,
+            properties={"dynamicfield.enabled": True}
+        )
+        log.info("Enabled dynamic schema via alter_collection_properties with dynamicfield.enabled=True")
+
+        # Verify dynamic field is now enabled
+        info = self.milvus_client.describe_collection(collection_name)
+        log.info(f"Collection info after alter: enable_dynamic_field={info.get('enable_dynamic_field')}, properties={info.get('properties')}")
+        assert info.get("enable_dynamic_field", False) is True, \
+            f"Expected enable_dynamic_field=True after alter, got {info}"
+
+        # Step 4: Insert data WITH dynamic fields
+        # After enabling dynamic field via properties, we should be able to insert dynamic fields
+        dynamic_data = [
+            {
+                "id": i,
+                "float_vector": [np.float32(x) for x in range(dim)],
+                "varchar": f"dynamic_{i}",
+                # Dynamic fields (not in schema)
+                "extra_string": f"extra_value_{i}",
+                "extra_int": i * 10,
+            }
+            for i in range(nb_initial, nb_initial + nb_after)
+        ]
+        self.milvus_client.insert(collection_name, dynamic_data)
+        self.milvus_client.flush(collection_name)
+        log.info(f"Inserted {nb_after} rows with dynamic fields")
+
+        # Step 5: Create backup
+        res = self.client.create_backup({
+            "async": False,
+            "backup_name": back_up_name,
+            "collection_names": [collection_name],
+        })
+        log.info(f"create_backup response: {res}")
+        assert res.get("msg", "") == "success", f"Backup creation failed: {res}"
+
+        # Verify backup was created
+        backup = self.client.get_backup(back_up_name)
+        assert backup["data"]["name"] == back_up_name
+        backup_collections = [
+            b["collection_name"] for b in backup["data"]["collection_backups"]
+        ]
+        assert collection_name in backup_collections
+
+        # Step 6: Restore backup
+        res = self.client.restore_backup({
+            "async": False,
+            "backup_name": back_up_name,
+            "collection_names": [collection_name],
+            "collection_suffix": suffix,
+        })
+        log.info(f"restore_backup response: {res}")
+        assert res.get("msg", "") == "success", f"Restore failed: {res}"
+
+        # Step 7: Verify restored collection
+        restored_name = collection_name + suffix
+        res, _ = self.utility_wrap.list_collections()
+        assert restored_name in res, f"Restored collection {restored_name} not found"
+
+        # Verify dynamic field is enabled in restored collection
+        restored_info = self.milvus_client.describe_collection(restored_name)
+        log.info(f"Restored collection info: enable_dynamic_field={restored_info.get('enable_dynamic_field')}, properties={restored_info.get('properties')}")
+        assert restored_info.get("enable_dynamic_field", False) is True, \
+            f"Restored collection should have enable_dynamic_field=True, got {restored_info}"
+
+        # Verify data integrity using compare_collections
+        self.compare_collections(
+            collection_name,
+            restored_name,
+            verify_by_query=True,
+        )
+        log.info("Test passed: alter enable_dynamic_schema backup/restore verified")
