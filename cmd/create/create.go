@@ -269,7 +269,7 @@ func (o *options) toArgs(params *paramtable.BackupParams) (backup.TaskArgs, erro
 
 		EtcdCli: etcdCli,
 
-		TaskMgr: taskmgr.DefaultMgr,
+		TaskMgr: taskmgr.DefaultMgr(),
 	}, nil
 }
 

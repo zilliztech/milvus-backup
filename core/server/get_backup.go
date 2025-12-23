@@ -58,7 +58,7 @@ type getBackupHandler struct {
 }
 
 func newGetBackupHandler(request *backuppb.GetBackupRequest, params *paramtable.BackupParams) *getBackupHandler {
-	return &getBackupHandler{request: request, params: params, taskMgr: taskmgr.DefaultMgr}
+	return &getBackupHandler{request: request, params: params, taskMgr: taskmgr.DefaultMgr()}
 }
 
 func (h *getBackupHandler) complete() {

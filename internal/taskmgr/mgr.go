@@ -7,7 +7,7 @@ import (
 
 var ErrTaskNotFound = errors.New("task not found")
 
-var DefaultMgr = NewMgr()
+var DefaultMgr = sync.OnceValue(func() *Mgr { return NewMgr() })
 
 func NewMgr() *Mgr {
 	return &Mgr{

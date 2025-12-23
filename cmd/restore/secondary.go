@@ -87,7 +87,7 @@ func (o *secondaryOption) toArgs(params *paramtable.BackupParams) (secondary.Tas
 		Restful: restfulClient,
 		Grpc:    milvusClient,
 
-		TaskMgr: taskmgr.DefaultMgr,
+		TaskMgr: taskmgr.DefaultMgr(),
 	}, nil
 }
 

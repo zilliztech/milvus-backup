@@ -18,7 +18,14 @@ import (
 )
 
 func newTestTask() *Task {
-	return &Task{logger: zap.NewNop(), plan: &Plan{}, params: &paramtable.BackupParams{}}
+	return &Task{
+		logger: zap.NewNop(),
+
+		args: TaskArgs{
+			Plan:   &Plan{},
+			Params: &paramtable.BackupParams{},
+		},
+	}
 }
 
 func TestTask_CheckCollExist(t *testing.T) {
@@ -50,7 +57,7 @@ func TestTask_CheckCollExist(t *testing.T) {
 
 			cli.EXPECT().HasCollection(mock.Anything, "db1", "coll1").Return(tc.has, nil).Once()
 
-			rt := &Task{grpc: cli, option: opt, logger: zap.NewNop()}
+			rt := &Task{args: TaskArgs{Grpc: cli, Option: opt}, logger: zap.NewNop()}
 			err := rt.checkCollExist(context.Background(), task)
 			if tc.ok {
 				assert.NoError(t, err)
@@ -82,7 +89,7 @@ func TestTask_filterDBBackup(t *testing.T) {
 			{DbName: "db1"},
 			{DbName: "db3"},
 		}
-		task := &Task{plan: plan}
+		task := &Task{args: TaskArgs{Plan: plan}}
 		assert.ElementsMatch(t, expect, task.filterDBBackup(dbBackup))
 	})
 }
@@ -106,7 +113,7 @@ func TestTask_filterCollBackup(t *testing.T) {
 			}},
 		}}
 		task := newTestTask()
-		task.plan = p
+		task.args.Plan = p
 		collBackup := []*backuppb.CollectionBackupInfo{
 			{DbName: "db1", CollectionName: "coll1"},
 			{DbName: "db1", CollectionName: "coll2"},
@@ -123,7 +130,7 @@ func TestTask_filterCollBackup(t *testing.T) {
 			"db1": {AllowAll: true},
 		}}
 		task := newTestTask()
-		task.plan = p
+		task.args.Plan = p
 		collBackup := []*backuppb.CollectionBackupInfo{
 			{DbName: "db1", CollectionName: "coll1"},
 			{DbName: "db1", CollectionName: "coll2"},
@@ -151,7 +158,7 @@ func TestTask_filterDBTask(t *testing.T) {
 	t.Run("Filter", func(t *testing.T) {
 		p := &Plan{DBTaskFilter: map[string]struct{}{"db1": {}, "db3": {}}}
 		task := newTestTask()
-		task.plan = p
+		task.args.Plan = p
 		dbTasks := []*databaseTask{
 			{targetName: "db1"},
 			{targetName: "db2"},
@@ -181,7 +188,7 @@ func TestTask_filterCollTask(t *testing.T) {
 			"db1": {CollName: map[string]struct{}{"coll1": {}}},
 		}}
 		task := newTestTask()
-		task.plan = p
+		task.args.Plan = p
 		collTasks := []*collectionTask{
 			{targetNS: namespace.New("db1", "coll1")},
 			{targetNS: namespace.New("db1", "coll2")},
@@ -198,7 +205,7 @@ func TestTask_filterCollTask(t *testing.T) {
 			"db1": {AllowAll: true},
 		}}
 		task := newTestTask()
-		task.plan = p
+		task.args.Plan = p
 		collTasks := []*collectionTask{
 			{targetNS: namespace.New("db1", "coll1")},
 			{targetNS: namespace.New("db1", "coll2")},
@@ -224,7 +231,7 @@ func TestTask_newDBTask(t *testing.T) {
 	t.Run("WithMapping", func(t *testing.T) {
 		p := &Plan{DBMapper: map[string][]DBMapping{"db1": {{Target: "db2"}, {Target: "db3"}}}}
 		task := newTestTask()
-		task.plan = p
+		task.args.Plan = p
 		dbBak := &backuppb.DatabaseBackupInfo{DbName: "db1"}
 		dbTasks := task.newDBTask(dbBak)
 		assert.Len(t, dbTasks, 2)
@@ -243,11 +250,11 @@ func TestTask_newCollTasks(t *testing.T) {
 	}).Once()
 
 	task := newTestTask()
-	task.plan = &Plan{CollMapper: mapper}
+	task.args.Plan = &Plan{CollMapper: mapper}
 	mgr := taskmgr.NewMgr()
 	mgr.AddRestoreTask("task1")
-	task.taskID = "task1"
-	task.taskMgr = mgr
+	task.args.TaskID = "task1"
+	task.args.TaskMgr = mgr
 
 	dbBackup := &backuppb.DatabaseBackupInfo{DbName: "db1"}
 	collBackup := &backuppb.CollectionBackupInfo{DbName: "db1", CollectionName: "coll1"}

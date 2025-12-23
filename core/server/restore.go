@@ -201,14 +201,12 @@ func (h *restoreHandler) newTask(ctx context.Context, backupDir string) (*restor
 		MilvusStorage: h.milvusStorage,
 		Grpc:          h.milvusClient,
 		Restful:       h.restfulClient,
+
+		TaskMgr: taskmgr.DefaultMgr(),
 	}
 	task, err := restore.NewTask(args)
 	if err != nil {
 		return nil, fmt.Errorf("backup: new restore task: %w", err)
-	}
-
-	if err := task.Prepare(ctx); err != nil {
-		return nil, fmt.Errorf("backup: build restore collection task: %w", err)
 	}
 
 	return task, nil
@@ -220,7 +218,7 @@ func (h *restoreHandler) runSync(ctx context.Context, task *restore.Task) *backu
 	}
 
 	resp := backuppb.RestoreBackupResponse{RequestId: h.request.GetRequestId()}
-	taskView, err := taskmgr.DefaultMgr.GetRestoreTask(h.request.GetId())
+	taskView, err := taskmgr.DefaultMgr().GetRestoreTask(h.request.GetId())
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		log.Error("get restore task fail", zap.String("taskId", h.request.GetId()), zap.Error(err))
@@ -243,7 +241,7 @@ func (h *restoreHandler) runAsync(task *restore.Task) *backuppb.RestoreBackupRes
 	}()
 
 	resp := backuppb.RestoreBackupResponse{RequestId: h.request.GetRequestId()}
-	taskView, err := taskmgr.DefaultMgr.GetRestoreTask(h.request.GetId())
+	taskView, err := taskmgr.DefaultMgr().GetRestoreTask(h.request.GetId())
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		log.Error("get restore task fail", zap.String("taskId", h.request.GetId()), zap.Error(err))

@@ -45,7 +45,7 @@ func (o *options) run(cmd *cobra.Command, params *paramtable.BackupParams) error
 		return err
 	}
 
-	taskStat, err := taskmgr.DefaultMgr.GetMigrateTask(taskID)
+	taskStat, err := taskmgr.DefaultMgr().GetMigrateTask(taskID)
 	if err != nil {
 		return err
 	}
