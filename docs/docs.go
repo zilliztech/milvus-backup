@@ -587,10 +587,6 @@ const docTemplate = `{
                     "description": "strategy for backup, one of [meta_only, skip_flush, bulk_flush, serial_flush], if not set will auto select",
                     "type": "string"
                 },
-                "with_ezk": {
-                    "description": "if true, backup ezk",
-                    "type": "boolean"
-                },
                 "with_index_extra": {
                     "type": "boolean"
                 }

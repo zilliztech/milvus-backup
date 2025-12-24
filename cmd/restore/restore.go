@@ -11,7 +11,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
@@ -22,6 +21,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
+	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 type options struct {

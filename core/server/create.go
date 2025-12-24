@@ -226,7 +226,6 @@ func (h *createBackupHandler) toOption(params *paramtable.BackupParams) (backup.
 		PauseGC:          h.request.GetGcPauseEnable() || params.BackupCfg.GcPauseEnable,
 		Strategy:         strategy,
 		BackupRBAC:       h.request.GetRbac(),
-		BackupEZK:        h.request.GetWithEzk(),
 		BackupIndexExtra: h.request.GetWithIndexExtra(),
 		Filter:           f,
 	}, nil

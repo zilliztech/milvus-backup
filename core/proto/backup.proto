@@ -195,11 +195,9 @@ message CreateBackupRequest {
   string backup_root_path = 12;
   // filter for backup
   map<string, CollFilter> filter = 13;
-  // if true, backup ezk
-  bool with_ezk = 14;
   // strategy for backup, one of [meta_only, skip_flush, bulk_flush, serial_flush], if not set will auto select
-  string strategy = 15;
-  bool with_index_extra = 16;
+  string strategy = 14;
+  bool with_index_extra = 15;
 }
 
 /**
