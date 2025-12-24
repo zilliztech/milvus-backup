@@ -329,6 +329,7 @@ func (ddlt *collectionDDLTask) Execute(ctx context.Context) error {
 		VirtualChannelNames:  descResp.GetVirtualChannelNames(),
 		PhysicalChannelNames: descResp.GetPhysicalChannelNames(),
 		Replicas:             replicas,
+		Aliases:              descResp.GetAliases(),
 	}
 
 	ddlt.metaBuilder.addCollection(ddlt.ns, collBackup)
