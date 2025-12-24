@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
+	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
@@ -349,6 +350,8 @@ func (o *options) toArgs(params *paramtable.BackupParams) (restore.TaskArgs, err
 		MilvusStorage:  milvusStorage,
 		Grpc:           milvusClient,
 		Restful:        restfulClient,
+
+		TaskMgr: taskmgr.DefaultMgr(),
 	}, nil
 }
 
@@ -364,9 +367,7 @@ func (o *options) run(cmd *cobra.Command, params *paramtable.BackupParams) error
 	if err != nil {
 		return err
 	}
-	if err := task.Prepare(context.Background()); err != nil {
-		return err
-	}
+
 	if err := task.Execute(context.Background()); err != nil {
 		return err
 	}

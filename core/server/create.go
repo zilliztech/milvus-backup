@@ -256,7 +256,7 @@ func (h *createBackupHandler) toArgs() (backup.TaskArgs, error) {
 		Restful:       h.restfulClient,
 		Manage:        h.manageClient,
 		EtcdCli:       h.etcdClient,
-		TaskMgr:       taskmgr.DefaultMgr,
+		TaskMgr:       taskmgr.DefaultMgr(),
 	}, nil
 }
 
@@ -278,7 +278,7 @@ func (h *createBackupHandler) runSync(ctx context.Context, args backup.TaskArgs)
 		return resp
 	}
 
-	taskView, err := taskmgr.DefaultMgr.GetBackupTask(h.request.GetRequestId())
+	taskView, err := taskmgr.DefaultMgr().GetBackupTask(h.request.GetRequestId())
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()

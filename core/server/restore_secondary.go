@@ -174,7 +174,7 @@ func (h *restoreSecondaryHandler) newTask(ctx context.Context) (tasklet.Tasklet,
 		Restful: h.restfulClient,
 		Grpc:    h.milvusClient,
 
-		TaskMgr: taskmgr.DefaultMgr,
+		TaskMgr: taskmgr.DefaultMgr(),
 	}
 
 	task, err := secondary.NewTask(args)
@@ -194,7 +194,7 @@ func (h *restoreSecondaryHandler) runAsync(task tasklet.Tasklet) *backuppb.Resto
 		}
 	}()
 
-	taskView, err := taskmgr.DefaultMgr.GetRestoreTask(h.request.GetRequestId())
+	taskView, err := taskmgr.DefaultMgr().GetRestoreTask(h.request.GetRequestId())
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
@@ -216,7 +216,7 @@ func (h *restoreSecondaryHandler) runSync(ctx context.Context, task tasklet.Task
 		return resp
 	}
 
-	taskView, err := taskmgr.DefaultMgr.GetRestoreTask(h.request.GetRequestId())
+	taskView, err := taskmgr.DefaultMgr().GetRestoreTask(h.request.GetRequestId())
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()

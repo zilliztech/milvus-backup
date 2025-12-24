@@ -213,7 +213,7 @@ func NewTask(taskID, backupName, clusterID string, params *paramtable.BackupPara
 
 		cloudCli:  cloudCli,
 		clusterID: clusterID,
-		taskMgr:   taskmgr.DefaultMgr,
+		taskMgr:   taskmgr.DefaultMgr(),
 
 		backupDir:     backupDir,
 		backupStorage: backupStorage,
