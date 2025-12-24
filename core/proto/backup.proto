@@ -76,6 +76,7 @@ message CollectionBackupInfo {
   repeated string virtual_channel_names = 25;
   repeated string physical_channel_names = 26;
   repeated ReplicaInfo replicas = 27;
+  repeated string aliases = 28;
 }
 
 message PartitionBackupInfo {
