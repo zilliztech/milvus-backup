@@ -13,12 +13,12 @@ import (
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 
-	"github.com/zilliztech/milvus-backup/internal/namespace"
-
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore/conv"
+	"github.com/zilliztech/milvus-backup/core/restore/funcs"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
@@ -64,7 +64,7 @@ func newCollectionDDLTask(args ddlTaskArgs, dbBackup *backuppb.DatabaseBackupInf
 	}
 }
 
-func (ddlt *collectionDDLTask) Execute(ctx context.Context) error {
+func (ddlt *collectionDDLTask) Execute(_ context.Context) error {
 	if err := ddlt.createColl(); err != nil {
 		return fmt.Errorf("collection: create collection: %w", err)
 	}
@@ -164,6 +164,7 @@ func (ddlt *collectionDDLTask) appendSysFields(schema *schemapb.CollectionSchema
 func (ddlt *collectionDDLTask) appendDynamicField(schema *schemapb.CollectionSchema) {
 	if schema.GetEnableDynamicField() {
 		schema.Fields = append(schema.Fields, &schemapb.FieldSchema{
+			FieldID:     funcs.GuessDynFieldID(schema.Fields),
 			Name:        common.MetaFieldName,
 			Description: "dynamic schema",
 			DataType:    schemapb.DataType_JSON,
