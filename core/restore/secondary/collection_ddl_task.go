@@ -6,19 +6,17 @@ import (
 	"math/rand/v2"
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
-	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
 	"github.com/milvus-io/milvus/pkg/v2/common"
 	"github.com/milvus-io/milvus/pkg/v2/proto/indexpb"
 	"github.com/milvus-io/milvus/pkg/v2/streaming/util/message"
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 
-	"github.com/zilliztech/milvus-backup/internal/namespace"
-
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore/conv"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
@@ -64,7 +62,7 @@ func newCollectionDDLTask(args ddlTaskArgs, dbBackup *backuppb.DatabaseBackupInf
 	}
 }
 
-func (ddlt *collectionDDLTask) Execute(ctx context.Context) error {
+func (ddlt *collectionDDLTask) Execute(_ context.Context) error {
 	if err := ddlt.createColl(); err != nil {
 		return fmt.Errorf("collection: create collection: %w", err)
 	}
@@ -109,6 +107,8 @@ func (ddlt *collectionDDLTask) createIndex(index *backuppb.IndexInfo) error {
 		IndexName:    index.GetIndexName(),
 	}
 
+	ddlt.logger.Info("create index", zap.Any("header", header), zap.Any("body", body))
+
 	builder := message.NewCreateIndexMessageBuilderV2().
 		WithHeader(header).
 		WithBody(body).
@@ -144,34 +144,6 @@ func (ddlt *collectionDDLTask) partitionIDs() []int64 {
 	})
 }
 
-func (ddlt *collectionDDLTask) appendSysFields(schema *schemapb.CollectionSchema) {
-	schema.Fields = append(schema.Fields, &schemapb.FieldSchema{
-		FieldID:      int64(common.RowIDField),
-		Name:         common.RowIDFieldName,
-		IsPrimaryKey: false,
-		Description:  "row id",
-		DataType:     schemapb.DataType_Int64,
-	})
-	schema.Fields = append(schema.Fields, &schemapb.FieldSchema{
-		FieldID:      int64(common.TimeStampField),
-		Name:         common.TimeStampFieldName,
-		IsPrimaryKey: false,
-		Description:  "time stamp",
-		DataType:     schemapb.DataType_Int64,
-	})
-}
-
-func (ddlt *collectionDDLTask) appendDynamicField(schema *schemapb.CollectionSchema) {
-	if schema.GetEnableDynamicField() {
-		schema.Fields = append(schema.Fields, &schemapb.FieldSchema{
-			Name:        common.MetaFieldName,
-			Description: "dynamic schema",
-			DataType:    schemapb.DataType_JSON,
-			IsDynamic:   true,
-		})
-	}
-}
-
 func (ddlt *collectionDDLTask) createColl() error {
 	header := &message.CreateCollectionMessageHeader{
 		CollectionId: ddlt.collBackup.GetCollectionId(),
@@ -189,8 +161,8 @@ func (ddlt *collectionDDLTask) createColl() error {
 		Key:   common.ConsistencyLevel,
 		Value: ddlt.collBackup.GetConsistencyLevel().String(),
 	})
-	ddlt.appendSysFields(schema)
-	ddlt.appendDynamicField(schema)
+	appendSysFields(schema)
+	appendDynamicField(schema)
 
 	ddlt.logger.Info("collection schema", zap.Any("schema", schema))
 
