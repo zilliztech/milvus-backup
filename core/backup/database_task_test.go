@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 
+	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 )
@@ -29,7 +30,7 @@ func TestDatabaseTask_Execute(t *testing.T) {
 
 		builder := newMetaBuilder("task1", "backup1")
 
-		task := newDatabaseTask("backup1", "db1", false, cli, manage, builder)
+		task := newDatabaseTask("backup1", "db1", cli, manage, builder)
 		err := task.Execute(context.Background())
 		assert.NoError(t, err)
 
@@ -46,7 +47,7 @@ func TestDatabaseTask_Execute(t *testing.T) {
 
 		builder := newMetaBuilder("task1", "backup1")
 
-		task := newDatabaseTask("backup1", namespace.DefaultDBName, false, cli, manage, builder)
+		task := newDatabaseTask("backup1", namespace.DefaultDBName, cli, manage, builder)
 		err := task.Execute(context.Background())
 		assert.NoError(t, err)
 
@@ -54,48 +55,26 @@ func TestDatabaseTask_Execute(t *testing.T) {
 		assert.Equal(t, namespace.DefaultDBName, builder.data.DatabaseBackups[0].GetDbName())
 		assert.Empty(t, builder.data.DatabaseBackups[0].GetProperties())
 	})
+}
 
-	t.Run("BackupEZK", func(t *testing.T) {
-		cli := milvus.NewMockGrpc(t)
-		manage := milvus.NewMockManage(t)
+func TestDatabaseTask_cipherEnabled(t *testing.T) {
+	task := &databaseTask{}
 
-		cli.EXPECT().HasFeature(milvus.DescribeDatabase).Return(true).Once()
-		cli.EXPECT().DescribeDatabase(mock.Anything, "db1").Return(&milvuspb.DescribeDatabaseResponse{
-			DbID: 1,
-			Properties: []*commonpb.KeyValuePair{
-				{Key: "key1", Value: "value1"},
-				{Key: "key2", Value: "value2"},
-			},
-		}, nil).Once()
-
-		manage.EXPECT().GetEZK(mock.Anything, "db1").Return("ezk1", nil).Once()
-
-		builder := newMetaBuilder("task1", "backup1")
-
-		task := newDatabaseTask("backup1", "db1", true, cli, manage, builder)
-		err := task.Execute(context.Background())
-		assert.NoError(t, err)
-		assert.Equal(t, "ezk1", builder.data.DatabaseBackups[0].GetEzk())
+	t.Run("Enabled", func(t *testing.T) {
+		assert.True(t, task.cipherEnabled([]*backuppb.KeyValuePair{
+			{Key: _cipherEnabledKey, Value: "true"},
+		}))
 	})
 
-	t.Run("NotBackupEZK", func(t *testing.T) {
-		cli := milvus.NewMockGrpc(t)
-		manage := milvus.NewMockManage(t)
+	t.Run("Disabled", func(t *testing.T) {
+		assert.False(t, task.cipherEnabled([]*backuppb.KeyValuePair{
+			{Key: _cipherEnabledKey, Value: "false"},
+		}))
+	})
 
-		cli.EXPECT().HasFeature(milvus.DescribeDatabase).Return(true).Once()
-		cli.EXPECT().DescribeDatabase(mock.Anything, "db1").Return(&milvuspb.DescribeDatabaseResponse{
-			DbID: 1,
-			Properties: []*commonpb.KeyValuePair{
-				{Key: "key1", Value: "value1"},
-				{Key: "key2", Value: "value2"},
-			},
-		}, nil).Once()
-
-		builder := newMetaBuilder("task1", "backup1")
-
-		task := newDatabaseTask("backup1", "db1", false, cli, manage, builder)
-		err := task.Execute(context.Background())
-		assert.NoError(t, err)
-		assert.Equal(t, "", builder.data.DatabaseBackups[0].GetEzk())
+	t.Run("NotSet", func(t *testing.T) {
+		assert.False(t, task.cipherEnabled([]*backuppb.KeyValuePair{
+			{Key: "other", Value: "true"},
+		}))
 	})
 }

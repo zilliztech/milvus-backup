@@ -4,26 +4,52 @@ import (
 	"context"
 	"fmt"
 
+	"go.uber.org/zap"
+
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
+	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 )
+
+const _cipherEnabledKey = "cipher.enabled"
 
 type databaseTask struct {
 	taskID string
 
 	dbName string
 
-	backupEZK bool
-
 	metaBuilder *metaBuilder
 
 	grpc   milvus.Grpc
 	manage milvus.Manage
+
+	logger *zap.Logger
 }
 
-func newDatabaseTask(taskID, dbName string, backupEZK bool, grpc milvus.Grpc, manage milvus.Manage, builder *metaBuilder) *databaseTask {
-	return &databaseTask{taskID: taskID, dbName: dbName, backupEZK: backupEZK, metaBuilder: builder, grpc: grpc, manage: manage}
+func newDatabaseTask(taskID, dbName string, grpc milvus.Grpc, manage milvus.Manage, builder *metaBuilder) *databaseTask {
+	return &databaseTask{
+		taskID: taskID,
+
+		dbName: dbName,
+
+		metaBuilder: builder,
+
+		grpc:   grpc,
+		manage: manage,
+
+		logger: log.With(zap.String("task_id", taskID), zap.String("db_name", dbName)),
+	}
+}
+
+func (dt *databaseTask) cipherEnabled(properties []*backuppb.KeyValuePair) bool {
+	for _, prop := range properties {
+		if prop.GetKey() == _cipherEnabledKey && prop.GetValue() == "true" {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (dt *databaseTask) Execute(ctx context.Context) error {
@@ -41,11 +67,13 @@ func (dt *databaseTask) Execute(ctx context.Context) error {
 
 	bakDB := &backuppb.DatabaseBackupInfo{DbName: dt.dbName, DbId: dbID, Properties: properties}
 
-	if dt.backupEZK {
+	if dt.cipherEnabled(properties) {
+		dt.logger.Info("backup ezk")
 		ezk, err := dt.manage.GetEZK(ctx, dt.dbName)
 		if err != nil {
 			return fmt.Errorf("backup: get ezk: %w", err)
 		}
+		dt.logger.Info("get ezk done", zap.Int("length", len(ezk)))
 		bakDB.Ezk = ezk
 	}
 

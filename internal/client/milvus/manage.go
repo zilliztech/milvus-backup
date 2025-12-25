@@ -45,12 +45,12 @@ func WithTicket(ticket string) Option[resumeGCOpt] {
 }
 
 type resumeGCOpt struct {
+	commonResp
 	ticket string
 }
 
-type CommonResp[T any] struct {
-	Msg  string `json:"msg"`
-	Data T      `json:"data"`
+type commonResp struct {
+	Msg string `json:"msg"`
 }
 
 type pauseGCResp struct {
@@ -76,11 +76,12 @@ func NewManage(base string) *ManageImpl {
 }
 
 type ezkResp struct {
+	commonResp
 	EZK string `json:"ezk"`
 }
 
 func (m *ManageImpl) GetEZK(ctx context.Context, dbName string) (string, error) {
-	var result CommonResp[ezkResp]
+	var result ezkResp
 	resp, err := m.cli.R().SetContext(ctx).
 		SetQueryParam("db_name", dbName).
 		SetSuccessResult(&result).
@@ -98,13 +99,13 @@ func (m *ManageImpl) GetEZK(ctx context.Context, dbName string) (string, error) 
 		return "", fmt.Errorf("client: get ezk: %v", result)
 	}
 
-	return result.Data.EZK, nil
+	return result.EZK, nil
 }
 
 func (m *ManageImpl) PauseGC(ctx context.Context, opts ...Option[pauseGCOption]) (string, error) {
 	opt := newOption(opts...)
 
-	var result CommonResp[pauseGCResp]
+	var result pauseGCResp
 	resp, err := m.cli.R().SetContext(ctx).
 		SetQueryParam("pause_seconds", strconv.Itoa(int(opt.pauseSeconds))).
 		SetQueryParam("collection_id", strconv.FormatInt(opt.collectionID, 10)).
@@ -118,7 +119,7 @@ func (m *ManageImpl) PauseGC(ctx context.Context, opts ...Option[pauseGCOption])
 		return "", fmt.Errorf("client: pause gc: %v", resp)
 	}
 
-	return result.Data.Ticket, nil
+	return result.Ticket, nil
 }
 
 func (m *ManageImpl) ResumeGC(ctx context.Context, opts ...Option[resumeGCOpt]) error {
@@ -129,8 +130,9 @@ func (m *ManageImpl) ResumeGC(ctx context.Context, opts ...Option[resumeGCOpt]) 
 		r.SetQueryParam("ticket", opt.ticket)
 	}
 
+	var result commonResp
 	resp, err := r.
-		SetSuccessResult(&CommonResp[string]{}).
+		SetSuccessResult(&result).
 		Get("/management/datacoord/garbage_collection/resume")
 	if err != nil {
 		return fmt.Errorf("client: resume gc: %w", err)

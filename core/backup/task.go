@@ -55,7 +55,6 @@ type Option struct {
 	Strategy Strategy
 
 	BackupRBAC bool
-	BackupEZK  bool
 
 	BackupIndexExtra bool
 
@@ -327,7 +326,7 @@ func (t *Task) backupDatabase(ctx context.Context, dbNames []string) error {
 	t.taskMgr.UpdateBackupTask(t.taskID, taskmgr.SetBackupDatabaseExecuting())
 
 	for _, dbName := range dbNames {
-		dbTask := newDatabaseTask(t.taskID, dbName, t.option.BackupEZK, t.grpc, t.manage, t.metaBuilder)
+		dbTask := newDatabaseTask(t.taskID, dbName, t.grpc, t.manage, t.metaBuilder)
 		if err := dbTask.Execute(ctx); err != nil {
 			return fmt.Errorf("backup: execute db task %s: %w", dbName, err)
 		}
