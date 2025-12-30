@@ -49,6 +49,10 @@ func (ciet *collectionIndexExtraTask) Execute(ctx context.Context) error {
 		if err := proto.Unmarshal(kv.Value, index); err != nil {
 			return fmt.Errorf("backup: unmarshal index %w", err)
 		}
+		if index.GetDeleted() {
+			ciet.logger.Info("skip deleted index", zap.Int64("index_id", index.GetIndexInfo().GetIndexID()))
+			continue
+		}
 		indexes = append(indexes, index)
 	}
 

@@ -6,7 +6,6 @@ import (
 	"sync"
 
 	"github.com/milvus-io/milvus/pkg/v2/proto/indexpb"
-
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"

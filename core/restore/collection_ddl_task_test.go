@@ -6,6 +6,7 @@ import (
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
+	"github.com/milvus-io/milvus/pkg/v2/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
@@ -41,12 +42,12 @@ func TestCollectionDDLTask_fields(t *testing.T) {
 		ddlt.collBackup = &backuppb.CollectionBackupInfo{
 			Schema: &backuppb.CollectionSchema{
 				Fields: []*backuppb.FieldSchema{
-					{Name: "field1", FieldID: 1},
-					{Name: "field2", FieldID: 2},
-					{Name: "field3", FieldID: 3},
-					// $meta field's field id is 4
-					{Name: "field5", FieldID: 5},
-					{Name: "field6", FieldID: 6},
+					{Name: "field1", FieldID: common.StartOfUserFieldID},
+					{Name: "field2", FieldID: common.StartOfUserFieldID + 1},
+					{Name: "field3", FieldID: common.StartOfUserFieldID + 2},
+					// $meta field's field id is common.StartOfUserFieldID + 3
+					{Name: "field4", FieldID: common.StartOfUserFieldID + 4},
+					{Name: "field5", FieldID: common.StartOfUserFieldID + 5},
 				},
 				EnableDynamicField: true,
 			},
@@ -60,8 +61,7 @@ func TestCollectionDDLTask_fields(t *testing.T) {
 		assert.Equal(t, "field1", createFields[0].GetName())
 		assert.Equal(t, "field2", createFields[1].GetName())
 		assert.Equal(t, "field3", createFields[2].GetName())
-		assert.Equal(t, "field5", addFields[0].GetName())
-		assert.Equal(t, "field6", addFields[1].GetName())
+		assert.Equal(t, "field4", addFields[0].GetName())
 	})
 
 	t.Run("WithoutDynamicField", func(t *testing.T) {
@@ -69,7 +69,10 @@ func TestCollectionDDLTask_fields(t *testing.T) {
 
 		ddlt.collBackup = &backuppb.CollectionBackupInfo{
 			Schema: &backuppb.CollectionSchema{
-				Fields:             []*backuppb.FieldSchema{{Name: "field1", FieldID: 1}, {Name: "field2", FieldID: 2}},
+				Fields: []*backuppb.FieldSchema{
+					{Name: "field1", FieldID: common.StartOfUserFieldID},
+					{Name: "field2", FieldID: common.StartOfUserFieldID + 1},
+				},
 				EnableDynamicField: false,
 			},
 		}
@@ -97,7 +100,12 @@ func TestCollectionTask_createColl(t *testing.T) {
 		ct.targetNS = namespace.New("db1", "coll1")
 		ct.collBackup = &backuppb.CollectionBackupInfo{
 			Schema: &backuppb.CollectionSchema{
-				Fields:             []*backuppb.FieldSchema{{Name: "field", DataType: backuppb.DataType_Int64, IsPrimaryKey: true}},
+				Fields: []*backuppb.FieldSchema{{
+					FieldID:      common.StartOfUserFieldID,
+					Name:         "field",
+					DataType:     backuppb.DataType_Int64,
+					IsPrimaryKey: true},
+				},
 				Properties:         []*backuppb.KeyValuePair{{Key: "key", Value: "val"}},
 				Functions:          []*backuppb.FunctionSchema{{Name: "func", InputFieldNames: []string{"hello"}}},
 				EnableDynamicField: true,

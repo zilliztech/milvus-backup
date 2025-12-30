@@ -392,6 +392,8 @@ func (dmlt *collectionDMLTask) sendImportMsg(partitionID int64, b batch) (int64,
 	if err != nil {
 		return 0, fmt.Errorf("secondary: convert schema: %w", err)
 	}
+	appendSysFields(schema)
+	appendDynamicField(schema)
 
 	ts := dmlt.tsAlloc.Alloc()
 	header := &message.ImportMessageHeader{}

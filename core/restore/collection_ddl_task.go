@@ -3,7 +3,6 @@ package restore
 import (
 	"context"
 	"fmt"
-	"sort"
 	"strings"
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
@@ -12,6 +11,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore/conv"
+	"github.com/zilliztech/milvus-backup/core/restore/funcs"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
@@ -90,12 +90,6 @@ func (ddlt *collectionDDLTask) dropExistedColl(ctx context.Context) error {
 	return nil
 }
 
-type sortableFields []*schemapb.FieldSchema
-
-func (s sortableFields) Len() int           { return len(s) }
-func (s sortableFields) Swap(i, j int)      { s[i], s[j] = s[j], s[i] }
-func (s sortableFields) Less(i, j int) bool { return s[i].GetFieldID() < s[j].GetFieldID() }
-
 // fields returns two types of fields:
 // 1. fields that can be created in CreateCollection API
 // 2. fields that need to be created by addField API
@@ -112,30 +106,17 @@ func (ddlt *collectionDDLTask) fields() ([]*schemapb.FieldSchema, []*schemapb.Fi
 	}
 
 	if !ddlt.collBackup.GetSchema().GetEnableDynamicField() {
+		ddlt.logger.Info("fields", zap.Any("fields", fields))
 		return fields, nil, nil
 	}
 
-	sort.Sort(sortableFields(fields))
-
+	dynFieldID := funcs.GuessDynFieldID(fields)
 	var createFields, addFields []*schemapb.FieldSchema
-	if len(fields) == 0 {
-		return createFields, addFields, nil
-	}
-
-	createFields = append(createFields, fields[0])
-	isContinuous := true
-	for i := 1; i < len(fields); i++ {
-		prevField := fields[i-1]
-		currField := fields[i]
-
-		if isContinuous && currField.GetFieldID() != prevField.GetFieldID()+1 {
-			isContinuous = false
-		}
-
-		if isContinuous {
-			createFields = append(createFields, currField)
+	for _, field := range fields {
+		if field.GetFieldID() < dynFieldID {
+			createFields = append(createFields, field)
 		} else {
-			addFields = append(addFields, currField)
+			addFields = append(addFields, field)
 		}
 	}
 
