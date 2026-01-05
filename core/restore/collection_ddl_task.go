@@ -7,6 +7,8 @@ import (
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
+	"github.com/milvus-io/milvus/pkg/v2/common"
+	"github.com/samber/lo"
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
@@ -49,6 +51,9 @@ func (ddlt *collectionDDLTask) Execute(ctx context.Context) error {
 	}
 	if err := ddlt.createColl(ctx); err != nil {
 		return fmt.Errorf("restore: create collection: %w", err)
+	}
+	if err := ddlt.restoreFuncRuntimeCheck(ctx); err != nil {
+		return fmt.Errorf("restore: restore func runtime check: %w", err)
 	}
 
 	// restore collection index
@@ -135,6 +140,66 @@ func (ddlt *collectionDDLTask) addFields(ctx context.Context, fields []*schemapb
 	return nil
 }
 
+// properties returns the properties of the collection.
+// If milvus support func runtime check, add disable_auto_function to properties to avoid error when create collection.
+func (ddlt *collectionDDLTask) properties() []*commonpb.KeyValuePair {
+	props := pbconv.BakKVToMilvusKV(ddlt.collBackup.GetSchema().GetProperties(), ddlt.option.SkipParams.CollectionProperties...)
+
+	if len(ddlt.collBackup.GetSchema().GetFunctions()) == 0 {
+		ddlt.logger.Info("no functions, skip disable_auto_function")
+		return props
+	}
+
+	if !ddlt.grpcCli.HasFeature(milvus.FuncRuntimeCheck) {
+		ddlt.logger.Info("milvus does not support func runtime check, skip disable")
+		return props
+	}
+
+	ddlt.logger.Info("milvus support func runtime check, disable it")
+	// remove original disable_func_runtime_check
+	props = lo.Filter(props, func(item *commonpb.KeyValuePair, _ int) bool {
+		return item.GetKey() != common.DisableFuncRuntimeCheck
+	})
+	props = append(props, &commonpb.KeyValuePair{Key: common.DisableFuncRuntimeCheck, Value: "true"})
+	return props
+}
+
+// restoreFuncRuntimeCheck restores the disable_func_runtime_check property to original value from backup.
+// properties function add disable_auto_function to properties, we need to restore the original value from backup.
+func (ddlt *collectionDDLTask) restoreFuncRuntimeCheck(ctx context.Context) error {
+	if len(ddlt.collBackup.GetSchema().GetFunctions()) == 0 {
+		ddlt.logger.Info("no functions, skip restore func runtime check")
+		return nil
+	}
+
+	if !ddlt.grpcCli.HasFeature(milvus.FuncRuntimeCheck) {
+		ddlt.logger.Info("milvus does not support func runtime check, skip restore")
+		return nil
+	}
+
+	ddlt.logger.Info("milvus support func runtime check, restore original value")
+	val := "false"
+	for _, kv := range ddlt.collBackup.GetSchema().GetProperties() {
+		if kv.GetKey() == common.DisableFuncRuntimeCheck {
+			val = kv.GetValue()
+			break
+		}
+	}
+
+	if val == "true" {
+		ddlt.logger.Info("original disable_func_runtime_check is true, skip restore")
+		return nil
+	}
+
+	ddlt.logger.Info("restore disable_func_runtime_check to false")
+	props := []*commonpb.KeyValuePair{{Key: common.DisableFuncRuntimeCheck, Value: "false"}}
+	if err := ddlt.grpcCli.AlterCollection(ctx, ddlt.targetNS.DBName(), ddlt.targetNS.CollName(), props); err != nil {
+		return fmt.Errorf("restore: alter collection: %w", err)
+	}
+
+	return nil
+}
+
 func (ddlt *collectionDDLTask) createColl(ctx context.Context) error {
 	if ddlt.option.SkipCreateCollection {
 		ddlt.logger.Info("skip create collection")
@@ -168,7 +233,7 @@ func (ddlt *collectionDDLTask) createColl(ctx context.Context) error {
 		ConsLevel:    commonpb.ConsistencyLevel(ddlt.collBackup.GetConsistencyLevel()),
 		ShardNum:     ddlt.shardNum(),
 		PartitionNum: ddlt.partitionNum(),
-		Properties:   pbconv.BakKVToMilvusKV(ddlt.collBackup.GetProperties(), ddlt.option.SkipParams.CollectionProperties...),
+		Properties:   ddlt.properties(),
 	}
 	if err := ddlt.grpcCli.CreateCollection(ctx, opt); err != nil {
 		return fmt.Errorf("restore: call create collection api after retry: %w", err)
