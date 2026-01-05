@@ -3,6 +3,7 @@ package secondary
 import (
 	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
 	"github.com/milvus-io/milvus/pkg/v2/common"
+
 	"github.com/zilliztech/milvus-backup/core/restore/funcs"
 )
 

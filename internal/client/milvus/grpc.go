@@ -49,6 +49,7 @@ const (
 	FlushAll
 	CollectionLevelGCControl
 	GetReplicas
+	FuncRuntimeCheck
 )
 
 type featureTuple struct {
@@ -63,6 +64,7 @@ var _featureTuples = []featureTuple{
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.6.8-0")), Flag: FlushAll},
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.6.8-0")), Flag: CollectionLevelGCControl},
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.4.0-0")), Flag: GetReplicas},
+	{Constraints: lo.Must(semver.NewConstraint(">= 2.6.8-0")), Flag: FuncRuntimeCheck},
 }
 
 func defaultDialOpt() []grpc.DialOption {
@@ -117,6 +119,7 @@ type Grpc interface {
 	BulkInsert(ctx context.Context, input GrpcBulkInsertInput) (int64, error)
 	GetBulkInsertState(ctx context.Context, taskID int64) (*milvuspb.GetImportStateResponse, error)
 	CreateCollection(ctx context.Context, input CreateCollectionInput) error
+	AlterCollection(ctx context.Context, db, collName string, properties []*commonpb.KeyValuePair) error
 	CreatePartition(ctx context.Context, db, collName, partitionName string) error
 	HasPartition(ctx context.Context, db, collName, partitionName string) (bool, error)
 	AddField(ctx context.Context, db, collName string, field *schemapb.FieldSchema) error
@@ -833,9 +836,9 @@ func (g *GrpcClient) CreateCollection(ctx context.Context, input CreateCollectio
 			if isRateLimitError(err) {
 				g.limiters.createCollection.Failure()
 				return fmt.Errorf("client: create collection failed: %w", err)
-			} else {
-				return retry.Unrecoverable(fmt.Errorf("client: create collection: %w", err))
 			}
+
+			return retry.Unrecoverable(fmt.Errorf("client: create collection: %w", err))
 		}
 		g.limiters.createCollection.Success()
 
@@ -843,7 +846,18 @@ func (g *GrpcClient) CreateCollection(ctx context.Context, input CreateCollectio
 	})
 }
 
-func (g *GrpcClient) DropCollection(ctx context.Context, db string, collectionName string) error {
+func (g *GrpcClient) AlterCollection(ctx context.Context, db, collName string, properties []*commonpb.KeyValuePair) error {
+	ctx = g.newCtxWithDB(ctx, db)
+	in := &milvuspb.AlterCollectionRequest{CollectionName: collName, Properties: properties}
+	resp, err := g.srv.AlterCollection(ctx, in)
+	if err := checkResponse(resp, err); err != nil {
+		return fmt.Errorf("client: alter collection failed: %w", err)
+	}
+
+	return nil
+}
+
+func (g *GrpcClient) DropCollection(ctx context.Context, db, collectionName string) error {
 	ctx = g.newCtxWithDB(ctx, db)
 	resp, err := g.srv.DropCollection(ctx, &milvuspb.DropCollectionRequest{CollectionName: collectionName})
 	if err := checkResponse(resp, err); err != nil {
@@ -877,7 +891,7 @@ func (g *GrpcClient) CreatePartition(ctx context.Context, db, collName, partitio
 	})
 }
 
-func (g *GrpcClient) HasPartition(ctx context.Context, db, collName string, partitionName string) (bool, error) {
+func (g *GrpcClient) HasPartition(ctx context.Context, db, collName, partitionName string) (bool, error) {
 	ctx = g.newCtxWithDB(ctx, db)
 	in := &milvuspb.HasPartitionRequest{CollectionName: collName, PartitionName: partitionName}
 	resp, err := g.srv.HasPartition(ctx, in)

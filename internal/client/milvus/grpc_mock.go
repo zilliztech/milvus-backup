@@ -7,6 +7,7 @@ package milvus
 import (
 	"context"
 
+	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
 	mock "github.com/stretchr/testify/mock"
@@ -104,6 +105,75 @@ func (_c *MockGrpc_AddField_Call) Return(err error) *MockGrpc_AddField_Call {
 }
 
 func (_c *MockGrpc_AddField_Call) RunAndReturn(run func(ctx context.Context, db string, collName string, field *schemapb.FieldSchema) error) *MockGrpc_AddField_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// AlterCollection provides a mock function for the type MockGrpc
+func (_mock *MockGrpc) AlterCollection(ctx context.Context, db string, collName string, properties []*commonpb.KeyValuePair) error {
+	ret := _mock.Called(ctx, db, collName, properties)
+
+	if len(ret) == 0 {
+		panic("no return value specified for AlterCollection")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, []*commonpb.KeyValuePair) error); ok {
+		r0 = returnFunc(ctx, db, collName, properties)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockGrpc_AlterCollection_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'AlterCollection'
+type MockGrpc_AlterCollection_Call struct {
+	*mock.Call
+}
+
+// AlterCollection is a helper method to define mock.On call
+//   - ctx context.Context
+//   - db string
+//   - collName string
+//   - properties []*commonpb.KeyValuePair
+func (_e *MockGrpc_Expecter) AlterCollection(ctx interface{}, db interface{}, collName interface{}, properties interface{}) *MockGrpc_AlterCollection_Call {
+	return &MockGrpc_AlterCollection_Call{Call: _e.mock.On("AlterCollection", ctx, db, collName, properties)}
+}
+
+func (_c *MockGrpc_AlterCollection_Call) Run(run func(ctx context.Context, db string, collName string, properties []*commonpb.KeyValuePair)) *MockGrpc_AlterCollection_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 []*commonpb.KeyValuePair
+		if args[3] != nil {
+			arg3 = args[3].([]*commonpb.KeyValuePair)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *MockGrpc_AlterCollection_Call) Return(err error) *MockGrpc_AlterCollection_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockGrpc_AlterCollection_Call) RunAndReturn(run func(ctx context.Context, db string, collName string, properties []*commonpb.KeyValuePair) error) *MockGrpc_AlterCollection_Call {
 	_c.Call.Return(run)
 	return _c
 }
