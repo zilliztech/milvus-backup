@@ -237,7 +237,9 @@ func (meta *MetaManager) GetFullMeta(taskID string) *backuppb.BackupInfo {
 		cloneBackup.Size = cloneBackup.Size + collectionBackup.Size
 	}
 	cloneBackup.CollectionBackups = collectionBackups
-	if totalSize != 0 {
+	if cloneBackup.StateCode == backuppb.BackupTaskStateCode_BACKUP_SUCCESS {
+		cloneBackup.Progress = 100
+	} else if totalSize != 0 {
 		cloneBackup.Progress = int32(float64(backupedSize) / float64(totalSize) * 100)
 	} else {
 		cloneBackup.Progress = 0
