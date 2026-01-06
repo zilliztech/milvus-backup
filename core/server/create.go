@@ -270,7 +270,11 @@ func (h *createBackupHandler) validate() error {
 func (h *createBackupHandler) runSync(ctx context.Context, args backup.TaskArgs) *backuppb.BackupInfoResponse {
 	resp := &backuppb.BackupInfoResponse{RequestId: h.request.GetRequestId()}
 
-	task := backup.NewTask(args)
+	task, err := backup.NewTask(args)
+	if err != nil {
+		resp.Code = backuppb.ResponseCode_Fail
+		resp.Msg = err.Error()
+	}
 	if err := task.Execute(ctx); err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
@@ -307,7 +311,12 @@ func (h *createBackupHandler) runSync(ctx context.Context, args backup.TaskArgs)
 
 func (h *createBackupHandler) runAsync(args backup.TaskArgs) *backuppb.BackupInfoResponse {
 	resp := &backuppb.BackupInfoResponse{RequestId: h.request.GetRequestId()}
-	task := backup.NewTask(args)
+	task, err := backup.NewTask(args)
+	if err != nil {
+		resp.Code = backuppb.ResponseCode_Fail
+		resp.Msg = err.Error()
+		return resp
+	}
 
 	go func() {
 		if err := task.Execute(context.Background()); err != nil {

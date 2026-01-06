@@ -107,7 +107,7 @@ func newGCCtrl(args TaskArgs) gcCtrl {
 	return newClusterGCCtrl(args.TaskID, args.Manage)
 }
 
-func NewTask(args TaskArgs) *Task {
+func NewTask(args TaskArgs) (*Task, error) {
 	logger := log.L().With(zap.String("task_id", args.TaskID))
 
 	crossStorage := args.Params.MinioCfg.CrossStorage
@@ -116,7 +116,10 @@ func NewTask(args TaskArgs) *Task {
 	}
 
 	mb := newMetaBuilder(args.TaskID, args.Option.BackupName)
-	args.TaskMgr.AddBackupTask(args.TaskID, args.Option.BackupName)
+	err := args.TaskMgr.AddBackupTask(args.TaskID, args.Option.BackupName)
+	if err != nil {
+		return nil, fmt.Errorf("backup: add backup task to manager: %w", err)
+	}
 
 	throttling := concurrencyThrottling{
 		CollSem: semaphore.NewWeighted(args.Params.BackupCfg.BackupCollectionParallelism),
@@ -155,7 +158,7 @@ func NewTask(args TaskArgs) *Task {
 		taskMgr: args.TaskMgr,
 
 		rpcChannelName: args.Params.MilvusCfg.RPCChanelName,
-	}
+	}, nil
 }
 
 func (t *Task) Execute(ctx context.Context) error {
