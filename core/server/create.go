@@ -343,6 +343,15 @@ func (h *createBackupHandler) run(ctx context.Context) *backuppb.BackupInfoRespo
 		return resp
 	}
 
+	if taskView, err := taskmgr.DefaultMgr().GetBackupTaskByName(args.Option.BackupName); err == nil {
+		state := taskView.StateCode()
+		if state != backuppb.BackupTaskStateCode_BACKUP_FAIL && state != backuppb.BackupTaskStateCode_BACKUP_TIMEOUT {
+			resp.Code = backuppb.ResponseCode_Parameter_Error
+			resp.Msg = fmt.Sprintf("backup with name %s is already running (task %s)", args.Option.BackupName, taskView.ID())
+			return resp
+		}
+	}
+
 	if h.request.GetAsync() {
 		return h.runAsync(args)
 	} else {
