@@ -128,7 +128,7 @@ type Grpc interface {
 	BackupRBAC(ctx context.Context) (*milvuspb.BackupRBACMetaResponse, error)
 	RestoreRBAC(ctx context.Context, rbacMeta *milvuspb.RBACMeta) error
 	ReplicateMessage(ctx context.Context, channelName string) (string, error)
-	CreateReplicateStream(sourceClusterID string) (milvuspb.MilvusService_CreateReplicateStreamClient, error)
+	CreateReplicateStream(ctx context.Context, sourceClusterID string) (milvuspb.MilvusService_CreateReplicateStreamClient, error)
 	GetReplicas(ctx context.Context, db, collName string) (*milvuspb.GetReplicasResponse, error)
 }
 
@@ -1005,11 +1005,11 @@ func (g *GrpcClient) ReplicateMessage(ctx context.Context, channelName string) (
 	return resp.GetPosition(), nil
 }
 
-func (g *GrpcClient) CreateReplicateStream(sourceClusterID string) (milvuspb.MilvusService_CreateReplicateStreamClient, error) {
-	md := g.newAuthMD(context.Background())
+func (g *GrpcClient) CreateReplicateStream(ctx context.Context, sourceClusterID string) (milvuspb.MilvusService_CreateReplicateStreamClient, error) {
+	md := g.newAuthMD(ctx)
 	md.Set(_clusterIDHeader, sourceClusterID)
 
-	stream, err := g.srv.CreateReplicateStream(metadata.NewOutgoingContext(context.Background(), md))
+	stream, err := g.srv.CreateReplicateStream(metadata.NewOutgoingContext(ctx, md))
 	if err != nil {
 		return nil, fmt.Errorf("client: create replicate stream failed: %w", err)
 	}

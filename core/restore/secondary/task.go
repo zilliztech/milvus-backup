@@ -56,7 +56,7 @@ type Task struct {
 
 func NewTask(args TaskArgs) (*Task, error) {
 	pchs := args.Backup.GetPhysicalChannelNames()
-	streamCli, err := milvus.NewStreamClient(args.TaskID, args.SourceClusterID, pchs, args.Grpc)
+	streamCli, err := milvus.NewStreamClient(args.SourceClusterID, args.TaskID, pchs, args.Grpc)
 	if err != nil {
 		return nil, fmt.Errorf("secondary: create stream client: %w", err)
 	}
@@ -87,12 +87,12 @@ func (t *Task) Execute(ctx context.Context) error {
 		return fmt.Errorf("secondary: run collection tasks: %w", err)
 	}
 
-	if err := t.sendRBACMsg(); err != nil {
+	if err := t.sendRBACMsg(ctx); err != nil {
 		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
 		return fmt.Errorf("secondary: send rbac msg: %w", err)
 	}
 
-	if err := t.sendFlushAll(); err != nil {
+	if err := t.sendFlushAll(ctx); err != nil {
 		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
 		return fmt.Errorf("secondary: send flush all: %w", err)
 	}
@@ -230,7 +230,7 @@ func (t *Task) runCollTasks(ctx context.Context) error {
 	return nil
 }
 
-func (t *Task) sendRBACMsg() error {
+func (t *Task) sendRBACMsg(ctx context.Context) error {
 	t.logger.Info("send rbac msg")
 	curRBAC, err := t.args.Grpc.BackupRBAC(context.Background())
 	if err != nil {
@@ -263,7 +263,7 @@ func (t *Task) sendRBACMsg() error {
 			IntoImmutableMessage(newFakeMessageID(ts)).
 			IntoImmutableMessageProto()
 
-		if err := t.streamCli.Send(immutableMessage); err != nil {
+		if err := t.streamCli.Send(ctx, immutableMessage); err != nil {
 			return fmt.Errorf("secondary: send rbac msg: %w", err)
 		}
 	}
@@ -271,7 +271,7 @@ func (t *Task) sendRBACMsg() error {
 	return nil
 }
 
-func (t *Task) sendFlushAll() error {
+func (t *Task) sendFlushAll(ctx context.Context) error {
 	t.logger.Info("send flush all msg")
 
 	for _, msgBase64 := range t.args.Backup.GetFlushAllMsgsBase64() {
@@ -285,7 +285,7 @@ func (t *Task) sendFlushAll() error {
 			return fmt.Errorf("secondary: unmarshal flush all msg: %w", err)
 		}
 
-		if err := t.streamCli.Send(&msg); err != nil {
+		if err := t.streamCli.Send(ctx, &msg); err != nil {
 			return fmt.Errorf("secondary: send flush all msg: %w", err)
 		}
 	}

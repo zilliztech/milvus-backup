@@ -227,7 +227,7 @@ func (dmlt *collectionDMLTask) restorePartition(ctx context.Context, partition *
 func (dmlt *collectionDMLTask) restoreBatches(ctx context.Context, partitionID int64, batches []batch) error {
 	jobIDs := make([]int64, 0, len(batches))
 	for _, b := range batches {
-		jobID, err := dmlt.sendImportMsg(partitionID, b)
+		jobID, err := dmlt.sendImportMsg(ctx, partitionID, b)
 		if err != nil {
 			return fmt.Errorf("secondary: build messages: %w", err)
 		}
@@ -386,7 +386,7 @@ func (dmlt *collectionDMLTask) buildImportFiles(b batch) []*msgpb.ImportFile {
 	return files
 }
 
-func (dmlt *collectionDMLTask) sendImportMsg(partitionID int64, b batch) (int64, error) {
+func (dmlt *collectionDMLTask) sendImportMsg(ctx context.Context, partitionID int64, b batch) (int64, error) {
 	jobID := rand.Int64()
 	schema, err := conv.Schema(dmlt.collBackup.GetSchema())
 	if err != nil {
@@ -426,7 +426,7 @@ func (dmlt *collectionDMLTask) sendImportMsg(partitionID int64, b batch) (int64,
 			IntoImmutableMessage(newFakeMessageID(ts)).
 			IntoImmutableMessageProto()
 
-		if err := dmlt.streamCli.Send(immutableMessage); err != nil {
+		if err := dmlt.streamCli.Send(ctx, immutableMessage); err != nil {
 			return 0, fmt.Errorf("secondary: broadcast import: %w", err)
 		}
 	}
