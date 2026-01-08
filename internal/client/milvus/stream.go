@@ -1,6 +1,7 @@
 package milvus
 
 import (
+	"context"
 	"fmt"
 	"sync"
 
@@ -9,37 +10,34 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/retry"
 )
 
 type Stream interface {
-	Send(immutableMessage *commonpb.ImmutableMessage) error
+	Send(ctx context.Context, immutableMessage *commonpb.ImmutableMessage) error
 	WaitConfirm()
 }
 
 type StreamClient struct {
-	sourceClusterID string
-
 	pchClient map[string]*pchClient
-
-	logger *zap.Logger
 }
 
-func NewStreamClient(taskID, srcClusterID string, pch []string, grpc Grpc) (*StreamClient, error) {
+func NewStreamClient(srcClusterID, taskID string, pch []string, grpc Grpc) (*StreamClient, error) {
 	pchClients := make(map[string]*pchClient, len(pch))
 	for _, p := range pch {
-		streamCli, err := grpc.CreateReplicateStream(srcClusterID)
+		pchCli, err := newPchClient(srcClusterID, taskID, p, grpc)
 		if err != nil {
-			return nil, fmt.Errorf("create replicate stream: %w", err)
+			return nil, fmt.Errorf("stream: new pch client: %w", err)
 		}
-		pchClients[p] = newPchClient(taskID, p, streamCli)
+		pchClients[p] = pchCli
 	}
 
-	s := &StreamClient{sourceClusterID: srcClusterID, pchClient: pchClients, logger: log.With(zap.String("task_id", taskID))}
+	s := &StreamClient{pchClient: pchClients}
 
 	return s, nil
 }
 
-func (s *StreamClient) Send(immutableMessage *commonpb.ImmutableMessage) error {
+func (s *StreamClient) Send(ctx context.Context, immutableMessage *commonpb.ImmutableMessage) error {
 	log.Debug("stream: send message", zap.String("msg", immutableMessage.String()))
 
 	pch := GetPch(immutableMessage)
@@ -51,16 +49,7 @@ func (s *StreamClient) Send(immutableMessage *commonpb.ImmutableMessage) error {
 		return fmt.Errorf("stream: no pch client for %s", pch)
 	}
 
-	req := &milvuspb.ReplicateRequest{
-		Request: &milvuspb.ReplicateRequest_ReplicateMessage{
-			ReplicateMessage: &milvuspb.ReplicateMessage{
-				SourceClusterId: s.sourceClusterID,
-				Message:         immutableMessage,
-			},
-		},
-	}
-
-	if err := cli.send(req); err != nil {
+	if err := cli.send(ctx, immutableMessage); err != nil {
 		return fmt.Errorf("stream: send message: %w", err)
 	}
 
@@ -74,7 +63,11 @@ func (s *StreamClient) WaitConfirm() {
 }
 
 type pchClient struct {
-	cli milvuspb.MilvusService_CreateReplicateStreamClient
+	sourceClusterID string
+	grpc            Grpc
+
+	cli            milvuspb.MilvusService_CreateReplicateStreamClient
+	connCancelFunc context.CancelFunc
 
 	cond        *sync.Cond
 	mu          sync.Mutex
@@ -84,37 +77,94 @@ type pchClient struct {
 	logger *zap.Logger
 }
 
-func newPchClient(taskID, pch string, cli milvuspb.MilvusService_CreateReplicateStreamClient) *pchClient {
+func newPchClient(sourceClusterID, taskID, pch string, grpc Grpc) (*pchClient, error) {
 	p := &pchClient{
-		cli:    cli,
+		grpc:            grpc,
+		sourceClusterID: sourceClusterID,
+
 		logger: log.With(zap.String("task_id", taskID), zap.String("pch", pch)),
 	}
 	p.cond = sync.NewCond(&p.mu)
 
-	go p.recvLoop()
-	return p
+	if err := p.newStreamClient(); err != nil {
+		return nil, fmt.Errorf("stream: new stream client: %w", err)
+	}
+
+	return p, nil
 }
 
-func (p *pchClient) send(req *milvuspb.ReplicateRequest) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+func (p *pchClient) newStreamClient() error {
+	if p.connCancelFunc != nil {
+		p.connCancelFunc()
+	}
 
-	sentTT, err := GetTT(req.GetReplicateMessage().GetMessage())
+	p.logger.Info("create stream client")
+	if p.cli != nil {
+		if err := p.cli.CloseSend(); err != nil {
+			p.logger.Warn("close stream error", zap.Error(err))
+		}
+	}
+
+	connCtx, cancel := context.WithCancel(context.Background())
+	p.connCancelFunc = cancel
+
+	cli, err := p.grpc.CreateReplicateStream(connCtx, p.sourceClusterID)
 	if err != nil {
-		return fmt.Errorf("stream: get tt: %w", err)
+		return fmt.Errorf("create replicate stream: %w", err)
 	}
-	p.sentTT = sentTT
 
-	if err := p.cli.Send(req); err != nil {
-		return fmt.Errorf("stream: send message: %w", err)
-	}
+	p.cli = cli
+	go p.recvLoop(cli)
 
 	return nil
 }
 
-func (p *pchClient) recvLoop() {
+func (p *pchClient) newReq(msg *commonpb.ImmutableMessage) *milvuspb.ReplicateRequest {
+	return &milvuspb.ReplicateRequest{
+		Request: &milvuspb.ReplicateRequest_ReplicateMessage{
+			ReplicateMessage: &milvuspb.ReplicateMessage{
+				SourceClusterId: p.sourceClusterID,
+				Message:         msg,
+			},
+		},
+	}
+}
+
+func (p *pchClient) send(ctx context.Context, msg *commonpb.ImmutableMessage) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	tt, err := GetTT(msg)
+	if err != nil {
+		return fmt.Errorf("stream: get tt: %w", err)
+	}
+
+	err = retry.Do(ctx, func() error {
+		if err := p.cli.Send(p.newReq(msg)); err != nil {
+			p.logger.Warn("send to stream error, try to reconnect", zap.Error(err))
+
+			if err := p.newStreamClient(); err != nil {
+				return fmt.Errorf("stream: new stream client: %w", err)
+			}
+
+			return fmt.Errorf("stream: send message: %w", err)
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return fmt.Errorf("stream: send message: %w", err)
+	}
+
+	p.sentTT = tt
+
+	return nil
+}
+
+func (p *pchClient) recvLoop(cli milvuspb.MilvusService_CreateReplicateStreamClient) {
 	for {
-		resp, err := p.cli.Recv()
+		resp, err := cli.Recv()
 		if err != nil {
 			p.logger.Warn("recv from stream error", zap.Error(err))
 			return

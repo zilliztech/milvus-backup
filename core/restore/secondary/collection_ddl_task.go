@@ -62,21 +62,21 @@ func newCollectionDDLTask(args ddlTaskArgs, dbBackup *backuppb.DatabaseBackupInf
 	}
 }
 
-func (ddlt *collectionDDLTask) Execute(_ context.Context) error {
-	if err := ddlt.createColl(); err != nil {
+func (ddlt *collectionDDLTask) Execute(ctx context.Context) error {
+	if err := ddlt.createColl(ctx); err != nil {
 		return fmt.Errorf("collection: create collection: %w", err)
 	}
 
-	if err := ddlt.createIndexes(); err != nil {
+	if err := ddlt.createIndexes(ctx); err != nil {
 		return fmt.Errorf("collection: create indexes: %w", err)
 	}
 
 	return nil
 }
 
-func (ddlt *collectionDDLTask) createIndexes() error {
+func (ddlt *collectionDDLTask) createIndexes(ctx context.Context) error {
 	for _, index := range ddlt.collBackup.GetIndexInfos() {
-		if err := ddlt.createIndex(index); err != nil {
+		if err := ddlt.createIndex(ctx, index); err != nil {
 			return fmt.Errorf("collection: create index: %w", err)
 		}
 	}
@@ -84,7 +84,7 @@ func (ddlt *collectionDDLTask) createIndexes() error {
 	return nil
 }
 
-func (ddlt *collectionDDLTask) createIndex(index *backuppb.IndexInfo) error {
+func (ddlt *collectionDDLTask) createIndex(ctx context.Context, index *backuppb.IndexInfo) error {
 	indexInfo := &indexpb.IndexInfo{
 		CollectionID:    ddlt.collBackup.GetCollectionId(),
 		FieldID:         index.GetFieldId(),
@@ -124,7 +124,7 @@ func (ddlt *collectionDDLTask) createIndex(index *backuppb.IndexInfo) error {
 			IntoImmutableMessage(newFakeMessageID(ts)).
 			IntoImmutableMessageProto()
 
-		if err := ddlt.streamCli.Send(immutableMessage); err != nil {
+		if err := ddlt.streamCli.Send(ctx, immutableMessage); err != nil {
 			return fmt.Errorf("collection: broadcast create index: %w", err)
 		}
 	}
@@ -144,7 +144,7 @@ func (ddlt *collectionDDLTask) partitionIDs() []int64 {
 	})
 }
 
-func (ddlt *collectionDDLTask) createColl() error {
+func (ddlt *collectionDDLTask) createColl(ctx context.Context) error {
 	header := &message.CreateCollectionMessageHeader{
 		CollectionId: ddlt.collBackup.GetCollectionId(),
 		DbId:         ddlt.dbBackup.GetDbId(),
@@ -198,7 +198,7 @@ func (ddlt *collectionDDLTask) createColl() error {
 			IntoImmutableMessage(newFakeMessageID(ts)).
 			IntoImmutableMessageProto()
 
-		if err := ddlt.streamCli.Send(immutableMessage); err != nil {
+		if err := ddlt.streamCli.Send(ctx, immutableMessage); err != nil {
 			return fmt.Errorf("secondary: broadcast create collection: %w", err)
 		}
 	}

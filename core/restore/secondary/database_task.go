@@ -51,7 +51,7 @@ func newDatabaseTask(args databaseTaskArgs, dbBackup *backuppb.DatabaseBackupInf
 	return task, nil
 }
 
-func (dbt *databaseTask) Execute(_ context.Context) error {
+func (dbt *databaseTask) Execute(ctx context.Context) error {
 	header := &message.CreateDatabaseMessageHeader{
 		DbName: dbt.dbBackup.GetDbName(),
 		DbId:   dbt.dbBackup.GetDbId(),
@@ -76,7 +76,7 @@ func (dbt *databaseTask) Execute(_ context.Context) error {
 			IntoImmutableMessage(newFakeMessageID(ts)).
 			IntoImmutableMessageProto()
 
-		if err := dbt.streamCli.Send(immutableMessage); err != nil {
+		if err := dbt.streamCli.Send(ctx, immutableMessage); err != nil {
 			return fmt.Errorf("collection: broadcast create collection: %w", err)
 		}
 	}

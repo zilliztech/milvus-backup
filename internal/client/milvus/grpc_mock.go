@@ -591,8 +591,8 @@ func (_c *MockGrpc_CreatePartition_Call) RunAndReturn(run func(ctx context.Conte
 }
 
 // CreateReplicateStream provides a mock function for the type MockGrpc
-func (_mock *MockGrpc) CreateReplicateStream(sourceClusterID string) (milvuspb.MilvusService_CreateReplicateStreamClient, error) {
-	ret := _mock.Called(sourceClusterID)
+func (_mock *MockGrpc) CreateReplicateStream(ctx context.Context, sourceClusterID string) (milvuspb.MilvusService_CreateReplicateStreamClient, error) {
+	ret := _mock.Called(ctx, sourceClusterID)
 
 	if len(ret) == 0 {
 		panic("no return value specified for CreateReplicateStream")
@@ -600,18 +600,18 @@ func (_mock *MockGrpc) CreateReplicateStream(sourceClusterID string) (milvuspb.M
 
 	var r0 milvuspb.MilvusService_CreateReplicateStreamClient
 	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(string) (milvuspb.MilvusService_CreateReplicateStreamClient, error)); ok {
-		return returnFunc(sourceClusterID)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) (milvuspb.MilvusService_CreateReplicateStreamClient, error)); ok {
+		return returnFunc(ctx, sourceClusterID)
 	}
-	if returnFunc, ok := ret.Get(0).(func(string) milvuspb.MilvusService_CreateReplicateStreamClient); ok {
-		r0 = returnFunc(sourceClusterID)
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string) milvuspb.MilvusService_CreateReplicateStreamClient); ok {
+		r0 = returnFunc(ctx, sourceClusterID)
 	} else {
 		if ret.Get(0) != nil {
 			r0 = ret.Get(0).(milvuspb.MilvusService_CreateReplicateStreamClient)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(string) error); ok {
-		r1 = returnFunc(sourceClusterID)
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string) error); ok {
+		r1 = returnFunc(ctx, sourceClusterID)
 	} else {
 		r1 = ret.Error(1)
 	}
@@ -624,19 +624,25 @@ type MockGrpc_CreateReplicateStream_Call struct {
 }
 
 // CreateReplicateStream is a helper method to define mock.On call
+//   - ctx context.Context
 //   - sourceClusterID string
-func (_e *MockGrpc_Expecter) CreateReplicateStream(sourceClusterID interface{}) *MockGrpc_CreateReplicateStream_Call {
-	return &MockGrpc_CreateReplicateStream_Call{Call: _e.mock.On("CreateReplicateStream", sourceClusterID)}
+func (_e *MockGrpc_Expecter) CreateReplicateStream(ctx interface{}, sourceClusterID interface{}) *MockGrpc_CreateReplicateStream_Call {
+	return &MockGrpc_CreateReplicateStream_Call{Call: _e.mock.On("CreateReplicateStream", ctx, sourceClusterID)}
 }
 
-func (_c *MockGrpc_CreateReplicateStream_Call) Run(run func(sourceClusterID string)) *MockGrpc_CreateReplicateStream_Call {
+func (_c *MockGrpc_CreateReplicateStream_Call) Run(run func(ctx context.Context, sourceClusterID string)) *MockGrpc_CreateReplicateStream_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 string
+		var arg0 context.Context
 		if args[0] != nil {
-			arg0 = args[0].(string)
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
 		}
 		run(
 			arg0,
+			arg1,
 		)
 	})
 	return _c
@@ -647,7 +653,7 @@ func (_c *MockGrpc_CreateReplicateStream_Call) Return(milvusService_CreateReplic
 	return _c
 }
 
-func (_c *MockGrpc_CreateReplicateStream_Call) RunAndReturn(run func(sourceClusterID string) (milvuspb.MilvusService_CreateReplicateStreamClient, error)) *MockGrpc_CreateReplicateStream_Call {
+func (_c *MockGrpc_CreateReplicateStream_Call) RunAndReturn(run func(ctx context.Context, sourceClusterID string) (milvuspb.MilvusService_CreateReplicateStreamClient, error)) *MockGrpc_CreateReplicateStream_Call {
 	_c.Call.Return(run)
 	return _c
 }

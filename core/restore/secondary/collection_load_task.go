@@ -57,7 +57,7 @@ func newCollectionLoadTask(args loadTaskArgs, dbBackup *backuppb.DatabaseBackupI
 	}
 }
 
-func (clt *collectionLoadTask) Execute(_ context.Context) error {
+func (clt *collectionLoadTask) Execute(ctx context.Context) error {
 	if clt.collBackup.GetLoadState() == meta.LoadStateNotload {
 		clt.logger.Info("collection not load, skip load")
 		return nil
@@ -81,7 +81,7 @@ func (clt *collectionLoadTask) Execute(_ context.Context) error {
 			IntoImmutableMessage(newFakeMessageID(ts)).
 			IntoImmutableMessageProto()
 
-		if err := clt.streamCli.Send(immutableMessage); err != nil {
+		if err := clt.streamCli.Send(ctx, immutableMessage); err != nil {
 			return err
 		}
 	}
