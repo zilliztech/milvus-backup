@@ -93,14 +93,10 @@ func (c *clusterGCCtrl) ResumeGC(ctx context.Context) {
 }
 
 // PauseCollectionGC is not implemented for clusterGCCtrl.
-func (c *clusterGCCtrl) PauseCollectionGC(_ context.Context, _ int64) {
-	return
-}
+func (c *clusterGCCtrl) PauseCollectionGC(_ context.Context, _ int64) {}
 
 // ResumeCollectionGC is not implemented for clusterGCCtrl.
-func (c *clusterGCCtrl) ResumeCollectionGC(_ context.Context, _ int64) {
-	return
-}
+func (c *clusterGCCtrl) ResumeCollectionGC(_ context.Context, _ int64) {}
 
 type gcTicket struct {
 	collectionID int64
@@ -176,7 +172,7 @@ func (c *collectionGCCtrl) renewalGCLease() {
 	defer c.mu.Unlock()
 
 	for collID, ticket := range c.collIDTicket {
-		remaining := ticket.expire.Sub(time.Now())
+		remaining := time.Until(ticket.expire)
 		if remaining < 2*_gcRenewalInterval {
 			c.logger.Info("gc ticket is about to expire, renewal it", zap.Int64("collection_id", collID))
 			resp, err := c.manage.PauseGC(ctx, milvus.WithCollectionID(collID), milvus.WithPauseSeconds(int32(_defaultPauseDuration.Seconds())))
