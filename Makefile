@@ -37,7 +37,7 @@ gen-mock:
 
 fmt:
 	@echo Formatting code...
-	@goimports -w --local $(PKG) ./
+	@find . -name '*.go' -type f ! -exec grep -q "DO NOT EDIT" {} \; -print0 | xargs -0 goimports -w --local $(PKG)
 	@echo Format code done
 
 .PHONY: all build gen
