@@ -2,7 +2,10 @@ package taskmgr
 
 import (
 	"errors"
+	"fmt"
 	"sync"
+
+	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 )
 
 var ErrTaskNotFound = errors.New("task not found")
@@ -91,12 +94,34 @@ func (m *Mgr) GetMigrateTask(taskID string) (*MigrateTask, error) {
 	return task, nil
 }
 
-func (m *Mgr) AddBackupTask(taskID, backupName string) {
+func (m *Mgr) AddBackupTask(taskID, backupName string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	existID, ok := m.backupNameBackupID[backupName]
+	if !ok {
+		m.backupTask[taskID] = newBackupTask(taskID, backupName)
+		m.backupNameBackupID[backupName] = taskID
+		return nil
+	}
+
+	task := m.backupTask[existID]
+	if task == nil {
+		m.backupTask[taskID] = newBackupTask(taskID, backupName)
+		m.backupNameBackupID[backupName] = taskID
+		return nil
+	}
+
+	switch task.StateCode() {
+	case backuppb.BackupTaskStateCode_BACKUP_FAIL,
+		backuppb.BackupTaskStateCode_BACKUP_TIMEOUT:
+	default:
+		return fmt.Errorf("%s (existing task %s)", backupName, existID)
+	}
+
 	m.backupTask[taskID] = newBackupTask(taskID, backupName)
 	m.backupNameBackupID[backupName] = taskID
+	return nil
 }
 
 func (m *Mgr) UpdateBackupTask(taskID string, opts ...BackupTaskOpt) {
