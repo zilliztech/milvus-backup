@@ -399,9 +399,6 @@ const docTemplate = `{
                 3,
                 4
             ],
-            "x-enum-comments": {
-                "BackupTaskStateCode_BACKUP_INITIAL": "pending"
-            },
             "x-enum-varnames": [
                 "BackupTaskStateCode_BACKUP_INITIAL",
                 "BackupTaskStateCode_BACKUP_EXECUTING",
@@ -483,14 +480,12 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "autoID": {
-                    "description": "deprecated later, keep compatible with c++ part now",
                     "type": "boolean"
                 },
                 "description": {
                     "type": "string"
                 },
                 "enable_dynamic_field": {
-                    "description": "mark whether this table has the dynamic field function enabled.",
                     "type": "boolean"
                 },
                 "fields": {
@@ -538,14 +533,14 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "collection_names": {
-                    "description": "collection names to backup, empty to backup all\n\nDeprecated: Marked as deprecated in backup.proto.",
+                    "description": "collection names to backup, empty to backup all",
                     "type": "array",
                     "items": {
                         "type": "string"
                     }
                 },
                 "db_collections": {
-                    "description": "database and collections to backup. A json string. To support database. 2023.7.7\n\nDeprecated: Marked as deprecated in backup.proto.",
+                    "description": "database and collections to backup. A json string. To support database. 2023.7.7",
                     "type": "string"
                 },
                 "filter": {
@@ -556,7 +551,7 @@ const docTemplate = `{
                     }
                 },
                 "force": {
-                    "description": "force backup skip flush, Should make sure data has been stored into disk when using it\nDeprecated: set strategy=skip_flush instead\n\nDeprecated: Marked as deprecated in backup.proto.",
+                    "description": "force backup skip flush, Should make sure data has been stored into disk when using it\nDeprecated: set strategy=skip_flush instead",
                     "type": "boolean"
                 },
                 "gc_pause_address": {
@@ -568,11 +563,11 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "gc_pause_seconds": {
-                    "description": "gc pause seconds, set it larger than the time cost of backup\n\nDeprecated: Marked as deprecated in backup.proto.",
+                    "description": "gc pause seconds, set it larger than the time cost of backup",
                     "type": "integer"
                 },
                 "meta_only": {
-                    "description": "only backup meta, including collection schema and index info\nDeprecated: set strategy=meta_only instead\n\nDeprecated: Marked as deprecated in backup.proto.",
+                    "description": "only backup meta, including collection schema and index info\nDeprecated: set strategy=meta_only instead",
                     "type": "boolean"
                 },
                 "rbac": {
@@ -620,10 +615,6 @@ const docTemplate = `{
                 200,
                 201
             ],
-            "x-enum-comments": {
-                "DataType_ArrayOfStruct": "internal types, not used in user interface",
-                "DataType_VarChar": "variable-length strings with a specified maximum length"
-            },
             "x-enum-varnames": [
                 "DataType_None",
                 "DataType_Bool",
@@ -702,30 +693,20 @@ const docTemplate = `{
                     "$ref": "#/definitions/backuppb.DataType"
                 },
                 "default_value": {
-                    "description": "default_value only support scalars except array and json for now",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/backuppb.ValueField"
-                        }
-                    ]
+                    "$ref": "#/definitions/backuppb.ValueField"
                 },
                 "default_value_base64": {
                     "type": "string"
                 },
                 "default_value_proto": {
-                    "description": "Deprecated: Marked as deprecated in backup.proto.",
+                    "description": "Deprecated: Do not use.",
                     "type": "string"
                 },
                 "description": {
                     "type": "string"
                 },
                 "element_type": {
-                    "description": "For array type, the element type is stored here",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/backuppb.DataType"
-                        }
-                    ]
+                    "$ref": "#/definitions/backuppb.DataType"
                 },
                 "fieldID": {
                     "type": "integer"
@@ -737,14 +718,12 @@ const docTemplate = `{
                     }
                 },
                 "is_dynamic": {
-                    "description": "mark whether this field is the dynamic field",
                     "type": "boolean"
                 },
                 "is_function_output": {
                     "type": "boolean"
                 },
                 "is_partition_key": {
-                    "description": "enable logic partitions",
                     "type": "boolean"
                 },
                 "is_primary_key": {
@@ -757,12 +736,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "state": {
-                    "description": "To keep compatible with older version, the default state is ` + "`" + `Created` + "`" + `.",
-                    "allOf": [
-                        {
-                            "$ref": "#/definitions/backuppb.FieldState"
-                        }
-                    ]
+                    "$ref": "#/definitions/backuppb.FieldState"
                 },
                 "type_params": {
                     "type": "array",
@@ -1057,7 +1031,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "skipImportDiskQuotaCheck": {
-                    "description": "if true, skip the diskQuota in Import\n\nDeprecated: Marked as deprecated in backup.proto.",
+                    "description": "if true, skip the diskQuota in Import",
                     "type": "boolean"
                 },
                 "skipParams": {
@@ -1315,7 +1289,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "data": {
-                    "description": "Types that are assignable to Data:\n\n\t*ValueField_BoolData\n\t*ValueField_IntData\n\t*ValueField_LongData\n\t*ValueField_FloatData\n\t*ValueField_DoubleData\n\t*ValueField_StringData\n\t*ValueField_BytesData"
+                    "description": "Types that are valid to be assigned to Data:\n\n\t*ValueField_BoolData\n\t*ValueField_IntData\n\t*ValueField_LongData\n\t*ValueField_FloatData\n\t*ValueField_DoubleData\n\t*ValueField_StringData\n\t*ValueField_BytesData"
                 }
             }
         }
