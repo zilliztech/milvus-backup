@@ -125,16 +125,13 @@ func (ddlt *collectionDDLTask) convSchema(schema *schemapb.CollectionSchema) (*b
 	if err != nil {
 		return nil, fmt.Errorf("backup: convert fields %w", err)
 	}
-	ddlt.logger.Info("collection fields", zap.Any("fields", fields))
 
 	functions := ddlt.convFunctions(schema.Functions)
-	ddlt.logger.Info("collection functions", zap.Any("functions", functions))
 
 	structArrayFields, err := ddlt.convStructArrayFields(schema.StructArrayFields)
 	if err != nil {
 		return nil, fmt.Errorf("backup: convert struct array fields %w", err)
 	}
-	ddlt.logger.Info("collection struct array fields", zap.Any("struct_array_fields", structArrayFields))
 
 	bakSchema := &backuppb.CollectionSchema{
 		Name:               schema.GetName(),
@@ -290,6 +287,8 @@ func (ddlt *collectionDDLTask) Execute(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("backup: describe collection %w", err)
 	}
+	ddlt.logger.Info("describe collection", zap.Any("resp", descResp))
+
 	schema, err := ddlt.convSchema(descResp.GetSchema())
 	if err != nil {
 		return fmt.Errorf("backup: convert schema %w", err)
