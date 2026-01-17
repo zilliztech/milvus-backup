@@ -6,8 +6,10 @@ import (
 	"sync"
 
 	"github.com/milvus-io/milvus/pkg/v2/proto/indexpb"
+	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 )
@@ -19,8 +21,13 @@ type metaBuilder struct {
 
 	// index
 	nsToCollID        map[namespace.NS]int64
-	collectionBackups map[int64]*backuppb.CollectionBackupInfo          // coll id - > collection backup info
-	partitionBackups  map[int64]map[int64]*backuppb.PartitionBackupInfo // coll id -> part id - > partition backup info
+	collectionBackups map[int64]*backuppb.CollectionBackupInfo       // coll id - > collection backup info
+	partitionBackups  map[partitionKey]*backuppb.PartitionBackupInfo // coll id -> part id - > partition backup info
+}
+
+type partitionKey struct {
+	collectionID int64
+	partitionID  int64
 }
 
 func newMetaBuilder(taskID, backupName string) *metaBuilder {
@@ -30,7 +37,7 @@ func newMetaBuilder(taskID, backupName string) *metaBuilder {
 
 		nsToCollID:        make(map[namespace.NS]int64),
 		collectionBackups: make(map[int64]*backuppb.CollectionBackupInfo),
-		partitionBackups:  make(map[int64]map[int64]*backuppb.PartitionBackupInfo),
+		partitionBackups:  make(map[partitionKey]*backuppb.PartitionBackupInfo),
 	}
 }
 
@@ -66,10 +73,8 @@ func (builder *metaBuilder) addCollection(ns namespace.NS, collectionBackup *bac
 	builder.nsToCollID[ns] = collectionBackup.GetCollectionId()
 	builder.collectionBackups[collectionBackup.GetCollectionId()] = collectionBackup
 	for _, partition := range collectionBackup.GetPartitionBackups() {
-		if _, ok := builder.partitionBackups[collectionBackup.GetCollectionId()]; !ok {
-			builder.partitionBackups[collectionBackup.GetCollectionId()] = make(map[int64]*backuppb.PartitionBackupInfo)
-		}
-		builder.partitionBackups[collectionBackup.GetCollectionId()][partition.GetPartitionId()] = partition
+		key := partitionKey{collectionID: collectionBackup.GetCollectionId(), partitionID: partition.GetPartitionId()}
+		builder.partitionBackups[key] = partition
 	}
 }
 
@@ -98,7 +103,16 @@ func (builder *metaBuilder) addSegments(segments []*backuppb.SegmentBackupInfo) 
 		if segment.GetIsL0() && segment.GetPartitionId() == _allPartitionID {
 			collBackup.L0Segments = append(collBackup.L0Segments, segment)
 		} else {
-			partBackup := builder.partitionBackups[segment.GetCollectionId()][segment.GetPartitionId()]
+			key := partitionKey{collectionID: segment.GetCollectionId(), partitionID: segment.GetPartitionId()}
+			partBackup, ok := builder.partitionBackups[key]
+			if !ok {
+				log.Warn("partition not found, may be milvus bug, see milvus#47145 and milvus#47154",
+					zap.Int64("collection_id", segment.GetCollectionId()),
+					zap.Int64("partition_id", segment.GetPartitionId()),
+					zap.Int64("segment_id", segment.GetSegmentId()))
+
+				continue
+			}
 			partBackup.SegmentBackups = append(partBackup.SegmentBackups, segment)
 			partBackup.Size += segment.GetSize()
 		}
