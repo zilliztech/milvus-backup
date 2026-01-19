@@ -1960,7 +1960,7 @@ class TestRestoreBackup(TestcaseBase):
             == str(ttl_seconds)
         )
 
-    @pytest.mark.tags(CaseLabel.L1)
+    @pytest.mark.tags(CaseLabel.MASTER)
     @pytest.mark.parametrize("with_default_value", [True, False])
     def test_milvus_restore_backup_with_add_field(self, with_default_value):
         """
