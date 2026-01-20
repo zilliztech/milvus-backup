@@ -9,6 +9,8 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
+	clientv3 "go.etcd.io/etcd/client/v3"
+
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/backup"
 	"github.com/zilliztech/milvus-backup/core/paramtable"
@@ -19,7 +21,6 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
-	clientv3 "go.etcd.io/etcd/client/v3"
 )
 
 type options struct {
