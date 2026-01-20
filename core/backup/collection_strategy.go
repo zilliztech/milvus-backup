@@ -176,8 +176,6 @@ func (sf *skipFlushStrategy) Execute(ctx context.Context) error {
 		return fmt.Errorf("backup: execute dml task %w", err)
 	}
 
-	sf.args.TaskMgr.UpdateBackupTask(sf.args.TaskID, taskmgr.SetBackupSuccess())
-
 	return nil
 }
 
