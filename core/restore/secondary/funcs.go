@@ -33,6 +33,12 @@ func appendDynamicField(schema *schemapb.CollectionSchema) {
 			Description: "dynamic schema",
 			DataType:    schemapb.DataType_JSON,
 			IsDynamic:   true,
+			Nullable:    true,
+			DefaultValue: &schemapb.ValueField{
+				Data: &schemapb.ValueField_BytesData{
+					BytesData: []byte("{}"),
+				},
+			},
 		})
 	}
 }
