@@ -8,6 +8,7 @@ import (
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
@@ -49,9 +50,17 @@ func TestIsUnimplemented(t *testing.T) {
 }
 
 func TestStatusOk(t *testing.T) {
+	// Both Code and ErrorCode are 0 (ErrorCode defaults to 0)
 	assert.True(t, statusOk(&commonpb.Status{Code: 0}))
 
-	assert.False(t, statusOk(&commonpb.Status{Code: 1}))
+	// Code is 0 but ErrorCode is not 0
+	assert.False(t, statusOk(&commonpb.Status{Code: 0, ErrorCode: commonpb.ErrorCode_UnexpectedError}))
+
+	// Code is not 0 but ErrorCode is 0
+	assert.False(t, statusOk(&commonpb.Status{Code: 1, ErrorCode: commonpb.ErrorCode_Success}))
+
+	// Both Code and ErrorCode are not 0
+	assert.False(t, statusOk(&commonpb.Status{Code: 1, ErrorCode: commonpb.ErrorCode_UnexpectedError}))
 }
 
 func TestCheckResponse(t *testing.T) {
@@ -59,9 +68,13 @@ func TestCheckResponse(t *testing.T) {
 	assert.Nil(t, checkResponse(&commonpb.Status{Code: 0}, nil))
 	assert.Error(t, checkResponse(&commonpb.Status{Code: 0}, errors.New("some error")))
 
-	// status is not ok
+	// status is not ok - Code is not 0
 	assert.Error(t, checkResponse(&commonpb.Status{Code: 1}, nil))
 	assert.Error(t, checkResponse(&milvuspb.ShowCollectionsResponse{Status: &commonpb.Status{Code: 1}}, nil))
+
+	// status is not ok - ErrorCode is not 0 (legacy check)
+	assert.Error(t, checkResponse(&commonpb.Status{Code: 0, ErrorCode: commonpb.ErrorCode_UnexpectedError}, nil))
+	assert.Error(t, checkResponse(&milvuspb.ShowCollectionsResponse{Status: &commonpb.Status{Code: 0, ErrorCode: commonpb.ErrorCode_UnexpectedError}}, nil))
 
 	// status is ok
 	assert.Nil(t, checkResponse(&commonpb.Status{Code: 0}, nil))
@@ -137,4 +150,59 @@ func TestGrpcClient_HasFeature(t *testing.T) {
 	cli = &GrpcClient{flags: MultiDatabase | DescribeDatabase}
 	assert.True(t, cli.HasFeature(MultiDatabase))
 	assert.True(t, cli.HasFeature(DescribeDatabase))
+}
+
+func TestGrpcClient_ListIndex(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv}
+
+		expectedIndexes := []*milvuspb.IndexDescription{{IndexName: "test_index"}}
+		mockSrv.EXPECT().DescribeIndex(mock.Anything, mock.Anything).Return(&milvuspb.DescribeIndexResponse{
+			Status:            &commonpb.Status{Code: 0},
+			IndexDescriptions: expectedIndexes,
+		}, nil)
+
+		indexes, err := cli.ListIndex(context.Background(), "db", "coll")
+		assert.NoError(t, err)
+		assert.Equal(t, expectedIndexes, indexes)
+	})
+
+	t.Run("IndexNotExist", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv}
+
+		// Some Milvus versions return IndexNotExist error code when collection has no index
+		mockSrv.EXPECT().DescribeIndex(mock.Anything, mock.Anything).Return(&milvuspb.DescribeIndexResponse{
+			Status: &commonpb.Status{ErrorCode: commonpb.ErrorCode_IndexNotExist},
+		}, nil)
+
+		indexes, err := cli.ListIndex(context.Background(), "db", "coll")
+		assert.NoError(t, err)
+		assert.Nil(t, indexes)
+	})
+
+	t.Run("GrpcError", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv}
+
+		mockSrv.EXPECT().DescribeIndex(mock.Anything, mock.Anything).Return(nil, errors.New("grpc error"))
+
+		indexes, err := cli.ListIndex(context.Background(), "db", "coll")
+		assert.Error(t, err)
+		assert.Nil(t, indexes)
+	})
+
+	t.Run("StatusError", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv}
+
+		mockSrv.EXPECT().DescribeIndex(mock.Anything, mock.Anything).Return(&milvuspb.DescribeIndexResponse{
+			Status: &commonpb.Status{Code: 1, Reason: "some error"},
+		}, nil)
+
+		indexes, err := cli.ListIndex(context.Background(), "db", "coll")
+		assert.Error(t, err)
+		assert.Nil(t, indexes)
+	})
 }

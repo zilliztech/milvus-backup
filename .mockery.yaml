@@ -1,6 +1,15 @@
 template: testify
 filename: "{{.InterfaceName | camelcase | firstLower }}_mock.go"
 packages:
+
+  github.com/milvus-io/milvus-proto/go-api/v2/milvuspb:
+    config:
+      include-auto-generated: true
+      dir: internal/client/milvus
+      pkgname: milvus
+    interfaces:
+      MilvusServiceClient:
+
   github.com/zilliztech/milvus-backup/internal/taskmgr:
     interfaces:
       RestoreCollTaskView:
