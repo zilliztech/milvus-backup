@@ -139,7 +139,10 @@ const (
 	_clusterIDHeader     = "cluster-id"
 )
 
-func statusOk(status *commonpb.Status) bool { return status.GetCode() == 0 }
+func statusOk(status *commonpb.Status) bool {
+	// nolint
+	return status.GetCode() == 0 && status.GetErrorCode() == 0
+}
 
 func checkResponse(resp any, err error) error {
 	if err != nil {
@@ -512,7 +515,15 @@ func (g *GrpcClient) DescribeDatabase(ctx context.Context, dbName string) (*milv
 func (g *GrpcClient) ListIndex(ctx context.Context, db, collName string) ([]*milvuspb.IndexDescription, error) {
 	ctx = g.newCtxWithDB(ctx, db)
 	resp, err := g.srv.DescribeIndex(ctx, &milvuspb.DescribeIndexRequest{CollectionName: collName})
-	if err := checkResponse(resp, err); err != nil {
+	if err != nil {
+		return nil, fmt.Errorf("client: describe index failed: %w", err)
+	}
+	// Some Milvus versions return IndexNotExist error code when collection has no index
+	// nolint
+	if resp.GetStatus().GetErrorCode() == commonpb.ErrorCode_IndexNotExist {
+		return nil, nil
+	}
+	if err := checkResponse(resp, nil); err != nil {
 		return nil, fmt.Errorf("client: describe index failed: %w", err)
 	}
 
