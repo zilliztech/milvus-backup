@@ -2,7 +2,7 @@ import time
 import pytest
 import json
 import numpy as np
-import jax.numpy as jnp
+import ml_dtypes
 import pandas as pd
 import random
 from collections import defaultdict
@@ -952,9 +952,7 @@ class TestRestoreBackup(TestcaseBase):
                 for _ in range(nb)
             ],
             [
-                np.array(
-                    jnp.array([random.random() for _ in range(128)], dtype=jnp.bfloat16)
-                )
+                np.array([random.random() for _ in range(128)], dtype=ml_dtypes.bfloat16)
                 for _ in range(nb)
             ],
         ]
@@ -972,9 +970,7 @@ class TestRestoreBackup(TestcaseBase):
                         [random.random() for _ in range(128)], dtype=np.float16
                     ),
                     "brain_float16_vector": np.array(
-                        jnp.array(
-                            [random.random() for _ in range(128)], dtype=jnp.bfloat16
-                        )
+                        [random.random() for _ in range(128)], dtype=ml_dtypes.bfloat16
                     ),
                     f"dynamic_{str(i)}": i,
                 }
