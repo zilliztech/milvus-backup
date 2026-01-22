@@ -60,15 +60,29 @@ func TestDatabaseTask_Execute(t *testing.T) {
 func TestDatabaseTask_cipherEnabled(t *testing.T) {
 	task := &databaseTask{}
 
-	t.Run("Enabled", func(t *testing.T) {
+	t.Run("BothExist", func(t *testing.T) {
 		assert.True(t, task.cipherEnabled([]*backuppb.KeyValuePair{
-			{Key: _cipherEnabledKey, Value: "true"},
+			{Key: _cipherEzIDKey, Value: "ez123"},
+			{Key: _cipherKeyKey, Value: "key456"},
 		}))
 	})
 
-	t.Run("Disabled", func(t *testing.T) {
+	t.Run("OnlyEzID", func(t *testing.T) {
 		assert.False(t, task.cipherEnabled([]*backuppb.KeyValuePair{
-			{Key: _cipherEnabledKey, Value: "false"},
+			{Key: _cipherEzIDKey, Value: "ez123"},
+		}))
+	})
+
+	t.Run("OnlyKey", func(t *testing.T) {
+		assert.False(t, task.cipherEnabled([]*backuppb.KeyValuePair{
+			{Key: _cipherKeyKey, Value: "key456"},
+		}))
+	})
+
+	t.Run("BothEmpty", func(t *testing.T) {
+		assert.False(t, task.cipherEnabled([]*backuppb.KeyValuePair{
+			{Key: _cipherEzIDKey, Value: ""},
+			{Key: _cipherKeyKey, Value: ""},
 		}))
 	})
 

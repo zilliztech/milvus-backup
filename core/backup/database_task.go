@@ -12,7 +12,10 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 )
 
-const _cipherEnabledKey = "cipher.enabled"
+const (
+	_cipherEzIDKey = "cipher.ezID"
+	_cipherKeyKey  = "cipher.key"
+)
 
 type databaseTask struct {
 	taskID string
@@ -43,13 +46,17 @@ func newDatabaseTask(taskID, dbName string, grpc milvus.Grpc, manage milvus.Mana
 }
 
 func (dt *databaseTask) cipherEnabled(properties []*backuppb.KeyValuePair) bool {
+	var hasEzID, hasKey bool
 	for _, prop := range properties {
-		if prop.GetKey() == _cipherEnabledKey && prop.GetValue() == "true" {
-			return true
+		if prop.GetKey() == _cipherEzIDKey && prop.GetValue() != "" {
+			hasEzID = true
+		}
+		if prop.GetKey() == _cipherKeyKey && prop.GetValue() != "" {
+			hasKey = true
 		}
 	}
 
-	return false
+	return hasEzID && hasKey
 }
 
 func (dt *databaseTask) Execute(ctx context.Context) error {
