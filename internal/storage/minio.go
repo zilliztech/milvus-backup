@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"sort"
 	"sync"
 
@@ -251,9 +252,22 @@ func (m *MinioClient) UploadObject(ctx context.Context, i UploadObjectInput) err
 	return nil
 }
 
+// isDeleteSuccessful checks if the error from RemoveObject should be treated as success.
+// Some S3-compatible storage returns 200 instead of 204 for successful deletion,
+// minio SDK may treat this as an error, but 200 should be considered successful.
+func isDeleteSuccessful(err error) bool {
+	if err == nil {
+		return true
+	}
+	return minio.ToErrorResponse(err).StatusCode == http.StatusOK
+}
+
 func (m *MinioClient) DeleteObject(ctx context.Context, key string) error {
 	return retry.Do(ctx, func() error {
 		if err := m.cli.RemoveObject(ctx, m.cfg.Bucket, key, minio.RemoveObjectOptions{}); err != nil {
+			if isDeleteSuccessful(err) {
+				return nil
+			}
 			return fmt.Errorf("storage: %s delete object %w", m.cfg.Provider, err)
 		}
 
