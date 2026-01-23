@@ -6,8 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-
-	"regexp"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -19,6 +17,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/restore"
 	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
+	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
@@ -281,13 +280,9 @@ func newOptionFromRequest(request *backuppb.RestoreBackupRequest) *restore.Optio
 }
 
 func newPlanFromRequest(request *backuppb.RestoreBackupRequest) (*restore.Plan, error) {
-	dbFilter, err := newDBBackupFilter(request)
+	backupFilter, err := newBackupFilter(request)
 	if err != nil {
-		return nil, fmt.Errorf("restore: create db backup filter: %w", err)
-	}
-	collFilter, err := newCollBackupFilter(request)
-	if err != nil {
-		return nil, fmt.Errorf("restore: create coll backup filter: %w", err)
+		return nil, fmt.Errorf("restore: create backup filter: %w", err)
 	}
 
 	dbMapper, err := newDBMapper(request.GetRestorePlan())
@@ -299,67 +294,32 @@ func newPlanFromRequest(request *backuppb.RestoreBackupRequest) (*restore.Plan, 
 		return nil, fmt.Errorf("restore: create coll mapper: %w", err)
 	}
 
-	dbTaskFilter, err := newDBTaskFilter(request)
+	taskFilter, err := newTaskFilter(request)
 	if err != nil {
-		return nil, fmt.Errorf("restore: create db task filter: %w", err)
-	}
-	collTaskFilter, err := newCollTaskFilter(request)
-	if err != nil {
-		return nil, fmt.Errorf("restore: create coll task filter: %w", err)
+		return nil, fmt.Errorf("restore: create task filter: %w", err)
 	}
 
 	return &restore.Plan{
-		DBBackupFilter:   dbFilter,
-		CollBackupFilter: collFilter,
-		DBMapper:         dbMapper,
-		CollMapper:       collMapper,
-		DBTaskFilter:     dbTaskFilter,
-		CollTaskFilter:   collTaskFilter,
+		BackupFilter: backupFilter,
+		DBMapper:     dbMapper,
+		CollMapper:   collMapper,
+		TaskFilter:   taskFilter,
 	}, nil
-
 }
 
-// rename map format: key: oldName, value: newName
+// newTableMapperFromCollRename creates a new TableMapper with the given rename map.
+// Rename map format: key: oldName, value: newName
 // rule 1. key: db1.* value: db2.*
 // rule 2. key: db1.coll1 value: db2.coll2
 // rule 3. key: coll1 value: coll2 , under default db
 // rule 4. key: db1. value: db2.
-
-var (
-	_rule1Regex = regexp.MustCompile(`^(\w+)\.\*$`)
-	_rule2Regex = regexp.MustCompile(`^(\w+)\.(\w+)$`)
-	_rule3Regex = regexp.MustCompile(`^(\w+)$`)
-	_rule4Regex = regexp.MustCompile(`^(\w+)\.$`)
-)
-
-func inferRuleType(k, v string) (int, error) {
-	if _rule1Regex.MatchString(k) && _rule1Regex.MatchString(v) {
-		return 1, nil
-	}
-
-	if _rule2Regex.MatchString(k) && _rule2Regex.MatchString(v) {
-		return 2, nil
-	}
-
-	if _rule3Regex.MatchString(k) && _rule3Regex.MatchString(v) {
-		return 3, nil
-	}
-
-	if _rule4Regex.MatchString(k) && _rule4Regex.MatchString(v) {
-		return 4, nil
-	}
-
-	return 0, fmt.Errorf("restore: invalid rename rule: %s -> %s", k, v)
-}
-
-// newRenameGenerator creates a new mapRenamer with the given rename map.
 func newTableMapperFromCollRename(collRename map[string]string) (*restore.TableMapper, error) {
 	// add default db in collection_renames if not set
 	nsMapping := make(map[string][]namespace.NS)
 	dbWildcard := make(map[string]string)
 
 	for k, v := range collRename {
-		rule, err := inferRuleType(k, v)
+		rule, err := filter.InferMapperRuleType(k, v)
 		if err != nil {
 			return nil, err
 		}
@@ -451,184 +411,80 @@ func newDBMapper(plan *backuppb.RestorePlan) (map[string][]restore.DBMapping, er
 	return dbMapper, nil
 }
 
-func newDBFilterFromDBCollections(dbCollections string) (map[string]struct{}, error) {
-	dbColl := make(map[string][]string)
-	if err := json.Unmarshal([]byte(dbCollections), &dbColl); err != nil {
-		return nil, fmt.Errorf("restore: unmarshal dbCollections: %w", err)
-	}
-
-	dbFilter := make(map[string]struct{}, len(dbColl))
-	for dbName := range dbColl {
-		if dbName == "" {
-			dbName = namespace.DefaultDBName
-		}
-		dbFilter[dbName] = struct{}{}
-	}
-
-	return dbFilter, nil
-}
-
-func newDBBackupFilter(request *backuppb.RestoreBackupRequest) (map[string]struct{}, error) {
-	// from db collection
-	dbCollectionsStr := utils.GetDBCollections(request.GetDbCollections())
-	if dbCollectionsStr != "" {
-		return newDBFilterFromDBCollections(dbCollectionsStr)
-	}
-
-	// from collection names
-	if len(request.GetCollectionNames()) != 0 {
-		dbFilter := make(map[string]struct{}, len(request.GetCollectionNames()))
-		for _, ns := range request.GetCollectionNames() {
-			dbName, err := namespace.Parse(ns)
-			if err != nil {
-				return nil, fmt.Errorf("restore: parse namespace %s: %w", ns, err)
-			}
-			dbFilter[dbName.DBName()] = struct{}{}
-		}
-
-		return dbFilter, nil
-	}
-
-	return nil, nil
-}
-
-func newCollFilterFromDBCollections(dbCollections string) (map[string]restore.CollFilter, error) {
+func newFilterFromDBCollections(dbCollections string) (filter.Filter, error) {
 	dbColls := make(map[string][]string)
 	if err := json.Unmarshal([]byte(dbCollections), &dbColls); err != nil {
-		return nil, fmt.Errorf("restore: unmarshal dbCollections: %w", err)
+		return filter.Filter{}, fmt.Errorf("restore: unmarshal dbCollections: %w", err)
 	}
 
-	collBackupFilter := make(map[string]restore.CollFilter, len(dbColls))
+	collFilter := make(map[string]filter.CollFilter, len(dbColls))
 	for dbName, colls := range dbColls {
 		if dbName == "" {
 			dbName = namespace.DefaultDBName
 		}
 
 		if len(colls) == 0 {
-			collBackupFilter[dbName] = restore.CollFilter{AllowAll: true}
+			collFilter[dbName] = filter.CollFilter{AllowAll: true}
 		} else {
 			collName := make(map[string]struct{}, len(colls))
 			for _, coll := range colls {
 				collName[coll] = struct{}{}
 			}
-
-			collBackupFilter[dbName] = restore.CollFilter{CollName: collName}
+			collFilter[dbName] = filter.CollFilter{CollName: collName}
 		}
 	}
 
-	return collBackupFilter, nil
+	return filter.Filter{DBCollFilter: collFilter}, nil
 }
 
-func newCollFilterFromCollectionNames(collectionNames []string) (map[string]restore.CollFilter, error) {
-	collBackupFilter := make(map[string]restore.CollFilter)
+func newFilterFromCollectionNames(collectionNames []string) (filter.Filter, error) {
+	collFilter := make(map[string]filter.CollFilter)
 	for _, ns := range collectionNames {
 		dbName, err := namespace.Parse(ns)
 		if err != nil {
-			return nil, fmt.Errorf("restore: parse namespace %s: %w", ns, err)
+			return filter.Filter{}, fmt.Errorf("restore: parse namespace %s: %w", ns, err)
 		}
-		filter, ok := collBackupFilter[dbName.DBName()]
+		f, ok := collFilter[dbName.DBName()]
 		if !ok {
-			filter = restore.CollFilter{CollName: make(map[string]struct{})}
-			collBackupFilter[dbName.DBName()] = filter
+			f = filter.CollFilter{CollName: make(map[string]struct{})}
+			collFilter[dbName.DBName()] = f
 		}
-		filter.CollName[dbName.CollName()] = struct{}{}
+		f.CollName[dbName.CollName()] = struct{}{}
 	}
 
-	return collBackupFilter, nil
+	return filter.Filter{DBCollFilter: collFilter}, nil
 }
 
-func newCollBackupFilter(request *backuppb.RestoreBackupRequest) (map[string]restore.CollFilter, error) {
+func newBackupFilter(request *backuppb.RestoreBackupRequest) (filter.Filter, error) {
 	// from db collection
 	dbCollectionsStr := utils.GetDBCollections(request.GetDbCollections())
 	if dbCollectionsStr != "" {
-		return newCollFilterFromDBCollections(dbCollectionsStr)
+		return newFilterFromDBCollections(dbCollectionsStr)
 	}
 
 	// from collection names
 	if len(request.GetCollectionNames()) != 0 {
-		return newCollFilterFromCollectionNames(request.GetCollectionNames())
+		return newFilterFromCollectionNames(request.GetCollectionNames())
 	}
 
-	return nil, nil
+	return filter.Filter{}, nil
 }
 
-func newDBTaskFilterFromPlan(plan *backuppb.RestorePlan) (map[string]struct{}, error) {
-	dbTaskFilter := make(map[string]struct{})
-	for dbName := range plan.GetFilter() {
-		dbTaskFilter[dbName] = struct{}{}
-	}
-
-	return dbTaskFilter, nil
+func newFilterFromPlan(plan *backuppb.RestorePlan) (filter.Filter, error) {
+	return filter.FromPB(plan.GetFilter())
 }
 
-func newDBTaskFilter(request *backuppb.RestoreBackupRequest) (map[string]struct{}, error) {
+func newTaskFilter(request *backuppb.RestoreBackupRequest) (filter.Filter, error) {
 	// from restore plan
 	if request.GetRestorePlan() != nil {
-		return newDBTaskFilterFromPlan(request.GetRestorePlan())
+		return newFilterFromPlan(request.GetRestorePlan())
 	}
 
 	// from db collection
 	dbCollectionsStr := utils.GetDBCollections(request.GetDbCollectionsAfterRename())
 	if dbCollectionsStr != "" {
-		return newDBFilterFromDBCollections(dbCollectionsStr)
+		return newFilterFromDBCollections(dbCollectionsStr)
 	}
 
-	return nil, nil
-}
-
-func newCollTaskFilterFromPlan(plan *backuppb.RestorePlan) map[string]restore.CollFilter {
-	collTaskFilter := make(map[string]restore.CollFilter)
-	for dbName, filter := range plan.GetFilter() {
-		if len(filter.GetColls()) == 1 && filter.GetColls()[0] == "*" {
-			collTaskFilter[dbName] = restore.CollFilter{AllowAll: true}
-			continue
-		}
-
-		collTaskFilter[dbName] = restore.CollFilter{CollName: make(map[string]struct{}, len(filter.GetColls()))}
-		for _, coll := range filter.GetColls() {
-			collTaskFilter[dbName].CollName[coll] = struct{}{}
-		}
-	}
-	return collTaskFilter
-}
-
-func newCollTaskFilterFromDBCollections(dbCollections string) (map[string]restore.CollFilter, error) {
-	dbColl := make(map[string][]string)
-	if err := json.Unmarshal([]byte(dbCollections), &dbColl); err != nil {
-		return nil, fmt.Errorf("restore: unmarshal dbCollections: %w", err)
-	}
-
-	collTaskFilter := make(map[string]restore.CollFilter, len(dbColl))
-	for dbName, colls := range dbColl {
-		if dbName == "" {
-			dbName = namespace.DefaultDBName
-		}
-
-		if len(colls) == 0 {
-			collTaskFilter[dbName] = restore.CollFilter{AllowAll: true}
-		} else {
-			filter := restore.CollFilter{CollName: make(map[string]struct{}, len(colls))}
-			for _, coll := range colls {
-				filter.CollName[coll] = struct{}{}
-			}
-			collTaskFilter[dbName] = filter
-		}
-	}
-
-	return collTaskFilter, nil
-}
-
-func newCollTaskFilter(request *backuppb.RestoreBackupRequest) (map[string]restore.CollFilter, error) {
-	// from restore plan
-	if request.GetRestorePlan() != nil {
-		return newCollTaskFilterFromPlan(request.GetRestorePlan()), nil
-	}
-
-	// from db collection
-	dbCollectionsStr := utils.GetDBCollections(request.GetDbCollectionsAfterRename())
-	if dbCollectionsStr != "" {
-		return newCollTaskFilterFromDBCollections(dbCollectionsStr)
-	}
-
-	return nil, nil
+	return filter.Filter{}, nil
 }

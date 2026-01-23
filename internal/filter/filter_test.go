@@ -9,7 +9,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 )
 
-func TestInferFilterRuleType(t *testing.T) {
+func Test_inferFilterRuleType(t *testing.T) {
 	t.Run("Rule1", func(t *testing.T) {
 		rule, err := inferFilterRuleType("db1.*")
 		assert.NoError(t, err)
@@ -151,5 +151,41 @@ func TestFilter_AllowNSS(t *testing.T) {
 			namespace.New("db2", "coll1"),
 		}
 		assert.ElementsMatch(t, expect, f.AllowNSS(ns))
+	})
+}
+
+func TestInferMapperRuleType(t *testing.T) {
+	t.Run("Rule1", func(t *testing.T) {
+		rule, err := InferMapperRuleType("db1.*", "db2.*")
+		assert.NoError(t, err)
+		assert.Equal(t, 1, rule)
+	})
+
+	t.Run("Rule2", func(t *testing.T) {
+		rule, err := InferMapperRuleType("db1.coll1", "db2.coll2")
+		assert.NoError(t, err)
+		assert.Equal(t, 2, rule)
+	})
+
+	t.Run("Rule3", func(t *testing.T) {
+		rule, err := InferMapperRuleType("coll1", "coll2")
+		assert.NoError(t, err)
+		assert.Equal(t, 3, rule)
+	})
+
+	t.Run("Rule4", func(t *testing.T) {
+		rule, err := InferMapperRuleType("db1.", "db2.")
+		assert.NoError(t, err)
+		assert.Equal(t, 4, rule)
+	})
+
+	t.Run("MismatchedRules", func(t *testing.T) {
+		_, err := InferMapperRuleType("db1.*", "db2.coll1")
+		assert.Error(t, err)
+	})
+
+	t.Run("Invalid", func(t *testing.T) {
+		_, err := InferMapperRuleType("db1.*.", "db2.*.")
+		assert.Error(t, err)
 	})
 }
