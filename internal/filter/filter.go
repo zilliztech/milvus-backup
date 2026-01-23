@@ -17,26 +17,32 @@ import (
 // rule 4. key: db1.
 
 var (
-	Rule1Regex = regexp.MustCompile(`^(\w+)\.\*$`)
-	Rule2Regex = regexp.MustCompile(`^(\w+)\.(\w+)$`)
-	Rule3Regex = regexp.MustCompile(`^(\w+)$`)
-	Rule4Regex = regexp.MustCompile(`^(\w+)\.$`)
+	_rule1Regex = regexp.MustCompile(`^(\w+)\.\*$`)
+	_rule2Regex = regexp.MustCompile(`^(\w+)\.(\w+)$`)
+	_rule3Regex = regexp.MustCompile(`^(\w+)$`)
+	_rule4Regex = regexp.MustCompile(`^(\w+)\.$`)
 )
 
+// inferFilterRuleType determines the type of filter rule from a string.
+// Rule types:
+//   - 1: db1.* (all collections in database)
+//   - 2: db1.coll1 (specific database and collection)
+//   - 3: coll1 (collection in default database)
+//   - 4: db1. (database only, empty collection list)
 func inferFilterRuleType(rule string) (int, error) {
-	if Rule1Regex.MatchString(rule) {
+	if _rule1Regex.MatchString(rule) {
 		return 1, nil
 	}
 
-	if Rule2Regex.MatchString(rule) {
+	if _rule2Regex.MatchString(rule) {
 		return 2, nil
 	}
 
-	if Rule3Regex.MatchString(rule) {
+	if _rule3Regex.MatchString(rule) {
 		return 3, nil
 	}
 
-	if Rule4Regex.MatchString(rule) {
+	if _rule4Regex.MatchString(rule) {
 		return 4, nil
 	}
 
@@ -152,4 +158,26 @@ func (f Filter) AllowNSS(nss []namespace.NS) []namespace.NS {
 		}
 	}
 	return filtered
+}
+
+// InferMapperRuleType determines if both key and value match the same rule type.
+// Used for rename/mapping operations.
+func InferMapperRuleType(k, v string) (int, error) {
+	if _rule1Regex.MatchString(k) && _rule1Regex.MatchString(v) {
+		return 1, nil
+	}
+
+	if _rule2Regex.MatchString(k) && _rule2Regex.MatchString(v) {
+		return 2, nil
+	}
+
+	if _rule3Regex.MatchString(k) && _rule3Regex.MatchString(v) {
+		return 3, nil
+	}
+
+	if _rule4Regex.MatchString(k) && _rule4Regex.MatchString(v) {
+		return 4, nil
+	}
+
+	return 0, fmt.Errorf("filter: invalid mapper rule: %s -> %s", k, v)
 }

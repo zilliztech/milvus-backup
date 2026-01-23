@@ -14,6 +14,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore/conv"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
+	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/storage"
@@ -23,11 +24,6 @@ import (
 type DBMapping struct {
 	Target   string
 	WithProp bool
-}
-
-type CollFilter struct {
-	AllowAll bool
-	CollName map[string]struct{}
 }
 
 type SkipParams struct {
@@ -40,19 +36,17 @@ type SkipParams struct {
 }
 
 type Plan struct {
-	// There is no need to do filtering before mapping.
+	// BackupFilter filters databases and collections from the backup.
 	// It is mainly for backward compatibility and can be
 	// removed after the dbCollection parameter is completely deprecated.
-	DBBackupFilter   map[string]struct{}
-	CollBackupFilter map[string]CollFilter
+	BackupFilter filter.Filter
 
 	// mapping
 	DBMapper   map[string][]DBMapping
 	CollMapper CollMapper
 
-	// filter after mapping
-	DBTaskFilter   map[string]struct{}
-	CollTaskFilter map[string]CollFilter // dbName -> collFilter
+	// TaskFilter filters databases and collections after mapping.
+	TaskFilter filter.Filter
 }
 
 // CollMapper is the interface for renaming collection.
@@ -205,33 +199,15 @@ func (t *Task) newDBAndCollTasks(backup *backuppb.BackupInfo) ([]*databaseTask, 
 }
 
 func (t *Task) filterDBBackup(dbBackups []*backuppb.DatabaseBackupInfo) []*backuppb.DatabaseBackupInfo {
-	if len(t.args.Plan.DBBackupFilter) == 0 {
-		return dbBackups
-	}
-
 	return lo.Filter(dbBackups, func(dbBackup *backuppb.DatabaseBackupInfo, _ int) bool {
-		_, ok := t.args.Plan.DBBackupFilter[dbBackup.GetDbName()]
-		return ok
+		return t.args.Plan.BackupFilter.AllowDB(dbBackup.GetDbName())
 	})
 }
 
 func (t *Task) filterCollBackup(collBackups []*backuppb.CollectionBackupInfo) []*backuppb.CollectionBackupInfo {
-	if len(t.args.Plan.CollBackupFilter) == 0 {
-		return collBackups
-	}
-
 	return lo.Filter(collBackups, func(collBackup *backuppb.CollectionBackupInfo, _ int) bool {
-		filter, ok := t.args.Plan.CollBackupFilter[collBackup.GetDbName()]
-		if !ok {
-			return false
-		}
-
-		if filter.AllowAll {
-			return true
-		}
-
-		_, ok = filter.CollName[collBackup.GetCollectionName()]
-		return ok
+		ns := namespace.New(collBackup.GetDbName(), collBackup.GetCollectionName())
+		return t.args.Plan.BackupFilter.AllowNS(ns)
 	})
 }
 
@@ -311,33 +287,14 @@ func (t *Task) newCollTasks(dbBackups []*backuppb.DatabaseBackupInfo, collBackup
 }
 
 func (t *Task) filterDBTask(dbTask []*databaseTask) []*databaseTask {
-	if len(t.args.Plan.DBTaskFilter) == 0 {
-		return dbTask
-	}
-
 	return lo.Filter(dbTask, func(task *databaseTask, _ int) bool {
-		_, ok := t.args.Plan.DBTaskFilter[task.targetName]
-		return ok
+		return t.args.Plan.TaskFilter.AllowDB(task.targetName)
 	})
 }
 
 func (t *Task) filterCollTask(collTask []*collectionTask) []*collectionTask {
-	if len(t.args.Plan.CollTaskFilter) == 0 {
-		return collTask
-	}
-
 	return lo.Filter(collTask, func(task *collectionTask, _ int) bool {
-		filter, ok := t.args.Plan.CollTaskFilter[task.targetNS.DBName()]
-		if !ok {
-			return false
-		}
-
-		if filter.AllowAll {
-			return true
-		}
-
-		_, ok = filter.CollName[task.targetNS.CollName()]
-		return ok
+		return t.args.Plan.TaskFilter.AllowNS(task.targetNS)
 	})
 }
 

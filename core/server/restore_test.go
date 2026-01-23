@@ -8,6 +8,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore"
+	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 )
 
@@ -57,29 +58,29 @@ func TestRestoreHandler_validate(t *testing.T) {
 
 func TestInferRuleType(t *testing.T) {
 	// rule 1
-	rule, err := inferRuleType("db1.*", "db2.*")
+	rule, err := filter.InferMapperRuleType("db1.*", "db2.*")
 	assert.NoError(t, err)
 	assert.Equal(t, 1, rule)
 
 	// rule 2
-	rule, err = inferRuleType("db1.coll1", "db2.coll2")
+	rule, err = filter.InferMapperRuleType("db1.coll1", "db2.coll2")
 	assert.NoError(t, err)
 	assert.Equal(t, 2, rule)
 
 	// rule 3
-	rule, err = inferRuleType("coll1", "coll2")
+	rule, err = filter.InferMapperRuleType("coll1", "coll2")
 	assert.NoError(t, err)
 	assert.Equal(t, 3, rule)
 
 	// rule 4
-	rule, err = inferRuleType("db1.", "db2.")
+	rule, err = filter.InferMapperRuleType("db1.", "db2.")
 	assert.NoError(t, err)
 	assert.Equal(t, 4, rule)
 
 	// invalid
-	_, err = inferRuleType("db1.*", "db2")
+	_, err = filter.InferMapperRuleType("db1.*", "db2")
 	assert.Error(t, err)
-	_, err = inferRuleType("db1", "db2.*")
+	_, err = filter.InferMapperRuleType("db1", "db2.*")
 	assert.Error(t, err)
 }
 
@@ -204,57 +205,26 @@ func TestNewDBMapper(t *testing.T) {
 	})
 }
 
-func TestNewDBFilterFromDBCollections(t *testing.T) {
-	dbFilter, err := newDBFilterFromDBCollections(`{"db1":[],"db2":["coll1","coll2"],"": ["coll3"]}`)
+func TestNewFilterFromDBCollections(t *testing.T) {
+	f, err := newFilterFromDBCollections(`{"db1":[],"db2":["coll1","coll2"],"": ["coll3"]}`)
 	assert.NoError(t, err)
-	assert.Equal(t, map[string]struct{}{"db1": {}, "db2": {}, "default": {}}, dbFilter)
-}
-
-func TestNewDBBackupFilter(t *testing.T) {
-	t.Run("FromDBCollections", func(t *testing.T) {
-		request := &backuppb.RestoreBackupRequest{DbCollections: &structpb.Value{
-			Kind: &structpb.Value_StringValue{StringValue: `{"db1":[],"db2":["coll1","coll2"], "": ["coll3"]}`},
-		}}
-		dbFilter, err := newDBBackupFilter(request)
-		assert.NoError(t, err)
-		assert.Equal(t, map[string]struct{}{"db1": {}, "db2": {}, "default": {}}, dbFilter)
-	})
-
-	t.Run("FromCollectionNames", func(t *testing.T) {
-		request := &backuppb.RestoreBackupRequest{CollectionNames: []string{"coll1", "db2.coll2"}}
-		dbFilter, err := newDBBackupFilter(request)
-		assert.NoError(t, err)
-		assert.Equal(t, map[string]struct{}{"default": {}, "db2": {}}, dbFilter)
-	})
-
-	t.Run("Empty", func(t *testing.T) {
-		request := &backuppb.RestoreBackupRequest{}
-		dbFilter, err := newDBBackupFilter(request)
-		assert.NoError(t, err)
-		assert.Empty(t, dbFilter)
-	})
-}
-
-func TestNewCollFilterFromDBCollections(t *testing.T) {
-	cf, err := newCollFilterFromDBCollections(`{"db1":[],"db2":["coll1","coll2"], "": ["coll3"]}`)
-	assert.NoError(t, err)
-	assert.Equal(t, map[string]restore.CollFilter{
+	assert.Equal(t, map[string]filter.CollFilter{
 		"db1":     {AllowAll: true},
 		"db2":     {CollName: map[string]struct{}{"coll1": {}, "coll2": {}}},
 		"default": {CollName: map[string]struct{}{"coll3": {}}},
-	}, cf)
+	}, f.DBCollFilter)
 }
 
-func TestNewCollFilterFromCollectionNames(t *testing.T) {
-	cf, err := newCollFilterFromCollectionNames([]string{"coll1", "db2.coll2"})
+func TestNewFilterFromCollectionNames(t *testing.T) {
+	f, err := newFilterFromCollectionNames([]string{"coll1", "db2.coll2"})
 	assert.NoError(t, err)
-	assert.Equal(t, map[string]restore.CollFilter{
+	assert.Equal(t, map[string]filter.CollFilter{
 		"default": {CollName: map[string]struct{}{"coll1": {}}},
 		"db2":     {CollName: map[string]struct{}{"coll2": {}}},
-	}, cf)
+	}, f.DBCollFilter)
 }
 
-func TestNewCollBackupFilter(t *testing.T) {
+func TestNewBackupFilter(t *testing.T) {
 	t.Run("FromDBCollections", func(t *testing.T) {
 		request := &backuppb.RestoreBackupRequest{
 			// CollectionNames will be ignored
@@ -262,101 +232,47 @@ func TestNewCollBackupFilter(t *testing.T) {
 			DbCollections: &structpb.Value{
 				Kind: &structpb.Value_StringValue{StringValue: `{"db1":[],"db2":["coll1","coll2"], "": ["coll3"]}`},
 			}}
-		cf, err := newCollBackupFilter(request)
+		f, err := newBackupFilter(request)
 		assert.NoError(t, err)
-		assert.Equal(t, map[string]restore.CollFilter{
+		assert.Equal(t, map[string]filter.CollFilter{
 			"db1":     {AllowAll: true},
 			"db2":     {CollName: map[string]struct{}{"coll1": {}, "coll2": {}}},
 			"default": {CollName: map[string]struct{}{"coll3": {}}},
-		}, cf)
+		}, f.DBCollFilter)
 	})
 
 	t.Run("FromCollectionNames", func(t *testing.T) {
 		request := &backuppb.RestoreBackupRequest{CollectionNames: []string{"coll1", "db2.coll2"}}
-		cf, err := newCollBackupFilter(request)
+		f, err := newBackupFilter(request)
 		assert.NoError(t, err)
-		assert.Equal(t, map[string]restore.CollFilter{
+		assert.Equal(t, map[string]filter.CollFilter{
 			"default": {CollName: map[string]struct{}{"coll1": {}}},
 			"db2":     {CollName: map[string]struct{}{"coll2": {}}},
-		}, cf)
+		}, f.DBCollFilter)
 	})
 
 	t.Run("Empty", func(t *testing.T) {
 		request := &backuppb.RestoreBackupRequest{}
-		cf, err := newCollBackupFilter(request)
+		f, err := newBackupFilter(request)
 		assert.NoError(t, err)
-		assert.Empty(t, cf)
+		assert.Empty(t, f.DBCollFilter)
 	})
 }
 
-func TestNewDBTaskFilterFromPlan(t *testing.T) {
+func TestNewFilterFromPlan(t *testing.T) {
 	plan := &backuppb.RestorePlan{Filter: map[string]*backuppb.CollFilter{
 		"db1": {Colls: []string{"coll1", "coll2"}},
 		"db2": {Colls: []string{"coll3", "coll4"}},
 	}}
-	dbFilter, err := newDBTaskFilterFromPlan(plan)
+	f, err := newFilterFromPlan(plan)
 	assert.NoError(t, err)
-	assert.Equal(t, map[string]struct{}{"db1": {}, "db2": {}}, dbFilter)
-}
-
-func TestNewDBTaskFilter(t *testing.T) {
-	t.Run("FromPlan", func(t *testing.T) {
-		request := &backuppb.RestoreBackupRequest{
-			// dbCollectionsAfterRename will be ignored
-			DbCollectionsAfterRename: &structpb.Value{
-				Kind: &structpb.Value_StringValue{StringValue: `{"db1":[],"db2":["coll1","coll2"], "": ["coll3"]}`},
-			},
-			RestorePlan: &backuppb.RestorePlan{
-				Filter: map[string]*backuppb.CollFilter{
-					"db1": {Colls: []string{"coll1", "coll2"}},
-					"db2": {Colls: []string{"coll3", "coll4"}},
-				},
-			}}
-		dbFilter, err := newDBTaskFilter(request)
-		assert.NoError(t, err)
-		assert.Equal(t, map[string]struct{}{"db1": {}, "db2": {}}, dbFilter)
-	})
-
-	t.Run("FromDBCollections", func(t *testing.T) {
-		request := &backuppb.RestoreBackupRequest{DbCollectionsAfterRename: &structpb.Value{
-			Kind: &structpb.Value_StringValue{StringValue: `{"db1":[],"db2":["coll1","coll2"], "": ["coll3"]}`},
-		}}
-		dbFilter, err := newDBTaskFilter(request)
-		assert.NoError(t, err)
-		assert.Equal(t, map[string]struct{}{"db1": {}, "db2": {}, "default": {}}, dbFilter)
-	})
-
-	t.Run("Empty", func(t *testing.T) {
-		request := &backuppb.RestoreBackupRequest{}
-		dbFilter, err := newDBTaskFilter(request)
-		assert.NoError(t, err)
-		assert.Empty(t, dbFilter)
-	})
-}
-
-func TestNewCollTaskFilterFromPlan(t *testing.T) {
-	plan := &backuppb.RestorePlan{Filter: map[string]*backuppb.CollFilter{
-		"db1": {Colls: []string{"coll1", "coll2"}},
-		"db2": {Colls: []string{"coll3", "coll4"}},
-	}}
-	cf := newCollTaskFilterFromPlan(plan)
-	assert.Equal(t, map[string]restore.CollFilter{
+	assert.Equal(t, map[string]filter.CollFilter{
 		"db1": {CollName: map[string]struct{}{"coll1": {}, "coll2": {}}},
 		"db2": {CollName: map[string]struct{}{"coll3": {}, "coll4": {}}},
-	}, cf)
+	}, f.DBCollFilter)
 }
 
-func TestNewCollTaskFilterFromDBCollections(t *testing.T) {
-	cf, err := newCollTaskFilterFromDBCollections(`{"db1":[],"db2":["coll1","coll2"], "": ["coll3"]}`)
-	assert.NoError(t, err)
-	assert.Equal(t, map[string]restore.CollFilter{
-		"db1":     {AllowAll: true},
-		"db2":     {CollName: map[string]struct{}{"coll1": {}, "coll2": {}}},
-		"default": {CollName: map[string]struct{}{"coll3": {}}},
-	}, cf)
-}
-
-func TestNewCollTaskFilter(t *testing.T) {
+func TestNewTaskFilter(t *testing.T) {
 	t.Run("FromPlan", func(t *testing.T) {
 		request := &backuppb.RestoreBackupRequest{
 			// dbCollectionsAfterRename will be ignored
@@ -369,31 +285,31 @@ func TestNewCollTaskFilter(t *testing.T) {
 					"db2": {Colls: []string{"coll3", "coll4"}},
 				},
 			}}
-		cf, err := newCollTaskFilter(request)
+		f, err := newTaskFilter(request)
 		assert.NoError(t, err)
-		assert.Equal(t, map[string]restore.CollFilter{
+		assert.Equal(t, map[string]filter.CollFilter{
 			"db1": {CollName: map[string]struct{}{"coll1": {}, "coll2": {}}},
 			"db2": {CollName: map[string]struct{}{"coll3": {}, "coll4": {}}},
-		}, cf)
+		}, f.DBCollFilter)
 	})
 
 	t.Run("FromDBCollections", func(t *testing.T) {
 		request := &backuppb.RestoreBackupRequest{DbCollectionsAfterRename: &structpb.Value{
 			Kind: &structpb.Value_StringValue{StringValue: `{"db1":[],"db2":["coll1","coll2"], "": ["coll3"]}`},
 		}}
-		cf, err := newCollTaskFilter(request)
+		f, err := newTaskFilter(request)
 		assert.NoError(t, err)
-		assert.Equal(t, map[string]restore.CollFilter{
+		assert.Equal(t, map[string]filter.CollFilter{
 			"db1":     {AllowAll: true},
 			"db2":     {CollName: map[string]struct{}{"coll1": {}, "coll2": {}}},
 			"default": {CollName: map[string]struct{}{"coll3": {}}},
-		}, cf)
+		}, f.DBCollFilter)
 	})
 
 	t.Run("Empty", func(t *testing.T) {
 		request := &backuppb.RestoreBackupRequest{}
-		cf, err := newCollTaskFilter(request)
+		f, err := newTaskFilter(request)
 		assert.NoError(t, err)
-		assert.Empty(t, cf)
+		assert.Empty(t, f.DBCollFilter)
 	})
 }

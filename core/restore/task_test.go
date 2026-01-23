@@ -13,6 +13,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
+	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
@@ -76,10 +77,10 @@ func TestTask_filterDBBackup(t *testing.T) {
 	})
 
 	t.Run("Filter", func(t *testing.T) {
-		plan := &Plan{DBBackupFilter: map[string]struct{}{
-			"db1": {},
-			"db3": {},
-		}}
+		plan := &Plan{BackupFilter: filter.Filter{DBCollFilter: map[string]filter.CollFilter{
+			"db1": {AllowAll: true},
+			"db3": {AllowAll: true},
+		}}}
 		dbBackup := []*backuppb.DatabaseBackupInfo{
 			{DbName: "db1"},
 			{DbName: "db2"},
@@ -107,11 +108,11 @@ func TestTask_filterCollBackup(t *testing.T) {
 	})
 
 	t.Run("Filter", func(t *testing.T) {
-		p := &Plan{CollBackupFilter: map[string]CollFilter{
+		p := &Plan{BackupFilter: filter.Filter{DBCollFilter: map[string]filter.CollFilter{
 			"db1": {CollName: map[string]struct{}{
 				"coll1": {},
 			}},
-		}}
+		}}}
 		task := newTestTask()
 		task.args.Plan = p
 		collBackup := []*backuppb.CollectionBackupInfo{
@@ -126,9 +127,9 @@ func TestTask_filterCollBackup(t *testing.T) {
 	})
 
 	t.Run("AllowAll", func(t *testing.T) {
-		p := &Plan{CollBackupFilter: map[string]CollFilter{
+		p := &Plan{BackupFilter: filter.Filter{DBCollFilter: map[string]filter.CollFilter{
 			"db1": {AllowAll: true},
-		}}
+		}}}
 		task := newTestTask()
 		task.args.Plan = p
 		collBackup := []*backuppb.CollectionBackupInfo{
@@ -156,7 +157,10 @@ func TestTask_filterDBTask(t *testing.T) {
 	})
 
 	t.Run("Filter", func(t *testing.T) {
-		p := &Plan{DBTaskFilter: map[string]struct{}{"db1": {}, "db3": {}}}
+		p := &Plan{TaskFilter: filter.Filter{DBCollFilter: map[string]filter.CollFilter{
+			"db1": {AllowAll: true},
+			"db3": {AllowAll: true},
+		}}}
 		task := newTestTask()
 		task.args.Plan = p
 		dbTasks := []*databaseTask{
@@ -184,9 +188,9 @@ func TestTask_filterCollTask(t *testing.T) {
 	})
 
 	t.Run("Filter", func(t *testing.T) {
-		p := &Plan{CollTaskFilter: map[string]CollFilter{
+		p := &Plan{TaskFilter: filter.Filter{DBCollFilter: map[string]filter.CollFilter{
 			"db1": {CollName: map[string]struct{}{"coll1": {}}},
-		}}
+		}}}
 		task := newTestTask()
 		task.args.Plan = p
 		collTasks := []*collectionTask{
@@ -201,9 +205,9 @@ func TestTask_filterCollTask(t *testing.T) {
 	})
 
 	t.Run("AllowAll", func(t *testing.T) {
-		p := &Plan{CollTaskFilter: map[string]CollFilter{
+		p := &Plan{TaskFilter: filter.Filter{DBCollFilter: map[string]filter.CollFilter{
 			"db1": {AllowAll: true},
-		}}
+		}}}
 		task := newTestTask()
 		task.args.Plan = p
 		collTasks := []*collectionTask{

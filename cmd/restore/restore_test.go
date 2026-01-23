@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/zilliztech/milvus-backup/core/restore"
+	"github.com/zilliztech/milvus-backup/internal/filter"
 )
 
 func TestOptions_validate(t *testing.T) {
@@ -44,22 +44,21 @@ func TestOptions_validate(t *testing.T) {
 func TestOptions_toTaskFilter(t *testing.T) {
 	t.Run("NoFilter", func(t *testing.T) {
 		var o options
-		dbFilter, collFilter, err := o.toTaskFilter()
+		f, err := o.toTaskFilter()
 		assert.NoError(t, err)
-		assert.Empty(t, dbFilter)
-		assert.Empty(t, collFilter)
+		assert.Empty(t, f.DBCollFilter)
 	})
 
 	t.Run("Normal", func(t *testing.T) {
 		var o options
 		o.filter = "db1.*,db2.coll1,coll3,db3."
-		dbFilter, collFilter, err := o.toTaskFilter()
+		f, err := o.toTaskFilter()
 		assert.NoError(t, err)
-		assert.Equal(t, map[string]struct{}{"db1": {}, "db2": {}, "db3": {}, "default": {}}, dbFilter)
-		assert.Equal(t, map[string]restore.CollFilter{
+		assert.Equal(t, map[string]filter.CollFilter{
 			"db1":     {AllowAll: true},
 			"db2":     {CollName: map[string]struct{}{"coll1": {}}},
 			"default": {CollName: map[string]struct{}{"coll3": {}}},
-		}, collFilter)
+			"db3":     {}, // db3. rule produces empty CollFilter (database only, no collections)
+		}, f.DBCollFilter)
 	})
 }
