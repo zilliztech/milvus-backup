@@ -30,7 +30,7 @@ $ ./milvus-backup server
 
 | Config Key           | Env Variable        | Description                                 |
 |----------------------|---------------------|---------------------------------------------|
-| milvus.address       | MINIO_ADDRESS       | Milvus proxy address                        |
+| milvus.address       | MILVUS_ADDRESS      | Milvus proxy address                        |
 | milvus.port          | MILVUS_PORT         | Milvus proxy port                           |
 | milvus.user          | MILVUS_USER         | Milvus user name                            |
 | milvus.password      | MILVUS_PASSWORD     | Milvus password                             |

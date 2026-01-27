@@ -9,3 +9,6 @@ examplebackup/
 
 dist/
 .DS_Store
+
+# Claude Code
+CLAUDE.local.md
