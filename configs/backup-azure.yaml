@@ -75,7 +75,7 @@ minio:
   # Set this option to true to enable data transfer through Milvus Backup.
   # Note: This option will be automatically set to true if `minio.storageType` and `minio.backupStorageType` differ.
   # However, if they are the same but belong to different services, you must manually set this option to `true`.
-  crossStorage: "false"
+  crossStorage: false
   
 backup:
   parallelism:
