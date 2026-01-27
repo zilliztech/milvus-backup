@@ -17,7 +17,7 @@ Always use the **[latest release](https://github.com/zilliztech/milvus-backup/re
 
 The table below shows which Milvus versions can restore backups created from other versions:
 
-| Backup From ↓ \ Restore To → | 2.4 | 2.5 | 2.6 (Beta) |
+| Backup From ↓ \ Restore To → | 2.4 | 2.5 | 2.6 |
 |------------------------------|-----|-----|-----------|
 | 2.2                          | ✅  | ✅  | ✅        |
 | 2.3                          | ✅  | ✅  | ✅        |
@@ -32,7 +32,6 @@ The table below shows which Milvus versions can restore backups created from oth
 > - Restore is supported **to Milvus 2.4+**
 > - A backup can only be restored to **the same or newer Milvus versions**
 > - For example, backups created in Milvus 2.5 **cannot** be restored to 2.4
-> - 2.6 is Beta support. Welcome feedback!
 
 
 ## Installation
