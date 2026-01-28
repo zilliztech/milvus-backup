@@ -1761,19 +1761,25 @@ class TestRestoreBackup(TestcaseBase):
 
         # Generate and insert data
         data = []
+        empty_clips_ids = []  # Track IDs with empty clips for verification
         for i in range(nb):
-            # Random number of tokens per document (normal distribution around avg)
-            num_tokens = int(np.random.normal(AVG_TOKENS, 15))
-            num_tokens = max(10, min(MAX_TOKENS, num_tokens))  # Clamp to [10, MAX_TOKENS]
+            # 5% probability for empty clips array to test edge case
+            if random.random() < 0.05:
+                clips = []
+                empty_clips_ids.append(i)
+            else:
+                # Random number of tokens per document (normal distribution around avg)
+                num_tokens = int(np.random.normal(AVG_TOKENS, 15))
+                num_tokens = max(10, min(MAX_TOKENS, num_tokens))  # Clamp to [10, MAX_TOKENS]
 
-            # Generate random embeddings for this document
-            doc_embeddings = np.random.randn(num_tokens, DIM).astype(np.float32)
+                # Generate random embeddings for this document
+                doc_embeddings = np.random.randn(num_tokens, DIM).astype(np.float32)
 
-            # Convert to list of structs format
-            clips = []
-            for j in range(num_tokens):
-                clip_struct = {"clip_embedding": doc_embeddings[j].tolist()}
-                clips.append(clip_struct)
+                # Convert to list of structs format
+                clips = []
+                for j in range(num_tokens):
+                    clip_struct = {"clip_embedding": doc_embeddings[j].tolist()}
+                    clips.append(clip_struct)
 
             row = {
                 "id": i,
@@ -1796,6 +1802,7 @@ class TestRestoreBackup(TestcaseBase):
 
         # Flush to ensure all data is persisted
         self.milvus_client.flush(collection_name=name_origin)
+        log.info(f"Inserted {nb} rows, {len(empty_clips_ids)} rows have empty clips array")
 
         # Create index for struct array vector field
         index_params = self.milvus_client.prepare_index_params()
@@ -1877,16 +1884,25 @@ class TestRestoreBackup(TestcaseBase):
         # Verify same number of results
         assert len(original_result) == len(restored_result)
 
-        # Verify struct array content matches
+        # Verify struct array content matches (including empty arrays)
+        restored_empty_count = 0
         for orig, restored in zip(original_result, restored_result):
             assert orig["id"] == restored["id"]
             assert len(orig["clips"]) == len(restored["clips"])
+            # Track empty clips for verification
+            if len(restored["clips"]) == 0:
+                restored_empty_count += 1
             for orig_clip, restored_clip in zip(orig["clips"], restored["clips"]):
                 assert len(orig_clip["clip_embedding"]) == len(restored_clip["clip_embedding"])
                 # Compare embeddings
                 orig_emb = np.array(orig_clip["clip_embedding"])
                 restored_emb = np.array(restored_clip["clip_embedding"])
                 np.testing.assert_array_almost_equal(orig_emb, restored_emb, decimal=5)
+
+        # Verify empty clips count matches
+        log.info(f"Verified {restored_empty_count} rows with empty clips array after restore")
+        assert restored_empty_count == len(empty_clips_ids), \
+            f"Empty clips count mismatch: expected {len(empty_clips_ids)}, got {restored_empty_count}"
 
         # Clean up backup
         res = self.client.delete_backup(back_up_name)
