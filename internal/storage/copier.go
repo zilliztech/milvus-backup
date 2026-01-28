@@ -70,6 +70,14 @@ func (rp *remoteCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
 		rp.opt.traceFn(copyAttr.Src.Length, cost)
 	}
 
+	attr, err := rp.dest.HeadObject(ctx, copyAttr.DestKey)
+	if err != nil {
+		return fmt.Errorf("storage: remote copier verify copy: %w", err)
+	}
+	if attr.Length != copyAttr.Src.Length {
+		return fmt.Errorf("storage: remote copier size mismatch, src=%d dest=%d", copyAttr.Src.Length, attr.Length)
+	}
+
 	return nil
 }
 
@@ -100,7 +108,15 @@ func (sc *serverCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
 
 		i := UploadObjectInput{Body: body, Key: copyAttr.DestKey, Size: copyAttr.Src.Length}
 		if err := sc.dest.UploadObject(ctx, i); err != nil {
-			return fmt.Errorf("storage: copier upload object %w", err)
+			return fmt.Errorf("storage: server copier upload object %w", err)
+		}
+
+		attr, err := sc.dest.HeadObject(ctx, copyAttr.DestKey)
+		if err != nil {
+			return fmt.Errorf("storage: server copier verify copy: %w", err)
+		}
+		if attr.Length != copyAttr.Src.Length {
+			return fmt.Errorf("storage: server copier size mismatch, src=%d dest=%d", copyAttr.Src.Length, attr.Length)
 		}
 
 		return nil
