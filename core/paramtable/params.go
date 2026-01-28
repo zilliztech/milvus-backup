@@ -1,259 +1,127 @@
 package paramtable
 
 import (
-	"strconv"
+	"fmt"
+	"os"
 	"strings"
+
+	"github.com/spf13/viper"
+	"go.uber.org/zap"
+
+	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
+// BackupParams is the root configuration structure
 type BackupParams struct {
-	BaseTable
-
-	LogCfg      LogConfig
-	HTTPCfg     HTTPConfig
-	CloudConfig CloudConfig
-	MilvusCfg   MilvusConfig
-	MinioCfg    MinioConfig
-	BackupCfg   BackupConfig
+	LogCfg      LogConfig    `yaml:"log" mapstructure:"log"`
+	HTTPCfg     HTTPConfig   `yaml:"http" mapstructure:"http"`
+	CloudConfig CloudConfig  `yaml:"cloud" mapstructure:"cloud"`
+	MilvusCfg   MilvusConfig `yaml:"milvus" mapstructure:"milvus"`
+	MinioCfg    MinioConfig  `yaml:"minio" mapstructure:"minio"`
+	BackupCfg   BackupCfg    `yaml:"backup" mapstructure:"backup"`
 }
 
-func (p *BackupParams) Init() {
-	p.BaseTable.Init()
-
-	p.LogCfg.init(&p.BaseTable)
-	p.HTTPCfg.init(&p.BaseTable)
-	p.CloudConfig.init(&p.BaseTable)
-	p.MilvusCfg.init(&p.BaseTable)
-	p.MinioCfg.init(&p.BaseTable)
-	p.BackupCfg.init(&p.BaseTable)
+type LogConfig struct {
+	Level   string        `yaml:"level" mapstructure:"level"`
+	Console bool          `yaml:"console" mapstructure:"console"`
+	File    LogFileConfig `yaml:"file" mapstructure:"file"`
 }
 
-type BackupConfig struct {
-	Base *BaseTable
-
-	BackupCollectionParallelism int64
-	BackupSegmentParallelism    int64
-	BackupCopyDataParallelism   int64
-
-	RestoreParallelism   int
-	ImportJobParallelism int64
-
-	KeepTempFiles bool
-
-	GcPauseEnable  bool
-	GcPauseAddress string
+type LogFileConfig struct {
+	RootPath   string `yaml:"rootPath" mapstructure:"rootPath"`
+	Filename   string `yaml:"filename" mapstructure:"filename"`
+	MaxSize    int    `yaml:"maxSize" mapstructure:"maxSize"`
+	MaxDays    int    `yaml:"maxDays" mapstructure:"maxDays"`
+	MaxBackups int    `yaml:"maxBackups" mapstructure:"maxBackups"`
 }
 
-func (p *BackupConfig) init(base *BaseTable) {
-	p.Base = base
-
-	p.initBackupCopyDataParallelism()
-	p.initBackupCollectionParallelism()
-	p.initBackupSegmentParallelism()
-
-	p.initRestoreCollectionParallelism()
-	p.initImportJobParallelism()
-	p.initKeepTempFiles()
-	p.initGcPauseEnable()
-	p.initGcPauseAddress()
+type HTTPConfig struct {
+	Enabled        bool `yaml:"enabled" mapstructure:"enabled"`
+	DebugMode      bool `yaml:"debug_mode" mapstructure:"debug_mode"`
+	SimpleResponse bool `yaml:"simpleResponse" mapstructure:"simpleResponse"`
 }
 
-func (p *BackupConfig) initBackupCollectionParallelism() {
-	num := p.Base.ParseIntWithDefault("backup.parallelism.backupCollection", 1)
-	p.BackupCollectionParallelism = int64(num)
-}
-
-func (p *BackupConfig) initBackupSegmentParallelism() {
-	num := p.Base.ParseIntWithDefault("backup.parallelism.backupSegment", 1024)
-	p.BackupSegmentParallelism = int64(num)
-}
-
-func (p *BackupConfig) initBackupCopyDataParallelism() {
-	num := p.Base.ParseIntWithDefault("backup.parallelism.copydata", 128)
-	p.BackupCopyDataParallelism = int64(num)
-}
-
-func (p *BackupConfig) initRestoreCollectionParallelism() {
-	num := p.Base.ParseIntWithDefault("backup.parallelism.restoreCollection", 1)
-	p.RestoreParallelism = num
-}
-
-func (p *BackupConfig) initImportJobParallelism() {
-	num := p.Base.ParseIntWithDefault("backup.parallelism.importJob", 768)
-	p.ImportJobParallelism = int64(num)
-}
-
-func (p *BackupConfig) initKeepTempFiles() {
-	keepTempFiles := p.Base.LoadWithDefault("backup.keepTempFiles", "false")
-	p.KeepTempFiles, _ = strconv.ParseBool(keepTempFiles)
-}
-
-func (p *BackupConfig) initGcPauseEnable() {
-	enable := p.Base.LoadWithDefault("backup.gcPause.enable", "false")
-	p.GcPauseEnable, _ = strconv.ParseBool(enable)
-}
-
-func (p *BackupConfig) initGcPauseAddress() {
-	address := p.Base.LoadWithDefault("backup.gcPause.address", "http://localhost:9091")
-	p.GcPauseAddress = address
+type CloudConfig struct {
+	Address string `yaml:"address" mapstructure:"address"`
+	APIKey  string `yaml:"apikey" mapstructure:"apikey"`
 }
 
 type EtcdConfig struct {
-	Endpoints string
-	RootPath  string
+	Endpoints string `yaml:"endpoints" mapstructure:"endpoints"`
+	RootPath  string `yaml:"rootPath" mapstructure:"rootPath"`
 }
 
 type MilvusConfig struct {
-	Base *BaseTable
+	Address  string `yaml:"address" mapstructure:"address"`
+	Port     string `yaml:"port" mapstructure:"port"`
+	User     string `yaml:"user" mapstructure:"user"`
+	Password string `yaml:"password" mapstructure:"password"`
 
-	Address string
-	Port    string
+	TLSMode    int    `yaml:"tlsMode" mapstructure:"tlsMode"`
+	CACertPath string `yaml:"caCertPath" mapstructure:"caCertPath"`
+	ServerName string `yaml:"serverName" mapstructure:"serverName"`
 
-	User     string
-	Password string
+	MTLSCertPath string `yaml:"mtlsCertPath" mapstructure:"mtlsCertPath"`
+	MTLSKeyPath  string `yaml:"mtlsKeyPath" mapstructure:"mtlsKeyPath"`
 
-	TLSMode int
+	EtcdConfig EtcdConfig `yaml:"etcd" mapstructure:"etcd"`
 
-	// tls credentials for validate server
-	CACertPath string
-	ServerName string
-
-	// tls credentials for validate client, eg: mTLS
-	MTLSCertPath string
-	MTLSKeyPath  string
-
-	EtcdConfig EtcdConfig
-
-	RPCChanelName string
+	RPCChannelName string `yaml:"rpcChannelName" mapstructure:"rpcChannelName"`
 }
 
-func (p *MilvusConfig) init(base *BaseTable) {
-	p.Base = base
+type MinioConfig struct {
+	StorageType       string `yaml:"storageType" mapstructure:"storageType"`
+	CloudProvider     string `yaml:"cloudProvider" mapstructure:"cloudProvider"`
+	Address           string `yaml:"address" mapstructure:"address"`
+	Port              string `yaml:"port" mapstructure:"port"`
+	Region            string `yaml:"region" mapstructure:"region"`
+	AccessKeyID       string `yaml:"accessKeyID" mapstructure:"accessKeyID"`
+	SecretAccessKey   string `yaml:"secretAccessKey" mapstructure:"secretAccessKey"`
+	Token             string `yaml:"token" mapstructure:"token"`
+	GcpCredentialJSON string `yaml:"gcpCredentialJSON" mapstructure:"gcpCredentialJSON"`
+	UseSSL            bool   `yaml:"useSSL" mapstructure:"useSSL"`
+	BucketName        string `yaml:"bucketName" mapstructure:"bucketName"`
+	RootPath          string `yaml:"rootPath" mapstructure:"rootPath"`
+	UseIAM            bool   `yaml:"useIAM" mapstructure:"useIAM"`
+	IAMEndpoint       string `yaml:"iamEndpoint" mapstructure:"iamEndpoint"`
 
-	p.initAddress()
-	p.initPort()
+	BackupStorageType       string `yaml:"backupStorageType" mapstructure:"backupStorageType"`
+	BackupAddress           string `yaml:"backupAddress" mapstructure:"backupAddress"`
+	BackupPort              string `yaml:"backupPort" mapstructure:"backupPort"`
+	BackupRegion            string `yaml:"backupRegion" mapstructure:"backupRegion"`
+	BackupAccessKeyID       string `yaml:"backupAccessKeyID" mapstructure:"backupAccessKeyID"`
+	BackupSecretAccessKey   string `yaml:"backupSecretAccessKey" mapstructure:"backupSecretAccessKey"`
+	BackupToken             string `yaml:"backupToken" mapstructure:"backupToken"`
+	BackupGcpCredentialJSON string `yaml:"backupGcpCredentialJSON" mapstructure:"backupGcpCredentialJSON"`
+	BackupUseSSL            bool   `yaml:"backupUseSSL" mapstructure:"backupUseSSL"`
+	BackupBucketName        string `yaml:"backupBucketName" mapstructure:"backupBucketName"`
+	BackupRootPath          string `yaml:"backupRootPath" mapstructure:"backupRootPath"`
+	BackupUseIAM            bool   `yaml:"backupUseIAM" mapstructure:"backupUseIAM"`
+	BackupIAMEndpoint       string `yaml:"backupIamEndpoint" mapstructure:"backupIamEndpoint"`
 
-	p.initUser()
-	p.initPassword()
-
-	p.initTLSMode()
-
-	p.initCACertPath()
-	p.initServerName()
-
-	p.initMTLSCertPath()
-	p.initMTLSKeyPath()
-
-	p.initEtcdEndpoints()
-	p.initEtcdRootPath()
-
-	p.initRPCChanelName()
+	CrossStorage bool `yaml:"crossStorage" mapstructure:"crossStorage"`
 }
 
-func (p *MilvusConfig) initAddress() {
-	address, err := p.Base.Load("milvus.address")
-	if err != nil {
-		panic(err)
-	}
-	p.Address = address
+type BackupCfg struct {
+	Parallelism   ParallelismConfig `yaml:"parallelism" mapstructure:"parallelism"`
+	KeepTempFiles bool              `yaml:"keepTempFiles" mapstructure:"keepTempFiles"`
+	GCPause       GCPauseConfig     `yaml:"gcPause" mapstructure:"gcPause"`
 }
 
-func (p *MilvusConfig) initPort() {
-	port, err := p.Base.Load("milvus.port")
-	if err != nil {
-		panic(err)
-	}
-	p.Port = port
+type ParallelismConfig struct {
+	BackupCollection  int `yaml:"backupCollection" mapstructure:"backupCollection"`
+	BackupSegment     int `yaml:"backupSegment" mapstructure:"backupSegment"`
+	CopyData          int `yaml:"copydata" mapstructure:"copydata"`
+	RestoreCollection int `yaml:"restoreCollection" mapstructure:"restoreCollection"`
+	ImportJob         int `yaml:"importJob" mapstructure:"importJob"`
 }
 
-func (p *MilvusConfig) initUser() {
-	user, err := p.Base.Load("milvus.user")
-	if err != nil {
-		p.User = ""
-	}
-	p.User = user
+type GCPauseConfig struct {
+	Enable  bool   `yaml:"enable" mapstructure:"enable"`
+	Address string `yaml:"address" mapstructure:"address"`
 }
 
-func (p *MilvusConfig) initPassword() {
-	password, err := p.Base.Load("milvus.password")
-	if err != nil {
-		p.Password = ""
-	}
-	p.Password = password
-}
-
-func (p *MilvusConfig) initCACertPath() {
-	caCertPath := p.Base.LoadWithDefault("milvus.caCertPath", "")
-	p.CACertPath = caCertPath
-}
-
-func (p *MilvusConfig) initServerName() {
-	serverName := p.Base.LoadWithDefault("milvus.serverName", "")
-	p.ServerName = serverName
-}
-
-func (p *MilvusConfig) initMTLSCertPath() {
-	// for backward compatibility, if mTLS cert path is not set, use tls mode 1.
-	// WARN: This behavior will be removed in the version after v0.6.0
-	mtlsCertPath := p.Base.LoadWithDefault("milvus.mtlsCertPath", "")
-	p.MTLSCertPath = mtlsCertPath
-}
-
-func (p *MilvusConfig) initMTLSKeyPath() {
-	// for backward compatibility, if mTLS key path is not set, use tls mode 1 instead of 2.
-	// WARN: This behavior will be removed in the version after v0.6.0
-	mtlsKeyPath := p.Base.LoadWithDefault("milvus.mtlsKeyPath", "")
-	p.MTLSKeyPath = mtlsKeyPath
-}
-
-func (p *MilvusConfig) initTLSMode() {
-	// for backward compatibility, if mTLS cert path is not set, use tls mode 1 instead of 2.
-	// WARN: This behavior will be removed in the version after v0.6.0
-	p.TLSMode = p.Base.ParseIntWithDefault("milvus.tlsMode", 0)
-}
-
-func (p *MilvusConfig) initEtcdEndpoints() {
-	endpoints := p.Base.LoadWithDefault("milvus.etcd.endpoints", "localhost:2379")
-	p.EtcdConfig.Endpoints = endpoints
-}
-
-func (p *MilvusConfig) initEtcdRootPath() {
-	rootPath := p.Base.LoadWithDefault("milvus.etcd.rootPath", "by-dev")
-	p.EtcdConfig.RootPath = rootPath
-}
-
-func (p *MilvusConfig) initRPCChanelName() {
-	rpcChanelName := p.Base.LoadWithDefault("milvus.rpcChannelName", "by-dev-replicate-msg")
-	p.RPCChanelName = rpcChanelName
-}
-
-const (
-	DefaultCloudAddress = "https://api.cloud.zilliz.com"
-)
-
-type CloudConfig struct {
-	Base *BaseTable
-
-	Address string
-	APIKey  string
-}
-
-func (p *CloudConfig) init(base *BaseTable) {
-	p.Base = base
-
-	p.initAddress()
-	p.initAPIKey()
-}
-
-func (p *CloudConfig) initAddress() {
-	address := p.Base.LoadWithDefault("cloud.address", DefaultCloudAddress)
-	p.Address = address
-}
-
-func (p *CloudConfig) initAPIKey() {
-	apikey := p.Base.LoadWithDefault("cloud.apikey", "")
-	p.APIKey = apikey
-}
-
+// Storage type constants
 const (
 	Local                     = "local"
 	Minio                     = "minio"
@@ -288,355 +156,196 @@ var supportedStorageType = map[string]bool{
 	CloudProviderHwc:          true,
 }
 
-type MinioConfig struct {
-	Base *BaseTable
+// Load loads configuration from YAML file and applies environment variable overrides
+func Load(yamlPath string) (*BackupParams, error) {
+	cfg := &BackupParams{}
+	setDefaults(cfg)
 
-	StorageType string
-	// Deprecated
-	CloudProvider     string
-	Address           string
-	Port              string
-	Region            string
-	AccessKeyID       string
-	SecretAccessKey   string
-	Token             string
-	GcpCredentialJSON string
-	UseSSL            bool
-	BucketName        string
-	RootPath          string
-	UseIAM            bool
-	IAMEndpoint       string
+	v := viper.New()
+	v.SetConfigFile(yamlPath)
 
-	BackupStorageType       string
-	BackupAddress           string
-	BackupPort              string
-	BackupRegion            string
-	BackupAccessKeyID       string
-	BackupSecretAccessKey   string
-	BackupToken             string
-	BackupGcpCredentialJSON string
-	BackupUseSSL            bool
-	BackupBucketName        string
-	BackupRootPath          string
-	BackupUseIAM            bool
-	BackupIAMEndpoint       string
+	if err := v.ReadInConfig(); err != nil {
+		return nil, fmt.Errorf("read config file: %w", err)
+	}
 
-	CrossStorage bool
+	if err := v.Unmarshal(cfg); err != nil {
+		return nil, fmt.Errorf("unmarshal config: %w", err)
+	}
+
+	applyEnvOverrides(cfg)
+	applyDefaults(cfg)
+
+	if err := validate(cfg); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
 }
 
-func (p *MinioConfig) init(base *BaseTable) {
-	p.Base = base
+func setDefaults(cfg *BackupParams) {
+	cfg.LogCfg.Level = "info"
+	cfg.LogCfg.Console = true
+	cfg.LogCfg.File.Filename = "logs/backup.log"
+	cfg.LogCfg.File.MaxSize = 300
 
-	p.initStorageType()
-	p.initAddress()
-	p.initRegion()
-	p.initToken()
-	p.initPort()
-	p.initAccessKeyID()
-	p.initSecretAccessKey()
-	p.initGcpCredentialJSON()
-	p.initUseSSL()
-	p.initBucketName()
-	p.initRootPath()
-	p.initUseIAM()
-	p.initCloudProvider()
-	p.initIAMEndpoint()
+	cfg.HTTPCfg.Enabled = true
 
-	p.initBackupStorageType()
-	p.initBackupAddress()
-	p.initBackupPort()
-	p.initBackupAccessKeyID()
-	p.initBackupSecretAccessKey()
-	p.initBackupGcpCredentialJSON()
-	p.initBackupUseSSL()
-	p.initBackupBucketName()
-	p.initBackupRootPath()
-	p.initBackupRegion()
-	p.initBackupToken()
-	p.initBackupUseIAM()
-	p.initBackupIAMEndpoint()
+	cfg.CloudConfig.Address = "https://api.cloud.zilliz.com"
 
-	p.initCrossStorage()
+	cfg.MilvusCfg.EtcdConfig.Endpoints = "localhost:2379"
+	cfg.MilvusCfg.EtcdConfig.RootPath = "by-dev"
+	cfg.MilvusCfg.RPCChannelName = "by-dev-replicate-msg"
+
+	cfg.MinioCfg.StorageType = Minio
+	cfg.MinioCfg.CloudProvider = CloudProviderAWS
+	cfg.MinioCfg.Address = "localhost"
+	cfg.MinioCfg.Port = "9000"
+	cfg.MinioCfg.AccessKeyID = "minioadmin"
+	cfg.MinioCfg.SecretAccessKey = "minioadmin"
+	cfg.MinioCfg.BucketName = "a-bucket"
+	cfg.MinioCfg.RootPath = "files"
+	cfg.MinioCfg.BackupRootPath = "backup"
+
+	cfg.BackupCfg.Parallelism.BackupCollection = 1
+	cfg.BackupCfg.Parallelism.BackupSegment = 1024
+	cfg.BackupCfg.Parallelism.CopyData = 128
+	cfg.BackupCfg.Parallelism.RestoreCollection = 1
+	cfg.BackupCfg.Parallelism.ImportJob = 768
+	cfg.BackupCfg.GCPause.Address = "http://localhost:9091"
 }
 
-func (p *MinioConfig) initAddress() {
-	endpoint := p.Base.LoadWithDefault("minio.address", DefaultMinioAddress)
-	p.Address = endpoint
-}
+func applyDefaults(cfg *BackupParams) {
+	// Minio root path should not start with /
+	cfg.MinioCfg.RootPath = strings.TrimLeft(cfg.MinioCfg.RootPath, "/")
 
-func (p *MinioConfig) initPort() {
-	port := p.Base.LoadWithDefault("minio.port", DefaultMinioPort)
-	p.Port = port
-}
-
-func (p *MinioConfig) initRegion() {
-	region := p.Base.LoadWithDefault("minio.region", "")
-	p.Region = region
-}
-
-func (p *MinioConfig) initAccessKeyID() {
-	keyID := p.Base.LoadWithDefault("minio.accessKeyID", DefaultMinioAccessKey)
-	p.AccessKeyID = keyID
-}
-
-func (p *MinioConfig) initSecretAccessKey() {
-	key := p.Base.LoadWithDefault("minio.secretAccessKey", DefaultMinioSecretAccessKey)
-	p.SecretAccessKey = key
-}
-
-func (p *MinioConfig) initToken() {
-	token := p.Base.LoadWithDefault("minio.token", "")
-	p.Token = token
-}
-
-func (p *MinioConfig) initGcpCredentialJSON() {
-	gcpCredentialJSON := p.Base.LoadWithDefault("minio.gcpCredentialJSON", DefaultGcpCredentialJSON)
-	p.GcpCredentialJSON = gcpCredentialJSON
-}
-
-func (p *MinioConfig) initUseSSL() {
-	usessl := p.Base.LoadWithDefault("minio.useSSL", DefaultMinioUseSSL)
-	var err error
-	p.UseSSL, err = strconv.ParseBool(usessl)
-	if err != nil {
-		panic("parse bool useIAM:" + err.Error())
+	// Backup storage defaults to primary storage
+	if cfg.MinioCfg.BackupStorageType == "" {
+		cfg.MinioCfg.BackupStorageType = cfg.MinioCfg.StorageType
+	}
+	if cfg.MinioCfg.BackupAddress == "" {
+		cfg.MinioCfg.BackupAddress = cfg.MinioCfg.Address
+	}
+	if cfg.MinioCfg.BackupPort == "" {
+		cfg.MinioCfg.BackupPort = cfg.MinioCfg.Port
+	}
+	if cfg.MinioCfg.BackupRegion == "" {
+		cfg.MinioCfg.BackupRegion = cfg.MinioCfg.Region
+	}
+	if cfg.MinioCfg.BackupAccessKeyID == "" {
+		cfg.MinioCfg.BackupAccessKeyID = cfg.MinioCfg.AccessKeyID
+	}
+	if cfg.MinioCfg.BackupSecretAccessKey == "" {
+		cfg.MinioCfg.BackupSecretAccessKey = cfg.MinioCfg.SecretAccessKey
+	}
+	if cfg.MinioCfg.BackupToken == "" {
+		cfg.MinioCfg.BackupToken = cfg.MinioCfg.Token
+	}
+	if cfg.MinioCfg.BackupBucketName == "" {
+		cfg.MinioCfg.BackupBucketName = cfg.MinioCfg.BucketName
+	}
+	if !cfg.MinioCfg.BackupUseIAM && cfg.MinioCfg.UseIAM {
+		cfg.MinioCfg.BackupUseIAM = cfg.MinioCfg.UseIAM
+	}
+	if cfg.MinioCfg.BackupIAMEndpoint == "" {
+		cfg.MinioCfg.BackupIAMEndpoint = cfg.MinioCfg.IAMEndpoint
 	}
 }
 
-func (p *MinioConfig) initBucketName() {
-	bucketName := p.Base.LoadWithDefault("minio.bucketName", DefaultMinioBucketName)
-	p.BucketName = bucketName
+// envMapping defines environment variable to config field mappings
+var envMapping = []struct {
+	env   string
+	field func(*BackupParams) *string
+}{
+	{"MILVUS_ADDRESS", func(c *BackupParams) *string { return &c.MilvusCfg.Address }},
+	{"MILVUS_PORT", func(c *BackupParams) *string { return &c.MilvusCfg.Port }},
+	{"MILVUS_USER", func(c *BackupParams) *string { return &c.MilvusCfg.User }},
+	{"MILVUS_PASSWORD", func(c *BackupParams) *string { return &c.MilvusCfg.Password }},
+
+	{"MINIO_ADDRESS", func(c *BackupParams) *string { return &c.MinioCfg.Address }},
+	{"MINIO_PORT", func(c *BackupParams) *string { return &c.MinioCfg.Port }},
+	{"MINIO_ACCESS_KEY", func(c *BackupParams) *string { return &c.MinioCfg.AccessKeyID }},
+	{"MINIO_SECRET_KEY", func(c *BackupParams) *string { return &c.MinioCfg.SecretAccessKey }},
+	{"MINIO_BUCKET_NAME", func(c *BackupParams) *string { return &c.MinioCfg.BucketName }},
+	{"MINIO_ROOT_PATH", func(c *BackupParams) *string { return &c.MinioCfg.RootPath }},
+	{"MINIO_BACKUP_BUCKET_NAME", func(c *BackupParams) *string { return &c.MinioCfg.BackupBucketName }},
+	{"MINIO_BACKUP_ROOT_PATH", func(c *BackupParams) *string { return &c.MinioCfg.BackupRootPath }},
 }
 
-func (p *MinioConfig) initRootPath() {
-	rootPath := p.Base.LoadWithDefault("minio.rootPath", DefaultMinioRootPath)
-	p.RootPath = strings.TrimLeft(rootPath, "/")
-}
+func applyEnvOverrides(cfg *BackupParams) {
+	for _, m := range envMapping {
+		if val := os.Getenv(m.env); val != "" {
+			field := m.field(cfg)
+			oldVal := *field
+			*field = val
 
-func (p *MinioConfig) initUseIAM() {
-	useIAM := p.Base.LoadWithDefault("minio.useIAM", DefaultMinioUseIAM)
-	var err error
-	p.UseIAM, err = strconv.ParseBool(useIAM)
-	if err != nil {
-		panic("parse bool useIAM:" + err.Error())
+			if isSensitiveEnv(m.env) {
+				log.Info("config overridden by env",
+					zap.String("env", m.env),
+					zap.String("from", MaskSensitiveValue(oldVal)),
+					zap.String("to", MaskSensitiveValue(val)))
+			} else if oldVal != val {
+				log.Info("config overridden by env",
+					zap.String("env", m.env),
+					zap.String("from", oldVal),
+					zap.String("to", val))
+			}
+		}
 	}
 }
 
-func (p *MinioConfig) initCloudProvider() {
-	p.CloudProvider = p.Base.LoadWithDefault("minio.cloudProvider", DefaultMinioCloudProvider)
-	if !supportedStorageType[p.CloudProvider] {
-		panic("unsupported cloudProvider:" + p.CloudProvider)
+func isSensitiveEnv(env string) bool {
+	lower := strings.ToLower(env)
+	return strings.Contains(lower, "password") ||
+		strings.Contains(lower, "secret") ||
+		strings.Contains(lower, "key") ||
+		strings.Contains(lower, "token")
+}
+
+func validate(cfg *BackupParams) error {
+	if cfg.MilvusCfg.Address == "" {
+		return fmt.Errorf("milvus.address is required")
 	}
-}
-
-func (p *MinioConfig) initIAMEndpoint() {
-	iamEndpoint := p.Base.LoadWithDefault("minio.iamEndpoint", DefaultMinioIAMEndpoint)
-	p.IAMEndpoint = iamEndpoint
-}
-
-func (p *MinioConfig) initStorageType() {
-	engine := p.Base.LoadWithDefault("storage.storageType",
-		p.Base.LoadWithDefault("minio.storageType",
-			p.Base.LoadWithDefault("minio.cloudProvider", DefaultStorageType)))
-	if !supportedStorageType[engine] {
-		panic("unsupported storage type:" + engine)
+	if cfg.MilvusCfg.Port == "" {
+		return fmt.Errorf("milvus.port is required")
 	}
-	p.StorageType = engine
-}
 
-func (p *MinioConfig) initBackupStorageType() {
-	engine := p.Base.LoadWithDefault("storage.backupStorageType",
-		p.Base.LoadWithDefault("minio.backupStorageType",
-			p.StorageType))
-	if !supportedStorageType[engine] {
-		panic("unsupported storage type:" + engine)
+	if !supportedStorageType[cfg.MinioCfg.StorageType] {
+		return fmt.Errorf("unsupported storage type: %s", cfg.MinioCfg.StorageType)
 	}
-	p.BackupStorageType = engine
-}
-
-func (p *MinioConfig) initBackupAddress() {
-	endpoint := p.Base.LoadWithDefault("minio.backupAddress",
-		p.Base.LoadWithDefault("minio.address", DefaultMinioAddress))
-	p.BackupAddress = endpoint
-}
-
-func (p *MinioConfig) initBackupPort() {
-	port := p.Base.LoadWithDefault("minio.backupPort",
-		p.Base.LoadWithDefault("minio.port", DefaultMinioPort))
-	p.BackupPort = port
-}
-
-func (p *MinioConfig) initBackupRegion() {
-	region := p.Base.LoadWithDefault("minio.backupRegion",
-		p.Base.LoadWithDefault("minio.region", ""))
-	p.BackupRegion = region
-}
-
-func (p *MinioConfig) initBackupUseSSL() {
-	usessl := p.Base.LoadWithDefault("minio.backupUseSSL",
-		p.Base.LoadWithDefault("minio.useSSL", DefaultMinioUseSSL))
-	var err error
-	p.BackupUseSSL, err = strconv.ParseBool(usessl)
-	if err != nil {
-		panic("parse bool backupUseSSL:" + err.Error())
+	if !supportedStorageType[cfg.MinioCfg.CloudProvider] {
+		return fmt.Errorf("unsupported cloud provider: %s", cfg.MinioCfg.CloudProvider)
 	}
-}
-
-func (p *MinioConfig) initBackupUseIAM() {
-	useIAM := p.Base.LoadWithDefault("minio.backupUseIAM",
-		p.Base.LoadWithDefault("minio.useIAM", DefaultMinioUseIAM))
-	var err error
-	p.BackupUseIAM, err = strconv.ParseBool(useIAM)
-	if err != nil {
-		panic("parse bool backupUseIAM:" + err.Error())
+	if cfg.MinioCfg.BackupStorageType != "" && !supportedStorageType[cfg.MinioCfg.BackupStorageType] {
+		return fmt.Errorf("unsupported backup storage type: %s", cfg.MinioCfg.BackupStorageType)
 	}
+
+	return nil
 }
 
-func (p *MinioConfig) initBackupIAMEndpoint() {
-	iamEndpoint := p.Base.LoadWithDefault("minio.backupIamEndpoint",
-		p.Base.LoadWithDefault("minio.iamEndpoint", DefaultMinioIAMEndpoint))
-	p.BackupIAMEndpoint = iamEndpoint
-}
-
-func (p *MinioConfig) initBackupAccessKeyID() {
-	keyID := p.Base.LoadWithDefault("minio.backupAccessKeyID",
-		p.Base.LoadWithDefault("minio.accessKeyID", DefaultMinioAccessKey))
-	p.BackupAccessKeyID = keyID
-}
-
-func (p *MinioConfig) initBackupSecretAccessKey() {
-	key := p.Base.LoadWithDefault("minio.backupSecretAccessKey",
-		p.Base.LoadWithDefault("minio.secretAccessKey", DefaultMinioSecretAccessKey))
-	p.BackupSecretAccessKey = key
-}
-
-func (p *MinioConfig) initBackupToken() {
-	token := p.Base.LoadWithDefault("minio.backupToken",
-		p.Base.LoadWithDefault("minio.token", ""))
-	p.BackupToken = token
-}
-
-func (p *MinioConfig) initBackupGcpCredentialJSON() {
-	gcpCredentialJSON := p.Base.LoadWithDefault("minio.backupGcpCredentialJSON", DefaultGcpCredentialJSON)
-	p.BackupGcpCredentialJSON = gcpCredentialJSON
-}
-
-func (p *MinioConfig) initBackupBucketName() {
-	bucketName := p.Base.LoadWithDefault("minio.backupBucketName",
-		p.Base.LoadWithDefault("minio.bucketName", DefaultMinioBackupBucketName))
-	p.BackupBucketName = bucketName
-}
-
-func (p *MinioConfig) initBackupRootPath() {
-	rootPath := p.Base.LoadWithDefault("minio.backupRootPath",
-		p.Base.LoadWithDefault("minio.rootPath", DefaultMinioBackupRootPath))
-	p.BackupRootPath = rootPath
-}
-
-func (p *MinioConfig) initCrossStorage() {
-	crossStorage := p.Base.LoadWithDefault("minio.crossStorage", "false")
-	var err error
-	p.CrossStorage, err = strconv.ParseBool(crossStorage)
-	if err != nil {
-		panic("parse bool CrossStorage:" + err.Error())
+// MaskSensitiveValue masks sensitive values, showing only first 2 and last 2 characters
+func MaskSensitiveValue(value string) string {
+	if len(value) < 6 {
+		return "***"
 	}
+	return value[:2] + "***" + value[len(value)-2:]
 }
 
-type LogConfig struct {
-	Base *BaseTable
+// MaskedConfig returns a copy of config with sensitive values masked (for display)
+func (c *BackupParams) MaskedConfig() *BackupParams {
+	masked := *c
 
-	Level   string
-	Console bool
-	File    struct {
-		RootPath   string
-		Filename   string
-		MaxSize    int
-		MaxDays    int
-		MaxBackups int
-	}
-}
+	masked.MilvusCfg.Password = MaskSensitiveValue(c.MilvusCfg.Password)
 
-func (p *LogConfig) init(base *BaseTable) {
-	p.Base = base
+	masked.MinioCfg.AccessKeyID = MaskSensitiveValue(c.MinioCfg.AccessKeyID)
+	masked.MinioCfg.SecretAccessKey = MaskSensitiveValue(c.MinioCfg.SecretAccessKey)
+	masked.MinioCfg.Token = MaskSensitiveValue(c.MinioCfg.Token)
+	masked.MinioCfg.GcpCredentialJSON = MaskSensitiveValue(c.MinioCfg.GcpCredentialJSON)
+	masked.MinioCfg.BackupAccessKeyID = MaskSensitiveValue(c.MinioCfg.BackupAccessKeyID)
+	masked.MinioCfg.BackupSecretAccessKey = MaskSensitiveValue(c.MinioCfg.BackupSecretAccessKey)
+	masked.MinioCfg.BackupToken = MaskSensitiveValue(c.MinioCfg.BackupToken)
+	masked.MinioCfg.BackupGcpCredentialJSON = MaskSensitiveValue(c.MinioCfg.BackupGcpCredentialJSON)
 
-	p.initLevel()
-	p.initConsole()
-	p.initFilename()
-	p.initFileMaxSize()
-	p.initFileMaxDays()
-	p.initFileMaxBackups()
-}
+	masked.CloudConfig.APIKey = MaskSensitiveValue(c.CloudConfig.APIKey)
 
-func (p *LogConfig) initLevel() {
-	level := p.Base.LoadWithDefault("log.level", DefaultLogLevel)
-	p.Level = level
-}
-
-func (p *LogConfig) initConsole() {
-	console := p.Base.LoadWithDefault("log.console", "true")
-	var err error
-	p.Console, err = strconv.ParseBool(console)
-	if err != nil {
-		panic("parse bool console:" + err.Error())
-	}
-}
-
-func (p *LogConfig) initFilename() {
-	filename := p.Base.LoadWithDefault("log.file.filename", "logs/backup.log")
-	p.File.Filename = filename
-}
-
-func (p *LogConfig) initFileMaxSize() {
-	maxSizeStr := p.Base.LoadWithDefault("log.file.maxSize", "300")
-	maxSize, err := strconv.Atoi(maxSizeStr)
-	if err != nil {
-		panic("parse int log.file.maxSize:" + err.Error())
-	}
-	p.File.MaxSize = maxSize
-}
-
-func (p *LogConfig) initFileMaxDays() {
-	maxDaysStr := p.Base.LoadWithDefault("log.file.maxDays", "0")
-	maxDays, err := strconv.Atoi(maxDaysStr)
-	if err != nil {
-		panic("parse int log.file.maxDays:" + err.Error())
-	}
-	p.File.MaxDays = maxDays
-}
-
-func (p *LogConfig) initFileMaxBackups() {
-	maxBackupsStr := p.Base.LoadWithDefault("log.file.maxBackups", "0")
-	maxBackups, err := strconv.Atoi(maxBackupsStr)
-	if err != nil {
-		panic("parse int log.file.maxBackups:" + err.Error())
-	}
-	p.File.MaxBackups = maxBackups
-}
-
-type HTTPConfig struct {
-	Base *BaseTable
-
-	Enabled        bool
-	DebugMode      bool
-	SimpleResponse bool
-}
-
-func (p *HTTPConfig) init(base *BaseTable) {
-	p.Base = base
-
-	p.initHTTPEnabled()
-	p.initHTTPDebugMode()
-	p.initHTTPSimpleResponse()
-}
-
-func (p *HTTPConfig) initHTTPEnabled() {
-	p.Enabled = p.Base.ParseBool("http.enabled", true)
-}
-
-func (p *HTTPConfig) initHTTPDebugMode() {
-	p.DebugMode = p.Base.ParseBool("http.debug_mode", false)
-}
-
-func (p *HTTPConfig) initHTTPSimpleResponse() {
-	p.SimpleResponse = p.Base.ParseBool("http.simpleResponse", false)
+	return &masked
 }

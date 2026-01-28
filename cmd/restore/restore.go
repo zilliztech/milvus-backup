@@ -378,16 +378,16 @@ func NewCmd(opt *root.Options) *cobra.Command {
 		Long:  "restore a backup",
 
 		RunE: func(cmd *cobra.Command, args []string) error {
-			params := opt.InitGlobalVars()
+			params, err := opt.LoadConfig()
+			if err != nil {
+				return err
+			}
 
 			if err := o.validate(); err != nil {
 				return err
 			}
 
-			err := o.run(cmd, params)
-			cobra.CheckErr(err)
-
-			return nil
+			return o.run(cmd, params)
 		},
 	}
 

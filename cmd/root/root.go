@@ -16,14 +16,24 @@ type Options struct {
 	YamlOverrides []string
 }
 
-func (o *Options) InitGlobalVars() *paramtable.BackupParams {
-	var params paramtable.BackupParams
-	params.GlobalInitWithYaml(o.Config)
-	params.Init()
+func (o *Options) LoadConfig() (*paramtable.BackupParams, error) {
+	cfg, err := paramtable.Load(o.Config)
+	if err != nil {
+		return nil, err
+	}
 
-	log.InitLogger(&params.LogCfg)
+	log.InitLogger(&log.Config{
+		Level:   cfg.LogCfg.Level,
+		Console: cfg.LogCfg.Console,
+		File: log.FileLogConfig{
+			Filename:   cfg.LogCfg.File.Filename,
+			MaxSize:    cfg.LogCfg.File.MaxSize,
+			MaxDays:    cfg.LogCfg.File.MaxDays,
+			MaxBackups: cfg.LogCfg.File.MaxBackups,
+		},
+	})
 
-	return &params
+	return cfg, nil
 }
 
 func NewCmd(opt *Options) *cobra.Command {
@@ -38,7 +48,6 @@ func NewCmd(opt *Options) *cobra.Command {
 			cmd.Printf("execute %s args:%v error:%v\n", cmd.Name(), args, errors.New("unrecognized command"))
 			os.Exit(1)
 		},
-		// TODO: remove this, the Override should be done in the paramtable, not by set env
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			if err := setEnvs(opt.YamlOverrides); err != nil {
 				cmd.Println(err)
@@ -53,7 +62,6 @@ func NewCmd(opt *Options) *cobra.Command {
 	return cmd
 }
 
-// Set environment variables from yamlOverrides
 func setEnvs(envs []string) error {
 	for _, e := range envs {
 		env := strings.Split(e, "=")
@@ -61,6 +69,5 @@ func setEnvs(envs []string) error {
 			return err
 		}
 	}
-
 	return nil
 }

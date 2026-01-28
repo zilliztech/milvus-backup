@@ -122,9 +122,9 @@ func NewTask(args TaskArgs) (*Task, error) {
 	}
 
 	throttling := concurrencyThrottling{
-		CollSem: semaphore.NewWeighted(args.Params.BackupCfg.BackupCollectionParallelism),
-		SegSem:  semaphore.NewWeighted(args.Params.BackupCfg.BackupSegmentParallelism),
-		CopySem: semaphore.NewWeighted(args.Params.BackupCfg.BackupCopyDataParallelism),
+		CollSem: semaphore.NewWeighted(int64(args.Params.BackupCfg.Parallelism.BackupCollection)),
+		SegSem:  semaphore.NewWeighted(int64(args.Params.BackupCfg.Parallelism.BackupSegment)),
+		CopySem: semaphore.NewWeighted(int64(args.Params.BackupCfg.Parallelism.CopyData)),
 	}
 
 	return &Task{
@@ -157,7 +157,7 @@ func NewTask(args TaskArgs) (*Task, error) {
 
 		taskMgr: args.TaskMgr,
 
-		rpcChannelName: args.Params.MilvusCfg.RPCChanelName,
+		rpcChannelName: args.Params.MilvusCfg.RPCChannelName,
 	}, nil
 }
 

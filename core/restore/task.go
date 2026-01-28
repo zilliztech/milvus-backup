@@ -154,8 +154,8 @@ func NewTask(args TaskArgs) (*Task, error) {
 	return &Task{
 		args: args,
 
-		copySem:       semaphore.NewWeighted(args.Params.BackupCfg.BackupCopyDataParallelism),
-		bulkInsertSem: semaphore.NewWeighted(args.Params.BackupCfg.ImportJobParallelism),
+		copySem:       semaphore.NewWeighted(int64(args.Params.BackupCfg.Parallelism.CopyData)),
+		bulkInsertSem: semaphore.NewWeighted(int64(args.Params.BackupCfg.Parallelism.ImportJob)),
 
 		logger: logger,
 	}, nil
@@ -467,7 +467,7 @@ func (t *Task) runCollTasks(ctx context.Context, collTasks []*collectionTask) er
 	t.logger.Info("start restore collection")
 
 	g, subCtx := errgroup.WithContext(ctx)
-	g.SetLimit(t.args.Params.BackupCfg.RestoreParallelism)
+	g.SetLimit(t.args.Params.BackupCfg.Parallelism.RestoreCollection)
 	for _, collTask := range collTasks {
 		g.Go(func() error {
 			if err := collTask.Execute(subCtx); err != nil {

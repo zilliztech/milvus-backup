@@ -206,7 +206,7 @@ func (o *options) toOption(params *paramtable.BackupParams) (backup.Option, erro
 
 	return backup.Option{
 		BackupName: o.backupName,
-		PauseGC:    params.BackupCfg.GcPauseEnable,
+		PauseGC:    params.BackupCfg.GCPause.Enable,
 
 		Strategy: strategy,
 
@@ -305,7 +305,10 @@ func NewCmd(opt *root.Options) *cobra.Command {
 		Short: "create a backup.",
 
 		RunE: func(cmd *cobra.Command, args []string) error {
-			params := opt.InitGlobalVars()
+			params, err := opt.LoadConfig()
+			if err != nil {
+				return err
+			}
 
 			if err := o.complete(); err != nil {
 				return err
@@ -315,11 +318,7 @@ func NewCmd(opt *root.Options) *cobra.Command {
 				return err
 			}
 
-			err := o.run(cmd, params)
-			cobra.CheckErr(err)
-
-			return nil
-
+			return o.run(cmd, params)
 		},
 	}
 

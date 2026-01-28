@@ -18,7 +18,10 @@ func NewCmd(opt *root.Options) *cobra.Command {
 
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
-			params := opt.InitGlobalVars()
+			params, err := opt.LoadConfig()
+			if err != nil {
+				return err
+			}
 
 			grpc, err := milvus.NewGrpc(&params.MilvusCfg)
 			cobra.CheckErr(err)

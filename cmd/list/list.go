@@ -64,10 +64,12 @@ func NewCmd(opt *root.Options) *cobra.Command {
 		Use:   "list",
 		Short: "Shows all backup in object storage.",
 
-		Run: func(cmd *cobra.Command, args []string) {
-			params := opt.InitGlobalVars()
-			err := o.run(cmd, params)
-			cobra.CheckErr(err)
+		RunE: func(cmd *cobra.Command, args []string) error {
+			params, err := opt.LoadConfig()
+			if err != nil {
+				return err
+			}
+			return o.run(cmd, params)
 		},
 	}
 

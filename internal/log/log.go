@@ -41,7 +41,6 @@ import (
 	"go.uber.org/zap/zaptest"
 	"gopkg.in/natefinch/lumberjack.v2"
 
-	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/internal/progressbar"
 )
 
@@ -58,18 +57,7 @@ func init() {
 	_globalR.Store(r)
 }
 
-func InitLogger(params *paramtable.LogConfig) {
-	cfg := &Config{
-		Level:   params.Level,
-		Console: params.Console,
-		File: FileLogConfig{
-			Filename:   params.File.Filename,
-			MaxSize:    params.File.MaxSize,
-			MaxDays:    params.File.MaxDays,
-			MaxBackups: params.File.MaxBackups,
-		},
-	}
-
+func InitLogger(cfg *Config) {
 	lg, p, err := initLogger(cfg)
 	if err != nil {
 		panic(err)
@@ -148,7 +136,7 @@ func initFileLog(cfg *FileLogConfig) (*lumberjack.Logger, error) {
 }
 
 func newStdLogger() (*zap.Logger, *ZapProperties) {
-	conf := &Config{Level: "info", File: FileLogConfig{}}
+	conf := &Config{Level: "info", Console: true, File: FileLogConfig{}}
 	lg, r, _ := initLogger(conf, zap.AddCallerSkip(1))
 	return lg, r
 }

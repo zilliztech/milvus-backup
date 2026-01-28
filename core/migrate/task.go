@@ -220,7 +220,7 @@ func NewTask(taskID, backupName, clusterID string, params *paramtable.BackupPara
 
 		// use taskID as stage prefix
 		volume:  newVolume(clusterID, taskID, cloudCli),
-		copySem: semaphore.NewWeighted(params.BackupCfg.BackupCopyDataParallelism),
+		copySem: semaphore.NewWeighted(int64(params.BackupCfg.Parallelism.CopyData)),
 	}, nil
 }
 

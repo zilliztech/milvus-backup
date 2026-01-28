@@ -223,7 +223,7 @@ func (h *createBackupHandler) toOption(params *paramtable.BackupParams) (backup.
 
 	return backup.Option{
 		BackupName:       h.request.GetBackupName(),
-		PauseGC:          h.request.GetGcPauseEnable() || params.BackupCfg.GcPauseEnable,
+		PauseGC:          h.request.GetGcPauseEnable() || params.BackupCfg.GCPause.Enable,
 		Strategy:         strategy,
 		BackupRBAC:       h.request.GetRbac(),
 		BackupIndexExtra: h.request.GetWithIndexExtra(),
