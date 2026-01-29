@@ -16,7 +16,6 @@ import (
 	"os"
 	"path"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -25,7 +24,6 @@ import (
 	"github.com/spf13/viper"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	memkv "github.com/zilliztech/milvus-backup/internal/kv/mem"
 )
 
 const (
@@ -56,7 +54,7 @@ var defaultYaml = DefaultBackupYaml
 // BaseTable the basics of paramtable
 type BaseTable struct {
 	once      sync.Once
-	params    *memkv.MemoryKV
+	config    *viper.Viper
 	configDir string
 }
 
@@ -73,7 +71,7 @@ func (gp *BaseTable) GlobalInitWithYaml(yaml string) {
 
 // Init initializes the param table.
 func (gp *BaseTable) Init() {
-	gp.params = memkv.NewMemoryKV()
+	gp.config = viper.New()
 	gp.configDir = gp.initConfPath()
 	gp.loadFromYaml(defaultYaml)
 	gp.tryLoadFromEnv()
@@ -131,141 +129,129 @@ func (gp *BaseTable) tryLoadFromEnv() {
 
 // Load loads an object with @key.
 func (gp *BaseTable) Load(key string) (string, error) {
-	return gp.params.Load(strings.ToLower(key))
+	key = strings.ToLower(key)
+	if !gp.config.IsSet(key) {
+		return "", fmt.Errorf("invalid key: %s", key)
+	}
+	return gp.getString(key), nil
 }
 
 // LoadWithDefault loads an object with @key. If the object does not exist, @defaultValue will be returned.
 func (gp *BaseTable) LoadWithDefault(key, defaultValue string) string {
-	return gp.params.LoadWithDefault(strings.ToLower(key), defaultValue)
+	key = strings.ToLower(key)
+	if !gp.config.IsSet(key) {
+		return defaultValue
+	}
+	return gp.getString(key)
+}
+
+// getString retrieves a string value, handling array conversion
+func (gp *BaseTable) getString(key string) string {
+	val := gp.config.Get(key)
+	str, err := cast.ToStringE(val)
+	if err != nil {
+		// Handle array type
+		if arr, ok := val.([]interface{}); ok {
+			var parts []string
+			for _, v := range arr {
+				s, _ := cast.ToStringE(v)
+				parts = append(parts, s)
+			}
+			return strings.Join(parts, ",")
+		}
+		return ""
+	}
+	return str
 }
 
 func (gp *BaseTable) LoadYaml(fileName string) error {
-	config := viper.New()
 	configFile := fmt.Sprintf("%s/%s", strings.TrimRight(gp.configDir, "/"), path.Base(fileName))
 	if _, err := os.Stat(configFile); err != nil {
 		panic("cannot access config file: " + configFile)
 	}
 
-	config.SetConfigFile(configFile)
-	if err := config.ReadInConfig(); err != nil {
+	gp.config.SetConfigFile(configFile)
+	if err := gp.config.ReadInConfig(); err != nil {
 		panic(err)
-	}
-
-	for _, key := range config.AllKeys() {
-		val := config.Get(key)
-		str, err := cast.ToStringE(val)
-		if err != nil {
-			switch val := val.(type) {
-			case []interface{}:
-				str = str[:0]
-				for _, v := range val {
-					ss, err := cast.ToStringE(v)
-					if err != nil {
-						panic(err)
-					}
-					if str == "" {
-						str = ss
-					} else {
-						str = str + "," + ss
-					}
-				}
-
-			default:
-				panic("undefined config type, key=" + key)
-			}
-		}
-		err = gp.params.Save(strings.ToLower(key), str)
-		if err != nil {
-			panic(err)
-		}
-
 	}
 
 	return nil
 }
 
 func (gp *BaseTable) Get(key string) string {
-	return gp.params.Get(strings.ToLower(key))
+	key = strings.ToLower(key)
+	if !gp.config.IsSet(key) {
+		return ""
+	}
+	return gp.getString(key)
 }
 
 func (gp *BaseTable) Remove(key string) error {
-	return gp.params.Remove(strings.ToLower(key))
+	// viper doesn't have a direct remove method, but we can set to nil
+	// which effectively removes the key from IsSet checks for simple values
+	gp.config.Set(strings.ToLower(key), nil)
+	return nil
 }
 
 func (gp *BaseTable) Save(key, value string) error {
-	return gp.params.Save(strings.ToLower(key), value)
+	gp.config.Set(strings.ToLower(key), value)
+	return nil
 }
 
 func (gp *BaseTable) ParseBool(key string, defaultValue bool) bool {
-	valueStr := gp.LoadWithDefault(key, strconv.FormatBool(defaultValue))
-	value, err := strconv.ParseBool(valueStr)
-	if err != nil {
-		panic(err)
+	key = strings.ToLower(key)
+	if !gp.config.IsSet(key) {
+		return defaultValue
 	}
-	return value
+	return gp.config.GetBool(key)
 }
 
 func (gp *BaseTable) ParseInt64(key string) int64 {
-	valueStr, err := gp.Load(key)
-	if err != nil {
-		panic(err)
+	key = strings.ToLower(key)
+	if !gp.config.IsSet(key) {
+		panic(fmt.Errorf("invalid key: %s", key))
 	}
-	value, err := strconv.ParseInt(valueStr, 10, 64)
-	if err != nil {
-		panic(err)
-	}
-	return value
+	return gp.config.GetInt64(key)
 }
 
 func (gp *BaseTable) ParseInt64WithDefault(key string, defaultValue int64) int64 {
-	valueStr := gp.LoadWithDefault(key, strconv.FormatInt(defaultValue, 10))
-	value, err := strconv.ParseInt(valueStr, 10, 64)
-	if err != nil {
-		panic(err)
+	key = strings.ToLower(key)
+	if !gp.config.IsSet(key) {
+		return defaultValue
 	}
-	return value
+	return gp.config.GetInt64(key)
 }
 
 func (gp *BaseTable) ParseInt32(key string) int32 {
-	valueStr, err := gp.Load(key)
-	if err != nil {
-		panic(err)
+	key = strings.ToLower(key)
+	if !gp.config.IsSet(key) {
+		panic(fmt.Errorf("invalid key: %s", key))
 	}
-	value, err := strconv.ParseInt(valueStr, 10, 32)
-	if err != nil {
-		panic(err)
-	}
-	return int32(value)
+	return gp.config.GetInt32(key)
 }
 
 func (gp *BaseTable) ParseInt32WithDefault(key string, defaultValue int32) int32 {
-	valueStr := gp.LoadWithDefault(key, strconv.FormatInt(int64(defaultValue), 10))
-	value, err := strconv.ParseInt(valueStr, 10, 32)
-	if err != nil {
-		panic(err)
+	key = strings.ToLower(key)
+	if !gp.config.IsSet(key) {
+		return defaultValue
 	}
-	return int32(value)
+	return gp.config.GetInt32(key)
 }
 
 func (gp *BaseTable) ParseInt(key string) int {
-	valueStr, err := gp.Load(key)
-	if err != nil {
-		panic(err)
+	key = strings.ToLower(key)
+	if !gp.config.IsSet(key) {
+		panic(fmt.Errorf("invalid key: %s", key))
 	}
-	value, err := strconv.Atoi(valueStr)
-	if err != nil {
-		panic(err)
-	}
-	return value
+	return gp.config.GetInt(key)
 }
 
 func (gp *BaseTable) ParseIntWithDefault(key string, defaultValue int) int {
-	valueStr := gp.LoadWithDefault(key, strconv.FormatInt(int64(defaultValue), 10))
-	value, err := strconv.Atoi(valueStr)
-	if err != nil {
-		panic(err)
+	key = strings.ToLower(key)
+	if !gp.config.IsSet(key) {
+		return defaultValue
 	}
-	return value
+	return gp.config.GetInt(key)
 }
 
 func (gp *BaseTable) loadMinioConfig() {
