@@ -134,38 +134,9 @@ func (gp *BaseTable) Load(key string) (string, error) {
 	return gp.params.Load(strings.ToLower(key))
 }
 
-// LoadWithPriority loads an object with multiple @keys, return the first successful value.
-// If all keys not exist, return error.
-// This is to be compatible with old configuration file.
-func (gp *BaseTable) LoadWithPriority(keys []string) (string, error) {
-	for _, key := range keys {
-		if str, err := gp.params.Load(strings.ToLower(key)); err == nil {
-			return str, nil
-		}
-	}
-	return "", fmt.Errorf("invalid keys: %v", keys)
-}
-
 // LoadWithDefault loads an object with @key. If the object does not exist, @defaultValue will be returned.
 func (gp *BaseTable) LoadWithDefault(key, defaultValue string) string {
 	return gp.params.LoadWithDefault(strings.ToLower(key), defaultValue)
-}
-
-// LoadWithDefault2 loads an object with multiple @keys, return the first successful value.
-// If all keys not exist, return @defaultValue.
-// This is to be compatible with old configuration file.
-func (gp *BaseTable) LoadWithDefault2(keys []string, defaultValue string) string {
-	for _, key := range keys {
-		if str, err := gp.params.Load(strings.ToLower(key)); err == nil {
-			return str
-		}
-	}
-	return defaultValue
-}
-
-// LoadRange loads objects with range @startKey to @endKey with @limit number of objects.
-func (gp *BaseTable) LoadRange(key, endKey string, limit int) ([]string, []string, error) {
-	return gp.params.LoadRange(strings.ToLower(key), strings.ToLower(endKey), limit)
 }
 
 func (gp *BaseTable) LoadYaml(fileName string) error {
@@ -234,27 +205,6 @@ func (gp *BaseTable) ParseBool(key string, defaultValue bool) bool {
 	return value
 }
 
-func (gp *BaseTable) ParseFloat(key string) float64 {
-	valueStr, err := gp.Load(key)
-	if err != nil {
-		panic(err)
-	}
-	value, err := strconv.ParseFloat(valueStr, 64)
-	if err != nil {
-		panic(err)
-	}
-	return value
-}
-
-func (gp *BaseTable) ParseFloatWithDefault(key string, defaultValue float64) float64 {
-	valueStr := gp.LoadWithDefault(key, fmt.Sprintf("%f", defaultValue))
-	value, err := strconv.ParseFloat(valueStr, 64)
-	if err != nil {
-		panic(err)
-	}
-	return value
-}
-
 func (gp *BaseTable) ParseInt64(key string) int64 {
 	valueStr, err := gp.Load(key)
 	if err != nil {
@@ -316,35 +266,6 @@ func (gp *BaseTable) ParseIntWithDefault(key string, defaultValue int) int {
 		panic(err)
 	}
 	return value
-}
-
-func (gp *BaseTable) ParseDataSizeWithDefault(key string, defaultValue string) (int64, error) {
-	valueStr := strings.ToLower(gp.LoadWithDefault(key, defaultValue))
-	if strings.HasSuffix(valueStr, "g") || strings.HasSuffix(valueStr, "gb") {
-		size, err := strconv.ParseInt(strings.Split(valueStr, "g")[0], 10, 64)
-		if err != nil {
-			return 0, err
-		}
-		return size * 1024 * 1024 * 1024, nil
-	} else if strings.HasSuffix(valueStr, "m") || strings.HasSuffix(valueStr, "mb") {
-		size, err := strconv.ParseInt(strings.Split(valueStr, "m")[0], 10, 64)
-		if err != nil {
-			return 0, err
-		}
-		return size * 1024 * 1024, nil
-	} else if strings.HasSuffix(valueStr, "k") || strings.HasSuffix(valueStr, "kb") {
-		size, err := strconv.ParseInt(strings.Split(valueStr, "k")[0], 10, 64)
-		if err != nil {
-			return 0, err
-		}
-		return size * 1024, nil
-	}
-
-	size, err := strconv.ParseInt(strings.Split(valueStr, "k")[0], 10, 64)
-	if err != nil {
-		return 0, err
-	}
-	return size, nil
 }
 
 func (gp *BaseTable) loadMinioConfig() {
