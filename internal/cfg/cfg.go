@@ -1,5 +1,20 @@
 package cfg
 
+import "cmp"
+
+type Resolver interface {
+	Resolve(*source) error
+}
+
+func resolve(s *source, rs ...Resolver) error {
+	for _, r := range rs {
+		if err := r.Resolve(s); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 type Config struct {
 	Log    LogConfig
 	HTTP   HTTPConfig
@@ -21,25 +36,7 @@ func New() *Config {
 }
 
 func (c *Config) Resolve(s *source) error {
-	if err := c.Log.Resolve(s); err != nil {
-		return err
-	}
-	if err := c.HTTP.Resolve(s); err != nil {
-		return err
-	}
-	if err := c.Cloud.Resolve(s); err != nil {
-		return err
-	}
-	if err := c.Milvus.Resolve(s); err != nil {
-		return err
-	}
-	if err := c.Minio.Resolve(s); err != nil {
-		return err
-	}
-	if err := c.Backup.Resolve(s); err != nil {
-		return err
-	}
-	return nil
+	return resolve(s, &c.Log, &c.HTTP, &c.Cloud, &c.Milvus, &c.Minio, &c.Backup)
 }
 
 type LogFileConfig struct {
@@ -69,25 +66,7 @@ func newLogConfig() LogConfig {
 }
 
 func (c *LogConfig) Resolve(s *source) error {
-	if err := c.Level.Resolve(s); err != nil {
-		return err
-	}
-	if err := c.Console.Resolve(s); err != nil {
-		return err
-	}
-	if err := c.File.Filename.Resolve(s); err != nil {
-		return err
-	}
-	if err := c.File.MaxSize.Resolve(s); err != nil {
-		return err
-	}
-	if err := c.File.MaxDays.Resolve(s); err != nil {
-		return err
-	}
-	if err := c.File.MaxBackups.Resolve(s); err != nil {
-		return err
-	}
-	return nil
+	return resolve(s, &c.Level, &c.Console, &c.File.Filename, &c.File.MaxSize, &c.File.MaxDays, &c.File.MaxBackups)
 }
 
 type HTTPConfig struct {
@@ -103,13 +82,7 @@ func newHTTPConfig() HTTPConfig {
 }
 
 func (c *HTTPConfig) Resolve(s *source) error {
-	if err := c.Enabled.Resolve(s); err != nil {
-		return err
-	}
-	if err := c.DebugMode.Resolve(s); err != nil {
-		return err
-	}
-	return nil
+	return resolve(s, &c.Enabled, &c.DebugMode)
 }
 
 type CloudConfig struct {
@@ -125,13 +98,7 @@ func newCloudConfig() CloudConfig {
 }
 
 func (c *CloudConfig) Resolve(s *source) error {
-	if err := c.Address.Resolve(s); err != nil {
-		return err
-	}
-	if err := c.APIKey.Resolve(s); err != nil {
-		return err
-	}
-	return nil
+	return resolve(s, &c.Address, &c.APIKey)
 }
 
 type EtcdConfig struct {
@@ -185,43 +152,14 @@ func newMilvusConfig() MilvusConfig {
 }
 
 func (c *MilvusConfig) Resolve(s *source) error {
-	if err := c.Address.Resolve(s); err != nil {
-		return err
-	}
-	if err := c.Port.Resolve(s); err != nil {
-		return err
-	}
-	if err := c.User.Resolve(s); err != nil {
-		return err
-	}
-	if err := c.Password.Resolve(s); err != nil {
-		return err
-	}
-	if err := c.TLSMode.Resolve(s); err != nil {
-		return err
-	}
-	if err := c.CACertPath.Resolve(s); err != nil {
-		return err
-	}
-	if err := c.ServerName.Resolve(s); err != nil {
-		return err
-	}
-	if err := c.MTLSCertPath.Resolve(s); err != nil {
-		return err
-	}
-	if err := c.MTLSKeyPath.Resolve(s); err != nil {
-		return err
-	}
-	if err := c.RPCChannelName.Resolve(s); err != nil {
-		return err
-	}
-	if err := c.Etcd.Endpoints.Resolve(s); err != nil {
-		return err
-	}
-	if err := c.Etcd.RootPath.Resolve(s); err != nil {
-		return err
-	}
-	return nil
+	return resolve(s,
+		&c.Address, &c.Port,
+		&c.User, &c.Password,
+		&c.TLSMode, &c.CACertPath, &c.ServerName,
+		&c.MTLSCertPath, &c.MTLSKeyPath,
+		&c.RPCChannelName,
+		&c.Etcd.Endpoints, &c.Etcd.RootPath,
+	)
 }
 
 type MinioConfig struct {
@@ -302,95 +240,34 @@ func newMinioConfig() MinioConfig {
 
 func (c *MinioConfig) Resolve(s *source) error {
 	// Resolve "milvus storage" fields first.
-	primary := []interface {
-		Resolve(*source) error
-	}{
-		&c.StorageType,
-		&c.Address,
-		&c.Port,
-		&c.Region,
-		&c.AccessKeyID,
-		&c.SecretAccessKey,
-		&c.Token,
-		&c.GcpCredentialJSON,
-		&c.UseSSL,
-		&c.BucketName,
-		&c.RootPath,
-		&c.UseIAM,
-		&c.IAMEndpoint,
-	}
-	for _, f := range primary {
-		if err := f.Resolve(s); err != nil {
-			return err
-		}
+	if err := resolve(s,
+		&c.StorageType, &c.Address, &c.Port, &c.Region,
+		&c.AccessKeyID, &c.SecretAccessKey, &c.Token, &c.GcpCredentialJSON,
+		&c.UseSSL, &c.BucketName, &c.RootPath, &c.UseIAM, &c.IAMEndpoint,
+	); err != nil {
+		return err
 	}
 
 	// Backward-compatible defaults: if backup configs are not provided, inherit from primary configs.
-	if c.BackupStorageType.Default == "" {
-		c.BackupStorageType.Default = c.StorageType.Val
-	}
-	if c.BackupAddress.Default == "" {
-		c.BackupAddress.Default = c.Address.Val
-	}
-	if c.BackupPort.Default == 0 {
-		c.BackupPort.Default = c.Port.Val
-	}
-	if c.BackupRegion.Default == "" {
-		c.BackupRegion.Default = c.Region.Val
-	}
-	if c.BackupAccessKeyID.Default == "" {
-		c.BackupAccessKeyID.Default = c.AccessKeyID.Val
-	}
-	if c.BackupSecretAccessKey.Default == "" {
-		c.BackupSecretAccessKey.Default = c.SecretAccessKey.Val
-	}
-	if c.BackupToken.Default == "" {
-		c.BackupToken.Default = c.Token.Val
-	}
-	if !c.BackupUseSSL.Default {
-		c.BackupUseSSL.Default = c.UseSSL.Val
-	}
-	if c.BackupBucketName.Default == "" {
-		c.BackupBucketName.Default = c.BucketName.Val
-	}
-	if c.BackupRootPath.Default == "" {
-		// old default: minio.backupRootPath -> minio.rootPath -> "backup"
-		c.BackupRootPath.Default = c.RootPath.Val
-		if c.BackupRootPath.Default == "" {
-			c.BackupRootPath.Default = "backup"
-		}
-	}
-	if !c.BackupUseIAM.Default {
-		c.BackupUseIAM.Default = c.UseIAM.Val
-	}
-	if c.BackupIAMEndpoint.Default == "" {
-		c.BackupIAMEndpoint.Default = c.IAMEndpoint.Val
-	}
+	c.BackupStorageType.Default = cmp.Or(c.BackupStorageType.Default, c.StorageType.Val)
+	c.BackupAddress.Default = cmp.Or(c.BackupAddress.Default, c.Address.Val)
+	c.BackupPort.Default = cmp.Or(c.BackupPort.Default, c.Port.Val)
+	c.BackupRegion.Default = cmp.Or(c.BackupRegion.Default, c.Region.Val)
+	c.BackupAccessKeyID.Default = cmp.Or(c.BackupAccessKeyID.Default, c.AccessKeyID.Val)
+	c.BackupSecretAccessKey.Default = cmp.Or(c.BackupSecretAccessKey.Default, c.SecretAccessKey.Val)
+	c.BackupToken.Default = cmp.Or(c.BackupToken.Default, c.Token.Val)
+	c.BackupUseSSL.Default = c.BackupUseSSL.Default || c.UseSSL.Val
+	c.BackupBucketName.Default = cmp.Or(c.BackupBucketName.Default, c.BucketName.Val)
+	c.BackupRootPath.Default = cmp.Or(c.BackupRootPath.Default, c.RootPath.Val, "backup")
+	c.BackupUseIAM.Default = c.BackupUseIAM.Default || c.UseIAM.Val
+	c.BackupIAMEndpoint.Default = cmp.Or(c.BackupIAMEndpoint.Default, c.IAMEndpoint.Val)
 
-	backup := []interface {
-		Resolve(*source) error
-	}{
-		&c.BackupStorageType,
-		&c.BackupAddress,
-		&c.BackupPort,
-		&c.BackupRegion,
-		&c.BackupAccessKeyID,
-		&c.BackupSecretAccessKey,
-		&c.BackupToken,
-		&c.BackupGcpCredentialJSON,
-		&c.BackupUseSSL,
-		&c.BackupBucketName,
-		&c.BackupRootPath,
-		&c.BackupUseIAM,
-		&c.BackupIAMEndpoint,
+	return resolve(s,
+		&c.BackupStorageType, &c.BackupAddress, &c.BackupPort, &c.BackupRegion,
+		&c.BackupAccessKeyID, &c.BackupSecretAccessKey, &c.BackupToken, &c.BackupGcpCredentialJSON,
+		&c.BackupUseSSL, &c.BackupBucketName, &c.BackupRootPath, &c.BackupUseIAM, &c.BackupIAMEndpoint,
 		&c.CrossStorage,
-	}
-	for _, f := range backup {
-		if err := f.Resolve(s); err != nil {
-			return err
-		}
-	}
-	return nil
+	)
 }
 
 type BackupParallelismConfig struct {
@@ -430,22 +307,10 @@ func newBackupConfig() BackupConfig {
 }
 
 func (c *BackupConfig) Resolve(s *source) error {
-	fields := []interface {
-		Resolve(*source) error
-	}{
-		&c.Parallelism.CopyData,
-		&c.Parallelism.BackupCollection,
-		&c.Parallelism.BackupSegment,
-		&c.Parallelism.RestoreCollection,
-		&c.Parallelism.ImportJob,
+	return resolve(s,
+		&c.Parallelism.CopyData, &c.Parallelism.BackupCollection, &c.Parallelism.BackupSegment,
+		&c.Parallelism.RestoreCollection, &c.Parallelism.ImportJob,
 		&c.KeepTempFiles,
-		&c.GCPause.Enable,
-		&c.GCPause.Address,
-	}
-	for _, f := range fields {
-		if err := f.Resolve(s); err != nil {
-			return err
-		}
-	}
-	return nil
+		&c.GCPause.Enable, &c.GCPause.Address,
+	)
 }
