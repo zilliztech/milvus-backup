@@ -57,10 +57,10 @@ type LogConfig struct {
 
 func newLogConfig() LogConfig {
 	return LogConfig{
-		Level:   Value[string]{Default: "info", Keys: []string{"log.level"}, EnvKeys: []string{"LOG_LEVEL"}},
-		Console: Value[bool]{Default: true, Keys: []string{"log.console"}, EnvKeys: []string{"LOG_CONSOLE"}},
+		Level:   Value[string]{Default: "info", Keys: []string{"log.level"}},
+		Console: Value[bool]{Default: true, Keys: []string{"log.console"}},
 		File: LogFileConfig{
-			Filename:   Value[string]{Default: "logs/backup.log", Keys: []string{"log.file.filename"}, EnvKeys: []string{"LOG_FILE_PATH"}},
+			Filename:   Value[string]{Default: "logs/backup.log", Keys: []string{"log.file.filename"}},
 			MaxSize:    Value[int]{Default: 300, Keys: []string{"log.file.maxSize"}},
 			MaxDays:    Value[int]{Default: 0, Keys: []string{"log.file.maxDays"}},
 			MaxBackups: Value[int]{Default: 0, Keys: []string{"log.file.maxBackups"}},
