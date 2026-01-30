@@ -10,9 +10,9 @@ import (
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 
-	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore/conv"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
@@ -124,7 +124,7 @@ type TaskArgs struct {
 	Plan   *Plan
 	Option *Option
 
-	Params *paramtable.BackupParams
+	Params *cfg.Config
 
 	BackupDir      string
 	BackupRootPath string
@@ -154,8 +154,8 @@ func NewTask(args TaskArgs) (*Task, error) {
 	return &Task{
 		args: args,
 
-		copySem:       semaphore.NewWeighted(args.Params.BackupCfg.BackupCopyDataParallelism),
-		bulkInsertSem: semaphore.NewWeighted(args.Params.BackupCfg.ImportJobParallelism),
+		copySem:       semaphore.NewWeighted(int64(args.Params.Backup.Parallelism.CopyData.Value())),
+		bulkInsertSem: semaphore.NewWeighted(int64(args.Params.Backup.Parallelism.ImportJob.Value())),
 
 		logger: logger,
 	}, nil
@@ -254,8 +254,8 @@ func (t *Task) newCollTask(dbBackup *backuppb.DatabaseBackupInfo, collBackup *ba
 			collBackup:     collBackup,
 			option:         t.args.Option,
 			backupRootPath: t.args.BackupRootPath,
-			crossStorage:   t.args.Params.MinioCfg.CrossStorage,
-			keepTempFiles:  t.args.Params.BackupCfg.KeepTempFiles,
+			crossStorage:   t.args.Params.Minio.CrossStorage.Value(),
+			keepTempFiles:  t.args.Params.Backup.KeepTempFiles.Value(),
 			backupDir:      t.args.BackupDir,
 			backupStorage:  t.args.BackupStorage,
 			milvusStorage:  t.args.MilvusStorage,
@@ -467,7 +467,7 @@ func (t *Task) runCollTasks(ctx context.Context, collTasks []*collectionTask) er
 	t.logger.Info("start restore collection")
 
 	g, subCtx := errgroup.WithContext(ctx)
-	g.SetLimit(t.args.Params.BackupCfg.RestoreParallelism)
+	g.SetLimit(t.args.Params.Backup.Parallelism.RestoreCollection.Value())
 	for _, collTask := range collTasks {
 		g.Go(func() error {
 			if err := collTask.Execute(subCtx); err != nil {

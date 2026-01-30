@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
@@ -52,12 +52,12 @@ type getBackupHandler struct {
 
 	taskMgr *taskmgr.Mgr
 
-	params *paramtable.BackupParams
+	params *cfg.Config
 
 	backupStorage storage.Client
 }
 
-func newGetBackupHandler(request *backuppb.GetBackupRequest, params *paramtable.BackupParams) *getBackupHandler {
+func newGetBackupHandler(request *backuppb.GetBackupRequest, params *cfg.Config) *getBackupHandler {
 	return &getBackupHandler{request: request, params: params, taskMgr: taskmgr.DefaultMgr()}
 }
 
@@ -76,7 +76,7 @@ func (h *getBackupHandler) validate() error {
 }
 
 func (h *getBackupHandler) initClient(ctx context.Context) error {
-	cli, err := storage.NewBackupStorage(ctx, &h.params.MinioCfg)
+	cli, err := storage.NewBackupStorage(ctx, &h.params.Minio)
 	if err != nil {
 		return fmt.Errorf("server: init backup storage client %w", err)
 	}
@@ -137,7 +137,7 @@ func (h *getBackupHandler) get(ctx context.Context) *backuppb.BackupInfoResponse
 
 func (h *getBackupHandler) readFromStorage(ctx context.Context, backupName string) (*backuppb.BackupInfo, int64, error) {
 	// get backup meta from storage
-	backupRootPath := h.params.MinioCfg.BackupRootPath
+	backupRootPath := h.params.Minio.BackupRootPath.Value()
 	if h.request.GetPath() != "" {
 		backupRootPath = h.request.GetPath()
 	}

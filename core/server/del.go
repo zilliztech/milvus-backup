@@ -10,8 +10,8 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/zilliztech/milvus-backup/core/del"
-	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 )
@@ -38,14 +38,14 @@ func (s *Server) handleDeleteBackup(c *gin.Context) {
 }
 
 type delHandler struct {
-	params *paramtable.BackupParams
+	params *cfg.Config
 
 	req *backuppb.DeleteBackupRequest
 
 	backupStorage storage.Client
 }
 
-func newDelHandler(req *backuppb.DeleteBackupRequest, params *paramtable.BackupParams) *delHandler {
+func newDelHandler(req *backuppb.DeleteBackupRequest, params *cfg.Config) *delHandler {
 	return &delHandler{
 		req:    req,
 		params: params,
@@ -67,7 +67,7 @@ func (h *delHandler) validate() error {
 }
 
 func (h *delHandler) initClient(ctx context.Context) error {
-	backupStorage, err := storage.NewBackupStorage(ctx, &h.params.MinioCfg)
+	backupStorage, err := storage.NewBackupStorage(ctx, &h.params.Minio)
 	if err != nil {
 		return fmt.Errorf("server: create backup storage: %w", err)
 	}
@@ -93,7 +93,7 @@ func (h *delHandler) run(ctx context.Context) *backuppb.DeleteBackupResponse {
 		return resp
 	}
 
-	task := del.NewTask(h.backupStorage, mpath.BackupDir(h.params.MinioCfg.BackupRootPath, h.req.GetBackupName()))
+	task := del.NewTask(h.backupStorage, mpath.BackupDir(h.params.Minio.BackupRootPath.Value(), h.req.GetBackupName()))
 	if err := task.Execute(ctx); err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()

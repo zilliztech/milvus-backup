@@ -11,7 +11,7 @@ import (
 	"github.com/imroc/req/v3"
 	"go.uber.org/zap"
 
-	"github.com/zilliztech/milvus-backup/core/paramtable"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/retry"
 )
@@ -250,12 +250,12 @@ func restfulAuth(username, password string) string {
 	return ""
 }
 
-func NewRestful(cfg *paramtable.MilvusConfig) (*RestfulClient, error) {
-	host := net.JoinHostPort(cfg.Address, cfg.Port)
+func NewRestful(cfg *cfg.MilvusConfig) (*RestfulClient, error) {
+	host := net.JoinHostPort(cfg.Address.Value(), strconv.Itoa(cfg.Port.Value()))
 	log.Info("new milvus restful client", zap.String("host", host))
 
 	var baseURL string
-	switch cfg.TLSMode {
+	switch cfg.TLSMode.Value() {
 	case 0:
 		baseURL = "http://" + host
 	case 1, 2:
@@ -266,7 +266,7 @@ func NewRestful(cfg *paramtable.MilvusConfig) (*RestfulClient, error) {
 
 	cli := req.C().SetBaseURL(baseURL)
 
-	if auth := restfulAuth(cfg.User, cfg.Password); len(auth) != 0 {
+	if auth := restfulAuth(cfg.User.Value(), cfg.Password.Value()); len(auth) != 0 {
 		cli.SetCommonBearerAuthToken(auth)
 	}
 

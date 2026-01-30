@@ -13,7 +13,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/backup"
-	"github.com/zilliztech/milvus-backup/core/paramtable"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
@@ -193,7 +193,7 @@ func (o *options) toStrategy() (backup.Strategy, error) {
 	return backup.StrategyAuto, nil
 }
 
-func (o *options) toOption(params *paramtable.BackupParams) (backup.Option, error) {
+func (o *options) toOption(params *cfg.Config) (backup.Option, error) {
 	f, err := o.toFilter()
 	if err != nil {
 		return backup.Option{}, err
@@ -206,7 +206,7 @@ func (o *options) toOption(params *paramtable.BackupParams) (backup.Option, erro
 
 	return backup.Option{
 		BackupName: o.backupName,
-		PauseGC:    params.BackupCfg.GcPauseEnable,
+		PauseGC:    params.Backup.GCPause.Enable.Value(),
 
 		Strategy: strategy,
 
@@ -218,29 +218,29 @@ func (o *options) toOption(params *paramtable.BackupParams) (backup.Option, erro
 	}, nil
 }
 
-func (o *options) toArgs(params *paramtable.BackupParams) (backup.TaskArgs, error) {
-	backupStorage, err := storage.NewBackupStorage(context.Background(), &params.MinioCfg)
+func (o *options) toArgs(params *cfg.Config) (backup.TaskArgs, error) {
+	backupStorage, err := storage.NewBackupStorage(context.Background(), &params.Minio)
 	if err != nil {
 		return backup.TaskArgs{}, fmt.Errorf("create backup storage: %w", err)
 	}
-	milvusStorage, err := storage.NewMilvusStorage(context.Background(), &params.MinioCfg)
+	milvusStorage, err := storage.NewMilvusStorage(context.Background(), &params.Minio)
 	if err != nil {
 		return backup.TaskArgs{}, fmt.Errorf("create milvus storage: %w", err)
 	}
 
-	milvusClient, err := milvus.NewGrpc(&params.MilvusCfg)
+	milvusClient, err := milvus.NewGrpc(&params.Milvus)
 	if err != nil {
 		return backup.TaskArgs{}, fmt.Errorf("create milvus grpc client: %w", err)
 	}
-	restfulClient, err := milvus.NewRestful(&params.MilvusCfg)
+	restfulClient, err := milvus.NewRestful(&params.Milvus)
 	if err != nil {
 		return backup.TaskArgs{}, fmt.Errorf("create milvus restful client: %w", err)
 	}
-	manage := milvus.NewManage(params.MilvusCfg.Address)
+	manage := milvus.NewManage(params.Backup.GCPause.Address.Value())
 
 	var etcdCli *clientv3.Client
 	if o.backupIndexExtra {
-		endpoints := strings.Split(params.MilvusCfg.EtcdConfig.Endpoints, ",")
+		endpoints := strings.Split(params.Milvus.Etcd.Endpoints.Value(), ",")
 		etcdCli, err = clientv3.New(clientv3.Config{
 			Endpoints:   endpoints,
 			DialTimeout: 5 * time.Second,
@@ -250,7 +250,7 @@ func (o *options) toArgs(params *paramtable.BackupParams) (backup.TaskArgs, erro
 		}
 	}
 
-	backupDir := mpath.BackupDir(params.MinioCfg.BackupRootPath, o.backupName)
+	backupDir := mpath.BackupDir(params.Minio.BackupRootPath.Value(), o.backupName)
 	option, err := o.toOption(params)
 	if err != nil {
 		return backup.TaskArgs{}, err
@@ -273,7 +273,7 @@ func (o *options) toArgs(params *paramtable.BackupParams) (backup.TaskArgs, erro
 	}, nil
 }
 
-func (o *options) run(cmd *cobra.Command, params *paramtable.BackupParams) error {
+func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
 	start := time.Now()
 
 	args, err := o.toArgs(params)

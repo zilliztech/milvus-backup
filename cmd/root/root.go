@@ -7,7 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/zilliztech/milvus-backup/core/paramtable"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
@@ -16,14 +16,20 @@ type Options struct {
 	YamlOverrides []string
 }
 
-func (o *Options) InitGlobalVars() *paramtable.BackupParams {
-	var params paramtable.BackupParams
-	params.GlobalInitWithYaml(o.Config)
-	params.Init()
+func (o *Options) InitGlobalVars() *cfg.Config {
+	overrides, err := parseOverrides(o.YamlOverrides)
+	if err != nil {
+		panic(err)
+	}
 
-	log.InitLogger(&params.LogCfg)
+	params, err := cfg.Load(o.Config, overrides)
+	if err != nil {
+		panic(err)
+	}
 
-	return &params
+	log.InitLogger(&params.Log)
+
+	return params
 }
 
 func NewCmd(opt *Options) *cobra.Command {
@@ -38,13 +44,6 @@ func NewCmd(opt *Options) *cobra.Command {
 			cmd.Printf("execute %s args:%v error:%v\n", cmd.Name(), args, errors.New("unrecognized command"))
 			os.Exit(1)
 		},
-		// TODO: remove this, the Override should be done in the paramtable, not by set env
-		PersistentPreRun: func(cmd *cobra.Command, args []string) {
-			if err := setEnvs(opt.YamlOverrides); err != nil {
-				cmd.Println(err)
-				os.Exit(1)
-			}
-		},
 	}
 
 	cmd.PersistentFlags().StringVarP(&opt.Config, "config", "", "backup.yaml", "config YAML file of milvus")
@@ -53,14 +52,14 @@ func NewCmd(opt *Options) *cobra.Command {
 	return cmd
 }
 
-// Set environment variables from yamlOverrides
-func setEnvs(envs []string) error {
+func parseOverrides(envs []string) (map[string]string, error) {
+	out := make(map[string]string, len(envs))
 	for _, e := range envs {
-		env := strings.Split(e, "=")
-		if err := os.Setenv(env[0], env[1]); err != nil {
-			return err
+		parts := strings.SplitN(e, "=", 2)
+		if len(parts) != 2 {
+			return nil, errors.New("invalid --set format, want KEY=VALUE")
 		}
+		out[parts[0]] = parts[1]
 	}
-
-	return nil
+	return out, nil
 }

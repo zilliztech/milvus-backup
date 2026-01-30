@@ -10,8 +10,8 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
 
-	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/tasklet"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
@@ -36,7 +36,7 @@ type TaskArgs struct {
 	BackupStorage storage.Client
 	BackupDir     string
 
-	Params *paramtable.BackupParams
+	Params *cfg.Config
 
 	Grpc    milvus.Grpc
 	Restful milvus.Restful
@@ -110,7 +110,7 @@ func newGCCtrl(args TaskArgs) gcCtrl {
 func NewTask(args TaskArgs) (*Task, error) {
 	logger := log.L().With(zap.String("task_id", args.TaskID))
 
-	crossStorage := args.Params.MinioCfg.CrossStorage
+	crossStorage := args.Params.Minio.CrossStorage.Value()
 	if args.BackupStorage.Config().Provider != args.MilvusStorage.Config().Provider {
 		crossStorage = true
 	}
@@ -122,9 +122,9 @@ func NewTask(args TaskArgs) (*Task, error) {
 	}
 
 	throttling := concurrencyThrottling{
-		CollSem: semaphore.NewWeighted(args.Params.BackupCfg.BackupCollectionParallelism),
-		SegSem:  semaphore.NewWeighted(args.Params.BackupCfg.BackupSegmentParallelism),
-		CopySem: semaphore.NewWeighted(args.Params.BackupCfg.BackupCopyDataParallelism),
+		CollSem: semaphore.NewWeighted(int64(args.Params.Backup.Parallelism.BackupCollection.Value())),
+		SegSem:  semaphore.NewWeighted(int64(args.Params.Backup.Parallelism.BackupSegment.Value())),
+		CopySem: semaphore.NewWeighted(int64(args.Params.Backup.Parallelism.CopyData.Value())),
 	}
 
 	return &Task{
@@ -135,7 +135,7 @@ func NewTask(args TaskArgs) (*Task, error) {
 		option: args.Option,
 
 		milvusStorage:  args.MilvusStorage,
-		milvusRootPath: args.Params.MinioCfg.RootPath,
+		milvusRootPath: args.Params.Minio.RootPath.Value(),
 
 		crossStorage: crossStorage,
 
@@ -151,13 +151,13 @@ func NewTask(args TaskArgs) (*Task, error) {
 		gcCtrl: newGCCtrl(args),
 
 		etcdCli:      args.EtcdCli,
-		etcdRootPath: args.Params.MilvusCfg.EtcdConfig.RootPath,
+		etcdRootPath: args.Params.Milvus.Etcd.RootPath.Value(),
 
 		metaBuilder: mb,
 
 		taskMgr: args.TaskMgr,
 
-		rpcChannelName: args.Params.MilvusCfg.RPCChanelName,
+		rpcChannelName: args.Params.Milvus.RPCChannelName.Value(),
 	}, nil
 }
 

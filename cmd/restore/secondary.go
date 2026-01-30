@@ -9,8 +9,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
-	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/restore/secondary"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/storage"
@@ -43,14 +43,14 @@ func (o *secondaryOption) validate() error {
 	return nil
 }
 
-func (o *secondaryOption) toArgs(params *paramtable.BackupParams) (secondary.TaskArgs, error) {
+func (o *secondaryOption) toArgs(params *cfg.Config) (secondary.TaskArgs, error) {
 
-	backupStorage, err := storage.NewBackupStorage(context.Background(), &params.MinioCfg)
+	backupStorage, err := storage.NewBackupStorage(context.Background(), &params.Minio)
 	if err != nil {
 		return secondary.TaskArgs{}, fmt.Errorf("create backup storage: %w", err)
 	}
 
-	backupDir := mpath.BackupDir(params.MinioCfg.BackupRootPath, o.backupName)
+	backupDir := mpath.BackupDir(params.Minio.BackupRootPath.Value(), o.backupName)
 	exist, err := meta.Exist(context.Background(), backupStorage, backupDir)
 	if err != nil {
 		return secondary.TaskArgs{}, fmt.Errorf("check backup exist: %w", err)
@@ -63,12 +63,12 @@ func (o *secondaryOption) toArgs(params *paramtable.BackupParams) (secondary.Tas
 	if err != nil {
 		return secondary.TaskArgs{}, fmt.Errorf("read backup meta: %w", err)
 	}
-	milvusClient, err := milvus.NewGrpc(&params.MilvusCfg)
+	milvusClient, err := milvus.NewGrpc(&params.Milvus)
 	if err != nil {
 		return secondary.TaskArgs{}, fmt.Errorf("create milvus grpc client: %w", err)
 	}
 
-	restfulClient, err := milvus.NewRestful(&params.MilvusCfg)
+	restfulClient, err := milvus.NewRestful(&params.Milvus)
 	if err != nil {
 		return secondary.TaskArgs{}, fmt.Errorf("create milvus restful client: %w", err)
 	}
@@ -91,7 +91,7 @@ func (o *secondaryOption) toArgs(params *paramtable.BackupParams) (secondary.Tas
 	}, nil
 }
 
-func (o *secondaryOption) run(cmd *cobra.Command, params *paramtable.BackupParams) error {
+func (o *secondaryOption) run(cmd *cobra.Command, params *cfg.Config) error {
 	args, err := o.toArgs(params)
 	if err != nil {
 		return err

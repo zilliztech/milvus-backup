@@ -14,8 +14,8 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/restore/conv"
 
-	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
@@ -31,7 +31,7 @@ type TaskArgs struct {
 
 	Backup *backuppb.BackupInfo
 
-	Params *paramtable.BackupParams
+	Params *cfg.Config
 
 	BackupDir     string
 	BackupStorage storage.Client
