@@ -22,9 +22,7 @@ $ ./milvus-backup server
 
 - [Milvus Connection](#milvus-connection)
 - [MinIO (Object Storage)](#minio-object-storage)
-- [Logging](#logging)
-- [HTTP API](#http-api)
-- [Others](#others)
+- [Backup](#backup)
 
 ### Milvus Connection
 
@@ -75,21 +73,7 @@ $ ./milvus-backup server
 | minio.backupIamEndpoint           | MINIO_BACKUP_IAM_ENDPOINT     | Backup IAM endpoint                          |
 | minio.backupGcpCredentialJSON     | BACKUP_GCP_KEY_JSON           | Path to GCP credentials JSON for backup      |
 
-### Logging
-
-| Config Key         | Env Variable     | Description                          |
-|--------------------|------------------|--------------------------------------|
-| log.level          | LOG_LEVEL        | Logging level (`info`, `debug`, etc) |
-| log.console        | LOG_CONSOLE      | Print logs to console                |
-| log.file.filename  | LOG_FILE_PATH    | Path to log file                     |
-
-### HTTP API
-
-| Config Key          | Env Variable          | Description                   |
-|---------------------|-----------------------|-------------------------------|
-| http.simpleResponse | HTTP_SIMPLE_RESPONSE  | Enable simple HTTP responses  |
-
-### Others
+### Backup
 
 | Config Key                  | Env Variable                  | Description                                   |
 |-----------------------------|-------------------------------|-----------------------------------------------|
