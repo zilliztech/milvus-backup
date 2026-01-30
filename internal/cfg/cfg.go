@@ -120,7 +120,7 @@ type CloudConfig struct {
 func newCloudConfig() CloudConfig {
 	return CloudConfig{
 		Address: Value[string]{Default: "https://api.cloud.zilliz.com", Keys: []string{"cloud.address"}},
-		APIKey:  (Value[string]{Default: "", Keys: []string{"cloud.apikey"}}).WithOptions(SecretValue),
+		APIKey:  Value[string]{Default: "", Keys: []string{"cloud.apikey"}, Opts: SecretValue},
 	}
 }
 
@@ -165,7 +165,7 @@ func newMilvusConfig() MilvusConfig {
 		Port:    Value[int]{Default: 19530, Keys: []string{"milvus.port"}, EnvKeys: []string{"MILVUS_PORT"}},
 
 		User:     Value[string]{Default: "", Keys: []string{"milvus.user"}, EnvKeys: []string{"MILVUS_USER"}},
-		Password: (Value[string]{Default: "", Keys: []string{"milvus.password"}, EnvKeys: []string{"MILVUS_PASSWORD"}}).WithOptions(SecretValue),
+		Password: Value[string]{Default: "", Keys: []string{"milvus.password"}, EnvKeys: []string{"MILVUS_PASSWORD"}, Opts: SecretValue},
 
 		TLSMode: Value[int]{Default: 0, Keys: []string{"milvus.tlsMode"}, EnvKeys: []string{"MILVUS_TLS_MODE"}},
 
@@ -270,9 +270,9 @@ func newMinioConfig() MinioConfig {
 		Region:  Value[string]{Default: "", Keys: []string{"minio.region"}, EnvKeys: []string{"MINIO_REGION"}},
 
 		AccessKeyID:       Value[string]{Default: "minioadmin", Keys: []string{"minio.accessKeyID"}, EnvKeys: []string{"MINIO_ACCESS_KEY"}},
-		SecretAccessKey:   (Value[string]{Default: "minioadmin", Keys: []string{"minio.secretAccessKey"}, EnvKeys: []string{"MINIO_SECRET_KEY"}}).WithOptions(SecretValue),
-		Token:             (Value[string]{Default: "", Keys: []string{"minio.token"}, EnvKeys: []string{"MINIO_TOKEN"}}).WithOptions(SecretValue),
-		GcpCredentialJSON: (Value[string]{Default: "", Keys: []string{"minio.gcpCredentialJSON"}, EnvKeys: []string{"GCP_KEY_JSON"}}).WithOptions(SecretValue),
+		SecretAccessKey:   Value[string]{Default: "minioadmin", Keys: []string{"minio.secretAccessKey"}, EnvKeys: []string{"MINIO_SECRET_KEY"}, Opts: SecretValue},
+		Token:             Value[string]{Default: "", Keys: []string{"minio.token"}, EnvKeys: []string{"MINIO_TOKEN"}, Opts: SecretValue},
+		GcpCredentialJSON: Value[string]{Default: "", Keys: []string{"minio.gcpCredentialJSON"}, EnvKeys: []string{"GCP_KEY_JSON"}, Opts: SecretValue},
 
 		UseSSL:      Value[bool]{Default: false, Keys: []string{"minio.useSSL"}, EnvKeys: []string{"MINIO_USE_SSL"}},
 		BucketName:  Value[string]{Default: "a-bucket", Keys: []string{"minio.bucketName"}, EnvKeys: []string{"MINIO_BUCKET_NAME"}},
@@ -287,9 +287,9 @@ func newMinioConfig() MinioConfig {
 		BackupRegion:      Value[string]{Default: "", Keys: []string{"minio.backupRegion"}, EnvKeys: []string{"MINIO_BACKUP_REGION"}},
 
 		BackupAccessKeyID:       Value[string]{Default: "", Keys: []string{"minio.backupAccessKeyID"}, EnvKeys: []string{"MINIO_BACKUP_ACCESS_KEY"}},
-		BackupSecretAccessKey:   (Value[string]{Default: "", Keys: []string{"minio.backupSecretAccessKey"}, EnvKeys: []string{"MINIO_BACKUP_SECRET_KEY"}}).WithOptions(SecretValue),
-		BackupToken:             (Value[string]{Default: "", Keys: []string{"minio.backupToken"}, EnvKeys: []string{"MINIO_BACKUP_TOKEN"}}).WithOptions(SecretValue),
-		BackupGcpCredentialJSON: (Value[string]{Default: "", Keys: []string{"minio.backupGcpCredentialJSON"}, EnvKeys: []string{"BACKUP_GCP_KEY_JSON"}}).WithOptions(SecretValue),
+		BackupSecretAccessKey:   Value[string]{Default: "", Keys: []string{"minio.backupSecretAccessKey"}, EnvKeys: []string{"MINIO_BACKUP_SECRET_KEY"}, Opts: SecretValue},
+		BackupToken:             Value[string]{Default: "", Keys: []string{"minio.backupToken"}, EnvKeys: []string{"MINIO_BACKUP_TOKEN"}, Opts: SecretValue},
+		BackupGcpCredentialJSON: Value[string]{Default: "", Keys: []string{"minio.backupGcpCredentialJSON"}, EnvKeys: []string{"BACKUP_GCP_KEY_JSON"}, Opts: SecretValue},
 		BackupUseSSL:            Value[bool]{Default: false, Keys: []string{"minio.backupUseSSL"}, EnvKeys: []string{"MINIO_BACKUP_USE_SSL"}},
 		BackupBucketName:        Value[string]{Default: "", Keys: []string{"minio.backupBucketName"}, EnvKeys: []string{"MINIO_BACKUP_BUCKET_NAME"}},
 		BackupRootPath:          Value[string]{Default: "", Keys: []string{"minio.backupRootPath"}, EnvKeys: []string{"MINIO_BACKUP_ROOT_PATH"}},

@@ -34,27 +34,20 @@ type Value[T any] struct {
 	Default T
 	Keys    []string
 	EnvKeys []string
+	Opts    ValueOption
 
-	val T
-
+	val  T
 	Used Used
-
-	opts ValueOption
 }
 
 func (val *Value[T]) Value() T         { return val.val }
-func (val *Value[T]) isRequired() bool { return val.opts&RequiredValue != 0 }
-func (val *Value[T]) IsSecret() bool   { return val.opts&SecretValue != 0 }
+func (val *Value[T]) isRequired() bool { return val.Opts&RequiredValue != 0 }
+func (val *Value[T]) IsSecret() bool   { return val.Opts&SecretValue != 0 }
 
 // Set sets the resolved value directly (useful for tests or programmatic config).
 func (val *Value[T]) Set(v T) {
 	val.val = v
 	val.Used = Used{Kind: SourceOverride, Key: ""}
-}
-
-func (val Value[T]) WithOptions(opts ValueOption) Value[T] {
-	val.opts |= opts
-	return val
 }
 
 func (val *Value[T]) parseValue(value string) (T, error) {
