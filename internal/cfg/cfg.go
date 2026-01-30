@@ -263,7 +263,7 @@ type MinioConfig struct {
 func newMinioConfig() MinioConfig {
 	// Defaults align with configs/backup.yaml and old paramtable constants.
 	return MinioConfig{
-		StorageType: Value[string]{Default: "minio", Keys: []string{"minio.storageType", "minio.cloudProvider"}},
+		StorageType: Value[string]{Default: "minio", Keys: []string{"storage.storageType", "minio.storageType", "minio.cloudProvider"}},
 
 		Address: Value[string]{Default: "localhost", Keys: []string{"minio.address"}, EnvKeys: []string{"MINIO_ADDRESS"}},
 		Port:    Value[int]{Default: 9000, Keys: []string{"minio.port"}, EnvKeys: []string{"MINIO_PORT"}},
