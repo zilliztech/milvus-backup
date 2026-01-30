@@ -37,9 +37,6 @@ type YAMLConFig struct {
 			MaxBackups int    `yaml:"maxBackups"`
 		} `yaml:"file"`
 	} `yaml:"log"`
-	Http struct {
-		SimpleResponse bool `yaml:"simpleResponse"`
-	} `yaml:"http"`
 	Cloud struct {
 		Address string `yaml:"address"`
 		APIKey  string `yaml:"apikey"`
@@ -117,8 +114,6 @@ func printParams(base *cfg.Config) {
 	yml.Log.File.MaxSize = base.Log.File.MaxSize.Value()
 	yml.Log.File.MaxDays = base.Log.File.MaxDays.Value()
 	yml.Log.File.MaxBackups = base.Log.File.MaxBackups.Value()
-
-	yml.Http.SimpleResponse = base.HTTP.SimpleResponse.Value()
 
 	yml.Cloud.Address = base.Cloud.Address.Value()
 	yml.Cloud.APIKey = base.Cloud.APIKey.Value()
