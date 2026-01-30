@@ -137,7 +137,7 @@ func (h *getBackupHandler) get(ctx context.Context) *backuppb.BackupInfoResponse
 
 func (h *getBackupHandler) readFromStorage(ctx context.Context, backupName string) (*backuppb.BackupInfo, int64, error) {
 	// get backup meta from storage
-	backupRootPath := h.params.Minio.BackupRootPath.Value()
+	backupRootPath := h.params.Minio.BackupRootPath.Val
 	if h.request.GetPath() != "" {
 		backupRootPath = h.request.GetPath()
 	}

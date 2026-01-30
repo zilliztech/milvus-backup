@@ -281,7 +281,7 @@ func (o *options) toArgs(params *cfg.Config) (restore.TaskArgs, error) {
 		return restore.TaskArgs{}, fmt.Errorf("create milvus restful client: %w", err)
 	}
 
-	backupDir := mpath.BackupDir(params.Minio.BackupRootPath.Value(), o.backupName)
+	backupDir := mpath.BackupDir(params.Minio.BackupRootPath.Val, o.backupName)
 	exist, err := meta.Exist(context.Background(), backupStorage, backupDir)
 	if err != nil {
 		return restore.TaskArgs{}, fmt.Errorf("check backup exist: %w", err)
@@ -301,8 +301,8 @@ func (o *options) toArgs(params *cfg.Config) (restore.TaskArgs, error) {
 		Plan:           plan,
 		Option:         o.toOption(),
 		Params:         params,
-		BackupDir:      mpath.BackupDir(params.Minio.BackupRootPath.Value(), o.backupName),
-		BackupRootPath: params.Minio.BackupRootPath.Value(),
+		BackupDir:      mpath.BackupDir(params.Minio.BackupRootPath.Val, o.backupName),
+		BackupRootPath: params.Minio.BackupRootPath.Val,
 		BackupStorage:  backupStorage,
 		MilvusStorage:  milvusStorage,
 		Grpc:           milvusClient,

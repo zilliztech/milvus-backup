@@ -225,7 +225,7 @@ func grpcAuth(username, password string) string {
 }
 
 func transCred(cfg *cfg.MilvusConfig) (credentials.TransportCredentials, error) {
-	tlsMode := cfg.TLSMode.Value()
+	tlsMode := cfg.TLSMode.Val
 	if tlsMode < 0 || tlsMode > 2 {
 		return nil, errors.New("milvus.TLSMode is illegal, support value 0, 1, 2")
 	}
@@ -238,9 +238,9 @@ func transCred(cfg *cfg.MilvusConfig) (credentials.TransportCredentials, error) 
 	// tls mode 1, 2
 
 	// validate server cert
-	tlsCfg := &tls.Config{ServerName: cfg.ServerName.Value()}
-	if cfg.CACertPath.Value() != "" {
-		b, err := os.ReadFile(cfg.CACertPath.Value())
+	tlsCfg := &tls.Config{ServerName: cfg.ServerName.Val}
+	if cfg.CACertPath.Val != "" {
+		b, err := os.ReadFile(cfg.CACertPath.Val)
 		if err != nil {
 			return nil, fmt.Errorf("client: read ca cert %w", err)
 		}
@@ -261,13 +261,13 @@ func transCred(cfg *cfg.MilvusConfig) (credentials.TransportCredentials, error) 
 	// use mTLS but key/cert path not set, for backward compatibility, use server tls instead
 	// WARN: this behavior will be removed after v0.6.0
 	if tlsMode == 2 {
-		if cfg.MTLSKeyPath.Value() == "" || cfg.MTLSCertPath.Value() == "" {
+		if cfg.MTLSKeyPath.Val == "" || cfg.MTLSCertPath.Val == "" {
 			log.Warn("client: mutual tls enabled but key/cert path not set! will use server tls instead")
 			return credentials.NewTLS(tlsCfg), nil
 		}
 
 		// use mTLS
-		cert, err := tls.LoadX509KeyPair(cfg.MTLSCertPath.Value(), cfg.MTLSKeyPath.Value())
+		cert, err := tls.LoadX509KeyPair(cfg.MTLSCertPath.Val, cfg.MTLSKeyPath.Val)
 		if err != nil {
 			return nil, fmt.Errorf("client: load client cert: %w", err)
 		}
@@ -291,10 +291,10 @@ func isUnimplemented(err error) bool {
 func NewGrpc(cfg *cfg.MilvusConfig) (*GrpcClient, error) {
 	logger := log.L()
 
-	host := fmt.Sprintf("%s:%d", cfg.Address.Value(), cfg.Port.Value())
+	host := fmt.Sprintf("%s:%d", cfg.Address.Val, cfg.Port.Val)
 	logger.Info("New milvus grpc client", zap.String("host", host))
 
-	auth := grpcAuth(cfg.User.Value(), cfg.Password.Value())
+	auth := grpcAuth(cfg.User.Val, cfg.Password.Val)
 
 	cerd, err := transCred(cfg)
 	if err != nil {
@@ -317,7 +317,7 @@ func NewGrpc(cfg *cfg.MilvusConfig) (*GrpcClient, error) {
 
 		limiters: newLimiters(),
 
-		user: cfg.User.Value(),
+		user: cfg.User.Val,
 		auth: auth,
 	}
 

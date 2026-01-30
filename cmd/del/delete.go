@@ -36,7 +36,7 @@ func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
 		return fmt.Errorf("delete: create backup storage: %w", err)
 	}
 
-	task := del.NewTask(backupStorage, mpath.BackupDir(params.Minio.BackupRootPath.Value(), o.name))
+	task := del.NewTask(backupStorage, mpath.BackupDir(params.Minio.BackupRootPath.Val, o.name))
 	if err := task.Execute(context.Background()); err != nil {
 		return fmt.Errorf("delete: execute task: %w", err)
 	}

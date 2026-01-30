@@ -40,7 +40,7 @@ func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
 		return fmt.Errorf("create backup storage: %w", err)
 	}
 
-	backupDir := mpath.BackupDir(params.Minio.BackupRootPath.Value(), o.backupName)
+	backupDir := mpath.BackupDir(params.Minio.BackupRootPath.Val, o.backupName)
 	backupInfo, err := meta.Read(ctx, backupStorage, backupDir)
 	if err != nil {
 		return fmt.Errorf("read backup meta: %w", err)

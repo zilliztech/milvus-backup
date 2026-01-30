@@ -196,7 +196,7 @@ type Task struct {
 
 func NewTask(taskID, backupName, clusterID string, params *cfg.Config) (*Task, error) {
 	logger := log.With(zap.String("task_id", taskID))
-	cloudCli := cloud.NewClient(params.Cloud.Address.Value(), params.Cloud.APIKey.Value())
+	cloudCli := cloud.NewClient(params.Cloud.Address.Val, params.Cloud.APIKey.Val)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -204,7 +204,7 @@ func NewTask(taskID, backupName, clusterID string, params *cfg.Config) (*Task, e
 	if err != nil {
 		return nil, fmt.Errorf("migrate: new backup storage %w", err)
 	}
-	backupDir := mpath.BackupDir(params.Minio.BackupRootPath.Value(), backupName)
+	backupDir := mpath.BackupDir(params.Minio.BackupRootPath.Val, backupName)
 
 	return &Task{
 		logger: logger,
@@ -220,7 +220,7 @@ func NewTask(taskID, backupName, clusterID string, params *cfg.Config) (*Task, e
 
 		// use taskID as stage prefix
 		volume:  newVolume(clusterID, taskID, cloudCli),
-		copySem: semaphore.NewWeighted(int64(params.Backup.Parallelism.CopyData.Value())),
+		copySem: semaphore.NewWeighted(int64(params.Backup.Parallelism.CopyData.Val)),
 	}, nil
 }
 

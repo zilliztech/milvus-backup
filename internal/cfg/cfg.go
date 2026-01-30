@@ -327,44 +327,44 @@ func (c *MinioConfig) Resolve(s *source) error {
 
 	// Backward-compatible defaults: if backup configs are not provided, inherit from primary configs.
 	if c.BackupStorageType.Default == "" {
-		c.BackupStorageType.Default = c.StorageType.Value()
+		c.BackupStorageType.Default = c.StorageType.Val
 	}
 	if c.BackupAddress.Default == "" {
-		c.BackupAddress.Default = c.Address.Value()
+		c.BackupAddress.Default = c.Address.Val
 	}
 	if c.BackupPort.Default == 0 {
-		c.BackupPort.Default = c.Port.Value()
+		c.BackupPort.Default = c.Port.Val
 	}
 	if c.BackupRegion.Default == "" {
-		c.BackupRegion.Default = c.Region.Value()
+		c.BackupRegion.Default = c.Region.Val
 	}
 	if c.BackupAccessKeyID.Default == "" {
-		c.BackupAccessKeyID.Default = c.AccessKeyID.Value()
+		c.BackupAccessKeyID.Default = c.AccessKeyID.Val
 	}
 	if c.BackupSecretAccessKey.Default == "" {
-		c.BackupSecretAccessKey.Default = c.SecretAccessKey.Value()
+		c.BackupSecretAccessKey.Default = c.SecretAccessKey.Val
 	}
 	if c.BackupToken.Default == "" {
-		c.BackupToken.Default = c.Token.Value()
+		c.BackupToken.Default = c.Token.Val
 	}
 	if !c.BackupUseSSL.Default {
-		c.BackupUseSSL.Default = c.UseSSL.Value()
+		c.BackupUseSSL.Default = c.UseSSL.Val
 	}
 	if c.BackupBucketName.Default == "" {
-		c.BackupBucketName.Default = c.BucketName.Value()
+		c.BackupBucketName.Default = c.BucketName.Val
 	}
 	if c.BackupRootPath.Default == "" {
 		// old default: minio.backupRootPath -> minio.rootPath -> "backup"
-		c.BackupRootPath.Default = c.RootPath.Value()
+		c.BackupRootPath.Default = c.RootPath.Val
 		if c.BackupRootPath.Default == "" {
 			c.BackupRootPath.Default = "backup"
 		}
 	}
 	if !c.BackupUseIAM.Default {
-		c.BackupUseIAM.Default = c.UseIAM.Value()
+		c.BackupUseIAM.Default = c.UseIAM.Val
 	}
 	if c.BackupIAMEndpoint.Default == "" {
-		c.BackupIAMEndpoint.Default = c.IAMEndpoint.Value()
+		c.BackupIAMEndpoint.Default = c.IAMEndpoint.Val
 	}
 
 	backup := []interface {

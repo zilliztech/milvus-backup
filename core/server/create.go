@@ -107,7 +107,7 @@ func (h *createBackupHandler) initClient(ctx context.Context) error {
 
 	var etcdCli *clientv3.Client
 	if h.request.GetWithIndexExtra() {
-		endpoints := strings.Split(h.params.Milvus.Etcd.Endpoints.Value(), ",")
+		endpoints := strings.Split(h.params.Milvus.Etcd.Endpoints.Val, ",")
 		etcdCli, err = clientv3.New(clientv3.Config{
 			Endpoints:   endpoints,
 			DialTimeout: 5 * time.Second,
@@ -118,7 +118,7 @@ func (h *createBackupHandler) initClient(ctx context.Context) error {
 	}
 	h.etcdClient = etcdCli
 
-	manageAddr := h.params.Backup.GCPause.Address.Value()
+	manageAddr := h.params.Backup.GCPause.Address.Val
 	if h.request.GetGcPauseAddress() != "" {
 		manageAddr = h.request.GetGcPauseAddress()
 	}
@@ -223,7 +223,7 @@ func (h *createBackupHandler) toOption(params *cfg.Config) (backup.Option, error
 
 	return backup.Option{
 		BackupName:       h.request.GetBackupName(),
-		PauseGC:          h.request.GetGcPauseEnable() || params.Backup.GCPause.Enable.Value(),
+		PauseGC:          h.request.GetGcPauseEnable() || params.Backup.GCPause.Enable.Val,
 		Strategy:         strategy,
 		BackupRBAC:       h.request.GetRbac(),
 		BackupIndexExtra: h.request.GetWithIndexExtra(),
@@ -237,7 +237,7 @@ func (h *createBackupHandler) toArgs() (backup.TaskArgs, error) {
 		return backup.TaskArgs{}, fmt.Errorf("server: build option: %w", err)
 	}
 
-	backupRoot := h.params.Minio.BackupRootPath.Value()
+	backupRoot := h.params.Minio.BackupRootPath.Val
 	if h.request.GetBackupRootPath() != "" {
 		backupRoot = h.request.GetBackupRootPath()
 		log.Info("use backup root from request", zap.String("backup_root", backupRoot))

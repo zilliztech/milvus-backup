@@ -161,7 +161,7 @@ func (h *restoreHandler) initClient(ctx context.Context) error {
 		return fmt.Errorf("server: create backup bucket: %w", err)
 	}
 
-	backupRootPath := h.params.Minio.BackupRootPath.Value()
+	backupRootPath := h.params.Minio.BackupRootPath.Val
 	if h.request.GetPath() != "" {
 		log.Info("use path from request", zap.String("path", h.request.GetPath()))
 		backupRootPath = h.request.GetPath()

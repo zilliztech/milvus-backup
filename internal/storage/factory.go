@@ -14,47 +14,47 @@ import (
 
 func newBackupCredential(params *cfg.MinioConfig) Credential {
 	var cred Credential
-	if params.BackupStorageType.Value() == cfg.CloudProviderAzure {
-		cred.AzureAccountName = params.BackupAccessKeyID.Value()
+	if params.BackupStorageType.Val == cfg.CloudProviderAzure {
+		cred.AzureAccountName = params.BackupAccessKeyID.Val
 	}
 
-	if params.BackupUseIAM.Value() {
+	if params.BackupUseIAM.Val {
 		cred.Type = IAM
-		cred.IAMEndpoint = params.BackupIAMEndpoint.Value()
+		cred.IAMEndpoint = params.BackupIAMEndpoint.Val
 		return cred
 	}
 
-	if params.BackupStorageType.Value() == cfg.CloudProviderGCPNative &&
-		params.BackupGcpCredentialJSON.Value() != "" {
+	if params.BackupStorageType.Val == cfg.CloudProviderGCPNative &&
+		params.BackupGcpCredentialJSON.Val != "" {
 		cred.Type = GCPCredJSON
-		cred.GCPCredJSON = params.BackupGcpCredentialJSON.Value()
+		cred.GCPCredJSON = params.BackupGcpCredentialJSON.Val
 		return cred
 	}
 
 	cred.Type = Static
-	cred.AK = params.BackupAccessKeyID.Value()
-	cred.SK = params.BackupSecretAccessKey.Value()
-	cred.Token = params.BackupToken.Value()
+	cred.AK = params.BackupAccessKeyID.Val
+	cred.SK = params.BackupSecretAccessKey.Val
+	cred.Token = params.BackupToken.Val
 	return cred
 }
 
 func BackupStorageConfig(params *cfg.MinioConfig) Config {
-	ep := net.JoinHostPort(params.BackupAddress.Value(), strconv.Itoa(params.BackupPort.Value()))
+	ep := net.JoinHostPort(params.BackupAddress.Val, strconv.Itoa(params.BackupPort.Val))
 	return Config{
-		Provider:   params.BackupStorageType.Value(),
+		Provider:   params.BackupStorageType.Val,
 		Endpoint:   ep,
-		UseSSL:     params.BackupUseSSL.Value(),
-		Bucket:     params.BackupBucketName.Value(),
+		UseSSL:     params.BackupUseSSL.Val,
+		Bucket:     params.BackupBucketName.Val,
 		Credential: newBackupCredential(params),
-		Region:     params.BackupRegion.Value(),
+		Region:     params.BackupRegion.Val,
 	}
 }
 
 func NewBackupStorage(ctx context.Context, params *cfg.MinioConfig) (Client, error) {
-	ep := net.JoinHostPort(params.BackupAddress.Value(), strconv.Itoa(params.BackupPort.Value()))
+	ep := net.JoinHostPort(params.BackupAddress.Val, strconv.Itoa(params.BackupPort.Val))
 	log.Info("create backup storage client",
 		zap.String("endpoint", ep),
-		zap.String("bucket", params.BackupBucketName.Value()))
+		zap.String("bucket", params.BackupBucketName.Val))
 
 	cfg := BackupStorageConfig(params)
 
@@ -71,47 +71,47 @@ func NewBackupStorage(ctx context.Context, params *cfg.MinioConfig) (Client, err
 
 func newMilvusCredential(params *cfg.MinioConfig) Credential {
 	var cred Credential
-	if params.StorageType.Value() == cfg.CloudProviderAzure {
-		cred.AzureAccountName = params.AccessKeyID.Value()
+	if params.StorageType.Val == cfg.CloudProviderAzure {
+		cred.AzureAccountName = params.AccessKeyID.Val
 	}
 
-	if params.UseIAM.Value() {
+	if params.UseIAM.Val {
 		cred.Type = IAM
-		cred.IAMEndpoint = params.IAMEndpoint.Value()
+		cred.IAMEndpoint = params.IAMEndpoint.Val
 		return cred
 	}
 
-	if params.StorageType.Value() == cfg.CloudProviderGCPNative &&
-		params.GcpCredentialJSON.Value() != "" {
+	if params.StorageType.Val == cfg.CloudProviderGCPNative &&
+		params.GcpCredentialJSON.Val != "" {
 		cred.Type = GCPCredJSON
-		cred.GCPCredJSON = params.GcpCredentialJSON.Value()
+		cred.GCPCredJSON = params.GcpCredentialJSON.Val
 		return cred
 	}
 
 	cred.Type = Static
-	cred.AK = params.AccessKeyID.Value()
-	cred.SK = params.SecretAccessKey.Value()
-	cred.Token = params.Token.Value()
+	cred.AK = params.AccessKeyID.Val
+	cred.SK = params.SecretAccessKey.Val
+	cred.Token = params.Token.Val
 	return cred
 }
 
 func MilvusStorageConfig(params *cfg.MinioConfig) Config {
-	ep := net.JoinHostPort(params.Address.Value(), strconv.Itoa(params.Port.Value()))
+	ep := net.JoinHostPort(params.Address.Val, strconv.Itoa(params.Port.Val))
 	return Config{
-		Provider:   params.StorageType.Value(),
+		Provider:   params.StorageType.Val,
 		Endpoint:   ep,
-		UseSSL:     params.UseSSL.Value(),
+		UseSSL:     params.UseSSL.Val,
 		Credential: newMilvusCredential(params),
-		Bucket:     params.BucketName.Value(),
-		Region:     params.Region.Value(),
+		Bucket:     params.BucketName.Val,
+		Region:     params.Region.Val,
 	}
 }
 
 func NewMilvusStorage(ctx context.Context, params *cfg.MinioConfig) (Client, error) {
-	ep := net.JoinHostPort(params.Address.Value(), strconv.Itoa(params.Port.Value()))
+	ep := net.JoinHostPort(params.Address.Val, strconv.Itoa(params.Port.Val))
 	log.Info("create milvus storage client",
 		zap.String("endpoint", ep),
-		zap.String("bucket", params.BucketName.Value()))
+		zap.String("bucket", params.BucketName.Val))
 
 	cfg := MilvusStorageConfig(params)
 

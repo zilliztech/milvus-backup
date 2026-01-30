@@ -142,7 +142,7 @@ func (h *restoreSecondaryHandler) initClient(ctx context.Context) error {
 		return fmt.Errorf("server: create backup storage: %w", err)
 	}
 
-	backupRootPath := h.params.Minio.BackupRootPath.Value()
+	backupRootPath := h.params.Minio.BackupRootPath.Val
 	if len(h.request.GetPath()) != 0 {
 		backupRootPath = h.request.GetPath()
 	}

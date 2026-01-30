@@ -39,7 +39,7 @@ func (s *Server) handleListBackups(c *gin.Context) {
 		return
 	}
 
-	summaries, err := meta.List(c.Request.Context(), backupStorage, s.params.Minio.BackupRootPath.Value())
+	summaries, err := meta.List(c.Request.Context(), backupStorage, s.params.Minio.BackupRootPath.Val)
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()

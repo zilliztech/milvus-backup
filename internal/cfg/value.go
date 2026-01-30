@@ -36,19 +36,12 @@ type Value[T any] struct {
 	EnvKeys []string
 	Opts    ValueOption
 
-	val  T
+	Val  T
 	Used Used
 }
 
-func (val *Value[T]) Value() T         { return val.val }
 func (val *Value[T]) isRequired() bool { return val.Opts&RequiredValue != 0 }
 func (val *Value[T]) IsSecret() bool   { return val.Opts&SecretValue != 0 }
-
-// Set sets the resolved value directly (useful for tests or programmatic config).
-func (val *Value[T]) Set(v T) {
-	val.val = v
-	val.Used = Used{Kind: SourceOverride, Key: ""}
-}
 
 func (val *Value[T]) parseValue(value string) (T, error) {
 	var zero T
@@ -277,7 +270,7 @@ func (val *Value[T]) resolveOverride(s *source) (bool, error) {
 			if err != nil {
 				return false, fmt.Errorf("cfg: parse override value %q for %s: %w", raw, key, err)
 			}
-			val.val = parsed
+			val.Val = parsed
 			val.Used = Used{Kind: SourceOverride, Key: strings.ToLower(key)}
 			return true, nil
 		}
@@ -293,7 +286,7 @@ func (val *Value[T]) resolveEnv(s *source) (bool, error) {
 			if err != nil {
 				return false, fmt.Errorf("cfg: parse env value %q for %s: %w", raw, key, err)
 			}
-			val.val = parsed
+			val.Val = parsed
 			val.Used = Used{Kind: SourceEnv, Key: strings.ToLower(key)}
 			return true, nil
 		}
@@ -310,7 +303,7 @@ func (val *Value[T]) resolveConfigFile(s *source) (bool, error) {
 				return false, fmt.Errorf("cfg: parse config file value %v for %s: %w", raw, key, err)
 			}
 
-			val.val = parsed
+			val.Val = parsed
 			val.Used = Used{Kind: SourceConfigFile, Key: strings.ToLower(key)}
 			return true, nil
 		}
@@ -349,7 +342,7 @@ func (val *Value[T]) Resolve(s *source) error {
 		return fmt.Errorf("cfg: required value not found (keys=%v envKeys=%v)", val.Keys, val.EnvKeys)
 	}
 
-	val.val = val.Default
+	val.Val = val.Default
 	val.Used = Used{Kind: SourceDefault, Key: ""}
 	return nil
 }

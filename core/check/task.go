@@ -70,12 +70,12 @@ func (t *Task) writeResult(version string, milvusEmpty bool) error {
 	buff = append(buff, []byte("\nMilvus version: "+version+"\n")...)
 
 	buff = append(buff, []byte("Storage:\n")...)
-	buff = append(buff, []byte("  milvus-storage-type: "+t.params.Minio.StorageType.Value()+"\n")...)
-	buff = append(buff, []byte("  milvus-bucket: "+t.params.Minio.BucketName.Value()+"\n")...)
-	buff = append(buff, []byte("  milvus-rootpath: "+t.params.Minio.RootPath.Value()+"\n")...)
-	buff = append(buff, []byte("  backup-storage-type: "+t.params.Minio.BackupStorageType.Value()+"\n")...)
-	buff = append(buff, []byte("  backup-bucket: "+t.params.Minio.BackupBucketName.Value()+"\n")...)
-	buff = append(buff, []byte("  backup-rootpath: "+t.params.Minio.BackupRootPath.Value()+"\n")...)
+	buff = append(buff, []byte("  milvus-storage-type: "+t.params.Minio.StorageType.Val+"\n")...)
+	buff = append(buff, []byte("  milvus-bucket: "+t.params.Minio.BucketName.Val+"\n")...)
+	buff = append(buff, []byte("  milvus-rootpath: "+t.params.Minio.RootPath.Val+"\n")...)
+	buff = append(buff, []byte("  backup-storage-type: "+t.params.Minio.BackupStorageType.Val+"\n")...)
+	buff = append(buff, []byte("  backup-bucket: "+t.params.Minio.BackupBucketName.Val+"\n")...)
+	buff = append(buff, []byte("  backup-rootpath: "+t.params.Minio.BackupRootPath.Val+"\n")...)
 
 	if milvusEmpty {
 		buff = append(buff, []byte("\n")...)
@@ -96,7 +96,7 @@ func (t *Task) writeResult(version string, milvusEmpty bool) error {
 
 func (t *Task) checkMilvusStorage(ctx context.Context) (bool, error) {
 	t.logger.Info("check milvus storage")
-	files, _, err := storage.ListPrefixFlat(ctx, t.milvusStorage, mpath.MilvusRootDir(t.params.Minio.RootPath.Value()), true)
+	files, _, err := storage.ListPrefixFlat(ctx, t.milvusStorage, mpath.MilvusRootDir(t.params.Minio.RootPath.Val), true)
 	if err != nil {
 		return false, fmt.Errorf("check: list milvus root dir %w", err)
 	}
@@ -112,7 +112,7 @@ func (t *Task) checkMilvusStorage(ctx context.Context) (bool, error) {
 
 func (t *Task) checkBackupStorage(ctx context.Context) error {
 	t.logger.Info("check backup storage")
-	_, _, err := storage.ListPrefixFlat(ctx, t.backupStorage, mpath.BackupRootDir(t.params.Minio.BackupRootPath.Value()), false)
+	_, _, err := storage.ListPrefixFlat(ctx, t.backupStorage, mpath.BackupRootDir(t.params.Minio.BackupRootPath.Val), false)
 	if err != nil {
 		return fmt.Errorf("check: list backup root dir %w", err)
 	}
@@ -122,8 +122,8 @@ func (t *Task) checkBackupStorage(ctx context.Context) error {
 
 func (t *Task) checkWriteAndCopy(ctx context.Context) error {
 	t.logger.Info("check write and copy")
-	srcKey := path.Join(t.params.Minio.RootPath.Value(), "milvus_backup_check_src_"+uuid.NewString())
-	destKey := path.Join(t.params.Minio.BackupRootPath.Value(), "milvus_backup_check_dst_"+uuid.NewString())
+	srcKey := path.Join(t.params.Minio.RootPath.Val, "milvus_backup_check_src_"+uuid.NewString())
+	destKey := path.Join(t.params.Minio.BackupRootPath.Val, "milvus_backup_check_dst_"+uuid.NewString())
 	if err := storage.Write(ctx, t.milvusStorage, srcKey, []byte{1}); err != nil {
 		return fmt.Errorf("check: write to milvus storage %w", err)
 	}
@@ -136,7 +136,7 @@ func (t *Task) checkWriteAndCopy(ctx context.Context) error {
 	t.logger.Info("write to milvus storage success", zap.String("key", srcKey))
 
 	t.logger.Info("copy from milvus storage to backup storage")
-	crossStorage := t.params.Minio.CrossStorage.Value()
+	crossStorage := t.params.Minio.CrossStorage.Val
 	if t.backupStorage.Config().Provider != t.milvusStorage.Config().Provider {
 		crossStorage = true
 	}

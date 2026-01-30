@@ -206,7 +206,7 @@ func (o *options) toOption(params *cfg.Config) (backup.Option, error) {
 
 	return backup.Option{
 		BackupName: o.backupName,
-		PauseGC:    params.Backup.GCPause.Enable.Value(),
+		PauseGC:    params.Backup.GCPause.Enable.Val,
 
 		Strategy: strategy,
 
@@ -236,11 +236,11 @@ func (o *options) toArgs(params *cfg.Config) (backup.TaskArgs, error) {
 	if err != nil {
 		return backup.TaskArgs{}, fmt.Errorf("create milvus restful client: %w", err)
 	}
-	manage := milvus.NewManage(params.Backup.GCPause.Address.Value())
+	manage := milvus.NewManage(params.Backup.GCPause.Address.Val)
 
 	var etcdCli *clientv3.Client
 	if o.backupIndexExtra {
-		endpoints := strings.Split(params.Milvus.Etcd.Endpoints.Value(), ",")
+		endpoints := strings.Split(params.Milvus.Etcd.Endpoints.Val, ",")
 		etcdCli, err = clientv3.New(clientv3.Config{
 			Endpoints:   endpoints,
 			DialTimeout: 5 * time.Second,
@@ -250,7 +250,7 @@ func (o *options) toArgs(params *cfg.Config) (backup.TaskArgs, error) {
 		}
 	}
 
-	backupDir := mpath.BackupDir(params.Minio.BackupRootPath.Value(), o.backupName)
+	backupDir := mpath.BackupDir(params.Minio.BackupRootPath.Val, o.backupName)
 	option, err := o.toOption(params)
 	if err != nil {
 		return backup.TaskArgs{}, err

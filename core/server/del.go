@@ -93,7 +93,7 @@ func (h *delHandler) run(ctx context.Context) *backuppb.DeleteBackupResponse {
 		return resp
 	}
 
-	task := del.NewTask(h.backupStorage, mpath.BackupDir(h.params.Minio.BackupRootPath.Value(), h.req.GetBackupName()))
+	task := del.NewTask(h.backupStorage, mpath.BackupDir(h.params.Minio.BackupRootPath.Val, h.req.GetBackupName()))
 	if err := task.Execute(ctx); err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()

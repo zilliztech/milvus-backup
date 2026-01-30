@@ -60,13 +60,13 @@ func init() {
 
 func InitLogger(params *cfg.LogConfig) {
 	cfg := &Config{
-		Level:   params.Level.Value(),
-		Console: params.Console.Value(),
+		Level:   params.Level.Val,
+		Console: params.Console.Val,
 		File: FileLogConfig{
-			Filename:   params.File.Filename.Value(),
-			MaxSize:    params.File.MaxSize.Value(),
-			MaxDays:    params.File.MaxDays.Value(),
-			MaxBackups: params.File.MaxBackups.Value(),
+			Filename:   params.File.Filename.Val,
+			MaxSize:    params.File.MaxSize.Val,
+			MaxDays:    params.File.MaxDays.Val,
+			MaxBackups: params.File.MaxBackups.Val,
 		},
 	}
 

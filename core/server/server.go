@@ -41,7 +41,7 @@ func (s *Server) Run() error {
 
 // registerHTTPServer register the http server, panic when failed
 func (s *Server) initEngine() {
-	if !s.params.HTTP.DebugMode.Value() {
+	if !s.params.HTTP.DebugMode.Val {
 		gin.SetMode(gin.ReleaseMode)
 	}
 

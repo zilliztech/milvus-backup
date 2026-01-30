@@ -27,7 +27,7 @@ milvus:
 		if err != nil {
 			t.Fatalf("Load: %v", err)
 		}
-		if got := c.Milvus.Port.Value(); got != 12345 {
+		if got := c.Milvus.Port.Val; got != 12345 {
 			t.Fatalf("milvus.port = %d, want %d", got, 12345)
 		}
 	})
@@ -38,7 +38,7 @@ milvus:
 		if err != nil {
 			t.Fatalf("Load: %v", err)
 		}
-		if got := c.Milvus.Port.Value(); got != 23456 {
+		if got := c.Milvus.Port.Val; got != 23456 {
 			t.Fatalf("milvus.port = %d, want %d", got, 23456)
 		}
 	})
@@ -49,7 +49,7 @@ milvus:
 		if err != nil {
 			t.Fatalf("Load: %v", err)
 		}
-		if got := c.Milvus.Port.Value(); got != 34567 {
+		if got := c.Milvus.Port.Val; got != 34567 {
 			t.Fatalf("milvus.port = %d, want %d", got, 34567)
 		}
 	})
@@ -59,7 +59,7 @@ milvus:
 		if err != nil {
 			t.Fatalf("Load: %v", err)
 		}
-		if got := c.Milvus.Port.Value(); got != 45678 {
+		if got := c.Milvus.Port.Val; got != 45678 {
 			t.Fatalf("milvus.port = %d, want %d", got, 45678)
 		}
 	})
@@ -77,10 +77,10 @@ backup:
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if got := c.Backup.Parallelism.CopyData.Value(); got != 99 {
+	if got := c.Backup.Parallelism.CopyData.Val; got != 99 {
 		t.Fatalf("backup.parallelism.copydata = %d, want %d", got, 99)
 	}
-	if got := c.Backup.Parallelism.BackupCollection.Value(); got != 7 {
+	if got := c.Backup.Parallelism.BackupCollection.Val; got != 7 {
 		t.Fatalf("backup.parallelism.backupCollection = %d, want %d", got, 7)
 	}
 }

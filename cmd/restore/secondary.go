@@ -50,7 +50,7 @@ func (o *secondaryOption) toArgs(params *cfg.Config) (secondary.TaskArgs, error)
 		return secondary.TaskArgs{}, fmt.Errorf("create backup storage: %w", err)
 	}
 
-	backupDir := mpath.BackupDir(params.Minio.BackupRootPath.Value(), o.backupName)
+	backupDir := mpath.BackupDir(params.Minio.BackupRootPath.Val, o.backupName)
 	exist, err := meta.Exist(context.Background(), backupStorage, backupDir)
 	if err != nil {
 		return secondary.TaskArgs{}, fmt.Errorf("check backup exist: %w", err)

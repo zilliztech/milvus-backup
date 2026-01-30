@@ -26,24 +26,19 @@ func TestGrpcAuth(t *testing.T) {
 }
 
 func TestTransCred(t *testing.T) {
-	conf := &cfg.MilvusConfig{}
-	conf.TLSMode.Set(3)
-	cred, err := transCred(conf)
+	cred, err := transCred(&cfg.MilvusConfig{TLSMode: cfg.Value[int]{Val: 3}})
 	assert.Error(t, err)
 	assert.Nil(t, cred)
 
-	conf.TLSMode.Set(0)
-	cred, err = transCred(conf)
+	cred, err = transCred(&cfg.MilvusConfig{TLSMode: cfg.Value[int]{Val: 0}})
 	assert.NoError(t, err)
 	assert.Equal(t, insecure.NewCredentials(), cred)
 
-	conf.TLSMode.Set(1)
-	cred, err = transCred(conf)
+	cred, err = transCred(&cfg.MilvusConfig{TLSMode: cfg.Value[int]{Val: 1}})
 	assert.NoError(t, err)
 	assert.NotNil(t, cred)
 
-	conf.TLSMode.Set(2)
-	cred, err = transCred(conf)
+	cred, err = transCred(&cfg.MilvusConfig{TLSMode: cfg.Value[int]{Val: 2}})
 	assert.NoError(t, err)
 	assert.NotNil(t, cred)
 }

@@ -251,11 +251,11 @@ func restfulAuth(username, password string) string {
 }
 
 func NewRestful(cfg *cfg.MilvusConfig) (*RestfulClient, error) {
-	host := net.JoinHostPort(cfg.Address.Value(), strconv.Itoa(cfg.Port.Value()))
+	host := net.JoinHostPort(cfg.Address.Val, strconv.Itoa(cfg.Port.Val))
 	log.Info("new milvus restful client", zap.String("host", host))
 
 	var baseURL string
-	switch cfg.TLSMode.Value() {
+	switch cfg.TLSMode.Val {
 	case 0:
 		baseURL = "http://" + host
 	case 1, 2:
@@ -266,7 +266,7 @@ func NewRestful(cfg *cfg.MilvusConfig) (*RestfulClient, error) {
 
 	cli := req.C().SetBaseURL(baseURL)
 
-	if auth := restfulAuth(cfg.User.Value(), cfg.Password.Value()); len(auth) != 0 {
+	if auth := restfulAuth(cfg.User.Val, cfg.Password.Val); len(auth) != 0 {
 		cli.SetCommonBearerAuthToken(auth)
 	}
 

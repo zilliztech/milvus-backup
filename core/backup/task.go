@@ -110,7 +110,7 @@ func newGCCtrl(args TaskArgs) gcCtrl {
 func NewTask(args TaskArgs) (*Task, error) {
 	logger := log.L().With(zap.String("task_id", args.TaskID))
 
-	crossStorage := args.Params.Minio.CrossStorage.Value()
+	crossStorage := args.Params.Minio.CrossStorage.Val
 	if args.BackupStorage.Config().Provider != args.MilvusStorage.Config().Provider {
 		crossStorage = true
 	}
@@ -122,9 +122,9 @@ func NewTask(args TaskArgs) (*Task, error) {
 	}
 
 	throttling := concurrencyThrottling{
-		CollSem: semaphore.NewWeighted(int64(args.Params.Backup.Parallelism.BackupCollection.Value())),
-		SegSem:  semaphore.NewWeighted(int64(args.Params.Backup.Parallelism.BackupSegment.Value())),
-		CopySem: semaphore.NewWeighted(int64(args.Params.Backup.Parallelism.CopyData.Value())),
+		CollSem: semaphore.NewWeighted(int64(args.Params.Backup.Parallelism.BackupCollection.Val)),
+		SegSem:  semaphore.NewWeighted(int64(args.Params.Backup.Parallelism.BackupSegment.Val)),
+		CopySem: semaphore.NewWeighted(int64(args.Params.Backup.Parallelism.CopyData.Val)),
 	}
 
 	return &Task{
@@ -135,7 +135,7 @@ func NewTask(args TaskArgs) (*Task, error) {
 		option: args.Option,
 
 		milvusStorage:  args.MilvusStorage,
-		milvusRootPath: args.Params.Minio.RootPath.Value(),
+		milvusRootPath: args.Params.Minio.RootPath.Val,
 
 		crossStorage: crossStorage,
 
@@ -151,13 +151,13 @@ func NewTask(args TaskArgs) (*Task, error) {
 		gcCtrl: newGCCtrl(args),
 
 		etcdCli:      args.EtcdCli,
-		etcdRootPath: args.Params.Milvus.Etcd.RootPath.Value(),
+		etcdRootPath: args.Params.Milvus.Etcd.RootPath.Val,
 
 		metaBuilder: mb,
 
 		taskMgr: args.TaskMgr,
 
-		rpcChannelName: args.Params.Milvus.RPCChannelName.Value(),
+		rpcChannelName: args.Params.Milvus.RPCChannelName.Val,
 	}, nil
 }
 
