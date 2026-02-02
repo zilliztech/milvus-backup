@@ -18,7 +18,6 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 type collectionDDLTask struct {
@@ -29,8 +28,6 @@ type collectionDDLTask struct {
 	collBackup *backuppb.CollectionBackupInfo
 
 	tsAlloc *tsAlloc
-
-	taskMgr *taskmgr.Mgr
 
 	streamCli milvus.Stream
 	logger    *zap.Logger
