@@ -1,6 +1,9 @@
 package cfg
 
-import "cmp"
+import (
+	"cmp"
+	"reflect"
+)
 
 type Resolver interface {
 	Resolve(*source) error
@@ -37,6 +40,37 @@ func New() *Config {
 
 func (c *Config) Resolve(s *source) error {
 	return resolve(s, &c.Log, &c.HTTP, &c.Cloud, &c.Milvus, &c.Minio, &c.Backup)
+}
+
+func (c *Config) Entries() []Entry {
+	var (
+		entries       []Entry
+		displayerType = reflect.TypeOf((*Displayer)(nil)).Elem()
+		collect       func(v reflect.Value, prefix string)
+	)
+
+	collect = func(v reflect.Value, prefix string) {
+		t := v.Type()
+		for i := range v.NumField() {
+			field := v.Field(i)
+			name := t.Field(i).Name
+			if prefix != "" {
+				name = prefix + "." + name
+			}
+
+			if field.Addr().Type().Implements(displayerType) {
+				entries = append(entries, field.Addr().Interface().(Displayer).Display(name))
+				continue
+			}
+
+			if field.Kind() == reflect.Struct {
+				collect(field, name)
+			}
+		}
+	}
+
+	collect(reflect.ValueOf(c).Elem(), "")
+	return entries
 }
 
 type LogFileConfig struct {

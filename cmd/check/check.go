@@ -45,7 +45,7 @@ func NewCmd(opt *root.Options) *cobra.Command {
 		},
 	}
 
-	cmd.AddCommand(newBackupYamlCmd(opt))
+	cmd.AddCommand(newConfigCmd(opt))
 
 	return cmd
 }
