@@ -296,7 +296,7 @@ func (t *Task) listFilteredDBAndNSS(ctx context.Context, f filter.Filter) ([]str
 				return nil, nil, fmt.Errorf("backup: check collection %s.%s: %w", dbName, collName, err)
 			}
 			if !exists {
-				return nil, nil, fmt.Errorf("backup: filter collection %s not found in milvus", collName)
+				return nil, nil, fmt.Errorf("backup: filter collection %s.%s not found in milvus", dbName, collName)
 			}
 			nss = append(nss, namespace.New(dbName, collName))
 		}

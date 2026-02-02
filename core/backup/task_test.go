@@ -152,6 +152,6 @@ func TestTask_listDBAndNSS(t *testing.T) {
 
 		_, _, err := task.listDBAndNSS(ctx)
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "filter collection not_exist not found")
+		assert.Contains(t, err.Error(), "filter collection db1.not_exist not found")
 	})
 }
