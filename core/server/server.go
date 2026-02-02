@@ -8,17 +8,17 @@ import (
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 
-	"github.com/zilliztech/milvus-backup/core/paramtable"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 )
 
 // Server is the Backup Server
 type Server struct {
 	engine *gin.Engine
 	config *config
-	params *paramtable.BackupParams
+	params *cfg.Config
 }
 
-func New(params *paramtable.BackupParams, opts ...Option) (*Server, error) {
+func New(params *cfg.Config, opts ...Option) (*Server, error) {
 	cfg := newDefaultConfig()
 	for _, opt := range opts {
 		opt(cfg)
@@ -41,7 +41,7 @@ func (s *Server) Run() error {
 
 // registerHTTPServer register the http server, panic when failed
 func (s *Server) initEngine() {
-	if !s.params.HTTPCfg.DebugMode {
+	if !s.params.HTTP.DebugMode.Val {
 		gin.SetMode(gin.ReleaseMode)
 	}
 

@@ -13,17 +13,17 @@ import (
 
 func (s *Server) handleCheck(c *gin.Context) {
 	ctx := c.Request.Context()
-	grpc, err := milvus.NewGrpc(&s.params.MilvusCfg)
+	grpc, err := milvus.NewGrpc(&s.params.Milvus)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	milvusStorage, err := storage.NewMilvusStorage(ctx, &s.params.MinioCfg)
+	milvusStorage, err := storage.NewMilvusStorage(ctx, &s.params.Minio)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	backupStorage, err := storage.NewBackupStorage(ctx, &s.params.MinioCfg)
+	backupStorage, err := storage.NewBackupStorage(ctx, &s.params.Minio)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

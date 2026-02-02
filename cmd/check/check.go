@@ -20,13 +20,13 @@ func NewCmd(opt *root.Options) *cobra.Command {
 			ctx := context.Background()
 			params := opt.InitGlobalVars()
 
-			grpc, err := milvus.NewGrpc(&params.MilvusCfg)
+			grpc, err := milvus.NewGrpc(&params.Milvus)
 			cobra.CheckErr(err)
 
-			milvusStorage, err := storage.NewMilvusStorage(ctx, &params.MinioCfg)
+			milvusStorage, err := storage.NewMilvusStorage(ctx, &params.Minio)
 			cobra.CheckErr(err)
 
-			backupStorage, err := storage.NewBackupStorage(ctx, &params.MinioCfg)
+			backupStorage, err := storage.NewBackupStorage(ctx, &params.Minio)
 			cobra.CheckErr(err)
 
 			taskArgs := check.TaskArgs{

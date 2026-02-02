@@ -10,8 +10,8 @@ import (
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
 
-	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
@@ -24,7 +24,7 @@ func newTestTask() *Task {
 
 		args: TaskArgs{
 			Plan:   &Plan{},
-			Params: &paramtable.BackupParams{},
+			Params: &cfg.Config{},
 		},
 	}
 }

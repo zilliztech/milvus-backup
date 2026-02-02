@@ -14,7 +14,7 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/zilliztech/milvus-backup/core/paramtable"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 )
 
 func TestGrpcAuth(t *testing.T) {
@@ -26,19 +26,19 @@ func TestGrpcAuth(t *testing.T) {
 }
 
 func TestTransCred(t *testing.T) {
-	cred, err := transCred(&paramtable.MilvusConfig{TLSMode: 3})
+	cred, err := transCred(&cfg.MilvusConfig{TLSMode: cfg.Value[int]{Val: 3}})
 	assert.Error(t, err)
 	assert.Nil(t, cred)
 
-	cred, err = transCred(&paramtable.MilvusConfig{TLSMode: 0})
+	cred, err = transCred(&cfg.MilvusConfig{TLSMode: cfg.Value[int]{Val: 0}})
 	assert.NoError(t, err)
 	assert.Equal(t, insecure.NewCredentials(), cred)
 
-	cred, err = transCred(&paramtable.MilvusConfig{TLSMode: 1})
+	cred, err = transCred(&cfg.MilvusConfig{TLSMode: cfg.Value[int]{Val: 1}})
 	assert.NoError(t, err)
 	assert.NotNil(t, cred)
 
-	cred, err = transCred(&paramtable.MilvusConfig{TLSMode: 2})
+	cred, err = transCred(&cfg.MilvusConfig{TLSMode: cfg.Value[int]{Val: 2}})
 	assert.NoError(t, err)
 	assert.NotNil(t, cred)
 }

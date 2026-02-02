@@ -30,8 +30,8 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/internal/aimd"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/retry"
@@ -224,22 +224,23 @@ func grpcAuth(username, password string) string {
 	return ""
 }
 
-func transCred(cfg *paramtable.MilvusConfig) (credentials.TransportCredentials, error) {
-	if cfg.TLSMode < 0 || cfg.TLSMode > 2 {
+func transCred(cfg *cfg.MilvusConfig) (credentials.TransportCredentials, error) {
+	tlsMode := cfg.TLSMode.Val
+	if tlsMode < 0 || tlsMode > 2 {
 		return nil, errors.New("milvus.TLSMode is illegal, support value 0, 1, 2")
 	}
 
 	// tls mode 0 disable tls
-	if cfg.TLSMode == 0 {
+	if tlsMode == 0 {
 		return insecure.NewCredentials(), nil
 	}
 
 	// tls mode 1, 2
 
 	// validate server cert
-	tlsCfg := &tls.Config{ServerName: cfg.ServerName}
-	if cfg.CACertPath != "" {
-		b, err := os.ReadFile(cfg.CACertPath)
+	tlsCfg := &tls.Config{ServerName: cfg.ServerName.Val}
+	if cfg.CACertPath.Val != "" {
+		b, err := os.ReadFile(cfg.CACertPath.Val)
 		if err != nil {
 			return nil, fmt.Errorf("client: read ca cert %w", err)
 		}
@@ -252,21 +253,21 @@ func transCred(cfg *paramtable.MilvusConfig) (credentials.TransportCredentials, 
 	}
 
 	// tls mode 1, server tls
-	if cfg.TLSMode == 1 {
+	if tlsMode == 1 {
 		return credentials.NewTLS(tlsCfg), nil
 	}
 
 	// tls mode 2, mutual tls
 	// use mTLS but key/cert path not set, for backward compatibility, use server tls instead
 	// WARN: this behavior will be removed after v0.6.0
-	if cfg.TLSMode == 2 {
-		if cfg.MTLSKeyPath == "" || cfg.MTLSCertPath == "" {
+	if tlsMode == 2 {
+		if cfg.MTLSKeyPath.Val == "" || cfg.MTLSCertPath.Val == "" {
 			log.Warn("client: mutual tls enabled but key/cert path not set! will use server tls instead")
 			return credentials.NewTLS(tlsCfg), nil
 		}
 
 		// use mTLS
-		cert, err := tls.LoadX509KeyPair(cfg.MTLSCertPath, cfg.MTLSKeyPath)
+		cert, err := tls.LoadX509KeyPair(cfg.MTLSCertPath.Val, cfg.MTLSKeyPath.Val)
 		if err != nil {
 			return nil, fmt.Errorf("client: load client cert: %w", err)
 		}
@@ -287,13 +288,13 @@ func isUnimplemented(err error) bool {
 	return s.Code() == codes.Unimplemented
 }
 
-func NewGrpc(cfg *paramtable.MilvusConfig) (*GrpcClient, error) {
+func NewGrpc(cfg *cfg.MilvusConfig) (*GrpcClient, error) {
 	logger := log.L()
 
-	host := fmt.Sprintf("%s:%s", cfg.Address, cfg.Port)
+	host := fmt.Sprintf("%s:%d", cfg.Address.Val, cfg.Port.Val)
 	logger.Info("New milvus grpc client", zap.String("host", host))
 
-	auth := grpcAuth(cfg.User, cfg.Password)
+	auth := grpcAuth(cfg.User.Val, cfg.Password.Val)
 
 	cerd, err := transCred(cfg)
 	if err != nil {
@@ -316,7 +317,7 @@ func NewGrpc(cfg *paramtable.MilvusConfig) (*GrpcClient, error) {
 
 		limiters: newLimiters(),
 
-		user: cfg.User,
+		user: cfg.User.Val,
 		auth: auth,
 	}
 

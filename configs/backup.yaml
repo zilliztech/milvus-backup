@@ -5,9 +5,6 @@ log:
   file:
     filename: "logs/backup.log"
 
-http:
-  simpleResponse: true
-
 # Zilliz Cloud config.
 # If you want to migrate data to Zilliz Cloud, you need to configure the following parameters.
 # Otherwise, you can ignore it.

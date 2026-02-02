@@ -12,8 +12,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
-	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/restore"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
@@ -258,30 +258,30 @@ func (o *options) renameCollectionNamesToMapper() (*restore.TableMapper, error) 
 	return newTableMapperFromCollRename(renameMap)
 }
 
-func (o *options) toArgs(params *paramtable.BackupParams) (restore.TaskArgs, error) {
+func (o *options) toArgs(params *cfg.Config) (restore.TaskArgs, error) {
 	plan, err := o.toPlan()
 	if err != nil {
 		return restore.TaskArgs{}, err
 	}
 
-	backupStorage, err := storage.NewBackupStorage(context.Background(), &params.MinioCfg)
+	backupStorage, err := storage.NewBackupStorage(context.Background(), &params.Minio)
 	if err != nil {
 		return restore.TaskArgs{}, fmt.Errorf("create backup storage: %w", err)
 	}
-	milvusStorage, err := storage.NewMilvusStorage(context.Background(), &params.MinioCfg)
+	milvusStorage, err := storage.NewMilvusStorage(context.Background(), &params.Minio)
 	if err != nil {
 		return restore.TaskArgs{}, fmt.Errorf("create milvus storage: %w", err)
 	}
-	milvusClient, err := milvus.NewGrpc(&params.MilvusCfg)
+	milvusClient, err := milvus.NewGrpc(&params.Milvus)
 	if err != nil {
 		return restore.TaskArgs{}, fmt.Errorf("create milvus grpc client: %w", err)
 	}
-	restfulClient, err := milvus.NewRestful(&params.MilvusCfg)
+	restfulClient, err := milvus.NewRestful(&params.Milvus)
 	if err != nil {
 		return restore.TaskArgs{}, fmt.Errorf("create milvus restful client: %w", err)
 	}
 
-	backupDir := mpath.BackupDir(params.MinioCfg.BackupRootPath, o.backupName)
+	backupDir := mpath.BackupDir(params.Minio.BackupRootPath.Val, o.backupName)
 	exist, err := meta.Exist(context.Background(), backupStorage, backupDir)
 	if err != nil {
 		return restore.TaskArgs{}, fmt.Errorf("check backup exist: %w", err)
@@ -301,8 +301,8 @@ func (o *options) toArgs(params *paramtable.BackupParams) (restore.TaskArgs, err
 		Plan:           plan,
 		Option:         o.toOption(),
 		Params:         params,
-		BackupDir:      mpath.BackupDir(params.MinioCfg.BackupRootPath, o.backupName),
-		BackupRootPath: params.MinioCfg.BackupRootPath,
+		BackupDir:      mpath.BackupDir(params.Minio.BackupRootPath.Val, o.backupName),
+		BackupRootPath: params.Minio.BackupRootPath.Val,
 		BackupStorage:  backupStorage,
 		MilvusStorage:  milvusStorage,
 		Grpc:           milvusClient,
@@ -312,7 +312,7 @@ func (o *options) toArgs(params *paramtable.BackupParams) (restore.TaskArgs, err
 	}, nil
 }
 
-func (o *options) run(cmd *cobra.Command, params *paramtable.BackupParams) error {
+func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
 	start := time.Now()
 
 	args, err := o.toArgs(params)

@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
-	"github.com/zilliztech/milvus-backup/core/paramtable"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 	"github.com/zilliztech/milvus-backup/internal/storage"
@@ -32,15 +32,15 @@ func (o *options) validate() error {
 	return nil
 }
 
-func (o *options) run(cmd *cobra.Command, params *paramtable.BackupParams) error {
+func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
 	ctx := context.Background()
 
-	backupStorage, err := storage.NewBackupStorage(ctx, &params.MinioCfg)
+	backupStorage, err := storage.NewBackupStorage(ctx, &params.Minio)
 	if err != nil {
 		return fmt.Errorf("create backup storage: %w", err)
 	}
 
-	backupDir := mpath.BackupDir(params.MinioCfg.BackupRootPath, o.backupName)
+	backupDir := mpath.BackupDir(params.Minio.BackupRootPath.Val, o.backupName)
 	backupInfo, err := meta.Read(ctx, backupStorage, backupDir)
 	if err != nil {
 		return fmt.Errorf("read backup meta: %w", err)

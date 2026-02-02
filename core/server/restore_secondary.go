@@ -10,9 +10,9 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/zilliztech/milvus-backup/core/paramtable"
 	"github.com/zilliztech/milvus-backup/core/restore/secondary"
 	"github.com/zilliztech/milvus-backup/core/tasklet"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
@@ -49,12 +49,12 @@ func (s *Server) handleRestoreSecondary(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func newRestoreSecondaryHandler(request *backuppb.RestoreSecondaryRequest, params *paramtable.BackupParams) *restoreSecondaryHandler {
+func newRestoreSecondaryHandler(request *backuppb.RestoreSecondaryRequest, params *cfg.Config) *restoreSecondaryHandler {
 	return &restoreSecondaryHandler{request: request, params: params}
 }
 
 type restoreSecondaryHandler struct {
-	params  *paramtable.BackupParams
+	params  *cfg.Config
 	request *backuppb.RestoreSecondaryRequest
 
 	milvusClient  milvus.Grpc
@@ -127,22 +127,22 @@ func (h *restoreSecondaryHandler) run(ctx context.Context) *backuppb.RestoreBack
 }
 
 func (h *restoreSecondaryHandler) initClient(ctx context.Context) error {
-	milvusGrpc, err := milvus.NewGrpc(&h.params.MilvusCfg)
+	milvusGrpc, err := milvus.NewGrpc(&h.params.Milvus)
 	if err != nil {
 		return fmt.Errorf("server: create milvus client: %w", err)
 	}
 
-	milvusRestful, err := milvus.NewRestful(&h.params.MilvusCfg)
+	milvusRestful, err := milvus.NewRestful(&h.params.Milvus)
 	if err != nil {
 		return fmt.Errorf("server: create milvus restful client: %w", err)
 	}
 
-	backupStorage, err := storage.NewBackupStorage(ctx, &h.params.MinioCfg)
+	backupStorage, err := storage.NewBackupStorage(ctx, &h.params.Minio)
 	if err != nil {
 		return fmt.Errorf("server: create backup storage: %w", err)
 	}
 
-	backupRootPath := h.params.MinioCfg.BackupRootPath
+	backupRootPath := h.params.Minio.BackupRootPath.Val
 	if len(h.request.GetPath()) != 0 {
 		backupRootPath = h.request.GetPath()
 	}

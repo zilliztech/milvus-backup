@@ -41,7 +41,7 @@ import (
 	"go.uber.org/zap/zaptest"
 	"gopkg.in/natefinch/lumberjack.v2"
 
-	"github.com/zilliztech/milvus-backup/core/paramtable"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/progressbar"
 )
 
@@ -58,15 +58,15 @@ func init() {
 	_globalR.Store(r)
 }
 
-func InitLogger(params *paramtable.LogConfig) {
+func InitLogger(params *cfg.LogConfig) {
 	cfg := &Config{
-		Level:   params.Level,
-		Console: params.Console,
+		Level:   params.Level.Val,
+		Console: params.Console.Val,
 		File: FileLogConfig{
-			Filename:   params.File.Filename,
-			MaxSize:    params.File.MaxSize,
-			MaxDays:    params.File.MaxDays,
-			MaxBackups: params.File.MaxBackups,
+			Filename:   params.File.Filename.Val,
+			MaxSize:    params.File.MaxSize.Val,
+			MaxDays:    params.File.MaxDays.Val,
+			MaxBackups: params.File.MaxBackups.Val,
 		},
 	}
 
