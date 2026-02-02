@@ -30,7 +30,13 @@ type Used struct {
 	Key  string
 }
 
-type Value[T any] struct {
+type primitive interface {
+	~int | ~int8 | ~int16 | ~int32 | ~int64 |
+		~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 |
+		~float32 | ~float64 | ~string | ~bool
+}
+
+type Value[T primitive] struct {
 	Default T
 	Keys    []string
 	EnvKeys []string
@@ -38,6 +44,40 @@ type Value[T any] struct {
 
 	Val  T
 	Used Used
+}
+
+type Entry struct {
+	Name      string
+	Value     string
+	Source    SourceKind
+	SourceKey string
+}
+
+type Displayer interface {
+	Display(name string) Entry
+}
+
+func (val *Value[T]) Display(name string) Entry {
+	value := fmt.Sprintf("%v", val.Val)
+	if val.IsSecret() {
+		value = maskSecret(value)
+	}
+	return Entry{
+		Name:      name,
+		Value:     value,
+		Source:    val.Used.Kind,
+		SourceKey: val.Used.Key,
+	}
+}
+
+func maskSecret(s string) string {
+	if s == "" {
+		return ""
+	}
+	if len(s) <= 4 {
+		return "****"
+	}
+	return s[:2] + "****" + s[len(s)-2:]
 }
 
 func (val *Value[T]) isRequired() bool { return val.Opts&RequiredValue != 0 }
