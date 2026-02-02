@@ -1,8 +1,11 @@
 package storage
 
 import (
+	"errors"
+	"net/http"
 	"testing"
 
+	"github.com/minio/minio-go/v7"
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 )
@@ -64,4 +67,25 @@ func TestSplitIntoParts(t *testing.T) {
 		_, err := splitIntoParts(_maxMultiCopySize + 1)
 		assert.Error(t, err)
 	})
+}
+
+func TestIsDeleteSuccessful(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{"NilError", nil, true},
+		{"Status200", minio.ErrorResponse{StatusCode: http.StatusOK}, true},
+		{"Status404", minio.ErrorResponse{StatusCode: http.StatusNotFound}, false},
+		{"Status403", minio.ErrorResponse{StatusCode: http.StatusForbidden}, false},
+		{"Status500", minio.ErrorResponse{StatusCode: http.StatusInternalServerError}, false},
+		{"NonMinioError", errors.New("error"), false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, isDeleteSuccessful(tt.err))
+		})
+	}
 }
