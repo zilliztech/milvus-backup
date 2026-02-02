@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/samber/lo"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
@@ -228,100 +227,99 @@ func (t *Task) prepare(ctx context.Context) error {
 	return nil
 }
 
-func (t *Task) listNS(ctx context.Context, db string) ([]namespace.NS, error) {
-	var nss []namespace.NS
-	resp, err := t.grpc.ListCollections(ctx, db)
-	if err != nil {
-		return nil, fmt.Errorf("backup: list collections for db %s: %w", db, err)
-	}
-	for _, coll := range resp.CollectionNames {
-		nss = append(nss, namespace.New(db, coll))
+func (t *Task) listDBAndNSS(ctx context.Context) ([]string, []namespace.NS, error) {
+	f := t.option.Filter
+
+	if f.DBCollFilter == nil {
+		return t.listAllDBAndNSS(ctx)
 	}
 
-	return nss, nil
+	return t.listFilteredDBAndNSS(ctx, f)
 }
 
 func (t *Task) listAllDBAndNSS(ctx context.Context) ([]string, []namespace.NS, error) {
-	// if milvus support multi database, list all databases and collections
+	var dbNames []string
+	var err error
+
 	if t.grpc.HasFeature(milvus.MultiDatabase) {
-		t.logger.Info("the milvus server support multi database")
-		dbNames, err := t.grpc.ListDatabases(ctx)
+		dbNames, err = t.grpc.ListDatabases(ctx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("backup: list databases: %w", err)
 		}
+	} else {
+		dbNames = []string{namespace.DefaultDBName}
+	}
 
-		var nss []namespace.NS
-		for _, dbName := range dbNames {
-			dbNss, err := t.listNS(ctx, dbName)
+	var nss []namespace.NS
+	for _, dbName := range dbNames {
+		resp, err := t.grpc.ListCollections(ctx, dbName)
+		if err != nil {
+			return nil, nil, fmt.Errorf("backup: list collections for db %s: %w", dbName, err)
+		}
+		for _, coll := range resp.CollectionNames {
+			nss = append(nss, namespace.New(dbName, coll))
+		}
+	}
+
+	t.logger.Info("listed all collections",
+		zap.Strings("db", dbNames),
+		zap.Strings("ns", nsStrings(nss)))
+
+	return dbNames, nss, nil
+}
+
+func (t *Task) listFilteredDBAndNSS(ctx context.Context, f filter.Filter) ([]string, []namespace.NS, error) {
+	// With filter: process each filter entry:
+	// - db.*: list all collections in the db
+	// - db.coll1,db.coll2: list collections with existence check
+	// - db.: database only (no collections)
+	dbNameSet := make(map[string]struct{}, len(f.DBCollFilter))
+	var nss []namespace.NS
+
+	for dbName, collFilter := range f.DBCollFilter {
+		dbNameSet[dbName] = struct{}{}
+
+		if collFilter.AllowAll {
+			resp, err := t.grpc.ListCollections(ctx, dbName)
 			if err != nil {
 				return nil, nil, fmt.Errorf("backup: list collections for db %s: %w", dbName, err)
 			}
-			nss = append(nss, dbNss...)
-		}
-
-		return dbNames, nss, nil
-	} else {
-		dbNames := []string{namespace.DefaultDBName}
-		var nss []namespace.NS
-
-		defaultDBNss, err := t.listNS(ctx, namespace.DefaultDBName)
-		if err != nil {
-			return nil, nil, err
-		}
-		nss = append(nss, defaultDBNss...)
-
-		return dbNames, nss, nil
-	}
-}
-
-func (t *Task) filterDBAndNSS(dbNames []string, nss []namespace.NS) ([]string, []namespace.NS, error) {
-	filteredDBNames := t.option.Filter.AllowDBs(dbNames)
-	filteredNSS := t.option.Filter.AllowNSS(nss)
-
-	// if the filter have some db not in milvus, return error
-	dbNameSet := lo.SliceToMap(dbNames, func(item string) (string, struct{}) { return item, struct{}{} })
-	for dbName := range t.option.Filter.DBCollFilter {
-		if _, ok := dbNameSet[dbName]; !ok {
-			return nil, nil, fmt.Errorf("backup: filter db %s not found in milvus", dbName)
-		}
-	}
-
-	// if the filter have some collection not in milvus, return error
-	nsSet := lo.SliceToMap(nss, func(item namespace.NS) (namespace.NS, struct{}) { return item, struct{}{} })
-	for dbName, collFilter := range t.option.Filter.DBCollFilter {
-		if collFilter.AllowAll {
+			for _, coll := range resp.CollectionNames {
+				nss = append(nss, namespace.New(dbName, coll))
+			}
 			continue
 		}
 
 		for collName := range collFilter.CollName {
-			ns := namespace.New(dbName, collName)
-			if _, ok := nsSet[ns]; !ok {
+			exists, err := t.grpc.HasCollection(ctx, dbName, collName)
+			if err != nil {
+				return nil, nil, fmt.Errorf("backup: check collection %s.%s: %w", dbName, collName, err)
+			}
+			if !exists {
 				return nil, nil, fmt.Errorf("backup: filter collection %s not found in milvus", collName)
 			}
+			nss = append(nss, namespace.New(dbName, collName))
 		}
 	}
 
-	return filteredDBNames, filteredNSS, nil
-}
-
-func (t *Task) listDBAndNSS(ctx context.Context) ([]string, []namespace.NS, error) {
-	dbNames, nss, err := t.listAllDBAndNSS(ctx)
-	if err != nil {
-		return nil, nil, fmt.Errorf("backup: list all db and ns: %w", err)
+	dbNames := make([]string, 0, len(dbNameSet))
+	for dbName := range dbNameSet {
+		dbNames = append(dbNames, dbName)
 	}
-	t.logger.Info("all db and collections in milvus",
-		zap.Strings("db", dbNames),
-		zap.Strings("ns", lo.Map(nss, func(ns namespace.NS, _ int) string { return ns.String() })))
 
-	dbNames, nss, err = t.filterDBAndNSS(dbNames, nss)
-	if err != nil {
-		return nil, nil, fmt.Errorf("backup: filter db and ns: %w", err)
-	}
-	t.logger.Info("db and collections need to backup",
+	t.logger.Info("listed collections (filtered)",
 		zap.Strings("db", dbNames),
-		zap.Strings("ns", lo.Map(nss, func(ns namespace.NS, _ int) string { return ns.String() })))
+		zap.Strings("ns", nsStrings(nss)))
 
 	return dbNames, nss, nil
+}
+
+func nsStrings(nss []namespace.NS) []string {
+	out := make([]string, 0, len(nss))
+	for _, ns := range nss {
+		out = append(out, ns.String())
+	}
+	return out
 }
 
 func (t *Task) backupDatabase(ctx context.Context, dbNames []string) error {
