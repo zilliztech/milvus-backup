@@ -37,126 +37,50 @@ func TestTask_runRBACTask(t *testing.T) {
 	})
 }
 
-func TestTask_filterDBAndNSS(t *testing.T) {
-	t.Run("NoFilter", func(t *testing.T) {
-		dbNames := []string{"db1", "db2"}
-		nss := []namespace.NS{
-			namespace.New("db1", "coll1"),
-			namespace.New("db1", "coll2"),
-			namespace.New("db2", "coll1"),
-			namespace.New("db2", "coll2"),
+func TestTask_listDBAndNSS(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("NoFilterSupportMultiDB", func(t *testing.T) {
+		mockGrpc := milvus.NewMockGrpc(t)
+		mockGrpc.EXPECT().HasFeature(milvus.MultiDatabase).Return(true)
+		mockGrpc.EXPECT().ListDatabases(ctx).Return([]string{"db1", "db2"}, nil)
+		mockGrpc.EXPECT().ListCollections(ctx, "db1").Return(&milvuspb.ShowCollectionsResponse{
+			CollectionNames: []string{"coll1", "coll2"},
+		}, nil)
+		mockGrpc.EXPECT().ListCollections(ctx, "db2").Return(&milvuspb.ShowCollectionsResponse{
+			CollectionNames: []string{"coll3"},
+		}, nil)
+
+		task := &Task{
+			logger: zap.NewNop(),
+			grpc:   mockGrpc,
+			option: Option{Filter: filter.Filter{}},
 		}
-		task := &Task{option: Option{Filter: filter.Filter{}}}
-		filteredDBNames, filteredNSS, err := task.filterDBAndNSS(dbNames, nss)
+
+		dbNames, nss, err := task.listDBAndNSS(ctx)
 		assert.NoError(t, err)
-		assert.ElementsMatch(t, dbNames, filteredDBNames)
-		assert.ElementsMatch(t, nss, filteredNSS)
-	})
-
-	t.Run("Filter", func(t *testing.T) {
-		dbNames := []string{"db1", "db2"}
-		nss := []namespace.NS{
-			namespace.New("db1", "coll1"),
-			namespace.New("db1", "coll2"),
-			namespace.New("db2", "coll1"),
-			namespace.New("db2", "coll2"),
-		}
-
-		f := filter.Filter{DBCollFilter: map[string]filter.CollFilter{
-			"db1": {CollName: map[string]struct{}{"coll1": {}}},
-		}}
-		task := &Task{option: Option{Filter: f}}
-		filteredDBNames, filteredNSS, err := task.filterDBAndNSS(dbNames, nss)
-		assert.NoError(t, err)
-		assert.ElementsMatch(t, []string{"db1"}, filteredDBNames)
-		assert.ElementsMatch(t, []namespace.NS{namespace.New("db1", "coll1")}, filteredNSS)
-	})
-
-	t.Run("FilterDBNotFound", func(t *testing.T) {
-		dbNames := []string{"db1", "db2"}
-		nss := []namespace.NS{
-			namespace.New("db1", "coll1"),
-			namespace.New("db2", "coll1"),
-		}
-
-		f := filter.Filter{DBCollFilter: map[string]filter.CollFilter{
-			"db3": {CollName: map[string]struct{}{"coll1": {}}},
-		}}
-
-		task := &Task{option: Option{Filter: f}}
-		_, _, err := task.filterDBAndNSS(dbNames, nss)
-		assert.Error(t, err)
-	})
-
-	t.Run("FilterCollNotFound", func(t *testing.T) {
-		dbNames := []string{"db1", "db2"}
-		nss := []namespace.NS{
-			namespace.New("db1", "coll1"),
-			namespace.New("db1", "coll2"),
-			namespace.New("db2", "coll1"),
-			namespace.New("db2", "coll2"),
-		}
-
-		f := filter.Filter{DBCollFilter: map[string]filter.CollFilter{
-			"db1": {CollName: map[string]struct{}{"coll3": {}}},
-		}}
-		task := &Task{option: Option{Filter: f}}
-		_, _, err := task.filterDBAndNSS(dbNames, nss)
-		assert.Error(t, err)
-	})
-}
-
-func TestTask_listNS(t *testing.T) {
-	cli := milvus.NewMockGrpc(t)
-	cli.EXPECT().ListCollections(mock.Anything, "db1").
-		Return(&milvuspb.ShowCollectionsResponse{CollectionNames: []string{"coll1", "coll2"}}, nil).
-		Once()
-
-	task := &Task{grpc: cli, logger: zap.NewNop()}
-	nss, err := task.listNS(context.Background(), "db1")
-	assert.NoError(t, err)
-	assert.ElementsMatch(t, []namespace.NS{
-		namespace.New("db1", "coll1"),
-		namespace.New("db1", "coll2"),
-	}, nss)
-}
-
-func TestTask_listAllDBAndNSS(t *testing.T) {
-	t.Run("SupportMultiDB", func(t *testing.T) {
-		cli := milvus.NewMockGrpc(t)
-		cli.EXPECT().HasFeature(milvus.MultiDatabase).Return(true).Once()
-		cli.EXPECT().ListCollections(mock.Anything, "default").
-			Return(&milvuspb.ShowCollectionsResponse{CollectionNames: []string{"coll1", "coll2"}}, nil).
-			Once()
-		cli.EXPECT().ListDatabases(mock.Anything).Return([]string{"default", "db1", "db2"}, nil).Once()
-		cli.EXPECT().ListCollections(mock.Anything, "db1").
-			Return(&milvuspb.ShowCollectionsResponse{CollectionNames: []string{"coll1", "coll2"}}, nil).
-			Once()
-		cli.EXPECT().ListCollections(mock.Anything, "db2").
-			Return(&milvuspb.ShowCollectionsResponse{CollectionNames: []string{"coll3", "coll4"}}, nil).
-			Once()
-		task := &Task{grpc: cli, logger: zap.NewNop()}
-		dbNames, nss, err := task.listAllDBAndNSS(context.Background())
-		assert.NoError(t, err)
-		assert.ElementsMatch(t, []string{"default", "db1", "db2"}, dbNames)
+		assert.ElementsMatch(t, []string{"db1", "db2"}, dbNames)
 		assert.ElementsMatch(t, []namespace.NS{
-			namespace.New("default", "coll1"),
-			namespace.New("default", "coll2"),
 			namespace.New("db1", "coll1"),
 			namespace.New("db1", "coll2"),
 			namespace.New("db2", "coll3"),
-			namespace.New("db2", "coll4"),
 		}, nss)
 	})
 
-	t.Run("NotSupportMultiDB", func(t *testing.T) {
-		cli := milvus.NewMockGrpc(t)
-		cli.EXPECT().HasFeature(milvus.MultiDatabase).Return(false).Once()
-		cli.EXPECT().ListCollections(mock.Anything, "default").
-			Return(&milvuspb.ShowCollectionsResponse{CollectionNames: []string{"coll1", "coll2"}}, nil).
-			Once()
-		task := &Task{grpc: cli, logger: zap.NewNop()}
-		dbNames, nss, err := task.listAllDBAndNSS(context.Background())
+	t.Run("NoFilterNotSupportMultiDB", func(t *testing.T) {
+		mockGrpc := milvus.NewMockGrpc(t)
+		mockGrpc.EXPECT().HasFeature(milvus.MultiDatabase).Return(false)
+		mockGrpc.EXPECT().ListCollections(ctx, "default").Return(&milvuspb.ShowCollectionsResponse{
+			CollectionNames: []string{"coll1", "coll2"},
+		}, nil)
+
+		task := &Task{
+			logger: zap.NewNop(),
+			grpc:   mockGrpc,
+			option: Option{Filter: filter.Filter{}},
+		}
+
+		dbNames, nss, err := task.listDBAndNSS(ctx)
 		assert.NoError(t, err)
 		assert.ElementsMatch(t, []string{"default"}, dbNames)
 		assert.ElementsMatch(t, []namespace.NS{
@@ -164,53 +88,70 @@ func TestTask_listAllDBAndNSS(t *testing.T) {
 			namespace.New("default", "coll2"),
 		}, nss)
 	})
-}
 
-func TestTask_listDBAndNSS(t *testing.T) {
-	t.Run("NoFilter", func(t *testing.T) {
-		cli := milvus.NewMockGrpc(t)
-		cli.EXPECT().HasFeature(milvus.MultiDatabase).Return(true).Once()
-		cli.EXPECT().ListDatabases(mock.Anything).Return([]string{"default", "db1"}, nil).Once()
-		cli.EXPECT().ListCollections(mock.Anything, "default").
-			Return(&milvuspb.ShowCollectionsResponse{CollectionNames: []string{"coll1", "coll2"}}, nil).
-			Once()
-		cli.EXPECT().ListCollections(mock.Anything, "db1").
-			Return(&milvuspb.ShowCollectionsResponse{CollectionNames: []string{"coll1", "coll2"}}, nil).
-			Once()
-		task := &Task{grpc: cli, logger: zap.NewNop()}
-		dbNames, nss, err := task.listDBAndNSS(context.Background())
+	t.Run("DBPattern", func(t *testing.T) {
+		mockGrpc := milvus.NewMockGrpc(t)
+		mockGrpc.EXPECT().ListCollections(ctx, "db1").Return(&milvuspb.ShowCollectionsResponse{
+			CollectionNames: []string{"coll1", "coll2"},
+		}, nil)
+
+		task := &Task{
+			logger: zap.NewNop(),
+			grpc:   mockGrpc,
+			option: Option{Filter: filter.Filter{
+				DBCollFilter: map[string]filter.CollFilter{
+					"db1": {AllowAll: true},
+				},
+			}},
+		}
+
+		dbNames, nss, err := task.listDBAndNSS(ctx)
 		assert.NoError(t, err)
-		assert.ElementsMatch(t, []string{"default", "db1"}, dbNames)
+		assert.ElementsMatch(t, []string{"db1"}, dbNames)
 		assert.ElementsMatch(t, []namespace.NS{
-			namespace.New("default", "coll1"),
-			namespace.New("default", "coll2"),
 			namespace.New("db1", "coll1"),
 			namespace.New("db1", "coll2"),
 		}, nss)
 	})
 
-	t.Run("WithFilter", func(t *testing.T) {
-		cli := milvus.NewMockGrpc(t)
-		cli.EXPECT().HasFeature(milvus.MultiDatabase).Return(true).Once()
-		cli.EXPECT().ListDatabases(mock.Anything).Return([]string{"default", "db1"}, nil).Once()
-		cli.EXPECT().ListCollections(mock.Anything, "default").
-			Return(&milvuspb.ShowCollectionsResponse{CollectionNames: []string{"coll1", "coll2"}}, nil).
-			Once()
-		cli.EXPECT().ListCollections(mock.Anything, "db1").
-			Return(&milvuspb.ShowCollectionsResponse{CollectionNames: []string{"coll1", "coll2"}}, nil).
-			Once()
+	t.Run("TargetedPattern", func(t *testing.T) {
+		mockGrpc := milvus.NewMockGrpc(t)
+		mockGrpc.EXPECT().HasCollection(ctx, "db1", "coll1").Return(true, nil)
 
-		f := filter.Filter{DBCollFilter: map[string]filter.CollFilter{
-			"default": {CollName: map[string]struct{}{"coll1": {}}},
-			"db1":     {CollName: map[string]struct{}{"coll2": {}}},
-		}}
-		task := &Task{grpc: cli, logger: zap.NewNop(), option: Option{Filter: f}}
-		dbNames, nss, err := task.listDBAndNSS(context.Background())
+		task := &Task{
+			logger: zap.NewNop(),
+			grpc:   mockGrpc,
+			option: Option{Filter: filter.Filter{
+				DBCollFilter: map[string]filter.CollFilter{
+					"db1": {CollName: map[string]struct{}{"coll1": {}}},
+				},
+			}},
+		}
+
+		dbNames, nss, err := task.listDBAndNSS(ctx)
 		assert.NoError(t, err)
-		assert.ElementsMatch(t, []string{"default", "db1"}, dbNames)
+		assert.ElementsMatch(t, []string{"db1"}, dbNames)
 		assert.ElementsMatch(t, []namespace.NS{
-			namespace.New("default", "coll1"),
-			namespace.New("db1", "coll2"),
+			namespace.New("db1", "coll1"),
 		}, nss)
+	})
+
+	t.Run("CollectionNotFound", func(t *testing.T) {
+		mockGrpc := milvus.NewMockGrpc(t)
+		mockGrpc.EXPECT().HasCollection(ctx, "db1", "not_exist").Return(false, nil)
+
+		task := &Task{
+			logger: zap.NewNop(),
+			grpc:   mockGrpc,
+			option: Option{Filter: filter.Filter{
+				DBCollFilter: map[string]filter.CollFilter{
+					"db1": {CollName: map[string]struct{}{"not_exist": {}}},
+				},
+			}},
+		}
+
+		_, _, err := task.listDBAndNSS(ctx)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "filter collection db1.not_exist not found")
 	})
 }
