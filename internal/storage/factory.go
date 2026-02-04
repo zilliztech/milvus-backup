@@ -41,12 +41,13 @@ func newBackupCredential(params *cfg.MinioConfig) Credential {
 func BackupStorageConfig(params *cfg.MinioConfig) Config {
 	ep := net.JoinHostPort(params.BackupAddress.Val, strconv.Itoa(params.BackupPort.Val))
 	return Config{
-		Provider:   params.BackupStorageType.Val,
-		Endpoint:   ep,
-		UseSSL:     params.BackupUseSSL.Val,
-		Bucket:     params.BackupBucketName.Val,
-		Credential: newBackupCredential(params),
-		Region:     params.BackupRegion.Val,
+		Provider:                  params.BackupStorageType.Val,
+		Endpoint:                  ep,
+		UseSSL:                    params.BackupUseSSL.Val,
+		Bucket:                    params.BackupBucketName.Val,
+		Credential:                newBackupCredential(params),
+		Region:                    params.BackupRegion.Val,
+		MultipartCopyThresholdMiB: params.MultipartCopyThresholdMiB.Val,
 	}
 }
 
@@ -98,12 +99,13 @@ func newMilvusCredential(params *cfg.MinioConfig) Credential {
 func MilvusStorageConfig(params *cfg.MinioConfig) Config {
 	ep := net.JoinHostPort(params.Address.Val, strconv.Itoa(params.Port.Val))
 	return Config{
-		Provider:   params.StorageType.Val,
-		Endpoint:   ep,
-		UseSSL:     params.UseSSL.Val,
-		Credential: newMilvusCredential(params),
-		Bucket:     params.BucketName.Val,
-		Region:     params.Region.Val,
+		Provider:                  params.StorageType.Val,
+		Endpoint:                  ep,
+		UseSSL:                    params.UseSSL.Val,
+		Credential:                newMilvusCredential(params),
+		Bucket:                    params.BucketName.Val,
+		Region:                    params.Region.Val,
+		MultipartCopyThresholdMiB: params.MultipartCopyThresholdMiB.Val,
 	}
 }
 

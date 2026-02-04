@@ -47,6 +47,10 @@ type Config struct {
 	Credential Credential
 
 	Bucket string
+
+	// MultipartCopyThresholdMiB is the file size threshold above which multipart copy is used.
+	// Default is 500 MiB if not set. GCP does not support multipart copy.
+	MultipartCopyThresholdMiB int64
 }
 
 type Credential struct {

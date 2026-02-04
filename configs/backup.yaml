@@ -72,11 +72,15 @@ minio:
   backupRootPath: "backup" # Rootpath to store backup data. Backup data will store to backupBucketName/backupRootPath
   backupUseSSL: false # Access to MinIO/S3 with SSL
 
-  # If you need to back up or restore data between two different storage systems, direct client-side copying is not supported. 
+  # If you need to back up or restore data between two different storage systems, direct client-side copying is not supported.
   # Set this option to true to enable data transfer through Milvus Backup.
   # Note: This option will be automatically set to true if `minio.storageType` and `minio.backupStorageType` differ.
   # However, if they are the same but belong to different services, you must manually set this option to `true`.
   crossStorage: false
+
+  # File size threshold (MiB) above which multipart copy is used for S3-compatible storage.
+  # Default is 500. GCP does not support multipart copy and will always use single copy.
+  multipartCopyThresholdMiB: 500
   
 backup:
   parallelism:

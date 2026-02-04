@@ -145,4 +145,3 @@ func flattenAny(prefix string, v any, out map[string]any) error {
 		return nil
 	}
 }
-
