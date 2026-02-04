@@ -19,9 +19,7 @@ require (
 	github.com/milvus-io/milvus-proto/go-api/v2 v2.6.6-0.20251215075310-deda9c0dcece
 	github.com/minio/minio-go/v7 v7.0.97
 	github.com/samber/lo v1.52.0
-	github.com/spf13/cast v1.10.0
 	github.com/spf13/cobra v1.10.2
-	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
 	github.com/swaggo/files v1.0.1
 	github.com/swaggo/gin-swagger v1.6.1
@@ -82,7 +80,6 @@ require (
 	github.com/envoyproxy/go-control-plane/envoy v1.36.0 // indirect
 	github.com/envoyproxy/protoc-gen-validate v1.3.0 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/fsnotify/fsnotify v1.9.0 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.12 // indirect
 	github.com/getsentry/sentry-go v0.40.0 // indirect
 	github.com/gin-contrib/sse v1.1.0 // indirect
@@ -103,7 +100,6 @@ require (
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
 	github.com/go-playground/validator/v10 v10.30.0 // indirect
-	github.com/go-viper/mapstructure/v2 v2.4.0 // indirect
 	github.com/goccy/go-json v0.10.5 // indirect
 	github.com/goccy/go-yaml v1.19.1 // indirect
 	github.com/gogo/protobuf v1.3.2 // indirect
@@ -146,13 +142,10 @@ require (
 	github.com/refraction-networking/utls v1.8.1 // indirect
 	github.com/rogpeppe/go-internal v1.14.1 // indirect
 	github.com/rs/xid v1.6.0 // indirect
-	github.com/sagikazarmark/locafero v0.12.0 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
-	github.com/spf13/afero v1.15.0 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.6.0 // indirect
 	github.com/stretchr/objx v0.5.3 // indirect
-	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/tinylib/msgp v1.6.1 // indirect
 	github.com/tjfoc/gmsm v1.4.1 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
