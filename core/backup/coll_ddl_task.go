@@ -19,7 +19,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
-type collectionDDLTask struct {
+type collDDLTask struct {
 	taskID string
 
 	ns namespace.NS
@@ -32,10 +32,10 @@ type collectionDDLTask struct {
 	logger *zap.Logger
 }
 
-func newCollDDLTask(ns namespace.NS, args collectionTaskArgs) *collectionDDLTask {
+func newCollDDLTask(ns namespace.NS, args collTaskArgs) *collDDLTask {
 	logger := log.L().With(zap.String("task_id", args.TaskID), zap.String("ns", ns.String()))
 
-	return &collectionDDLTask{
+	return &collDDLTask{
 		taskID:      args.TaskID,
 		ns:          ns,
 		grpc:        args.Grpc,
@@ -45,7 +45,7 @@ func newCollDDLTask(ns namespace.NS, args collectionTaskArgs) *collectionDDLTask
 	}
 }
 
-func (ddlt *collectionDDLTask) convFields(fields []*schemapb.FieldSchema) ([]*backuppb.FieldSchema, error) {
+func (ddlt *collDDLTask) convFields(fields []*schemapb.FieldSchema) ([]*backuppb.FieldSchema, error) {
 	bakFields := make([]*backuppb.FieldSchema, 0, len(fields))
 	for _, field := range fields {
 		var defaultValueBase64 string
@@ -79,7 +79,7 @@ func (ddlt *collectionDDLTask) convFields(fields []*schemapb.FieldSchema) ([]*ba
 	return bakFields, nil
 }
 
-func (ddlt *collectionDDLTask) convFunctions(funs []*schemapb.FunctionSchema) []*backuppb.FunctionSchema {
+func (ddlt *collDDLTask) convFunctions(funs []*schemapb.FunctionSchema) []*backuppb.FunctionSchema {
 	bakFuns := make([]*backuppb.FunctionSchema, 0, len(funs))
 	for _, function := range funs {
 		functionBak := &backuppb.FunctionSchema{
@@ -99,7 +99,7 @@ func (ddlt *collectionDDLTask) convFunctions(funs []*schemapb.FunctionSchema) []
 	return bakFuns
 }
 
-func (ddlt *collectionDDLTask) convStructArrayFields(fieldSchemas []*schemapb.StructArrayFieldSchema) ([]*backuppb.StructArrayFieldSchema, error) {
+func (ddlt *collDDLTask) convStructArrayFields(fieldSchemas []*schemapb.StructArrayFieldSchema) ([]*backuppb.StructArrayFieldSchema, error) {
 	bakFields := make([]*backuppb.StructArrayFieldSchema, 0, len(fieldSchemas))
 	for _, fieldSchema := range fieldSchemas {
 		fields, err := ddlt.convFields(fieldSchema.GetFields())
@@ -120,7 +120,7 @@ func (ddlt *collectionDDLTask) convStructArrayFields(fieldSchemas []*schemapb.St
 	return bakFields, nil
 }
 
-func (ddlt *collectionDDLTask) convSchema(schema *schemapb.CollectionSchema) (*backuppb.CollectionSchema, error) {
+func (ddlt *collDDLTask) convSchema(schema *schemapb.CollectionSchema) (*backuppb.CollectionSchema, error) {
 	fields, err := ddlt.convFields(schema.Fields)
 	if err != nil {
 		return nil, fmt.Errorf("backup: convert fields %w", err)
@@ -147,7 +147,7 @@ func (ddlt *collectionDDLTask) convSchema(schema *schemapb.CollectionSchema) (*b
 	return bakSchema, nil
 }
 
-func (ddlt *collectionDDLTask) backupIndexes(ctx context.Context) ([]*backuppb.IndexInfo, error) {
+func (ddlt *collDDLTask) backupIndexes(ctx context.Context) ([]*backuppb.IndexInfo, error) {
 	ddlt.logger.Info("start backup indexes of collection")
 	indexes, err := ddlt.grpc.ListIndex(ctx, ddlt.ns.DBName(), ddlt.ns.CollName())
 	if err != nil && !strings.Contains(err.Error(), "index not found") {
@@ -171,7 +171,7 @@ func (ddlt *collectionDDLTask) backupIndexes(ctx context.Context) ([]*backuppb.I
 	return bakIndexes, nil
 }
 
-func (ddlt *collectionDDLTask) getPartLoadState(ctx context.Context, collLoadState string, partitionNames []string) (map[string]string, error) {
+func (ddlt *collDDLTask) getPartLoadState(ctx context.Context, collLoadState string, partitionNames []string) (map[string]string, error) {
 	partLoadState := make(map[string]string, len(partitionNames))
 	// if the collection is loaded or not loaded, means all partitions are loaded or not loaded
 	if collLoadState == meta.LoadStateLoaded || collLoadState == meta.LoadStateNotload {
@@ -201,7 +201,7 @@ func (ddlt *collectionDDLTask) getPartLoadState(ctx context.Context, collLoadSta
 	return partLoadState, nil
 }
 
-func (ddlt *collectionDDLTask) getCollLoadState(ctx context.Context) (string, error) {
+func (ddlt *collDDLTask) getCollLoadState(ctx context.Context) (string, error) {
 	progress, err := ddlt.grpc.GetLoadingProgress(ctx, ddlt.ns.DBName(), ddlt.ns.CollName())
 	if err != nil {
 		return "", fmt.Errorf("backup: get loading progress %w", err)
@@ -217,7 +217,7 @@ func (ddlt *collectionDDLTask) getCollLoadState(ctx context.Context) (string, er
 	}
 }
 
-func (ddlt *collectionDDLTask) backupPartitionDDL(ctx context.Context, collID int64, collLoadState string) ([]*backuppb.PartitionBackupInfo, error) {
+func (ddlt *collDDLTask) backupPartitionDDL(ctx context.Context, collID int64, collLoadState string) ([]*backuppb.PartitionBackupInfo, error) {
 	ddlt.logger.Info("start backup partition ddl of collection")
 
 	resp, err := ddlt.grpc.ShowPartitions(ctx, ddlt.ns.DBName(), ddlt.ns.CollName())
@@ -250,7 +250,7 @@ func (ddlt *collectionDDLTask) backupPartitionDDL(ctx context.Context, collID in
 	return bakPartitions, nil
 }
 
-func (ddlt *collectionDDLTask) backupReplicas(ctx context.Context) ([]*backuppb.ReplicaInfo, error) {
+func (ddlt *collDDLTask) backupReplicas(ctx context.Context) ([]*backuppb.ReplicaInfo, error) {
 	if !ddlt.grpc.HasFeature(milvus.GetReplicas) {
 		ddlt.logger.Info("current milvus server does not support get replicas")
 		return nil, nil
@@ -278,7 +278,7 @@ func (ddlt *collectionDDLTask) backupReplicas(ctx context.Context) ([]*backuppb.
 
 // Execute collects the collection DDL info, including schema, index and partition info.
 // The segment info is not collected here, will be collect later in DML task.
-func (ddlt *collectionDDLTask) Execute(ctx context.Context) error {
+func (ddlt *collDDLTask) Execute(ctx context.Context) error {
 	ddlt.logger.Info("start to backup ddl of collection")
 
 	ddlt.taskMgr.UpdateBackupTask(ddlt.taskID, taskmgr.SetBackupCollDDLExecuting(ddlt.ns))

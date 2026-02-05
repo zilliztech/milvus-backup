@@ -16,28 +16,28 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 )
 
-func newTestCollectionDDLTask() *collectionDDLTask {
-	return &collectionDDLTask{logger: zap.NewNop(), option: &Option{}}
+func newTestCollDDLTask() *collDDLTask {
+	return &collDDLTask{logger: zap.NewNop(), option: &Option{}}
 }
 
-func TestCollectionDDLTask_shardNum(t *testing.T) {
+func TestCollDDLTask_shardNum(t *testing.T) {
 	t.Run("Normal", func(t *testing.T) {
-		ddlt := newTestCollectionDDLTask()
+		ddlt := newTestCollDDLTask()
 		ddlt.collBackup = &backuppb.CollectionBackupInfo{ShardsNum: 10}
 		assert.Equal(t, int32(10), ddlt.shardNum())
 	})
 
 	t.Run("OverwriteByRequest", func(t *testing.T) {
-		ct := newTestCollectionDDLTask()
+		ct := newTestCollDDLTask()
 		ct.collBackup = &backuppb.CollectionBackupInfo{ShardsNum: 10}
 		ct.option.MaxShardNum = 5
 		assert.Equal(t, int32(5), ct.shardNum())
 	})
 }
 
-func TestCollectionDDLTask_fields(t *testing.T) {
+func TestCollDDLTask_fields(t *testing.T) {
 	t.Run("WithDynamicField", func(t *testing.T) {
-		ddlt := newTestCollectionDDLTask()
+		ddlt := newTestCollDDLTask()
 
 		ddlt.collBackup = &backuppb.CollectionBackupInfo{
 			Schema: &backuppb.CollectionSchema{
@@ -65,7 +65,7 @@ func TestCollectionDDLTask_fields(t *testing.T) {
 	})
 
 	t.Run("WithoutDynamicField", func(t *testing.T) {
-		ddlt := newTestCollectionDDLTask()
+		ddlt := newTestCollDDLTask()
 
 		ddlt.collBackup = &backuppb.CollectionBackupInfo{
 			Schema: &backuppb.CollectionSchema{
@@ -87,12 +87,12 @@ func TestCollectionDDLTask_fields(t *testing.T) {
 	})
 }
 
-func TestCollectionTask_properties(t *testing.T) {
+func TestCollDDLTask_properties(t *testing.T) {
 	t.Run("NotSupportFuncRuntimeCheck", func(t *testing.T) {
 		grpcCli := milvus.NewMockGrpc(t)
 		grpcCli.EXPECT().HasFeature(milvus.FuncRuntimeCheck).Return(false).Once()
 
-		ddlt := newTestCollectionDDLTask()
+		ddlt := newTestCollDDLTask()
 		ddlt.grpcCli = grpcCli
 		ddlt.collBackup = &backuppb.CollectionBackupInfo{
 			Schema: &backuppb.CollectionSchema{
@@ -108,7 +108,7 @@ func TestCollectionTask_properties(t *testing.T) {
 	})
 
 	t.Run("NoFunctions", func(t *testing.T) {
-		ddlt := newTestCollectionDDLTask()
+		ddlt := newTestCollDDLTask()
 		ddlt.collBackup = &backuppb.CollectionBackupInfo{
 			Schema: &backuppb.CollectionSchema{
 				Properties: []*backuppb.KeyValuePair{{Key: "key", Value: "val"}},
@@ -124,7 +124,7 @@ func TestCollectionTask_properties(t *testing.T) {
 	t.Run("SupportFuncRuntimeCheck", func(t *testing.T) {
 		grpcCli := milvus.NewMockGrpc(t)
 		grpcCli.EXPECT().HasFeature(milvus.FuncRuntimeCheck).Return(true).Once()
-		ddlt := newTestCollectionDDLTask()
+		ddlt := newTestCollDDLTask()
 		ddlt.grpcCli = grpcCli
 		ddlt.collBackup = &backuppb.CollectionBackupInfo{
 			Schema: &backuppb.CollectionSchema{
@@ -142,11 +142,11 @@ func TestCollectionTask_properties(t *testing.T) {
 	})
 }
 
-func TestCollectionTask_restoreFuncRuntimeCheck(t *testing.T) {
+func TestCollDDLTask_restoreFuncRuntimeCheck(t *testing.T) {
 	t.Run("NotSupportFuncRuntimeCheck", func(t *testing.T) {
 		grpcCli := milvus.NewMockGrpc(t)
 		grpcCli.EXPECT().HasFeature(milvus.FuncRuntimeCheck).Return(false).Once()
-		ddlt := newTestCollectionDDLTask()
+		ddlt := newTestCollDDLTask()
 		ddlt.collBackup = &backuppb.CollectionBackupInfo{
 			Schema: &backuppb.CollectionSchema{
 				Functions: []*backuppb.FunctionSchema{{Name: "func", InputFieldNames: []string{"hello"}}},
@@ -158,7 +158,7 @@ func TestCollectionTask_restoreFuncRuntimeCheck(t *testing.T) {
 	})
 
 	t.Run("NoFunctions", func(t *testing.T) {
-		ddlt := newTestCollectionDDLTask()
+		ddlt := newTestCollDDLTask()
 
 		err := ddlt.restoreFuncRuntimeCheck(context.Background())
 		assert.NoError(t, err)
@@ -169,7 +169,7 @@ func TestCollectionTask_restoreFuncRuntimeCheck(t *testing.T) {
 
 		grpcCli.EXPECT().HasFeature(milvus.FuncRuntimeCheck).Return(true).Once()
 
-		ddlt := newTestCollectionDDLTask()
+		ddlt := newTestCollDDLTask()
 		ddlt.grpcCli = grpcCli
 		ddlt.collBackup = &backuppb.CollectionBackupInfo{
 			Schema: &backuppb.CollectionSchema{
@@ -198,7 +198,7 @@ func TestCollectionTask_restoreFuncRuntimeCheck(t *testing.T) {
 			}).
 			Once()
 
-		ddlt := newTestCollectionDDLTask()
+		ddlt := newTestCollDDLTask()
 		ddlt.grpcCli = grpcCli
 		ddlt.collBackup = &backuppb.CollectionBackupInfo{
 			Schema: &backuppb.CollectionSchema{
@@ -212,16 +212,16 @@ func TestCollectionTask_restoreFuncRuntimeCheck(t *testing.T) {
 	})
 }
 
-func TestCollectionTask_createColl(t *testing.T) {
+func TestCollDDLTask_createColl(t *testing.T) {
 	t.Run("Skip", func(t *testing.T) {
-		ct := newTestCollectionDDLTask()
+		ct := newTestCollDDLTask()
 		ct.option.SkipCreateCollection = true
 		err := ct.createColl(context.Background())
 		assert.NoError(t, err)
 	})
 
 	t.Run("Normal", func(t *testing.T) {
-		ct := newTestCollectionDDLTask()
+		ct := newTestCollDDLTask()
 		ct.targetNS = namespace.New("db1", "coll1")
 		ct.collBackup = &backuppb.CollectionBackupInfo{
 			Schema: &backuppb.CollectionSchema{

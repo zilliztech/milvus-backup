@@ -13,8 +13,8 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 )
 
-func newTestCollectionTask() *collectionTask {
-	return &collectionTask{logger: zap.NewNop(), option: &Option{}}
+func newTestCollTask() *collTask {
+	return &collTask{logger: zap.NewNop(), option: &Option{}}
 }
 
 func TestGetFailedReason(t *testing.T) {
@@ -41,15 +41,15 @@ func TestGetProcess(t *testing.T) {
 	})
 }
 
-func TestCollectionTask_ezk(t *testing.T) {
+func TestCollTask_ezk(t *testing.T) {
 	t.Run("Normal", func(t *testing.T) {
-		ct := newTestCollectionTask()
+		ct := newTestCollTask()
 		ct.dbBackup = &backuppb.DatabaseBackupInfo{Ezk: "hello"}
 		assert.Equal(t, "hello", ct.ezk())
 	})
 
 	t.Run("WithoutEZK", func(t *testing.T) {
-		ct := newTestCollectionTask()
+		ct := newTestCollTask()
 		assert.Equal(t, "", ct.ezk())
 	})
 }
@@ -87,7 +87,7 @@ func TestL0SegmentBatches(t *testing.T) {
 	}
 
 	t.Run("SingleL0InOneJob", func(t *testing.T) {
-		ct := newTestCollectionTask()
+		ct := newTestCollTask()
 		ct.collBackup = &backuppb.CollectionBackupInfo{CollectionId: 1}
 		grpcCli := milvus.NewMockGrpc(t)
 		grpcCli.EXPECT().HasFeature(milvus.MultiL0InOneJob).Return(false).Once()
@@ -107,7 +107,7 @@ func TestL0SegmentBatches(t *testing.T) {
 	})
 
 	t.Run("MultiL0InOneJob", func(t *testing.T) {
-		ct := newTestCollectionTask()
+		ct := newTestCollTask()
 		ct.collBackup = &backuppb.CollectionBackupInfo{CollectionId: 1}
 		grpcCli := milvus.NewMockGrpc(t)
 		grpcCli.EXPECT().HasFeature(milvus.MultiL0InOneJob).Return(true).Once()

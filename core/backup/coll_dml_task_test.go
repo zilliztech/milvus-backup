@@ -16,7 +16,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 )
 
-func newTestCollDMLTask() *collectionDMLTask { return &collectionDMLTask{logger: zap.NewNop()} }
+func newTestCollDMLTask() *collDMLTask { return &collDMLTask{logger: zap.NewNop()} }
 
 func TestCollDDLTask_groupID(t *testing.T) {
 	t.Run("NormalSegment", func(t *testing.T) {
@@ -42,7 +42,7 @@ func newMockStorage(t *testing.T, prefix string, objs []storage.ObjectAttr) stor
 	return st
 }
 
-func TestCollectionTask_listInsertLogByListFile(t *testing.T) {
+func TestCollDMLTask_listInsertLogByListFile(t *testing.T) {
 	t.Run("Normal", func(t *testing.T) {
 		dir := mpath.MilvusInsertLogDir("base", mpath.CollectionID(1), mpath.PartitionID(2), mpath.SegmentID(3))
 		objs := []storage.ObjectAttr{
@@ -94,7 +94,7 @@ func TestCollectionTask_listInsertLogByListFile(t *testing.T) {
 
 }
 
-func TestCollectionTask_listDeltaLogByListFile(t *testing.T) {
+func TestCollDMLTask_listDeltaLogByListFile(t *testing.T) {
 	dir := mpath.MilvusDeltaLogDir("base", mpath.CollectionID(1), mpath.PartitionID(2), mpath.SegmentID(3))
 	objs := []storage.ObjectAttr{
 		{Key: mpath.Join(dir, mpath.LogID(1)), Length: 1},
@@ -122,7 +122,7 @@ func TestCollectionTask_listDeltaLogByListFile(t *testing.T) {
 	})
 }
 
-func TestCollectionTask_listInsertLogByAPI(t *testing.T) {
+func TestCollDMLTask_listInsertLogByAPI(t *testing.T) {
 	dir := mpath.MilvusInsertLogDir("base", mpath.CollectionID(1), mpath.PartitionID(2), mpath.SegmentID(3))
 	objs := []storage.ObjectAttr{
 		{Key: mpath.Join(dir, mpath.FieldID(1), mpath.LogID(1)), Length: 1},
@@ -154,7 +154,7 @@ func TestCollectionTask_listInsertLogByAPI(t *testing.T) {
 	})
 }
 
-func TestCollectionTask_listDeltaLogByAPI(t *testing.T) {
+func TestCollDMLTask_listDeltaLogByAPI(t *testing.T) {
 	dir := mpath.MilvusDeltaLogDir("base", mpath.CollectionID(1), mpath.PartitionID(2), mpath.SegmentID(3))
 	objs := []storage.ObjectAttr{
 		{Key: mpath.Join(dir, mpath.LogID(1)), Length: 1},

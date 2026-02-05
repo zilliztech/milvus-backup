@@ -11,9 +11,9 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 )
 
-func newTestCollDDLTask() *collectionDDLTask { return &collectionDDLTask{logger: zap.NewNop()} }
+func newTestCollDDLTask() *collDDLTask { return &collDDLTask{logger: zap.NewNop()} }
 
-func TestCollectionTask_convSchema(t *testing.T) {
+func TestCollDDLTask_convSchema(t *testing.T) {
 	schema := &schemapb.CollectionSchema{
 		Name:               "name",
 		Description:        "description",

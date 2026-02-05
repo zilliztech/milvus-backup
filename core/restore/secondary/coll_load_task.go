@@ -27,7 +27,7 @@ type loadTaskArgs struct {
 	TSAlloc   *tsAlloc
 }
 
-type collectionLoadTask struct {
+type collLoadTask struct {
 	taskID string
 
 	backupInfo *backuppb.BackupInfo
@@ -40,10 +40,10 @@ type collectionLoadTask struct {
 	logger    *zap.Logger
 }
 
-func newCollectionLoadTask(args loadTaskArgs, dbBackup *backuppb.DatabaseBackupInfo, collBackup *backuppb.CollectionBackupInfo) *collectionLoadTask {
+func newCollLoadTask(args loadTaskArgs, dbBackup *backuppb.DatabaseBackupInfo, collBackup *backuppb.CollectionBackupInfo) *collLoadTask {
 	ns := namespace.New(collBackup.GetDbName(), collBackup.GetCollectionName())
 
-	return &collectionLoadTask{
+	return &collLoadTask{
 		taskID: args.TaskID,
 
 		backupInfo: args.BackupInfo,
@@ -57,7 +57,7 @@ func newCollectionLoadTask(args loadTaskArgs, dbBackup *backuppb.DatabaseBackupI
 	}
 }
 
-func (clt *collectionLoadTask) Execute(ctx context.Context) error {
+func (clt *collLoadTask) Execute(ctx context.Context) error {
 	if clt.collBackup.GetLoadState() == meta.LoadStateNotload {
 		clt.logger.Info("collection not load, skip load")
 		return nil
@@ -90,7 +90,7 @@ func (clt *collectionLoadTask) Execute(ctx context.Context) error {
 
 }
 
-func (clt *collectionLoadTask) buildLoadFields() []*messagespb.LoadFieldConfig {
+func (clt *collLoadTask) buildLoadFields() []*messagespb.LoadFieldConfig {
 	indexField := lo.SliceToMap(clt.collBackup.GetIndexInfos(), func(index *backuppb.IndexInfo) (int64, *backuppb.IndexInfo) {
 		return index.GetIndexId(), index
 	})
@@ -108,7 +108,7 @@ func (clt *collectionLoadTask) buildLoadFields() []*messagespb.LoadFieldConfig {
 	return fieldConfigs
 }
 
-func (clt *collectionLoadTask) buildLoadConfig() []*messagespb.LoadReplicaConfig {
+func (clt *collLoadTask) buildLoadConfig() []*messagespb.LoadReplicaConfig {
 	replicaConfigs := make([]*messagespb.LoadReplicaConfig, 0, len(clt.collBackup.GetReplicas()))
 
 	for _, replica := range clt.collBackup.GetReplicas() {
@@ -131,7 +131,7 @@ func (clt *collectionLoadTask) buildLoadConfig() []*messagespb.LoadReplicaConfig
 	return replicaConfigs
 }
 
-func (clt *collectionLoadTask) buildHeader() *message.AlterLoadConfigMessageHeader {
+func (clt *collLoadTask) buildHeader() *message.AlterLoadConfigMessageHeader {
 	partitionIDs := lo.Map(clt.collBackup.GetPartitionBackups(), func(partition *backuppb.PartitionBackupInfo, _ int) int64 {
 		return partition.GetPartitionId()
 	})

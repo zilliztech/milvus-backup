@@ -42,7 +42,7 @@ type concurrencyThrottling struct {
 	CopySem *semaphore.Weighted
 }
 
-type collectionTaskArgs struct {
+type collTaskArgs struct {
 	TaskID string
 
 	MilvusStorage  storage.Client
@@ -90,7 +90,7 @@ func concurrentExecCollTask(ctx context.Context, collSem *semaphore.Weighted, ta
 	return nil
 }
 
-func newDDLTasks(nss []namespace.NS, args collectionTaskArgs) []collTask {
+func newDDLTasks(nss []namespace.NS, args collTaskArgs) []collTask {
 	ddlTasks := make([]collTask, 0, len(nss))
 	for _, ns := range nss {
 		task := func(ctx context.Context) error {
@@ -107,7 +107,7 @@ func newDDLTasks(nss []namespace.NS, args collectionTaskArgs) []collTask {
 	return ddlTasks
 }
 
-func newDMLTasks(nss []namespace.NS, args collectionTaskArgs) []collTask {
+func newDMLTasks(nss []namespace.NS, args collTaskArgs) []collTask {
 	dmlTasks := make([]collTask, 0, len(nss))
 	for _, ns := range nss {
 		task := func(ctx context.Context) error {
@@ -129,10 +129,10 @@ func newDMLTasks(nss []namespace.NS, args collectionTaskArgs) []collTask {
 type metaOnlyStrategy struct {
 	nss []namespace.NS
 
-	args collectionTaskArgs
+	args collTaskArgs
 }
 
-func newMetaOnlyStrategy(nss []namespace.NS, args collectionTaskArgs) *metaOnlyStrategy {
+func newMetaOnlyStrategy(nss []namespace.NS, args collTaskArgs) *metaOnlyStrategy {
 	return &metaOnlyStrategy{nss: nss, args: args}
 }
 
@@ -148,12 +148,12 @@ func (m *metaOnlyStrategy) Execute(ctx context.Context) error {
 type skipFlushStrategy struct {
 	nss []namespace.NS
 
-	args collectionTaskArgs
+	args collTaskArgs
 
 	logger *zap.Logger
 }
 
-func newSkipFlushStrategy(nss []namespace.NS, args collectionTaskArgs) *skipFlushStrategy {
+func newSkipFlushStrategy(nss []namespace.NS, args collTaskArgs) *skipFlushStrategy {
 	return &skipFlushStrategy{
 		nss:    nss,
 		args:   args,
@@ -182,12 +182,12 @@ func (sf *skipFlushStrategy) Execute(ctx context.Context) error {
 type serialFlushStrategy struct {
 	nss []namespace.NS
 
-	args collectionTaskArgs
+	args collTaskArgs
 
 	logger *zap.Logger
 }
 
-func newSerialFlushStrategy(nss []namespace.NS, args collectionTaskArgs) *serialFlushStrategy {
+func newSerialFlushStrategy(nss []namespace.NS, args collTaskArgs) *serialFlushStrategy {
 	return &serialFlushStrategy{
 		nss:    nss,
 		args:   args,
@@ -273,12 +273,12 @@ func (sf *serialFlushStrategy) Execute(ctx context.Context) error {
 type bulkFlushStrategy struct {
 	nss []namespace.NS
 
-	args collectionTaskArgs
+	args collTaskArgs
 
 	logger *zap.Logger
 }
 
-func newBulkFlushStrategy(nss []namespace.NS, args collectionTaskArgs) *bulkFlushStrategy {
+func newBulkFlushStrategy(nss []namespace.NS, args collTaskArgs) *bulkFlushStrategy {
 	return &bulkFlushStrategy{nss: nss, args: args, logger: log.With(zap.String("task_id", args.TaskID))}
 }
 

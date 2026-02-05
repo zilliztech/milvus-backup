@@ -90,7 +90,7 @@ type dmlTaskArgs struct {
 	RestfulCli milvus.Restful
 }
 
-type collectionDMLTask struct {
+type collDMLTask struct {
 	taskID string
 
 	tsAlloc *tsAlloc
@@ -107,10 +107,10 @@ type collectionDMLTask struct {
 	logger *zap.Logger
 }
 
-func newCollectionDMLTask(args dmlTaskArgs, collBackup *backuppb.CollectionBackupInfo) *collectionDMLTask {
+func newCollDMLTask(args dmlTaskArgs, collBackup *backuppb.CollectionBackupInfo) *collDMLTask {
 	ns := namespace.New(collBackup.GetDbName(), collBackup.GetCollectionName())
 
-	return &collectionDMLTask{
+	return &collDMLTask{
 		taskID: args.TaskID,
 
 		tsAlloc: args.TSAlloc,
@@ -128,7 +128,7 @@ func newCollectionDMLTask(args dmlTaskArgs, collBackup *backuppb.CollectionBacku
 	}
 }
 
-func (dmlt *collectionDMLTask) Execute(ctx context.Context) error {
+func (dmlt *collDMLTask) Execute(ctx context.Context) error {
 	dmlt.logger.Info("start restore collection dml")
 
 	if err := dmlt.restorePartitions(ctx); err != nil {
@@ -142,7 +142,7 @@ func (dmlt *collectionDMLTask) Execute(ctx context.Context) error {
 	return nil
 }
 
-func (dmlt *collectionDMLTask) backupTS(vch string) (uint64, error) {
+func (dmlt *collDMLTask) backupTS(vch string) (uint64, error) {
 	pch := funcutil.ToPhysicalChannel(vch)
 
 	ts, ok := dmlt.pchTS[pch]
@@ -153,7 +153,7 @@ func (dmlt *collectionDMLTask) backupTS(vch string) (uint64, error) {
 	return ts, nil
 }
 
-func (dmlt *collectionDMLTask) restoreAllPartitionL0(ctx context.Context) error {
+func (dmlt *collDMLTask) restoreAllPartitionL0(ctx context.Context) error {
 	dmlt.logger.Info("restore all partition l0")
 
 	batches, err := dmlt.l0SegBatches(dmlt.collBackup.GetL0Segments())
@@ -171,7 +171,7 @@ func (dmlt *collectionDMLTask) restoreAllPartitionL0(ctx context.Context) error 
 
 }
 
-func (dmlt *collectionDMLTask) restorePartitions(ctx context.Context) error {
+func (dmlt *collDMLTask) restorePartitions(ctx context.Context) error {
 	g, subCtx := errgroup.WithContext(ctx)
 	for _, partition := range dmlt.collBackup.GetPartitionBackups() {
 		g.Go(func() error {
@@ -189,7 +189,7 @@ func (dmlt *collectionDMLTask) restorePartitions(ctx context.Context) error {
 	return nil
 }
 
-func (dmlt *collectionDMLTask) restorePartition(ctx context.Context, partition *backuppb.PartitionBackupInfo) error {
+func (dmlt *collDMLTask) restorePartition(ctx context.Context, partition *backuppb.PartitionBackupInfo) error {
 	var l0Segs []*backuppb.SegmentBackupInfo
 	var nonL0Segs []*backuppb.SegmentBackupInfo
 
@@ -224,7 +224,7 @@ func (dmlt *collectionDMLTask) restorePartition(ctx context.Context, partition *
 	return nil
 }
 
-func (dmlt *collectionDMLTask) restoreBatches(ctx context.Context, partitionID int64, batches []batch) error {
+func (dmlt *collDMLTask) restoreBatches(ctx context.Context, partitionID int64, batches []batch) error {
 	jobIDs := make([]int64, 0, len(batches))
 	for _, b := range batches {
 		jobID, err := dmlt.sendImportMsg(ctx, partitionID, b)
@@ -241,7 +241,7 @@ func (dmlt *collectionDMLTask) restoreBatches(ctx context.Context, partitionID i
 	return nil
 }
 
-func (dmlt *collectionDMLTask) checkBulkInsertJobs(ctx context.Context, jobIDs []int64) error {
+func (dmlt *collDMLTask) checkBulkInsertJobs(ctx context.Context, jobIDs []int64) error {
 	g, subCtx := errgroup.WithContext(ctx)
 	for _, jobID := range jobIDs {
 		g.Go(func() error {
@@ -259,7 +259,7 @@ func (dmlt *collectionDMLTask) checkBulkInsertJobs(ctx context.Context, jobIDs [
 	return nil
 }
 
-func (dmlt *collectionDMLTask) checkBulkInsertJob(ctx context.Context, jobID string) error {
+func (dmlt *collDMLTask) checkBulkInsertJob(ctx context.Context, jobID string) error {
 	// wait for bulk insert job done
 	var lastProgress int
 	lastUpdateTime := time.Now()
@@ -294,7 +294,7 @@ func (dmlt *collectionDMLTask) checkBulkInsertJob(ctx context.Context, jobID str
 	return errors.New("secondary: walk into unreachable code")
 }
 
-func (dmlt *collectionDMLTask) nonL0SegBatches(ctx context.Context, segs []*backuppb.SegmentBackupInfo) ([]batch, error) {
+func (dmlt *collDMLTask) nonL0SegBatches(ctx context.Context, segs []*backuppb.SegmentBackupInfo) ([]batch, error) {
 	// group by vchannel and storage version
 	segBatch := lo.GroupBy(segs, func(seg *backuppb.SegmentBackupInfo) batchKey {
 		return batchKey{vch: seg.GetVChannel(), sv: seg.GetStorageVersion()}
@@ -336,7 +336,7 @@ func (dmlt *collectionDMLTask) nonL0SegBatches(ctx context.Context, segs []*back
 	return batches, nil
 }
 
-func (dmlt *collectionDMLTask) l0SegBatches(l0Segs []*backuppb.SegmentBackupInfo) ([]batch, error) {
+func (dmlt *collDMLTask) l0SegBatches(l0Segs []*backuppb.SegmentBackupInfo) ([]batch, error) {
 	segBatch := lo.GroupBy(l0Segs, func(seg *backuppb.SegmentBackupInfo) batchKey {
 		return batchKey{vch: seg.GetVChannel(), sv: seg.GetStorageVersion()}
 	})
@@ -371,7 +371,7 @@ func (dmlt *collectionDMLTask) l0SegBatches(l0Segs []*backuppb.SegmentBackupInfo
 	return batches, nil
 }
 
-func (dmlt *collectionDMLTask) buildImportFiles(b batch) []*msgpb.ImportFile {
+func (dmlt *collDMLTask) buildImportFiles(b batch) []*msgpb.ImportFile {
 	files := make([]*msgpb.ImportFile, 0, len(b.partitionDirs))
 
 	for i, dir := range b.partitionDirs {
@@ -386,7 +386,7 @@ func (dmlt *collectionDMLTask) buildImportFiles(b batch) []*msgpb.ImportFile {
 	return files
 }
 
-func (dmlt *collectionDMLTask) sendImportMsg(ctx context.Context, partitionID int64, b batch) (int64, error) {
+func (dmlt *collDMLTask) sendImportMsg(ctx context.Context, partitionID int64, b batch) (int64, error) {
 	jobID := rand.Int64()
 	schema, err := conv.Schema(dmlt.collBackup.GetSchema())
 	if err != nil {
@@ -434,7 +434,7 @@ func (dmlt *collectionDMLTask) sendImportMsg(ctx context.Context, partitionID in
 	return jobID, nil
 }
 
-func (dmlt *collectionDMLTask) buildBackupPartitionDir(ctx context.Context, size int64, pathOpt ...mpath.Option) (partitionDir, error) {
+func (dmlt *collDMLTask) buildBackupPartitionDir(ctx context.Context, size int64, pathOpt ...mpath.Option) (partitionDir, error) {
 	insertLogDir := mpath.BackupInsertLogDir(dmlt.backupDir, pathOpt...)
 	deltaLogDir := mpath.BackupDeltaLogDir(dmlt.backupDir, pathOpt...)
 

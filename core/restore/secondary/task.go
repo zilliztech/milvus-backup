@@ -177,19 +177,19 @@ func (t *Task) runCollTask(ctx context.Context, dbBackup *backuppb.DatabaseBacku
 	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.AddRestoreCollTask(ns, collBackup.GetSize()))
 	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollExecuting(ns))
 
-	ddlTask := newCollectionDDLTask(ddlArgs, dbBackup, collBackup)
+	ddlTask := newCollDDLTask(ddlArgs, dbBackup, collBackup)
 	if err := ddlTask.Execute(ctx); err != nil {
 		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollFail(ns, err))
 		return fmt.Errorf("secondary: execute collection ddl task: %w", err)
 	}
 
-	dmlTask := newCollectionDMLTask(dmlArgs, collBackup)
+	dmlTask := newCollDMLTask(dmlArgs, collBackup)
 	if err := dmlTask.Execute(ctx); err != nil {
 		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollFail(ns, err))
 		return fmt.Errorf("secondary: execute collection dml task: %w", err)
 	}
 
-	loadTask := newCollectionLoadTask(loadArgs, dbBackup, collBackup)
+	loadTask := newCollLoadTask(loadArgs, dbBackup, collBackup)
 	if err := loadTask.Execute(ctx); err != nil {
 		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollFail(ns, err))
 		return fmt.Errorf("secondary: execute collection load task: %w", err)

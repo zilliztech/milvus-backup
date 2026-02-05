@@ -12,7 +12,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
-type collectionIndexExtraTask struct {
+type collIndexExtraTask struct {
 	taskID string
 
 	kv clientv3.KV
@@ -24,8 +24,8 @@ type collectionIndexExtraTask struct {
 	logger *zap.Logger
 }
 
-func newCollectionIndexExtraTask(taskID string, kv clientv3.KV, etcdRootPath string, metaBuilder *metaBuilder) *collectionIndexExtraTask {
-	return &collectionIndexExtraTask{
+func newCollIndexExtraTask(taskID string, kv clientv3.KV, etcdRootPath string, metaBuilder *metaBuilder) *collIndexExtraTask {
+	return &collIndexExtraTask{
 		taskID:       taskID,
 		kv:           kv,
 		etcdRootPath: etcdRootPath,
@@ -34,7 +34,7 @@ func newCollectionIndexExtraTask(taskID string, kv clientv3.KV, etcdRootPath str
 	}
 }
 
-func (ciet *collectionIndexExtraTask) Execute(ctx context.Context) error {
+func (ciet *collIndexExtraTask) Execute(ctx context.Context) error {
 	prefix := fmt.Sprintf("%s/meta/field-index/", ciet.etcdRootPath)
 	ciet.logger.Info("start to get index info from etcd", zap.String("prefix", prefix))
 	resp, err := ciet.kv.Get(ctx, prefix, clientv3.WithPrefix())
