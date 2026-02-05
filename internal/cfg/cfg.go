@@ -230,6 +230,10 @@ type MinioConfig struct {
 	BackupIAMEndpoint       Value[string]
 
 	CrossStorage Value[bool]
+
+	// MultipartCopyThresholdMiB is the file size threshold above which multipart copy is used.
+	// Default is 500 MiB. GCP does not support multipart copy and will always use single copy.
+	MultipartCopyThresholdMiB Value[int64]
 }
 
 func newMinioConfig() MinioConfig {
@@ -269,6 +273,8 @@ func newMinioConfig() MinioConfig {
 		BackupIAMEndpoint:       Value[string]{Default: "", Keys: []string{"minio.backupIamEndpoint"}, EnvKeys: []string{"MINIO_BACKUP_IAM_ENDPOINT"}},
 
 		CrossStorage: Value[bool]{Default: false, Keys: []string{"minio.crossStorage"}},
+
+		MultipartCopyThresholdMiB: Value[int64]{Default: 500, Keys: []string{"minio.multipartCopyThresholdMiB"}},
 	}
 }
 
@@ -301,6 +307,7 @@ func (c *MinioConfig) Resolve(s *source) error {
 		&c.BackupAccessKeyID, &c.BackupSecretAccessKey, &c.BackupToken, &c.BackupGcpCredentialJSON,
 		&c.BackupUseSSL, &c.BackupBucketName, &c.BackupRootPath, &c.BackupUseIAM, &c.BackupIAMEndpoint,
 		&c.CrossStorage,
+		&c.MultipartCopyThresholdMiB,
 	)
 }
 
