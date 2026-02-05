@@ -20,7 +20,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 )
 
-type collectionDDLTask struct {
+type collDDLTask struct {
 	taskID string
 
 	backupInfo *backuppb.BackupInfo
@@ -42,10 +42,10 @@ type ddlTaskArgs struct {
 	TSAlloc   *tsAlloc
 }
 
-func newCollectionDDLTask(args ddlTaskArgs, dbBackup *backuppb.DatabaseBackupInfo, collBackup *backuppb.CollectionBackupInfo) *collectionDDLTask {
+func newCollDDLTask(args ddlTaskArgs, dbBackup *backuppb.DatabaseBackupInfo, collBackup *backuppb.CollectionBackupInfo) *collDDLTask {
 	ns := namespace.New(collBackup.GetDbName(), collBackup.GetCollectionName())
 
-	return &collectionDDLTask{
+	return &collDDLTask{
 		taskID: args.TaskID,
 
 		backupInfo: args.BackupInfo,
@@ -59,7 +59,7 @@ func newCollectionDDLTask(args ddlTaskArgs, dbBackup *backuppb.DatabaseBackupInf
 	}
 }
 
-func (ddlt *collectionDDLTask) Execute(ctx context.Context) error {
+func (ddlt *collDDLTask) Execute(ctx context.Context) error {
 	if err := ddlt.createColl(ctx); err != nil {
 		return fmt.Errorf("collection: create collection: %w", err)
 	}
@@ -71,7 +71,7 @@ func (ddlt *collectionDDLTask) Execute(ctx context.Context) error {
 	return nil
 }
 
-func (ddlt *collectionDDLTask) createIndexes(ctx context.Context) error {
+func (ddlt *collDDLTask) createIndexes(ctx context.Context) error {
 	for _, index := range ddlt.collBackup.GetIndexInfos() {
 		if err := ddlt.createIndex(ctx, index); err != nil {
 			return fmt.Errorf("collection: create index: %w", err)
@@ -81,7 +81,7 @@ func (ddlt *collectionDDLTask) createIndexes(ctx context.Context) error {
 	return nil
 }
 
-func (ddlt *collectionDDLTask) createIndex(ctx context.Context, index *backuppb.IndexInfo) error {
+func (ddlt *collDDLTask) createIndex(ctx context.Context, index *backuppb.IndexInfo) error {
 	indexInfo := &indexpb.IndexInfo{
 		CollectionID:    ddlt.collBackup.GetCollectionId(),
 		FieldID:         index.GetFieldId(),
@@ -129,19 +129,19 @@ func (ddlt *collectionDDLTask) createIndex(ctx context.Context, index *backuppb.
 	return nil
 }
 
-func (ddlt *collectionDDLTask) partitionNames() []string {
+func (ddlt *collDDLTask) partitionNames() []string {
 	return lo.Map(ddlt.collBackup.GetPartitionBackups(), func(part *backuppb.PartitionBackupInfo, _ int) string {
 		return part.GetPartitionName()
 	})
 }
 
-func (ddlt *collectionDDLTask) partitionIDs() []int64 {
+func (ddlt *collDDLTask) partitionIDs() []int64 {
 	return lo.Map(ddlt.collBackup.GetPartitionBackups(), func(part *backuppb.PartitionBackupInfo, _ int) int64 {
 		return part.GetPartitionId()
 	})
 }
 
-func (ddlt *collectionDDLTask) createColl(ctx context.Context) error {
+func (ddlt *collDDLTask) createColl(ctx context.Context) error {
 	header := &message.CreateCollectionMessageHeader{
 		CollectionId: ddlt.collBackup.GetCollectionId(),
 		DbId:         ddlt.dbBackup.GetDbId(),

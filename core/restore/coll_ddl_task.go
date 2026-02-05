@@ -21,7 +21,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/validate"
 )
 
-type collectionDDLTask struct {
+type collDDLTask struct {
 	option *Option
 
 	collBackup *backuppb.CollectionBackupInfo
@@ -32,8 +32,8 @@ type collectionDDLTask struct {
 	logger *zap.Logger
 }
 
-func newCollectionDDLTask(taskID string, opt *Option, collBackup *backuppb.CollectionBackupInfo, targetNS namespace.NS, grpcCli milvus.Grpc) *collectionDDLTask {
-	return &collectionDDLTask{
+func newCollDDLTask(taskID string, opt *Option, collBackup *backuppb.CollectionBackupInfo, targetNS namespace.NS, grpcCli milvus.Grpc) *collDDLTask {
+	return &collDDLTask{
 		option:     opt,
 		collBackup: collBackup,
 		targetNS:   targetNS,
@@ -42,7 +42,7 @@ func newCollectionDDLTask(taskID string, opt *Option, collBackup *backuppb.Colle
 	}
 }
 
-func (ddlt *collectionDDLTask) Execute(ctx context.Context) error {
+func (ddlt *collDDLTask) Execute(ctx context.Context) error {
 	ddlt.logger.Info("start restore collection ddl")
 
 	// restore collection schema
@@ -72,7 +72,7 @@ func (ddlt *collectionDDLTask) Execute(ctx context.Context) error {
 	return nil
 }
 
-func (ddlt *collectionDDLTask) dropExistedColl(ctx context.Context) error {
+func (ddlt *collDDLTask) dropExistedColl(ctx context.Context) error {
 	if !ddlt.option.DropExistCollection {
 		ddlt.logger.Info("skip drop existed collection")
 		return nil
@@ -104,7 +104,7 @@ func (ddlt *collectionDDLTask) dropExistedColl(ctx context.Context) error {
 // This discrepancy in field order between the new collection and the backup file can cause restore errors.
 // Therefore, we stop processing fields if the field IDs are not continuous.
 // The remaining fields will be imported via addField.
-func (ddlt *collectionDDLTask) fields() ([]*schemapb.FieldSchema, []*schemapb.FieldSchema, error) {
+func (ddlt *collDDLTask) fields() ([]*schemapb.FieldSchema, []*schemapb.FieldSchema, error) {
 	fields, err := ddlt.convFields(ddlt.collBackup.GetSchema().GetFields())
 	if err != nil {
 		return nil, nil, fmt.Errorf("collection: get fields: %w", err)
@@ -129,7 +129,7 @@ func (ddlt *collectionDDLTask) fields() ([]*schemapb.FieldSchema, []*schemapb.Fi
 	return createFields, addFields, nil
 }
 
-func (ddlt *collectionDDLTask) addFields(ctx context.Context, fields []*schemapb.FieldSchema) error {
+func (ddlt *collDDLTask) addFields(ctx context.Context, fields []*schemapb.FieldSchema) error {
 	// add fields
 	for _, field := range fields {
 		if err := ddlt.grpcCli.AddField(ctx, ddlt.targetNS.DBName(), ddlt.targetNS.CollName(), field); err != nil {
@@ -142,7 +142,7 @@ func (ddlt *collectionDDLTask) addFields(ctx context.Context, fields []*schemapb
 
 // properties returns the properties of the collection.
 // If milvus support func runtime check, add disable_auto_function to properties to avoid error when create collection.
-func (ddlt *collectionDDLTask) properties() []*commonpb.KeyValuePair {
+func (ddlt *collDDLTask) properties() []*commonpb.KeyValuePair {
 	props := pbconv.BakKVToMilvusKV(ddlt.collBackup.GetSchema().GetProperties(), ddlt.option.SkipParams.CollectionProperties...)
 
 	if len(ddlt.collBackup.GetSchema().GetFunctions()) == 0 {
@@ -166,7 +166,7 @@ func (ddlt *collectionDDLTask) properties() []*commonpb.KeyValuePair {
 
 // restoreFuncRuntimeCheck restores the disable_func_runtime_check property to original value from backup.
 // properties function add disable_auto_function to properties, we need to restore the original value from backup.
-func (ddlt *collectionDDLTask) restoreFuncRuntimeCheck(ctx context.Context) error {
+func (ddlt *collDDLTask) restoreFuncRuntimeCheck(ctx context.Context) error {
 	if len(ddlt.collBackup.GetSchema().GetFunctions()) == 0 {
 		ddlt.logger.Info("no functions, skip restore func runtime check")
 		return nil
@@ -200,7 +200,7 @@ func (ddlt *collectionDDLTask) restoreFuncRuntimeCheck(ctx context.Context) erro
 	return nil
 }
 
-func (ddlt *collectionDDLTask) createColl(ctx context.Context) error {
+func (ddlt *collDDLTask) createColl(ctx context.Context) error {
 	if ddlt.option.SkipCreateCollection {
 		ddlt.logger.Info("skip create collection")
 		return nil
@@ -246,7 +246,7 @@ func (ddlt *collectionDDLTask) createColl(ctx context.Context) error {
 	return nil
 }
 
-func (ddlt *collectionDDLTask) convFields(bakFields []*backuppb.FieldSchema) ([]*schemapb.FieldSchema, error) {
+func (ddlt *collDDLTask) convFields(bakFields []*backuppb.FieldSchema) ([]*schemapb.FieldSchema, error) {
 	fields := make([]*schemapb.FieldSchema, 0, len(bakFields))
 
 	for _, bakField := range bakFields {
@@ -278,7 +278,7 @@ func (ddlt *collectionDDLTask) convFields(bakFields []*backuppb.FieldSchema) ([]
 	return fields, nil
 }
 
-func (ddlt *collectionDDLTask) structArrayFields() ([]*schemapb.StructArrayFieldSchema, error) {
+func (ddlt *collDDLTask) structArrayFields() ([]*schemapb.StructArrayFieldSchema, error) {
 	bakFields := ddlt.collBackup.GetSchema().GetStructArrayFields()
 	structArrayFields := make([]*schemapb.StructArrayFieldSchema, 0, len(bakFields))
 	for _, bakField := range bakFields {
@@ -302,7 +302,7 @@ func (ddlt *collectionDDLTask) structArrayFields() ([]*schemapb.StructArrayField
 
 // shardNum returns the shard number of the collection.
 // if MaxShardNum is set and greater than the shard number in backup, use MaxShardNum
-func (ddlt *collectionDDLTask) shardNum() int32 {
+func (ddlt *collDDLTask) shardNum() int32 {
 	// overwrite shardNum by request parameter
 	shardNum := ddlt.collBackup.GetShardsNum()
 	if ddlt.option.MaxShardNum > 0 && shardNum > ddlt.option.MaxShardNum {
@@ -318,7 +318,7 @@ func (ddlt *collectionDDLTask) shardNum() int32 {
 // partitionNum returns the partition number of the collection
 // if partition key was set, return the length of partition in backup
 // else return 0.
-func (ddlt *collectionDDLTask) partitionNum() int {
+func (ddlt *collDDLTask) partitionNum() int {
 	var hasPartitionKey bool
 	for _, field := range ddlt.collBackup.GetSchema().GetFields() {
 		if field.GetIsPartitionKey() {
@@ -334,7 +334,7 @@ func (ddlt *collectionDDLTask) partitionNum() int {
 	return 0
 }
 
-func (ddlt *collectionDDLTask) dropExistedIndex(ctx context.Context) error {
+func (ddlt *collDDLTask) dropExistedIndex(ctx context.Context) error {
 	if !ddlt.option.DropExistIndex {
 		ddlt.logger.Info("skip drop existed index")
 		return nil
@@ -359,7 +359,7 @@ func (ddlt *collectionDDLTask) dropExistedIndex(ctx context.Context) error {
 	return nil
 }
 
-func (ddlt *collectionDDLTask) createIndex(ctx context.Context) error {
+func (ddlt *collDDLTask) createIndex(ctx context.Context) error {
 	if !ddlt.option.RebuildIndex {
 		ddlt.logger.Info("skip rebuild index")
 		return nil
@@ -400,7 +400,7 @@ func (ddlt *collectionDDLTask) createIndex(ctx context.Context) error {
 
 // hasSpecialChar checks if the index name contains special characters
 // This function is mainly copied from milvus main repo
-func (ddlt *collectionDDLTask) specialIndexName(indexName string) bool {
+func (ddlt *collDDLTask) specialIndexName(indexName string) bool {
 	indexName = strings.TrimSpace(indexName)
 
 	if indexName == "" {
@@ -416,7 +416,7 @@ func (ddlt *collectionDDLTask) specialIndexName(indexName string) bool {
 	return validate.HasSpecialChar(indexName)
 }
 
-func (ddlt *collectionDDLTask) restoreScalarFieldIdx(ctx context.Context, indexes []*backuppb.IndexInfo) error {
+func (ddlt *collDDLTask) restoreScalarFieldIdx(ctx context.Context, indexes []*backuppb.IndexInfo) error {
 	for _, index := range indexes {
 		ddlt.logger.Info("source index",
 			zap.String("index_name", index.GetIndexName()),
@@ -445,7 +445,7 @@ func (ddlt *collectionDDLTask) restoreScalarFieldIdx(ctx context.Context, indexe
 	return nil
 }
 
-func (ddlt *collectionDDLTask) restoreVectorFieldIdx(ctx context.Context, indexes []*backuppb.IndexInfo) error {
+func (ddlt *collDDLTask) restoreVectorFieldIdx(ctx context.Context, indexes []*backuppb.IndexInfo) error {
 	for _, index := range indexes {
 		ddlt.logger.Info("source  index",
 			zap.String("indexName", index.GetIndexName()),
@@ -478,7 +478,7 @@ func (ddlt *collectionDDLTask) restoreVectorFieldIdx(ctx context.Context, indexe
 	return nil
 }
 
-func (ddlt *collectionDDLTask) createPartitions(ctx context.Context) error {
+func (ddlt *collDDLTask) createPartitions(ctx context.Context) error {
 	for _, part := range ddlt.collBackup.GetPartitionBackups() {
 		if err := ddlt.createPartition(ctx, part.GetPartitionName()); err != nil {
 			return fmt.Errorf("restore: create partition: %w", err)
@@ -488,7 +488,7 @@ func (ddlt *collectionDDLTask) createPartitions(ctx context.Context) error {
 	return nil
 }
 
-func (ddlt *collectionDDLTask) createPartition(ctx context.Context, partitionName string) error {
+func (ddlt *collDDLTask) createPartition(ctx context.Context, partitionName string) error {
 	// pre-check whether partition exist, if not create it
 	ddlt.logger.Debug("check partition exist", zap.String("partition_name", partitionName))
 	exist, err := ddlt.grpcCli.HasPartition(ctx, ddlt.targetNS.DBName(), ddlt.targetNS.CollName(), partitionName)

@@ -16,7 +16,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 )
 
-func newTestCollDMLTask() *collectionDMLTask { return &collectionDMLTask{logger: zap.NewNop()} }
+func newTestCollDMLTask() *collDMLTask { return &collDMLTask{logger: zap.NewNop()} }
 
 func TestCollDDLTask_groupID(t *testing.T) {
 	t.Run("NormalSegment", func(t *testing.T) {

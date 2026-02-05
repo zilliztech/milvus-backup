@@ -35,7 +35,7 @@ const (
 
 type tearDownFn func(ctx context.Context) error
 
-type collectionTask struct {
+type collTask struct {
 	taskID string
 
 	dbBackup   *backuppb.DatabaseBackupInfo
@@ -74,7 +74,7 @@ type collectionTask struct {
 	logger *zap.Logger
 }
 
-type collectionTaskArgs struct {
+type collTaskArgs struct {
 	taskID string
 
 	dbBackup   *backuppb.DatabaseBackupInfo
@@ -101,7 +101,7 @@ type collectionTaskArgs struct {
 	restfulCli milvus.Restful
 }
 
-func newCollectionTask(args collectionTaskArgs) *collectionTask {
+func newCollTask(args collTaskArgs) *collTask {
 	srcNS := namespace.New(args.collBackup.GetDbName(), args.collBackup.GetCollectionName())
 
 	logger := log.With(
@@ -114,7 +114,7 @@ func newCollectionTask(args collectionTaskArgs) *collectionTask {
 	})
 	args.taskMgr.UpdateRestoreTask(args.taskID, taskmgr.AddRestoreCollTask(args.targetNS, size))
 
-	return &collectionTask{
+	return &collTask{
 		taskID: args.taskID,
 
 		dbBackup:   args.dbBackup,
@@ -151,7 +151,7 @@ func newCollectionTask(args collectionTaskArgs) *collectionTask {
 	}
 }
 
-func (ct *collectionTask) Execute(ctx context.Context) error {
+func (ct *collTask) Execute(ctx context.Context) error {
 	ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.SetRestoreCollExecuting(ct.targetNS))
 
 	// tear down restore task
@@ -173,10 +173,10 @@ func (ct *collectionTask) Execute(ctx context.Context) error {
 	return nil
 }
 
-func (ct *collectionTask) privateExecute(ctx context.Context) error {
+func (ct *collTask) privateExecute(ctx context.Context) error {
 	ct.logger.Info("start restore collection")
 
-	ddlt := newCollectionDDLTask(ct.taskID, ct.option, ct.collBackup, ct.targetNS, ct.grpcCli)
+	ddlt := newCollDDLTask(ct.taskID, ct.option, ct.collBackup, ct.targetNS, ct.grpcCli)
 	if err := ddlt.Execute(ctx); err != nil {
 		return fmt.Errorf("restore_collection: restore collection ddl: %w", err)
 	}
@@ -189,7 +189,7 @@ func (ct *collectionTask) privateExecute(ctx context.Context) error {
 	return nil
 }
 
-func (ct *collectionTask) restoreData(ctx context.Context) error {
+func (ct *collTask) restoreData(ctx context.Context) error {
 	if ct.option.MetaOnly {
 		ct.logger.Info("skip restore data")
 		return nil
@@ -209,7 +209,7 @@ func (ct *collectionTask) restoreData(ctx context.Context) error {
 	return nil
 }
 
-func (ct *collectionTask) restoreDataV2(ctx context.Context) error {
+func (ct *collTask) restoreDataV2(ctx context.Context) error {
 	// restore partition segment
 	ct.logger.Info("start restore partition segment", zap.Int("partition_num", len(ct.collBackup.GetPartitionBackups())))
 	g, subCtx := errgroup.WithContext(ctx)
@@ -234,7 +234,7 @@ func (ct *collectionTask) restoreDataV2(ctx context.Context) error {
 	return nil
 }
 
-func (ct *collectionTask) restoreDataV1(ctx context.Context) error {
+func (ct *collTask) restoreDataV1(ctx context.Context) error {
 	// restore partition segment
 	ct.logger.Info("start restore partition segment", zap.Int("partition_num", len(ct.collBackup.GetPartitionBackups())))
 	g, subCtx := errgroup.WithContext(ctx)
@@ -259,7 +259,7 @@ func (ct *collectionTask) restoreDataV1(ctx context.Context) error {
 	return nil
 }
 
-func (ct *collectionTask) tearDown(ctx context.Context) error {
+func (ct *collTask) tearDown(ctx context.Context) error {
 	if ct.keepTempFiles {
 		ct.logger.Info("skip clean temporary files")
 		return nil
@@ -281,7 +281,7 @@ func (ct *collectionTask) tearDown(ctx context.Context) error {
 	return nil
 }
 
-func (ct *collectionTask) ezk() string {
+func (ct *collTask) ezk() string {
 	if ct.dbBackup.GetEzk() != "" {
 		return ct.dbBackup.GetEzk()
 	}
@@ -289,7 +289,7 @@ func (ct *collectionTask) ezk() string {
 	return ""
 }
 
-func (ct *collectionTask) cleanTempFiles(dir string) tearDownFn {
+func (ct *collTask) cleanTempFiles(dir string) tearDownFn {
 	return func(ctx context.Context) error {
 		if len(dir) == 0 {
 			return errors.New("restore_collection: empty temporary file dir")
@@ -304,7 +304,7 @@ func (ct *collectionTask) cleanTempFiles(dir string) tearDownFn {
 	}
 }
 
-func (ct *collectionTask) copyToMilvusBucket(ctx context.Context, tempDir, srcPrefix string) (string, error) {
+func (ct *collTask) copyToMilvusBucket(ctx context.Context, tempDir, srcPrefix string) (string, error) {
 	ct.logger.Info("milvus and backup store in different bucket, copy the data first", zap.String("temp_dir", tempDir))
 	dest := path.Join(tempDir, strings.Replace(srcPrefix, ct.backupRootPath, "", 1)) + "/"
 	opt := storage.CopyPrefixOpt{
@@ -326,7 +326,7 @@ func (ct *collectionTask) copyToMilvusBucket(ctx context.Context, tempDir, srcPr
 	return dest, nil
 }
 
-func (ct *collectionTask) copyAndRewriteDir(ctx context.Context, b batch) (batch, error) {
+func (ct *collTask) copyAndRewriteDir(ctx context.Context, b batch) (batch, error) {
 	isSameBucket := ct.milvusStorage.Config().Bucket == ct.backupStorage.Config().Bucket
 	isSameStorage := ct.backupStorage.Config().Provider == ct.milvusStorage.Config().Provider
 	// if milvus bucket and backup bucket are not the same, should copy the data first
@@ -364,7 +364,7 @@ func (ct *collectionTask) copyAndRewriteDir(ctx context.Context, b batch) (batch
 	return b, nil
 }
 
-func (ct *collectionTask) restoreNotL0SegV1(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
+func (ct *collTask) restoreNotL0SegV1(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
 	notL0SegBatches, err := ct.notL0SegmentBatches(ctx, part)
 	if err != nil {
 		return fmt.Errorf("restore_collection: get not L0 groups: %w", err)
@@ -391,7 +391,7 @@ func toPaths(dir partitionDir) []string {
 	return []string{dir.insertLogDir, dir.deltaLogDir}
 }
 
-func (ct *collectionTask) restoreNotL0SegV2(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
+func (ct *collTask) restoreNotL0SegV2(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
 	batches, err := ct.notL0SegmentBatches(ctx, part)
 	if err != nil {
 		return fmt.Errorf("restore_collection: get not L0 groups: %w", err)
@@ -424,7 +424,7 @@ func (ct *collectionTask) restoreNotL0SegV2(ctx context.Context, part *backuppb.
 	return nil
 }
 
-func (ct *collectionTask) restoreL0SegV1(ctx context.Context, partitionName string, l0Segs []*backuppb.SegmentBackupInfo) error {
+func (ct *collTask) restoreL0SegV1(ctx context.Context, partitionName string, l0Segs []*backuppb.SegmentBackupInfo) error {
 	batches, err := ct.l0SegmentBatches(l0Segs)
 	if err != nil {
 		return fmt.Errorf("restore_collection: get L0 batches: %w", err)
@@ -443,7 +443,7 @@ func (ct *collectionTask) restoreL0SegV1(ctx context.Context, partitionName stri
 	return nil
 }
 
-func (ct *collectionTask) restoreL0SegV2(ctx context.Context, partitionName string, l0Segs []*backuppb.SegmentBackupInfo) error {
+func (ct *collTask) restoreL0SegV2(ctx context.Context, partitionName string, l0Segs []*backuppb.SegmentBackupInfo) error {
 	batches, err := ct.l0SegmentBatches(l0Segs)
 	if err != nil {
 		return fmt.Errorf("restore_collection: get L0 batches: %w", err)
@@ -477,7 +477,7 @@ func (ct *collectionTask) restoreL0SegV2(ctx context.Context, partitionName stri
 	return nil
 }
 
-func (ct *collectionTask) restorePartitionV1(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
+func (ct *collTask) restorePartitionV1(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
 	ct.logger.Info("start restore not L0 segment", zap.String("partition_name", part.GetPartitionName()))
 	// restore not L0 data groups
 	if err := ct.restoreNotL0SegV1(ctx, part); err != nil {
@@ -496,7 +496,7 @@ func (ct *collectionTask) restorePartitionV1(ctx context.Context, part *backuppb
 	return nil
 }
 
-func (ct *collectionTask) restorePartitionV2(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
+func (ct *collTask) restorePartitionV2(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
 	ct.logger.Info("start restore partition not L0 segment v2", zap.String("partition_name", part.GetPartitionName()))
 	if err := ct.restoreNotL0SegV2(ctx, part); err != nil {
 		return fmt.Errorf("restore_collection: restore not L0 groups: %w", err)
@@ -511,7 +511,7 @@ func (ct *collectionTask) restorePartitionV2(ctx context.Context, part *backuppb
 	return nil
 }
 
-func (ct *collectionTask) notL0SegBatchesWithoutGroupID(ctx context.Context, part *backuppb.PartitionBackupInfo) ([]batch, error) {
+func (ct *collTask) notL0SegBatchesWithoutGroupID(ctx context.Context, part *backuppb.PartitionBackupInfo) ([]batch, error) {
 	if ct.option.TruncateBinlogByTs {
 		return nil, fmt.Errorf("restore: truncate binlog by ts is not supported if group id is not set in backup")
 	}
@@ -529,7 +529,7 @@ func (ct *collectionTask) notL0SegBatchesWithoutGroupID(ctx context.Context, par
 	return []batch{{partitionDirs: []partitionDir{partDir}}}, nil
 }
 
-func (ct *collectionTask) backupTS(vch string) (uint64, error) {
+func (ct *collTask) backupTS(vch string) (uint64, error) {
 	if !ct.option.TruncateBinlogByTs {
 		return 0, nil
 	}
@@ -569,7 +569,7 @@ type batchKey struct {
 	sv  int64
 }
 
-func (ct *collectionTask) notL0SegBatchesWithGroupID(ctx context.Context, notL0Segs []*backuppb.SegmentBackupInfo) ([]batch, error) {
+func (ct *collTask) notL0SegBatchesWithGroupID(ctx context.Context, notL0Segs []*backuppb.SegmentBackupInfo) ([]batch, error) {
 	// group by vchannel and storage version
 	segBatch := lo.GroupBy(notL0Segs, func(seg *backuppb.SegmentBackupInfo) batchKey {
 		return batchKey{vch: seg.GetVChannel(), sv: seg.GetStorageVersion()}
@@ -611,7 +611,7 @@ func (ct *collectionTask) notL0SegBatchesWithGroupID(ctx context.Context, notL0S
 	return batches, nil
 }
 
-func (ct *collectionTask) notL0SegmentBatches(ctx context.Context, part *backuppb.PartitionBackupInfo) ([]batch, error) {
+func (ct *collTask) notL0SegmentBatches(ctx context.Context, part *backuppb.PartitionBackupInfo) ([]batch, error) {
 	var withGroupID bool
 	notL0Segs := make([]*backuppb.SegmentBackupInfo, 0, len(part.GetSegmentBackups()))
 	for _, seg := range part.GetSegmentBackups() {
@@ -636,7 +636,7 @@ func (ct *collectionTask) notL0SegmentBatches(ctx context.Context, part *backupp
 	}
 }
 
-func (ct *collectionTask) l0SegmentBatches(l0Segs []*backuppb.SegmentBackupInfo) ([]batch, error) {
+func (ct *collTask) l0SegmentBatches(l0Segs []*backuppb.SegmentBackupInfo) ([]batch, error) {
 	segBatch := lo.GroupBy(l0Segs, func(seg *backuppb.SegmentBackupInfo) batchKey {
 		return batchKey{vch: seg.GetVChannel(), sv: seg.GetStorageVersion()}
 	})
@@ -689,7 +689,7 @@ type batch struct {
 	partitionDirs []partitionDir
 }
 
-func (ct *collectionTask) checkBulkInsertViaGrpc(ctx context.Context, jobID int64) error {
+func (ct *collTask) checkBulkInsertViaGrpc(ctx context.Context, jobID int64) error {
 	// wait for bulk insert job done
 	var lastProgress int
 	lastUpdateTime := time.Now()
@@ -724,7 +724,7 @@ func (ct *collectionTask) checkBulkInsertViaGrpc(ctx context.Context, jobID int6
 	return errors.New("restore_collection: walk into unreachable code")
 }
 
-func (ct *collectionTask) bulkInsertViaGrpc(ctx context.Context, partitionName string, b batch) error {
+func (ct *collTask) bulkInsertViaGrpc(ctx context.Context, partitionName string, b batch) error {
 	g, subCtx := errgroup.WithContext(ctx)
 	for _, dir := range b.partitionDirs {
 		if err := ct.bulkInsertSem.Acquire(ctx, 1); err != nil {
@@ -765,7 +765,7 @@ func (ct *collectionTask) bulkInsertViaGrpc(ctx context.Context, partitionName s
 	return nil
 }
 
-func (ct *collectionTask) checkBulkInsertViaRestful(ctx context.Context, jobID string) error {
+func (ct *collTask) checkBulkInsertViaRestful(ctx context.Context, jobID string) error {
 	// wait for bulk insert job done
 	var lastProgress int
 	lastUpdateTime := time.Now()
@@ -802,7 +802,7 @@ func (ct *collectionTask) checkBulkInsertViaRestful(ctx context.Context, jobID s
 	return errors.New("restore_collection: walk into unreachable code")
 }
 
-func (ct *collectionTask) bulkInsertViaRestful(ctx context.Context, partition string, b batch) error {
+func (ct *collTask) bulkInsertViaRestful(ctx context.Context, partition string, b batch) error {
 	ct.logger.Info("start bulk insert via restful", zap.Int("batch_num", len(b.partitionDirs)), zap.String("partition", partition))
 	paths := lo.Map(b.partitionDirs, func(dir partitionDir, _ int) []string { return toPaths(dir) })
 	in := milvus.BulkInsertV2Input{
@@ -856,7 +856,7 @@ func getFailedReason(infos []*commonpb.KeyValuePair) string {
 	return ""
 }
 
-func (ct *collectionTask) buildBackupPartitionDir(ctx context.Context, size int64, pathOpt ...mpath.Option) (partitionDir, error) {
+func (ct *collTask) buildBackupPartitionDir(ctx context.Context, size int64, pathOpt ...mpath.Option) (partitionDir, error) {
 	insertLogDir := mpath.BackupInsertLogDir(ct.backupDir, pathOpt...)
 	deltaLogDir := mpath.BackupDeltaLogDir(ct.backupDir, pathOpt...)
 

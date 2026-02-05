@@ -100,7 +100,7 @@ func newGCCtrl(args TaskArgs) gcCtrl {
 	}
 
 	if args.Grpc.HasFeature(milvus.CollectionLevelGCControl) {
-		return newCollectionGCCtrl(args.TaskID, args.Manage)
+		return newCollGCCtrl(args.TaskID, args.Manage)
 	}
 
 	return newClusterGCCtrl(args.TaskID, args.Manage)
@@ -338,8 +338,8 @@ func (t *Task) backupDatabase(ctx context.Context, dbNames []string) error {
 	return nil
 }
 
-func (t *Task) newCollTaskArgs() collectionTaskArgs {
-	return collectionTaskArgs{
+func (t *Task) newCollTaskArgs() collTaskArgs {
+	return collTaskArgs{
 		TaskID:         t.taskID,
 		MilvusStorage:  t.milvusStorage,
 		MilvusRootPath: t.milvusRootPath,
@@ -438,7 +438,7 @@ func (t *Task) backupIndexExtraInfo(ctx context.Context) error {
 
 	t.logger.Info("start backup index extra info")
 
-	indexExtraTask := newCollectionIndexExtraTask(t.taskID, t.etcdCli, t.etcdRootPath, t.metaBuilder)
+	indexExtraTask := newCollIndexExtraTask(t.taskID, t.etcdCli, t.etcdRootPath, t.metaBuilder)
 	if err := indexExtraTask.Execute(ctx); err != nil {
 		return fmt.Errorf("backup: execute index extra task: %w", err)
 	}

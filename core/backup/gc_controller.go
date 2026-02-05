@@ -106,8 +106,8 @@ type gcTicket struct {
 
 const _gcRenewalInterval = 5 * time.Minute
 
-// collectionGCCtrl will pause and resume GC for a specific collection.
-type collectionGCCtrl struct {
+// collGCCtrl will pause and resume GC for a specific collection.
+type collGCCtrl struct {
 	manage milvus.Manage
 
 	mu           sync.Mutex
@@ -118,8 +118,8 @@ type collectionGCCtrl struct {
 	logger *zap.Logger
 }
 
-func newCollectionGCCtrl(taskID string, manage milvus.Manage) *collectionGCCtrl {
-	return &collectionGCCtrl{
+func newCollGCCtrl(taskID string, manage milvus.Manage) *collGCCtrl {
+	return &collGCCtrl{
 		manage:       manage,
 		collIDTicket: make(map[int64]gcTicket),
 		stopRenewal:  make(chan struct{}),
@@ -127,13 +127,13 @@ func newCollectionGCCtrl(taskID string, manage milvus.Manage) *collectionGCCtrl 
 	}
 }
 
-var _ gcCtrl = (*collectionGCCtrl)(nil)
+var _ gcCtrl = (*collGCCtrl)(nil)
 
-func (c *collectionGCCtrl) PauseGC(_ context.Context) {
+func (c *collGCCtrl) PauseGC(_ context.Context) {
 	go c.loopRenew()
 }
 
-func (c *collectionGCCtrl) ResumeGC(_ context.Context) {
+func (c *collGCCtrl) ResumeGC(_ context.Context) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -150,7 +150,7 @@ func (c *collectionGCCtrl) ResumeGC(_ context.Context) {
 	close(c.stopRenewal)
 }
 
-func (c *collectionGCCtrl) loopRenew() {
+func (c *collGCCtrl) loopRenew() {
 	ticker := time.NewTicker(_gcRenewalInterval)
 	defer ticker.Stop()
 
@@ -164,7 +164,7 @@ func (c *collectionGCCtrl) loopRenew() {
 	}
 }
 
-func (c *collectionGCCtrl) renewalGCLease() {
+func (c *collGCCtrl) renewalGCLease() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -187,7 +187,7 @@ func (c *collectionGCCtrl) renewalGCLease() {
 	}
 }
 
-func (c *collectionGCCtrl) PauseCollectionGC(ctx context.Context, collectionID int64) {
+func (c *collGCCtrl) PauseCollectionGC(ctx context.Context, collectionID int64) {
 	resp, err := c.manage.PauseGC(ctx, milvus.WithCollectionID(collectionID), milvus.WithPauseSeconds(int32(_defaultPauseDuration.Seconds())))
 	if err != nil {
 		c.logger.Warn(_gcWarnMessage, zap.Error(err), zap.Int64("collection_id", collectionID))
@@ -210,7 +210,7 @@ func (c *collectionGCCtrl) PauseCollectionGC(ctx context.Context, collectionID i
 	c.logger.Info("pause collection gc done", zap.String("resp", resp))
 }
 
-func (c *collectionGCCtrl) ResumeCollectionGC(ctx context.Context, collectionID int64) {
+func (c *collGCCtrl) ResumeCollectionGC(ctx context.Context, collectionID int64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

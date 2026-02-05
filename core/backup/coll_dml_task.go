@@ -22,7 +22,7 @@ import (
 
 const _allPartitionID = -1
 
-type collectionDMLTask struct {
+type collDMLTask struct {
 	taskID string
 
 	ns namespace.NS
@@ -48,9 +48,9 @@ type collectionDMLTask struct {
 	logger *zap.Logger
 }
 
-func newCollDMLTask(ns namespace.NS, args collectionTaskArgs) *collectionDMLTask {
+func newCollDMLTask(ns namespace.NS, args collTaskArgs) *collDMLTask {
 	logger := log.L().With(zap.String("task_id", args.TaskID), zap.String("ns", ns.String()))
-	return &collectionDMLTask{
+	return &collDMLTask{
 		taskID: args.TaskID,
 
 		ns: ns,
@@ -77,7 +77,7 @@ func newCollDMLTask(ns namespace.NS, args collectionTaskArgs) *collectionDMLTask
 	}
 }
 
-func (dmlt *collectionDMLTask) listDeltaLogByAPI(ctx context.Context, binlogDir string, fieldsBinlog []milvus.BinlogInfo) ([]*backuppb.FieldBinlog, int64, error) {
+func (dmlt *collDMLTask) listDeltaLogByAPI(ctx context.Context, binlogDir string, fieldsBinlog []milvus.BinlogInfo) ([]*backuppb.FieldBinlog, int64, error) {
 	keys, sizes, err := storage.ListPrefixFlat(ctx, dmlt.milvusStorage, binlogDir, true)
 	if err != nil {
 		return nil, 0, fmt.Errorf("backup: list insert logs %w", err)
@@ -108,7 +108,7 @@ func (dmlt *collectionDMLTask) listDeltaLogByAPI(ctx context.Context, binlogDir 
 	return bakFieldsBinlog, lo.Sum(sizes), nil
 }
 
-func (dmlt *collectionDMLTask) listInsertLogByAPI(ctx context.Context, binlogDir string, fieldsBinlog []milvus.BinlogInfo) ([]*backuppb.FieldBinlog, int64, error) {
+func (dmlt *collDMLTask) listInsertLogByAPI(ctx context.Context, binlogDir string, fieldsBinlog []milvus.BinlogInfo) ([]*backuppb.FieldBinlog, int64, error) {
 	keys, sizes, err := storage.ListPrefixFlat(ctx, dmlt.milvusStorage, binlogDir, true)
 	if err != nil {
 		return nil, 0, fmt.Errorf("backup: list insert logs %w", err)
@@ -138,7 +138,7 @@ func (dmlt *collectionDMLTask) listInsertLogByAPI(ctx context.Context, binlogDir
 	return bakFieldsBinlog, lo.Sum(sizes), nil
 }
 
-func (dmlt *collectionDMLTask) getSegments(ctx context.Context) ([]*backuppb.SegmentBackupInfo, error) {
+func (dmlt *collDMLTask) getSegments(ctx context.Context) ([]*backuppb.SegmentBackupInfo, error) {
 	dmlt.logger.Info("start get segments of collection")
 	segments, err := dmlt.grpc.GetPersistentSegmentInfo(ctx, dmlt.ns.DBName(), dmlt.ns.CollName())
 	if err != nil {
@@ -169,7 +169,7 @@ func (dmlt *collectionDMLTask) getSegments(ctx context.Context) ([]*backuppb.Seg
 	return bakSegs, nil
 }
 
-func (dmlt *collectionDMLTask) getSegment(ctx context.Context, seg *milvuspb.PersistentSegmentInfo) (*backuppb.SegmentBackupInfo, error) {
+func (dmlt *collDMLTask) getSegment(ctx context.Context, seg *milvuspb.PersistentSegmentInfo) (*backuppb.SegmentBackupInfo, error) {
 	dmlt.logger.Info("get segment info", zap.Int64("segment_id", seg.SegmentID))
 
 	var bakSeg *backuppb.SegmentBackupInfo
@@ -194,7 +194,7 @@ func (dmlt *collectionDMLTask) getSegment(ctx context.Context, seg *milvuspb.Per
 	return bakSeg, nil
 }
 
-func (dmlt *collectionDMLTask) listInsertLogByListFile(ctx context.Context, binlogDir string) ([]*backuppb.FieldBinlog, int64, error) {
+func (dmlt *collDMLTask) listInsertLogByListFile(ctx context.Context, binlogDir string) ([]*backuppb.FieldBinlog, int64, error) {
 	keys, sizes, err := storage.ListPrefixFlat(ctx, dmlt.milvusStorage, binlogDir, true)
 	if err != nil {
 		return nil, 0, fmt.Errorf("backup: list insert logs %w", err)
@@ -226,7 +226,7 @@ func (dmlt *collectionDMLTask) listInsertLogByListFile(ctx context.Context, binl
 	return fields, lo.Sum(sizes), nil
 }
 
-func (dmlt *collectionDMLTask) listDeltaLogByListFile(ctx context.Context, binlogDir string) ([]*backuppb.FieldBinlog, int64, error) {
+func (dmlt *collDMLTask) listDeltaLogByListFile(ctx context.Context, binlogDir string) ([]*backuppb.FieldBinlog, int64, error) {
 	keys, sizes, err := storage.ListPrefixFlat(ctx, dmlt.milvusStorage, binlogDir, true)
 	if err != nil {
 		return nil, 0, fmt.Errorf("backup: list delta log %w", err)
@@ -247,7 +247,7 @@ func (dmlt *collectionDMLTask) listDeltaLogByListFile(ctx context.Context, binlo
 }
 
 // getSegmentInfoByListFile if milvus version < 2.5.8, we can only get segment info via list file.
-func (dmlt *collectionDMLTask) getSegmentInfoByListFile(ctx context.Context, seg *milvuspb.PersistentSegmentInfo) (*backuppb.SegmentBackupInfo, error) {
+func (dmlt *collDMLTask) getSegmentInfoByListFile(ctx context.Context, seg *milvuspb.PersistentSegmentInfo) (*backuppb.SegmentBackupInfo, error) {
 	dmlt.logger.Info("get segment info via list file", zap.Int64("segment_id", seg.SegmentID))
 
 	pathOpts := []mpath.Option{
@@ -289,7 +289,7 @@ func (dmlt *collectionDMLTask) getSegmentInfoByListFile(ctx context.Context, seg
 // groupID generates a virtual partition ID for batch importing multiple segments.
 // When the partition ID is -1, it means that the segment applies to all partitions.
 // Therefore, it requires special handling and cannot participate in batch import, so groupID returns 0.
-func (dmlt *collectionDMLTask) groupID(seg *milvuspb.PersistentSegmentInfo) int64 {
+func (dmlt *collDMLTask) groupID(seg *milvuspb.PersistentSegmentInfo) int64 {
 	if seg.GetPartitionID() == _allPartitionID {
 		return 0
 	}
@@ -299,7 +299,7 @@ func (dmlt *collectionDMLTask) groupID(seg *milvuspb.PersistentSegmentInfo) int6
 
 // getSegmentDetailByAPI if milvus version > 2.5.8, we have a new api to get the segment info via proxy node.
 // see: https://github.com/milvus-io/milvus/pull/40464
-func (dmlt *collectionDMLTask) getSegmentInfoByAPI(ctx context.Context, seg *milvuspb.PersistentSegmentInfo) (*backuppb.SegmentBackupInfo, error) {
+func (dmlt *collDMLTask) getSegmentInfoByAPI(ctx context.Context, seg *milvuspb.PersistentSegmentInfo) (*backuppb.SegmentBackupInfo, error) {
 	dmlt.logger.Info("try get segment info via proxy node", zap.Int64("segment_id", seg.SegmentID))
 	segInfo, err := dmlt.restful.GetSegmentInfo(ctx, dmlt.ns.DBName(), seg.CollectionID, seg.SegmentID)
 	if err != nil {
@@ -340,7 +340,7 @@ func (dmlt *collectionDMLTask) getSegmentInfoByAPI(ctx context.Context, seg *mil
 	return bakSeg, nil
 }
 
-func (dmlt *collectionDMLTask) Execute(ctx context.Context) error {
+func (dmlt *collDMLTask) Execute(ctx context.Context) error {
 	dmlt.logger.Info("start to backup dml of collection")
 
 	dmlt.taskMgr.UpdateBackupTask(dmlt.taskID, taskmgr.SetBackupCollDMLPrepare(dmlt.ns))
@@ -371,7 +371,7 @@ func (dmlt *collectionDMLTask) Execute(ctx context.Context) error {
 	return nil
 }
 
-func (dmlt *collectionDMLTask) backupSegmentsData(ctx context.Context, segments []*backuppb.SegmentBackupInfo) error {
+func (dmlt *collDMLTask) backupSegmentsData(ctx context.Context, segments []*backuppb.SegmentBackupInfo) error {
 	dmlt.logger.Info("start to backup segments", zap.Int("segment_num", len(segments)))
 	g, subCtx := errgroup.WithContext(ctx)
 	for _, seg := range segments {
@@ -399,7 +399,7 @@ func (dmlt *collectionDMLTask) backupSegmentsData(ctx context.Context, segments 
 	return nil
 }
 
-func (dmlt *collectionDMLTask) insertLogsAttrs(seg *backuppb.SegmentBackupInfo) ([]storage.CopyAttr, error) {
+func (dmlt *collDMLTask) insertLogsAttrs(seg *backuppb.SegmentBackupInfo) ([]storage.CopyAttr, error) {
 	opts := []mpath.Option{
 		mpath.CollectionID(seg.GetCollectionId()),
 		mpath.PartitionID(seg.GetPartitionId()),
@@ -426,7 +426,7 @@ func (dmlt *collectionDMLTask) insertLogsAttrs(seg *backuppb.SegmentBackupInfo) 
 	return attrs, nil
 }
 
-func (dmlt *collectionDMLTask) deltaLogAttrs(seg *backuppb.SegmentBackupInfo) ([]storage.CopyAttr, error) {
+func (dmlt *collDMLTask) deltaLogAttrs(seg *backuppb.SegmentBackupInfo) ([]storage.CopyAttr, error) {
 	opts := []mpath.Option{
 		mpath.CollectionID(seg.GetCollectionId()),
 		mpath.PartitionID(seg.GetPartitionId()),
@@ -455,7 +455,7 @@ func (dmlt *collectionDMLTask) deltaLogAttrs(seg *backuppb.SegmentBackupInfo) ([
 	return attrs, nil
 }
 
-func (dmlt *collectionDMLTask) backupSegmentData(ctx context.Context, seg *backuppb.SegmentBackupInfo) error {
+func (dmlt *collDMLTask) backupSegmentData(ctx context.Context, seg *backuppb.SegmentBackupInfo) error {
 	dmlt.logger.Info("backup binlogs of segment", zap.Int64("segment_id", seg.GetSegmentId()))
 	insertAttrs, err := dmlt.insertLogsAttrs(seg)
 	if err != nil {

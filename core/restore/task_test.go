@@ -51,7 +51,7 @@ func TestTask_CheckCollExist(t *testing.T) {
 		t.Run(fmt.Sprintf("has:%v, skipCreate:%v, dropExist:%v", tc.has, tc.skipCreate, tc.dropExist), func(t *testing.T) {
 			cli := milvus.NewMockGrpc(t)
 			opt := &Option{SkipCreateCollection: tc.skipCreate, DropExistCollection: tc.dropExist}
-			task := &collectionTask{
+			task := &collTask{
 				targetNS: namespace.New("db1", "coll1"),
 				option:   opt,
 			}
@@ -179,7 +179,7 @@ func TestTask_filterDBTask(t *testing.T) {
 func TestTask_filterCollTask(t *testing.T) {
 	t.Run("NoFilter", func(t *testing.T) {
 		task := newTestTask()
-		collTasks := []*collectionTask{
+		collTasks := []*collTask{
 			{targetNS: namespace.New("db1", "coll1")},
 			{targetNS: namespace.New("db1", "coll2")},
 			{targetNS: namespace.New("db2", "coll1")},
@@ -193,12 +193,12 @@ func TestTask_filterCollTask(t *testing.T) {
 		}}}
 		task := newTestTask()
 		task.args.Plan = p
-		collTasks := []*collectionTask{
+		collTasks := []*collTask{
 			{targetNS: namespace.New("db1", "coll1")},
 			{targetNS: namespace.New("db1", "coll2")},
 			{targetNS: namespace.New("db2", "coll1")},
 		}
-		expect := []*collectionTask{
+		expect := []*collTask{
 			{targetNS: namespace.New("db1", "coll1")},
 		}
 		assert.ElementsMatch(t, expect, task.filterCollTask(collTasks))
@@ -210,12 +210,12 @@ func TestTask_filterCollTask(t *testing.T) {
 		}}}
 		task := newTestTask()
 		task.args.Plan = p
-		collTasks := []*collectionTask{
+		collTasks := []*collTask{
 			{targetNS: namespace.New("db1", "coll1")},
 			{targetNS: namespace.New("db1", "coll2")},
 			{targetNS: namespace.New("db2", "coll1")},
 		}
-		expect := []*collectionTask{
+		expect := []*collTask{
 			{targetNS: namespace.New("db1", "coll1")},
 			{targetNS: namespace.New("db1", "coll2")},
 		}
@@ -264,7 +264,7 @@ func TestTask_newCollTasks(t *testing.T) {
 	collBackup := &backuppb.CollectionBackupInfo{DbName: "db1", CollectionName: "coll1"}
 	tasks := task.newCollTask(dbBackup, collBackup)
 	assert.Len(t, tasks, 2)
-	nss := lo.Map(tasks, func(task *collectionTask, _ int) string { return task.targetNS.String() })
+	nss := lo.Map(tasks, func(task *collTask, _ int) string { return task.targetNS.String() })
 	assert.ElementsMatch(t, []string{"db2.coll2", "db3.coll3"}, nss)
 }
 

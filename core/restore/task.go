@@ -161,7 +161,7 @@ func NewTask(args TaskArgs) (*Task, error) {
 	}, nil
 }
 
-func (t *Task) newDBAndCollTasks(backup *backuppb.BackupInfo) ([]*databaseTask, []*collectionTask) {
+func (t *Task) newDBAndCollTasks(backup *backuppb.BackupInfo) ([]*databaseTask, []*collTask) {
 	dbNames := lo.Map(backup.GetDatabaseBackups(), func(db *backuppb.DatabaseBackupInfo, _ int) string { return db.GetDbName() })
 	t.logger.Info("databases in backup", zap.Strings("db_names", dbNames))
 	collNSs := lo.Map(backup.GetCollectionBackups(), func(coll *backuppb.CollectionBackupInfo, _ int) string {
@@ -184,7 +184,7 @@ func (t *Task) newDBAndCollTasks(backup *backuppb.BackupInfo) ([]*databaseTask, 
 	collTasks := t.newCollTasks(dbBackups, collBackups)
 	dbNames = lo.Map(dbTasks, func(db *databaseTask, _ int) string { return db.targetName })
 	t.logger.Info("databases task after mapping", zap.Strings("db_names", dbNames))
-	collNSs = lo.Map(collTasks, func(coll *collectionTask, _ int) string { return coll.targetNS.String() })
+	collNSs = lo.Map(collTasks, func(coll *collTask, _ int) string { return coll.targetNS.String() })
 	t.logger.Info("collections task after mapping", zap.Strings("ns", collNSs))
 
 	// filter task
@@ -192,7 +192,7 @@ func (t *Task) newDBAndCollTasks(backup *backuppb.BackupInfo) ([]*databaseTask, 
 	collTasks = t.filterCollTask(collTasks)
 	dbNames = lo.Map(dbTasks, func(db *databaseTask, _ int) string { return db.targetName })
 	t.logger.Info("databases task after filtering", zap.Strings("db_names", dbNames))
-	collNSs = lo.Map(collTasks, func(coll *collectionTask, _ int) string { return coll.targetNS.String() })
+	collNSs = lo.Map(collTasks, func(coll *collTask, _ int) string { return coll.targetNS.String() })
 	t.logger.Info("collections task after filtering", zap.Strings("coll_names", collNSs))
 
 	return dbTasks, collTasks
@@ -239,14 +239,14 @@ func (t *Task) newDBTasks(dbBackups []*backuppb.DatabaseBackupInfo) []*databaseT
 	return dbTasks
 }
 
-func (t *Task) newCollTask(dbBackup *backuppb.DatabaseBackupInfo, collBackup *backuppb.CollectionBackupInfo) []*collectionTask {
+func (t *Task) newCollTask(dbBackup *backuppb.DatabaseBackupInfo, collBackup *backuppb.CollectionBackupInfo) []*collTask {
 	sourceNS := namespace.New(collBackup.GetDbName(), collBackup.GetCollectionName())
 	targetNSes := t.args.Plan.CollMapper.TagetNS(sourceNS)
 
-	tasks := make([]*collectionTask, 0, len(targetNSes))
+	tasks := make([]*collTask, 0, len(targetNSes))
 	for _, targetNS := range targetNSes {
 		t.logger.Debug("generate restore collection task", zap.String("source", sourceNS.String()), zap.String("target", targetNS.String()))
-		args := collectionTaskArgs{
+		args := collTaskArgs{
 			taskID:         t.args.TaskID,
 			taskMgr:        t.args.TaskMgr,
 			targetNS:       targetNS,
@@ -265,18 +265,18 @@ func (t *Task) newCollTask(dbBackup *backuppb.DatabaseBackupInfo, collBackup *ba
 			restfulCli:     t.args.Restful,
 		}
 
-		tasks = append(tasks, newCollectionTask(args))
+		tasks = append(tasks, newCollTask(args))
 	}
 
 	return tasks
 }
 
-func (t *Task) newCollTasks(dbBackups []*backuppb.DatabaseBackupInfo, collBackups []*backuppb.CollectionBackupInfo) []*collectionTask {
+func (t *Task) newCollTasks(dbBackups []*backuppb.DatabaseBackupInfo, collBackups []*backuppb.CollectionBackupInfo) []*collTask {
 	nameDBBackup := lo.SliceToMap(dbBackups, func(dbBackup *backuppb.DatabaseBackupInfo) (string, *backuppb.DatabaseBackupInfo) {
 		return dbBackup.GetDbName(), dbBackup
 	})
 
-	collTasks := make([]*collectionTask, 0, len(collBackups))
+	collTasks := make([]*collTask, 0, len(collBackups))
 	for _, collBackup := range collBackups {
 		dbBackup := nameDBBackup[collBackup.GetDbName()]
 		tasks := t.newCollTask(dbBackup, collBackup)
@@ -292,14 +292,14 @@ func (t *Task) filterDBTask(dbTask []*databaseTask) []*databaseTask {
 	})
 }
 
-func (t *Task) filterCollTask(collTask []*collectionTask) []*collectionTask {
-	return lo.Filter(collTask, func(task *collectionTask, _ int) bool {
+func (t *Task) filterCollTask(collTasks []*collTask) []*collTask {
+	return lo.Filter(collTasks, func(task *collTask, _ int) bool {
 		return t.args.Plan.TaskFilter.AllowNS(task.targetNS)
 	})
 }
 
 // checkCollsExist check if the collection exist in target milvus, if collection exist, return error.
-func (t *Task) checkCollsExist(ctx context.Context, collTasks []*collectionTask) error {
+func (t *Task) checkCollsExist(ctx context.Context, collTasks []*collTask) error {
 	for _, collTask := range collTasks {
 		if err := t.checkCollExist(ctx, collTask); err != nil {
 			return err
@@ -309,7 +309,7 @@ func (t *Task) checkCollsExist(ctx context.Context, collTasks []*collectionTask)
 	return nil
 }
 
-func (t *Task) checkCollExist(ctx context.Context, task *collectionTask) error {
+func (t *Task) checkCollExist(ctx context.Context, task *collTask) error {
 	has, err := t.args.Grpc.HasCollection(ctx, task.targetNS.DBName(), task.targetNS.CollName())
 	if err != nil {
 		return fmt.Errorf("restore: check collection %w", err)
@@ -440,7 +440,7 @@ func (t *Task) runDBTasks(ctx context.Context, dbTasks []*databaseTask) error {
 }
 
 // prepareDB create database if not exist, for restore collection task.
-func (t *Task) prepareDB(ctx context.Context, collTasks []*collectionTask) error {
+func (t *Task) prepareDB(ctx context.Context, collTasks []*collTask) error {
 	dbInTarget, err := t.args.Grpc.ListDatabases(ctx)
 	if err != nil {
 		return fmt.Errorf("restore: list databases %w", err)
@@ -463,7 +463,7 @@ func (t *Task) prepareDB(ctx context.Context, collTasks []*collectionTask) error
 	return nil
 }
 
-func (t *Task) runCollTasks(ctx context.Context, collTasks []*collectionTask) error {
+func (t *Task) runCollTasks(ctx context.Context, collTasks []*collTask) error {
 	t.logger.Info("start restore collection")
 
 	g, subCtx := errgroup.WithContext(ctx)
