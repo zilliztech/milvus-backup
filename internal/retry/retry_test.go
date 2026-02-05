@@ -15,6 +15,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -42,36 +43,77 @@ func TestMaxSleepTime(t *testing.T) {
 }
 
 func TestDo(t *testing.T) {
-	n := 0
-	testFn := func() error {
-		if n < 3 {
-			n++
-			return errors.New("some error")
+	synctest.Test(t, func(t *testing.T) {
+		n := 0
+		testFn := func() error {
+			if n < 3 {
+				n++
+				return errors.New("some error")
+			}
+			return nil
 		}
-		return nil
-	}
 
-	err := Do(context.Background(), testFn)
-	assert.NoError(t, err)
+		err := Do(context.Background(), testFn)
+		assert.NoError(t, err)
+		assert.Equal(t, 3, n)
+	})
 }
 
 func TestAllError(t *testing.T) {
-	testFn := func() error {
-		return errors.New("some error")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		testFn := func() error {
+			return errors.New("some error")
+		}
 
-	err := Do(context.Background(), testFn, Attempts(3))
-	assert.Error(t, err)
+		err := Do(context.Background(), testFn, Attempts(3))
+		assert.Error(t, err)
+	})
 }
 
 func TestUnRecoveryError(t *testing.T) {
-	attempts := 0
-	testFn := func() error {
-		attempts++
-		return Unrecoverable(errors.New("some error"))
-	}
+	synctest.Test(t, func(t *testing.T) {
+		attempts := 0
+		testFn := func() error {
+			attempts++
+			return Unrecoverable(errors.New("some error"))
+		}
 
-	err := Do(context.Background(), testFn, Attempts(3))
-	assert.Error(t, err)
-	assert.Equal(t, 1, attempts)
+		err := Do(context.Background(), testFn, Attempts(3))
+		assert.Error(t, err)
+		assert.Equal(t, 1, attempts)
+	})
+}
+
+func TestExponentialBackoff(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		attempts := 0
+		testFn := func() error {
+			attempts++
+			return errors.New("always fail")
+		}
+
+		err := Do(context.Background(), testFn) // default 10 attempts
+		assert.Error(t, err)
+		assert.Equal(t, 10, attempts)
+	})
+}
+
+func TestContextCancel(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+
+		attempts := 0
+		testFn := func() error {
+			attempts++
+			if attempts == 2 {
+				cancel()
+			}
+			return errors.New("some error")
+		}
+
+		err := Do(ctx, testFn)
+		assert.Error(t, err)
+		assert.ErrorIs(t, err, context.Canceled)
+		assert.Equal(t, 2, attempts)
+	})
 }
