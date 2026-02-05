@@ -20,7 +20,7 @@ func newTestCollDDLTask() *collDDLTask {
 	return &collDDLTask{logger: zap.NewNop(), option: &Option{}}
 }
 
-func TestCollectionDDLTask_shardNum(t *testing.T) {
+func TestCollDDLTask_shardNum(t *testing.T) {
 	t.Run("Normal", func(t *testing.T) {
 		ddlt := newTestCollDDLTask()
 		ddlt.collBackup = &backuppb.CollectionBackupInfo{ShardsNum: 10}
@@ -35,7 +35,7 @@ func TestCollectionDDLTask_shardNum(t *testing.T) {
 	})
 }
 
-func TestCollectionDDLTask_fields(t *testing.T) {
+func TestCollDDLTask_fields(t *testing.T) {
 	t.Run("WithDynamicField", func(t *testing.T) {
 		ddlt := newTestCollDDLTask()
 
@@ -87,7 +87,7 @@ func TestCollectionDDLTask_fields(t *testing.T) {
 	})
 }
 
-func TestCollectionTask_properties(t *testing.T) {
+func TestCollDDLTask_properties(t *testing.T) {
 	t.Run("NotSupportFuncRuntimeCheck", func(t *testing.T) {
 		grpcCli := milvus.NewMockGrpc(t)
 		grpcCli.EXPECT().HasFeature(milvus.FuncRuntimeCheck).Return(false).Once()
@@ -142,7 +142,7 @@ func TestCollectionTask_properties(t *testing.T) {
 	})
 }
 
-func TestCollectionTask_restoreFuncRuntimeCheck(t *testing.T) {
+func TestCollDDLTask_restoreFuncRuntimeCheck(t *testing.T) {
 	t.Run("NotSupportFuncRuntimeCheck", func(t *testing.T) {
 		grpcCli := milvus.NewMockGrpc(t)
 		grpcCli.EXPECT().HasFeature(milvus.FuncRuntimeCheck).Return(false).Once()
@@ -212,7 +212,7 @@ func TestCollectionTask_restoreFuncRuntimeCheck(t *testing.T) {
 	})
 }
 
-func TestCollectionTask_createColl(t *testing.T) {
+func TestCollDDLTask_createColl(t *testing.T) {
 	t.Run("Skip", func(t *testing.T) {
 		ct := newTestCollDDLTask()
 		ct.option.SkipCreateCollection = true

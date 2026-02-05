@@ -13,7 +13,7 @@ import (
 
 func newTestCollDDLTask() *collDDLTask { return &collDDLTask{logger: zap.NewNop()} }
 
-func TestCollectionTask_convSchema(t *testing.T) {
+func TestCollDDLTask_convSchema(t *testing.T) {
 	schema := &schemapb.CollectionSchema{
 		Name:               "name",
 		Description:        "description",

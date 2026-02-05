@@ -41,7 +41,7 @@ func TestGetProcess(t *testing.T) {
 	})
 }
 
-func TestCollectionTask_ezk(t *testing.T) {
+func TestCollTask_ezk(t *testing.T) {
 	t.Run("Normal", func(t *testing.T) {
 		ct := newTestCollTask()
 		ct.dbBackup = &backuppb.DatabaseBackupInfo{Ezk: "hello"}
