@@ -2,10 +2,13 @@ package storage
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -18,7 +21,10 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
+	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 
+	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/retry"
 )
 
@@ -59,6 +65,7 @@ func newAzureClient(cfg Config) (*AzureClient, error) {
 	// Remove standard HTTPS port :443 from endpoint if present
 	endpoint := strings.TrimSuffix(cfg.Endpoint, ":443")
 	ep := fmt.Sprintf("https://%s.blob.%s", cfg.Credential.AzureAccountName, endpoint)
+	logger := log.L().With(zap.String("provider", cfg.Provider), zap.String("endpoint", endpoint))
 	switch cfg.Credential.Type {
 	case IAM:
 		cred, err := azidentity.NewDefaultAzureCredential(nil)
@@ -74,7 +81,7 @@ func newAzureClient(cfg Config) (*AzureClient, error) {
 			return nil, fmt.Errorf("storage: new azure service client %w", err)
 		}
 
-		return &AzureClient{cfg: cfg, cli: cli, sasCli: sasCli}, nil
+		return &AzureClient{cfg: cfg, cli: cli, sasCli: sasCli, logger: logger}, nil
 	case Static:
 		cred, err := azblob.NewSharedKeyCredential(cfg.Credential.AK, cfg.Credential.SK)
 		if err != nil {
@@ -88,7 +95,7 @@ func newAzureClient(cfg Config) (*AzureClient, error) {
 		if err != nil {
 			return nil, fmt.Errorf("storage: new azure service client %w", err)
 		}
-		return &AzureClient{cfg: cfg, cli: cli, sasCli: sasCli}, nil
+		return &AzureClient{cfg: cfg, cli: cli, sasCli: sasCli, logger: logger}, nil
 	default:
 		return nil, fmt.Errorf("storage: azure unsupported credential type: %s", cfg.Credential.Type.String())
 	}
@@ -103,6 +110,8 @@ type AzureClient struct {
 	// When we want to copy object under two different service accounts, AD auth is not supported.
 	// So we need to use AD auth to generate SAS token and use SAS token to copy object.
 	sasCli *service.Client
+
+	logger *zap.Logger
 }
 
 func (a *AzureClient) getSAS(ctx context.Context, srcCli *AzureClient) (*sas.QueryParameters, error) {
@@ -166,6 +175,32 @@ func (a *AzureClient) CopyObject(ctx context.Context, i CopyObjectInput) error {
 		return fmt.Errorf("storage: azure copy object src client is not azure")
 	}
 
+	threshold := a.multipartCopyThreshold()
+	if i.SrcAttr.Length >= threshold {
+		a.logger.Debug("copy object by multipart", zap.String("src_key", i.SrcAttr.Key), zap.String("dest_key", i.DestKey))
+		return a.multiPartCopy(ctx, srcCli, i)
+	}
+
+	a.logger.Debug("copy object by single part", zap.String("src_key", i.SrcAttr.Key), zap.String("dest_key", i.DestKey))
+	return a.copyObject(ctx, srcCli, i)
+}
+
+const _azureMaxSyncCopySize int64 = 256 * _MiB
+
+func (a *AzureClient) multipartCopyThreshold() int64 {
+	if a.cfg.MultipartCopyThresholdMiB > 0 {
+		threshold := a.cfg.MultipartCopyThresholdMiB * _MiB
+		// Azure CopyFromURL (synchronous copy) has a 256 MB limit,
+		// so we cap the threshold to avoid errors
+		if threshold > _azureMaxSyncCopySize {
+			return _azureMaxSyncCopySize
+		}
+		return threshold
+	}
+	return _azureMaxSyncCopySize
+}
+
+func (a *AzureClient) copyObject(ctx context.Context, srcCli *AzureClient, i CopyObjectInput) error {
 	return retry.Do(ctx, func() error {
 		// Remove standard HTTPS port :443 from endpoint if present
 		endpoint := strings.TrimSuffix(srcCli.cfg.Endpoint, ":443")
@@ -199,6 +234,89 @@ func (a *AzureClient) CopyObject(ctx context.Context, i CopyObjectInput) error {
 
 		return nil
 	})
+}
+
+type azureBlockInfo struct {
+	blockID string
+	index   int
+}
+
+func (a *AzureClient) multiPartCopy(ctx context.Context, srcCli *AzureClient, i CopyObjectInput) error {
+	parts, err := splitIntoParts(i.SrcAttr.Length)
+	if err != nil {
+		return fmt.Errorf("storage: azure split into parts %w", err)
+	}
+
+	// Generate SAS token for source URL
+	endpoint := strings.TrimSuffix(srcCli.cfg.Endpoint, ":443")
+	srcBaseURL := fmt.Sprintf("https://%s.blob.%s/%s/%s", srcCli.cfg.Credential.AzureAccountName, endpoint, srcCli.cfg.Bucket, i.SrcAttr.Key)
+	srcSAS, err := a.getSAS(ctx, srcCli)
+	if err != nil {
+		return fmt.Errorf("storage: azure get sas %w", err)
+	}
+	srcURL := srcBaseURL + "?" + srcSAS.Encode()
+
+	blobCli := a.cli.ServiceClient().NewContainerClient(a.cfg.Bucket).NewBlockBlobClient(i.DestKey)
+
+	blockInfos := make([]azureBlockInfo, 0, len(parts))
+	var mu sync.Mutex
+	g, subCtx := errgroup.WithContext(ctx)
+	g.SetLimit(_maxCopyPartParallelism)
+
+	for _, p := range parts {
+		g.Go(func() error {
+			// Block ID must be base64 encoded and all block IDs must have the same length
+			blockID := base64.StdEncoding.EncodeToString([]byte(fmt.Sprintf("block-%08d", p.Index)))
+
+			a.logger.Debug("stage block from url",
+				zap.String("dest_key", i.DestKey),
+				zap.String("block_id", blockID),
+				zap.Int("index", p.Index),
+				zap.Int64("offset", p.Offset),
+				zap.Int64("size", p.Size))
+
+			err := retry.Do(subCtx, func() error {
+				_, err := blobCli.StageBlockFromURL(subCtx, blockID, srcURL, &blockblob.StageBlockFromURLOptions{
+					Range: azblob.HTTPRange{Offset: p.Offset, Count: p.Size},
+				})
+				if err != nil {
+					return fmt.Errorf("storage: azure stage block from url %w", err)
+				}
+				return nil
+			})
+			if err != nil {
+				return err
+			}
+
+			mu.Lock()
+			blockInfos = append(blockInfos, azureBlockInfo{blockID: blockID, index: p.Index})
+			mu.Unlock()
+
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return fmt.Errorf("storage: azure wait for stage block %w", err)
+	}
+
+	// Sort block IDs by index to maintain order
+	sort.Slice(blockInfos, func(i, j int) bool {
+		return blockInfos[i].index < blockInfos[j].index
+	})
+
+	blockIDs := make([]string, len(blockInfos))
+	for i, info := range blockInfos {
+		blockIDs[i] = info.blockID
+	}
+
+	// Commit all blocks
+	_, err = blobCli.CommitBlockList(ctx, blockIDs, nil)
+	if err != nil {
+		return fmt.Errorf("storage: azure commit block list %w", err)
+	}
+
+	return nil
 }
 
 func (a *AzureClient) HeadObject(ctx context.Context, key string) (ObjectAttr, error) {
