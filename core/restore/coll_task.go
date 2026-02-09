@@ -52,9 +52,8 @@ type collTask struct {
 	copySem       *semaphore.Weighted
 	bulkInsertSem *semaphore.Weighted
 
-	backupDir      string
-	backupRootPath string
-	backupStorage  storage.Client
+	backupDir     string
+	backupStorage storage.Client
 
 	milvusStorage storage.Client
 
@@ -86,10 +85,9 @@ type collTaskArgs struct {
 
 	taskMgr *taskmgr.Mgr
 
-	backupRootPath string
-	backupDir      string
-	keepTempFiles  bool
-	crossStorage   bool
+	backupDir     string
+	keepTempFiles bool
+	crossStorage  bool
 
 	backupStorage storage.Client
 	milvusStorage storage.Client
@@ -129,10 +127,9 @@ func newCollTask(args collTaskArgs) *collTask {
 		copySem:       args.copySem,
 		bulkInsertSem: args.bulkInsertSem,
 
-		crossStorage:   args.crossStorage,
-		keepTempFiles:  args.keepTempFiles,
-		backupDir:      args.backupDir,
-		backupRootPath: args.backupRootPath,
+		crossStorage:  args.crossStorage,
+		keepTempFiles: args.keepTempFiles,
+		backupDir:     args.backupDir,
 
 		backupStorage: args.backupStorage,
 		milvusStorage: args.milvusStorage,
@@ -306,7 +303,7 @@ func (ct *collTask) cleanTempFiles(dir string) tearDownFn {
 
 func (ct *collTask) copyToMilvusBucket(ctx context.Context, tempDir, srcPrefix string) (string, error) {
 	ct.logger.Info("milvus and backup store in different bucket, copy the data first", zap.String("temp_dir", tempDir))
-	dest := path.Join(tempDir, strings.Replace(srcPrefix, ct.backupRootPath, "", 1)) + "/"
+	dest := path.Join(tempDir, strings.Replace(srcPrefix, ct.backupDir, "", 1)) + "/"
 	opt := storage.CopyPrefixOpt{
 		Sem:          ct.copySem,
 		Src:          ct.backupStorage,

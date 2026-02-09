@@ -296,17 +296,16 @@ func (o *options) toArgs(params *cfg.Config) (restore.TaskArgs, error) {
 	}
 
 	return restore.TaskArgs{
-		TaskID:         uuid.NewString(),
-		Backup:         backup,
-		Plan:           plan,
-		Option:         o.toOption(),
-		Params:         params,
-		BackupDir:      mpath.BackupDir(params.Minio.BackupRootPath.Val, o.backupName),
-		BackupRootPath: params.Minio.BackupRootPath.Val,
-		BackupStorage:  backupStorage,
-		MilvusStorage:  milvusStorage,
-		Grpc:           milvusClient,
-		Restful:        restfulClient,
+		TaskID:        uuid.NewString(),
+		Backup:        backup,
+		Plan:          plan,
+		Option:        o.toOption(),
+		Params:        params,
+		BackupDir:     mpath.BackupDir(params.Minio.BackupRootPath.Val, o.backupName),
+		BackupStorage: backupStorage,
+		MilvusStorage: milvusStorage,
+		Grpc:          milvusClient,
+		Restful:       restfulClient,
 
 		TaskMgr: taskmgr.DefaultMgr(),
 	}, nil
