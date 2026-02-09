@@ -416,7 +416,14 @@ func (t *Task) backupRBAC(ctx context.Context) error {
 	return nil
 }
 
+// backupRPCChannelPOS backs up the RPC channel position for CDC incremental replication.
+// This is only needed for Milvus 2.5.x CDC, which is no longer maintained.
+// Consider removing this entirely in the future.
 func (t *Task) backupRPCChannelPOS(ctx context.Context) {
+	if !t.grpc.HasFeature(milvus.ReplicateMessage) {
+		t.logger.Info("skip backup rpc channel pos, replicate message not supported in this version")
+		return
+	}
 	t.logger.Info("start backup rpc channel pos")
 	rpcPosTask := newRPCChannelPOSTask(t.taskID, t.rpcChannelName, t.grpc, t.metaBuilder)
 	if err := rpcPosTask.Execute(ctx); err != nil {

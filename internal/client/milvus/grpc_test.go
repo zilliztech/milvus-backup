@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	semver "github.com/Masterminds/semver/v3"
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
 	"github.com/stretchr/testify/assert"
@@ -150,6 +151,36 @@ func TestGrpcClient_HasFeature(t *testing.T) {
 	cli = &GrpcClient{flags: MultiDatabase | DescribeDatabase}
 	assert.True(t, cli.HasFeature(MultiDatabase))
 	assert.True(t, cli.HasFeature(DescribeDatabase))
+}
+
+func TestReplicateMessageConstraint(t *testing.T) {
+	tests := []struct {
+		name    string
+		version string
+		want    bool
+	}{
+		{"Milvus2.5.0", "2.5.0", true},
+		{"Milvus2.5.6", "2.5.6", true},
+		{"Milvus2.5.99", "2.5.99", true},
+		{"Milvus2.4.9", "2.4.9", false},
+		{"Milvus2.6.0", "2.6.0", false},
+		{"Milvus2.6.9", "2.6.9", false},
+		{"Milvus2.7.0", "2.7.0", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, tuple := range _featureTuples {
+				if tuple.Flag == ReplicateMessage {
+					ver, err := semver.NewVersion(tt.version)
+					assert.NoError(t, err)
+					assert.Equal(t, tt.want, tuple.Constraints.Check(ver))
+					return
+				}
+			}
+			t.Fatal("ReplicateMessage not found in _featureTuples")
+		})
+	}
 }
 
 func TestGrpcClient_ListIndex(t *testing.T) {
