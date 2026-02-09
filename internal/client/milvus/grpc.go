@@ -50,6 +50,7 @@ const (
 	CollectionLevelGCControl
 	GetReplicas
 	FuncRuntimeCheck
+	ReplicateMessage
 )
 
 type featureTuple struct {
@@ -65,6 +66,9 @@ var _featureTuples = []featureTuple{
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.6.8-0")), Flag: CollectionLevelGCControl},
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.4.0-0")), Flag: GetReplicas},
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.6.8-0")), Flag: FuncRuntimeCheck},
+	// ReplicateMessage is only used by 2.5 CDC for incremental data replication.
+	// Since 2.5 CDC is no longer maintained, consider removing this in the future.
+	{Constraints: lo.Must(semver.NewConstraint(">= 2.5.0-0, < 2.6.0-0")), Flag: ReplicateMessage},
 }
 
 func defaultDialOpt() []grpc.DialOption {
