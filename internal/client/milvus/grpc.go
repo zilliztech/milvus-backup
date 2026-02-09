@@ -409,13 +409,20 @@ func (g *GrpcClient) HasFeature(flag FeatureFlag) bool {
 }
 
 func (g *GrpcClient) GetVersion(ctx context.Context) (string, error) {
+	if _, err := semver.NewVersion(g.serverVersion); err == nil {
+		g.logger.Info("get version from connect", zap.String("version", g.serverVersion))
+		return g.serverVersion, nil
+	}
+
 	ctx = g.newCtx(ctx)
 	resp, err := g.srv.GetVersion(ctx, &milvuspb.GetVersionRequest{})
 	if err := checkResponse(resp, err); err != nil {
 		return "", fmt.Errorf("client: get version failed: %w", err)
 	}
 
-	return resp.GetVersion(), nil
+	ver := resp.GetVersion()
+	g.logger.Info("get version from RPC", zap.String("version", ver))
+	return ver, nil
 }
 
 func (g *GrpcClient) checkFeature(ctx context.Context) error {
@@ -435,7 +442,6 @@ func (g *GrpcClient) checkFeature(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("client: get version: %w", err)
 	}
-	g.logger.Info("server version", zap.String("version", ver))
 	sem, err := semver.NewVersion(ver)
 	if err != nil {
 		return fmt.Errorf("client: parse version: %w", err)

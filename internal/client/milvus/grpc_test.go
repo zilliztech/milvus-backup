@@ -16,6 +16,7 @@ import (
 	"google.golang.org/grpc/status"
 
 	"github.com/zilliztech/milvus-backup/internal/cfg"
+	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
 func TestGrpcAuth(t *testing.T) {
@@ -181,6 +182,41 @@ func TestReplicateMessageConstraint(t *testing.T) {
 			t.Fatal("ReplicateMessage not found in _featureTuples")
 		})
 	}
+}
+
+func TestGrpcClient_GetVersion(t *testing.T) {
+	t.Run("ConnectVersionValid", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, serverVersion: "2.5.0", logger: log.L()}
+
+		ver, err := cli.GetVersion(context.Background())
+		assert.NoError(t, err)
+		assert.Equal(t, "2.5.0", ver)
+	})
+
+	t.Run("ConnectVersionInvalidFallsBackToRPC", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, serverVersion: "", logger: log.L()}
+
+		mockSrv.EXPECT().GetVersion(mock.Anything, mock.Anything).Return(&milvuspb.GetVersionResponse{
+			Status:  &commonpb.Status{Code: 0},
+			Version: "2.6.0",
+		}, nil)
+
+		ver, err := cli.GetVersion(context.Background())
+		assert.NoError(t, err)
+		assert.Equal(t, "2.6.0", ver)
+	})
+
+	t.Run("BothInvalid", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, serverVersion: "", logger: log.L()}
+
+		mockSrv.EXPECT().GetVersion(mock.Anything, mock.Anything).Return(nil, errors.New("rpc error"))
+
+		_, err := cli.GetVersion(context.Background())
+		assert.Error(t, err)
+	})
 }
 
 func TestGrpcClient_ListIndex(t *testing.T) {
