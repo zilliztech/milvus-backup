@@ -203,10 +203,10 @@ func (t *Task) closeClients() {
 }
 
 func (t *Task) Execute(ctx context.Context) error {
+	defer t.closeClients()
 	if err := t.initClients(); err != nil {
 		return err
 	}
-	defer t.closeClients()
 
 	if err := t.prepare(ctx); err != nil {
 		return err

@@ -100,10 +100,10 @@ func (t *Task) closeClients() {
 }
 
 func (t *Task) Execute(ctx context.Context) error {
+	defer t.closeClients()
 	if err := t.initClients(); err != nil {
 		return err
 	}
-	defer t.closeClients()
 
 	if err := t.runDBTasks(ctx); err != nil {
 		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))

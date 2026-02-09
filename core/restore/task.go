@@ -355,10 +355,10 @@ func (t *Task) closeClients() {
 }
 
 func (t *Task) Execute(ctx context.Context) error {
+	defer t.closeClients()
 	if err := t.initClients(); err != nil {
 		return err
 	}
-	defer t.closeClients()
 
 	if err := t.privateExecute(ctx); err != nil {
 		t.logger.Error("restore task failed", zap.Error(err))

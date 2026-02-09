@@ -183,9 +183,8 @@ func (h *restoreHandler) newTask(ctx context.Context, backupDir string) (*restor
 		Plan:           plan,
 		Option:         newOptionFromRequest(h.request),
 		Params:         h.params,
-		BackupDir:      backupDir,
-		BackupRootPath: h.backupRootPath,
-		BackupStorage:  h.backupStorage,
+		BackupDir:     backupDir,
+		BackupStorage: h.backupStorage,
 		MilvusStorage:  h.milvusStorage,
 
 		TaskMgr: taskmgr.DefaultMgr(),
