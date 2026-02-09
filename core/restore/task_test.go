@@ -58,7 +58,7 @@ func TestTask_CheckCollExist(t *testing.T) {
 
 			cli.EXPECT().HasCollection(mock.Anything, "db1", "coll1").Return(tc.has, nil).Once()
 
-			rt := &Task{args: TaskArgs{Grpc: cli, Option: opt}, logger: zap.NewNop()}
+			rt := &Task{args: TaskArgs{Option: opt}, grpc: cli, logger: zap.NewNop()}
 			err := rt.checkCollExist(context.Background(), task)
 			if tc.ok {
 				assert.NoError(t, err)

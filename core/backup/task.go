@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
+	"time"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
@@ -37,19 +39,14 @@ type TaskArgs struct {
 
 	Params *cfg.Config
 
-	Grpc    milvus.Grpc
-	Restful milvus.Restful
-	Manage  milvus.Manage
-
-	EtcdCli *clientv3.Client
-
 	TaskMgr *taskmgr.Mgr
 }
 
 type Option struct {
 	BackupName string
 
-	PauseGC bool
+	PauseGC    bool
+	ManageAddr string
 
 	Strategy Strategy
 
@@ -67,6 +64,7 @@ type Task struct {
 	logger *zap.Logger
 
 	option Option
+	params *cfg.Config
 
 	milvusStorage  storage.Client
 	milvusRootPath string
@@ -94,16 +92,16 @@ type Task struct {
 	rpcChannelName string
 }
 
-func newGCCtrl(args TaskArgs) gcCtrl {
-	if !args.Option.PauseGC {
+func newGCCtrl(taskID string, pauseGC bool, grpc milvus.Grpc, manage milvus.Manage) gcCtrl {
+	if !pauseGC {
 		return &emptyGCCtrl{}
 	}
 
-	if args.Grpc.HasFeature(milvus.CollectionLevelGCControl) {
-		return newCollGCCtrl(args.TaskID, args.Manage)
+	if grpc.HasFeature(milvus.CollectionLevelGCControl) {
+		return newCollGCCtrl(taskID, manage)
 	}
 
-	return newClusterGCCtrl(args.TaskID, args.Manage)
+	return newClusterGCCtrl(taskID, manage)
 }
 
 func NewTask(args TaskArgs) (*Task, error) {
@@ -133,6 +131,8 @@ func NewTask(args TaskArgs) (*Task, error) {
 
 		option: args.Option,
 
+		params: args.Params,
+
 		milvusStorage:  args.MilvusStorage,
 		milvusRootPath: args.Params.Minio.RootPath.Val,
 
@@ -143,13 +143,6 @@ func NewTask(args TaskArgs) (*Task, error) {
 
 		throttling: throttling,
 
-		grpc:    args.Grpc,
-		restful: args.Restful,
-		manage:  args.Manage,
-
-		gcCtrl: newGCCtrl(args),
-
-		etcdCli:      args.EtcdCli,
 		etcdRootPath: args.Params.Milvus.Etcd.RootPath.Val,
 
 		metaBuilder: mb,
@@ -160,7 +153,61 @@ func NewTask(args TaskArgs) (*Task, error) {
 	}, nil
 }
 
+func (t *Task) initClients() error {
+	grpcCli, err := milvus.NewGrpc(&t.params.Milvus)
+	if err != nil {
+		return fmt.Errorf("backup: create grpc client: %w", err)
+	}
+	t.grpc = grpcCli
+
+	restfulCli, err := milvus.NewRestful(&t.params.Milvus)
+	if err != nil {
+		return fmt.Errorf("backup: create restful client: %w", err)
+	}
+	t.restful = restfulCli
+
+	manageAddr := t.params.Backup.GCPause.Address.Val
+	if t.option.ManageAddr != "" {
+		manageAddr = t.option.ManageAddr
+	}
+	t.manage = milvus.NewManage(manageAddr)
+
+	if t.option.BackupIndexExtra {
+		endpoints := strings.Split(t.params.Milvus.Etcd.Endpoints.Val, ",")
+		etcdCli, err := clientv3.New(clientv3.Config{
+			Endpoints:   endpoints,
+			DialTimeout: 5 * time.Second,
+		})
+		if err != nil {
+			return fmt.Errorf("backup: create etcd client: %w", err)
+		}
+		t.etcdCli = etcdCli
+	}
+
+	t.gcCtrl = newGCCtrl(t.taskID, t.option.PauseGC, t.grpc, t.manage)
+
+	return nil
+}
+
+func (t *Task) closeClients() {
+	if t.grpc != nil {
+		if err := t.grpc.Close(); err != nil {
+			t.logger.Warn("close grpc client", zap.Error(err))
+		}
+	}
+	if t.etcdCli != nil {
+		if err := t.etcdCli.Close(); err != nil {
+			t.logger.Warn("close etcd client", zap.Error(err))
+		}
+	}
+}
+
 func (t *Task) Execute(ctx context.Context) error {
+	if err := t.initClients(); err != nil {
+		return err
+	}
+	defer t.closeClients()
+
 	if err := t.prepare(ctx); err != nil {
 		return err
 	}

@@ -9,12 +9,10 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
-	clientv3 "go.etcd.io/etcd/client/v3"
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/backup"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
-	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
@@ -228,28 +226,6 @@ func (o *options) toArgs(params *cfg.Config) (backup.TaskArgs, error) {
 		return backup.TaskArgs{}, fmt.Errorf("create milvus storage: %w", err)
 	}
 
-	milvusClient, err := milvus.NewGrpc(&params.Milvus)
-	if err != nil {
-		return backup.TaskArgs{}, fmt.Errorf("create milvus grpc client: %w", err)
-	}
-	restfulClient, err := milvus.NewRestful(&params.Milvus)
-	if err != nil {
-		return backup.TaskArgs{}, fmt.Errorf("create milvus restful client: %w", err)
-	}
-	manage := milvus.NewManage(params.Backup.GCPause.Address.Val)
-
-	var etcdCli *clientv3.Client
-	if o.backupIndexExtra {
-		endpoints := strings.Split(params.Milvus.Etcd.Endpoints.Val, ",")
-		etcdCli, err = clientv3.New(clientv3.Config{
-			Endpoints:   endpoints,
-			DialTimeout: 5 * time.Second,
-		})
-		if err != nil {
-			return backup.TaskArgs{}, fmt.Errorf("create etcd client: %w", err)
-		}
-	}
-
 	backupDir := mpath.BackupDir(params.Minio.BackupRootPath.Val, o.backupName)
 	option, err := o.toOption(params)
 	if err != nil {
@@ -263,13 +239,7 @@ func (o *options) toArgs(params *cfg.Config) (backup.TaskArgs, error) {
 		BackupStorage: backupStorage,
 		BackupDir:     backupDir,
 		Params:        params,
-		Grpc:          milvusClient,
-		Restful:       restfulClient,
-		Manage:        manage,
-
-		EtcdCli: etcdCli,
-
-		TaskMgr: taskmgr.DefaultMgr(),
+		TaskMgr:       taskmgr.DefaultMgr(),
 	}, nil
 }
 

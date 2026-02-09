@@ -130,14 +130,14 @@ type TaskArgs struct {
 	BackupStorage storage.Client
 	MilvusStorage storage.Client
 
-	Grpc    milvus.Grpc
-	Restful milvus.Restful
-
 	TaskMgr *taskmgr.Mgr
 }
 
 type Task struct {
 	args TaskArgs
+
+	grpc    milvus.Grpc
+	restful milvus.Restful
 
 	copySem       *semaphore.Weighted
 	bulkInsertSem *semaphore.Weighted
@@ -214,14 +214,14 @@ func (t *Task) newDBTask(dbBak *backuppb.DatabaseBackupInfo) []*databaseTask {
 	mappings, ok := t.args.Plan.DBMapper[dbBak.GetDbName()]
 	if !ok {
 		t.logger.Debug("no mapping for database, restore directly", zap.String("db_name", dbBak.GetDbName()))
-		task := newDatabaseTask(t.args.Grpc, dbBak, dbBak.GetDbName())
+		task := newDatabaseTask(t.grpc, dbBak, dbBak.GetDbName())
 		return []*databaseTask{task}
 	}
 
 	tasks := make([]*databaseTask, 0, len(mappings))
 	for _, mapping := range mappings {
 		t.logger.Debug("generate restore database task", zap.String("source", dbBak.GetDbName()), zap.String("target", mapping.Target))
-		task := newDatabaseTask(t.args.Grpc, dbBak, mapping.Target)
+		task := newDatabaseTask(t.grpc, dbBak, mapping.Target)
 		tasks = append(tasks, task)
 	}
 
@@ -259,8 +259,8 @@ func (t *Task) newCollTask(dbBackup *backuppb.DatabaseBackupInfo, collBackup *ba
 			milvusStorage: t.args.MilvusStorage,
 			copySem:       t.copySem,
 			bulkInsertSem: t.bulkInsertSem,
-			grpcCli:       t.args.Grpc,
-			restfulCli:    t.args.Restful,
+			grpcCli:       t.grpc,
+			restfulCli:    t.restful,
 		}
 
 		tasks = append(tasks, newCollTask(args))
@@ -308,7 +308,7 @@ func (t *Task) checkCollsExist(ctx context.Context, collTasks []*collTask) error
 }
 
 func (t *Task) checkCollExist(ctx context.Context, task *collTask) error {
-	has, err := t.args.Grpc.HasCollection(ctx, task.targetNS.DBName(), task.targetNS.CollName())
+	has, err := t.grpc.HasCollection(ctx, task.targetNS.DBName(), task.targetNS.CollName())
 	if err != nil {
 		return fmt.Errorf("restore: check collection %w", err)
 	}
@@ -330,7 +330,36 @@ func (t *Task) checkCollExist(ctx context.Context, task *collTask) error {
 	return nil
 }
 
+func (t *Task) initClients() error {
+	grpcCli, err := milvus.NewGrpc(&t.args.Params.Milvus)
+	if err != nil {
+		return fmt.Errorf("restore: create grpc client: %w", err)
+	}
+	t.grpc = grpcCli
+
+	restfulCli, err := milvus.NewRestful(&t.args.Params.Milvus)
+	if err != nil {
+		return fmt.Errorf("restore: create restful client: %w", err)
+	}
+	t.restful = restfulCli
+
+	return nil
+}
+
+func (t *Task) closeClients() {
+	if t.grpc != nil {
+		if err := t.grpc.Close(); err != nil {
+			t.logger.Warn("close grpc client", zap.Error(err))
+		}
+	}
+}
+
 func (t *Task) Execute(ctx context.Context) error {
+	if err := t.initClients(); err != nil {
+		return err
+	}
+	defer t.closeClients()
+
 	if err := t.privateExecute(ctx); err != nil {
 		t.logger.Error("restore task failed", zap.Error(err))
 		t.args.TaskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
@@ -376,7 +405,7 @@ func (t *Task) restoreRBAC(ctx context.Context) error {
 		return nil
 	}
 
-	curRBAC, err := t.args.Grpc.BackupRBAC(ctx)
+	curRBAC, err := t.grpc.BackupRBAC(ctx)
 	if err != nil {
 		return fmt.Errorf("restore: get current rbac: %w", err)
 	}
@@ -399,7 +428,7 @@ func (t *Task) restoreRBAC(ctx context.Context) error {
 		zap.Int("grants", len(grants)),
 		zap.Int("privilege_groups", len(privilegeGroups)))
 
-	if err := t.args.Grpc.RestoreRBAC(ctx, rbacMeta); err != nil {
+	if err := t.grpc.RestoreRBAC(ctx, rbacMeta); err != nil {
 		return fmt.Errorf("restore: restore rbac: %w", err)
 	}
 
@@ -410,7 +439,7 @@ func (t *Task) runDBTasks(ctx context.Context, dbTasks []*databaseTask) error {
 	t.logger.Info("start restore database")
 
 	// if the database is existed, skip restore
-	dbs, err := t.args.Grpc.ListDatabases(ctx)
+	dbs, err := t.grpc.ListDatabases(ctx)
 	if err != nil {
 		return fmt.Errorf("restore: list databases %w", err)
 	}
@@ -439,7 +468,7 @@ func (t *Task) runDBTasks(ctx context.Context, dbTasks []*databaseTask) error {
 
 // prepareDB create database if not exist, for restore collection task.
 func (t *Task) prepareDB(ctx context.Context, collTasks []*collTask) error {
-	dbInTarget, err := t.args.Grpc.ListDatabases(ctx)
+	dbInTarget, err := t.grpc.ListDatabases(ctx)
 	if err != nil {
 		return fmt.Errorf("restore: list databases %w", err)
 	}
@@ -452,7 +481,7 @@ func (t *Task) prepareDB(ctx context.Context, collTasks []*collTask) error {
 
 	dbNotInTarget := lo.Without(dbsNeedToRestores, dbInTarget...)
 	for _, db := range dbNotInTarget {
-		if err := t.args.Grpc.CreateDatabase(ctx, db); err != nil {
+		if err := t.grpc.CreateDatabase(ctx, db); err != nil {
 			return fmt.Errorf("restore: create database %w", err)
 		}
 		t.logger.Info("create db done", zap.String("database", db))

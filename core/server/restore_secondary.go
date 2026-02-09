@@ -10,18 +10,16 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore/secondary"
 	"github.com/zilliztech/milvus-backup/core/tasklet"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
-	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
-
-	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 )
 
 // RestoreBackup Restore interface
@@ -56,9 +54,6 @@ func newRestoreSecondaryHandler(request *backuppb.RestoreSecondaryRequest, param
 type restoreSecondaryHandler struct {
 	params  *cfg.Config
 	request *backuppb.RestoreSecondaryRequest
-
-	milvusClient  milvus.Grpc
-	restfulClient milvus.Restful
 
 	backupStorage  storage.Client
 	backupRootPath string
@@ -127,16 +122,6 @@ func (h *restoreSecondaryHandler) run(ctx context.Context) *backuppb.RestoreBack
 }
 
 func (h *restoreSecondaryHandler) initClient(ctx context.Context) error {
-	milvusGrpc, err := milvus.NewGrpc(&h.params.Milvus)
-	if err != nil {
-		return fmt.Errorf("server: create milvus client: %w", err)
-	}
-
-	milvusRestful, err := milvus.NewRestful(&h.params.Milvus)
-	if err != nil {
-		return fmt.Errorf("server: create milvus restful client: %w", err)
-	}
-
 	backupStorage, err := storage.NewBackupStorage(ctx, &h.params.Minio)
 	if err != nil {
 		return fmt.Errorf("server: create backup storage: %w", err)
@@ -147,9 +132,7 @@ func (h *restoreSecondaryHandler) initClient(ctx context.Context) error {
 		backupRootPath = h.request.GetPath()
 	}
 
-	h.milvusClient = milvusGrpc
 	h.backupStorage = backupStorage
-	h.restfulClient = milvusRestful
 	h.backupRootPath = backupRootPath
 	return nil
 }
@@ -170,9 +153,6 @@ func (h *restoreSecondaryHandler) newTask(ctx context.Context) (tasklet.Tasklet,
 		Params:        h.params,
 		BackupDir:     mpath.BackupDir(h.backupRootPath, h.request.GetBackupName()),
 		BackupStorage: h.backupStorage,
-
-		Restful: h.restfulClient,
-		Grpc:    h.milvusClient,
 
 		TaskMgr: taskmgr.DefaultMgr(),
 	}

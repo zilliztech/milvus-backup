@@ -5,19 +5,15 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
-	"strings"
-	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
-	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/backup"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
-	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
@@ -59,12 +55,6 @@ type createBackupHandler struct {
 
 	request *backuppb.CreateBackupRequest
 
-	milvusClient  milvus.Grpc
-	restfulClient milvus.Restful
-	manageClient  milvus.Manage
-
-	etcdClient *clientv3.Client
-
 	backupStorage storage.Client
 
 	milvusStorage storage.Client
@@ -93,37 +83,6 @@ func (h *createBackupHandler) initClient(ctx context.Context) error {
 	}
 	h.milvusStorage = milvusStorage
 
-	milvusClient, err := milvus.NewGrpc(&h.params.Milvus)
-	if err != nil {
-		return err
-	}
-	h.milvusClient = milvusClient
-
-	restfulClient, err := milvus.NewRestful(&h.params.Milvus)
-	if err != nil {
-		return err
-	}
-	h.restfulClient = restfulClient
-
-	var etcdCli *clientv3.Client
-	if h.request.GetWithIndexExtra() {
-		endpoints := strings.Split(h.params.Milvus.Etcd.Endpoints.Val, ",")
-		etcdCli, err = clientv3.New(clientv3.Config{
-			Endpoints:   endpoints,
-			DialTimeout: 5 * time.Second,
-		})
-		if err != nil {
-			return fmt.Errorf("create etcd client: %w", err)
-		}
-	}
-	h.etcdClient = etcdCli
-
-	manageAddr := h.params.Backup.GCPause.Address.Val
-	if h.request.GetGcPauseAddress() != "" {
-		manageAddr = h.request.GetGcPauseAddress()
-	}
-
-	h.manageClient = milvus.NewManage(manageAddr)
 	return nil
 }
 
@@ -221,9 +180,15 @@ func (h *createBackupHandler) toOption(params *cfg.Config) (backup.Option, error
 		return backup.Option{}, fmt.Errorf("server: build strategy: %w", err)
 	}
 
+	manageAddr := ""
+	if h.request.GetGcPauseAddress() != "" {
+		manageAddr = h.request.GetGcPauseAddress()
+	}
+
 	return backup.Option{
 		BackupName:       h.request.GetBackupName(),
 		PauseGC:          h.request.GetGcPauseEnable() || params.Backup.GCPause.Enable.Val,
+		ManageAddr:       manageAddr,
 		Strategy:         strategy,
 		BackupRBAC:       h.request.GetRbac(),
 		BackupIndexExtra: h.request.GetWithIndexExtra(),
@@ -251,10 +216,6 @@ func (h *createBackupHandler) toArgs() (backup.TaskArgs, error) {
 		BackupStorage: h.backupStorage,
 		BackupDir:     backupDir,
 		Params:        h.params,
-		Grpc:          h.milvusClient,
-		Restful:       h.restfulClient,
-		Manage:        h.manageClient,
-		EtcdCli:       h.etcdClient,
 		TaskMgr:       taskmgr.DefaultMgr(),
 	}, nil
 }
