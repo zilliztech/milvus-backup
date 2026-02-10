@@ -126,10 +126,9 @@ type TaskArgs struct {
 
 	Params *cfg.Config
 
-	BackupDir      string
-	BackupRootPath string
-	BackupStorage  storage.Client
-	MilvusStorage  storage.Client
+	BackupDir     string
+	BackupStorage storage.Client
+	MilvusStorage storage.Client
 
 	Grpc    milvus.Grpc
 	Restful milvus.Restful
@@ -247,22 +246,21 @@ func (t *Task) newCollTask(dbBackup *backuppb.DatabaseBackupInfo, collBackup *ba
 	for _, targetNS := range targetNSes {
 		t.logger.Debug("generate restore collection task", zap.String("source", sourceNS.String()), zap.String("target", targetNS.String()))
 		args := collTaskArgs{
-			taskID:         t.args.TaskID,
-			taskMgr:        t.args.TaskMgr,
-			targetNS:       targetNS,
-			dbBackup:       dbBackup,
-			collBackup:     collBackup,
-			option:         t.args.Option,
-			backupRootPath: t.args.BackupRootPath,
-			crossStorage:   t.args.Params.Minio.CrossStorage.Val,
-			keepTempFiles:  t.args.Params.Backup.KeepTempFiles.Val,
-			backupDir:      t.args.BackupDir,
-			backupStorage:  t.args.BackupStorage,
-			milvusStorage:  t.args.MilvusStorage,
-			copySem:        t.copySem,
-			bulkInsertSem:  t.bulkInsertSem,
-			grpcCli:        t.args.Grpc,
-			restfulCli:     t.args.Restful,
+			taskID:        t.args.TaskID,
+			taskMgr:       t.args.TaskMgr,
+			targetNS:      targetNS,
+			dbBackup:      dbBackup,
+			collBackup:    collBackup,
+			option:        t.args.Option,
+			crossStorage:  t.args.Params.Minio.CrossStorage.Val,
+			keepTempFiles: t.args.Params.Backup.KeepTempFiles.Val,
+			backupDir:     t.args.BackupDir,
+			backupStorage: t.args.BackupStorage,
+			milvusStorage: t.args.MilvusStorage,
+			copySem:       t.copySem,
+			bulkInsertSem: t.bulkInsertSem,
+			grpcCli:       t.args.Grpc,
+			restfulCli:    t.args.Restful,
 		}
 
 		tasks = append(tasks, newCollTask(args))
