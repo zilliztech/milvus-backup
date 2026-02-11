@@ -36,14 +36,14 @@ type TaskArgs struct {
 	BackupDir     string
 	BackupStorage storage.Client
 
-	Restful milvus.Restful
-	Grpc    milvus.Grpc
-
 	TaskMgr *taskmgr.Mgr
 }
 
 type Task struct {
 	args TaskArgs
+
+	grpc    milvus.Grpc
+	restful milvus.Restful
 
 	tsAlloc *tsAlloc
 
@@ -55,12 +55,6 @@ type Task struct {
 }
 
 func NewTask(args TaskArgs) (*Task, error) {
-	pchs := args.Backup.GetPhysicalChannelNames()
-	streamCli, err := milvus.NewStreamClient(args.SourceClusterID, args.TaskID, pchs, args.Grpc)
-	if err != nil {
-		return nil, fmt.Errorf("secondary: create stream client: %w", err)
-	}
-
 	args.TaskMgr.AddRestoreTask(args.TaskID)
 
 	return &Task{
@@ -68,15 +62,49 @@ func NewTask(args TaskArgs) (*Task, error) {
 
 		tsAlloc: newTTAlloc(),
 
-		streamCli: streamCli,
-
 		taskMgr: args.TaskMgr,
 
 		logger: log.With(zap.String("task_id", args.TaskID)),
 	}, nil
 }
 
+func (t *Task) initClients() error {
+	grpcCli, err := milvus.NewGrpc(&t.args.Params.Milvus)
+	if err != nil {
+		return fmt.Errorf("secondary: create grpc client: %w", err)
+	}
+	t.grpc = grpcCli
+
+	restfulCli, err := milvus.NewRestful(&t.args.Params.Milvus)
+	if err != nil {
+		return fmt.Errorf("secondary: create restful client: %w", err)
+	}
+	t.restful = restfulCli
+
+	pchs := t.args.Backup.GetPhysicalChannelNames()
+	streamCli, err := milvus.NewStreamClient(t.args.SourceClusterID, t.args.TaskID, pchs, t.grpc)
+	if err != nil {
+		return fmt.Errorf("secondary: create stream client: %w", err)
+	}
+	t.streamCli = streamCli
+
+	return nil
+}
+
+func (t *Task) closeClients() {
+	if t.grpc != nil {
+		if err := t.grpc.Close(); err != nil {
+			t.logger.Warn("close grpc client", zap.Error(err))
+		}
+	}
+}
+
 func (t *Task) Execute(ctx context.Context) error {
+	defer t.closeClients()
+	if err := t.initClients(); err != nil {
+		return err
+	}
+
 	if err := t.runDBTasks(ctx); err != nil {
 		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
 		return fmt.Errorf("secondary: run database tasks: %w", err)
@@ -159,7 +187,7 @@ func (t *Task) dmlTaskArgs() (dmlTaskArgs, error) {
 		BackupDir:     t.args.BackupDir,
 
 		StreamCli:  t.streamCli,
-		RestfulCli: t.args.Restful,
+		RestfulCli: t.restful,
 	}, nil
 }
 
@@ -232,7 +260,7 @@ func (t *Task) runCollTasks(ctx context.Context) error {
 
 func (t *Task) sendRBACMsg(ctx context.Context) error {
 	t.logger.Info("send rbac msg")
-	curRBAC, err := t.args.Grpc.BackupRBAC(context.Background())
+	curRBAC, err := t.grpc.BackupRBAC(context.Background())
 	if err != nil {
 		return fmt.Errorf("secondary: get current rbac: %w", err)
 	}

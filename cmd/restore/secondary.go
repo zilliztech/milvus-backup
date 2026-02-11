@@ -11,7 +11,6 @@ import (
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/restore/secondary"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
-	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
@@ -63,15 +62,6 @@ func (o *secondaryOption) toArgs(params *cfg.Config) (secondary.TaskArgs, error)
 	if err != nil {
 		return secondary.TaskArgs{}, fmt.Errorf("read backup meta: %w", err)
 	}
-	milvusClient, err := milvus.NewGrpc(&params.Milvus)
-	if err != nil {
-		return secondary.TaskArgs{}, fmt.Errorf("create milvus grpc client: %w", err)
-	}
-
-	restfulClient, err := milvus.NewRestful(&params.Milvus)
-	if err != nil {
-		return secondary.TaskArgs{}, fmt.Errorf("create milvus restful client: %w", err)
-	}
 
 	return secondary.TaskArgs{
 		TaskID: uuid.NewString(),
@@ -83,9 +73,6 @@ func (o *secondaryOption) toArgs(params *cfg.Config) (secondary.TaskArgs, error)
 		Params:        params,
 		BackupDir:     backupDir,
 		BackupStorage: backupStorage,
-
-		Restful: restfulClient,
-		Grpc:    milvusClient,
 
 		TaskMgr: taskmgr.DefaultMgr(),
 	}, nil

@@ -16,7 +16,6 @@ import (
 	"github.com/zilliztech/milvus-backup/core/restore"
 	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
-	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
@@ -54,9 +53,6 @@ func (s *Server) handleRestoreBackup(c *gin.Context) {
 type restoreHandler struct {
 	params  *cfg.Config
 	request *backuppb.RestoreBackupRequest
-
-	milvusClient  milvus.Grpc
-	restfulClient milvus.Restful
 
 	backupStorage  storage.Client
 	backupRootPath string
@@ -138,16 +134,6 @@ func (h *restoreHandler) complete() {
 }
 
 func (h *restoreHandler) initClient(ctx context.Context) error {
-	milvusClient, err := milvus.NewGrpc(&h.params.Milvus)
-	if err != nil {
-		return fmt.Errorf("server: create milvus client: %w", err)
-	}
-
-	restfulClient, err := milvus.NewRestful(&h.params.Milvus)
-	if err != nil {
-		return fmt.Errorf("server: create restful client: %w", err)
-	}
-
 	backupCfg := storage.BackupStorageConfig(&h.params.Minio)
 	if h.request.GetBucketName() != "" {
 		log.Info("use bucket name from request", zap.String("bucketName", h.request.GetBucketName()))
@@ -172,8 +158,6 @@ func (h *restoreHandler) initClient(ctx context.Context) error {
 		return fmt.Errorf("server: create milvus storage: %w", err)
 	}
 
-	h.milvusClient = milvusClient
-	h.restfulClient = restfulClient
 	h.backupStorage = backupStorage
 	h.milvusStorage = milvusStorage
 
@@ -194,16 +178,14 @@ func (h *restoreHandler) newTask(ctx context.Context, backupDir string) (*restor
 	}
 
 	args := restore.TaskArgs{
-		TaskID:        h.request.GetId(),
-		Backup:        backup,
-		Plan:          plan,
-		Option:        newOptionFromRequest(h.request),
-		Params:        h.params,
+		TaskID:         h.request.GetId(),
+		Backup:         backup,
+		Plan:           plan,
+		Option:         newOptionFromRequest(h.request),
+		Params:         h.params,
 		BackupDir:     backupDir,
 		BackupStorage: h.backupStorage,
-		MilvusStorage: h.milvusStorage,
-		Grpc:          h.milvusClient,
-		Restful:       h.restfulClient,
+		MilvusStorage:  h.milvusStorage,
 
 		TaskMgr: taskmgr.DefaultMgr(),
 	}
