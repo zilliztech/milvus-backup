@@ -114,6 +114,11 @@ type Option struct {
 	TruncateBinlogByTs bool
 
 	RestoreRBAC bool
+
+	// EZKMapping maps old encryption keys to new ones.
+	// During restore, the old EZK from backup is looked up in this map
+	// and replaced with the new EZK if a match is found.
+	EZKMapping map[string]string
 }
 
 type TaskArgs struct {

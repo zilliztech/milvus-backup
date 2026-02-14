@@ -262,6 +262,7 @@ func newOptionFromRequest(request *backuppb.RestoreBackupRequest) *restore.Optio
 		UseV2Restore:         request.GetUseV2Restore(),
 		TruncateBinlogByTs:   request.GetTruncateBinlogByTs(),
 		RestoreRBAC:          request.GetRbac(),
+		EZKMapping:           request.GetEzkMapping(),
 	}
 }
 

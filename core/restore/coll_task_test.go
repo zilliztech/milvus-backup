@@ -52,6 +52,26 @@ func TestCollTask_ezk(t *testing.T) {
 		ct := newTestCollTask()
 		assert.Equal(t, "", ct.ezk())
 	})
+
+	t.Run("WithMapping", func(t *testing.T) {
+		ct := newTestCollTask()
+		ct.dbBackup = &backuppb.DatabaseBackupInfo{Ezk: "old_key"}
+		ct.option.EZKMapping = map[string]string{"old_key": "new_key"}
+		assert.Equal(t, "new_key", ct.ezk())
+	})
+
+	t.Run("WithMappingNoMatch", func(t *testing.T) {
+		ct := newTestCollTask()
+		ct.dbBackup = &backuppb.DatabaseBackupInfo{Ezk: "other_key"}
+		ct.option.EZKMapping = map[string]string{"old_key": "new_key"}
+		assert.Equal(t, "other_key", ct.ezk())
+	})
+
+	t.Run("WithMappingEmptyEZK", func(t *testing.T) {
+		ct := newTestCollTask()
+		ct.option.EZKMapping = map[string]string{"old_key": "new_key"}
+		assert.Equal(t, "", ct.ezk())
+	})
 }
 
 func TestToPaths(t *testing.T) {

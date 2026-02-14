@@ -400,6 +400,8 @@ message RestoreBackupRequest {
   google.protobuf.Value db_collections_after_rename = 23;
 
   RestorePlan restorePlan = 24;
+  // map of old ezk to new ezk, used to replace encryption keys during restore
+  map<string, string> ezkMapping = 25;
 }
 
 message RestorePlan {
