@@ -461,6 +461,9 @@ func (dmlt *collDMLTask) backupSegmentData(ctx context.Context, seg *backuppb.Se
 	if err != nil {
 		return fmt.Errorf("backup: backup insert logs %w", err)
 	}
+	if len(insertAttrs) == 0 && !seg.GetIsL0() {
+		return fmt.Errorf("backup: segment %d has no insert logs", seg.GetSegmentId())
+	}
 	deltaAttrs, err := dmlt.deltaLogAttrs(seg)
 	if err != nil {
 		return fmt.Errorf("backup: backup delta logs %w", err)
