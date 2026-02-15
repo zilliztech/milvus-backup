@@ -279,11 +279,18 @@ func (ct *collTask) tearDown(ctx context.Context) error {
 }
 
 func (ct *collTask) ezk() string {
-	if ct.dbBackup.GetEzk() != "" {
-		return ct.dbBackup.GetEzk()
+	oldEZK := ct.dbBackup.GetEzk()
+	if oldEZK == "" {
+		return ""
 	}
 
-	return ""
+	if len(ct.option.EZKMapping) > 0 {
+		if newEZK, ok := ct.option.EZKMapping[oldEZK]; ok {
+			return newEZK
+		}
+	}
+
+	return oldEZK
 }
 
 func (ct *collTask) cleanTempFiles(dir string) tearDownFn {
