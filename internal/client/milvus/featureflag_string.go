@@ -14,9 +14,8 @@ func _() {
 	_ = x[GetSegmentInfo-8]
 	_ = x[FlushAll-16]
 	_ = x[CollectionLevelGCControl-32]
-	_ = x[GetReplicas-64]
-	_ = x[FuncRuntimeCheck-128]
-	_ = x[ReplicateMessage-256]
+	_ = x[FuncRuntimeCheck-64]
+	_ = x[ReplicateMessage-128]
 }
 
 const (
@@ -25,9 +24,8 @@ const (
 	_FeatureFlag_name_2 = "GetSegmentInfo"
 	_FeatureFlag_name_3 = "FlushAll"
 	_FeatureFlag_name_4 = "CollectionLevelGCControl"
-	_FeatureFlag_name_5 = "GetReplicas"
-	_FeatureFlag_name_6 = "FuncRuntimeCheck"
-	_FeatureFlag_name_7 = "ReplicateMessage"
+	_FeatureFlag_name_5 = "FuncRuntimeCheck"
+	_FeatureFlag_name_6 = "ReplicateMessage"
 )
 
 var (
@@ -51,8 +49,6 @@ func (i FeatureFlag) String() string {
 		return _FeatureFlag_name_5
 	case i == 128:
 		return _FeatureFlag_name_6
-	case i == 256:
-		return _FeatureFlag_name_7
 	default:
 		return "FeatureFlag(" + strconv.FormatInt(int64(i), 10) + ")"
 	}

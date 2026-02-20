@@ -32,13 +32,6 @@ message IndexInfo {
   int32 max_index_version = 13;
 }
 
-message ReplicaInfo {    // ReplicaGroup
-  int64 replicaID = 1;
-  int64 collectionID = 2;
-  repeated int64 partition_ids = 3; // empty indicates to load collection
-  string resource_group_name = 4;
-}
-
 message DatabaseBackupInfo {
   string db_name = 1;
   int64 db_id = 2;
@@ -75,7 +68,6 @@ message CollectionBackupInfo {
   uint64 created_timestamp = 24;
   repeated string virtual_channel_names = 25;
   repeated string physical_channel_names = 26;
-  repeated ReplicaInfo replicas = 27;
   repeated string aliases = 28;
 }
 

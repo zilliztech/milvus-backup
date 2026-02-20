@@ -108,29 +108,6 @@ func (clt *collLoadTask) buildLoadFields() []*messagespb.LoadFieldConfig {
 	return fieldConfigs
 }
 
-func (clt *collLoadTask) buildLoadConfig() []*messagespb.LoadReplicaConfig {
-	replicaConfigs := make([]*messagespb.LoadReplicaConfig, 0, len(clt.collBackup.GetReplicas()))
-
-	for _, replica := range clt.collBackup.GetReplicas() {
-		rgName := replica.GetResourceGroupName()
-		if len(rgName) == 0 {
-			rgName = "__default_resource_group"
-		}
-
-		replicaConfig := &messagespb.LoadReplicaConfig{
-			ReplicaId:         replica.GetReplicaID(),
-			ResourceGroupName: rgName,
-		}
-		replicaConfigs = append(replicaConfigs, replicaConfig)
-	}
-
-	sort.Slice(replicaConfigs, func(i, j int) bool {
-		return replicaConfigs[i].GetReplicaId() < replicaConfigs[j].GetReplicaId()
-	})
-
-	return replicaConfigs
-}
-
 func (clt *collLoadTask) buildHeader() *message.AlterLoadConfigMessageHeader {
 	partitionIDs := lo.Map(clt.collBackup.GetPartitionBackups(), func(partition *backuppb.PartitionBackupInfo, _ int) int64 {
 		return partition.GetPartitionId()
@@ -141,10 +118,10 @@ func (clt *collLoadTask) buildHeader() *message.AlterLoadConfigMessageHeader {
 	})
 
 	return &message.AlterLoadConfigMessageHeader{
-		DbId:         clt.dbBackup.GetDbId(),
-		CollectionId: clt.collBackup.GetCollectionId(),
-		PartitionIds: partitionIDs,
-		LoadFields:   clt.buildLoadFields(),
-		Replicas:     clt.buildLoadConfig(),
+		DbId:                  clt.dbBackup.GetDbId(),
+		CollectionId:          clt.collBackup.GetCollectionId(),
+		PartitionIds:          partitionIDs,
+		LoadFields:            clt.buildLoadFields(),
+		UseLocalReplicaConfig: true,
 	}
 }
