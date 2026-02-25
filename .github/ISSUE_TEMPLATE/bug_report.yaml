@@ -22,6 +22,7 @@ body:
   attributes:
     label: Can you reproduce this issue on the latest version?
     description: Please check the latest released Milvus-Backup version.
+    default: 2
     options:
       - "Yes, it also happens on the latest version"
       - "No, it only happens on my current version"
