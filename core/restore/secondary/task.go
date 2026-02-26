@@ -105,6 +105,8 @@ func (t *Task) Execute(ctx context.Context) error {
 		return err
 	}
 
+	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreExecuting())
+
 	if err := t.runDBTasks(ctx); err != nil {
 		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
 		return fmt.Errorf("secondary: run database tasks: %w", err)
