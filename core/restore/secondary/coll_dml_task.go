@@ -155,12 +155,9 @@ func (dmlt *collDMLTask) Execute(ctx context.Context) error {
 func (dmlt *collDMLTask) restorePartitionNonL0(ctx context.Context) error {
 	var jobIDs []int64
 	for _, partition := range dmlt.collBackup.GetPartitionBackups() {
-		var nonL0Segs []*backuppb.SegmentBackupInfo
-		for _, seg := range partition.GetSegmentBackups() {
-			if !seg.IsL0 {
-				nonL0Segs = append(nonL0Segs, seg)
-			}
-		}
+		nonL0Segs := lo.Filter(partition.GetSegmentBackups(), func(seg *backuppb.SegmentBackupInfo, _ int) bool {
+			return !seg.IsL0
+		})
 
 		batches, err := dmlt.nonL0SegBatches(ctx, nonL0Segs)
 		if err != nil {
@@ -183,12 +180,9 @@ func (dmlt *collDMLTask) restorePartitionNonL0(ctx context.Context) error {
 func (dmlt *collDMLTask) restorePartitionL0(ctx context.Context) error {
 	var jobIDs []int64
 	for _, partition := range dmlt.collBackup.GetPartitionBackups() {
-		var l0Segs []*backuppb.SegmentBackupInfo
-		for _, seg := range partition.GetSegmentBackups() {
-			if seg.IsL0 {
-				l0Segs = append(l0Segs, seg)
-			}
-		}
+		l0Segs := lo.Filter(partition.GetSegmentBackups(), func(seg *backuppb.SegmentBackupInfo, _ int) bool {
+			return seg.IsL0
+		})
 
 		batches, err := dmlt.l0SegBatches(l0Segs)
 		if err != nil {
