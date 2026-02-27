@@ -131,15 +131,79 @@ func newCollDMLTask(args dmlTaskArgs, collBackup *backuppb.CollectionBackupInfo)
 func (dmlt *collDMLTask) Execute(ctx context.Context) error {
 	dmlt.logger.Info("start restore collection dml")
 
-	if err := dmlt.restorePartitions(ctx); err != nil {
-		return fmt.Errorf("secondary: restore partitions: %w", err)
+	// Send and wait for non-L0 imports for all partitions.
+	if err := dmlt.restorePartitionNonL0(ctx); err != nil {
+		return fmt.Errorf("secondary: restore partition non-L0: %w", err)
 	}
 
+	// Send and wait for per-partition L0 imports. L0 must come after non-L0.
+	if err := dmlt.restorePartitionL0(ctx); err != nil {
+		return fmt.Errorf("secondary: restore partition L0: %w", err)
+	}
+
+	// Send and wait for all-partition L0 imports.
 	if err := dmlt.restoreAllPartitionL0(ctx); err != nil {
 		return fmt.Errorf("secondary: restore all partition l0: %w", err)
 	}
 
 	return nil
+}
+
+// restorePartitionNonL0 builds and sends non-L0 import messages for all partitions
+// sequentially to ensure messages arrive at each physical channel in ts order,
+// then waits for all import jobs concurrently.
+func (dmlt *collDMLTask) restorePartitionNonL0(ctx context.Context) error {
+	var jobIDs []int64
+	for _, partition := range dmlt.collBackup.GetPartitionBackups() {
+		var nonL0Segs []*backuppb.SegmentBackupInfo
+		for _, seg := range partition.GetSegmentBackups() {
+			if !seg.IsL0 {
+				nonL0Segs = append(nonL0Segs, seg)
+			}
+		}
+
+		batches, err := dmlt.nonL0SegBatches(ctx, nonL0Segs)
+		if err != nil {
+			return fmt.Errorf("secondary: build non-L0 batches for partition %s: %w", partition.GetPartitionName(), err)
+		}
+
+		ids, err := dmlt.sendBatches(ctx, partition.GetPartitionId(), batches)
+		if err != nil {
+			return fmt.Errorf("secondary: send non-L0 for partition %s: %w", partition.GetPartitionName(), err)
+		}
+		jobIDs = append(jobIDs, ids...)
+	}
+
+	dmlt.logger.Info("check non-l0 bulk insert jobs", zap.Int("job_count", len(jobIDs)))
+	return dmlt.checkBulkInsertJobs(ctx, jobIDs)
+}
+
+// restorePartitionL0 builds and sends per-partition L0 import messages sequentially,
+// then waits for all import jobs concurrently.
+func (dmlt *collDMLTask) restorePartitionL0(ctx context.Context) error {
+	var jobIDs []int64
+	for _, partition := range dmlt.collBackup.GetPartitionBackups() {
+		var l0Segs []*backuppb.SegmentBackupInfo
+		for _, seg := range partition.GetSegmentBackups() {
+			if seg.IsL0 {
+				l0Segs = append(l0Segs, seg)
+			}
+		}
+
+		batches, err := dmlt.l0SegBatches(l0Segs)
+		if err != nil {
+			return fmt.Errorf("secondary: build L0 batches for partition %s: %w", partition.GetPartitionName(), err)
+		}
+
+		ids, err := dmlt.sendBatches(ctx, partition.GetPartitionId(), batches)
+		if err != nil {
+			return fmt.Errorf("secondary: send L0 for partition %s: %w", partition.GetPartitionName(), err)
+		}
+		jobIDs = append(jobIDs, ids...)
+	}
+
+	dmlt.logger.Info("check l0 bulk insert jobs", zap.Int("job_count", len(jobIDs)))
+	return dmlt.checkBulkInsertJobs(ctx, jobIDs)
 }
 
 func (dmlt *collDMLTask) backupTS(vch string) (uint64, error) {
@@ -161,84 +225,30 @@ func (dmlt *collDMLTask) restoreAllPartitionL0(ctx context.Context) error {
 		return fmt.Errorf("secondary: build all partition l0 batches: %w", err)
 	}
 
-	if err := dmlt.restoreBatches(ctx, common.AllPartitionsID, batches); err != nil {
-		return fmt.Errorf("secondary: restore all partition l0: %w", err)
+	jobIDs, err := dmlt.sendBatches(ctx, common.AllPartitionsID, batches)
+	if err != nil {
+		return fmt.Errorf("secondary: send all partition l0: %w", err)
+	}
+
+	if err := dmlt.checkBulkInsertJobs(ctx, jobIDs); err != nil {
+		return fmt.Errorf("secondary: check all partition l0 jobs: %w", err)
 	}
 
 	dmlt.logger.Info("restore all partition l0 done")
 
 	return nil
-
 }
 
-func (dmlt *collDMLTask) restorePartitions(ctx context.Context) error {
-	g, subCtx := errgroup.WithContext(ctx)
-	for _, partition := range dmlt.collBackup.GetPartitionBackups() {
-		g.Go(func() error {
-			if err := dmlt.restorePartition(subCtx, partition); err != nil {
-				return fmt.Errorf("secondary: restore partition %s: %w", partition.GetPartitionName(), err)
-			}
-			return nil
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		return fmt.Errorf("secondary: restore partitions: %w", err)
-	}
-
-	return nil
-}
-
-func (dmlt *collDMLTask) restorePartition(ctx context.Context, partition *backuppb.PartitionBackupInfo) error {
-	var l0Segs []*backuppb.SegmentBackupInfo
-	var nonL0Segs []*backuppb.SegmentBackupInfo
-
-	for _, seg := range partition.GetSegmentBackups() {
-		if seg.IsL0 {
-			l0Segs = append(l0Segs, seg)
-		} else {
-			nonL0Segs = append(nonL0Segs, seg)
-		}
-	}
-
-	dmlt.logger.Info("restore partition non-l0 segments", zap.String("partition_name", partition.GetPartitionName()))
-	nonL0Batches, err := dmlt.nonL0SegBatches(ctx, nonL0Segs)
-	if err != nil {
-		return fmt.Errorf("secondary: build non-L0 batches: %w", err)
-	}
-	if err := dmlt.restoreBatches(ctx, partition.GetPartitionId(), nonL0Batches); err != nil {
-		return fmt.Errorf("secondary: restore non-L0 segments: %w", err)
-	}
-	dmlt.logger.Info("restore partition non-l0 segments done", zap.String("partition_name", partition.GetPartitionName()))
-
-	dmlt.logger.Info("restore partition l0 segments", zap.String("partition_name", partition.GetPartitionName()))
-	l0Batches, err := dmlt.l0SegBatches(l0Segs)
-	if err != nil {
-		return fmt.Errorf("secondary: build L0 batches: %w", err)
-	}
-	if err := dmlt.restoreBatches(ctx, partition.GetPartitionId(), l0Batches); err != nil {
-		return fmt.Errorf("secondary: restore L0 segments: %w", err)
-	}
-	dmlt.logger.Info("restore partition l0 segments done", zap.String("partition_name", partition.GetPartitionName()))
-
-	return nil
-}
-
-func (dmlt *collDMLTask) restoreBatches(ctx context.Context, partitionID int64, batches []batch) error {
+func (dmlt *collDMLTask) sendBatches(ctx context.Context, partitionID int64, batches []batch) ([]int64, error) {
 	jobIDs := make([]int64, 0, len(batches))
 	for _, b := range batches {
 		jobID, err := dmlt.sendImportMsg(ctx, partitionID, b)
 		if err != nil {
-			return fmt.Errorf("secondary: build messages: %w", err)
+			return nil, fmt.Errorf("secondary: send import msg: %w", err)
 		}
 		jobIDs = append(jobIDs, jobID)
 	}
-
-	if err := dmlt.checkBulkInsertJobs(ctx, jobIDs); err != nil {
-		return fmt.Errorf("secondary: check bulk insert jobs: %w", err)
-	}
-
-	return nil
+	return jobIDs, nil
 }
 
 func (dmlt *collDMLTask) checkBulkInsertJobs(ctx context.Context, jobIDs []int64) error {
