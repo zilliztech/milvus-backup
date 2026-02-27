@@ -58,6 +58,11 @@ type featureTuple struct {
 	Flag        FeatureFlag
 }
 
+// _latestDevVersion is used as a fallback when the server returns a non-semver version
+// string (e.g. "master-20260226-abcdef" from dev builds). It ensures lower-bound
+// constraints (>= X) pass while upper-bound constraints (< Y) correctly fail.
+var _latestDevVersion = semver.MustParse("99.0.0")
+
 var _featureTuples = []featureTuple{
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.4.3-0")), Flag: DescribeDatabase},
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.6.5-0")), Flag: MultiL0InOneJob},
@@ -444,7 +449,10 @@ func (g *GrpcClient) checkFeature(ctx context.Context) error {
 	}
 	sem, err := semver.NewVersion(ver)
 	if err != nil {
-		return fmt.Errorf("client: parse version: %w", err)
+		// Dev/master builds may return non-semver strings like "master-20260226-abcdef".
+		g.logger.Warn("cannot parse server version as semver, treat as latest dev build",
+			zap.String("version", ver), zap.Error(err))
+		sem = _latestDevVersion
 	}
 
 	for _, tuple := range _featureTuples {
