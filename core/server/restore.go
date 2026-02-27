@@ -178,14 +178,14 @@ func (h *restoreHandler) newTask(ctx context.Context, backupDir string) (*restor
 	}
 
 	args := restore.TaskArgs{
-		TaskID:         h.request.GetId(),
-		Backup:         backup,
-		Plan:           plan,
-		Option:         newOptionFromRequest(h.request),
-		Params:         h.params,
+		TaskID:        h.request.GetId(),
+		Backup:        backup,
+		Plan:          plan,
+		Option:        newOptionFromRequest(h.request),
+		Params:        h.params,
 		BackupDir:     backupDir,
 		BackupStorage: h.backupStorage,
-		MilvusStorage:  h.milvusStorage,
+		MilvusStorage: h.milvusStorage,
 
 		TaskMgr: taskmgr.DefaultMgr(),
 	}
