@@ -1,0 +1,15 @@
+etcd:
+  rootPath: backup-test-upstream
+msgChannel:
+  chanNamePrefix:
+    cluster: backup-test-upstream
+minio:
+  rootPath: backup-test-upstream
+  bucketName: backup-test-upstream
+log:
+  level: debug
+dataNode:
+  segment:
+    insertBufSize: 4096
+rootCoord:
+  dmlChannelNum: 16

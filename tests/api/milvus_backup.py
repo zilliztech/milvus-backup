@@ -171,6 +171,11 @@ class MilvusBackupClient(Requests):
         response = self.post(url, headers=self.update_headers(), data=payload)
         return response.json()
 
+    def restore_secondary(self, payload):
+        url = f"{self.endpoint}/restore_secondary"
+        response = self.post(url, headers=self.update_headers(), data=payload)
+        return response.json()
+
     def get_restore(self, id):
         url = f"{self.endpoint}/get_restore"
         response = self.get(url, headers=self.update_headers(), params={"id": id})

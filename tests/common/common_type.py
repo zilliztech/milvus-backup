@@ -277,3 +277,4 @@ class CaseLabel:
     MASTER = "MASTER"
     RELEASE = "RELEASE"
     RBAC = "RBAC"
+    SECONDARY = "SECONDARY"
