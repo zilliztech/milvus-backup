@@ -3,7 +3,6 @@ import numpy as np
 from pymilvus import (
     connections,
     utility,
-    FieldSchema, CollectionSchema, DataType,
     Collection,
 )
 import argparse
@@ -33,21 +32,13 @@ def main(uri, token):
         assert has, f"Collection {collection_name} does not exist"
         collection = Collection(collection_name)
         print(collection.schema)
-        collection.flush()
+
+        # In secondary mode, the downstream Milvus only accepts replicate stream
+        # messages. Flush, create_index, and load are already done by the
+        # secondary restore process via the replicate stream, so we skip them
+        # here and go straight to search/query verification.
 
         print(f"Number of entities in Milvus: {collection_name} : {collection.num_entities}")
-
-        print(fmt.format("Start Creating index IVF_FLAT"))
-        index = {
-            "index_type": "IVF_FLAT",
-            "metric_type": "L2",
-            "params": {"nlist": 128},
-        }
-
-        collection.create_index("embeddings", index)
-
-        print(fmt.format("Start loading"))
-        collection.load()
 
         print(fmt.format("Start searching based on vector similarity"))
         vectors_to_search = entities[-1][-2:]
@@ -85,8 +76,8 @@ def main(uri, token):
                 print(f"hit: {hit}, random field: {hit.entity.get('random')}")
         print(search_latency_fmt.format(end_time - start_time))
 
-        print(fmt.format(f"Drop collection {collection_name}"))
-        utility.drop_collection(collection_name)
+        # Note: drop_collection is also blocked in secondary mode, skip it.
+        print(fmt.format(f"Verified collection {collection_name}"))
 
 
 if __name__ == "__main__":
