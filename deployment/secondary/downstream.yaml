@@ -1,0 +1,15 @@
+etcd:
+  rootPath: backup-test-downstream
+msgChannel:
+  chanNamePrefix:
+    cluster: backup-test-downstream
+minio:
+  rootPath: backup-test-downstream
+  bucketName: milvus-backup-test
+log:
+  level: debug
+dataNode:
+  segment:
+    insertBufSize: 4096
+rootCoord:
+  dmlChannelNum: 16

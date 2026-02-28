@@ -38,7 +38,7 @@ func NewStreamClient(srcClusterID, taskID string, pch []string, grpc Grpc) (*Str
 }
 
 func (s *StreamClient) Send(ctx context.Context, immutableMessage *commonpb.ImmutableMessage) error {
-	log.Debug("stream: send message", zap.String("msg", immutableMessage.String()))
+	log.Debug("stream: send message", zap.Object("msg", newMsgLogObject(immutableMessage)))
 
 	pch := GetPch(immutableMessage)
 	if pch == "" {

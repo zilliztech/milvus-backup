@@ -498,6 +498,170 @@ jobs:
         run: |
           python example/verify_data.py
 
+  test-backup-restore-secondary:
+    needs: unit-test-go
+    name: Backup and restore secondary
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image_tag: [master-latest]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+          cache: pip
+
+      - uses: actions/setup-go@v6
+        name: Set up Go ${{ env.go-version }}
+        with:
+          go-version: ${{ env.go-version }}
+          cache: true
+
+      - name: Build
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          go get
+          go build
+          go build -o inittarget ./cmd/inittarget
+
+      - name: Install dependency
+        timeout-minutes: 5
+        working-directory: tests
+        shell: bash
+        run: |
+          pip install -r requirements.txt --trusted-host https://test.pypi.org
+
+      - name: Deploy dual Milvus
+        timeout-minutes: 15
+        shell: bash
+        working-directory: deployment/secondary
+        run: |
+          tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
+          yq -i ".services.upstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          yq -i ".services.downstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          mkdir -p volumes/etcd volumes/minio volumes/upstream volumes/downstream volumes/upstream-runtime volumes/downstream-runtime
+          sudo chmod -R 777 volumes
+          sudo docker compose -f docker-compose.yml up -d --wait
+          sudo docker compose -f docker-compose.yml ps -a
+
+      - name: Export docker-compose status after deploy
+        if: ${{ always() }}
+        shell: bash
+        working-directory: deployment/secondary
+        run: |
+          echo "=== Docker Compose Status ==="
+          sudo docker compose -f docker-compose.yml ps -a || true
+          echo "=== Upstream Container Logs ==="
+          sudo docker compose -f docker-compose.yml logs upstream-standalone || true
+          echo "=== Downstream Container Logs ==="
+          sudo docker compose -f docker-compose.yml logs downstream-standalone || true
+
+      - name: Configure backup.yaml for upstream
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          yq -i '.log.level = "debug"' configs/backup.yaml
+          yq -i '.milvus.port = 19530' configs/backup.yaml
+          yq -i '.minio.bucketName = "milvus-backup-test"' configs/backup.yaml
+          yq -i '.minio.rootPath = "backup-test-upstream"' configs/backup.yaml
+          yq -i '.minio.backupBucketName = "milvus-backup-test"' configs/backup.yaml
+          yq -i '.milvus.rpcChannelName = "backup-test-upstream-replicate-msg"' configs/backup.yaml
+          yq -i '.milvus.etcd.rootPath = "backup-test-upstream"' configs/backup.yaml
+          cat configs/backup.yaml
+
+      - name: Prepare data on upstream
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python example/prepare_data.py --uri http://127.0.0.1:19530
+
+      - name: Create index and load on upstream
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          python -c "
+          from pymilvus import connections, Collection
+          connections.connect('default', uri='http://127.0.0.1:19530')
+          index = {'index_type': 'IVF_FLAT', 'metric_type': 'L2', 'params': {'nlist': 128}}
+          for name in ['hello_milvus', 'hello_milvus2']:
+              c = Collection(name)
+              c.create_index('embeddings', index)
+              c.load()
+              print(f'{name}: loaded, entities={c.num_entities}')
+          "
+
+      - name: Create backup
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          ./milvus-backup check
+          ./milvus-backup list
+          ./milvus-backup create -n my_backup --backup_index_extra
+          ./milvus-backup list
+
+      - name: Init downstream replicate configuration
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          ./inittarget --target downstream \
+            --upstream-uri upstream-standalone:19530 \
+            --downstream-uri downstream-standalone:19530
+
+      - name: Configure backup.yaml for downstream
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          yq -i '.milvus.port = 19500' configs/backup.yaml
+          cat configs/backup.yaml
+
+      - name: Restore secondary
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          ./milvus-backup restore secondary -n my_backup \
+            --source_cluster_id backup-test-upstream \
+            --target_cluster_id backup-test-downstream
+
+      - name: Init upstream replicate configuration
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          ./inittarget --target upstream \
+            --upstream-uri upstream-standalone:19530 \
+            --downstream-uri downstream-standalone:19530
+
+      - name: Verify data on downstream
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python example/secondary/verify_data.py --uri http://127.0.0.1:19500
+
+      - name: Export logs
+        if: ${{ always() }}
+        shell: bash
+        working-directory: deployment/secondary
+        run: |
+          mkdir -p /tmp/ci_logs
+          sudo docker compose -f docker-compose.yml logs upstream-standalone > /tmp/ci_logs/upstream.log 2>&1 || true
+          sudo docker compose -f docker-compose.yml logs downstream-standalone > /tmp/ci_logs/downstream.log 2>&1 || true
+          sudo docker compose -f docker-compose.yml logs etcd > /tmp/ci_logs/etcd.log 2>&1 || true
+          sudo docker compose -f docker-compose.yml logs minio > /tmp/ci_logs/minio.log 2>&1 || true
+
+      - name: Upload logs
+        if: ${{ ! success() }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: secondary-restore-logs-${{ matrix.image_tag }}
+          path: |
+            /tmp/ci_logs
+            ./server.log
+
   test-backup-restore-with-rbac-config:
     needs: unit-test-go
     name: Backup and restore with rbac config
