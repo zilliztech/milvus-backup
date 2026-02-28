@@ -2254,3 +2254,274 @@ class TestRestoreBackup(TestcaseBase):
             verify_by_query=True,
         )
         log.info("Test passed: alter enable_dynamic_schema backup/restore verified")
+
+    @pytest.mark.tags(CaseLabel.MASTER)
+    def test_milvus_restore_back_with_minhash_function(self):
+        self._connect()
+        name_origin = cf.gen_unique_str(prefix)
+        back_up_name = cf.gen_unique_str(backup_prefix)
+        fields = [
+            cf.gen_int64_field(name="int64", is_primary=True),
+            cf.gen_string_field(name="text", max_length=65535),
+            cf.gen_float_vec_field(name="float_vector", dim=128),
+            cf.gen_binary_vec_field(name="minhash_signature", dim=512),
+        ]
+        default_schema = cf.gen_collection_schema(fields)
+
+        # Add MinHash function
+        minhash_function = Function(
+            name="text_minhash",
+            function_type=FunctionType.MINHASH,
+            input_field_names=["text"],
+            output_field_names=["minhash_signature"],
+            params={"num_hashes": 16, "shingle_size": 3},
+        )
+        default_schema.add_function(minhash_function)
+
+        collection_w = self.init_collection_wrap(
+            name=name_origin, schema=default_schema, active_trace=True
+        )
+        create_index_for_vector_fields(collection_w)
+        nb = 3000
+        data = [
+            {
+                "int64": i,
+                "text": fake_en.text(),
+                "float_vector": [np.float32(i) for i in range(128)],
+            } for i in range(nb)
+        ]
+        collection_w.insert(data=data)
+        collection_w.flush()
+        res = self.client.create_backup(
+            {
+                "async": False,
+                "backup_name": back_up_name,
+                "collection_names": [name_origin],
+            }
+        )
+        log.info(f"create_backup {res}")
+        res = self.client.list_backup()
+        log.info(f"list_backup {res}")
+        if "data" in res:
+            all_backup = [r["name"] for r in res["data"]]
+        else:
+            all_backup = []
+        assert back_up_name in all_backup
+        backup = self.client.get_backup(back_up_name)
+        assert backup["data"]["name"] == back_up_name
+        backup_collections = [
+            backup["collection_name"] for backup in backup["data"]["collection_backups"]
+        ]
+        assert name_origin in backup_collections
+        res = self.client.restore_backup(
+            {
+                "async": False,
+                "backup_name": back_up_name,
+                "collection_names": [name_origin],
+                "collection_suffix": suffix,
+            }
+        )
+        log.info(f"restore_backup: {res}")
+        res, _ = self.utility_wrap.list_collections()
+        assert name_origin + suffix in res
+        output_fields = None
+        self.compare_collections(
+            name_origin, name_origin + suffix, output_fields=output_fields
+        )
+        # Verify MinHash search works on restored collection
+        c = Collection(name=name_origin + suffix)
+        # Create float_vector index
+        c.create_index("float_vector", {"index_type": "FLAT", "metric_type": "L2", "params": {}})
+        # Create minhash_signature index with MHJACCARD metric
+        c.create_index(
+            "minhash_signature",
+            {"index_type": "BIN_FLAT", "metric_type": "MHJACCARD", "params": {}},
+        )
+        c.load()
+        res = c.search(
+            data=[data[0]["text"]],
+            anns_field="minhash_signature",
+            output_fields=["text"],
+            param={"metric_type": "MHJACCARD"},
+            limit=1,
+        )
+        assert len(res) == 1
+        assert len(res[0]) == 1
+        res = self.client.delete_backup(back_up_name)
+        res = self.client.list_backup()
+        if "data" in res:
+            all_backup = [r["name"] for r in res["data"]]
+        else:
+            all_backup = []
+        assert back_up_name not in all_backup
+
+    @pytest.mark.tags(CaseLabel.MASTER)
+    @pytest.mark.parametrize("use_v2_restore", [True, False])
+    def test_milvus_restore_back_with_minhash_function_and_delete(self, use_v2_restore):
+        self._connect()
+        name_origin = cf.gen_unique_str(prefix)
+        back_up_name = cf.gen_unique_str(backup_prefix)
+        fields = [
+            cf.gen_int64_field(name="int64", is_primary=True),
+            cf.gen_string_field(name="text", max_length=65535),
+            cf.gen_float_vec_field(name="float_vector", dim=128),
+            cf.gen_binary_vec_field(name="minhash_signature", dim=512),
+        ]
+        default_schema = cf.gen_collection_schema(fields)
+
+        # Add MinHash function
+        minhash_function = Function(
+            name="text_minhash",
+            function_type=FunctionType.MINHASH,
+            input_field_names=["text"],
+            output_field_names=["minhash_signature"],
+            params={"num_hashes": 16, "shingle_size": 3},
+        )
+        default_schema.add_function(minhash_function)
+
+        collection_w = self.init_collection_wrap(
+            name=name_origin, schema=default_schema, active_trace=True
+        )
+        create_index_for_vector_fields(collection_w)
+        nb = 3000
+        data = [
+            {
+                "int64": i,
+                "text": fake_en.text(),
+                "float_vector": [np.float32(i) for i in range(128)],
+            } for i in range(nb)
+        ]
+        res, result = collection_w.insert(data=data)
+        collection_w.flush()
+        pk = res.primary_keys
+        # delete first 100 rows
+        delete_ids = pk[:100]
+        collection_w.delete(expr=f"int64 in {delete_ids}")
+        res = self.client.create_backup(
+            {
+                "async": False,
+                "backup_name": back_up_name,
+                "collection_names": [name_origin],
+            }
+        )
+        log.info(f"create_backup {res}")
+        res = self.client.list_backup()
+        log.info(f"list_backup {res}")
+        if "data" in res:
+            all_backup = [r["name"] for r in res["data"]]
+        else:
+            all_backup = []
+        assert back_up_name in all_backup
+        backup = self.client.get_backup(back_up_name)
+        assert backup["data"]["name"] == back_up_name
+        backup_collections = [
+            backup["collection_name"] for backup in backup["data"]["collection_backups"]
+        ]
+        assert name_origin in backup_collections
+        res = self.client.restore_backup(
+            {
+                "async": False,
+                "backup_name": back_up_name,
+                "collection_names": [name_origin],
+                "collection_suffix": suffix,
+                "useV2Restore": use_v2_restore,
+            }
+        )
+        log.info(f"restore_backup: {res}")
+        res, _ = self.utility_wrap.list_collections()
+        assert name_origin + suffix in res
+        output_fields = None
+        self.compare_collections(
+            name_origin,
+            name_origin + suffix,
+            output_fields=output_fields,
+            verify_by_query=True,
+        )
+
+    @pytest.mark.tags(CaseLabel.MASTER)
+    @pytest.mark.parametrize("use_v2_restore", [True, False])
+    def test_milvus_restore_back_with_minhash_function_and_upsert(self, use_v2_restore):
+        self._connect()
+        name_origin = cf.gen_unique_str(prefix)
+        back_up_name = cf.gen_unique_str(backup_prefix)
+        fields = [
+            cf.gen_int64_field(name="int64", is_primary=True),
+            cf.gen_string_field(name="text", max_length=65535),
+            cf.gen_float_vec_field(name="float_vector", dim=128),
+            cf.gen_binary_vec_field(name="minhash_signature", dim=512),
+        ]
+        default_schema = cf.gen_collection_schema(fields)
+
+        # Add MinHash function
+        minhash_function = Function(
+            name="text_minhash",
+            function_type=FunctionType.MINHASH,
+            input_field_names=["text"],
+            output_field_names=["minhash_signature"],
+            params={"num_hashes": 16, "shingle_size": 3},
+        )
+        default_schema.add_function(minhash_function)
+
+        collection_w = self.init_collection_wrap(
+            name=name_origin, schema=default_schema, active_trace=True
+        )
+        create_index_for_vector_fields(collection_w)
+        nb = 3000
+        data = [
+            {
+                "int64": i,
+                "text": fake_en.text(),
+                "float_vector": [np.float32(i) for i in range(128)],
+            } for i in range(nb)
+        ]
+        res, result = collection_w.insert(data=data)
+        collection_w.flush()
+        # upsert first 100 rows by pk
+        upsert_data = [
+            {
+                "int64": i,
+                "text": fake_en.text(),
+                "float_vector": [np.float32(i) for i in range(128, 128 * 2)],
+            } for i in range(100)
+        ]
+        res, result = collection_w.upsert(data=upsert_data)
+        res = self.client.create_backup(
+            {
+                "async": False,
+                "backup_name": back_up_name,
+                "collection_names": [name_origin],
+            }
+        )
+        log.info(f"create_backup {res}")
+        res = self.client.list_backup()
+        log.info(f"list_backup {res}")
+        if "data" in res:
+            all_backup = [r["name"] for r in res["data"]]
+        else:
+            all_backup = []
+        assert back_up_name in all_backup
+        backup = self.client.get_backup(back_up_name)
+        assert backup["data"]["name"] == back_up_name
+        backup_collections = [
+            backup["collection_name"] for backup in backup["data"]["collection_backups"]
+        ]
+        assert name_origin in backup_collections
+        res = self.client.restore_backup(
+            {
+                "async": False,
+                "backup_name": back_up_name,
+                "collection_names": [name_origin],
+                "collection_suffix": suffix,
+                "useV2Restore": use_v2_restore,
+            }
+        )
+        log.info(f"restore_backup: {res}")
+        res, _ = self.utility_wrap.list_collections()
+        assert name_origin + suffix in res
+        output_fields = None
+        self.compare_collections(
+            name_origin,
+            name_origin + suffix,
+            output_fields=output_fields,
+            verify_by_query=True,
+        )
