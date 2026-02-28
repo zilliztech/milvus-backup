@@ -581,6 +581,21 @@ jobs:
         run: |
           python example/prepare_data.py --uri http://127.0.0.1:19530
 
+      - name: Create index and load on upstream
+        timeout-minutes: 3
+        shell: bash
+        run: |
+          python -c "
+          from pymilvus import connections, Collection
+          connections.connect('default', uri='http://127.0.0.1:19530')
+          index = {'index_type': 'IVF_FLAT', 'metric_type': 'L2', 'params': {'nlist': 128}}
+          for name in ['hello_milvus', 'hello_milvus2']:
+              c = Collection(name)
+              c.create_index('embeddings', index)
+              c.load()
+              print(f'{name}: loaded, entities={c.num_entities}')
+          "
+
       - name: Create backup
         timeout-minutes: 5
         shell: bash
