@@ -5,7 +5,7 @@ msgChannel:
     cluster: backup-test-downstream
 minio:
   rootPath: backup-test-downstream
-  bucketName: backup-test-downstream
+  bucketName: milvus-backup-test
 log:
   level: debug
 dataNode:

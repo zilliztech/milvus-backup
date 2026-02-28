@@ -568,9 +568,9 @@ jobs:
         run: |
           yq -i '.log.level = "debug"' configs/backup.yaml
           yq -i '.milvus.port = 19530' configs/backup.yaml
-          yq -i '.minio.bucketName = "backup-test-upstream"' configs/backup.yaml
+          yq -i '.minio.bucketName = "milvus-backup-test"' configs/backup.yaml
           yq -i '.minio.rootPath = "backup-test-upstream"' configs/backup.yaml
-          yq -i '.minio.backupBucketName = "backup-test-upstream"' configs/backup.yaml
+          yq -i '.minio.backupBucketName = "milvus-backup-test"' configs/backup.yaml
           yq -i '.milvus.rpcChannelName = "backup-test-upstream-replicate-msg"' configs/backup.yaml
           yq -i '.milvus.etcd.rootPath = "backup-test-upstream"' configs/backup.yaml
           cat configs/backup.yaml
