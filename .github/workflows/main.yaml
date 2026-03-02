@@ -655,7 +655,7 @@ jobs:
 
       - name: Upload logs
         if: ${{ ! success() }}
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: secondary-restore-logs-${{ matrix.image_tag }}
           path: |
@@ -793,7 +793,7 @@ jobs:
           fi
       - name: Upload logs
         if: ${{ ! success() }}
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: custom-config-${{ matrix.deploy_tools }}-${{ matrix.milvus_mode }}
           path: |
@@ -916,7 +916,7 @@ jobs:
 
       - name: Upload logs
         if: ${{ ! success() }}
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: api-test-logs-${{ matrix.deploy_tools }}-${{ matrix.milvus_mode }}-${{ matrix.image_tag }}-${{ matrix.case_tag }}
           path: |
