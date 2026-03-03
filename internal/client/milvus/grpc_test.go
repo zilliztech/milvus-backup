@@ -113,7 +113,6 @@ func TestGrpcClient_newCtx(t *testing.T) {
 		assert.Equal(t, "identifier", md.Get(_identifierHeader)[0])
 		assert.Len(t, md.Get(_identifierHeader), 1)
 	})
-
 }
 
 func TestGrpcClient_newCtxWithDB(t *testing.T) {

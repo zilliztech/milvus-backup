@@ -1,0 +1,111 @@
+version: "2"
+
+run:
+  timeout: 5m
+
+linters:
+  default: none
+  enable:
+    # defaults
+    - errcheck
+    - govet
+    - ineffassign
+    - staticcheck
+    - unused
+    # additional
+    - misspell
+    - revive
+    - gocritic
+    - gocyclo
+    - unconvert
+    - nolintlint
+    - whitespace
+    - bodyclose
+    - durationcheck
+    - errname
+    - errorlint
+    - copyloopvar
+    - makezero
+    - nilerr
+    - prealloc
+    - reassign
+    - wastedassign
+  settings:
+    errcheck:
+      exclude-functions:
+        - io.Close
+        - io.Closer.Close
+        - (io.Closer).Close
+        - (*os.File).Close
+        - (net/http.ResponseBody).Close
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - (*text/tabwriter.Writer).Flush
+        - (*go.uber.org/zap.SugaredLogger).Sync
+        - (*go.uber.org/zap/zapcore.Core).Sync
+        - (*go.uber.org/zap/buffer.Buffer).Write
+    gocyclo:
+      min-complexity: 30
+    revive:
+      rules:
+        - name: blank-imports
+        - name: context-as-argument
+        - name: dot-imports
+        - name: error-return
+        - name: error-strings
+        - name: exported
+          disabled: true
+        - name: increment-decrement
+        - name: var-naming
+          disabled: true
+        - name: package-comments
+          disabled: true
+        - name: range
+        - name: receiver-naming
+        - name: time-naming
+        - name: unexported-return
+        - name: indent-error-flow
+        - name: errorf
+        - name: superfluous-else
+        - name: unreachable-code
+    gocritic:
+      enabled-checks:
+        - badLock
+        - badRegexp
+        - builtinShadowDecl
+        - truncateCmp
+        - weakCond
+    misspell:
+      locale: US
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+  exclusions:
+    paths:
+      - core/proto
+      - docs
+      - ".*_mock\\.go$"
+      - ".*_string\\.go$"
+    rules:
+      - path: _test\.go
+        linters:
+          - errcheck
+          - gocritic
+          - gocyclo
+          - prealloc
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/zilliztech/milvus-backup
+  exclusions:
+    paths:
+      - core/proto
+      - docs
+      - ".*_mock\\.go$"
+      - ".*_string\\.go$"

@@ -91,12 +91,12 @@ func (h *createBackupHandler) toFilter() (filter.Filter, error) {
 		return h.filterToFilter()
 	}
 
-	dbCollectionsStr := utils.GetDBCollections(h.request.GetDbCollections())
+	dbCollectionsStr := utils.GetDBCollections(h.request.GetDbCollections()) //nolint:staticcheck // SA1019: deprecated field for backward compatibility
 	if len(dbCollectionsStr) > 0 {
 		return h.dbCollectionsToFilter(dbCollectionsStr)
 	}
 
-	if len(h.request.GetCollectionNames()) > 0 {
+	if len(h.request.GetCollectionNames()) > 0 { //nolint:staticcheck // SA1019: deprecated field for backward compatibility
 		return h.collectionNamesToFilter()
 	}
 
@@ -127,7 +127,7 @@ func (h *createBackupHandler) dbCollectionsToFilter(dbCollectionsStr string) (fi
 
 func (h *createBackupHandler) collectionNamesToFilter() (filter.Filter, error) {
 	dbCollFilter := make(map[string]filter.CollFilter)
-	for _, nsStr := range h.request.GetCollectionNames() {
+	for _, nsStr := range h.request.GetCollectionNames() { //nolint:staticcheck // SA1019: deprecated field for backward compatibility
 		ns, err := namespace.Parse(nsStr)
 		if err != nil {
 			return filter.Filter{}, fmt.Errorf("server: invalid collection name %s", nsStr)
@@ -156,12 +156,12 @@ func (h *createBackupHandler) toStrategy() (backup.Strategy, error) {
 		return backup.ParseStrategy(h.request.GetStrategy())
 	}
 
-	if h.request.GetForce() {
+	if h.request.GetForce() { //nolint:staticcheck // SA1019: deprecated field for backward compatibility
 		log.Warn("force option is deprecated, pls use strategy=skip_flush instead")
 		return backup.StrategySkipFlush, nil
 	}
 
-	if h.request.GetMetaOnly() {
+	if h.request.GetMetaOnly() { //nolint:staticcheck // SA1019: deprecated field for backward compatibility
 		log.Warn("meta_only option is deprecated, pls use strategy=meta_only instead")
 		return backup.StrategyMetaOnly, nil
 	}
@@ -315,7 +315,6 @@ func (h *createBackupHandler) run(ctx context.Context) *backuppb.BackupInfoRespo
 
 	if h.request.GetAsync() {
 		return h.runAsync(args)
-	} else {
-		return h.runSync(ctx, args)
 	}
+	return h.runSync(ctx, args)
 }

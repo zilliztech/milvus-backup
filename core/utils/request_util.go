@@ -1,7 +1,7 @@
 package utils
 
 import (
-	"github.com/golang/protobuf/jsonpb"
+	"github.com/golang/protobuf/jsonpb" //nolint:staticcheck // SA1019: legacy protobuf package used for backward compatibility
 	structpb "github.com/golang/protobuf/ptypes/struct"
 )
 

@@ -20,6 +20,21 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Set up Go ${{ env.go-version }}
+        uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.go-version }}
+          cache: true
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: latest
+
   unit-test-go:
     name: Unit test go
     runs-on: ubuntu-latest

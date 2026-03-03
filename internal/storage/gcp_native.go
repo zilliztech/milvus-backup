@@ -112,7 +112,6 @@ func (g *GcpNativeObjectIterator) Next() (ObjectAttr, error) {
 	g.hasNext = true
 
 	return ObjectAttr{Key: currObj.Name, Length: currObj.Size}, nil
-
 }
 
 func (gcm *GCPNativeClient) ListPrefix(ctx context.Context, prefix string, recursive bool) (ObjectIterator, error) {
@@ -143,9 +142,8 @@ func (gcm *GCPNativeClient) BucketExist(ctx context.Context, _ string) (bool, er
 	if err != nil {
 		if errors.Is(err, storage.ErrBucketNotExist) {
 			return false, nil
-		} else {
-			return false, fmt.Errorf("storage: gcp native get bucket attrs %w", err)
 		}
+		return false, fmt.Errorf("storage: gcp native get bucket attrs %w", err)
 	}
 
 	return true, nil
@@ -177,13 +175,12 @@ func newGCPNativeClient(ctx context.Context, cfg Config) (*GCPNativeClient, erro
 	// Read the credentials file
 	jsonData, err := os.ReadFile(cfg.Credential.GCPCredJSON)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read credentials file:: %v", err)
+		return nil, fmt.Errorf("unable to read credentials file: %w", err)
 	}
 
 	creds, err := google.CredentialsFromJSON(ctx, jsonData, storage.ScopeReadWrite)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create credentials from JSON: %v", err)
-
+		return nil, fmt.Errorf("failed to create credentials from JSON: %w", err)
 	}
 	projectID, err := getProjectID(jsonData)
 	if err != nil {

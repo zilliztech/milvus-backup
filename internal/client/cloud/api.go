@@ -44,10 +44,10 @@ func mask(s string) string {
 
 func (cred *Credentials) String() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("expireTime: %s, ", cred.ExpireTime))
-	sb.WriteString(fmt.Sprintf("sessionToken: %s, ", mask(cred.SessionToken)))
-	sb.WriteString(fmt.Sprintf("tmpAK: %s, ", mask(cred.TmpAK)))
-	sb.WriteString(fmt.Sprintf("tmpSK: %s", mask(cred.TmpSK)))
+	fmt.Fprintf(&sb, "expireTime: %s, ", cred.ExpireTime)
+	fmt.Fprintf(&sb, "sessionToken: %s, ", mask(cred.SessionToken))
+	fmt.Fprintf(&sb, "tmpAK: %s, ", mask(cred.TmpAK))
+	fmt.Fprintf(&sb, "tmpSK: %s", mask(cred.TmpSK))
 
 	return sb.String()
 }
@@ -73,13 +73,13 @@ type ApplyVolumeResp struct {
 
 func (a *ApplyVolumeResp) String() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("bucketName: %s, ", mask(a.BucketName)))
-	sb.WriteString(fmt.Sprintf("cloud: %s, ", a.Cloud))
-	sb.WriteString(fmt.Sprintf("condition: %s, ", a.Condition.String()))
-	sb.WriteString(fmt.Sprintf("credentials: %s, ", a.Credentials.String()))
-	sb.WriteString(fmt.Sprintf("endpoint: %s, ", a.Endpoint))
-	sb.WriteString(fmt.Sprintf("region: %s, ", a.Region))
-	sb.WriteString(fmt.Sprintf("uploadPath: %s", mask(a.UploadPath)))
+	fmt.Fprintf(&sb, "bucketName: %s, ", mask(a.BucketName))
+	fmt.Fprintf(&sb, "cloud: %s, ", a.Cloud)
+	fmt.Fprintf(&sb, "condition: %s, ", a.Condition.String())
+	fmt.Fprintf(&sb, "credentials: %s, ", a.Credentials.String())
+	fmt.Fprintf(&sb, "endpoint: %s, ", a.Endpoint)
+	fmt.Fprintf(&sb, "region: %s, ", a.Region)
+	fmt.Fprintf(&sb, "uploadPath: %s", mask(a.UploadPath))
 
 	return sb.String()
 }

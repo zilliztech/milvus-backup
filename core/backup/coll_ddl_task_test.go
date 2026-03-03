@@ -27,7 +27,7 @@ func TestCollDDLTask_convSchema(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, schema.GetName(), bakSchema.GetName())
 	assert.Equal(t, schema.GetDescription(), bakSchema.GetDescription())
-	assert.Equal(t, schema.GetAutoID(), bakSchema.GetAutoID())
+	assert.Equal(t, schema.GetAutoID(), bakSchema.GetAutoID()) //nolint:staticcheck // SA1019: testing deprecated field
 	assert.Equal(t, schema.GetEnableDynamicField(), bakSchema.GetEnableDynamicField())
 	assert.ElementsMatch(t, schema.GetProperties(), pbconv.BakKVToMilvusKV(bakSchema.GetProperties()))
 }

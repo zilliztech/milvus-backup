@@ -45,7 +45,7 @@ func (c *HwcCredentialProvider) Retrieve() (minioCred.Value, error) {
 }
 
 func (c *HwcCredentialProvider) IsExpired() bool {
-	now := time.Now().Add(time.Minute * 2) //prepare 2 minute get the new credential
+	now := time.Now().Add(time.Minute * 2) // prepare 2 minute get the new credential
 	expired := now.After(c.expireTime)
 	return expired
 }

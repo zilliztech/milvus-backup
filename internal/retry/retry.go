@@ -25,7 +25,6 @@ import (
 // fn is the func to run.
 // Option can control the retry times and timeout.
 func Do(ctx context.Context, fn func() error, opts ...Option) error {
-
 	c := newDefaultConfig()
 
 	for _, opt := range opts {

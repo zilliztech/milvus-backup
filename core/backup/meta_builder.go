@@ -211,8 +211,9 @@ func (builder *metaBuilder) buildPartitionMeta() ([]byte, error) {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
 
-	partitions := make([]*backuppb.PartitionBackupInfo, 0)
-	for _, collection := range builder.data.GetCollectionBackups() {
+	collections := builder.data.GetCollectionBackups()
+	partitions := make([]*backuppb.PartitionBackupInfo, 0, len(collections))
+	for _, collection := range collections {
 		partitions = append(partitions, collection.GetPartitionBackups()...)
 	}
 

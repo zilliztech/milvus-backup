@@ -57,7 +57,8 @@ const (
 )
 
 func Join(base string, options ...Option) string {
-	elem := []string{base}
+	elem := make([]string, 0, 8)
+	elem = append(elem, base)
 
 	var o opt
 	for _, option := range options {
@@ -229,7 +230,7 @@ var (
 )
 
 func parseBinlogPath(reg *regexp.Regexp, p string) (binlogPath, []string, error) {
-	if strings.HasSuffix("/", p) {
+	if strings.HasSuffix(p, "/") {
 		return binlogPath{}, nil, fmt.Errorf("mpath: log path %s should not end with /", p)
 	}
 

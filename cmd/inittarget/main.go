@@ -63,11 +63,11 @@ func main() {
 		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 
-		conn, err := grpc.DialContext(ctx, addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+		conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 		if err != nil {
 			log.Fatalf("failed to dial %s (%s): %v", name, addr, err)
 		}
-		defer conn.Close()
+		defer conn.Close() //nolint:errcheck // best-effort close on exit
 
 		client := milvuspb.NewMilvusServiceClient(conn)
 		resp, err := client.UpdateReplicateConfiguration(ctx, &milvuspb.UpdateReplicateConfigurationRequest{
@@ -76,7 +76,7 @@ func main() {
 		if err != nil {
 			log.Fatalf("failed to update replicate configuration on %s: %v", name, err)
 		}
-		if resp.GetErrorCode() != commonpb.ErrorCode_Success {
+		if resp.GetErrorCode() != commonpb.ErrorCode_Success { //nolint:staticcheck // SA1019: GetErrorCode needed for backward compatibility
 			log.Fatalf("update replicate configuration on %s returned error: %s", name, resp.GetReason())
 		}
 		log.Printf("replicate configuration updated on %s successfully", name)

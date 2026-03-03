@@ -91,9 +91,8 @@ func (h *restoreHandler) run(ctx context.Context) *backuppb.RestoreBackupRespons
 
 	if h.request.GetAsync() {
 		return h.runAsync(task)
-	} else {
-		return h.runSync(ctx, task)
 	}
+	return h.runSync(ctx, task)
 }
 
 func (h *restoreHandler) validate() error {
