@@ -72,7 +72,6 @@ func levelToTree(l *levelBackupInfo) *backuppb.BackupInfo {
 	l.backupInfo.Size = lo.SumBy(collections, func(coll *backuppb.CollectionBackupInfo) int64 { return coll.GetSize() })
 	l.backupInfo.CollectionBackups = collections
 	return l.backupInfo
-
 }
 
 func readLevel[T any](ctx context.Context, backupDir string, cli storage.Client, metaType mpath.MetaType) (T, error) {
@@ -127,9 +126,8 @@ func Read(ctx context.Context, cli storage.Client, backupDir string) (*backuppb.
 
 	if exist {
 		return readFromFull(ctx, backupDir, cli)
-	} else {
-		return readFromLevel(ctx, backupDir, cli)
 	}
+	return readFromLevel(ctx, backupDir, cli)
 }
 
 func Exist(ctx context.Context, cli storage.Client, backupDir string) (bool, error) {

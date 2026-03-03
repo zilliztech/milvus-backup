@@ -401,7 +401,7 @@ func (flatIter *AzureObjectFlatIterator) Next() (ObjectAttr, error) {
 	}
 
 	attr := flatIter.currPage[flatIter.nextIdx]
-	flatIter.nextIdx += 1
+	flatIter.nextIdx++
 
 	return attr, nil
 }
@@ -465,7 +465,7 @@ func (hierIter *AzureObjectHierarchyIterator) Next() (ObjectAttr, error) {
 	}
 
 	attr := hierIter.currPage[hierIter.nextIdx]
-	hierIter.nextIdx += 1
+	hierIter.nextIdx++
 
 	return attr, nil
 }

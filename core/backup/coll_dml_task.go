@@ -179,9 +179,8 @@ func (dmlt *collDMLTask) getSegment(ctx context.Context, seg *milvuspb.Persisten
 		bakSeg, err = dmlt.getSegmentInfoByAPI(ctx, seg)
 		if err == nil {
 			return bakSeg, nil
-		} else {
-			dmlt.logger.Warn("get segment info via proxy node failed, pls check whether milvus restful api is enabled", zap.Error(err))
 		}
+		dmlt.logger.Warn("get segment info via proxy node failed, pls check whether milvus restful api is enabled", zap.Error(err))
 	}
 
 	var err error
@@ -469,7 +468,9 @@ func (dmlt *collDMLTask) backupSegmentData(ctx context.Context, seg *backuppb.Se
 		return fmt.Errorf("backup: backup delta logs %w", err)
 	}
 
-	attrs := append(insertAttrs, deltaAttrs...)
+	attrs := make([]storage.CopyAttr, 0, len(insertAttrs)+len(deltaAttrs))
+	attrs = append(attrs, insertAttrs...)
+	attrs = append(attrs, deltaAttrs...)
 	opt := storage.CopyObjectsOpt{
 		Src:          dmlt.milvusStorage,
 		Dest:         dmlt.backupStorage,

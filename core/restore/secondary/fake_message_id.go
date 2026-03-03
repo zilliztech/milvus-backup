@@ -22,27 +22,15 @@ func (f *fakeMessageID) WALName() message.WALName {
 }
 
 func (f *fakeMessageID) LT(id message.MessageID) bool {
-	if f.tt < id.(*fakeMessageID).tt {
-		return true
-	}
-
-	return false
+	return f.tt < id.(*fakeMessageID).tt
 }
 
 func (f *fakeMessageID) LTE(id message.MessageID) bool {
-	if f.tt <= id.(*fakeMessageID).tt {
-		return true
-	}
-
-	return false
+	return f.tt <= id.(*fakeMessageID).tt
 }
 
 func (f *fakeMessageID) EQ(id message.MessageID) bool {
-	if f.tt == id.(*fakeMessageID).tt {
-		return true
-	}
-
-	return false
+	return f.tt == id.(*fakeMessageID).tt
 }
 
 func (f *fakeMessageID) Marshal() string {

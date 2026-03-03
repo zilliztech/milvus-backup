@@ -289,7 +289,6 @@ func NewCmd(opt *root.Options) *cobra.Command {
 			cobra.CheckErr(err)
 
 			return nil
-
 		},
 	}
 

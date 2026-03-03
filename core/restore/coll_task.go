@@ -385,7 +385,6 @@ func (ct *collTask) restoreNotL0SegV1(ctx context.Context, part *backuppb.Partit
 	}
 
 	return nil
-
 }
 
 func toPaths(dir partitionDir) []string {
@@ -634,10 +633,9 @@ func (ct *collTask) notL0SegmentBatches(ctx context.Context, part *backuppb.Part
 
 	if withGroupID {
 		return ct.notL0SegBatchesWithGroupID(ctx, notL0Segs)
-	} else {
-		// backward compatible old backup without group id
-		return ct.notL0SegBatchesWithoutGroupID(ctx, part)
 	}
+	// backward compatible old backup without group id
+	return ct.notL0SegBatchesWithoutGroupID(ctx, part)
 }
 
 func (ct *collTask) l0SegmentBatches(l0Segs []*backuppb.SegmentBackupInfo) ([]batch, error) {
@@ -871,7 +869,6 @@ func (ct *collTask) buildBackupPartitionDir(ctx context.Context, size int64, pat
 
 	if exist {
 		return partitionDir{insertLogDir: insertLogDir, deltaLogDir: deltaLogDir, size: size}, nil
-	} else {
-		return partitionDir{insertLogDir: insertLogDir, size: size}, nil
 	}
+	return partitionDir{insertLogDir: insertLogDir, size: size}, nil
 }

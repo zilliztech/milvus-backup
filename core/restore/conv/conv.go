@@ -28,9 +28,10 @@ func DefaultValue(field *backuppb.FieldSchema) (*schemapb.ValueField, error) {
 	}
 
 	// backward compatibility
+	//nolint:staticcheck // SA1019: GetDefaultValueProto is deprecated but needed for backward compatibility with old backups
 	if field.GetDefaultValueProto() != "" {
 		var defaultValue schemapb.ValueField
-		err := proto.Unmarshal([]byte(field.GetDefaultValueProto()), &defaultValue)
+		err := proto.Unmarshal([]byte(field.GetDefaultValueProto()), &defaultValue) //nolint:staticcheck // SA1019
 		if err != nil {
 			return nil, fmt.Errorf("restore: failed to unmarshal default value: %w", err)
 		}

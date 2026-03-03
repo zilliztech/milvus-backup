@@ -136,7 +136,7 @@ func (ddlt *collDDLTask) convSchema(schema *schemapb.CollectionSchema) (*backupp
 	bakSchema := &backuppb.CollectionSchema{
 		Name:               schema.GetName(),
 		Description:        schema.GetDescription(),
-		AutoID:             schema.GetAutoID(),
+		AutoID:             schema.GetAutoID(), //nolint:staticcheck // SA1019: deprecated but needed for backward compatibility
 		Fields:             fields,
 		Properties:         pbconv.MilvusKVToBakKV(schema.GetProperties()),
 		EnableDynamicField: schema.GetEnableDynamicField(),

@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/Masterminds/semver/v3"
-	"github.com/golang/protobuf/proto"
+	"github.com/golang/protobuf/proto" //nolint:staticcheck // SA1019: legacy protobuf package used for backward compatibility
 	grpcretry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
@@ -146,7 +146,7 @@ const (
 )
 
 func statusOk(status *commonpb.Status) bool {
-	// nolint
+	//nolint:staticcheck // SA1019: GetErrorCode is needed for backward compatibility with older Milvus versions
 	return status.GetCode() == 0 && status.GetErrorCode() == 0
 }
 
@@ -480,9 +480,8 @@ func (g *GrpcClient) CreateDatabase(ctx context.Context, dbName string) error {
 			if isRateLimitError(err) {
 				g.limiters.createDatabase.Failure()
 				return fmt.Errorf("client: create database failed due to rate limit: %w", err)
-			} else {
-				return retry.Unrecoverable(fmt.Errorf("client: create database: %w", err))
 			}
+			return retry.Unrecoverable(fmt.Errorf("client: create database: %w", err))
 		}
 		g.limiters.createDatabase.Success()
 
@@ -535,7 +534,7 @@ func (g *GrpcClient) ListIndex(ctx context.Context, db, collName string) ([]*mil
 		return nil, fmt.Errorf("client: describe index failed: %w", err)
 	}
 	// Some Milvus versions return IndexNotExist error code when collection has no index
-	// nolint
+	//nolint:staticcheck // SA1019: GetErrorCode is needed for backward compatibility with older Milvus versions
 	if resp.GetStatus().GetErrorCode() == commonpb.ErrorCode_IndexNotExist {
 		return nil, nil
 	}
@@ -908,9 +907,8 @@ func (g *GrpcClient) CreatePartition(ctx context.Context, db, collName, partitio
 			if isRateLimitError(err) {
 				g.limiters.createPartition.Failure()
 				return fmt.Errorf("client: create partition failed due to rate limit: %w", err)
-			} else {
-				return retry.Unrecoverable(fmt.Errorf("client: create partition: %w", err))
 			}
+			return retry.Unrecoverable(fmt.Errorf("client: create partition: %w", err))
 		}
 		g.limiters.createPartition.Success()
 
@@ -982,9 +980,8 @@ func (g *GrpcClient) CreateIndex(ctx context.Context, input CreateIndexInput) er
 			if isRateLimitError(err) {
 				g.limiters.createIndex.Failure()
 				return fmt.Errorf("client: create index failed due to rate limit: %w", err)
-			} else {
-				return retry.Unrecoverable(fmt.Errorf("client: create index: %w", err))
 			}
+			return retry.Unrecoverable(fmt.Errorf("client: create index: %w", err))
 		}
 		g.limiters.createIndex.Success()
 
@@ -1024,7 +1021,7 @@ func (g *GrpcClient) RestoreRBAC(ctx context.Context, rbacMeta *milvuspb.RBACMet
 
 func (g *GrpcClient) ReplicateMessage(ctx context.Context, channelName string) (string, error) {
 	ctx = g.newCtx(ctx)
-	resp, err := g.srv.ReplicateMessage(ctx, &milvuspb.ReplicateMessageRequest{ChannelName: channelName})
+	resp, err := g.srv.ReplicateMessage(ctx, &milvuspb.ReplicateMessageRequest{ChannelName: channelName}) //nolint:staticcheck // SA1019: deprecated CDC API still needed
 	if err := checkResponse(resp, err); err != nil {
 		return "", fmt.Errorf("client: replicate message: %w", err)
 	}

@@ -87,7 +87,6 @@ func (clt *collLoadTask) Execute(ctx context.Context) error {
 	}
 
 	return nil
-
 }
 
 func (clt *collLoadTask) buildLoadFields() []*messagespb.LoadFieldConfig {

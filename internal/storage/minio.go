@@ -189,7 +189,6 @@ func (m *MinioClient) multiPartCopy(ctx context.Context, srcCli *MinioClient, i 
 				m.logger.Error("abort multipart upload failed", zap.Error(err))
 			}
 		}
-
 	}()
 
 	completedParts := make([]minio.CompletePart, 0, len(parts))

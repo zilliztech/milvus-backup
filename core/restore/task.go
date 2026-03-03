@@ -234,7 +234,7 @@ func (t *Task) newDBTask(dbBak *backuppb.DatabaseBackupInfo) []*databaseTask {
 }
 
 func (t *Task) newDBTasks(dbBackups []*backuppb.DatabaseBackupInfo) []*databaseTask {
-	var dbTasks []*databaseTask
+	dbTasks := make([]*databaseTask, 0, len(dbBackups))
 	for _, dbBackup := range dbBackups {
 		tasks := t.newDBTask(dbBackup)
 		dbTasks = append(dbTasks, tasks...)

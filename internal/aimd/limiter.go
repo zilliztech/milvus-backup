@@ -61,7 +61,7 @@ func (a *Limiter) Wait(ctx context.Context) error {
 	case <-a.bucket:
 		return nil
 	case <-ctx.Done():
-		return fmt.Errorf("aimd_limter: context cancelled: %w", ctx.Err())
+		return fmt.Errorf("aimd_limiter: context canceled: %w", ctx.Err())
 	}
 }
 

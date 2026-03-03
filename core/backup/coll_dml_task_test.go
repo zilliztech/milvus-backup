@@ -91,7 +91,6 @@ func TestCollDMLTask_listInsertLogByListFile(t *testing.T) {
 		_, _, err := dmlt.listInsertLogByListFile(context.Background(), dir)
 		assert.Error(t, err)
 	})
-
 }
 
 func TestCollDMLTask_listDeltaLogByListFile(t *testing.T) {
