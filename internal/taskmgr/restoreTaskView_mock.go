@@ -8,7 +8,6 @@ import (
 	"time"
 
 	mock "github.com/stretchr/testify/mock"
-
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 )

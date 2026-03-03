@@ -1203,6 +1203,89 @@ func (_c *MockMilvusServiceClient_BatchDescribeCollection_Call) RunAndReturn(run
 	return _c
 }
 
+// BatchUpdateManifest provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) BatchUpdateManifest(ctx context.Context, in *milvuspb.BatchUpdateManifestRequest, opts ...grpc.CallOption) (*commonpb.Status, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for BatchUpdateManifest")
+	}
+
+	var r0 *commonpb.Status
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.BatchUpdateManifestRequest, ...grpc.CallOption) (*commonpb.Status, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.BatchUpdateManifestRequest, ...grpc.CallOption) *commonpb.Status); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*commonpb.Status)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.BatchUpdateManifestRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_BatchUpdateManifest_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'BatchUpdateManifest'
+type MockMilvusServiceClient_BatchUpdateManifest_Call struct {
+	*mock.Call
+}
+
+// BatchUpdateManifest is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.BatchUpdateManifestRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) BatchUpdateManifest(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_BatchUpdateManifest_Call {
+	return &MockMilvusServiceClient_BatchUpdateManifest_Call{Call: _e.mock.On("BatchUpdateManifest",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_BatchUpdateManifest_Call) Run(run func(ctx context.Context, in *milvuspb.BatchUpdateManifestRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_BatchUpdateManifest_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.BatchUpdateManifestRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.BatchUpdateManifestRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_BatchUpdateManifest_Call) Return(status *commonpb.Status, err error) *MockMilvusServiceClient_BatchUpdateManifest_Call {
+	_c.Call.Return(status, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_BatchUpdateManifest_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.BatchUpdateManifestRequest, opts ...grpc.CallOption) (*commonpb.Status, error)) *MockMilvusServiceClient_BatchUpdateManifest_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // CalcDistance provides a mock function for the type MockMilvusServiceClient
 func (_mock *MockMilvusServiceClient) CalcDistance(ctx context.Context, in *milvuspb.CalcDistanceRequest, opts ...grpc.CallOption) (*milvuspb.CalcDistanceResults, error) {
 	var tmpRet mock.Arguments
@@ -5845,6 +5928,89 @@ func (_c *MockMilvusServiceClient_GetQuerySegmentInfo_Call) RunAndReturn(run fun
 	return _c
 }
 
+// GetRefreshExternalCollectionProgress provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) GetRefreshExternalCollectionProgress(ctx context.Context, in *milvuspb.GetRefreshExternalCollectionProgressRequest, opts ...grpc.CallOption) (*milvuspb.GetRefreshExternalCollectionProgressResponse, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetRefreshExternalCollectionProgress")
+	}
+
+	var r0 *milvuspb.GetRefreshExternalCollectionProgressResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.GetRefreshExternalCollectionProgressRequest, ...grpc.CallOption) (*milvuspb.GetRefreshExternalCollectionProgressResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.GetRefreshExternalCollectionProgressRequest, ...grpc.CallOption) *milvuspb.GetRefreshExternalCollectionProgressResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.GetRefreshExternalCollectionProgressResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.GetRefreshExternalCollectionProgressRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_GetRefreshExternalCollectionProgress_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetRefreshExternalCollectionProgress'
+type MockMilvusServiceClient_GetRefreshExternalCollectionProgress_Call struct {
+	*mock.Call
+}
+
+// GetRefreshExternalCollectionProgress is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.GetRefreshExternalCollectionProgressRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) GetRefreshExternalCollectionProgress(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_GetRefreshExternalCollectionProgress_Call {
+	return &MockMilvusServiceClient_GetRefreshExternalCollectionProgress_Call{Call: _e.mock.On("GetRefreshExternalCollectionProgress",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_GetRefreshExternalCollectionProgress_Call) Run(run func(ctx context.Context, in *milvuspb.GetRefreshExternalCollectionProgressRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetRefreshExternalCollectionProgress_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.GetRefreshExternalCollectionProgressRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.GetRefreshExternalCollectionProgressRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_GetRefreshExternalCollectionProgress_Call) Return(getRefreshExternalCollectionProgressResponse *milvuspb.GetRefreshExternalCollectionProgressResponse, err error) *MockMilvusServiceClient_GetRefreshExternalCollectionProgress_Call {
+	_c.Call.Return(getRefreshExternalCollectionProgressResponse, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_GetRefreshExternalCollectionProgress_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.GetRefreshExternalCollectionProgressRequest, opts ...grpc.CallOption) (*milvuspb.GetRefreshExternalCollectionProgressResponse, error)) *MockMilvusServiceClient_GetRefreshExternalCollectionProgress_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetReplicas provides a mock function for the type MockMilvusServiceClient
 func (_mock *MockMilvusServiceClient) GetReplicas(ctx context.Context, in *milvuspb.GetReplicasRequest, opts ...grpc.CallOption) (*milvuspb.GetReplicasResponse, error) {
 	var tmpRet mock.Arguments
@@ -5924,6 +6090,89 @@ func (_c *MockMilvusServiceClient_GetReplicas_Call) Return(getReplicasResponse *
 }
 
 func (_c *MockMilvusServiceClient_GetReplicas_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.GetReplicasRequest, opts ...grpc.CallOption) (*milvuspb.GetReplicasResponse, error)) *MockMilvusServiceClient_GetReplicas_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetReplicateConfiguration provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) GetReplicateConfiguration(ctx context.Context, in *milvuspb.GetReplicateConfigurationRequest, opts ...grpc.CallOption) (*milvuspb.GetReplicateConfigurationResponse, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetReplicateConfiguration")
+	}
+
+	var r0 *milvuspb.GetReplicateConfigurationResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.GetReplicateConfigurationRequest, ...grpc.CallOption) (*milvuspb.GetReplicateConfigurationResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.GetReplicateConfigurationRequest, ...grpc.CallOption) *milvuspb.GetReplicateConfigurationResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.GetReplicateConfigurationResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.GetReplicateConfigurationRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_GetReplicateConfiguration_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetReplicateConfiguration'
+type MockMilvusServiceClient_GetReplicateConfiguration_Call struct {
+	*mock.Call
+}
+
+// GetReplicateConfiguration is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.GetReplicateConfigurationRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) GetReplicateConfiguration(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_GetReplicateConfiguration_Call {
+	return &MockMilvusServiceClient_GetReplicateConfiguration_Call{Call: _e.mock.On("GetReplicateConfiguration",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_GetReplicateConfiguration_Call) Run(run func(ctx context.Context, in *milvuspb.GetReplicateConfigurationRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetReplicateConfiguration_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.GetReplicateConfigurationRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.GetReplicateConfigurationRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_GetReplicateConfiguration_Call) Return(getReplicateConfigurationResponse *milvuspb.GetReplicateConfigurationResponse, err error) *MockMilvusServiceClient_GetReplicateConfiguration_Call {
+	_c.Call.Return(getReplicateConfigurationResponse, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_GetReplicateConfiguration_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.GetReplicateConfigurationRequest, opts ...grpc.CallOption) (*milvuspb.GetReplicateConfigurationResponse, error)) *MockMilvusServiceClient_GetReplicateConfiguration_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -7256,6 +7505,89 @@ func (_c *MockMilvusServiceClient_ListPrivilegeGroups_Call) RunAndReturn(run fun
 	return _c
 }
 
+// ListRefreshExternalCollectionJobs provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) ListRefreshExternalCollectionJobs(ctx context.Context, in *milvuspb.ListRefreshExternalCollectionJobsRequest, opts ...grpc.CallOption) (*milvuspb.ListRefreshExternalCollectionJobsResponse, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListRefreshExternalCollectionJobs")
+	}
+
+	var r0 *milvuspb.ListRefreshExternalCollectionJobsResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.ListRefreshExternalCollectionJobsRequest, ...grpc.CallOption) (*milvuspb.ListRefreshExternalCollectionJobsResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.ListRefreshExternalCollectionJobsRequest, ...grpc.CallOption) *milvuspb.ListRefreshExternalCollectionJobsResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.ListRefreshExternalCollectionJobsResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.ListRefreshExternalCollectionJobsRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_ListRefreshExternalCollectionJobs_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListRefreshExternalCollectionJobs'
+type MockMilvusServiceClient_ListRefreshExternalCollectionJobs_Call struct {
+	*mock.Call
+}
+
+// ListRefreshExternalCollectionJobs is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.ListRefreshExternalCollectionJobsRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) ListRefreshExternalCollectionJobs(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_ListRefreshExternalCollectionJobs_Call {
+	return &MockMilvusServiceClient_ListRefreshExternalCollectionJobs_Call{Call: _e.mock.On("ListRefreshExternalCollectionJobs",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_ListRefreshExternalCollectionJobs_Call) Run(run func(ctx context.Context, in *milvuspb.ListRefreshExternalCollectionJobsRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_ListRefreshExternalCollectionJobs_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.ListRefreshExternalCollectionJobsRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.ListRefreshExternalCollectionJobsRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_ListRefreshExternalCollectionJobs_Call) Return(listRefreshExternalCollectionJobsResponse *milvuspb.ListRefreshExternalCollectionJobsResponse, err error) *MockMilvusServiceClient_ListRefreshExternalCollectionJobs_Call {
+	_c.Call.Return(listRefreshExternalCollectionJobsResponse, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_ListRefreshExternalCollectionJobs_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.ListRefreshExternalCollectionJobsRequest, opts ...grpc.CallOption) (*milvuspb.ListRefreshExternalCollectionJobsResponse, error)) *MockMilvusServiceClient_ListRefreshExternalCollectionJobs_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ListResourceGroups provides a mock function for the type MockMilvusServiceClient
 func (_mock *MockMilvusServiceClient) ListResourceGroups(ctx context.Context, in *milvuspb.ListResourceGroupsRequest, opts ...grpc.CallOption) (*milvuspb.ListResourceGroupsResponse, error) {
 	var tmpRet mock.Arguments
@@ -8414,6 +8746,89 @@ func (_c *MockMilvusServiceClient_Query_Call) Return(queryResults *milvuspb.Quer
 }
 
 func (_c *MockMilvusServiceClient_Query_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.QueryRequest, opts ...grpc.CallOption) (*milvuspb.QueryResults, error)) *MockMilvusServiceClient_Query_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// RefreshExternalCollection provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) RefreshExternalCollection(ctx context.Context, in *milvuspb.RefreshExternalCollectionRequest, opts ...grpc.CallOption) (*milvuspb.RefreshExternalCollectionResponse, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for RefreshExternalCollection")
+	}
+
+	var r0 *milvuspb.RefreshExternalCollectionResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.RefreshExternalCollectionRequest, ...grpc.CallOption) (*milvuspb.RefreshExternalCollectionResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.RefreshExternalCollectionRequest, ...grpc.CallOption) *milvuspb.RefreshExternalCollectionResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.RefreshExternalCollectionResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.RefreshExternalCollectionRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_RefreshExternalCollection_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'RefreshExternalCollection'
+type MockMilvusServiceClient_RefreshExternalCollection_Call struct {
+	*mock.Call
+}
+
+// RefreshExternalCollection is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.RefreshExternalCollectionRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) RefreshExternalCollection(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_RefreshExternalCollection_Call {
+	return &MockMilvusServiceClient_RefreshExternalCollection_Call{Call: _e.mock.On("RefreshExternalCollection",
+		append([]interface{}{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_RefreshExternalCollection_Call) Run(run func(ctx context.Context, in *milvuspb.RefreshExternalCollectionRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_RefreshExternalCollection_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.RefreshExternalCollectionRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.RefreshExternalCollectionRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_RefreshExternalCollection_Call) Return(refreshExternalCollectionResponse *milvuspb.RefreshExternalCollectionResponse, err error) *MockMilvusServiceClient_RefreshExternalCollection_Call {
+	_c.Call.Return(refreshExternalCollectionResponse, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_RefreshExternalCollection_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.RefreshExternalCollectionRequest, opts ...grpc.CallOption) (*milvuspb.RefreshExternalCollectionResponse, error)) *MockMilvusServiceClient_RefreshExternalCollection_Call {
 	_c.Call.Return(run)
 	return _c
 }

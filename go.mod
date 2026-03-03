@@ -16,7 +16,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/huaweicloud/huaweicloud-sdk-go-v3 v0.1.181
 	github.com/imroc/req/v3 v3.57.0
-	github.com/milvus-io/milvus-proto/go-api/v2 v2.6.6-0.20251215075310-deda9c0dcece
+	github.com/milvus-io/milvus-proto/go-api/v2 v2.6.6-0.20260202035249-b2c299650f7e
 	github.com/minio/minio-go/v7 v7.0.97
 	github.com/samber/lo v1.52.0
 	github.com/spf13/cobra v1.10.2
@@ -121,7 +121,7 @@ require (
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.19 // indirect
-	github.com/milvus-io/milvus/pkg/v2 v2.6.4-0.20251211020913-b2c49d01978a
+	github.com/milvus-io/milvus/pkg/v2 v2.6.4-0.20260227131920-650bc7f9a5b3
 	github.com/minio/crc64nvme v1.1.1 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect

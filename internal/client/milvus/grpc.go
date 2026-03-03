@@ -48,7 +48,6 @@ const (
 	GetSegmentInfo
 	FlushAll
 	CollectionLevelGCControl
-	GetReplicas
 	FuncRuntimeCheck
 	ReplicateMessage
 )
@@ -69,7 +68,6 @@ var _featureTuples = []featureTuple{
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.5.8-0")), Flag: GetSegmentInfo},
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.6.11-0")), Flag: FlushAll},
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.6.8-0")), Flag: CollectionLevelGCControl},
-	{Constraints: lo.Must(semver.NewConstraint(">= 2.4.0-0")), Flag: GetReplicas},
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.6.8-0")), Flag: FuncRuntimeCheck},
 	// ReplicateMessage is only used by 2.5 CDC for incremental data replication.
 	// Since 2.5 CDC is no longer maintained, consider removing this in the future.
@@ -138,7 +136,6 @@ type Grpc interface {
 	RestoreRBAC(ctx context.Context, rbacMeta *milvuspb.RBACMeta) error
 	ReplicateMessage(ctx context.Context, channelName string) (string, error)
 	CreateReplicateStream(ctx context.Context, sourceClusterID string) (milvuspb.MilvusService_CreateReplicateStreamClient, error)
-	GetReplicas(ctx context.Context, db, collName string) (*milvuspb.GetReplicasResponse, error)
 }
 
 const (
@@ -1045,14 +1042,4 @@ func (g *GrpcClient) CreateReplicateStream(ctx context.Context, sourceClusterID 
 	}
 
 	return stream, nil
-}
-
-func (g *GrpcClient) GetReplicas(ctx context.Context, db, collName string) (*milvuspb.GetReplicasResponse, error) {
-	ctx = g.newCtxWithDB(ctx, db)
-	resp, err := g.srv.GetReplicas(ctx, &milvuspb.GetReplicasRequest{CollectionName: collName})
-	if err := checkResponse(resp, err); err != nil {
-		return nil, fmt.Errorf("client: get replicas: %w", err)
-	}
-
-	return resp, nil
 }
