@@ -130,6 +130,33 @@ func TestExist(t *testing.T) {
 	})
 }
 
+func TestCreateBucketIfNotExist(t *testing.T) {
+	t.Run("BucketExists", func(t *testing.T) {
+		cli := NewMockClient(t)
+		cli.EXPECT().BucketExist(mock.Anything, "").Return(true, nil)
+
+		err := CreateBucketIfNotExist(context.Background(), cli, "")
+		assert.NoError(t, err)
+	})
+
+	t.Run("BucketNotExistThenCreate", func(t *testing.T) {
+		cli := NewMockClient(t)
+		cli.EXPECT().BucketExist(mock.Anything, "").Return(false, nil)
+		cli.EXPECT().CreateBucket(mock.Anything).Return(nil)
+
+		err := CreateBucketIfNotExist(context.Background(), cli, "")
+		assert.NoError(t, err)
+	})
+
+	t.Run("BucketExistError", func(t *testing.T) {
+		cli := NewMockClient(t)
+		cli.EXPECT().BucketExist(mock.Anything, "").Return(false, assert.AnError)
+
+		err := CreateBucketIfNotExist(context.Background(), cli, "")
+		assert.Error(t, err)
+	})
+}
+
 func TestRead(t *testing.T) {
 	cli := NewMockClient(t)
 

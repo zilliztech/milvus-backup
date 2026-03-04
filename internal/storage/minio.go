@@ -2,7 +2,6 @@ package storage
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"sort"
@@ -321,20 +320,30 @@ func (m *MinioClient) ListPrefix(ctx context.Context, prefix string, recursive b
 	return newMinioObjectIterator(m, objCh)
 }
 
+// BucketExist checks if the bucket exists by listing a single object.
+// We use ListObjects instead of BucketExists (HEAD bucket) to minimize
+// required S3 permissions. MaxKeys=1 ensures only one object is fetched
+// to avoid iterating the entire bucket, which can timeout on large buckets.
 func (m *MinioClient) BucketExist(ctx context.Context, prefix string) (bool, error) {
-	bucketExists := true
-	var errs error
-	for obj := range m.cli.ListObjects(ctx, m.cfg.Bucket, minio.ListObjectsOptions{Prefix: prefix}) {
+	opts := minio.ListObjectsOptions{Prefix: prefix, MaxKeys: 1}
+	// MaxKeys=1 ensures at most one result, so the channel closes naturally.
+	// We must drain the channel to avoid goroutine leaks (see minio-go docs).
+	exists := true
+	var retErr error
+	for obj := range m.cli.ListObjects(ctx, m.cfg.Bucket, opts) {
 		if obj.Err != nil {
 			if minio.ToErrorResponse(obj.Err).Code == "NoSuchBucket" {
-				bucketExists = false
+				exists = false
 			} else {
-				errs = errors.Join(errs, fmt.Errorf("storage: %s list objects %w", m.cfg.Provider, obj.Err))
+				retErr = fmt.Errorf("storage: %s list objects %w", m.cfg.Provider, obj.Err)
 			}
 		}
 	}
 
-	return bucketExists, errs
+	if retErr != nil {
+		return false, retErr
+	}
+	return exists, nil
 }
 
 func (m *MinioClient) CreateBucket(ctx context.Context) error {
