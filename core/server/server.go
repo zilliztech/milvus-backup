@@ -2,12 +2,14 @@ package server
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/gin-contrib/pprof"
 	"github.com/gin-gonic/gin"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 
+	"github.com/zilliztech/milvus-backup/docs"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 )
 
@@ -49,6 +51,10 @@ func (s *Server) initEngine() {
 	pprof.Register(engine)
 
 	s.engine = engine
+
+	if bp := os.Getenv("SWAGGER_BASE_PATH"); bp != "" {
+		docs.SwaggerInfo.BasePath = bp
+	}
 
 	engine.Any("", s.handleHello)
 
