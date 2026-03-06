@@ -45,8 +45,13 @@ jobs:
         with:
           go-version: ${{ env.go-version }}
           cache: true
-      - name: Unit test
-        run: make test
+      - name: Unit test with coverage
+        run: go test --race -coverprofile=coverage.out -covermode=atomic ./...
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v5
+        with:
+          files: coverage.out
+          fail_ci_if_error: true
 
   test-backup-restore-cross-version:
     needs: unit-test-go
