@@ -98,7 +98,7 @@ func initLogger(cfg *Config, opts ...zap.Option) (*zap.Logger, *ZapProperties, e
 // InitTestLogger initializes a logger for unit tests
 func InitTestLogger(t zaptest.TestingT, cfg *Config, opts ...zap.Option) (*zap.Logger, *ZapProperties, error) {
 	writer := newTestingWriter(t)
-	zapOptions := []zap.Option{
+	zapOptions := []zap.Option{ //nolint:prealloc // test-only init, readability over micro-optimization
 		// Send zap errors to the same writer and mark the test as failed if
 		// that happens.
 		zap.ErrorOutput(writer.WithMarkFailed(true)),
