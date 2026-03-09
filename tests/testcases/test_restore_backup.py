@@ -2126,7 +2126,6 @@ class TestRestoreBackup(TestcaseBase):
     def test_milvus_restore_backup_with_alter_enable_dynamic_schema(self):
         """
         Test backup/restore when dynamic schema is enabled via alter_collection_properties.
-        Only runs on Milvus 2.6+ (MASTER tag excludes 2.5).
 
         Steps:
         1. Create collection with enable_dynamic_field=False using MilvusClient
@@ -2188,16 +2187,10 @@ class TestRestoreBackup(TestcaseBase):
         log.info("Enabled dynamic schema via alter_collection_properties with dynamicfield.enabled=True")
 
         # Verify dynamic field is now enabled
-        # Note: After alter_collection_properties, describe_collection may still show
-        # enable_dynamic_field=False in the schema, but the property is set in properties dict.
-        # Check properties dict for the actual state.
         info = self.milvus_client.describe_collection(collection_name)
         log.info(f"Collection info after alter: enable_dynamic_field={info.get('enable_dynamic_field')}, properties={info.get('properties')}")
-        properties = info.get("properties", {})
-        dynamic_enabled = info.get("enable_dynamic_field", False) is True or \
-            str(properties.get("dynamicfield.enabled", "")).lower() == "true"
-        assert dynamic_enabled, \
-            f"Expected dynamic field enabled after alter, got {info}"
+        assert info.get("enable_dynamic_field", False) is True, \
+            f"Expected enable_dynamic_field=True after alter, got {info}"
 
         # Step 4: Insert data WITH dynamic fields
         # After enabling dynamic field via properties, we should be able to insert dynamic fields
@@ -2251,11 +2244,8 @@ class TestRestoreBackup(TestcaseBase):
         # Verify dynamic field is enabled in restored collection
         restored_info = self.milvus_client.describe_collection(restored_name)
         log.info(f"Restored collection info: enable_dynamic_field={restored_info.get('enable_dynamic_field')}, properties={restored_info.get('properties')}")
-        restored_properties = restored_info.get("properties", {})
-        restored_dynamic_enabled = restored_info.get("enable_dynamic_field", False) is True or \
-            str(restored_properties.get("dynamicfield.enabled", "")).lower() == "true"
-        assert restored_dynamic_enabled, \
-            f"Restored collection should have dynamic field enabled, got {restored_info}"
+        assert restored_info.get("enable_dynamic_field", False) is True, \
+            f"Restored collection should have enable_dynamic_field=True, got {restored_info}"
 
         # Verify data integrity using compare_collections
         self.compare_collections(
