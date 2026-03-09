@@ -2122,10 +2122,11 @@ class TestRestoreBackup(TestcaseBase):
         )
         log.info(f"Test passed: with_default_value={with_default_value}, added_fields={added_field_names}")
 
-    @pytest.mark.tags(CaseLabel.L1)
+    @pytest.mark.tags(CaseLabel.MASTER)
     def test_milvus_restore_backup_with_alter_enable_dynamic_schema(self):
         """
         Test backup/restore when dynamic schema is enabled via alter_collection_properties.
+        Only runs on Milvus 2.6+ (MASTER tag excludes 2.5).
 
         Steps:
         1. Create collection with enable_dynamic_field=False using MilvusClient
