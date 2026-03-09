@@ -57,11 +57,10 @@ jobs:
         shell: bash
         working-directory: deployment/standalone
         run: |
-          if [ ${{ matrix.milvus_version }} == "master" ]; then
-            mv docker-compose-tei.yml docker-compose.yml
-          fi
           if [ ${{ matrix.case_tag }} == "RBAC" ]; then
             mv docker-compose-rbac.yml docker-compose.yml
+          elif [ ${{ matrix.case_tag }} == "MASTER" ] || [ ${{ matrix.milvus_version }} == "master" ]; then
+            mv docker-compose-tei.yml docker-compose.yml
           fi
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.milvus_version }}-latest) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
@@ -86,11 +85,9 @@ jobs:
         shell: bash
         working-directory: tests
         run: |
-          if [ ${{ matrix.milvus_version }} == "master" ]; then
+          if [ ${{ matrix.case_tag }} == "MASTER" ] || [ ${{ matrix.milvus_version }} == "master" ]; then
             pytest -s -v --tags ${{ matrix.case_tag }} -n 4 --tei_endpoint http://text-embeddings:80
-          fi
-
-          if [ ${{ matrix.milvus_version }} != "master" ]; then
+          else
             pytest -s -v --tags ${{ matrix.case_tag }} -n 4
           fi
 
@@ -112,7 +109,7 @@ jobs:
         if: ${{ ! success() }}
         uses: actions/upload-artifact@v7
         with:
-          name: logs-docker-standalone-${{ matrix.milvus_version }}
+          name: logs-docker-standalone-${{ matrix.milvus_version }}-${{ matrix.case_tag }}
           path: |
             ./logs
             ./server.log

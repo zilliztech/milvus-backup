@@ -140,10 +140,16 @@ func (ddlt *collDDLTask) addFields(ctx context.Context, fields []*schemapb.Field
 	return nil
 }
 
-// properties returns the properties of the collection.
+// properties returns the collection-level properties for CreateCollection.
+// Uses collection-level properties (which include dynamicfield.enabled, TTL, etc.)
+// with fallback to schema properties for backward compatibility with older backups.
 // If milvus support func runtime check, add disable_auto_function to properties to avoid error when create collection.
 func (ddlt *collDDLTask) properties() []*commonpb.KeyValuePair {
-	props := pbconv.BakKVToMilvusKV(ddlt.collBackup.GetSchema().GetProperties(), ddlt.option.SkipParams.CollectionProperties...)
+	bakProps := ddlt.collBackup.GetProperties()
+	if len(bakProps) == 0 {
+		bakProps = ddlt.collBackup.GetSchema().GetProperties()
+	}
+	props := pbconv.BakKVToMilvusKV(bakProps, ddlt.option.SkipParams.CollectionProperties...)
 
 	if len(ddlt.collBackup.GetSchema().GetFunctions()) == 0 {
 		ddlt.logger.Info("no functions, skip disable_auto_function")
@@ -179,7 +185,12 @@ func (ddlt *collDDLTask) restoreFuncRuntimeCheck(ctx context.Context) error {
 
 	ddlt.logger.Info("milvus support func runtime check, restore original value")
 	val := "false"
-	for _, kv := range ddlt.collBackup.GetSchema().GetProperties() {
+	// Check collection-level properties first, then fall back to schema properties
+	bakProps := ddlt.collBackup.GetProperties()
+	if len(bakProps) == 0 {
+		bakProps = ddlt.collBackup.GetSchema().GetProperties()
+	}
+	for _, kv := range bakProps {
 		if kv.GetKey() == common.DisableFuncRuntimeCheck {
 			val = kv.GetValue()
 			break

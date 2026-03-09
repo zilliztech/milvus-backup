@@ -2187,10 +2187,16 @@ class TestRestoreBackup(TestcaseBase):
         log.info("Enabled dynamic schema via alter_collection_properties with dynamicfield.enabled=True")
 
         # Verify dynamic field is now enabled
+        # Note: After alter_collection_properties, describe_collection may still show
+        # enable_dynamic_field=False in the schema, but the property is set in properties dict.
+        # Check properties dict for the actual state.
         info = self.milvus_client.describe_collection(collection_name)
         log.info(f"Collection info after alter: enable_dynamic_field={info.get('enable_dynamic_field')}, properties={info.get('properties')}")
-        assert info.get("enable_dynamic_field", False) is True, \
-            f"Expected enable_dynamic_field=True after alter, got {info}"
+        properties = info.get("properties", {})
+        dynamic_enabled = info.get("enable_dynamic_field", False) is True or \
+            str(properties.get("dynamicfield.enabled", "")).lower() == "true"
+        assert dynamic_enabled, \
+            f"Expected dynamic field enabled after alter, got {info}"
 
         # Step 4: Insert data WITH dynamic fields
         # After enabling dynamic field via properties, we should be able to insert dynamic fields
@@ -2244,8 +2250,11 @@ class TestRestoreBackup(TestcaseBase):
         # Verify dynamic field is enabled in restored collection
         restored_info = self.milvus_client.describe_collection(restored_name)
         log.info(f"Restored collection info: enable_dynamic_field={restored_info.get('enable_dynamic_field')}, properties={restored_info.get('properties')}")
-        assert restored_info.get("enable_dynamic_field", False) is True, \
-            f"Restored collection should have enable_dynamic_field=True, got {restored_info}"
+        restored_properties = restored_info.get("properties", {})
+        restored_dynamic_enabled = restored_info.get("enable_dynamic_field", False) is True or \
+            str(restored_properties.get("dynamicfield.enabled", "")).lower() == "true"
+        assert restored_dynamic_enabled, \
+            f"Restored collection should have dynamic field enabled, got {restored_info}"
 
         # Verify data integrity using compare_collections
         self.compare_collections(
@@ -2258,6 +2267,9 @@ class TestRestoreBackup(TestcaseBase):
     @pytest.mark.tags(CaseLabel.MASTER)
     def test_milvus_restore_back_with_minhash_function(self):
         self._connect()
+        server_version = self.milvus_client.get_server_version()
+        if server_version.startswith("2.5") or server_version.startswith("2.6"):
+            pytest.skip(f"MinHash function not supported in Milvus {server_version}")
         name_origin = cf.gen_unique_str(prefix)
         back_up_name = cf.gen_unique_str(backup_prefix)
         fields = [
@@ -2359,6 +2371,9 @@ class TestRestoreBackup(TestcaseBase):
     @pytest.mark.parametrize("use_v2_restore", [True, False])
     def test_milvus_restore_back_with_minhash_function_and_delete(self, use_v2_restore):
         self._connect()
+        server_version = self.milvus_client.get_server_version()
+        if server_version.startswith("2.5") or server_version.startswith("2.6"):
+            pytest.skip(f"MinHash function not supported in Milvus {server_version}")
         name_origin = cf.gen_unique_str(prefix)
         back_up_name = cf.gen_unique_str(backup_prefix)
         fields = [
@@ -2442,6 +2457,9 @@ class TestRestoreBackup(TestcaseBase):
     @pytest.mark.parametrize("use_v2_restore", [True, False])
     def test_milvus_restore_back_with_minhash_function_and_upsert(self, use_v2_restore):
         self._connect()
+        server_version = self.milvus_client.get_server_version()
+        if server_version.startswith("2.5") or server_version.startswith("2.6"):
+            pytest.skip(f"MinHash function not supported in Milvus {server_version}")
         name_origin = cf.gen_unique_str(prefix)
         back_up_name = cf.gen_unique_str(backup_prefix)
         fields = [
