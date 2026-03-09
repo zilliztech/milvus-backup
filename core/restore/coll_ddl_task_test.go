@@ -262,8 +262,8 @@ func TestCollDDLTask_createColl(t *testing.T) {
 			assert.Equal(t, 0, coll.PartitionNum)
 
 			assert.Equal(t, 2, len(coll.Properties))
-			assert.Equal(t, "key1", coll.Properties[0].GetKey())
-			assert.Equal(t, "val1", coll.Properties[0].GetValue())
+			assert.Equal(t, "key", coll.Properties[0].GetKey())
+			assert.Equal(t, "val", coll.Properties[0].GetValue())
 			assert.Equal(t, common.DisableFuncRuntimeCheck, coll.Properties[1].GetKey())
 			assert.Equal(t, "true", coll.Properties[1].GetValue())
 		})

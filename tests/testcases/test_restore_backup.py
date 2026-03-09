@@ -1025,7 +1025,7 @@ class TestRestoreBackup(TestcaseBase):
     @pytest.mark.parametrize("include_dynamic", [True])
     @pytest.mark.parametrize("enable_text_match", [True])
     @pytest.mark.parametrize("enable_full_text_search", [True])
-    @pytest.mark.tags(CaseLabel.MASTER)
+    @pytest.mark.tags(CaseLabel.RELEASE)
     def test_milvus_restore_back_with_sparse_vector_text_match_datatype(self, include_dynamic, include_partition_key, enable_text_match, enable_full_text_search):
         self._connect()
         name_origin = cf.gen_unique_str(prefix)
@@ -1432,7 +1432,7 @@ class TestRestoreBackup(TestcaseBase):
             verify_by_query=True,
         )
 
-    @pytest.mark.tags(CaseLabel.MASTER)
+    @pytest.mark.tags(CaseLabel.RELEASE)
     def test_milvus_restore_back_with_text_embedding(self, tei_endpoint):
         self._connect()
         name_origin = cf.gen_unique_str(prefix)
@@ -1606,7 +1606,7 @@ class TestRestoreBackup(TestcaseBase):
 
     @pytest.mark.parametrize("include_partition_key", [True])
     @pytest.mark.parametrize("include_dynamic", [True])
-    @pytest.mark.tags(CaseLabel.MASTER)
+    @pytest.mark.tags(CaseLabel.RELEASE)
     def test_milvus_restore_back_with_geometry_datatype(self, include_dynamic, include_partition_key):
         """Test backup and restore with GEOMETRY data type"""
         self._connect()
@@ -1719,7 +1719,7 @@ class TestRestoreBackup(TestcaseBase):
 
     @pytest.mark.parametrize("include_partition_key", [True])
     @pytest.mark.parametrize("include_dynamic", [True])
-    @pytest.mark.tags(CaseLabel.MASTER)
+    @pytest.mark.tags(CaseLabel.RELEASE)
     def test_milvus_restore_back_with_struct_array_datatype(self, include_dynamic, include_partition_key):
         """Test backup and restore with struct array data type (multi-vector embeddings)"""
         self._connect()
@@ -1972,7 +1972,7 @@ class TestRestoreBackup(TestcaseBase):
             == str(ttl_seconds)
         )
 
-    @pytest.mark.tags(CaseLabel.MASTER)
+    @pytest.mark.tags(CaseLabel.RELEASE)
     @pytest.mark.parametrize("with_default_value", [True, False])
     def test_milvus_restore_backup_with_add_field(self, with_default_value):
         """
@@ -2122,7 +2122,7 @@ class TestRestoreBackup(TestcaseBase):
         )
         log.info(f"Test passed: with_default_value={with_default_value}, added_fields={added_field_names}")
 
-    @pytest.mark.tags(CaseLabel.MASTER)
+    @pytest.mark.tags(CaseLabel.RELEASE)
     def test_milvus_restore_backup_with_alter_enable_dynamic_schema(self):
         """
         Test backup/restore when dynamic schema is enabled via alter_collection_properties.
@@ -2268,9 +2268,6 @@ class TestRestoreBackup(TestcaseBase):
     @pytest.mark.tags(CaseLabel.MASTER)
     def test_milvus_restore_back_with_minhash_function(self):
         self._connect()
-        server_version = self.milvus_client.get_server_version()
-        if server_version.startswith("2.5") or server_version.startswith("2.6"):
-            pytest.skip(f"MinHash function not supported in Milvus {server_version}")
         name_origin = cf.gen_unique_str(prefix)
         back_up_name = cf.gen_unique_str(backup_prefix)
         fields = [
@@ -2372,9 +2369,6 @@ class TestRestoreBackup(TestcaseBase):
     @pytest.mark.parametrize("use_v2_restore", [True, False])
     def test_milvus_restore_back_with_minhash_function_and_delete(self, use_v2_restore):
         self._connect()
-        server_version = self.milvus_client.get_server_version()
-        if server_version.startswith("2.5") or server_version.startswith("2.6"):
-            pytest.skip(f"MinHash function not supported in Milvus {server_version}")
         name_origin = cf.gen_unique_str(prefix)
         back_up_name = cf.gen_unique_str(backup_prefix)
         fields = [
@@ -2458,9 +2452,6 @@ class TestRestoreBackup(TestcaseBase):
     @pytest.mark.parametrize("use_v2_restore", [True, False])
     def test_milvus_restore_back_with_minhash_function_and_upsert(self, use_v2_restore):
         self._connect()
-        server_version = self.milvus_client.get_server_version()
-        if server_version.startswith("2.5") or server_version.startswith("2.6"):
-            pytest.skip(f"MinHash function not supported in Milvus {server_version}")
         name_origin = cf.gen_unique_str(prefix)
         back_up_name = cf.gen_unique_str(backup_prefix)
         fields = [

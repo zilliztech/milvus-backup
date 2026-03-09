@@ -16,10 +16,14 @@ jobs:
       fail-fast: false
       matrix:
         milvus_version: ["master", "2.6", "2.5"]
-        case_tag: [L0, L1, L2, MASTER, RBAC]
+        case_tag: [L0, L1, L2, MASTER, RELEASE, RBAC]
         exclude:
           - milvus_version: 2.5
             case_tag: MASTER
+          - milvus_version: 2.6
+            case_tag: MASTER
+          - milvus_version: 2.5
+            case_tag: RELEASE
 
     steps:
       - uses: actions/checkout@v6
@@ -59,7 +63,7 @@ jobs:
         run: |
           if [ ${{ matrix.case_tag }} == "RBAC" ]; then
             mv docker-compose-rbac.yml docker-compose.yml
-          elif [ ${{ matrix.case_tag }} == "MASTER" ] || [ ${{ matrix.milvus_version }} == "master" ]; then
+          elif [ ${{ matrix.case_tag }} == "MASTER" ] || [ ${{ matrix.case_tag }} == "RELEASE" ] || [ ${{ matrix.milvus_version }} == "master" ]; then
             mv docker-compose-tei.yml docker-compose.yml
           fi
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.milvus_version }}-latest) && echo $tag
@@ -85,7 +89,7 @@ jobs:
         shell: bash
         working-directory: tests
         run: |
-          if [ ${{ matrix.case_tag }} == "MASTER" ] || [ ${{ matrix.milvus_version }} == "master" ]; then
+          if [ ${{ matrix.case_tag }} == "MASTER" ] || [ ${{ matrix.case_tag }} == "RELEASE" ] || [ ${{ matrix.milvus_version }} == "master" ]; then
             pytest -s -v --tags ${{ matrix.case_tag }} -n 4 --tei_endpoint http://text-embeddings:80
           else
             pytest -s -v --tags ${{ matrix.case_tag }} -n 4
