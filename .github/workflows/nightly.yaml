@@ -67,6 +67,7 @@ jobs:
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
           if [ "${{ matrix.milvus_version }}" == "master" ]; then
             yq -i '.common.storage.enablev2 = true' custom_config.yaml
+            yq -i '.common.storage.useLoonFFI = false' custom_config.yaml
           fi
           cat custom_config.yaml || true
           mkdir -p volumes/etcd volumes/minio volumes/milvus
