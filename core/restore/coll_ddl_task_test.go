@@ -33,6 +33,49 @@ func TestCollDDLTask_shardNum(t *testing.T) {
 		ct.option.MaxShardNum = 5
 		assert.Equal(t, int32(5), ct.shardNum())
 	})
+
+	t.Run("OverwriteByCollOverride", func(t *testing.T) {
+		ddlt := newTestCollDDLTask()
+		ddlt.collBackup = &backuppb.CollectionBackupInfo{ShardsNum: 10}
+		ddlt.collOverride = CollOverride{ShardNum: 3}
+		assert.Equal(t, int32(3), ddlt.shardNum())
+	})
+
+	t.Run("CollOverrideTakesPriorityOverMaxShardNum", func(t *testing.T) {
+		ddlt := newTestCollDDLTask()
+		ddlt.collBackup = &backuppb.CollectionBackupInfo{ShardsNum: 10}
+		ddlt.option.MaxShardNum = 5
+		ddlt.collOverride = CollOverride{ShardNum: 8}
+		assert.Equal(t, int32(8), ddlt.shardNum())
+	})
+}
+
+func TestCollDDLTask_description(t *testing.T) {
+	t.Run("FromBackup", func(t *testing.T) {
+		ddlt := newTestCollDDLTask()
+		ddlt.collBackup = &backuppb.CollectionBackupInfo{
+			Schema: &backuppb.CollectionSchema{Description: "original desc"},
+		}
+		assert.Equal(t, "original desc", ddlt.description())
+	})
+
+	t.Run("OverwriteByCollOverride", func(t *testing.T) {
+		ddlt := newTestCollDDLTask()
+		ddlt.collBackup = &backuppb.CollectionBackupInfo{
+			Schema: &backuppb.CollectionSchema{Description: "original desc"},
+		}
+		ddlt.collOverride = CollOverride{Description: "new desc"}
+		assert.Equal(t, "new desc", ddlt.description())
+	})
+
+	t.Run("EmptyOverrideFallsBackToBackup", func(t *testing.T) {
+		ddlt := newTestCollDDLTask()
+		ddlt.collBackup = &backuppb.CollectionBackupInfo{
+			Schema: &backuppb.CollectionSchema{Description: "original desc"},
+		}
+		ddlt.collOverride = CollOverride{Description: ""}
+		assert.Equal(t, "original desc", ddlt.description())
+	})
 }
 
 func TestCollDDLTask_fields(t *testing.T) {
@@ -268,6 +311,35 @@ func TestCollDDLTask_createColl(t *testing.T) {
 			assert.Equal(t, "true", coll.Properties[1].GetValue())
 		})
 		cli.EXPECT().HasFeature(milvus.FuncRuntimeCheck).Return(true).Once()
+		ct.grpcCli = cli
+		err := ct.createColl(context.Background())
+		assert.NoError(t, err)
+	})
+
+	t.Run("WithCollOverride", func(t *testing.T) {
+		ct := newTestCollDDLTask()
+		ct.targetNS = namespace.New("db1", "coll1")
+		ct.collOverride = CollOverride{ShardNum: 2, Description: "overridden desc"}
+		ct.collBackup = &backuppb.CollectionBackupInfo{
+			Schema: &backuppb.CollectionSchema{
+				Fields: []*backuppb.FieldSchema{{
+					FieldID:      common.StartOfUserFieldID,
+					Name:         "field",
+					DataType:     backuppb.DataType_Int64,
+					IsPrimaryKey: true},
+				},
+				Description: "original desc",
+			},
+			ShardsNum:        10,
+			ConsistencyLevel: backuppb.ConsistencyLevel_Bounded,
+		}
+
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().CreateCollection(mock.Anything, mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
+			coll := args[1].(milvus.CreateCollectionInput)
+			assert.Equal(t, "overridden desc", coll.Schema.Description)
+			assert.Equal(t, int32(2), coll.ShardNum)
+		})
 		ct.grpcCli = cli
 		err := ct.createColl(context.Background())
 		assert.NoError(t, err)

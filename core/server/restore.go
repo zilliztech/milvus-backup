@@ -286,10 +286,11 @@ func newPlanFromRequest(request *backuppb.RestoreBackupRequest) (*restore.Plan, 
 	}
 
 	return &restore.Plan{
-		BackupFilter: backupFilter,
-		DBMapper:     dbMapper,
-		CollMapper:   collMapper,
-		TaskFilter:   taskFilter,
+		BackupFilter:  backupFilter,
+		DBMapper:      dbMapper,
+		CollMapper:    collMapper,
+		CollOverrides: newCollOverridesFromPlan(request.GetRestorePlan()),
+		TaskFilter:    taskFilter,
 	}, nil
 }
 
@@ -395,6 +396,35 @@ func newDBMapper(plan *backuppb.RestorePlan) (map[string][]restore.DBMapping, er
 	}
 
 	return dbMapper, nil
+}
+
+func newCollOverridesFromPlan(plan *backuppb.RestorePlan) map[string]restore.CollOverride {
+	if plan == nil {
+		return nil
+	}
+
+	overrides := make(map[string]restore.CollOverride)
+	for _, mapping := range plan.GetMapping() {
+		for _, collMapping := range mapping.GetColls() {
+			o := collMapping.GetOverride()
+			if o == nil {
+				continue
+			}
+			if o.GetShardNum() == 0 && o.GetDescription() == "" {
+				continue
+			}
+			targetNS := namespace.New(mapping.GetTarget(), collMapping.GetTarget())
+			overrides[targetNS.String()] = restore.CollOverride{
+				ShardNum:    o.GetShardNum(),
+				Description: o.GetDescription(),
+			}
+		}
+	}
+
+	if len(overrides) == 0 {
+		return nil
+	}
+	return overrides
 }
 
 func newFilterFromDBCollections(dbCollections string) (filter.Filter, error) {

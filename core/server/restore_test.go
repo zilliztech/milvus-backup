@@ -313,3 +313,107 @@ func TestNewTaskFilter(t *testing.T) {
 		assert.Empty(t, f.DBCollFilter)
 	})
 }
+
+func TestNewCollOverridesFromPlan(t *testing.T) {
+	t.Run("NilPlan", func(t *testing.T) {
+		result := newCollOverridesFromPlan(nil)
+		assert.Nil(t, result)
+	})
+
+	t.Run("NoOverrides", func(t *testing.T) {
+		plan := &backuppb.RestorePlan{
+			Mapping: []*backuppb.RestoreMapping{{
+				Source: "db1",
+				Target: "db2",
+				Colls: []*backuppb.RestoreCollectionMapping{
+					{Source: "coll1", Target: "coll2"},
+				},
+			}},
+		}
+		result := newCollOverridesFromPlan(plan)
+		assert.Nil(t, result)
+	})
+
+	t.Run("WithShardNumOverride", func(t *testing.T) {
+		plan := &backuppb.RestorePlan{
+			Mapping: []*backuppb.RestoreMapping{{
+				Source: "db1",
+				Target: "db2",
+				Colls: []*backuppb.RestoreCollectionMapping{
+					{
+						Source:   "coll1",
+						Target:   "coll2",
+						Override: &backuppb.RestoreCollectionOverride{ShardNum: 4},
+					},
+				},
+			}},
+		}
+		result := newCollOverridesFromPlan(plan)
+		assert.Len(t, result, 1)
+		assert.Equal(t, int32(4), result["db2.coll2"].ShardNum)
+		assert.Equal(t, "", result["db2.coll2"].Description)
+	})
+
+	t.Run("WithDescriptionOverride", func(t *testing.T) {
+		plan := &backuppb.RestorePlan{
+			Mapping: []*backuppb.RestoreMapping{{
+				Source: "db1",
+				Target: "db2",
+				Colls: []*backuppb.RestoreCollectionMapping{
+					{
+						Source:   "coll1",
+						Target:   "coll2",
+						Override: &backuppb.RestoreCollectionOverride{Description: "new desc"},
+					},
+				},
+			}},
+		}
+		result := newCollOverridesFromPlan(plan)
+		assert.Len(t, result, 1)
+		assert.Equal(t, "new desc", result["db2.coll2"].Description)
+	})
+
+	t.Run("WithBothOverrides", func(t *testing.T) {
+		plan := &backuppb.RestorePlan{
+			Mapping: []*backuppb.RestoreMapping{{
+				Source: "db1",
+				Target: "db2",
+				Colls: []*backuppb.RestoreCollectionMapping{
+					{
+						Source:   "coll1",
+						Target:   "coll2",
+						Override: &backuppb.RestoreCollectionOverride{ShardNum: 2, Description: "desc"},
+					},
+					{
+						Source: "coll3",
+						Target: "coll4",
+					},
+				},
+			}},
+		}
+		result := newCollOverridesFromPlan(plan)
+		assert.Len(t, result, 1)
+		assert.Equal(t, int32(2), result["db2.coll2"].ShardNum)
+		assert.Equal(t, "desc", result["db2.coll2"].Description)
+		_, exists := result["db2.coll4"]
+		assert.False(t, exists)
+	})
+
+	t.Run("EmptyOverrideSkipped", func(t *testing.T) {
+		plan := &backuppb.RestorePlan{
+			Mapping: []*backuppb.RestoreMapping{{
+				Source: "db1",
+				Target: "db2",
+				Colls: []*backuppb.RestoreCollectionMapping{
+					{
+						Source:   "coll1",
+						Target:   "coll2",
+						Override: &backuppb.RestoreCollectionOverride{},
+					},
+				},
+			}},
+		}
+		result := newCollOverridesFromPlan(plan)
+		assert.Nil(t, result)
+	})
+}

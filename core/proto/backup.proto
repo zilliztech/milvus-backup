@@ -408,9 +408,15 @@ message RestoreMapping {
   repeated RestoreCollectionMapping colls = 4;
 }
 
+message RestoreCollectionOverride {
+  int32 shardNum = 1;
+  string description = 2;
+}
+
 message RestoreCollectionMapping {
   string source = 1;
   string target = 2;
+  RestoreCollectionOverride override = 3;
 }
 
 message CollFilter {

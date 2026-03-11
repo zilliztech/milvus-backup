@@ -2525,3 +2525,78 @@ class TestRestoreBackup(TestcaseBase):
             output_fields=output_fields,
             verify_by_query=True,
         )
+
+    @pytest.mark.parametrize("nb", [3000])
+    @pytest.mark.parametrize("use_v2_restore", [True, False])
+    @pytest.mark.tags(CaseLabel.L1)
+    def test_milvus_restore_with_collection_override(self, nb, use_v2_restore):
+        """Test restore with per-collection shard_num and description override via restorePlan"""
+        # prepare data
+        name_origin = cf.gen_unique_str(prefix)
+        back_up_name = cf.gen_unique_str(backup_prefix)
+        self.prepare_data(name_origin, nb=nb, is_binary=False, auto_id=True)
+        collection_src = Collection(name=name_origin)
+        src_shard_num = collection_src.num_shards
+        src_description = collection_src.description
+        log.info(f"source collection shard_num: {src_shard_num}, description: {src_description}")
+
+        # create backup
+        res = self.client.create_backup(
+            {"async": False, "backup_name": back_up_name, "collection_names": [name_origin]}
+        )
+        log.info(f"create backup response: {res}")
+
+        # restore with restorePlan containing override
+        target_shard_num = 1
+        target_description = "overridden_description_for_test"
+        target_name = name_origin + suffix
+        payload = {
+            "async": False,
+            "backup_name": back_up_name,
+            "useV2Restore": use_v2_restore,
+            "restorePlan": {
+                "mapping": [
+                    {
+                        "source": "default",
+                        "target": "default",
+                        "colls": [
+                            {
+                                "source": name_origin,
+                                "target": target_name,
+                                "override": {
+                                    "shardNum": target_shard_num,
+                                    "description": target_description,
+                                },
+                            }
+                        ],
+                    }
+                ],
+                "filter": {
+                    "default": {"colls": [target_name]},
+                },
+            },
+        }
+        res = self.client.restore_backup(payload)
+        log.info(f"restore_backup: {res}")
+        assert res["msg"] == "success"
+
+        # verify restored collection exists
+        res, _ = self.utility_wrap.list_collections()
+        assert target_name in res
+
+        # verify shard_num and description overrides
+        collection_dist = Collection(name=target_name)
+        log.info(f"restored collection shard_num: {collection_dist.num_shards}, description: {collection_dist.description}")
+        assert collection_dist.num_shards == target_shard_num, (
+            f"expected shard_num={target_shard_num}, got {collection_dist.num_shards}"
+        )
+        assert collection_dist.description == target_description, (
+            f"expected description={target_description}, got {collection_dist.description}"
+        )
+
+        # verify data integrity (skip compare_collections which asserts schema equality)
+        collection_src = Collection(name=name_origin)
+        collection_dist = Collection(name=target_name)
+        assert collection_src.num_entities == collection_dist.num_entities, (
+            f"entity count mismatch: src={collection_src.num_entities}, dist={collection_dist.num_entities}"
+        )
