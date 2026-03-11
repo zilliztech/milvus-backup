@@ -38,7 +38,6 @@ import (
 	"github.com/uber/jaeger-client-go/utils"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
-	"go.uber.org/zap/zaptest"
 	"gopkg.in/natefinch/lumberjack.v2"
 
 	"github.com/zilliztech/milvus-backup/internal/cfg"
@@ -92,18 +91,6 @@ func initLogger(cfg *Config, opts ...zap.Option) (*zap.Logger, *ZapProperties, e
 		outputs = append(outputs, stdOut)
 	}
 	writer := zap.CombineWriteSyncers(outputs...)
-	return InitLoggerWithWriteSyncer(cfg, writer, opts...)
-}
-
-// InitTestLogger initializes a logger for unit tests
-func InitTestLogger(t zaptest.TestingT, cfg *Config, opts ...zap.Option) (*zap.Logger, *ZapProperties, error) {
-	writer := newTestingWriter(t)
-	zapOptions := []zap.Option{
-		// Send zap errors to the same writer and mark the test as failed if
-		// that happens.
-		zap.ErrorOutput(writer.WithMarkFailed(true)),
-	}
-	opts = append(zapOptions, opts...)
 	return InitLoggerWithWriteSyncer(cfg, writer, opts...)
 }
 
