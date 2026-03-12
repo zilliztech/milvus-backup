@@ -41,7 +41,8 @@ type collTask struct {
 	dbBackup   *backuppb.DatabaseBackupInfo
 	collBackup *backuppb.CollectionBackupInfo
 
-	option *Option
+	option       *Option
+	collOverride CollOverride
 
 	taskMgr *taskmgr.Mgr
 
@@ -81,7 +82,8 @@ type collTaskArgs struct {
 
 	targetNS namespace.NS
 
-	option *Option
+	option       *Option
+	collOverride CollOverride
 
 	taskMgr *taskmgr.Mgr
 
@@ -118,7 +120,8 @@ func newCollTask(args collTaskArgs) *collTask {
 		dbBackup:   args.dbBackup,
 		collBackup: args.collBackup,
 
-		option: args.option,
+		option:       args.option,
+		collOverride: args.collOverride,
 
 		targetNS: args.targetNS,
 
@@ -173,7 +176,7 @@ func (ct *collTask) Execute(ctx context.Context) error {
 func (ct *collTask) privateExecute(ctx context.Context) error {
 	ct.logger.Info("start restore collection")
 
-	ddlt := newCollDDLTask(ct.taskID, ct.option, ct.collBackup, ct.targetNS, ct.grpcCli)
+	ddlt := newCollDDLTask(ct.taskID, ct.option, ct.collOverride, ct.collBackup, ct.targetNS, ct.grpcCli)
 	if err := ddlt.Execute(ctx); err != nil {
 		return fmt.Errorf("restore_collection: restore collection ddl: %w", err)
 	}

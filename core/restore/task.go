@@ -35,6 +35,12 @@ type SkipParams struct {
 	IndexParams []string
 }
 
+// CollOverride contains per-collection overrides for restore.
+type CollOverride struct {
+	ShardNum    int32
+	Description string
+}
+
 type Plan struct {
 	// BackupFilter filters databases and collections from the backup.
 	// It is mainly for backward compatibility and can be
@@ -44,6 +50,9 @@ type Plan struct {
 	// mapping
 	DBMapper   map[string][]DBMapping
 	CollMapper CollMapper
+
+	// CollOverrides contains per-collection overrides keyed by target namespace string.
+	CollOverrides map[string]CollOverride
 
 	// TaskFilter filters databases and collections after mapping.
 	TaskFilter filter.Filter
@@ -257,6 +266,7 @@ func (t *Task) newCollTask(dbBackup *backuppb.DatabaseBackupInfo, collBackup *ba
 			dbBackup:      dbBackup,
 			collBackup:    collBackup,
 			option:        t.args.Option,
+			collOverride:  t.args.Plan.CollOverrides[targetNS.String()],
 			crossStorage:  t.args.Params.Minio.CrossStorage.Val,
 			keepTempFiles: t.args.Params.Backup.KeepTempFiles.Val,
 			backupDir:     t.args.BackupDir,

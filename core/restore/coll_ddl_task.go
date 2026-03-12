@@ -22,7 +22,8 @@ import (
 )
 
 type collDDLTask struct {
-	option *Option
+	option       *Option
+	collOverride CollOverride
 
 	collBackup *backuppb.CollectionBackupInfo
 
@@ -32,13 +33,14 @@ type collDDLTask struct {
 	logger *zap.Logger
 }
 
-func newCollDDLTask(taskID string, opt *Option, collBackup *backuppb.CollectionBackupInfo, targetNS namespace.NS, grpcCli milvus.Grpc) *collDDLTask {
+func newCollDDLTask(taskID string, opt *Option, override CollOverride, collBackup *backuppb.CollectionBackupInfo, targetNS namespace.NS, grpcCli milvus.Grpc) *collDDLTask {
 	return &collDDLTask{
-		option:     opt,
-		collBackup: collBackup,
-		targetNS:   targetNS,
-		grpcCli:    grpcCli,
-		logger:     log.With(zap.String("task_id", taskID), zap.String("target_ns", targetNS.String())),
+		option:       opt,
+		collOverride: override,
+		collBackup:   collBackup,
+		targetNS:     targetNS,
+		grpcCli:      grpcCli,
+		logger:       log.With(zap.String("task_id", taskID), zap.String("target_ns", targetNS.String())),
 	}
 }
 
@@ -217,7 +219,7 @@ func (ddlt *collDDLTask) createColl(ctx context.Context) error {
 	}
 	schema := &schemapb.CollectionSchema{
 		Name:               ddlt.targetNS.CollName(),
-		Description:        ddlt.collBackup.GetSchema().GetDescription(),
+		Description:        ddlt.description(),
 		AutoID:             ddlt.collBackup.GetSchema().GetAutoID(),
 		Functions:          functions,
 		Fields:             createFields,
@@ -303,6 +305,14 @@ func (ddlt *collDDLTask) structArrayFields() ([]*schemapb.StructArrayFieldSchema
 // shardNum returns the shard number of the collection.
 // if MaxShardNum is set and greater than the shard number in backup, use MaxShardNum
 func (ddlt *collDDLTask) shardNum() int32 {
+	// per-collection override takes highest priority
+	if ddlt.collOverride.ShardNum > 0 {
+		ddlt.logger.Info("overwrite shardNum by collection override",
+			zap.Int32("old", ddlt.collBackup.GetShardsNum()),
+			zap.Int32("new", ddlt.collOverride.ShardNum))
+		return ddlt.collOverride.ShardNum
+	}
+
 	// overwrite shardNum by request parameter
 	shardNum := ddlt.collBackup.GetShardsNum()
 	if ddlt.option.MaxShardNum > 0 && shardNum > ddlt.option.MaxShardNum {
@@ -313,6 +323,13 @@ func (ddlt *collDDLTask) shardNum() int32 {
 	}
 
 	return shardNum
+}
+
+func (ddlt *collDDLTask) description() string {
+	if ddlt.collOverride.Description != "" {
+		return ddlt.collOverride.Description
+	}
+	return ddlt.collBackup.GetSchema().GetDescription()
 }
 
 // partitionNum returns the partition number of the collection
