@@ -6,3 +6,10 @@ coverage:
     patch:
       default:
         target: 90%
+
+ignore:
+  - "**/*.py"
+  - "**/*.sh"
+  - "**/*.pb.go"
+  - "**/*_mock.go"
+  - "**/*_string.go"
