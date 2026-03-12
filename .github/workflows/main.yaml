@@ -846,7 +846,7 @@ jobs:
         deploy_tools: [docker-compose]
         milvus_mode: [standalone]
         image_tag: [master-latest, 2.6-latest]
-        case_tag: [L0, L1, L2, MASTER, RBAC]
+        case_tag: [L0, L1, L2, MASTER, RELEASE, RBAC]
         exclude:
           - image_tag: 2.6-latest
             case_tag: MASTER
@@ -889,7 +889,7 @@ jobs:
         shell: bash
         working-directory: deployment/${{ matrix.milvus_mode }}
         run: |
-          if [ ${{ matrix.case_tag }} == "MASTER" ]; then
+          if [ ${{ matrix.case_tag }} == "MASTER" ] || [ ${{ matrix.case_tag }} == "RELEASE" ]; then
             mv docker-compose-tei.yml docker-compose.yml
           fi
           if [ ${{ matrix.case_tag }} == "RBAC" ]; then
