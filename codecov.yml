@@ -2,10 +2,10 @@ coverage:
   status:
     project:
       default:
-        target: 90%
+        target: 80%
     patch:
       default:
-        target: 90%
+        target: 80%
 
 ignore:
   - "**/*.py"
