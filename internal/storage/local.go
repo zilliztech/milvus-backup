@@ -6,16 +6,30 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 var _ Client = (*LocalClient)(nil)
 
 type LocalClient struct {
-	config Config
+	config  Config
+	baseDir string // filepath.Join(localPath, bucket)
 }
 
 func newLocalClient(config Config) *LocalClient {
-	return &LocalClient{config: config}
+	return &LocalClient{
+		config:  config,
+		baseDir: filepath.Join(config.LocalPath, config.Bucket),
+	}
+}
+
+func (l *LocalClient) absPath(key string) string {
+	return filepath.Join(l.baseDir, key)
+}
+
+func (l *LocalClient) relPath(abs string) string {
+	prefix := l.baseDir + string(filepath.Separator)
+	return strings.TrimPrefix(abs, prefix)
 }
 
 func (l *LocalClient) Config() Config {
@@ -23,28 +37,31 @@ func (l *LocalClient) Config() Config {
 }
 
 func (l *LocalClient) CopyObject(_ context.Context, i CopyObjectInput) error {
-	_, ok := i.SrcCli.(*LocalClient)
+	srcCli, ok := i.SrcCli.(*LocalClient)
 	if !ok {
 		return fmt.Errorf("storage: local copy object only support local client")
 	}
 
-	srcDir := filepath.Dir(i.SrcAttr.Key)
+	srcAbs := srcCli.absPath(i.SrcAttr.Key)
+	destAbs := l.absPath(i.DestKey)
+
+	srcDir := filepath.Dir(srcAbs)
 	srcDirInfo, err := os.Stat(srcDir)
 	if err != nil {
 		return fmt.Errorf("storage: local copy object get src parent dir info %w", err)
 	}
-	destDir := filepath.Dir(i.DestKey)
+	destDir := filepath.Dir(destAbs)
 	err = os.MkdirAll(destDir, srcDirInfo.Mode())
 	if err != nil {
 		return fmt.Errorf("storage: local copy object create dest parent dir %w", err)
 	}
 
-	src, err := os.Open(i.SrcAttr.Key)
+	src, err := os.Open(srcAbs)
 	if err != nil {
 		return fmt.Errorf("storage: local copy object open src file %w", err)
 	}
 	defer src.Close()
-	dest, err := os.Create(i.DestKey)
+	dest, err := os.Create(destAbs)
 	if err != nil {
 		return fmt.Errorf("storage: local copy object create dest file %w", err)
 	}
@@ -54,12 +71,12 @@ func (l *LocalClient) CopyObject(_ context.Context, i CopyObjectInput) error {
 		return fmt.Errorf("storage: local copy object copy file %w", err)
 	}
 
-	srcStat, err := os.Stat(i.SrcAttr.Key)
+	srcStat, err := os.Stat(srcAbs)
 	if err != nil {
 		return fmt.Errorf("storage: local copy object get src file stat %w", err)
 	}
 
-	if err = os.Chmod(i.DestKey, srcStat.Mode()); err != nil {
+	if err = os.Chmod(destAbs, srcStat.Mode()); err != nil {
 		return fmt.Errorf("storage: local copy object chmod dest file %w", err)
 	}
 
@@ -67,7 +84,8 @@ func (l *LocalClient) CopyObject(_ context.Context, i CopyObjectInput) error {
 }
 
 func (l *LocalClient) HeadObject(_ context.Context, key string) (ObjectAttr, error) {
-	info, err := os.Stat(key)
+	abs := l.absPath(key)
+	info, err := os.Stat(abs)
 	if err != nil {
 		return ObjectAttr{}, fmt.Errorf("storage: local head object %w", err)
 	}
@@ -76,12 +94,13 @@ func (l *LocalClient) HeadObject(_ context.Context, key string) (ObjectAttr, err
 }
 
 func (l *LocalClient) GetObject(_ context.Context, key string) (*Object, error) {
-	info, err := os.Stat(key)
+	abs := l.absPath(key)
+	info, err := os.Stat(abs)
 	if err != nil {
 		return nil, fmt.Errorf("storage: local get object %w", err)
 	}
 
-	f, err := os.Open(key)
+	f, err := os.Open(abs)
 	if err != nil {
 		return nil, fmt.Errorf("storage: local get object %w", err)
 	}
@@ -90,12 +109,13 @@ func (l *LocalClient) GetObject(_ context.Context, key string) (*Object, error) 
 }
 
 func (l *LocalClient) UploadObject(_ context.Context, i UploadObjectInput) error {
-	dir := filepath.Dir(i.Key)
+	abs := l.absPath(i.Key)
+	dir := filepath.Dir(abs)
 	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
 		return fmt.Errorf("storage: local upload object %w", err)
 	}
 
-	f, err := os.Create(i.Key)
+	f, err := os.Create(abs)
 	if err != nil {
 		return fmt.Errorf("storage: local upload object %w", err)
 	}
@@ -127,8 +147,9 @@ func (l *localIterator) Next() (ObjectAttr, error) {
 }
 
 func (l *LocalClient) ListPrefix(_ context.Context, prefix string, recursive bool) (ObjectIterator, error) {
+	abs := l.absPath(prefix)
 	// check if prefix is a file
-	info, err := os.Stat(prefix)
+	info, err := os.Stat(abs)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return &localIterator{}, nil
@@ -143,9 +164,9 @@ func (l *LocalClient) ListPrefix(_ context.Context, prefix string, recursive boo
 
 	var entries []ObjectAttr
 	if recursive {
-		entries, err = l.listRecursive(prefix)
+		entries, err = l.listRecursive(abs)
 	} else {
-		entries, err = l.listNonRecursive(prefix)
+		entries, err = l.listNonRecursive(abs)
 	}
 	if err != nil {
 		return nil, err
@@ -153,9 +174,9 @@ func (l *LocalClient) ListPrefix(_ context.Context, prefix string, recursive boo
 	return &localIterator{entries: entries}, nil
 }
 
-func (l *LocalClient) listRecursive(prefix string) ([]ObjectAttr, error) {
+func (l *LocalClient) listRecursive(absPrefix string) ([]ObjectAttr, error) {
 	var entries []ObjectAttr
-	err := filepath.Walk(prefix, func(path string, info os.FileInfo, err error) error {
+	err := filepath.Walk(absPrefix, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
@@ -164,7 +185,7 @@ func (l *LocalClient) listRecursive(prefix string) ([]ObjectAttr, error) {
 			return nil
 		}
 
-		entries = append(entries, ObjectAttr{Key: path, Length: info.Size()})
+		entries = append(entries, ObjectAttr{Key: l.relPath(path), Length: info.Size()})
 
 		return nil
 	})
@@ -174,8 +195,8 @@ func (l *LocalClient) listRecursive(prefix string) ([]ObjectAttr, error) {
 	return entries, nil
 }
 
-func (l *LocalClient) listNonRecursive(prefix string) ([]ObjectAttr, error) {
-	infos, err := os.ReadDir(prefix)
+func (l *LocalClient) listNonRecursive(absPrefix string) ([]ObjectAttr, error) {
+	infos, err := os.ReadDir(absPrefix)
 	if err != nil {
 		return nil, fmt.Errorf("storage: local list prefix non recursive %w", err)
 	}
@@ -183,29 +204,41 @@ func (l *LocalClient) listNonRecursive(prefix string) ([]ObjectAttr, error) {
 	entries := make([]ObjectAttr, 0, len(infos))
 	for _, info := range infos {
 		var size int64
+		absPath := filepath.Join(absPrefix, info.Name())
 		if !info.IsDir() {
-			stat, err := os.Stat(filepath.Join(prefix, info.Name()))
+			stat, err := os.Stat(absPath)
 			if err != nil {
 				return nil, fmt.Errorf("storage: local list prefix %w", err)
 			}
 			size = stat.Size()
 		}
-		entries = append(entries, ObjectAttr{Key: filepath.Join(prefix, info.Name()), Length: size})
+		entries = append(entries, ObjectAttr{Key: l.relPath(absPath), Length: size})
 	}
 	return entries, nil
 }
 
 func (l *LocalClient) DeleteObject(_ context.Context, key string) error {
-	if err := os.Remove(key); err != nil {
+	abs := l.absPath(key)
+	if err := os.Remove(abs); err != nil {
 		return fmt.Errorf("storage: local delete prefix %w", err)
 	}
 	return nil
 }
 
 func (l *LocalClient) BucketExist(_ context.Context, _ string) (bool, error) {
+	_, err := os.Stat(l.baseDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("storage: local bucket exist %w", err)
+	}
 	return true, nil
 }
 
 func (l *LocalClient) CreateBucket(_ context.Context) error {
+	if err := os.MkdirAll(l.baseDir, os.ModePerm); err != nil {
+		return fmt.Errorf("storage: local create bucket %w", err)
+	}
 	return nil
 }

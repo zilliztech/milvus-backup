@@ -58,6 +58,10 @@ minio:
   bucketName: "a-bucket" # Milvus Bucket name in MinIO/S3, make it the same as your milvus instance
   rootPath: "files" # Milvus storage root path in MinIO/S3, make it the same as your milvus instance
 
+  # Local storage path, only used when storageType is "local".
+  # Should match Milvus localStorage.path. Full path: localPath/bucketName/key
+  localPath: ""
+
   # Backup storage configs, the storage you want to put the backup data
   backupStorageType: "minio" # support storage type: local, minio, s3, aws, gcp, ali(aliyun), azure, tc(tencent)
   backupAddress: localhost # Address of MinIO/S3
@@ -71,6 +75,10 @@ minio:
   backupBucketName: "a-bucket" # Bucket name to store backup data. Backup data will store to backupBucketName/backupRootPath
   backupRootPath: "backup" # Rootpath to store backup data. Backup data will store to backupBucketName/backupRootPath
   backupUseSSL: false # Access to MinIO/S3 with SSL
+
+  # Backup local storage path, only used when backupStorageType is "local".
+  # Defaults to localPath if not set. Full path: backupLocalPath/backupBucketName/key
+  backupLocalPath: ""
 
   # If you need to back up or restore data between two different storage systems, direct client-side copying is not supported.
   # Set this option to true to enable data transfer through Milvus Backup.
