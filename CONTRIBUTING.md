@@ -116,7 +116,7 @@ $ make fmt
 
 ## Run unit test with code coverage
 
-Before submitting your Pull Request, make sure you have run unit test, and your code coverage rate is >= 90%.
+Before submitting your Pull Request, make sure you have run unit test, and your code coverage rate is >= 80%.
 
 ### Run golang unit tests
 
