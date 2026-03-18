@@ -285,11 +285,13 @@ func (dmlt *collDMLTask) checkBulkInsertJob(ctx context.Context, jobID string) e
 		default:
 			currentProgress := resp.Data.Progress
 			if currentProgress > lastProgress {
+				lastProgress = currentProgress
 				lastUpdateTime = time.Now()
 			} else if time.Since(lastUpdateTime) >= _bulkInsertTimeout {
-				dmlt.logger.Warn("bulk insert task timeout", zap.String("job_id", jobID),
+				dmlt.logger.Warn("bulk insert task no progress for too long, may milvus is not healthy",
+					zap.String("job_id", jobID),
 					zap.Duration("timeout", _bulkInsertTimeout))
-				return errors.New("secondary: bulk insert timeout")
+				lastUpdateTime = time.Now()
 			}
 			continue
 		}

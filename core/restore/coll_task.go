@@ -716,11 +716,13 @@ func (ct *collTask) checkBulkInsertViaGrpc(ctx context.Context, jobID int64) err
 			currentProgress := getProcess(state.Infos)
 			ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.UpdateRestoreImportJob(ct.targetNS, strconv.FormatInt(jobID, 10), currentProgress))
 			if currentProgress > lastProgress {
+				lastProgress = currentProgress
 				lastUpdateTime = time.Now()
 			} else if time.Since(lastUpdateTime) >= _bulkInsertTimeout {
-				ct.logger.Warn("bulk insert task timeout", zap.Int64("job_id", jobID),
+				ct.logger.Warn("bulk insert task no progress for too long, may milvus is not healthy",
+					zap.Int64("job_id", jobID),
 					zap.Duration("timeout", _bulkInsertTimeout))
-				return errors.New("restore_collection: bulk insert timeout")
+				lastUpdateTime = time.Now()
 			}
 			continue
 		}
@@ -794,11 +796,13 @@ func (ct *collTask) checkBulkInsertViaRestful(ctx context.Context, jobID string)
 			currentProgress := resp.Data.Progress
 			ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.UpdateRestoreImportJob(ct.targetNS, jobID, currentProgress))
 			if currentProgress > lastProgress {
+				lastProgress = currentProgress
 				lastUpdateTime = time.Now()
 			} else if time.Since(lastUpdateTime) >= _bulkInsertTimeout {
-				ct.logger.Warn("bulk insert task timeout", zap.String("job_id", jobID),
+				ct.logger.Warn("bulk insert task no progress for too long, may milvus is not healthy",
+					zap.String("job_id", jobID),
 					zap.Duration("timeout", _bulkInsertTimeout))
-				return errors.New("restore_collection: bulk insert timeout")
+				lastUpdateTime = time.Now()
 			}
 			continue
 		}
