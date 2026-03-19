@@ -127,7 +127,7 @@ Below is a summary of the configurations supported in `backup.yaml`:
 |                   | `console`                       | Whether to print logs to the console.                                                                        | `true`                  |
 |                   | `file.rootPath`                 | Path to the log file.                                                                                        | `logs/backup.log`       |
 | `http`            | `enabled`                       | Whether to enable the HTTP server.                                                                           | `true`                  |
-|                   | `debug_mode`                    | Whether to enable Gin debug mode.                                                                            | `false`                 |
+|                   | `debugMode`                     | Whether to enable Gin debug mode.                                                                            | `false`                 |
 |                   | `swaggerBasePath`               | Override the Swagger UI base path. Useful when running behind a reverse proxy with a path prefix.            | (empty)                 |
 | `milvus`          | `address`                       | Milvus proxy address.                                                                                        | `localhost`             |
 |                   | `port`                          | Milvus proxy port.                                                                                           | `19530`                 |
