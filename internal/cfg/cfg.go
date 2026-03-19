@@ -112,7 +112,7 @@ type HTTPConfig struct {
 func newHTTPConfig() HTTPConfig {
 	return HTTPConfig{
 		Enabled:         Value[bool]{Default: true, Keys: []string{"http.enabled"}},
-		DebugMode:       Value[bool]{Default: false, Keys: []string{"http.debug_mode"}},
+		DebugMode:       Value[bool]{Default: false, Keys: []string{"http.debugMode"}},
 		SwaggerBasePath: Value[string]{Default: "", Keys: []string{"http.swaggerBasePath"}},
 	}
 }
