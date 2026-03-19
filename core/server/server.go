@@ -8,6 +8,7 @@ import (
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 
+	"github.com/zilliztech/milvus-backup/docs"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 )
 
@@ -49,6 +50,10 @@ func (s *Server) initEngine() {
 	pprof.Register(engine)
 
 	s.engine = engine
+
+	if bp := s.params.HTTP.SwaggerBasePath.Val; bp != "" {
+		docs.SwaggerInfo.BasePath = bp
+	}
 
 	engine.Any("", s.handleHello)
 

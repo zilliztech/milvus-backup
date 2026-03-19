@@ -104,19 +104,21 @@ func (c *LogConfig) Resolve(s *source) error {
 }
 
 type HTTPConfig struct {
-	Enabled   Value[bool]
-	DebugMode Value[bool]
+	Enabled         Value[bool]
+	DebugMode       Value[bool]
+	SwaggerBasePath Value[string]
 }
 
 func newHTTPConfig() HTTPConfig {
 	return HTTPConfig{
-		Enabled:   Value[bool]{Default: true, Keys: []string{"http.enabled"}},
-		DebugMode: Value[bool]{Default: false, Keys: []string{"http.debug_mode"}},
+		Enabled:         Value[bool]{Default: true, Keys: []string{"http.enabled"}},
+		DebugMode:       Value[bool]{Default: false, Keys: []string{"http.debug_mode"}},
+		SwaggerBasePath: Value[string]{Default: "", Keys: []string{"http.swaggerBasePath"}},
 	}
 }
 
 func (c *HTTPConfig) Resolve(s *source) error {
-	return resolve(s, &c.Enabled, &c.DebugMode)
+	return resolve(s, &c.Enabled, &c.DebugMode, &c.SwaggerBasePath)
 }
 
 type CloudConfig struct {
