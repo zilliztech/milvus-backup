@@ -126,7 +126,9 @@ Below is a summary of the configurations supported in `backup.yaml`:
 | `log`             | `level`                         | Logging level. Supported: `debug`, `info`, `warn`, `error`, `panic`, `fatal`.                                | `info`                  |
 |                   | `console`                       | Whether to print logs to the console.                                                                        | `true`                  |
 |                   | `file.rootPath`                 | Path to the log file.                                                                                        | `logs/backup.log`       |
-| `http`            | `simpleResponse`                | Whether to enable simple HTTP responses.                                                                     | `true`                  |
+| `http`            | `enabled`                       | Whether to enable the HTTP server.                                                                           | `true`                  |
+|                   | `debug_mode`                    | Whether to enable Gin debug mode.                                                                            | `false`                 |
+|                   | `swaggerBasePath`               | Override the Swagger UI base path. Useful when running behind a reverse proxy with a path prefix.            | (empty)                 |
 | `milvus`          | `address`                       | Milvus proxy address.                                                                                        | `localhost`             |
 |                   | `port`                          | Milvus proxy port.                                                                                           | `19530`                 |
 |                   | `user`                          | Username for Milvus.                                                                                         | `root`                  |

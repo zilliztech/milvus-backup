@@ -2,7 +2,6 @@ package server
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/gin-contrib/pprof"
 	"github.com/gin-gonic/gin"
@@ -52,7 +51,7 @@ func (s *Server) initEngine() {
 
 	s.engine = engine
 
-	if bp := os.Getenv("SWAGGER_BASE_PATH"); bp != "" {
+	if bp := s.params.HTTP.SwaggerBasePath.Val; bp != "" {
 		docs.SwaggerInfo.BasePath = bp
 	}
 
