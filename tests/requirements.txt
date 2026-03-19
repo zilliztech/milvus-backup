@@ -56,4 +56,4 @@ ml-dtypes==0.2.0
 bm25s==0.2.0
 jieba==0.42.1
 
-deepdiff == 8.6.1
+deepdiff == 8.6.2
