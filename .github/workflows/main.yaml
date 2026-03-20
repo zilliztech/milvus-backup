@@ -955,7 +955,7 @@ jobs:
           yq -i '.minio.storageType = "local"' configs/backup.yaml
           yq -i '.minio.localPath = "deployment/standalone/volumes/milvus/data"' configs/backup.yaml
           yq -i '.minio.bucketName = ""' configs/backup.yaml
-          yq -i '.minio.rootPath = "files"' configs/backup.yaml
+          yq -i '.minio.rootPath = ""' configs/backup.yaml
           yq -i '.minio.backupStorageType = "local"' configs/backup.yaml
           yq -i '.minio.backupLocalPath = "deployment/standalone/volumes/backup"' configs/backup.yaml
           yq -i '.minio.backupBucketName = ""' configs/backup.yaml

@@ -59,7 +59,9 @@ minio:
   rootPath: "files" # Milvus storage root path in MinIO/S3, make it the same as your milvus instance
 
   # Local storage path, only used when storageType is "local".
-  # Should match Milvus localStorage.path. Full path: localPath/bucketName/key
+  # Should match Milvus localStorage.path. Full path: localPath/bucketName/key.
+  # In local mode, set bucketName and rootPath to empty since Milvus local storage
+  # does not use them — files are stored directly under localStorage.path.
   localPath: ""
 
   # Backup storage configs, the storage you want to put the backup data

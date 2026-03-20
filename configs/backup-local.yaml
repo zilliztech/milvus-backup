@@ -6,14 +6,13 @@
 # The official script runs:
 #   docker run ... -e COMMON_STORAGETYPE=local -v $(pwd)/volumes/milvus:/var/lib/milvus ...
 #
-# In local storage mode, Milvus writes data under localStorage.path with rootPath prefix
-# but without bucket prefix:
-#   volumes/milvus/data / <rootPath> / insert_log / <collID> / ...
-#   volumes/milvus/data / files       / insert_log / 123      / ...
+# In local storage mode, Milvus uses localStorage.path as the chunk manager root.
+# Unlike remote mode, minio.rootPath ("files") is NOT used as a path prefix.
+# Files are stored directly under localStorage.path:
+#   /var/lib/milvus/data / insert_log / <collID> / ...
 #
 # Set localPath to the HOST path that maps to Milvus localStorage.path.
-# Set bucketName to empty (local storage does not use bucket).
-# Set rootPath to match Milvus minio.rootPath (default: "files").
+# Set bucketName and rootPath to empty (not used in local storage mode).
 
 log:
   level: info
@@ -24,11 +23,11 @@ milvus:
   port: 19530
 
 minio:
-  # Milvus storage — match your Milvus minio config
+  # Milvus storage — match your Milvus local storage config
   storageType: "local"
   localPath: "volumes/milvus/data"      # host path to Milvus localStorage.path
   bucketName: ""                          # not used in local storage mode
-  rootPath: "files"                       # Milvus minio.rootPath (default)
+  rootPath: ""                            # not used in local storage mode
 
   # Backup storage
   backupStorageType: "local"
