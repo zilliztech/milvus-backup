@@ -960,6 +960,7 @@ jobs:
           yq -i '.minio.backupLocalPath = "deployment/standalone/volumes/backup"' configs/backup.yaml
           yq -i '.minio.backupBucketName = ""' configs/backup.yaml
           yq -i '.minio.backupRootPath = "backup"' configs/backup.yaml
+          yq -i '.minio.crossStorage = true' configs/backup.yaml
           cat configs/backup.yaml
 
       - name: Prepare data
