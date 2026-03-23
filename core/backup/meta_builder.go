@@ -196,9 +196,23 @@ func (builder *metaBuilder) buildCollectionMeta() ([]byte, error) {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
 
-	// TODO: don't know why we need segment info in collection meta. maybe just a bug.
-	// we should remove it in the future.
-	info := &backuppb.CollectionLevelBackupInfo{Infos: builder.data.GetCollectionBackups()}
+	// Shallow-copy each collection, keep partition metadata but strip all segment data.
+	// Segments are stored separately in segment_meta.json and full_meta.json.
+	stripped := make([]*backuppb.CollectionBackupInfo, 0, len(builder.data.GetCollectionBackups()))
+	for _, coll := range builder.data.GetCollectionBackups() {
+		c := *coll
+		c.L0Segments = nil
+		strippedParts := make([]*backuppb.PartitionBackupInfo, 0, len(coll.GetPartitionBackups()))
+		for _, part := range coll.GetPartitionBackups() {
+			p := *part
+			p.SegmentBackups = nil
+			strippedParts = append(strippedParts, &p)
+		}
+		c.PartitionBackups = strippedParts
+		stripped = append(stripped, &c)
+	}
+
+	info := &backuppb.CollectionLevelBackupInfo{Infos: stripped}
 	data, err := json.Marshal(info)
 	if err != nil {
 		return nil, fmt.Errorf("backup: build collection meta: %w", err)
@@ -211,10 +225,14 @@ func (builder *metaBuilder) buildPartitionMeta() ([]byte, error) {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
 
-	collections := builder.data.GetCollectionBackups()
-	partitions := make([]*backuppb.PartitionBackupInfo, 0, len(collections))
-	for _, collection := range collections {
-		partitions = append(partitions, collection.GetPartitionBackups()...)
+	// Shallow-copy each partition and strip nested segment data.
+	partitions := make([]*backuppb.PartitionBackupInfo, 0)
+	for _, coll := range builder.data.GetCollectionBackups() {
+		for _, part := range coll.GetPartitionBackups() {
+			p := *part
+			p.SegmentBackups = nil
+			partitions = append(partitions, &p)
+		}
 	}
 
 	info := &backuppb.PartitionLevelBackupInfo{Infos: partitions}
