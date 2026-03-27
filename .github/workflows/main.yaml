@@ -14,6 +14,9 @@ on:
 
 env:
   go-version: 1.25
+  # Pinned to last working master image before milvus-io/milvus#48477 (PR #48005 broke insert_log path).
+  # Revert to master-latest once the issue is fixed.
+  MILVUS_MASTER_IMAGE_TAG: master-20260322-aed7c8bc
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
@@ -65,7 +68,7 @@ jobs:
         milvus_mode: [standalone]
         another_milvus_mode: [standalone]
         source_image_tag: [v2.2.16, v2.3.22, v2.4.23, v2.5.20, 2.6-latest]
-        target_image_tag: [master-latest, 2.6-latest]
+        target_image_tag: [master-20260322-aed7c8bc, 2.6-latest]
         exclude:
           - source_image_tag: 2.6-latest
             target_image_tag: 2.6-latest
@@ -176,7 +179,7 @@ jobs:
         run: |
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.target_image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
-          if [ "${{ matrix.target_image_tag }}" == "master-latest" ]; then
+          if [ "${{ matrix.target_image_tag }}" == "master-20260322-aed7c8bc" ]; then
             yq -i '.common.storage.enablev2 = true' custom_config.yaml
             yq -i '.common.storage.useLoonFFI = false' custom_config.yaml
           fi
@@ -235,7 +238,7 @@ jobs:
         milvus_mode: [standalone]
         another_milvus_mode: [standalone]
         source_image_tag: [2.5-latest, 2.5-latest]
-        target_image_tag: [master-latest, 2.6-latest]
+        target_image_tag: [master-20260322-aed7c8bc, 2.6-latest]
         exclude:
           - source_image_tag: 2.6-latest
             target_image_tag: 2.6-latest
@@ -308,7 +311,7 @@ jobs:
           sudo docker compose -f docker-compose.yml down
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.target_image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
-          if [ "${{ matrix.target_image_tag }}" == "master-latest" ]; then
+          if [ "${{ matrix.target_image_tag }}" == "master-20260322-aed7c8bc" ]; then
             yq -i '.common.storage.enablev2 = true' custom_config.yaml
             yq -i '.common.storage.useLoonFFI = false' custom_config.yaml
           fi
@@ -366,7 +369,7 @@ jobs:
         deploy_tools: [docker-compose]
         milvus_mode: [standalone]
         another_milvus_mode: [standalone]
-        image_tag: [master-latest]
+        image_tag: [master-20260322-aed7c8bc]
         # mq_type: [pulsar, kafka]  # TODO: add pulsar and kafka
 
     steps:
@@ -406,7 +409,7 @@ jobs:
         run: |
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
-          if [ "${{ matrix.image_tag }}" == "master-latest" ]; then
+          if [ "${{ matrix.image_tag }}" == "master-20260322-aed7c8bc" ]; then
             yq -i '.common.storage.enablev2 = true' custom_config.yaml
             yq -i '.common.storage.useLoonFFI = false' custom_config.yaml
           fi
@@ -529,7 +532,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        image_tag: [master-latest]
+        image_tag: [master-20260322-aed7c8bc]
 
     steps:
       - uses: actions/checkout@v6
@@ -569,7 +572,7 @@ jobs:
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
           yq -i ".services.upstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
           yq -i ".services.downstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
-          if [ "${{ matrix.image_tag }}" == "master-latest" ]; then
+          if [ "${{ matrix.image_tag }}" == "master-20260322-aed7c8bc" ]; then
             yq -i '.common.storage.useLoonFFI = false' upstream.yaml
             yq -i '.common.storage.useLoonFFI = false' downstream.yaml
           fi
@@ -699,7 +702,7 @@ jobs:
       matrix:
         deploy_tools: [helm]
         milvus_mode: [standalone]
-        image_tag: [master-latest]
+        image_tag: [master-20260322-aed7c8bc]
 
     steps:
       - uses: actions/checkout@v6
@@ -751,7 +754,7 @@ jobs:
             helm repo update
             tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
             yq -i ".image.all.tag=\"${tag}\"" rbac-values.yaml
-            if [ "${{ matrix.image_tag }}" == "master-latest" ]; then
+            if [ "${{ matrix.image_tag }}" == "master-20260322-aed7c8bc" ]; then
               yq -i '.extraConfigFiles."user.yaml" += "  storage:\n    useLoonFFI: false\n"' rbac-values.yaml
             fi
             helm install --wait --debug --timeout 600s milvus-backup milvus/milvus -f rbac-values.yaml
@@ -845,7 +848,7 @@ jobs:
       matrix:
         deploy_tools: [docker-compose]
         milvus_mode: [standalone]
-        image_tag: [master-latest, 2.6-latest]
+        image_tag: [master-20260322-aed7c8bc, 2.6-latest]
         case_tag: [L0, L1, L2, MASTER, RELEASE, RBAC]
         exclude:
           - image_tag: 2.6-latest
@@ -897,7 +900,7 @@ jobs:
           fi
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
-          if [ "${{ matrix.image_tag }}" == "master-latest" ]; then
+          if [ "${{ matrix.image_tag }}" == "master-20260322-aed7c8bc" ]; then
             yq -i '.common.storage.enablev2 = true' custom_config.yaml
             yq -i '.common.storage.useLoonFFI = false' custom_config.yaml
           fi
