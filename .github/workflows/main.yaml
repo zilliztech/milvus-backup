@@ -957,3 +957,27 @@ jobs:
           path: |
             /tmp/ci_logs
             deployment/${{ matrix.milvus_mode }}/logs
+
+  ci-summary:
+    name: CI summary
+    if: always()
+    needs:
+      - lint
+      - unit-test-go
+      - test-backup-restore-cross-version
+      - test-backup-restore-after-upgrade
+      - test-backup-restore-cli
+      - test-backup-restore-secondary
+      - test-backup-restore-with-rbac-config
+      - test-backup-restore-api
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check results
+        run: |
+          results=( ${{ join(needs.*.result, ' ') }} )
+          for r in "${results[@]}"; do
+            if [[ "$r" != "success" && "$r" != "skipped" ]]; then
+              echo "Job failed with status: $r"
+              exit 1
+            fi
+          done
