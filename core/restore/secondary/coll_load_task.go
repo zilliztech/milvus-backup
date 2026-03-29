@@ -4,6 +4,7 @@ import (
 	"context"
 	"math/rand/v2"
 	"sort"
+	"sync"
 
 	"github.com/milvus-io/milvus/pkg/v2/proto/messagespb"
 	"github.com/milvus-io/milvus/pkg/v2/streaming/util/message"
@@ -25,6 +26,7 @@ type loadTaskArgs struct {
 
 	StreamCli milvus.Stream
 	TSAlloc   *tsAlloc
+	SendMu    *sync.Mutex
 }
 
 type collLoadTask struct {
@@ -35,6 +37,7 @@ type collLoadTask struct {
 	collBackup *backuppb.CollectionBackupInfo
 
 	tsAlloc *tsAlloc
+	sendMu  *sync.Mutex
 
 	streamCli milvus.Stream
 	logger    *zap.Logger
@@ -51,6 +54,7 @@ func newCollLoadTask(args loadTaskArgs, dbBackup *backuppb.DatabaseBackupInfo, c
 		collBackup: collBackup,
 
 		tsAlloc: args.TSAlloc,
+		sendMu:  args.SendMu,
 
 		streamCli: args.StreamCli,
 		logger:    log.With(zap.String("task_id", args.TaskID), zap.String("ns", ns.String())),
@@ -74,6 +78,10 @@ func (clt *collLoadTask) Execute(ctx context.Context) error {
 
 	broadcast := builder.MustBuildBroadcast().WithBroadcastID(rand.Uint64())
 	msgs := broadcast.SplitIntoMutableMessage()
+
+	clt.sendMu.Lock()
+	defer clt.sendMu.Unlock()
+
 	for _, msg := range msgs {
 		ts := clt.tsAlloc.Alloc()
 		immutableMessage := msg.WithTimeTick(ts).

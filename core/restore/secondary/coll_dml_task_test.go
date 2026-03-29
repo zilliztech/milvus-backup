@@ -123,6 +123,7 @@ func newTestDMLTask(t *testing.T, collBackup *backuppb.CollectionBackupInfo, str
 
 	return &collDMLTask{
 		tsAlloc:       newTTAlloc(),
+		sendMu:        &sync.Mutex{},
 		pchTS:         newTestPchTS(vchannels),
 		collBackup:    collBackup,
 		backupStorage: storageMock,
