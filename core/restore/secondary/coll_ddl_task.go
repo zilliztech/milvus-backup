@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand/v2"
+	"sync"
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus/pkg/v2/common"
@@ -28,6 +29,7 @@ type collDDLTask struct {
 	collBackup *backuppb.CollectionBackupInfo
 
 	tsAlloc *tsAlloc
+	sendMu  *sync.Mutex
 
 	streamCli milvus.Stream
 	logger    *zap.Logger
@@ -40,6 +42,7 @@ type ddlTaskArgs struct {
 
 	StreamCli milvus.Stream
 	TSAlloc   *tsAlloc
+	SendMu    *sync.Mutex
 }
 
 func newCollDDLTask(args ddlTaskArgs, dbBackup *backuppb.DatabaseBackupInfo, collBackup *backuppb.CollectionBackupInfo) *collDDLTask {
@@ -53,6 +56,7 @@ func newCollDDLTask(args ddlTaskArgs, dbBackup *backuppb.DatabaseBackupInfo, col
 		collBackup: collBackup,
 
 		tsAlloc: args.TSAlloc,
+		sendMu:  args.SendMu,
 
 		streamCli: args.StreamCli,
 		logger:    log.With(zap.String("task_id", args.TaskID), zap.String("ns", ns.String())),
@@ -114,6 +118,9 @@ func (ddlt *collDDLTask) createIndex(ctx context.Context, index *backuppb.IndexI
 	broadcast := builder.MustBuildBroadcast().WithBroadcastID(rand.Uint64())
 	msgs := broadcast.SplitIntoMutableMessage()
 
+	ddlt.sendMu.Lock()
+	defer ddlt.sendMu.Unlock()
+
 	for _, msg := range msgs {
 		ts := ddlt.tsAlloc.Alloc()
 		immutableMessage := msg.WithTimeTick(ts).
@@ -162,6 +169,9 @@ func (ddlt *collDDLTask) createColl(ctx context.Context) error {
 	appendDynamicField(schema)
 
 	ddlt.logger.Info("collection schema", zap.Any("schema", schema))
+
+	ddlt.sendMu.Lock()
+	defer ddlt.sendMu.Unlock()
 
 	req := &message.CreateCollectionRequest{
 		Base: &commonpb.MsgBase{
