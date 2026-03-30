@@ -61,8 +61,11 @@ func TestRemoteCopier_Copy(t *testing.T) {
 		dest.EXPECT().CopyObject(mock.Anything, in).Return(nil).Once()
 		dest.EXPECT().HeadObject(mock.Anything, "c/d").Return(ObjectAttr{}, assert.AnError).Once()
 
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
 		attr := CopyAttr{Src: ObjectAttr{Key: "a/b", Length: 5}, DestKey: "c/d"}
-		err := rp.copy(context.Background(), attr)
+		err := rp.copy(ctx, attr)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "verify copy")
 	})
@@ -76,8 +79,11 @@ func TestRemoteCopier_Copy(t *testing.T) {
 		dest.EXPECT().CopyObject(mock.Anything, in).Return(nil).Once()
 		dest.EXPECT().HeadObject(mock.Anything, "c/d").Return(ObjectAttr{Key: "c/d", Length: 3}, nil).Once()
 
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
 		attr := CopyAttr{Src: ObjectAttr{Key: "a/b", Length: 5}, DestKey: "c/d"}
-		err := rp.copy(context.Background(), attr)
+		err := rp.copy(ctx, attr)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "size mismatch")
 	})
