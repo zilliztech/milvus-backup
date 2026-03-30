@@ -52,6 +52,83 @@ func TestRemoteCopier_Copy(t *testing.T) {
 		assert.NoError(t, err)
 	})
 
+	t.Run("CopyObjectError", func(t *testing.T) {
+		dest := NewMockClient(t)
+		src := NewMockClient(t)
+		rp := &remoteCopier{src: src, dest: dest, logger: zap.NewNop()}
+
+		in := CopyObjectInput{SrcCli: src, SrcAttr: ObjectAttr{Key: "a/b", Length: 5}, DestKey: "c/d"}
+		dest.EXPECT().CopyObject(mock.Anything, in).Return(assert.AnError).Once()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		attr := CopyAttr{Src: ObjectAttr{Key: "a/b", Length: 5}, DestKey: "c/d"}
+		err := rp.copy(ctx, attr)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "copy object")
+	})
+
+	t.Run("RetryThenSuccess", func(t *testing.T) {
+		dest := NewMockClient(t)
+		src := NewMockClient(t)
+		rp := &remoteCopier{src: src, dest: dest, logger: zap.NewNop()}
+
+		in := CopyObjectInput{SrcCli: src, SrcAttr: ObjectAttr{Key: "a/b", Length: 5}, DestKey: "c/d"}
+		dest.EXPECT().CopyObject(mock.Anything, in).Return(assert.AnError).Once()
+		dest.EXPECT().CopyObject(mock.Anything, in).Return(nil).Once()
+		dest.EXPECT().HeadObject(mock.Anything, "c/d").Return(ObjectAttr{Key: "c/d", Length: 5}, nil).Once()
+
+		attr := CopyAttr{Src: ObjectAttr{Key: "a/b", Length: 5}, DestKey: "c/d"}
+		err := rp.copy(context.Background(), attr)
+		assert.NoError(t, err)
+	})
+
+	t.Run("SuccessWithTraceFn", func(t *testing.T) {
+		dest := NewMockClient(t)
+		src := NewMockClient(t)
+
+		var traced bool
+		rp := &remoteCopier{src: src, dest: dest, logger: zap.NewNop(), opt: copierOpt{
+			traceFn: func(size int64, cost time.Duration) {
+				traced = true
+				assert.Equal(t, int64(5), size)
+			},
+		}}
+
+		in := CopyObjectInput{SrcCli: src, SrcAttr: ObjectAttr{Key: "a/b", Length: 5}, DestKey: "c/d"}
+		dest.EXPECT().CopyObject(mock.Anything, in).Return(nil).Once()
+		dest.EXPECT().HeadObject(mock.Anything, "c/d").Return(ObjectAttr{Key: "c/d", Length: 5}, nil).Once()
+
+		attr := CopyAttr{Src: ObjectAttr{Key: "a/b", Length: 5}, DestKey: "c/d"}
+		err := rp.copy(context.Background(), attr)
+		assert.NoError(t, err)
+		assert.True(t, traced)
+	})
+
+	t.Run("ErrorNoTraceFn", func(t *testing.T) {
+		dest := NewMockClient(t)
+		src := NewMockClient(t)
+
+		var traced bool
+		rp := &remoteCopier{src: src, dest: dest, logger: zap.NewNop(), opt: copierOpt{
+			traceFn: func(size int64, cost time.Duration) {
+				traced = true
+			},
+		}}
+
+		in := CopyObjectInput{SrcCli: src, SrcAttr: ObjectAttr{Key: "a/b", Length: 5}, DestKey: "c/d"}
+		dest.EXPECT().CopyObject(mock.Anything, in).Return(assert.AnError).Once()
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		attr := CopyAttr{Src: ObjectAttr{Key: "a/b", Length: 5}, DestKey: "c/d"}
+		err := rp.copy(ctx, attr)
+		assert.Error(t, err)
+		assert.False(t, traced)
+	})
+
 	t.Run("HeadObjectError", func(t *testing.T) {
 		dest := NewMockClient(t)
 		src := NewMockClient(t)
