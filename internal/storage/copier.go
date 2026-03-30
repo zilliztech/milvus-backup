@@ -60,16 +60,12 @@ type remoteCopier struct {
 func (rp *remoteCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
 	rp.logger.Debug("copy object", zap.String("src", copyAttr.Src.Key), zap.String("dest", copyAttr.DestKey))
 
-	return retry.Do(ctx, func() error {
+	start := time.Now()
+	err := retry.Do(ctx, func() error {
 		i := CopyObjectInput{SrcCli: rp.src, SrcAttr: copyAttr.Src, DestKey: copyAttr.DestKey}
 
-		start := time.Now()
 		if err := rp.dest.CopyObject(ctx, i); err != nil {
 			return fmt.Errorf("storage: remote copier copy object %w", err)
-		}
-		if rp.opt.traceFn != nil {
-			cost := time.Since(start)
-			rp.opt.traceFn(copyAttr.Src.Length, cost)
 		}
 
 		attr, err := rp.dest.HeadObject(ctx, copyAttr.DestKey)
@@ -82,6 +78,12 @@ func (rp *remoteCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
 
 		return nil
 	})
+
+	if err == nil && rp.opt.traceFn != nil {
+		rp.opt.traceFn(copyAttr.Src.Length, time.Since(start))
+	}
+
+	return err
 }
 
 // serverCopier copy data from src to dest by backup server
