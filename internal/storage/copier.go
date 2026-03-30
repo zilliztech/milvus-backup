@@ -59,26 +59,31 @@ type remoteCopier struct {
 
 func (rp *remoteCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
 	rp.logger.Debug("copy object", zap.String("src", copyAttr.Src.Key), zap.String("dest", copyAttr.DestKey))
-	i := CopyObjectInput{SrcCli: rp.src, SrcAttr: copyAttr.Src, DestKey: copyAttr.DestKey}
 
 	start := time.Now()
-	if err := rp.dest.CopyObject(ctx, i); err != nil {
-		return fmt.Errorf("storage: remote copier copy object %w", err)
-	}
-	if rp.opt.traceFn != nil {
-		cost := time.Since(start)
-		rp.opt.traceFn(copyAttr.Src.Length, cost)
+	err := retry.Do(ctx, func() error {
+		i := CopyObjectInput{SrcCli: rp.src, SrcAttr: copyAttr.Src, DestKey: copyAttr.DestKey}
+
+		if err := rp.dest.CopyObject(ctx, i); err != nil {
+			return fmt.Errorf("storage: remote copier copy object %w", err)
+		}
+
+		attr, err := rp.dest.HeadObject(ctx, copyAttr.DestKey)
+		if err != nil {
+			return fmt.Errorf("storage: remote copier verify copy: %w", err)
+		}
+		if attr.Length != copyAttr.Src.Length {
+			return fmt.Errorf("storage: remote copier size mismatch, src=%d dest=%d", copyAttr.Src.Length, attr.Length)
+		}
+
+		return nil
+	})
+
+	if err == nil && rp.opt.traceFn != nil {
+		rp.opt.traceFn(copyAttr.Src.Length, time.Since(start))
 	}
 
-	attr, err := rp.dest.HeadObject(ctx, copyAttr.DestKey)
-	if err != nil {
-		return fmt.Errorf("storage: remote copier verify copy: %w", err)
-	}
-	if attr.Length != copyAttr.Src.Length {
-		return fmt.Errorf("storage: remote copier size mismatch, src=%d dest=%d", copyAttr.Src.Length, attr.Length)
-	}
-
-	return nil
+	return err
 }
 
 // serverCopier copy data from src to dest by backup server
