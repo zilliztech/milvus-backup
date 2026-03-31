@@ -5,11 +5,13 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math/rand/v2"
+	"sync"
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
 	"github.com/milvus-io/milvus/pkg/v2/streaming/util/message"
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/zilliztech/milvus-backup/core/restore/conv"
@@ -46,6 +48,7 @@ type Task struct {
 	restful milvus.Restful
 
 	tsAlloc *tsAlloc
+	sendMu  sync.Mutex
 
 	streamCli milvus.Stream
 
@@ -182,6 +185,7 @@ func (t *Task) dmlTaskArgs() (dmlTaskArgs, error) {
 		TaskID: t.args.TaskID,
 
 		TSAlloc: t.tsAlloc,
+		SendMu:  &t.sendMu,
 
 		PchTS: pchTS,
 
@@ -199,6 +203,7 @@ func (t *Task) ddlTaskArgs() ddlTaskArgs {
 		BackupInfo: t.args.Backup,
 		StreamCli:  t.streamCli,
 		TSAlloc:    t.tsAlloc,
+		SendMu:     &t.sendMu,
 	}
 }
 
@@ -236,6 +241,7 @@ func (t *Task) loadTaskArgs() loadTaskArgs {
 		BackupInfo: t.args.Backup,
 		StreamCli:  t.streamCli,
 		TSAlloc:    t.tsAlloc,
+		SendMu:     &t.sendMu,
 	}
 }
 
@@ -251,13 +257,16 @@ func (t *Task) runCollTasks(ctx context.Context) error {
 	}
 	ddlArgs := t.ddlTaskArgs()
 	loadArgs := t.loadTaskArgs()
+
+	g, subCtx := errgroup.WithContext(ctx)
+	g.SetLimit(t.args.Params.Backup.Parallelism.RestoreCollection.Val)
 	for _, coll := range t.args.Backup.GetCollectionBackups() {
-		if err := t.runCollTask(ctx, dbNameBackup[coll.GetDbName()], coll, ddlArgs, dmlArgs, loadArgs); err != nil {
-			return fmt.Errorf("secondary: run collection task: %w", err)
-		}
+		g.Go(func() error {
+			return t.runCollTask(subCtx, dbNameBackup[coll.GetDbName()], coll, ddlArgs, dmlArgs, loadArgs)
+		})
 	}
 
-	return nil
+	return g.Wait()
 }
 
 func (t *Task) sendRBACMsg(ctx context.Context) error {

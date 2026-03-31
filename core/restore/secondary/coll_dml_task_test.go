@@ -2,6 +2,7 @@ package secondary
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"testing"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
@@ -123,6 +125,7 @@ func newTestDMLTask(t *testing.T, collBackup *backuppb.CollectionBackupInfo, str
 
 	return &collDMLTask{
 		tsAlloc:       newTTAlloc(),
+		sendMu:        &sync.Mutex{},
 		pchTS:         newTestPchTS(vchannels),
 		collBackup:    collBackup,
 		backupStorage: storageMock,
@@ -228,6 +231,91 @@ func TestExecute_EmptyPartitions(t *testing.T) {
 	err := task.Execute(context.Background())
 	assert.NoError(t, err)
 	assert.Empty(t, stream.msgs, "no messages should be sent for empty partitions")
+}
+
+// TestConcurrentCollections_TimestampOrderingPerPch verifies that when multiple
+// collections are restored concurrently and share the same physical channels,
+// the sendMu ensures per-pch timestamps remain strictly increasing.
+func TestConcurrentCollections_TimestampOrderingPerPch(t *testing.T) {
+	// Shared resources — simulating what Task provides to all collection tasks.
+	tsAlloc := newTTAlloc()
+	sendMu := &sync.Mutex{}
+	stream := &recordingStream{}
+
+	storageMock := storage.NewMockClient(t)
+	storageMock.EXPECT().
+		ListPrefix(mock.Anything, mock.Anything, false).
+		Return(storage.NewMockObjectIterator(nil), nil).
+		Maybe()
+
+	// Create 4 collections with different vchannels mapping to the same 2 pchs.
+	numColls := 4
+	tasks := make([]*collDMLTask, numColls)
+	for i := range numColls {
+		collID := int64(100 + i)
+		vchannels := []string{
+			fmt.Sprintf("rootcoord-dml_0_%dv0", collID),
+			fmt.Sprintf("rootcoord-dml_1_%dv0", collID),
+		}
+
+		partitions := []*backuppb.PartitionBackupInfo{
+			{
+				PartitionId:   collID*10 + 1,
+				PartitionName: fmt.Sprintf("part_%d_1", collID),
+				SegmentBackups: []*backuppb.SegmentBackupInfo{
+					{PartitionId: collID*10 + 1, VChannel: vchannels[0], GroupId: collID*100 + 1, Size: 100, StorageVersion: 2},
+					{PartitionId: collID*10 + 1, VChannel: vchannels[1], GroupId: collID*100 + 2, Size: 100, StorageVersion: 2},
+					{PartitionId: collID*10 + 1, VChannel: vchannels[0], GroupId: collID*100 + 3, Size: 100, IsL0: true, StorageVersion: 2},
+				},
+			},
+			{
+				PartitionId:   collID*10 + 2,
+				PartitionName: fmt.Sprintf("part_%d_2", collID),
+				SegmentBackups: []*backuppb.SegmentBackupInfo{
+					{PartitionId: collID*10 + 2, VChannel: vchannels[0], GroupId: collID*100 + 4, Size: 100, StorageVersion: 2},
+					{PartitionId: collID*10 + 2, VChannel: vchannels[1], GroupId: collID*100 + 5, Size: 100, StorageVersion: 2},
+				},
+			},
+		}
+
+		collBackup := &backuppb.CollectionBackupInfo{
+			CollectionId:        collID,
+			DbName:              "default",
+			CollectionName:      fmt.Sprintf("coll_%d", collID),
+			Schema:              newTestSchema(),
+			VirtualChannelNames: vchannels,
+			PartitionBackups:    partitions,
+		}
+
+		tasks[i] = &collDMLTask{
+			tsAlloc:       tsAlloc,
+			sendMu:        sendMu,
+			pchTS:         newTestPchTS(vchannels),
+			collBackup:    collBackup,
+			backupStorage: storageMock,
+			backupDir:     "/backup",
+			streamCli:     stream,
+			restfulCli:    &completedRestful{},
+			logger:        zap.NewNop(),
+		}
+	}
+
+	// Run all collection DML tasks concurrently.
+	g, ctx := errgroup.WithContext(context.Background())
+	for _, task := range tasks {
+		g.Go(func() error {
+			return task.Execute(ctx)
+		})
+	}
+	assert.NoError(t, g.Wait())
+
+	// Verify: per physical channel, timestamps must be strictly increasing.
+	for pch, tss := range stream.timestampsByPch() {
+		for i := 1; i < len(tss); i++ {
+			assert.Greater(t, tss[i], tss[i-1],
+				"timestamps on pch %s should be strictly increasing, got %v", pch, tss)
+		}
+	}
 }
 
 func TestSendBatches(t *testing.T) {

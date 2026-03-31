@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
@@ -80,6 +81,7 @@ type dmlTaskArgs struct {
 	TaskID string
 
 	TSAlloc *tsAlloc
+	SendMu  *sync.Mutex
 
 	PchTS map[string]uint64
 
@@ -94,6 +96,7 @@ type collDMLTask struct {
 	taskID string
 
 	tsAlloc *tsAlloc
+	sendMu  *sync.Mutex
 
 	backupStorage storage.Client
 	backupDir     string
@@ -114,6 +117,7 @@ func newCollDMLTask(args dmlTaskArgs, collBackup *backuppb.CollectionBackupInfo)
 		taskID: args.TaskID,
 
 		tsAlloc: args.TSAlloc,
+		sendMu:  args.SendMu,
 
 		pchTS:      args.PchTS,
 		collBackup: collBackup,
@@ -400,6 +404,9 @@ func (dmlt *collDMLTask) sendImportMsg(ctx context.Context, partitionID int64, b
 	}
 	appendSysFields(schema)
 	appendDynamicField(schema)
+
+	dmlt.sendMu.Lock()
+	defer dmlt.sendMu.Unlock()
 
 	ts := dmlt.tsAlloc.Alloc()
 	header := &message.ImportMessageHeader{}
