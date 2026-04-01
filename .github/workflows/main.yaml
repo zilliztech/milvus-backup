@@ -132,6 +132,14 @@ jobs:
         run: |
           python example/prepare_data.py
 
+      - name: List MinIO files before backup
+        shell: bash
+        working-directory: deployment/${{ matrix.milvus_mode }}
+        run: |
+          sudo apt-get install -y tree > /dev/null 2>&1 || true
+          echo "=== MinIO volume tree (before backup) ==="
+          sudo tree volumes/minio/ -I '.minio.sys' | head -500
+
       - name: Backup
         timeout-minutes: 5
         shell: bash
@@ -150,6 +158,14 @@ jobs:
         shell: bash
         run: |
           python example/verify_data.py
+
+      - name: List MinIO files after backup
+        if: ${{ always() }}
+        shell: bash
+        working-directory: deployment/${{ matrix.milvus_mode }}
+        run: |
+          echo "=== MinIO volume tree (after backup) ==="
+          sudo tree volumes/minio/ -I '.minio.sys' | head -500
 
       - name: Save Backup
         timeout-minutes: 5
@@ -338,6 +354,14 @@ jobs:
         run: |
           python example/prepare_data.py --stage 2
 
+      - name: List MinIO files before backup
+        shell: bash
+        working-directory: deployment/${{ matrix.milvus_mode }}
+        run: |
+          sudo apt-get install -y tree > /dev/null 2>&1 || true
+          echo "=== MinIO volume tree (before backup) ==="
+          sudo tree volumes/minio/ -I '.minio.sys' | head -500
+
       - name: Backup
         timeout-minutes: 5
         shell: bash
@@ -357,6 +381,14 @@ jobs:
         shell: bash
         run: |
           python example/verify_data.py
+
+      - name: List MinIO files after backup
+        if: ${{ always() }}
+        shell: bash
+        working-directory: deployment/${{ matrix.milvus_mode }}
+        run: |
+          echo "=== MinIO volume tree (after backup) ==="
+          sudo tree volumes/minio/ -I '.minio.sys' | head -500
 
 
   test-backup-restore-cli:
@@ -437,6 +469,14 @@ jobs:
         run: |
           python example/prepare_data.py
 
+      - name: List MinIO files before backup
+        shell: bash
+        working-directory: deployment/${{ matrix.milvus_mode }}
+        run: |
+          sudo apt-get install -y tree > /dev/null 2>&1 || true
+          echo "=== MinIO volume tree (before backup) ==="
+          sudo tree volumes/minio/ -I '.minio.sys' | head -500
+
       - name: Backup
         timeout-minutes: 5
         shell: bash
@@ -455,6 +495,14 @@ jobs:
         shell: bash
         run: |
           python example/verify_data.py
+
+      - name: List MinIO files after backup
+        if: ${{ always() }}
+        shell: bash
+        working-directory: deployment/${{ matrix.milvus_mode }}
+        run: |
+          echo "=== MinIO volume tree (after backup) ==="
+          sudo tree volumes/minio/ -I '.minio.sys' | head -500
 
       - name: Save Backup
         timeout-minutes: 5
@@ -627,6 +675,14 @@ jobs:
               print(f'{name}: loaded, entities={c.num_entities}')
           "
 
+      - name: List MinIO files before backup
+        shell: bash
+        working-directory: deployment/secondary
+        run: |
+          sudo apt-get install -y tree > /dev/null 2>&1 || true
+          echo "=== MinIO volume tree (before backup) ==="
+          sudo tree volumes/minio/ -I '.minio.sys' | head -500
+
       - name: Create backup
         timeout-minutes: 5
         shell: bash
@@ -672,6 +728,14 @@ jobs:
         shell: bash
         run: |
           python example/secondary/verify_data.py --uri http://127.0.0.1:19500
+
+      - name: List MinIO files after backup
+        if: ${{ always() }}
+        shell: bash
+        working-directory: deployment/secondary
+        run: |
+          echo "=== MinIO volume tree (after backup) ==="
+          sudo tree volumes/minio/ -I '.minio.sys' | head -500
 
       - name: Export logs
         if: ${{ always() }}
@@ -787,6 +851,14 @@ jobs:
         run: |
           python example/prepare_data.py --uri http://127.0.0.1:19530
           python example/prepare_rbac.py --uri http://127.0.0.1:19530
+
+      - name: List MinIO files before backup
+        shell: bash
+        run: |
+          MINIO_POD=$(kubectl get pods -o name | grep milvus-backup.*minio | head -1)
+          echo "=== MinIO file tree (before backup) ==="
+          kubectl exec $MINIO_POD -- sh -c "apt-get install -y tree > /dev/null 2>&1 || true; tree /export/ -I '.minio.sys' | head -500"
+
       - name: Backup
         timeout-minutes: 5
         shell: bash
@@ -812,6 +884,15 @@ jobs:
         run: |
           python example/verify_data.py --uri http://127.0.0.1:19531
           python example/verify_rbac.py --uri http://127.0.0.1:19531
+
+      - name: List MinIO files after backup
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          MINIO_POD=$(kubectl get pods -o name | grep milvus-backup.*minio | head -1)
+          echo "=== MinIO file tree (after backup) ==="
+          kubectl exec $MINIO_POD -- sh -c "apt-get install -y tree > /dev/null 2>&1 || true; tree /export/ -I '.minio.sys' | head -500"
+
       - name: Export logs
         if: ${{ always() }}
         shell: bash
