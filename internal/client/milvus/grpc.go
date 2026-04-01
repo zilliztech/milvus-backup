@@ -869,7 +869,7 @@ func (g *GrpcClient) CreateCollection(ctx context.Context, input CreateCollectio
 		g.limiters.createCollection.Success()
 
 		return nil
-	})
+	}, retry.Attempts(20))
 }
 
 func (g *GrpcClient) AlterCollection(ctx context.Context, db, collName string, properties []*commonpb.KeyValuePair) error {
