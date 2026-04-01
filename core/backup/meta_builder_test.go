@@ -10,7 +10,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 )
 
-func newTestMetaBuilder() *metaBuilder {
+func newTestMetaBuilder(t *testing.T) *metaBuilder {
 	builder := newMetaBuilder("task1", "backup1")
 
 	ns := namespace.New("db1", "coll1")
@@ -60,13 +60,44 @@ func newTestMetaBuilder() *metaBuilder {
 			},
 		},
 	}
-	builder.addSegments(append(segments, l0Segments...))
+	assert.NoError(t, builder.addSegments(append(segments, l0Segments...)))
 
 	return builder
 }
 
+func TestAddSegments(t *testing.T) {
+	t.Run("UnknownCollectionID", func(t *testing.T) {
+		builder := newMetaBuilder("task1", "backup1")
+
+		segments := []*backuppb.SegmentBackupInfo{
+			{
+				SegmentId:    100,
+				CollectionId: 999,
+				PartitionId:  10,
+				Size:         4096,
+			},
+		}
+
+		err := builder.addSegments(segments)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "backup: collection backup not found")
+		assert.Contains(t, err.Error(), "999")
+	})
+}
+
+func TestAddPOS(t *testing.T) {
+	t.Run("UnknownNamespace", func(t *testing.T) {
+		builder := newMetaBuilder("task1", "backup1")
+
+		ns := namespace.New("db_unknown", "coll_unknown")
+		err := builder.addPOS(ns, map[string]string{"ch1": "cp1"}, 100, 200)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "backup: collection backup not found")
+	})
+}
+
 func TestBuildCollectionMetaStripsSegments(t *testing.T) {
-	builder := newTestMetaBuilder()
+	builder := newTestMetaBuilder(t)
 
 	data, err := builder.buildCollectionMeta()
 	assert.NoError(t, err)
@@ -88,7 +119,7 @@ func TestBuildCollectionMetaStripsSegments(t *testing.T) {
 }
 
 func TestBuildPartitionMetaStripsSegments(t *testing.T) {
-	builder := newTestMetaBuilder()
+	builder := newTestMetaBuilder(t)
 
 	data, err := builder.buildPartitionMeta()
 	assert.NoError(t, err)
@@ -105,7 +136,7 @@ func TestBuildPartitionMetaStripsSegments(t *testing.T) {
 }
 
 func TestBuildSegmentMetaContainsAllSegments(t *testing.T) {
-	builder := newTestMetaBuilder()
+	builder := newTestMetaBuilder(t)
 
 	data, err := builder.buildSegmentMeta()
 	assert.NoError(t, err)
@@ -124,7 +155,7 @@ func TestBuildSegmentMetaContainsAllSegments(t *testing.T) {
 }
 
 func TestBuildFullMetaContainsEverything(t *testing.T) {
-	builder := newTestMetaBuilder()
+	builder := newTestMetaBuilder(t)
 
 	data, err := builder.buildFullMeta()
 	assert.NoError(t, err)
@@ -146,7 +177,7 @@ func TestBuildFullMetaContainsEverything(t *testing.T) {
 }
 
 func TestSequentialBuildDoesNotCorruptData(t *testing.T) {
-	builder := newTestMetaBuilder()
+	builder := newTestMetaBuilder(t)
 
 	// Simulate production call order: collection → partition → segment → full
 	_, err := builder.buildCollectionMeta()

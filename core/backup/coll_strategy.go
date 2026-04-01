@@ -216,7 +216,9 @@ func (sf *serialFlushStrategy) flushAndBackupPOS(ctx context.Context, ns namespa
 		maxChannelTS = max(maxChannelTS, checkpoint.GetTimestamp())
 	}
 
-	sf.args.MetaBuilder.addPOS(ns, channelCP, maxChannelTS, uint64(resp.GetCollSealTimes()[ns.CollName()]))
+	if err := sf.args.MetaBuilder.addPOS(ns, channelCP, maxChannelTS, uint64(resp.GetCollSealTimes()[ns.CollName()])); err != nil {
+		return fmt.Errorf("backup: add POS meta: %w", err)
+	}
 	return nil
 }
 
