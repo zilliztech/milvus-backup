@@ -356,7 +356,9 @@ func (dmlt *collDMLTask) Execute(ctx context.Context) error {
 		return fmt.Errorf("backup: get segments %w", err)
 	}
 
-	dmlt.metaBuilder.addSegments(segments)
+	if err := dmlt.metaBuilder.addSegments(segments); err != nil {
+		return fmt.Errorf("backup: add segments meta: %w", err)
+	}
 
 	size := lo.SumBy(segments, func(seg *backuppb.SegmentBackupInfo) int64 { return seg.GetSize() })
 	dmlt.taskMgr.UpdateBackupTask(dmlt.taskID, taskmgr.SetBackupCollDMLExecuting(dmlt.ns, size))

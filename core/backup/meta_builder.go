@@ -78,26 +78,35 @@ func (builder *metaBuilder) addCollection(ns namespace.NS, collectionBackup *bac
 	}
 }
 
-func (builder *metaBuilder) addPOS(ns namespace.NS, channelCP map[string]string, maxChannelTS uint64, sealTime uint64) {
+func (builder *metaBuilder) addPOS(ns namespace.NS, channelCP map[string]string, maxChannelTS uint64, sealTime uint64) error {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
 
 	collID := builder.nsToCollID[ns]
-	collBackup := builder.collectionBackups[collID]
+	collBackup, ok := builder.collectionBackups[collID]
+	if !ok {
+		return fmt.Errorf("backup: collection backup not found for namespace %s, collection_id: %d", ns, collID)
+	}
 
 	collBackup.ChannelCheckpoints = channelCP
 	collBackup.BackupTimestamp = maxChannelTS
 	collBackup.BackupPhysicalTimestamp = sealTime
+
+	return nil
 }
 
-func (builder *metaBuilder) addSegments(segments []*backuppb.SegmentBackupInfo) {
+func (builder *metaBuilder) addSegments(segments []*backuppb.SegmentBackupInfo) error {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
 
 	for _, segment := range segments {
-		builder.data.Size += segment.GetSize()
+		collBackup, ok := builder.collectionBackups[segment.GetCollectionId()]
+		if !ok {
+			return fmt.Errorf("backup: collection backup not found for segment %d, collection_id: %d",
+				segment.GetSegmentId(), segment.GetCollectionId())
+		}
 
-		collBackup := builder.collectionBackups[segment.GetCollectionId()]
+		builder.data.Size += segment.GetSize()
 		collBackup.Size += segment.GetSize()
 
 		if segment.GetIsL0() && segment.GetPartitionId() == _allPartitionID {
@@ -117,6 +126,8 @@ func (builder *metaBuilder) addSegments(segments []*backuppb.SegmentBackupInfo) 
 			partBackup.Size += segment.GetSize()
 		}
 	}
+
+	return nil
 }
 
 func (builder *metaBuilder) addIndexExtraInfo(indexes []*indexpb.FieldIndex) {
