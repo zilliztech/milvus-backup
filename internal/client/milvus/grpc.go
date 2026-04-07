@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/Masterminds/semver/v3"
-	"github.com/golang/protobuf/proto" //nolint:staticcheck // SA1019: legacy protobuf package used for backward compatibility
 	grpcretry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
@@ -29,6 +28,7 @@ import (
 	"google.golang.org/grpc/keepalive"
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/zilliztech/milvus-backup/internal/aimd"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
