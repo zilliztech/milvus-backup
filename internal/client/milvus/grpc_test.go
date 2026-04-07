@@ -10,6 +10,7 @@ import (
 	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
@@ -179,6 +180,55 @@ func TestReplicateMessageConstraint(t *testing.T) {
 				}
 			}
 			t.Fatal("ReplicateMessage not found in _featureTuples")
+		})
+	}
+}
+
+func TestGrpcClient_parseVersionForFeature(t *testing.T) {
+	tests := []struct {
+		name           string
+		version        string
+		wantConstraint string
+		wantPass       bool
+	}{
+		// Strict semver: real release versions match constraints based on actual values.
+		{"Release2.6.0_NoMultiL0", "2.6.0", ">= 2.6.5-0", false},
+		{"Release2.6.5_HasMultiL0", "2.6.5", ">= 2.6.5-0", true},
+		{"Release2.6.11_HasFlushAll", "2.6.11", ">= 2.6.11-0", true},
+		{"Release2.6.10_NoFlushAll", "2.6.10", ">= 2.6.11-0", false},
+
+		// Milvus releases report build tags with a leading "v" (e.g. "v2.2.16").
+		// Without v-prefix stripping these would fall back to _latestDevVersion and
+		// incorrectly enable features the old release does not implement (e.g.
+		// DescribeDatabase on v2.2.16, which then crashes with Unimplemented).
+		{"VPrefixV2.2.16_NoDescribeDatabase", "v2.2.16", ">= 2.4.3-0", false},
+		{"VPrefixV2.3.22_NoDescribeDatabase", "v2.3.22", ">= 2.4.3-0", false},
+		{"VPrefixV2.4.23_HasDescribeDatabase", "v2.4.23", ">= 2.4.3-0", true},
+		{"VPrefixV2.5.20_NoMultiL0", "v2.5.20", ">= 2.6.5-0", false},
+		{"VPrefixV2.6.5_HasMultiL0", "v2.6.5", ">= 2.6.5-0", true},
+		{"VPrefixV2.5.20_HasReplicateMessage", "v2.5.20", ">= 2.5.0-0, < 2.6.0-0", true},
+
+		// Dev RC tag: must be treated as latest dev (and pass all >= constraints).
+		// Without StrictNewVersion this regresses: lenient parser turns it into
+		// 2.6.0-20260404-31fb3fc, which is LESS than 2.6.5-0 and disables features.
+		{"DevTag2.6_HasMultiL0", "2.6-20260404-31fb3fc", ">= 2.6.5-0", true},
+		{"DevTag2.6_HasFlushAll", "2.6-20260404-31fb3fc", ">= 2.6.11-0", true},
+		{"DevTag2.6_HasGC", "2.6-20260404-31fb3fc", ">= 2.6.8-0", true},
+
+		// Master tag: also treated as latest dev.
+		{"MasterTag_HasFlushAll", "master-20260226-abcdef", ">= 2.6.11-0", true},
+
+		// Empty string: also falls back to dev.
+		{"Empty_HasFlushAll", "", ">= 2.6.11-0", true},
+	}
+
+	cli := &GrpcClient{logger: zap.NewNop()}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sem := cli.parseVersionForFeature(tt.version)
+			constraint, err := semver.NewConstraint(tt.wantConstraint)
+			assert.NoError(t, err)
+			assert.Equal(t, tt.wantPass, constraint.Check(sem))
 		})
 	}
 }

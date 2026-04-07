@@ -57,9 +57,10 @@ type featureTuple struct {
 	Flag        FeatureFlag
 }
 
-// _latestDevVersion is used as a fallback when the server returns a non-semver version
-// string (e.g. "master-20260226-abcdef" from dev builds). It ensures lower-bound
-// constraints (>= X) pass while upper-bound constraints (< Y) correctly fail.
+// _latestDevVersion is used as a fallback when the server returns a version string
+// that is not a strict MAJOR.MINOR.PATCH semver (e.g. "master-20260226-abcdef" or
+// "2.6-20260404-31fb3fc" from dev builds). It ensures lower-bound constraints (>= X)
+// pass while upper-bound constraints (< Y) correctly fail.
 var _latestDevVersion = semver.MustParse("99.0.0")
 
 var _featureTuples = []featureTuple{
@@ -444,13 +445,7 @@ func (g *GrpcClient) checkFeature(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("client: get version: %w", err)
 	}
-	sem, err := semver.NewVersion(ver)
-	if err != nil {
-		// Dev/master builds may return non-semver strings like "master-20260226-abcdef".
-		g.logger.Warn("cannot parse server version as semver, treat as latest dev build",
-			zap.String("version", ver), zap.Error(err))
-		sem = _latestDevVersion
-	}
+	sem := g.parseVersionForFeature(ver)
 
 	for _, tuple := range _featureTuples {
 		if tuple.Constraints.Check(sem) {
@@ -462,6 +457,26 @@ func (g *GrpcClient) checkFeature(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// parseVersionForFeature parses a server version for feature constraint checking.
+//
+// It strips an optional leading "v" (Milvus releases report build tags like "v2.2.16")
+// and then uses StrictNewVersion, which requires MAJOR.MINOR.PATCH. This deliberately
+// rejects dev build tags like "2.6-20260404-31fb3fc" or "master-20260226-abcdef" so
+// they fall through to _latestDevVersion.
+//
+// The lenient semver.NewVersion cannot be used here because it parses
+// "2.6-20260404-31fb3fc" as "2.6.0-20260404-31fb3fc" — a prerelease of 2.6.0 — which
+// compares LESS than 2.6.x and silently disables features on dev builds.
+func (g *GrpcClient) parseVersionForFeature(ver string) *semver.Version {
+	sem, err := semver.StrictNewVersion(strings.TrimPrefix(ver, "v"))
+	if err != nil {
+		g.logger.Warn("cannot parse server version as strict semver, treat as latest dev build",
+			zap.String("version", ver), zap.Error(err))
+		return _latestDevVersion
+	}
+	return sem
 }
 
 func (g *GrpcClient) CreateDatabase(ctx context.Context, dbName string) error {
