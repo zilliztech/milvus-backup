@@ -1,10 +1,13 @@
 package backup
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"testing"
 
+	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
 	"github.com/stretchr/testify/assert"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
@@ -174,6 +177,96 @@ func TestBuildFullMetaContainsEverything(t *testing.T) {
 		totalSegs += len(part.GetSegmentBackups())
 	}
 	assert.Equal(t, 2, totalSegs)
+}
+
+func TestAddDynamicFields(t *testing.T) {
+	t.Run("InjectsDynamicFieldFromEtcd", func(t *testing.T) {
+		builder := newMetaBuilder("task1", "backup1")
+
+		ns := namespace.New("db1", "coll1")
+		coll := &backuppb.CollectionBackupInfo{
+			CollectionId:   1,
+			DbName:         "db1",
+			CollectionName: "coll1",
+			Schema: &backuppb.CollectionSchema{
+				Name:               "coll1",
+				EnableDynamicField: true,
+				Fields: []*backuppb.FieldSchema{
+					{FieldID: 100, Name: "pk", IsPrimaryKey: true, DataType: backuppb.DataType_Int64},
+					{FieldID: 101, Name: "vec", DataType: backuppb.DataType_FloatVector},
+				},
+			},
+		}
+		builder.addCollection(ns, coll)
+
+		defaultValue := &schemapb.ValueField{Data: &schemapb.ValueField_BytesData{BytesData: []byte("{}")}}
+		dynField := &schemapb.FieldSchema{
+			FieldID:      102,
+			Name:         "$meta",
+			DataType:     schemapb.DataType_JSON,
+			IsDynamic:    true,
+			Nullable:     true,
+			DefaultValue: defaultValue,
+			Description:  "dynamic schema",
+		}
+		assert.NoError(t, builder.addDynamicFields(map[int64]*schemapb.FieldSchema{1: dynField}))
+
+		fields := builder.collectionBackups[1].GetSchema().GetFields()
+		assert.Len(t, fields, 3)
+		dyn := fields[2]
+		assert.Equal(t, int64(102), dyn.GetFieldID())
+		assert.Equal(t, "$meta", dyn.GetName())
+		assert.True(t, dyn.GetIsDynamic())
+		assert.True(t, dyn.GetNullable())
+		assert.Equal(t, backuppb.DataType_JSON, dyn.GetDataType())
+
+		// Default value round-trips through base64+proto.
+		bytes, err := base64.StdEncoding.DecodeString(dyn.GetDefaultValueBase64())
+		assert.NoError(t, err)
+		var got schemapb.ValueField
+		assert.NoError(t, proto.Unmarshal(bytes, &got))
+		assert.Equal(t, []byte("{}"), got.GetBytesData())
+	})
+
+	t.Run("SkipsCollectionWithoutDynamicField", func(t *testing.T) {
+		builder := newMetaBuilder("task1", "backup1")
+		ns := namespace.New("db1", "coll1")
+		coll := &backuppb.CollectionBackupInfo{
+			CollectionId: 1,
+			Schema: &backuppb.CollectionSchema{
+				EnableDynamicField: false,
+				Fields:             []*backuppb.FieldSchema{{FieldID: 100, Name: "pk"}},
+			},
+		}
+		builder.addCollection(ns, coll)
+
+		dynField := &schemapb.FieldSchema{FieldID: 101, Name: "$meta", IsDynamic: true}
+		assert.NoError(t, builder.addDynamicFields(map[int64]*schemapb.FieldSchema{1: dynField}))
+
+		// Schema must be untouched when EnableDynamicField is false.
+		assert.Len(t, builder.collectionBackups[1].GetSchema().GetFields(), 1)
+	})
+
+	t.Run("ErrorsOnMissingEntryForCollection", func(t *testing.T) {
+		builder := newMetaBuilder("task1", "backup1")
+		ns := namespace.New("db1", "coll1")
+		coll := &backuppb.CollectionBackupInfo{
+			CollectionId:   1,
+			CollectionName: "coll1",
+			Schema: &backuppb.CollectionSchema{
+				EnableDynamicField: true,
+				Fields:             []*backuppb.FieldSchema{{FieldID: 100, Name: "pk"}},
+			},
+		}
+		builder.addCollection(ns, coll)
+
+		// etcd has no record for collection 1.
+		err := builder.addDynamicFields(map[int64]*schemapb.FieldSchema{2: {FieldID: 101, IsDynamic: true}})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), `"coll1"`)
+		// Schema must remain untouched on error.
+		assert.Len(t, builder.collectionBackups[1].GetSchema().GetFields(), 1)
+	})
 }
 
 func TestSequentialBuildDoesNotCorruptData(t *testing.T) {

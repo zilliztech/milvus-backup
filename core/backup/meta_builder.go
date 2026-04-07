@@ -1,12 +1,15 @@
 package backup
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"sync"
 
+	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
 	"github.com/milvus-io/milvus/pkg/v2/proto/indexpb"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/log"
@@ -155,6 +158,72 @@ func (builder *metaBuilder) addIndexExtraInfo(indexes []*indexpb.FieldIndex) {
 		indexInfo.MinIndexVersion = info.GetMinIndexVersion()
 		indexInfo.MaxIndexVersion = info.GetMaxIndexVersion()
 	}
+}
+
+// addDynamicFields injects the dynamic field schema (read directly from etcd)
+// into each collection backup that has dynamic schema enabled. The Milvus
+// DescribeCollection API filters out IsDynamic fields, so without this the
+// backup metadata is missing the actual $meta field attributes (Nullable,
+// DefaultValue) and secondary restore would have to reconstruct it blindly.
+// See zilliztech/milvus-backup#1013.
+//
+// Returns an error if any collection has EnableDynamicField=true but the
+// caller did not supply a matching dynamic field. We treat this as a hard
+// failure rather than silently producing an incomplete backup, since the
+// resulting file would break secondary restore.
+func (builder *metaBuilder) addDynamicFields(dynFields map[int64]*schemapb.FieldSchema) error {
+	builder.mu.Lock()
+	defer builder.mu.Unlock()
+
+	for _, coll := range builder.data.GetCollectionBackups() {
+		if !coll.GetSchema().GetEnableDynamicField() {
+			continue
+		}
+
+		dynField, ok := dynFields[coll.GetCollectionId()]
+		if !ok {
+			return fmt.Errorf("backup: %q missing dynamic field in etcd", coll.GetCollectionName())
+		}
+
+		bakField, err := convDynField(dynField)
+		if err != nil {
+			return fmt.Errorf("backup: convert dynamic field of %q: %w", coll.GetCollectionName(), err)
+		}
+		coll.Schema.Fields = append(coll.Schema.Fields, bakField)
+	}
+
+	return nil
+}
+
+// convDynField converts a milvus schemapb.FieldSchema (read from etcd) into
+// the backup proto FieldSchema. It only fills the subset of attributes that
+// matter for the dynamic field ($meta).
+func convDynField(field *schemapb.FieldSchema) (*backuppb.FieldSchema, error) {
+	var defaultValueBase64 string
+	if field.GetDefaultValue() != nil {
+		bytes, err := proto.Marshal(field.GetDefaultValue())
+		if err != nil {
+			return nil, fmt.Errorf("backup: marshal dynamic field default value: %w", err)
+		}
+		defaultValueBase64 = base64.StdEncoding.EncodeToString(bytes)
+	}
+
+	return &backuppb.FieldSchema{
+		FieldID:            field.GetFieldID(),
+		Name:               field.GetName(),
+		IsPrimaryKey:       field.GetIsPrimaryKey(),
+		Description:        field.GetDescription(),
+		AutoID:             field.GetAutoID(),
+		DataType:           backuppb.DataType(field.GetDataType()),
+		TypeParams:         pbconv.MilvusKVToBakKV(field.GetTypeParams()),
+		IndexParams:        pbconv.MilvusKVToBakKV(field.GetIndexParams()),
+		IsDynamic:          field.GetIsDynamic(),
+		IsPartitionKey:     field.GetIsPartitionKey(),
+		Nullable:           field.GetNullable(),
+		ElementType:        backuppb.DataType(field.GetElementType()),
+		IsFunctionOutput:   field.GetIsFunctionOutput(),
+		DefaultValueBase64: defaultValueBase64,
+	}, nil
 }
 
 func (builder *metaBuilder) setRBACMeta(rbacMeta *backuppb.RBACMeta) {

@@ -254,6 +254,10 @@ func (t *Task) privateExecute(ctx context.Context) error {
 		return fmt.Errorf("backup: run index extra info task: %w", err)
 	}
 
+	if err := t.backupCollDynField(ctx); err != nil {
+		return fmt.Errorf("backup: run coll dyn field task: %w", err)
+	}
+
 	if err := t.writeMeta(ctx); err != nil {
 		return fmt.Errorf("backup: write meta: %w", err)
 	}
@@ -495,6 +499,32 @@ func (t *Task) backupIndexExtraInfo(ctx context.Context) error {
 	indexExtraTask := newCollIndexExtraTask(t.taskID, t.etcdCli, t.etcdRootPath, t.metaBuilder)
 	if err := indexExtraTask.Execute(ctx); err != nil {
 		return fmt.Errorf("backup: execute index extra task: %w", err)
+	}
+
+	return nil
+}
+
+// backupCollDynField reads each collection's dynamic field ($meta) schema
+// directly from etcd and stores it in the backup metadata. This is necessary
+// because the Milvus DescribeCollection API filters out IsDynamic fields, so
+// the gRPC-based backup path never sees the actual $meta attributes
+// (Nullable, DefaultValue, ...). Without this info, secondary restore would
+// reconstruct the field with hardcoded defaults that may not match the source
+// collection. See zilliztech/milvus-backup#1013.
+//
+// Reuses the etcd client created for BackupIndexExtra; if etcd is not
+// configured (BackupIndexExtra disabled) the task is skipped.
+func (t *Task) backupCollDynField(ctx context.Context) error {
+	if t.etcdCli == nil {
+		t.logger.Info("skip backup collection dynamic field, etcd client is not initialized")
+		return nil
+	}
+
+	t.logger.Info("start backup collection dynamic field")
+
+	dynFieldTask := newCollDynFieldTask(t.taskID, t.etcdCli, t.etcdRootPath, t.metaBuilder)
+	if err := dynFieldTask.Execute(ctx); err != nil {
+		return fmt.Errorf("backup: execute coll dyn field task: %w", err)
 	}
 
 	return nil
