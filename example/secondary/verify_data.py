@@ -23,8 +23,10 @@ def main(uri, token):
     print(fmt.format(f"Milvus uri: {uri}"))
     connections.connect("default", uri=uri, token=token)
 
-    # Secondary restore uses original collection names (no _recover suffix)
-    collections = ["hello_milvus", "hello_milvus2"]
+    # Secondary restore uses original collection names (no _recover suffix).
+    # hello_milvus_dynamic exercises the dynamic-schema path; see
+    # zilliztech/milvus-backup#1013 for the $meta misalignment it covers.
+    collections = ["hello_milvus", "hello_milvus2", "hello_milvus_dynamic"]
 
     for collection_name in collections:
         has = utility.has_collection(collection_name)

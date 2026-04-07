@@ -164,6 +164,55 @@ def main(uri="http://127.0.0.1:19530", token="root:Milvus", stage=None, total_en
         print(fmt.format(f"Stage {stage} completed for hello_milvus2"))
         print(f"Stage {stage} inserted {num_entities2} entities starting from offset {entity_offset2}")
 
+    # hello_milvus_dynamic exercises the dynamic schema path. The $meta field
+    # attributes are version-dependent (Milvus #46419 added Nullable=true and
+    # DefaultValue={} starting from v2.6.8 / master), so creating this collection
+    # on a pre-#46419 Milvus and then doing secondary restore reproduces the
+    # schema misalignment described in zilliztech/milvus-backup#1013.
+    fields_dynamic = [
+        FieldSchema(name="pk", dtype=DataType.INT64, is_primary=True, auto_id=False),
+        FieldSchema(name="random", dtype=DataType.DOUBLE),
+        FieldSchema(name="var", dtype=DataType.VARCHAR, max_length=65535),
+        FieldSchema(name="embeddings", dtype=DataType.FLOAT_VECTOR, dim=dim),
+    ]
+    schema_dynamic = CollectionSchema(
+        fields_dynamic, "hello_milvus_dynamic", enable_dynamic_field=True
+    )
+
+    print(fmt.format("Create collection `hello_milvus_dynamic`"))
+    hello_milvus_dynamic = Collection(
+        "hello_milvus_dynamic", schema_dynamic, consistency_level="Strong"
+    )
+
+    if stage != 2:
+        print(fmt.format("Start inserting entities to hello_milvus_dynamic"))
+        num_entities_d = total_entities
+        rng_d = np.random.default_rng(seed=19531)
+        rows = []
+        for i in range(num_entities_d):
+            row = {
+                "pk": i,
+                "random": float(rng_d.random()),
+                "var": str(i),
+                "embeddings": rng_d.random(dim).tolist(),
+                # Populate dynamic fields on every row so the collection has
+                # real dynamic schema usage, not just a declared $meta field.
+                "extra_int": i,
+                "extra_str": f"dyn_{i}",
+            }
+            rows.append(row)
+
+        batch_size = max(1, num_entities_d // 10)
+        for j in range(0, num_entities_d, batch_size):
+            hello_milvus_dynamic.insert(rows[j : j + batch_size])
+            time.sleep(1)
+        hello_milvus_dynamic.flush()
+        print(
+            f"Number of entities in hello_milvus_dynamic: {hello_milvus_dynamic.num_entities}"
+        )
+    else:
+        print("Stage 2: Skipping data insertion to hello_milvus_dynamic")
+
 
 if __name__ == "__main__":
     args = argparse.ArgumentParser(description="prepare data for backup/restore testing")

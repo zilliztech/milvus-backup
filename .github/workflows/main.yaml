@@ -572,12 +572,28 @@ jobs:
 
   test-backup-restore-secondary:
     needs: unit-test-go
-    name: Backup and restore secondary
+    name: Backup and restore secondary (${{ matrix.scenario }})
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        image_tag: [master-latest]
+        # Two scenarios:
+        #   - same-version:          source and target are both the latest master.
+        #   - cross-version-upgrade: source data is created on a pre-#46419 Milvus
+        #     (v2.6.7, where the auto-appended $meta field has no Nullable nor
+        #     DefaultValue), then the cluster is upgraded to a CDC-capable image
+        #     (2.6-latest, since CDC support landed in v2.6.11+) before backup
+        #     and secondary restore. This reproduces the schema misalignment from
+        #     zilliztech/milvus-backup#1013 — etcd-schema-verify is expected to
+        #     fail on the $meta field's nullable/default_value until the bug is
+        #     fixed.
+        include:
+          - scenario: same-version
+            prepare_image_tag: master-latest
+            run_image_tag: master-latest
+          - scenario: cross-version-upgrade
+            prepare_image_tag: v2.6.7
+            run_image_tag: 2.6-latest
 
     steps:
       - uses: actions/checkout@v6
@@ -610,15 +626,15 @@ jobs:
         run: |
           pip install -r requirements.txt --trusted-host https://test.pypi.org
 
-      - name: Deploy dual Milvus
+      - name: Deploy dual Milvus (prepare image)
         timeout-minutes: 15
         shell: bash
         working-directory: deployment/secondary
         run: |
-          tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
+          tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.prepare_image_tag }}) && echo $tag
           yq -i ".services.upstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
           yq -i ".services.downstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
-          if [ "${{ matrix.image_tag }}" == "master-latest" ]; then
+          if [ "${{ matrix.prepare_image_tag }}" == "master-latest" ]; then
             yq -i '.common.storage.useLoonFFI = false' upstream.yaml
             yq -i '.common.storage.useLoonFFI = false' downstream.yaml
           fi
@@ -658,6 +674,26 @@ jobs:
         run: |
           python example/prepare_data.py --uri http://127.0.0.1:19530
 
+      - name: Upgrade dual Milvus to run image
+        if: ${{ matrix.prepare_image_tag != matrix.run_image_tag }}
+        timeout-minutes: 15
+        shell: bash
+        working-directory: deployment/secondary
+        run: |
+          # Stop containers but keep bind-mounted volumes (./volumes/*) so the
+          # collection schema written by the prepare image — including its
+          # version-specific $meta attributes — survives the upgrade.
+          sudo docker compose -f docker-compose.yml down
+          tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.run_image_tag }}) && echo $tag
+          yq -i ".services.upstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          yq -i ".services.downstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          if [ "${{ matrix.run_image_tag }}" == "master-latest" ]; then
+            yq -i '.common.storage.useLoonFFI = false' upstream.yaml
+            yq -i '.common.storage.useLoonFFI = false' downstream.yaml
+          fi
+          sudo docker compose -f docker-compose.yml up -d --wait
+          sudo docker compose -f docker-compose.yml ps -a
+
       - name: Create index and load on upstream
         timeout-minutes: 3
         shell: bash
@@ -666,7 +702,7 @@ jobs:
           from pymilvus import connections, Collection
           connections.connect('default', uri='http://127.0.0.1:19530')
           index = {'index_type': 'IVF_FLAT', 'metric_type': 'L2', 'params': {'nlist': 128}}
-          for name in ['hello_milvus', 'hello_milvus2']:
+          for name in ['hello_milvus', 'hello_milvus2', 'hello_milvus_dynamic']:
               c = Collection(name)
               c.create_index('embeddings', index)
               c.load()
@@ -718,7 +754,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          for coll in hello_milvus hello_milvus2; do
+          for coll in hello_milvus hello_milvus2 hello_milvus_dynamic; do
             echo "=== Verifying schema: ${coll} ==="
             ./etcd-schema-verify \
               -src-endpoints localhost:2379 \
@@ -766,7 +802,7 @@ jobs:
         if: ${{ ! success() }}
         uses: actions/upload-artifact@v7
         with:
-          name: secondary-restore-logs-${{ matrix.image_tag }}
+          name: secondary-restore-logs-${{ matrix.scenario }}
           path: |
             /tmp/ci_logs
             /tmp/schema_verify_*.json
