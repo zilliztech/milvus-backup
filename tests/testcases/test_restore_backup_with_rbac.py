@@ -103,6 +103,63 @@ class TestRestoreBackupWithRbac(TestcaseBase):
             assert group in privilege_list, \
                 f"Privilege group {group} not restored"
 
+    @staticmethod
+    def verify_role_grants(client, role_name, expected_grants):
+        """Verify a role has the expected grants restored.
+
+        expected_grants: list of dicts. Common keys are object_name, privilege,
+        db_name and object_type. Only keys present in an expected dict are
+        compared, so callers can omit fields whose value depends on server-side
+        inference (e.g. object_type for grant_privilege_v2).
+        """
+        actual = client.describe_role(role_name=role_name).get("privileges", [])
+        for exp in expected_grants:
+            matched = []
+            for g in actual:
+                ok = True
+                for key, want in exp.items():
+                    # describe_role omits db_name from the dict when empty,
+                    # treat a missing key as empty string for comparison.
+                    got = g.get(key, "")
+                    if got != want:
+                        ok = False
+                        break
+                if ok:
+                    matched.append(g)
+            assert matched, (
+                f"Grant not restored on role {role_name}: expected={exp}, "
+                f"actual={actual}"
+            )
+
+    @staticmethod
+    def verify_privilege_group_content(client, group_name, expected_privileges):
+        """Verify a privilege group exists and contains the expected privileges."""
+        groups = client.list_privilege_groups()
+        target = next(
+            (g for g in groups if g["privilege_group"] == group_name),
+            None,
+        )
+        assert target is not None, (
+            f"Privilege group {group_name} not found, got={groups}"
+        )
+        actual = set(target.get("privileges", ()))
+        missing = set(expected_privileges) - actual
+        assert not missing, (
+            f"Privilege group {group_name} missing privileges {missing}, "
+            f"actual={actual}"
+        )
+
+    @staticmethod
+    def verify_user_roles(client, user_name, expected_roles):
+        """Verify a user is bound to the expected roles."""
+        info = client.describe_user(user_name=user_name)
+        actual = set(info.get("roles", ()))
+        missing = set(expected_roles) - actual
+        assert not missing, (
+            f"User {user_name} missing role bindings {missing}, "
+            f"actual={actual}"
+        )
+
 
 
     @pytest.mark.tags(CaseLabel.L0)
@@ -175,4 +232,31 @@ class TestRestoreBackupWithRbac(TestcaseBase):
         log.info("list RBAC after restore, expected to be the same as before drop")
         self.list_rbac(self.milvus_client)
         self.verify_rbac_restore(self.milvus_client, [user_name], [role_name], [privilege_group_name])
+
+        # Verify privilege group content is restored, not just the name
+        self.verify_privilege_group_content(
+            self.milvus_client,
+            group_name=privilege_group_name,
+            expected_privileges=['Insert'],
+        )
+
+        # Verify the grant on the custom role is restored with original wildcards.
+        # object_type is intentionally not asserted because grant_privilege_v2
+        # lets the server infer it from the privilege.
+        self.verify_role_grants(
+            self.milvus_client,
+            role_name=role_name,
+            expected_grants=[{
+                "object_name": "*",
+                "privilege": privilege_group_name,
+                "db_name": "*",
+            }],
+        )
+
+        # Verify the user is still bound to the custom role
+        self.verify_user_roles(
+            self.milvus_client,
+            user_name=user_name,
+            expected_roles=[role_name],
+        )
 
