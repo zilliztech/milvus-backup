@@ -673,6 +673,7 @@ jobs:
         shell: bash
         run: |
           python example/prepare_data.py --uri http://127.0.0.1:19530
+          python example/prepare_data.py --uri http://127.0.0.1:19530 --scenario added
 
       - name: Upgrade dual Milvus to run image
         if: ${{ matrix.prepare_image_tag != matrix.run_image_tag }}
@@ -702,7 +703,7 @@ jobs:
           from pymilvus import connections, Collection
           connections.connect('default', uri='http://127.0.0.1:19530')
           index = {'index_type': 'IVF_FLAT', 'metric_type': 'L2', 'params': {'nlist': 128}}
-          for name in ['hello_milvus', 'hello_milvus2', 'hello_milvus_dynamic']:
+          for name in ['hello_milvus', 'hello_milvus2', 'hello_milvus_dynamic', 'hello_milvus_added']:
               c = Collection(name)
               c.create_index('embeddings', index)
               c.load()
@@ -754,7 +755,7 @@ jobs:
         shell: bash
         run: |
           set -o pipefail
-          for coll in hello_milvus hello_milvus2 hello_milvus_dynamic; do
+          for coll in hello_milvus hello_milvus2 hello_milvus_dynamic hello_milvus_added; do
             echo "=== Verifying schema: ${coll} ==="
             ./etcd-schema-verify \
               -src-endpoints localhost:2379 \

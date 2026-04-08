@@ -13,6 +13,7 @@ from pymilvus import (
     utility,
     FieldSchema, CollectionSchema, DataType,
     Collection,
+    MilvusClient,
 )
 import argparse
 
@@ -214,11 +215,114 @@ def main(uri="http://127.0.0.1:19530", token="root:Milvus", stage=None, total_en
         print("Stage 2: Skipping data insertion to hello_milvus_dynamic")
 
 
+def main_added(uri="http://127.0.0.1:19530", token="root:Milvus", total_entities=3000):
+    """Create hello_milvus_added.
+
+    Inserts half the rows, flushes, calls add_collection_field to add five
+    nullable fields (with default_value where supported), then inserts the
+    remaining rows populating the new fields. The added fields carry
+    Nullable=true and default_value attributes that must round-trip through
+    backup metadata into secondary restore.
+
+    Requires Milvus master / 2.6+: add_collection_field does not exist on
+    older versions, so this entry point is split out from main() and only
+    invoked by the secondary-restore CI workflow.
+    """
+    fmt = "\n=== {:30} ===\n"
+    dim = 8
+
+    print(fmt.format("start connecting to Milvus"))
+    print(fmt.format(f"Milvus uri: {uri}"))
+    connections.connect("default", uri=uri, token=token)
+
+    fields_added = [
+        FieldSchema(name="pk", dtype=DataType.INT64, is_primary=True, auto_id=False),
+        FieldSchema(name="random", dtype=DataType.DOUBLE),
+        FieldSchema(name="var", dtype=DataType.VARCHAR, max_length=65535),
+        FieldSchema(name="embeddings", dtype=DataType.FLOAT_VECTOR, dim=dim),
+    ]
+    schema_added = CollectionSchema(fields_added, "hello_milvus_added")
+
+    print(fmt.format("Create collection `hello_milvus_added`"))
+    hello_milvus_added = Collection(
+        "hello_milvus_added", schema_added, consistency_level="Strong"
+    )
+
+    first_half = total_entities // 2
+    rng_a = np.random.default_rng(seed=19532)
+
+    print(fmt.format("Insert first half to hello_milvus_added"))
+    first_rows = [
+        [i for i in range(first_half)],
+        rng_a.random(first_half).tolist(),
+        [str(i) for i in range(first_half)],
+        rng_a.random((first_half, dim)).tolist(),
+    ]
+    hello_milvus_added.insert(first_rows)
+    hello_milvus_added.flush()
+
+    # Use MilvusClient because the ORM Collection wrapper does not expose
+    # add_collection_field directly. All fields are nullable; some carry a
+    # default_value so the backup round-trip must preserve both attributes
+    # (see zilliztech/milvus-backup#1013).
+    print(fmt.format("add_collection_field to hello_milvus_added"))
+    client = MilvusClient(uri=uri, token=token)
+    added_fields = [
+        ("added_int64", DataType.INT64, {"nullable": True, "default_value": 0}),
+        (
+            "added_varchar",
+            DataType.VARCHAR,
+            {"nullable": True, "max_length": 256, "default_value": "default"},
+        ),
+        ("added_double", DataType.DOUBLE, {"nullable": True, "default_value": 0.0}),
+        ("added_bool", DataType.BOOL, {"nullable": True, "default_value": False}),
+        ("added_json", DataType.JSON, {"nullable": True}),
+    ]
+    for field_name, data_type, kwargs in added_fields:
+        client.add_collection_field(
+            collection_name="hello_milvus_added",
+            field_name=field_name,
+            data_type=data_type,
+            **kwargs,
+        )
+        print(f"added field {field_name} ({data_type.name}) {kwargs}")
+
+    print(fmt.format("Insert second half to hello_milvus_added"))
+    second_half = total_entities - first_half
+    second_rows = []
+    for k in range(second_half):
+        i = first_half + k
+        second_rows.append(
+            {
+                "pk": i,
+                "random": float(rng_a.random()),
+                "var": str(i),
+                "embeddings": rng_a.random(dim).tolist(),
+                "added_int64": i * 10,
+                "added_varchar": f"value_{i}",
+                "added_double": float(i) * 1.5,
+                "added_bool": i % 2 == 0,
+                "added_json": {"k": i},
+            }
+        )
+    # Use MilvusClient.insert here so the schema cache picks up the
+    # newly-added fields.
+    client.insert(collection_name="hello_milvus_added", data=second_rows)
+    client.flush(collection_name="hello_milvus_added")
+    print(
+        f"Number of entities in hello_milvus_added: {hello_milvus_added.num_entities}"
+    )
+
+
 if __name__ == "__main__":
     args = argparse.ArgumentParser(description="prepare data for backup/restore testing")
     args.add_argument("--uri", type=str, default="http://127.0.0.1:19530", help="Milvus server uri")
     args.add_argument("--token", type=str, default="root:Milvus", help="Milvus server token")
     args.add_argument("--stage", type=int, choices=[1, 2], required=False, help="Stage 1 or 2 for multi-stage data preparation (only affects hello_milvus2). Omit for single-stage mode")
     args.add_argument("--total-entities", type=int, default=3000, help="Total number of entities (hello_milvus always gets all, hello_milvus2 respects stage)")
+    args.add_argument("--scenario", choices=["base", "added"], default="base", help="base: hello_milvus / hello_milvus2 / hello_milvus_dynamic. added: hello_milvus_added (requires Milvus master / 2.6+).")
     args = args.parse_args()
-    main(args.uri, args.token, args.stage, args.total_entities)
+    if args.scenario == "base":
+        main(args.uri, args.token, args.stage, args.total_entities)
+    else:
+        main_added(args.uri, args.token, args.total_entities)
