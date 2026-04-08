@@ -1,11 +1,26 @@
 package secondary
 
 import (
+	"fmt"
+
 	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
 	"github.com/milvus-io/milvus/pkg/v2/common"
-
-	"github.com/zilliztech/milvus-backup/core/restore/funcs"
 )
+
+// checkDynamicField fails the restore if the source collection had dynamic
+// schema enabled but the backup metadata does not carry the actual $meta
+// field. See zilliztech/milvus-backup#1013.
+func checkDynamicField(schema *schemapb.CollectionSchema) error {
+	if !schema.GetEnableDynamicField() {
+		return nil
+	}
+	for _, f := range schema.GetFields() {
+		if f.GetIsDynamic() {
+			return nil
+		}
+	}
+	return fmt.Errorf("secondary: %q missing dynamic field in backup", schema.GetName())
+}
 
 func appendSysFields(schema *schemapb.CollectionSchema) {
 	schema.Fields = append(schema.Fields, &schemapb.FieldSchema{
@@ -23,22 +38,4 @@ func appendSysFields(schema *schemapb.CollectionSchema) {
 		Description:  "time stamp",
 		DataType:     schemapb.DataType_Int64,
 	})
-}
-
-func appendDynamicField(schema *schemapb.CollectionSchema) {
-	if schema.GetEnableDynamicField() {
-		schema.Fields = append(schema.Fields, &schemapb.FieldSchema{
-			FieldID:     funcs.GuessDynFieldID(schema.Fields),
-			Name:        common.MetaFieldName,
-			Description: "dynamic schema",
-			DataType:    schemapb.DataType_JSON,
-			IsDynamic:   true,
-			Nullable:    true,
-			DefaultValue: &schemapb.ValueField{
-				Data: &schemapb.ValueField_BytesData{
-					BytesData: []byte("{}"),
-				},
-			},
-		})
-	}
 }

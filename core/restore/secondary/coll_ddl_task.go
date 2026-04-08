@@ -161,12 +161,14 @@ func (ddlt *collDDLTask) createColl(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("secondary: convert schema: %w", err)
 	}
+	if err := checkDynamicField(schema); err != nil {
+		return err
+	}
 	schema.Properties = append(schema.Properties, &commonpb.KeyValuePair{
 		Key:   common.ConsistencyLevel,
 		Value: ddlt.collBackup.GetConsistencyLevel().String(),
 	})
 	appendSysFields(schema)
-	appendDynamicField(schema)
 
 	ddlt.logger.Info("collection schema", zap.Any("schema", schema))
 

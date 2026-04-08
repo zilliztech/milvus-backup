@@ -106,10 +106,25 @@ func (ddlt *collDDLTask) dropExistedColl(ctx context.Context) error {
 // This discrepancy in field order between the new collection and the backup file can cause restore errors.
 // Therefore, we stop processing fields if the field IDs are not continuous.
 // The remaining fields will be imported via addField.
+//
+// The dynamic field ($meta) is never returned in either slice: when
+// EnableDynamicField is true, Milvus auto-creates $meta inside CreateCollection,
+// and the AddField API rejects dynamic fields. Newer backups carry the actual
+// $meta schema in the backup metadata (see zilliztech/milvus-backup#1013) but
+// for the regular restore path it is purely informational.
 func (ddlt *collDDLTask) fields() ([]*schemapb.FieldSchema, []*schemapb.FieldSchema, error) {
-	fields, err := ddlt.convFields(ddlt.collBackup.GetSchema().GetFields())
+	allFields, err := ddlt.convFields(ddlt.collBackup.GetSchema().GetFields())
 	if err != nil {
 		return nil, nil, fmt.Errorf("collection: get fields: %w", err)
+	}
+
+	// Drop the dynamic field if present; CreateCollection / Milvus owns it.
+	fields := make([]*schemapb.FieldSchema, 0, len(allFields))
+	for _, f := range allFields {
+		if f.GetIsDynamic() {
+			continue
+		}
+		fields = append(fields, f)
 	}
 
 	if !ddlt.collBackup.GetSchema().GetEnableDynamicField() {

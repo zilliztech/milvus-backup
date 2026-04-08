@@ -402,8 +402,10 @@ func (dmlt *collDMLTask) sendImportMsg(ctx context.Context, partitionID int64, b
 	if err != nil {
 		return 0, fmt.Errorf("secondary: convert schema: %w", err)
 	}
+	if err := checkDynamicField(schema); err != nil {
+		return 0, err
+	}
 	appendSysFields(schema)
-	appendDynamicField(schema)
 
 	dmlt.sendMu.Lock()
 	defer dmlt.sendMu.Unlock()
