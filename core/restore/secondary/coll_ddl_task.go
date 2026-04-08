@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math/rand/v2"
-	"sync"
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus/pkg/v2/common"
@@ -28,9 +27,6 @@ type collDDLTask struct {
 	dbBackup   *backuppb.DatabaseBackupInfo
 	collBackup *backuppb.CollectionBackupInfo
 
-	tsAlloc *tsAlloc
-	sendMu  *sync.Mutex
-
 	streamCli milvus.Stream
 	logger    *zap.Logger
 }
@@ -41,8 +37,6 @@ type ddlTaskArgs struct {
 	BackupInfo *backuppb.BackupInfo
 
 	StreamCli milvus.Stream
-	TSAlloc   *tsAlloc
-	SendMu    *sync.Mutex
 }
 
 func newCollDDLTask(args ddlTaskArgs, dbBackup *backuppb.DatabaseBackupInfo, collBackup *backuppb.CollectionBackupInfo) *collDDLTask {
@@ -54,9 +48,6 @@ func newCollDDLTask(args ddlTaskArgs, dbBackup *backuppb.DatabaseBackupInfo, col
 		backupInfo: args.BackupInfo,
 		dbBackup:   dbBackup,
 		collBackup: collBackup,
-
-		tsAlloc: args.TSAlloc,
-		sendMu:  args.SendMu,
 
 		streamCli: args.StreamCli,
 		logger:    log.With(zap.String("task_id", args.TaskID), zap.String("ns", ns.String())),
@@ -118,17 +109,8 @@ func (ddlt *collDDLTask) createIndex(ctx context.Context, index *backuppb.IndexI
 	broadcast := builder.MustBuildBroadcast().WithBroadcastID(rand.Uint64())
 	msgs := broadcast.SplitIntoMutableMessage()
 
-	ddlt.sendMu.Lock()
-	defer ddlt.sendMu.Unlock()
-
 	for _, msg := range msgs {
-		ts := ddlt.tsAlloc.Alloc()
-		immutableMessage := msg.WithTimeTick(ts).
-			WithLastConfirmed(newFakeMessageID(ts)).
-			IntoImmutableMessage(newFakeMessageID(ts)).
-			IntoImmutableMessageProto()
-
-		if err := ddlt.streamCli.Send(ctx, immutableMessage); err != nil {
+		if err := ddlt.streamCli.Send(ctx, msg); err != nil {
 			return fmt.Errorf("collection: broadcast create index: %w", err)
 		}
 	}
@@ -172,13 +154,15 @@ func (ddlt *collDDLTask) createColl(ctx context.Context) error {
 
 	ddlt.logger.Info("collection schema", zap.Any("schema", schema))
 
-	ddlt.sendMu.Lock()
-	defer ddlt.sendMu.Unlock()
-
+	// MsgBase.Timestamp is the body-side request timestamp; the wire time-tick
+	// is allocated separately when each split message is dispatched. The
+	// streamingnode replicate path consumes only the wire time-tick, so it is
+	// fine for body.Timestamp to be strictly less than the wire time-tick of
+	// every dispatched message.
 	req := &message.CreateCollectionRequest{
 		Base: &commonpb.MsgBase{
 			MsgType:   commonpb.MsgType_CreateCollection,
-			Timestamp: ddlt.tsAlloc.Alloc(),
+			Timestamp: ddlt.streamCli.Alloc(),
 		},
 		DbName:               ddlt.collBackup.GetDbName(),
 		CollectionName:       ddlt.collBackup.GetCollectionName(),
@@ -201,13 +185,7 @@ func (ddlt *collDDLTask) createColl(ctx context.Context) error {
 	msgs := broadcast.SplitIntoMutableMessage()
 
 	for _, msg := range msgs {
-		ts := ddlt.tsAlloc.Alloc()
-		immutableMessage := msg.WithTimeTick(ts).
-			WithLastConfirmed(newFakeMessageID(ts)).
-			IntoImmutableMessage(newFakeMessageID(ts)).
-			IntoImmutableMessageProto()
-
-		if err := ddlt.streamCli.Send(ctx, immutableMessage); err != nil {
+		if err := ddlt.streamCli.Send(ctx, msg); err != nil {
 			return fmt.Errorf("secondary: broadcast create collection: %w", err)
 		}
 	}

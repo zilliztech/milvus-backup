@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math/rand/v2"
-	"sync"
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
@@ -47,9 +46,6 @@ type Task struct {
 	grpc    milvus.Grpc
 	restful milvus.Restful
 
-	tsAlloc *tsAlloc
-	sendMu  sync.Mutex
-
 	streamCli milvus.Stream
 
 	taskMgr *taskmgr.Mgr
@@ -62,8 +58,6 @@ func NewTask(args TaskArgs) (*Task, error) {
 
 	return &Task{
 		args: args,
-
-		tsAlloc: newTTAlloc(),
 
 		taskMgr: args.TaskMgr,
 
@@ -142,7 +136,6 @@ func (t *Task) runDBTasks(ctx context.Context) error {
 	args := databaseTaskArgs{
 		TaskID:     t.args.TaskID,
 		BackupInfo: t.args.Backup,
-		TSAlloc:    t.tsAlloc,
 		StreamCli:  t.streamCli,
 	}
 
@@ -184,9 +177,6 @@ func (t *Task) dmlTaskArgs() (dmlTaskArgs, error) {
 	return dmlTaskArgs{
 		TaskID: t.args.TaskID,
 
-		TSAlloc: t.tsAlloc,
-		SendMu:  &t.sendMu,
-
 		PchTS: pchTS,
 
 		BackupStorage: t.args.BackupStorage,
@@ -202,8 +192,6 @@ func (t *Task) ddlTaskArgs() ddlTaskArgs {
 		TaskID:     t.args.TaskID,
 		BackupInfo: t.args.Backup,
 		StreamCli:  t.streamCli,
-		TSAlloc:    t.tsAlloc,
-		SendMu:     &t.sendMu,
 	}
 }
 
@@ -240,8 +228,6 @@ func (t *Task) loadTaskArgs() loadTaskArgs {
 		TaskID:     t.args.TaskID,
 		BackupInfo: t.args.Backup,
 		StreamCli:  t.streamCli,
-		TSAlloc:    t.tsAlloc,
-		SendMu:     &t.sendMu,
 	}
 }
 
@@ -296,13 +282,7 @@ func (t *Task) sendRBACMsg(ctx context.Context) error {
 	broadcast := builder.MustBuildBroadcast().WithBroadcastID(rand.Uint64())
 	msgs := broadcast.SplitIntoMutableMessage()
 	for _, msg := range msgs {
-		ts := t.tsAlloc.Alloc()
-		immutableMessage := msg.WithTimeTick(ts).
-			WithLastConfirmed(newFakeMessageID(ts)).
-			IntoImmutableMessage(newFakeMessageID(ts)).
-			IntoImmutableMessageProto()
-
-		if err := t.streamCli.Send(ctx, immutableMessage); err != nil {
+		if err := t.streamCli.Send(ctx, msg); err != nil {
 			return fmt.Errorf("secondary: send rbac msg: %w", err)
 		}
 	}
@@ -324,7 +304,9 @@ func (t *Task) sendFlushAll(ctx context.Context) error {
 			return fmt.Errorf("secondary: unmarshal flush all msg: %w", err)
 		}
 
-		if err := t.streamCli.Send(ctx, &msg); err != nil {
+		// Flush-all messages carry source-cluster time-ticks; forward them
+		// without re-stamping so MVCC ordering on the target side stays intact.
+		if err := t.streamCli.Forward(ctx, &msg); err != nil {
 			return fmt.Errorf("secondary: send flush all msg: %w", err)
 		}
 	}
