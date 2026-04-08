@@ -7,19 +7,50 @@ import (
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
+	"github.com/milvus-io/milvus/pkg/v2/streaming/util/message"
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/retry"
 )
 
+// Stream is the replicate stream client used by the secondary restore path.
+//
+// Time-tick allocation lives inside the stream client: callers hand over a
+// MutableMessage and the stream client stamps the wire time-tick atomically
+// with the dispatch to the matching pchannel. Pre-built immutable messages
+// (e.g. flush-all messages whose time-ticks come from the source cluster) are
+// passed through Forward without re-stamping.
 type Stream interface {
-	Send(ctx context.Context, immutableMessage *commonpb.ImmutableMessage) error
+	// Alloc returns the next monotonic timestamp from the stream client's
+	// internal allocator. Use it for message body timestamps such as
+	// MsgBase.Timestamp so that body and wire time-ticks share one axis.
+	Alloc() uint64
+
+	// Send stamps a wire time-tick on the mutable message and dispatches it to
+	// the pchannel matching the message's vchannel. The (alloc, dispatch) pair
+	// is performed atomically with respect to other Send/Forward calls so that
+	// per-pchannel time-tick monotonicity is preserved.
+	Send(ctx context.Context, msg message.MutableMessage) error
+
+	// Forward dispatches a pre-built immutable message to its pchannel without
+	// re-stamping its time-tick. Used to replay messages whose time-ticks were
+	// assigned by the source cluster.
+	Forward(ctx context.Context, msg *commonpb.ImmutableMessage) error
+
+	// WaitConfirm blocks until every pchannel has received a confirmation
+	// covering the highest time-tick that was sent on it.
 	WaitConfirm()
 }
 
 type StreamClient struct {
 	pchClient map[string]*pchClient
+
+	tsAlloc *tsAlloc
+
+	// dispatchMu serializes (alloc tt + dispatch to pchClient) so that the
+	// per-pchannel time-tick stays monotonic across concurrent callers.
+	dispatchMu sync.Mutex
 }
 
 func NewStreamClient(srcClusterID, taskID string, pch []string, grpc Grpc) (*StreamClient, error) {
@@ -32,15 +63,33 @@ func NewStreamClient(srcClusterID, taskID string, pch []string, grpc Grpc) (*Str
 		pchClients[p] = pchCli
 	}
 
-	s := &StreamClient{pchClient: pchClients}
+	s := &StreamClient{
+		pchClient: pchClients,
+		tsAlloc:   newTSAlloc(),
+	}
 
 	return s, nil
 }
 
-func (s *StreamClient) Send(ctx context.Context, immutableMessage *commonpb.ImmutableMessage) error {
-	log.Debug("stream: send message", zap.Object("msg", newMsgLogObject(immutableMessage)))
+func (s *StreamClient) Alloc() uint64 {
+	return s.tsAlloc.Alloc()
+}
 
-	pch := GetPch(immutableMessage)
+func (s *StreamClient) Send(ctx context.Context, msg message.MutableMessage) error {
+	s.dispatchMu.Lock()
+	defer s.dispatchMu.Unlock()
+
+	ts := s.tsAlloc.Alloc()
+	id := newFakeMessageID(ts)
+	immutable := msg.
+		WithTimeTick(ts).
+		WithLastConfirmed(id).
+		IntoImmutableMessage(id).
+		IntoImmutableMessageProto()
+
+	log.Debug("stream: send message", zap.Object("msg", newMsgLogObject(immutable)))
+
+	pch := GetPch(immutable)
 	if pch == "" {
 		return fmt.Errorf("stream: no pch in message")
 	}
@@ -49,8 +98,30 @@ func (s *StreamClient) Send(ctx context.Context, immutableMessage *commonpb.Immu
 		return fmt.Errorf("stream: no pch client for %s", pch)
 	}
 
-	if err := cli.send(ctx, immutableMessage); err != nil {
+	if err := cli.send(ctx, immutable); err != nil {
 		return fmt.Errorf("stream: send message: %w", err)
+	}
+
+	return nil
+}
+
+func (s *StreamClient) Forward(ctx context.Context, immutable *commonpb.ImmutableMessage) error {
+	s.dispatchMu.Lock()
+	defer s.dispatchMu.Unlock()
+
+	log.Debug("stream: forward message", zap.Object("msg", newMsgLogObject(immutable)))
+
+	pch := GetPch(immutable)
+	if pch == "" {
+		return fmt.Errorf("stream: no pch in message")
+	}
+	cli, ok := s.pchClient[pch]
+	if !ok {
+		return fmt.Errorf("stream: no pch client for %s", pch)
+	}
+
+	if err := cli.send(ctx, immutable); err != nil {
+		return fmt.Errorf("stream: forward message: %w", err)
 	}
 
 	return nil
