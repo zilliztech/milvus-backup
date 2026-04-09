@@ -58,7 +58,9 @@ func (s *recordingStream) Forward(_ context.Context, msg *commonpb.ImmutableMess
 	return nil
 }
 
-func (s *recordingStream) WaitConfirm() {}
+func (s *recordingStream) WaitConfirm(_ context.Context) error { return nil }
+
+func (s *recordingStream) Close() {}
 
 // timestampsByPch returns the time-ticks grouped by physical channel, in send
 // order.

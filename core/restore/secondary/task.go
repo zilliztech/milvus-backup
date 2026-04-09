@@ -89,6 +89,9 @@ func (t *Task) initClients() error {
 }
 
 func (t *Task) closeClients() {
+	if t.streamCli != nil {
+		t.streamCli.Close()
+	}
 	if t.grpc != nil {
 		if err := t.grpc.Close(); err != nil {
 			t.logger.Warn("close grpc client", zap.Error(err))
@@ -125,7 +128,10 @@ func (t *Task) Execute(ctx context.Context) error {
 	}
 
 	t.logger.Info("wait confirm")
-	t.streamCli.WaitConfirm()
+	if err := t.streamCli.WaitConfirm(ctx); err != nil {
+		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
+		return fmt.Errorf("secondary: wait confirm: %w", err)
+	}
 
 	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreSuccess())
 	t.logger.Info("restore done")
