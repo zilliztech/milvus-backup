@@ -4,6 +4,7 @@ import (
 	"context"
 	"math/rand/v2"
 	"sort"
+	"sync"
 
 	"github.com/milvus-io/milvus/pkg/v2/proto/messagespb"
 	"github.com/milvus-io/milvus/pkg/v2/streaming/util/message"
@@ -24,6 +25,8 @@ type loadTaskArgs struct {
 	BackupInfo *backuppb.BackupInfo
 
 	StreamCli milvus.Stream
+	TSAlloc   *tsAlloc
+	SendMu    *sync.Mutex
 }
 
 type collLoadTask struct {
@@ -32,6 +35,9 @@ type collLoadTask struct {
 	backupInfo *backuppb.BackupInfo
 	dbBackup   *backuppb.DatabaseBackupInfo
 	collBackup *backuppb.CollectionBackupInfo
+
+	tsAlloc *tsAlloc
+	sendMu  *sync.Mutex
 
 	streamCli milvus.Stream
 	logger    *zap.Logger
@@ -46,6 +52,9 @@ func newCollLoadTask(args loadTaskArgs, dbBackup *backuppb.DatabaseBackupInfo, c
 		backupInfo: args.BackupInfo,
 		dbBackup:   dbBackup,
 		collBackup: collBackup,
+
+		tsAlloc: args.TSAlloc,
+		sendMu:  args.SendMu,
 
 		streamCli: args.StreamCli,
 		logger:    log.With(zap.String("task_id", args.TaskID), zap.String("ns", ns.String())),
@@ -70,8 +79,17 @@ func (clt *collLoadTask) Execute(ctx context.Context) error {
 	broadcast := builder.MustBuildBroadcast().WithBroadcastID(rand.Uint64())
 	msgs := broadcast.SplitIntoMutableMessage()
 
+	clt.sendMu.Lock()
+	defer clt.sendMu.Unlock()
+
 	for _, msg := range msgs {
-		if err := clt.streamCli.Send(ctx, msg); err != nil {
+		ts := clt.tsAlloc.Alloc()
+		immutableMessage := msg.WithTimeTick(ts).
+			WithLastConfirmed(newFakeMessageID(ts)).
+			IntoImmutableMessage(newFakeMessageID(ts)).
+			IntoImmutableMessageProto()
+
+		if err := clt.streamCli.Send(ctx, immutableMessage); err != nil {
 			return err
 		}
 	}
