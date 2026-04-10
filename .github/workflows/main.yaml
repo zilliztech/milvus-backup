@@ -972,6 +972,189 @@ jobs:
 
 
 
+  test-backup-restore-local-storage:
+    needs: unit-test-go
+    name: Backup and restore with local storage
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image_tag: [v2.5.20, 2.6-latest]
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v6
+        with:
+          python-version: '3.10'
+          cache: pip
+
+      - uses: actions/setup-go@v6
+        name: Set up Go ${{ env.go-version }}
+        with:
+          go-version: ${{ env.go-version }}
+          cache: true
+
+      - name: Build
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          go get
+          go build
+
+      - name: Install dependency
+        timeout-minutes: 5
+        working-directory: tests
+        shell: bash
+        run: |
+          pip install -r requirements.txt --trusted-host https://test.pypi.org
+
+      - name: Deploy Milvus with local storage
+        timeout-minutes: 15
+        shell: bash
+        working-directory: deployment/standalone
+        run: |
+          tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
+          mkdir -p volumes/milvus
+          sudo chmod -R 777 volumes
+
+          # Create embedEtcd.yaml
+          cat > embedEtcd.yaml <<'ETCD'
+          listen-client-urls: http://0.0.0.0:2379
+          advertise-client-urls: http://0.0.0.0:2379
+          quota-backend-bytes: 4294967296
+          auto-compaction-mode: revision
+          auto-compaction-retention: '1000'
+          ETCD
+
+          # Create user.yaml for custom config
+          cat > user.yaml <<'USERCFG'
+          log:
+            level: debug
+          dataNode:
+            segment:
+              insertBufSize: 4096
+          USERCFG
+          cat user.yaml
+
+          # Match official standalone docker deployment:
+          # https://milvus.io/docs/install_standalone-docker.md
+          sudo docker run -d \
+            --name milvus-standalone \
+            --security-opt seccomp:unconfined \
+            -e ETCD_USE_EMBED=true \
+            -e ETCD_DATA_DIR=/var/lib/milvus/etcd \
+            -e ETCD_CONFIG_PATH=/milvus/configs/embedEtcd.yaml \
+            -e COMMON_STORAGETYPE=local \
+            -e DEPLOY_MODE=STANDALONE \
+            -v $(pwd)/volumes/milvus:/var/lib/milvus \
+            -v $(pwd)/embedEtcd.yaml:/milvus/configs/embedEtcd.yaml \
+            -v $(pwd)/user.yaml:/milvus/configs/user.yaml \
+            -p 19530:19530 \
+            -p 9091:9091 \
+            -p 2379:2379 \
+            --health-cmd="curl -f http://localhost:9091/healthz" \
+            --health-interval=30s \
+            --health-start-period=90s \
+            --health-timeout=20s \
+            --health-retries=3 \
+            milvusdb/milvus:${tag} \
+            milvus run standalone
+
+          # Wait for healthy
+          for i in $(seq 1 60); do
+            status=$(sudo docker inspect --format='{{.State.Health.Status}}' milvus-standalone 2>/dev/null || echo "not ready")
+            echo "Attempt $i: $status"
+            if [ "$status" = "healthy" ]; then break; fi
+            sleep 5
+          done
+          sudo docker ps -a
+          # Fix permissions on Milvus data dir created by container root
+          sudo chmod -R 777 volumes
+
+      - name: Export container status after deploy
+        if: ${{ always() }}
+        shell: bash
+        working-directory: deployment/standalone
+        run: |
+          echo "=== Container Status ==="
+          sudo docker ps -a || true
+          echo "=== Standalone Container Logs ==="
+          sudo docker logs milvus-standalone 2>&1 | tail -100 || true
+
+      - name: Configure backup.yaml for local storage
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          yq -i '.log.level = "debug"' configs/backup.yaml
+          yq -i '.minio.storageType = "local"' configs/backup.yaml
+          yq -i '.minio.localPath = "deployment/standalone/volumes/milvus/data"' configs/backup.yaml
+          yq -i '.minio.bucketName = ""' configs/backup.yaml
+          yq -i '.minio.rootPath = ""' configs/backup.yaml
+          yq -i '.minio.backupStorageType = "local"' configs/backup.yaml
+          yq -i '.minio.backupLocalPath = "deployment/standalone/volumes/backup"' configs/backup.yaml
+          yq -i '.minio.backupBucketName = ""' configs/backup.yaml
+          yq -i '.minio.backupRootPath = "backup"' configs/backup.yaml
+          yq -i '.minio.crossStorage = true' configs/backup.yaml
+          cat configs/backup.yaml
+
+      - name: Prepare data
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python example/prepare_data.py
+
+      - name: Fix permissions after data preparation
+        shell: bash
+        working-directory: deployment/standalone
+        run: |
+          sudo chmod -R 777 volumes
+
+      - name: Backup
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          ./milvus-backup check
+          ./milvus-backup list
+          ./milvus-backup create -n my_backup
+          ./milvus-backup list
+
+      - name: Restore backup
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          ./milvus-backup restore -n my_backup -s _recover
+
+      - name: Verify data
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python example/verify_data.py
+
+      - name: Delete backup
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          ./milvus-backup delete -n my_backup
+          ./milvus-backup list
+
+      - name: Export logs
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          mkdir -p /tmp/ci_logs
+          sudo docker logs milvus-standalone > /tmp/ci_logs/standalone.log 2>&1 || true
+
+      - name: Upload logs
+        if: ${{ ! success() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: local-storage-logs-${{ matrix.image_tag }}
+          path: |
+            /tmp/ci_logs
+            ./server.log
+
   test-backup-restore-api:
     name: Backup and restore api
     runs-on: ubuntu-latest
