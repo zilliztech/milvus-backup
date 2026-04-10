@@ -1,4 +1,4 @@
-package milvus
+package secondary
 
 import (
 	"fmt"
@@ -9,10 +9,6 @@ import (
 
 var _ message.MessageID = (*fakeMessageID)(nil)
 
-// fakeMessageID is a synthetic MessageID used when constructing immutable
-// messages on the replicate side. The replicate stream does not own a real WAL,
-// so we fabricate an id from the time-tick to satisfy the MutableMessage ->
-// ImmutableMessage conversion contract.
 type fakeMessageID struct {
 	tt uint64
 }

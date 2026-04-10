@@ -4,11 +4,9 @@ import (
 	"context"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"testing"
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
-	"github.com/milvus-io/milvus/pkg/v2/streaming/util/message"
 	"github.com/milvus-io/milvus/pkg/v2/util/funcutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -20,50 +18,22 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
-// recordingStream is an in-memory fake of milvus.Stream that records every
-// message it accepts. It mimics the production StreamClient by allocating a
-// monotonic time-tick under a mutex and converting the mutable message into an
-// immutable proto, so the per-pch time-tick ordering invariants exercised by
-// the secondary tasks still surface in the recorded output.
+// recordingStream records all messages sent in order.
 type recordingStream struct {
 	mu   sync.Mutex
-	ts   atomic.Uint64
 	msgs []*commonpb.ImmutableMessage
 }
 
-func (s *recordingStream) Alloc() uint64 {
-	return s.ts.Add(1)
-}
-
-func (s *recordingStream) Send(_ context.Context, msg message.MutableMessage) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	tt := s.ts.Add(1)
-	id := newRecordingMessageID(tt)
-	immutable := msg.
-		WithTimeTick(tt).
-		WithLastConfirmed(id).
-		IntoImmutableMessage(id).
-		IntoImmutableMessageProto()
-
-	s.msgs = append(s.msgs, immutable)
-	return nil
-}
-
-func (s *recordingStream) Forward(_ context.Context, msg *commonpb.ImmutableMessage) error {
+func (s *recordingStream) Send(_ context.Context, msg *commonpb.ImmutableMessage) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.msgs = append(s.msgs, msg)
 	return nil
 }
 
-func (s *recordingStream) WaitConfirm(_ context.Context) error { return nil }
+func (s *recordingStream) WaitConfirm() {}
 
-func (s *recordingStream) Close() {}
-
-// timestampsByPch returns the time-ticks grouped by physical channel, in send
-// order.
+// timestampsByPch returns the timestamps grouped by physical channel, in send order.
 func (s *recordingStream) timestampsByPch() map[string][]uint64 {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -76,29 +46,6 @@ func (s *recordingStream) timestampsByPch() map[string][]uint64 {
 	}
 	return result
 }
-
-// recordingMessageID is a synthetic message id used by recordingStream to
-// satisfy the MutableMessage -> ImmutableMessage conversion contract.
-type recordingMessageID struct{ tt uint64 }
-
-func newRecordingMessageID(tt uint64) *recordingMessageID { return &recordingMessageID{tt: tt} }
-
-func (r *recordingMessageID) WALName() message.WALName { return message.WALNameKafka }
-func (r *recordingMessageID) LT(id message.MessageID) bool {
-	return r.tt < id.(*recordingMessageID).tt
-}
-
-func (r *recordingMessageID) LTE(id message.MessageID) bool {
-	return r.tt <= id.(*recordingMessageID).tt
-}
-func (r *recordingMessageID) EQ(id message.MessageID) bool {
-	return r.tt == id.(*recordingMessageID).tt
-}
-func (r *recordingMessageID) Marshal() string { return fmt.Sprintf("%d", r.tt) }
-func (r *recordingMessageID) IntoProto() *commonpb.MessageID {
-	return &commonpb.MessageID{Id: message.EncodeUint64(r.tt), WALName: commonpb.WALName_Kafka}
-}
-func (r *recordingMessageID) String() string { return fmt.Sprintf("%d", r.tt) }
 
 // completedRestful always returns ImportStateCompleted immediately.
 type completedRestful struct{}
@@ -177,6 +124,8 @@ func newTestDMLTask(t *testing.T, collBackup *backuppb.CollectionBackupInfo, str
 		Maybe()
 
 	return &collDMLTask{
+		tsAlloc:       newTTAlloc(),
+		sendMu:        &sync.Mutex{},
 		pchTS:         newTestPchTS(vchannels),
 		collBackup:    collBackup,
 		backupStorage: storageMock,
@@ -286,10 +235,11 @@ func TestExecute_EmptyPartitions(t *testing.T) {
 
 // TestConcurrentCollections_TimestampOrderingPerPch verifies that when multiple
 // collections are restored concurrently and share the same physical channels,
-// the stream client's internal serialization keeps per-pch time-ticks
-// monotonically increasing.
+// the sendMu ensures per-pch timestamps remain strictly increasing.
 func TestConcurrentCollections_TimestampOrderingPerPch(t *testing.T) {
-	// Shared stream — simulating what Task provides to all collection tasks.
+	// Shared resources — simulating what Task provides to all collection tasks.
+	tsAlloc := newTTAlloc()
+	sendMu := &sync.Mutex{}
 	stream := &recordingStream{}
 
 	storageMock := storage.NewMockClient(t)
@@ -338,6 +288,8 @@ func TestConcurrentCollections_TimestampOrderingPerPch(t *testing.T) {
 		}
 
 		tasks[i] = &collDMLTask{
+			tsAlloc:       tsAlloc,
+			sendMu:        sendMu,
 			pchTS:         newTestPchTS(vchannels),
 			collBackup:    collBackup,
 			backupStorage: storageMock,
