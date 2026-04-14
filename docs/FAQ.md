@@ -37,3 +37,19 @@ milvus-backup restore --name <backup_name> --rebuild_index
 ```
 
 This tells the restore process to re-create the indexes based on the backed-up index metadata after the data is restored, so the collection is ready to load immediately.
+
+---
+
+### Restore fails with `no binlog to import`
+
+This error usually means the target Milvus cannot read the restored binlog files because the bucket is misconfigured. Milvus can only read files from its own bucket — it cannot read across buckets.
+
+**Why does this happen?**
+
+During restore, milvus-backup copies backup data into the bucket specified by `minio.bucketName` in `backup.yaml`, then asks Milvus to import from there via BulkInsert. If that bucket is not the one the target Milvus is actually using, Milvus finds no files and returns `no binlog to import`.
+
+**How to fix it?**
+
+Run `./milvus-backup check config` to print the resolved configuration, and make sure `minio.bucketName` matches the bucket that the **target Milvus** is actually using. Run `./milvus-backup check` to verify connectivity.
+
+**Related issues:** [#1026](https://github.com/zilliztech/milvus-backup/issues/1026), [#1006](https://github.com/zilliztech/milvus-backup/issues/1006), [#923](https://github.com/zilliztech/milvus-backup/issues/923), [#895](https://github.com/zilliztech/milvus-backup/issues/895)
