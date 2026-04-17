@@ -5,39 +5,61 @@ import (
 	"context"
 	"io"
 	"os"
-	"path"
+	"path/filepath"
 	"testing"
 
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 )
 
+func newTestLocalClient(t *testing.T) *LocalClient {
+	t.Helper()
+	return newLocalClient(Config{LocalPath: t.TempDir(), Bucket: "test-bucket"})
+}
+
 func TestLocalClient_BucketExist(t *testing.T) {
-	cli := &LocalClient{}
-	exist, err := cli.BucketExist(context.Background(), "")
-	assert.NoError(t, err)
-	assert.True(t, exist)
+	t.Run("NotExist", func(t *testing.T) {
+		cli := newTestLocalClient(t)
+		exist, err := cli.BucketExist(context.Background(), "")
+		assert.NoError(t, err)
+		assert.False(t, exist)
+	})
+
+	t.Run("Exist", func(t *testing.T) {
+		cli := newTestLocalClient(t)
+		err := os.MkdirAll(cli.baseDir, 0755)
+		assert.NoError(t, err)
+
+		exist, err := cli.BucketExist(context.Background(), "")
+		assert.NoError(t, err)
+		assert.True(t, exist)
+	})
 }
 
 func TestLocalClient_CreateBucket(t *testing.T) {
-	cli := &LocalClient{}
+	cli := newTestLocalClient(t)
 	err := cli.CreateBucket(context.Background())
 	assert.NoError(t, err)
+	assert.DirExists(t, cli.baseDir)
 }
 
 func TestLocalClient_UploadObject(t *testing.T) {
-	key := path.Join(t.TempDir(), "test.txt")
-	cli := &LocalClient{}
-	err := cli.UploadObject(context.Background(), UploadObjectInput{
+	cli := newTestLocalClient(t)
+	err := cli.CreateBucket(context.Background())
+	assert.NoError(t, err)
+
+	key := "subdir/test.txt"
+	err = cli.UploadObject(context.Background(), UploadObjectInput{
 		Key:  key,
 		Body: bytes.NewReader([]byte{0}),
 		Size: 1,
 	})
-
 	assert.NoError(t, err)
-	assert.FileExists(t, key)
 
-	file, err := os.Open(key)
+	absPath := cli.absPath(key)
+	assert.FileExists(t, absPath)
+
+	file, err := os.Open(absPath)
 	assert.NoError(t, err)
 	defer file.Close()
 
@@ -51,24 +73,31 @@ func TestLocalClient_UploadObject(t *testing.T) {
 }
 
 func TestLocalClient_DeleteObject(t *testing.T) {
-	key := path.Join(t.TempDir(), "test.txt")
-	err := os.WriteFile(key, []byte{0}, 0644)
+	cli := newTestLocalClient(t)
+	err := cli.CreateBucket(context.Background())
 	assert.NoError(t, err)
-	assert.FileExists(t, key)
 
-	cli := &LocalClient{}
+	key := "test.txt"
+	absPath := cli.absPath(key)
+	err = os.WriteFile(absPath, []byte{0}, 0644)
+	assert.NoError(t, err)
+	assert.FileExists(t, absPath)
+
 	err = cli.DeleteObject(context.Background(), key)
 	assert.NoError(t, err)
-	assert.NoFileExists(t, key)
+	assert.NoFileExists(t, absPath)
 }
 
 func TestLocalClient_HeadObject(t *testing.T) {
-	key := path.Join(t.TempDir(), "test.txt")
-	err := os.WriteFile(key, []byte{0}, 0644)
+	cli := newTestLocalClient(t)
+	err := cli.CreateBucket(context.Background())
 	assert.NoError(t, err)
-	assert.FileExists(t, key)
 
-	cli := &LocalClient{}
+	key := "test.txt"
+	absPath := cli.absPath(key)
+	err = os.WriteFile(absPath, []byte{0}, 0644)
+	assert.NoError(t, err)
+
 	attr, err := cli.HeadObject(context.Background(), key)
 	assert.NoError(t, err)
 	assert.Equal(t, key, attr.Key)
@@ -76,12 +105,15 @@ func TestLocalClient_HeadObject(t *testing.T) {
 }
 
 func TestLocalClient_GetObject(t *testing.T) {
-	key := path.Join(t.TempDir(), "test.txt")
-	err := os.WriteFile(key, []byte{0}, 0644)
+	cli := newTestLocalClient(t)
+	err := cli.CreateBucket(context.Background())
 	assert.NoError(t, err)
-	assert.FileExists(t, key)
 
-	cli := &LocalClient{}
+	key := "test.txt"
+	absPath := cli.absPath(key)
+	err = os.WriteFile(absPath, []byte{0}, 0644)
+	assert.NoError(t, err)
+
 	obj, err := cli.GetObject(context.Background(), key)
 	assert.NoError(t, err)
 	defer obj.Body.Close()
@@ -93,72 +125,82 @@ func TestLocalClient_GetObject(t *testing.T) {
 }
 
 func TestLocalClient_CopyObject(t *testing.T) {
-	srcKey := path.Join(t.TempDir(), "test.txt")
-	err := os.WriteFile(srcKey, []byte{0}, 0644)
+	srcCli := newTestLocalClient(t)
+	err := srcCli.CreateBucket(context.Background())
 	assert.NoError(t, err)
-	assert.FileExists(t, srcKey)
 
-	destKey := path.Join(t.TempDir(), "backup", "test.txt")
-	cli := &LocalClient{}
-	assert.NoFileExists(t, destKey)
-	err = cli.CopyObject(context.Background(), CopyObjectInput{SrcCli: cli, SrcAttr: ObjectAttr{Key: srcKey, Length: 1}, DestKey: destKey})
+	srcKey := "test.txt"
+	err = os.WriteFile(srcCli.absPath(srcKey), []byte{0}, 0644)
 	assert.NoError(t, err)
-	assert.FileExists(t, destKey)
+
+	destCli := newLocalClient(Config{LocalPath: t.TempDir(), Bucket: "dest-bucket"})
+	err = destCli.CreateBucket(context.Background())
+	assert.NoError(t, err)
+
+	destKey := "backup/test.txt"
+	err = destCli.CopyObject(context.Background(), CopyObjectInput{
+		SrcCli:  srcCli,
+		SrcAttr: ObjectAttr{Key: srcKey, Length: 1},
+		DestKey: destKey,
+	})
+	assert.NoError(t, err)
+	assert.FileExists(t, destCli.absPath(destKey))
 }
 
 func TestLocalClient_ListPrefix(t *testing.T) {
-	dir := t.TempDir()
+	cli := newTestLocalClient(t)
+	err := cli.CreateBucket(context.Background())
+	assert.NoError(t, err)
 
 	keys := []string{
-		path.Join(dir, "backup", "meta", "test.txt"),
-		path.Join(dir, "backup", "meta", "test2.txt"),
-		path.Join(dir, "backup", "meta", "test3.txt"),
-		path.Join(dir, "backup", "binlogs", "test.txt"),
-		path.Join(dir, "backup", "binlogs", "test2.txt"),
-		path.Join(dir, "backup", "binlogs", "test3.txt"),
+		filepath.Join("backup", "meta", "test.txt"),
+		filepath.Join("backup", "meta", "test2.txt"),
+		filepath.Join("backup", "meta", "test3.txt"),
+		filepath.Join("backup", "binlogs", "test.txt"),
+		filepath.Join("backup", "binlogs", "test2.txt"),
+		filepath.Join("backup", "binlogs", "test3.txt"),
 	}
 
 	for _, key := range keys {
-		err := os.MkdirAll(path.Dir(key), 0755)
+		abs := cli.absPath(key)
+		err := os.MkdirAll(filepath.Dir(abs), 0755)
 		assert.NoError(t, err)
-		err = os.WriteFile(key, []byte{0}, 0644)
+		err = os.WriteFile(abs, []byte{0}, 0644)
 		assert.NoError(t, err)
 	}
 
 	t.Run("PrefixIsFile", func(t *testing.T) {
-		cli := &LocalClient{}
-		iter, err := cli.ListPrefix(context.Background(), path.Join(dir, "backup", "meta", "test.txt"), false)
+		key := filepath.Join("backup", "meta", "test.txt")
+		iter, err := cli.ListPrefix(context.Background(), key, false)
 		assert.NoError(t, err)
 
 		assert.True(t, iter.HasNext())
 		entry, err := iter.Next()
 		assert.NoError(t, err)
-		assert.Equal(t, path.Join(dir, "backup", "meta", "test.txt"), entry.Key)
+		assert.Equal(t, key, entry.Key)
 		assert.Equal(t, int64(1), entry.Length)
 
-		iter, err = cli.ListPrefix(context.Background(), path.Join(dir, "backup", "meta", "test.txt"), true)
+		iter, err = cli.ListPrefix(context.Background(), key, true)
 		assert.NoError(t, err)
 		assert.True(t, iter.HasNext())
 		entry, err = iter.Next()
 		assert.NoError(t, err)
-		assert.Equal(t, path.Join(dir, "backup", "meta", "test.txt"), entry.Key)
+		assert.Equal(t, key, entry.Key)
 		assert.Equal(t, int64(1), entry.Length)
 	})
 
 	t.Run("Empty", func(t *testing.T) {
-		cli := &LocalClient{}
-		iter, err := cli.ListPrefix(context.Background(), path.Join(dir, "not_exist"), false)
+		iter, err := cli.ListPrefix(context.Background(), "not_exist", false)
 		assert.NoError(t, err)
 		assert.False(t, iter.HasNext())
 
-		iter, err = cli.ListPrefix(context.Background(), path.Join(dir, "not_exist"), true)
+		iter, err = cli.ListPrefix(context.Background(), "not_exist", true)
 		assert.NoError(t, err)
 		assert.False(t, iter.HasNext())
 	})
 
 	t.Run("Recursive", func(t *testing.T) {
-		cli := &LocalClient{}
-		iter, err := cli.ListPrefix(context.Background(), path.Join(dir, "backup"), true)
+		iter, err := cli.ListPrefix(context.Background(), "backup", true)
 		assert.NoError(t, err)
 
 		var entries []ObjectAttr
@@ -174,8 +216,7 @@ func TestLocalClient_ListPrefix(t *testing.T) {
 	})
 
 	t.Run("NonRecursive", func(t *testing.T) {
-		cli := &LocalClient{}
-		iter, err := cli.ListPrefix(context.Background(), path.Join(dir, "backup"), false)
+		iter, err := cli.ListPrefix(context.Background(), "backup", false)
 		assert.NoError(t, err)
 
 		var entries []ObjectAttr
@@ -186,6 +227,6 @@ func TestLocalClient_ListPrefix(t *testing.T) {
 		}
 		assert.Len(t, entries, 2)
 		names := lo.Map(entries, func(entry ObjectAttr, _ int) string { return entry.Key })
-		assert.ElementsMatch(t, []string{path.Join(dir, "backup", "binlogs"), path.Join(dir, "backup", "meta")}, names)
+		assert.ElementsMatch(t, []string{filepath.Join("backup", "binlogs"), filepath.Join("backup", "meta")}, names)
 	})
 }

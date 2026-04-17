@@ -75,20 +75,29 @@ func TestCollTask_ezk(t *testing.T) {
 }
 
 func TestToPaths(t *testing.T) {
-	// normal
-	dir := partitionDir{insertLogDir: "insert", deltaLogDir: "delta"}
-	paths := toPaths(dir)
-	assert.Equal(t, []string{"insert", "delta"}, paths)
+	t.Run("Normal", func(t *testing.T) {
+		ct := &collTask{}
+		dir := partitionDir{insertLogDir: "insert", deltaLogDir: "delta"}
+		assert.Equal(t, []string{"insert", "delta"}, ct.toPaths(dir))
+	})
 
-	// without delta
-	dir = partitionDir{insertLogDir: "insert"}
-	paths = toPaths(dir)
-	assert.Equal(t, []string{"insert", ""}, paths)
+	t.Run("WithoutDelta", func(t *testing.T) {
+		ct := &collTask{}
+		dir := partitionDir{insertLogDir: "insert"}
+		assert.Equal(t, []string{"insert", ""}, ct.toPaths(dir))
+	})
 
-	// without insert
-	dir = partitionDir{deltaLogDir: "delta"}
-	paths = toPaths(dir)
-	assert.Equal(t, []string{"delta"}, paths)
+	t.Run("WithoutInsert", func(t *testing.T) {
+		ct := &collTask{}
+		dir := partitionDir{deltaLogDir: "delta"}
+		assert.Equal(t, []string{"delta"}, ct.toPaths(dir))
+	})
+
+	t.Run("MilvusLocalPathPrependedToNonEmptyOnly", func(t *testing.T) {
+		ct := &collTask{milvusLocalPath: "/var/lib/milvus/data"}
+		dir := partitionDir{insertLogDir: "restore-temp/binlogs/insert_log/x"}
+		assert.Equal(t, []string{"/var/lib/milvus/data/restore-temp/binlogs/insert_log/x", ""}, ct.toPaths(dir))
+	})
 }
 
 func TestL0SegmentBatches(t *testing.T) {
