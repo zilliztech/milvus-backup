@@ -73,6 +73,7 @@ pull_request_rules:
         - -body~=https://github.com/zilliztech/milvus-backup/issues/[0-9]{1,6}(\s+|$)
       - -label=kind/improvement
       - -title~=\[automated\]
+      - author!=dependabot[bot]
     actions:
       label:
         add:
