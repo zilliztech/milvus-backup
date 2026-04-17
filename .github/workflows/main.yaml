@@ -4,9 +4,19 @@ on:
   push:
     branches:
       - main
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'scripts/**'
+      - '.github/mergify.yml'
   pull_request:
     branches:
       - main
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'scripts/**'
+      - '.github/mergify.yml'
   workflow_dispatch:
   schedule:
     - cron: '0 0 * * *'
