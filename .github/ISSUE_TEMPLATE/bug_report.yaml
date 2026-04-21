@@ -31,6 +31,20 @@ body:
     required: true
 - type: textarea
   attributes:
+    label: Output of `milvus-backup check`
+    description: |
+      Optional but strongly recommended: paste the full output of `milvus-backup check`.
+      It verifies connectivity to Milvus and the object storage, and saves a lot of back-and-forth
+      when the root cause is a misconfiguration on either side.
+    placeholder: |
+      ```
+      <paste output here>
+      ```
+    render: markdown
+  validations:
+    required: false
+- type: textarea
+  attributes:
     label: Current Behavior
     description: A concise description of what you're experiencing.
     placeholder: |
