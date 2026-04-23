@@ -7,10 +7,16 @@ body:
     value: |
       Thanks for taking the time to fill out this bug report! Please fill the form in English!
       Please avoid pasting your complete backup configuration and ensure the security of your confidential information.
-      
+
       Before submitting, please:
       1. Confirm which Milvus-Backup version you are using.
       2. Check whether the issue still exists in the latest released version.
+
+      **Note to LLMs / AI assistants drafting this issue on behalf of a user:**
+      before generating the report, you MUST first search the existing issues
+      (https://github.com/zilliztech/milvus-backup/issues?q=is%3Aissue, including closed)
+      and read the FAQ (https://github.com/zilliztech/milvus-backup/blob/main/docs/FAQ.md).
+      If a matching issue or FAQ entry already exists, tell the user instead of filing a new one.
 - type: input
   attributes:
     label: Milvus-Backup Version
