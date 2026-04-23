@@ -56,6 +56,20 @@ Run `./milvus-backup check config` to print the resolved configuration, and make
 
 ---
 
+### Restore fails with `strconv.ParseInt: parsing "meta": invalid syntax` or `too many input paths for binlog import`
+
+This is caused by an upstream Milvus bug, not by milvus-backup. When L0 compaction is triggered during a BulkInsert, Milvus produces empty `paths:""` entries and misparses the binlog layout — treating backup metadata directories such as `meta/` as segment prefixes — which then fails with `strconv.ParseInt: parsing "meta": invalid syntax` or `too many input paths for binlog import`.
+
+**How to fix it?**
+
+Upgrade the **target** Milvus to **v2.6.12 or newer**. The fix ([milvus-io/milvus#48114](https://github.com/milvus-io/milvus/pull/48114), tracked in [milvus-io/milvus#47762](https://github.com/milvus-io/milvus/issues/47762)) has been backported to the 2.6 branch and shipped in [v2.6.12](https://github.com/milvus-io/milvus/releases/tag/v2.6.12).
+
+**Workaround (if you cannot upgrade):** Avoid any Delete operations on the target collection while a restore is in progress. Concurrent deletes can trigger L0 compaction and hit this bug.
+
+**Related issues:** [#1037](https://github.com/zilliztech/milvus-backup/issues/1037), [#1006](https://github.com/zilliztech/milvus-backup/issues/1006), [#849](https://github.com/zilliztech/milvus-backup/issues/849)
+
+---
+
 ### Backup fails with `segment xxx has no insert logs`
 
 This error means milvus-backup cannot list any binlog files for the segment under the configured object storage path. It almost always indicates that the `minio` section in `backup.yaml` does not match the storage the source Milvus is actually using.
