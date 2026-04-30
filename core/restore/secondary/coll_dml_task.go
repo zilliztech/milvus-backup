@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"strconv"
-	"sync"
 	"time"
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
@@ -80,9 +79,6 @@ type batchKey struct {
 type dmlTaskArgs struct {
 	TaskID string
 
-	TSAlloc *tsAlloc
-	SendMu  *sync.Mutex
-
 	PchTS map[string]uint64
 
 	BackupStorage storage.Client
@@ -94,9 +90,6 @@ type dmlTaskArgs struct {
 
 type collDMLTask struct {
 	taskID string
-
-	tsAlloc *tsAlloc
-	sendMu  *sync.Mutex
 
 	backupStorage storage.Client
 	backupDir     string
@@ -115,9 +108,6 @@ func newCollDMLTask(args dmlTaskArgs, collBackup *backuppb.CollectionBackupInfo)
 
 	return &collDMLTask{
 		taskID: args.TaskID,
-
-		tsAlloc: args.TSAlloc,
-		sendMu:  args.SendMu,
 
 		pchTS:      args.PchTS,
 		collBackup: collBackup,
@@ -407,43 +397,33 @@ func (dmlt *collDMLTask) sendImportMsg(ctx context.Context, partitionID int64, b
 	}
 	appendSysFields(schema)
 
-	dmlt.sendMu.Lock()
-	defer dmlt.sendMu.Unlock()
-
-	ts := dmlt.tsAlloc.Alloc()
-	header := &message.ImportMessageHeader{}
-	body := &message.ImportMsg{
-		Base: &commonpb.MsgBase{
-			MsgType:   commonpb.MsgType_Import,
-			Timestamp: ts,
-		},
-		Options:        b.options(),
-		DbName:         dmlt.collBackup.GetDbName(),
-		CollectionName: dmlt.collBackup.GetCollectionName(),
-		CollectionID:   dmlt.collBackup.GetCollectionId(),
-		PartitionIDs:   []int64{partitionID},
-		Files:          dmlt.buildImportFiles(b),
-		Schema:         schema,
-		JobID:          jobID,
-	}
-
-	builder := message.NewImportMessageBuilderV1().
-		WithHeader(header).
-		WithBody(body).
-		WithBroadcast(dmlt.collBackup.GetVirtualChannelNames())
-
-	broadcast := builder.MustBuildBroadcast().WithBroadcastID(rand.Uint64())
-	msgs := broadcast.SplitIntoMutableMessage()
-
-	for _, msg := range msgs {
-		immutableMessage := msg.WithTimeTick(ts).
-			WithLastConfirmed(newFakeMessageID(ts)).
-			IntoImmutableMessage(newFakeMessageID(ts)).
-			IntoImmutableMessageProto()
-
-		if err := dmlt.streamCli.Send(ctx, immutableMessage); err != nil {
-			return 0, fmt.Errorf("secondary: broadcast import: %w", err)
+	err = dmlt.streamCli.Send(ctx, func(ts uint64) []message.MutableMessage {
+		header := &message.ImportMessageHeader{}
+		body := &message.ImportMsg{
+			Base: &commonpb.MsgBase{
+				MsgType:   commonpb.MsgType_Import,
+				Timestamp: ts,
+			},
+			Options:        b.options(),
+			DbName:         dmlt.collBackup.GetDbName(),
+			CollectionName: dmlt.collBackup.GetCollectionName(),
+			CollectionID:   dmlt.collBackup.GetCollectionId(),
+			PartitionIDs:   []int64{partitionID},
+			Files:          dmlt.buildImportFiles(b),
+			Schema:         schema,
+			JobID:          jobID,
 		}
+
+		builder := message.NewImportMessageBuilderV1().
+			WithHeader(header).
+			WithBody(body).
+			WithBroadcast(dmlt.collBackup.GetVirtualChannelNames())
+
+		broadcast := builder.MustBuildBroadcast().WithBroadcastID(rand.Uint64())
+		return broadcast.SplitIntoMutableMessage()
+	})
+	if err != nil {
+		return 0, fmt.Errorf("secondary: broadcast import: %w", err)
 	}
 
 	return jobID, nil
