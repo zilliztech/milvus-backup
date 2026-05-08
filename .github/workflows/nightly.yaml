@@ -89,7 +89,9 @@ jobs:
         shell: bash
         working-directory: tests
         run: |
-          if [ ${{ matrix.case_tag }} == "MASTER" ] || [ ${{ matrix.case_tag }} == "RELEASE" ] || [ ${{ matrix.milvus_version }} == "master" ]; then
+          if [ ${{ matrix.case_tag }} == "RBAC" ]; then
+            pytest -s -v --tags ${{ matrix.case_tag }}
+          elif [ ${{ matrix.case_tag }} == "MASTER" ] || [ ${{ matrix.case_tag }} == "RELEASE" ] || [ ${{ matrix.milvus_version }} == "master" ]; then
             pytest -s -v --tags ${{ matrix.case_tag }} -n 4 --tei_endpoint http://text-embeddings:80
           else
             pytest -s -v --tags ${{ matrix.case_tag }} -n 4

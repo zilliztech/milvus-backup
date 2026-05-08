@@ -260,3 +260,121 @@ class TestRestoreBackupWithRbac(TestcaseBase):
             expected_roles=[role_name],
         )
 
+    @pytest.mark.tags(CaseLabel.L0)
+    def test_milvus_restore_backup_with_wildcard_privilege(
+        self,
+    ):
+        """Regression test for restoring grants with the AnyWord ('*') privilege.
+
+        The Milvus admin role uses '*' as its privilege name (AnyWord, meaning
+        "any privilege"), and users may also grant '*' to custom roles. The
+        OperatePrivilege code path on the Milvus server handles this correctly,
+        but the RestoreRBAC path historically did not, producing either a
+        `privilege group [] does not exist` error on 2.4.x / 2.5.x or silently
+        storing it as `PrivilegeGroup*` on master. This test exercises the
+        broken path: it grants '*' on a custom role, backs it up, drops the
+        role so the dedup in conv.Grants cannot hide the grant, then restores
+        and asserts the wildcard grant comes back exactly as written.
+        """
+
+        # Setup: create user + role and grant '*' directly to the role
+        user_name = cf.gen_unique_str("user_")
+        self.milvus_client.create_user(user_name=user_name, password="P@ssw0rd")
+        role_name = cf.gen_unique_str("role_")
+        self.milvus_client.create_role(role_name=role_name)
+        self.milvus_client.grant_privilege_v2(
+            role_name=role_name,
+            privilege='*',
+            collection_name='*',
+            db_name='*',
+        )
+        self.milvus_client.grant_role(user_name=user_name, role_name=role_name)
+        self.users.extend([user_name])
+        self.roles.extend([role_name])
+
+        # Sanity check: confirm the grant landed in the source cluster before
+        # we attempt to back it up. If the server starts rejecting '*' on
+        # OperatePrivilege in the future, this assertion turns the failure
+        # into a clear signal instead of a confusing restore-time error.
+        self.verify_role_grants(
+            self.milvus_client,
+            role_name=role_name,
+            expected_grants=[{
+                "object_name": "*",
+                "privilege": "*",
+                "db_name": "*",
+            }],
+        )
+
+        # Create a throwaway collection so the backup payload has something
+        # to point at; the test only cares about the RBAC half.
+        collection_name = f"{prefix}_{cf.gen_unique_str()}"
+        self.collection_names.extend([collection_name, collection_name + suffix])
+        dim = 8
+        schema: CollectionSchema = MilvusClient.create_schema(
+            auto_id=False,
+            enable_dynamic_field=False,
+        )
+        schema.add_field(field_name="id", datatype=DataType.INT64, is_primary=True)
+        schema.add_field(field_name="vector", datatype=DataType.FLOAT_VECTOR, dim=dim)
+        self.milvus_client.create_collection(collection_name=collection_name, schema=schema)
+
+        # Create backup with rbac=true
+        backup_name = f"{backup_prefix}_{cf.gen_unique_str()}"
+        payload = {
+            "async": False,
+            "backup_name": backup_name,
+            "collection_names": [collection_name],
+            "rbac": True,
+        }
+        res = self.client.create_backup(payload)
+        log.info(f"create backup response: {res}")
+        assert res["msg"] == "success"
+
+        # Drop the custom role/user so the restore path actually has to
+        # re-insert the '*' grant (otherwise conv.Grants would dedup it
+        # against the still-existing one and skip the broken path entirely).
+        self.clean_rbac(self.milvus_client)
+        log.info("List RBAC after drop and before restore, expected to be only build in parts")
+        self.list_rbac(self.milvus_client)
+
+        # Restore backup
+        payload = {
+            "async": False,
+            "backup_name": backup_name,
+            "collection_suffix": suffix,
+            "useV2Restore": True,
+            "rbac": True,
+        }
+        t0 = time.time()
+        res = self.client.restore_backup(payload)
+        log.info(f"restore_backup: {res}")
+        t1 = time.time()
+        log.info(f"restore cost time: {t1 - t0}")
+        assert res["msg"] == "success"
+
+        # Verify the wildcard grant survived backup -> drop -> restore.
+        # Two failure modes this catches:
+        #   1. Loud failure: the restore call above already returned non-success
+        #      because RestoreRBAC raised `privilege group [] does not exist`.
+        #   2. Silent corruption: restore claimed success but the grant got
+        #      written as `PrivilegeGroup*` instead of `*`, in which case
+        #      describe_role will return something other than '*' here.
+        log.info("list RBAC after restore, expected to be the same as before drop")
+        self.list_rbac(self.milvus_client)
+        self.verify_rbac_restore(self.milvus_client, [user_name], [role_name], [])
+        self.verify_role_grants(
+            self.milvus_client,
+            role_name=role_name,
+            expected_grants=[{
+                "object_name": "*",
+                "privilege": "*",
+                "db_name": "*",
+            }],
+        )
+        self.verify_user_roles(
+            self.milvus_client,
+            user_name=user_name,
+            expected_roles=[role_name],
+        )
+

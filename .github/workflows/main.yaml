@@ -1067,7 +1067,11 @@ jobs:
         shell: bash
         working-directory: tests
         run: |
-          pytest -s -v --tags ${{ matrix.case_tag }} -n 4 --tei_endpoint http://text-embeddings:80
+          if [ ${{ matrix.case_tag }} == "RBAC" ]; then
+            pytest -s -v --tags ${{ matrix.case_tag }}
+          else
+            pytest -s -v --tags ${{ matrix.case_tag }} -n 4 --tei_endpoint http://text-embeddings:80
+          fi
 
       - name: Get Milvus status
         shell: bash
