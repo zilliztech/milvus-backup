@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net"
 	"os"
 	"strconv"
 	"strings"
@@ -298,7 +299,7 @@ func isUnimplemented(err error) bool {
 func NewGrpc(cfg *cfg.MilvusConfig) (*GrpcClient, error) {
 	logger := log.L()
 
-	host := fmt.Sprintf("%s:%d", cfg.Address.Val, cfg.Port.Val)
+	host := net.JoinHostPort(cfg.Address.Val, strconv.Itoa(cfg.Port.Val))
 	logger.Info("New milvus grpc client", zap.String("host", host))
 
 	auth := grpcAuth(cfg.User.Val, cfg.Password.Val)
