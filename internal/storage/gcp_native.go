@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"cloud.google.com/go/storage"
 	"go.uber.org/zap"
@@ -160,9 +161,43 @@ func (gcm *GCPNativeClient) Config() Config {
 	return gcm.cfg
 }
 
+// isStandardGCSEndpoint reports whether the configured endpoint points at the
+// public Google Cloud Storage service (rather than a custom emulator host).
+//
+// The storage factory in factory.go always builds Config.Endpoint via
+// net.JoinHostPort(address, port), so for a normal GCS backup the endpoint is
+// something like "storage.googleapis.com:443" — never empty. Passing that host
+// to option.WithEndpoint() makes cloud.google.com/go/storage.NewClient treat it
+// as a custom endpoint and inject conflicting auth handling, which collides
+// with the explicit option.WithCredentials() below and fails client init with
+// "dialing: multiple credential options provided".
+//
+// For the standard GCS host the native client must use its own default
+// endpoints, so WithEndpoint must be skipped entirely. WithEndpoint is only
+// appropriate for a genuine non-GCS host (e.g. a fake-gcs-server emulator).
+func isStandardGCSEndpoint(endpoint string) bool {
+	if endpoint == "" {
+		return true
+	}
+	host := endpoint
+	if idx := strings.LastIndex(host, ":"); idx != -1 {
+		// strip the ":port" suffix that net.JoinHostPort always appends
+		host = host[:idx]
+	}
+	return host == "" ||
+		host == "storage.googleapis.com" ||
+		strings.HasSuffix(host, ".storage.googleapis.com") ||
+		host == "www.googleapis.com" ||
+		host == "googleapis.com"
+}
+
 func newGCPNativeClient(ctx context.Context, cfg Config) (*GCPNativeClient, error) {
 	var opts []option.ClientOption
-	if cfg.Endpoint != "" {
+	// Only set a custom endpoint for a genuine non-GCS host (an emulator).
+	// For the standard GCS service we must leave the endpoint unset so the
+	// native client uses its own defaults — otherwise WithEndpoint +
+	// WithCredentials collide ("multiple credential options provided").
+	if !isStandardGCSEndpoint(cfg.Endpoint) {
 		address := "https://"
 		if !cfg.UseSSL {
 			address = "http://"
