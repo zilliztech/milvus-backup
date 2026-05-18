@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// TestIsStandardGCSEndpoint locks the behaviour that drives whether
+// TestIsStandardGCSEndpoint locks the behavior that drives whether
 // newGCPNativeClient sets option.WithEndpoint: standard Google Cloud Storage
 // hosts must be reported as standard (so WithEndpoint is skipped), while
 // custom / emulator hosts must not be (so WithEndpoint is set). See the doc
