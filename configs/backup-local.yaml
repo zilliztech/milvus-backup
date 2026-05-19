@@ -1,0 +1,37 @@
+# Example config for Milvus Standalone with local storage.
+#
+# This matches the official docker deployment:
+#   https://milvus.io/docs/install_standalone-docker.md
+#
+# The official script runs:
+#   docker run ... -e COMMON_STORAGETYPE=local -v $(pwd)/volumes/milvus:/var/lib/milvus ...
+#
+# In local storage mode, Milvus uses localStorage.path as the chunk manager root.
+# Unlike remote mode, minio.rootPath ("files") is NOT used as a path prefix.
+# Files are stored directly under localStorage.path:
+#   /var/lib/milvus/data / insert_log / <collID> / ...
+#
+# Set localPath to the HOST path that maps to Milvus localStorage.path.
+# Set bucketName and rootPath to empty (not used in local storage mode).
+
+log:
+  level: info
+  console: true
+
+milvus:
+  address: localhost
+  port: 19530
+
+minio:
+  # Milvus storage — match your Milvus local storage config
+  storageType: "local"
+  localPath: "volumes/milvus/data"      # host path to Milvus localStorage.path
+  milvusLocalPath: "/var/lib/milvus/data" # container path Milvus uses as localStorage.path
+  bucketName: ""                          # not used in local storage mode
+  rootPath: ""                            # not used in local storage mode
+
+  # Backup storage
+  backupStorageType: "local"
+  backupLocalPath: "volumes/backup"      # separate host directory for backup data
+  backupBucketName: ""
+  backupRootPath: "backup"

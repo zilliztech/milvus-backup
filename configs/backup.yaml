@@ -58,6 +58,22 @@ minio:
   bucketName: "a-bucket" # Milvus Bucket name in MinIO/S3, make it the same as your milvus instance
   rootPath: "files" # Milvus storage root path in MinIO/S3, make it the same as your milvus instance
 
+  # Local storage path, only used when storageType is "local".
+  # The HOST path the milvus-backup binary uses to read/write local files.
+  # In docker deployments this is the host bind-mount that backs Milvus
+  # localStorage.path. Full path resolved by milvus-backup: localPath/bucketName/key.
+  # In local mode, set bucketName and rootPath to empty since Milvus local storage
+  # does not use them — files are stored directly under localStorage.path.
+  localPath: ""
+
+  # Absolute path Milvus itself uses as localStorage.path (the chunk-manager
+  # root inside the Milvus process). milvus-backup prepends this to the path
+  # it sends to bulk_insert during restore, since Milvus's LocalChunkManager
+  # does not prepend its own root. In docker deployments this is the
+  # CONTAINER path (e.g., /var/lib/milvus/data), not the host bind-mount.
+  # Required when restoring to a local-storage Milvus.
+  milvusLocalPath: ""
+
   # Backup storage configs, the storage you want to put the backup data
   backupStorageType: "minio" # support storage type: local, minio, s3, aws, gcp, ali(aliyun), azure, tc(tencent)
   backupAddress: localhost # Address of MinIO/S3
@@ -71,6 +87,10 @@ minio:
   backupBucketName: "a-bucket" # Bucket name to store backup data. Backup data will store to backupBucketName/backupRootPath
   backupRootPath: "backup" # Rootpath to store backup data. Backup data will store to backupBucketName/backupRootPath
   backupUseSSL: false # Access to MinIO/S3 with SSL
+
+  # Backup local storage path, only used when backupStorageType is "local".
+  # Defaults to localPath if not set. Full path: backupLocalPath/backupBucketName/key
+  backupLocalPath: ""
 
   # If you need to back up or restore data between two different storage systems, direct client-side copying is not supported.
   # Set this option to true to enable data transfer through Milvus Backup.

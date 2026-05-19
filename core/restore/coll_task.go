@@ -57,6 +57,12 @@ type collTask struct {
 	backupStorage storage.Client
 
 	milvusStorage storage.Client
+	// milvusLocalPath is Milvus's localStorage.path (absolute path inside the
+	// Milvus process). Empty unless Milvus is configured for local storage and
+	// the user set minio.milvusLocalPath. Prepended to bulk_insert paths so
+	// the Milvus LocalChunkManager can resolve restore temp files — its
+	// WalkWithPrefix does not prepend its own root.
+	milvusLocalPath string
 
 	grpcCli    milvus.Grpc
 	restfulCli milvus.Restful
@@ -91,8 +97,9 @@ type collTaskArgs struct {
 	keepTempFiles bool
 	crossStorage  bool
 
-	backupStorage storage.Client
-	milvusStorage storage.Client
+	backupStorage   storage.Client
+	milvusStorage   storage.Client
+	milvusLocalPath string
 
 	copySem       *semaphore.Weighted
 	bulkInsertSem *semaphore.Weighted
@@ -134,8 +141,9 @@ func newCollTask(args collTaskArgs) *collTask {
 		keepTempFiles: args.keepTempFiles,
 		backupDir:     args.backupDir,
 
-		backupStorage: args.backupStorage,
-		milvusStorage: args.milvusStorage,
+		backupStorage:   args.backupStorage,
+		milvusStorage:   args.milvusStorage,
+		milvusLocalPath: args.milvusLocalPath,
 
 		grpcCli:    args.grpcCli,
 		restfulCli: args.restfulCli,
@@ -390,11 +398,21 @@ func (ct *collTask) restoreNotL0SegV1(ctx context.Context, part *backuppb.Partit
 	return nil
 }
 
-func toPaths(dir partitionDir) []string {
-	if len(dir.insertLogDir) == 0 {
-		return []string{dir.deltaLogDir}
+// toPaths builds the [insertLogDir, deltaLogDir] argument for bulk_insert.
+// When the target Milvus uses local storage, milvusLocalPath is prepended so
+// the Milvus LocalChunkManager can resolve the path — it does not prepend its
+// own RootPath, unlike the remote/S3 chunk manager.
+func (ct *collTask) toPaths(dir partitionDir) []string {
+	prepend := func(p string) string {
+		if p == "" || ct.milvusLocalPath == "" {
+			return p
+		}
+		return path.Join(ct.milvusLocalPath, p)
 	}
-	return []string{dir.insertLogDir, dir.deltaLogDir}
+	if len(dir.insertLogDir) == 0 {
+		return []string{prepend(dir.deltaLogDir)}
+	}
+	return []string{prepend(dir.insertLogDir), prepend(dir.deltaLogDir)}
 }
 
 func (ct *collTask) restoreNotL0SegV2(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
@@ -741,13 +759,13 @@ func (ct *collTask) bulkInsertViaGrpc(ctx context.Context, partitionName string,
 		g.Go(func() error {
 			defer ct.bulkInsertSem.Release(1)
 
-			paths := toPaths(dir)
+			paths := ct.toPaths(dir)
 			ct.logger.Info("start bulk insert via grpc", zap.Strings("paths", paths), zap.String("partition", partitionName))
 			in := milvus.GrpcBulkInsertInput{
 				DB:             ct.targetNS.DBName(),
 				CollectionName: ct.targetNS.CollName(),
 				PartitionName:  partitionName,
-				Paths:          toPaths(dir),
+				Paths:          paths,
 				BackupTS:       b.timestamp,
 				IsL0:           b.isL0,
 				StorageVersion: b.storageVersion,
@@ -813,7 +831,7 @@ func (ct *collTask) checkBulkInsertViaRestful(ctx context.Context, jobID string)
 
 func (ct *collTask) bulkInsertViaRestful(ctx context.Context, partition string, b batch) error {
 	ct.logger.Info("start bulk insert via restful", zap.Int("batch_num", len(b.partitionDirs)), zap.String("partition", partition))
-	paths := lo.Map(b.partitionDirs, func(dir partitionDir, _ int) []string { return toPaths(dir) })
+	paths := lo.Map(b.partitionDirs, func(dir partitionDir, _ int) []string { return ct.toPaths(dir) })
 	in := milvus.BulkInsertV2Input{
 		DB:             ct.targetNS.DBName(),
 		CollectionName: ct.targetNS.CollName(),

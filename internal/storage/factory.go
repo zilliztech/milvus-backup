@@ -45,6 +45,7 @@ func BackupStorageConfig(params *cfg.MinioConfig) Config {
 		Endpoint:                  ep,
 		UseSSL:                    params.BackupUseSSL.Val,
 		Bucket:                    params.BackupBucketName.Val,
+		LocalPath:                 params.BackupLocalPath.Val,
 		Credential:                newBackupCredential(params),
 		Region:                    params.BackupRegion.Val,
 		MultipartCopyThresholdMiB: params.MultipartCopyThresholdMiB.Val,
@@ -104,6 +105,7 @@ func MilvusStorageConfig(params *cfg.MinioConfig) Config {
 		UseSSL:                    params.UseSSL.Val,
 		Credential:                newMilvusCredential(params),
 		Bucket:                    params.BucketName.Val,
+		LocalPath:                 params.LocalPath.Val,
 		Region:                    params.Region.Val,
 		MultipartCopyThresholdMiB: params.MultipartCopyThresholdMiB.Val,
 	}

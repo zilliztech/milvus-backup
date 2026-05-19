@@ -231,6 +231,16 @@ type MinioConfig struct {
 	BackupUseIAM            Value[bool]
 	BackupIAMEndpoint       Value[string]
 
+	LocalPath       Value[string]
+	BackupLocalPath Value[string]
+
+	// MilvusLocalPath is Milvus's own localStorage.path — the absolute prefix
+	// the Milvus process uses as its local chunk-manager root. milvus-backup
+	// prepends it to bulk_insert paths so Milvus can resolve restore temp
+	// files. In docker deployments this is the container path (e.g.,
+	// /var/lib/milvus/data), not the host bind-mount path.
+	MilvusLocalPath Value[string]
+
 	CrossStorage Value[bool]
 
 	// MultipartCopyThresholdMiB is the file size threshold above which multipart copy is used.
@@ -274,6 +284,10 @@ func newMinioConfig() MinioConfig {
 		BackupUseIAM:            Value[bool]{Default: false, Keys: []string{"minio.backupUseIAM"}, EnvKeys: []string{"MINIO_BACKUP_USE_IAM"}},
 		BackupIAMEndpoint:       Value[string]{Default: "", Keys: []string{"minio.backupIamEndpoint"}, EnvKeys: []string{"MINIO_BACKUP_IAM_ENDPOINT"}},
 
+		LocalPath:       Value[string]{Default: "", Keys: []string{"minio.localPath"}, EnvKeys: []string{"MINIO_LOCAL_PATH"}},
+		BackupLocalPath: Value[string]{Default: "", Keys: []string{"minio.backupLocalPath"}, EnvKeys: []string{"MINIO_BACKUP_LOCAL_PATH"}},
+		MilvusLocalPath: Value[string]{Default: "", Keys: []string{"minio.milvusLocalPath"}, EnvKeys: []string{"MINIO_MILVUS_LOCAL_PATH"}},
+
 		CrossStorage: Value[bool]{Default: false, Keys: []string{"minio.crossStorage"}},
 
 		MultipartCopyThresholdMiB: Value[int64]{Default: 500, Keys: []string{"minio.multipartCopyThresholdMiB"}},
@@ -286,6 +300,7 @@ func (c *MinioConfig) Resolve(s *source) error {
 		&c.StorageType, &c.Address, &c.Port, &c.Region,
 		&c.AccessKeyID, &c.SecretAccessKey, &c.Token, &c.GcpCredentialJSON,
 		&c.UseSSL, &c.BucketName, &c.RootPath, &c.UseIAM, &c.IAMEndpoint,
+		&c.LocalPath, &c.MilvusLocalPath,
 	); err != nil {
 		return err
 	}
@@ -303,11 +318,13 @@ func (c *MinioConfig) Resolve(s *source) error {
 	c.BackupRootPath.Default = cmp.Or(c.BackupRootPath.Default, c.RootPath.Val, "backup")
 	c.BackupUseIAM.Default = c.BackupUseIAM.Default || c.UseIAM.Val
 	c.BackupIAMEndpoint.Default = cmp.Or(c.BackupIAMEndpoint.Default, c.IAMEndpoint.Val)
+	c.BackupLocalPath.Default = cmp.Or(c.BackupLocalPath.Default, c.LocalPath.Val)
 
 	return resolve(s,
 		&c.BackupStorageType, &c.BackupAddress, &c.BackupPort, &c.BackupRegion,
 		&c.BackupAccessKeyID, &c.BackupSecretAccessKey, &c.BackupToken, &c.BackupGcpCredentialJSON,
 		&c.BackupUseSSL, &c.BackupBucketName, &c.BackupRootPath, &c.BackupUseIAM, &c.BackupIAMEndpoint,
+		&c.BackupLocalPath,
 		&c.CrossStorage,
 		&c.MultipartCopyThresholdMiB,
 	)

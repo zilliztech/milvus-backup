@@ -48,6 +48,10 @@ type Config struct {
 
 	Bucket string
 
+	// LocalPath is the base directory for local storage, corresponding to Milvus localStorage.path.
+	// Only used by LocalClient. The full path is: LocalPath / Bucket / key.
+	LocalPath string
+
 	// MultipartCopyThresholdMiB is the file size threshold above which multipart copy is used.
 	// Default is 500 MiB if not set. GCP does not support multipart copy.
 	MultipartCopyThresholdMiB int64
