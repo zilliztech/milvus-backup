@@ -68,7 +68,7 @@ type ApplyVolumeResp struct {
 	Endpoint    string      `json:"endpoint"`
 	Region      string      `json:"region"`
 	UploadPath  string      `json:"uploadPath"`
-	StageName   string      `json:"stageName"`
+	VolumeName  string      `json:"volumeName"`
 }
 
 func (a *ApplyVolumeResp) String() string {
@@ -132,7 +132,7 @@ func (a *APIClient) ApplyVolume(ctx context.Context, clusterID, dir string) (*Ap
 		SetContext(ctx).
 		SetBody(in).
 		SetSuccessResult(&applyResp).
-		Post("/v2/stages/apply")
+		Post("/v2/volumes/apply")
 	a.logger.Debug("apply volume response", zap.String("response", applyResp.Data.String()))
 	if err := a.checkResp(resp, &applyResp, err); err != nil {
 		return nil, fmt.Errorf("cloud: apply volume: %w", err)

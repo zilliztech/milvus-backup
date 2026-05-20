@@ -69,10 +69,10 @@ func (v *volume) oauth2Token() *oauth2.Token {
 }
 
 func (v *volume) Retrieve() (minioCred.Value, error) {
-	v.logger.Debug("retrieve stage credential")
+	v.logger.Debug("retrieve volume credential")
 	v.currentResp.mu.RLock()
 	if !v.IsExpired() {
-		v.logger.Debug("stage credential not expired, return cached credential")
+		v.logger.Debug("volume credential not expired, return cached credential")
 		v.currentResp.mu.RUnlock()
 		return v.minioValue(), nil
 	}
@@ -89,7 +89,7 @@ func (v *volume) Retrieve() (minioCred.Value, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	v.logger.Info("stage credential expired, apply new credential")
+	v.logger.Info("volume credential expired, apply new credential")
 	if err := v.apply(ctx); err != nil {
 		return minioCred.Value{}, err
 	}
@@ -135,7 +135,7 @@ func (v *volume) apply(ctx context.Context) error {
 	start := time.Now()
 	resp, err := v.cloudCli.ApplyVolume(ctx, v.clusterID, v.prefix)
 	if err != nil {
-		return fmt.Errorf("migrate: apply stage %w", err)
+		return fmt.Errorf("migrate: apply volume %w", err)
 	}
 	v.logger.Info("apply volume done", zap.Duration("cost", time.Since(start)))
 
@@ -171,7 +171,7 @@ func newVolumeStorage(ctx context.Context, vol *volume) (storage.Client, error) 
 
 	cli, err := storage.NewClient(ctx, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("migrate: new stage storage %w", err)
+		return nil, fmt.Errorf("migrate: new volume storage %w", err)
 	}
 
 	return cli, nil
@@ -218,7 +218,7 @@ func NewTask(taskID, backupName, clusterID string, params *cfg.Config) (*Task, e
 		backupDir:     backupDir,
 		backupStorage: backupStorage,
 
-		// use taskID as stage prefix
+		// use taskID as volume prefix
 		volume:  newVolume(clusterID, taskID, cloudCli),
 		copySem: semaphore.NewWeighted(int64(params.Backup.Parallelism.CopyData.Val)),
 	}, nil
@@ -241,7 +241,7 @@ func (t *Task) copyToCloud(ctx context.Context) error {
 
 	destCli, err := newVolumeStorage(ctx, t.volume)
 	if err != nil {
-		return fmt.Errorf("migrate: new stage storage %w", err)
+		return fmt.Errorf("migrate: new volume storage %w", err)
 	}
 
 	opt := storage.CopyPrefixOpt{
@@ -268,7 +268,7 @@ func (t *Task) copyToCloud(ctx context.Context) error {
 }
 
 func (t *Task) startMigrate(ctx context.Context) error {
-	src := cloud.Source{StageName: t.volume.currentResp.resp.StageName, DataPath: t.volume.prefix}
+	src := cloud.Source{StageName: t.volume.currentResp.resp.VolumeName, DataPath: t.volume.prefix}
 
 	t.logger.Info("trigger migrate job")
 	dest := cloud.Destination{ClusterID: t.clusterID}
@@ -284,7 +284,7 @@ func (t *Task) startMigrate(ctx context.Context) error {
 
 func (t *Task) Execute(ctx context.Context) error {
 	if err := t.volume.apply(ctx); err != nil {
-		return fmt.Errorf("migrate: apply stage %w", err)
+		return fmt.Errorf("migrate: apply volume %w", err)
 	}
 
 	t.taskMgr.UpdateMigrateTask(t.taskID, taskmgr.SetMigrateCopyStart())
