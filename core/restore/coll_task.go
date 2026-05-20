@@ -391,6 +391,17 @@ func (ct *collTask) restoreNotL0SegV1(ctx context.Context, part *backuppb.Partit
 }
 
 func toPaths(dir partitionDir) []string {
+	paths := make([]string, 0, 2)
+	if dir.insertLogDir != "" {
+		paths = append(paths, dir.insertLogDir)
+	}
+	if dir.deltaLogDir != "" {
+		paths = append(paths, dir.deltaLogDir)
+	}
+	return paths
+}
+
+func toGrpcPaths(dir partitionDir) []string {
 	if len(dir.insertLogDir) == 0 {
 		return []string{dir.deltaLogDir}
 	}
@@ -741,13 +752,13 @@ func (ct *collTask) bulkInsertViaGrpc(ctx context.Context, partitionName string,
 		g.Go(func() error {
 			defer ct.bulkInsertSem.Release(1)
 
-			paths := toPaths(dir)
+			paths := toGrpcPaths(dir)
 			ct.logger.Info("start bulk insert via grpc", zap.Strings("paths", paths), zap.String("partition", partitionName))
 			in := milvus.GrpcBulkInsertInput{
 				DB:             ct.targetNS.DBName(),
 				CollectionName: ct.targetNS.CollName(),
 				PartitionName:  partitionName,
-				Paths:          toPaths(dir),
+				Paths:          paths,
 				BackupTS:       b.timestamp,
 				IsL0:           b.isL0,
 				StorageVersion: b.storageVersion,

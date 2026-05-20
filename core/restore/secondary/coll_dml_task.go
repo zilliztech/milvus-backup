@@ -41,10 +41,14 @@ type partitionDir struct {
 }
 
 func (dir *partitionDir) toPaths() []string {
-	if len(dir.insertLogDir) == 0 {
-		return []string{dir.deltaLogDir}
+	paths := make([]string, 0, 2)
+	if dir.insertLogDir != "" {
+		paths = append(paths, dir.insertLogDir)
 	}
-	return []string{dir.insertLogDir, dir.deltaLogDir}
+	if dir.deltaLogDir != "" {
+		paths = append(paths, dir.deltaLogDir)
+	}
+	return paths
 }
 
 type batch struct {

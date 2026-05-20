@@ -83,11 +83,33 @@ func TestToPaths(t *testing.T) {
 	// without delta
 	dir = partitionDir{insertLogDir: "insert"}
 	paths = toPaths(dir)
-	assert.Equal(t, []string{"insert", ""}, paths)
+	assert.Equal(t, []string{"insert"}, paths)
 
 	// without insert
 	dir = partitionDir{deltaLogDir: "delta"}
 	paths = toPaths(dir)
+	assert.Equal(t, []string{"delta"}, paths)
+
+	// empty
+	dir = partitionDir{}
+	paths = toPaths(dir)
+	assert.Empty(t, paths)
+}
+
+func TestToGrpcPaths(t *testing.T) {
+	// normal
+	dir := partitionDir{insertLogDir: "insert", deltaLogDir: "delta"}
+	paths := toGrpcPaths(dir)
+	assert.Equal(t, []string{"insert", "delta"}, paths)
+
+	// without delta
+	dir = partitionDir{insertLogDir: "insert"}
+	paths = toGrpcPaths(dir)
+	assert.Equal(t, []string{"insert", ""}, paths)
+
+	// without insert
+	dir = partitionDir{deltaLogDir: "delta"}
+	paths = toGrpcPaths(dir)
 	assert.Equal(t, []string{"delta"}, paths)
 }
 
