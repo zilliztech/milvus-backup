@@ -160,8 +160,18 @@ func (t *Task) checkWriteAndCopy(ctx context.Context) error {
 			t.logger.Error("failed to delete check file", zap.String("path", destKey), zap.Error(err))
 		}
 	}()
-
 	t.logger.Info("copy from milvus storage to backup storage success")
+
+	expected, err := storage.ExpectedDestObjects(ctx, t.milvusStorage, srcKey, destKey)
+	if err != nil {
+		return fmt.Errorf("check: build expected for copy verify %w", err)
+	}
+	verifyTask := storage.NewVerifyPrefixTask(storage.VerifyPrefixOpt{Cli: t.backupStorage, Prefix: destKey, Expected: expected})
+	if err := verifyTask.Execute(ctx); err != nil {
+		return fmt.Errorf("check: verify copy to backup storage %w", err)
+	}
+	t.logger.Info("verify copy to backup storage success")
+
 	return nil
 }
 

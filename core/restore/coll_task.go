@@ -328,6 +328,15 @@ func (ct *collTask) copyToMilvusBucket(ctx context.Context, tempDir, srcPrefix s
 	if err := task.Execute(ctx); err != nil {
 		return "", fmt.Errorf("restore_collection: copy temporary restore file: %w", err)
 	}
+
+	expected, err := storage.ExpectedDestObjects(ctx, ct.backupStorage, srcPrefix, dest)
+	if err != nil {
+		return "", fmt.Errorf("restore_collection: build expected for copy verify: %w", err)
+	}
+	verifyTask := storage.NewVerifyPrefixTask(storage.VerifyPrefixOpt{Cli: ct.milvusStorage, Prefix: dest, Expected: expected})
+	if err := verifyTask.Execute(ctx); err != nil {
+		return "", fmt.Errorf("restore_collection: verify temporary restore file: %w", err)
+	}
 	ct.logger.Info("copy temporary restore file success", zap.String("src", srcPrefix), zap.String("dest", dest))
 
 	return dest, nil
