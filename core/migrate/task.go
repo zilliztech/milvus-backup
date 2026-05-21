@@ -244,19 +244,20 @@ func (t *Task) copyToCloud(ctx context.Context) error {
 		return fmt.Errorf("migrate: new volume storage %w", err)
 	}
 
+	srcPrefix := t.backupDir
+	destPrefix := t.volume.currentResp.resp.UploadPath
 	opt := storage.CopyPrefixOpt{
 		Src:        t.backupStorage,
 		Dest:       destCli,
-		SrcPrefix:  t.backupDir,
-		DestPrefix: t.volume.currentResp.resp.UploadPath,
+		SrcPrefix:  srcPrefix,
+		DestPrefix: destPrefix,
 		Sem:        t.copySem,
 
 		TraceFn: func(size int64, cost time.Duration) {
 			t.taskMgr.UpdateMigrateTask(t.taskID, taskmgr.IncMigrateCopiedSize(size, cost))
 		},
 
-		CopyByServer:      true,
-		DisableVerifyCopy: true,
+		CopyByServer: true,
 	}
 
 	copyTask := storage.NewCopyPrefixTask(opt)
@@ -265,7 +266,28 @@ func (t *Task) copyToCloud(ctx context.Context) error {
 	}
 	t.logger.Info("copy backup to cloud done")
 
+	// The cloud staging volume only grants ListObject (no HeadObject/GetObject),
+	// so verify the copy with a single recursive list instead of per-object head.
+	if err := t.verifyCopyToCloud(ctx, destCli, srcPrefix, destPrefix); err != nil {
+		return fmt.Errorf("migrate: verify copy to cloud %w", err)
+	}
+	t.logger.Info("verify copy to cloud done")
+
 	return nil
+}
+
+func (t *Task) verifyCopyToCloud(ctx context.Context, destCli storage.Client, srcPrefix, destPrefix string) error {
+	expected, err := storage.ExpectedDestObjects(ctx, t.backupStorage, srcPrefix, destPrefix)
+	if err != nil {
+		return fmt.Errorf("migrate: build expected %w", err)
+	}
+
+	verifyTask := storage.NewVerifyPrefixTask(storage.VerifyPrefixOpt{
+		Cli:      destCli,
+		Prefix:   destPrefix,
+		Expected: expected,
+	})
+	return verifyTask.Execute(ctx)
 }
 
 func (t *Task) startMigrate(ctx context.Context) error {

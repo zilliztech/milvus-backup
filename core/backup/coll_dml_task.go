@@ -367,7 +367,59 @@ func (dmlt *collDMLTask) Execute(ctx context.Context) error {
 		return fmt.Errorf("backup: backup segments %w", err)
 	}
 
+	if err := dmlt.verifySegmentsData(ctx, describe.CollectionID, segments); err != nil {
+		return fmt.Errorf("backup: verify segments %w", err)
+	}
+
 	dmlt.taskMgr.UpdateBackupTask(dmlt.taskID, taskmgr.SetBackupCollDMLDone(dmlt.ns))
+
+	return nil
+}
+
+// verifySegmentsData verifies that every copied binlog exists in the backup
+// storage with a matching size. The destination keys all live under the
+// collection-level insert_log and delta_log dirs, so two recursive lists cover
+// the whole collection instead of issuing a HeadObject per binlog.
+func (dmlt *collDMLTask) verifySegmentsData(ctx context.Context, collID int64, segments []*backuppb.SegmentBackupInfo) error {
+	insertExpected := make(map[string]int64)
+	deltaExpected := make(map[string]int64)
+	for _, seg := range segments {
+		insertAttrs, err := dmlt.insertLogsAttrs(seg)
+		if err != nil {
+			return fmt.Errorf("backup: build insert log expected %w", err)
+		}
+		for _, attr := range insertAttrs {
+			insertExpected[attr.DestKey] = attr.Src.Length
+		}
+
+		deltaAttrs, err := dmlt.deltaLogAttrs(seg)
+		if err != nil {
+			return fmt.Errorf("backup: build delta log expected %w", err)
+		}
+		for _, attr := range deltaAttrs {
+			deltaExpected[attr.DestKey] = attr.Src.Length
+		}
+	}
+
+	insertDir := mpath.BackupInsertLogDir(dmlt.backupDir, mpath.CollectionID(collID))
+	insertVerify := storage.NewVerifyPrefixTask(storage.VerifyPrefixOpt{
+		Cli:      dmlt.backupStorage,
+		Prefix:   insertDir,
+		Expected: insertExpected,
+	})
+	if err := insertVerify.Execute(ctx); err != nil {
+		return fmt.Errorf("backup: verify insert logs %w", err)
+	}
+
+	deltaDir := mpath.BackupDeltaLogDir(dmlt.backupDir, mpath.CollectionID(collID))
+	deltaVerify := storage.NewVerifyPrefixTask(storage.VerifyPrefixOpt{
+		Cli:      dmlt.backupStorage,
+		Prefix:   deltaDir,
+		Expected: deltaExpected,
+	})
+	if err := deltaVerify.Execute(ctx); err != nil {
+		return fmt.Errorf("backup: verify delta logs %w", err)
+	}
 
 	return nil
 }

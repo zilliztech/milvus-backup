@@ -45,6 +45,29 @@ func ListPrefixFlat(ctx context.Context, cli Client, prefix string, recursive bo
 	return keys, sizes, nil
 }
 
+// ExpectedDestObjects lists srcPrefix on src and returns the destination keys
+// (mapped by replacing srcPrefix with destPrefix, matching CopyPrefixTask) to
+// their sizes. The result feeds VerifyPrefixTask to verify a prefix copy.
+// Directory markers (empty objects whose key ends with "/") are skipped,
+// consistent with what CopyPrefixTask copies.
+func ExpectedDestObjects(ctx context.Context, src Client, srcPrefix, destPrefix string) (map[string]int64, error) {
+	keys, sizes, err := ListPrefixFlat(ctx, src, srcPrefix, true)
+	if err != nil {
+		return nil, fmt.Errorf("storage: expected dest objects list prefix %w", err)
+	}
+
+	expected := make(map[string]int64, len(keys))
+	for idx, key := range keys {
+		if sizes[idx] == 0 && strings.HasSuffix(key, "/") {
+			continue
+		}
+		destKey := strings.Replace(key, srcPrefix, destPrefix, 1)
+		expected[destKey] = sizes[idx]
+	}
+
+	return expected, nil
+}
+
 func DeletePrefix(ctx context.Context, cli Client, prefix string) error {
 	if prefix == "" {
 		return fmt.Errorf("storage: delete prefix empty prefix")
