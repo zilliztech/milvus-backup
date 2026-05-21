@@ -25,6 +25,8 @@ type CopyPrefixOpt struct {
 	TraceFn TraceFn
 
 	CopyByServer bool
+
+	DisableVerifyCopy bool
 }
 
 type CopyPrefixTask struct {
@@ -39,7 +41,10 @@ func NewCopyPrefixTask(opt CopyPrefixOpt) *CopyPrefixTask {
 	return &CopyPrefixTask{
 		opt: opt,
 
-		copier: newCopier(opt.Src, opt.Dest, opt.CopyByServer, copierOpt{traceFn: opt.TraceFn}),
+		copier: newCopier(opt.Src, opt.Dest, opt.CopyByServer, copierOpt{
+			traceFn:           opt.TraceFn,
+			disableVerifyCopy: opt.DisableVerifyCopy,
+		}),
 
 		logger: log.L().With(zap.String("src", opt.SrcPrefix), zap.String("dest", opt.DestPrefix)),
 	}
@@ -105,6 +110,8 @@ type CopyObjectsOpt struct {
 	TraceFn TraceFn
 
 	CopyByServer bool
+
+	DisableVerifyCopy bool
 }
 
 type CopyObjectsTask struct {
@@ -117,7 +124,10 @@ func NewCopyObjectsTask(opt CopyObjectsOpt) *CopyObjectsTask {
 	return &CopyObjectsTask{
 		opt: opt,
 
-		copier: newCopier(opt.Src, opt.Dest, opt.CopyByServer, copierOpt{traceFn: opt.TraceFn}),
+		copier: newCopier(opt.Src, opt.Dest, opt.CopyByServer, copierOpt{
+			traceFn:           opt.TraceFn,
+			disableVerifyCopy: opt.DisableVerifyCopy,
+		}),
 	}
 }
 

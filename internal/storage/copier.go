@@ -18,7 +18,8 @@ type CopyAttr struct {
 }
 
 type copierOpt struct {
-	traceFn TraceFn
+	traceFn           TraceFn
+	disableVerifyCopy bool
 }
 
 type TraceFn func(size int64, cost time.Duration)
@@ -68,12 +69,14 @@ func (rp *remoteCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
 			return fmt.Errorf("storage: remote copier copy object %w", err)
 		}
 
-		attr, err := rp.dest.HeadObject(ctx, copyAttr.DestKey)
-		if err != nil {
-			return fmt.Errorf("storage: remote copier verify copy: %w", err)
-		}
-		if attr.Length != copyAttr.Src.Length {
-			return fmt.Errorf("storage: remote copier size mismatch, src=%d dest=%d", copyAttr.Src.Length, attr.Length)
+		if !rp.opt.disableVerifyCopy {
+			attr, err := rp.dest.HeadObject(ctx, copyAttr.DestKey)
+			if err != nil {
+				return fmt.Errorf("storage: remote copier verify copy: %w", err)
+			}
+			if attr.Length != copyAttr.Src.Length {
+				return fmt.Errorf("storage: remote copier size mismatch, src=%d dest=%d", copyAttr.Src.Length, attr.Length)
+			}
 		}
 
 		return nil
@@ -116,12 +119,14 @@ func (sc *serverCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
 			return fmt.Errorf("storage: server copier upload object %w", err)
 		}
 
-		attr, err := sc.dest.HeadObject(ctx, copyAttr.DestKey)
-		if err != nil {
-			return fmt.Errorf("storage: server copier verify copy: %w", err)
-		}
-		if attr.Length != copyAttr.Src.Length {
-			return fmt.Errorf("storage: server copier size mismatch, src=%d dest=%d", copyAttr.Src.Length, attr.Length)
+		if !sc.opt.disableVerifyCopy {
+			attr, err := sc.dest.HeadObject(ctx, copyAttr.DestKey)
+			if err != nil {
+				return fmt.Errorf("storage: server copier verify copy: %w", err)
+			}
+			if attr.Length != copyAttr.Src.Length {
+				return fmt.Errorf("storage: server copier size mismatch, src=%d dest=%d", copyAttr.Src.Length, attr.Length)
+			}
 		}
 
 		return nil
