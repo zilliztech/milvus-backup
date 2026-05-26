@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
+	"github.com/milvus-io/milvus/pkg/v2/proto/indexpb"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/protobuf/proto"
 
@@ -295,4 +296,67 @@ func TestSequentialBuildDoesNotCorruptData(t *testing.T) {
 		totalSegs += len(part.GetSegmentBackups())
 	}
 	assert.Equal(t, 2, totalSegs)
+}
+
+func newIndexExtraTestBuilder() *metaBuilder {
+	builder := newMetaBuilder("task1", "backup1")
+	ns := namespace.New("db1", "coll1")
+	builder.addCollection(ns, &backuppb.CollectionBackupInfo{
+		CollectionId:   1,
+		DbName:         "db1",
+		CollectionName: "coll1",
+		IndexInfos:     []*backuppb.IndexInfo{{IndexId: 100, FieldName: "vec", IndexName: "vec_idx"}},
+	})
+
+	return builder
+}
+
+func TestAddIndexExtraInfo(t *testing.T) {
+	t.Run("MergesExtraAttributes", func(t *testing.T) {
+		builder := newIndexExtraTestBuilder()
+
+		indexes := []*indexpb.FieldIndex{
+			{
+				IndexInfo:  &indexpb.IndexInfo{CollectionID: 1, IndexID: 100, FieldID: 7, IsAutoIndex: true, MinIndexVersion: 1, MaxIndexVersion: 2},
+				CreateTime: 42,
+			},
+		}
+		assert.NoError(t, builder.addIndexExtraInfo(indexes))
+
+		got := builder.collectionBackups[1].GetIndexInfos()[0]
+		assert.Equal(t, int64(7), got.GetFieldId())
+		assert.Equal(t, uint64(42), got.GetCreateTime())
+		assert.True(t, got.GetIsAutoIndex())
+		assert.Equal(t, int32(1), got.GetMinIndexVersion())
+		assert.Equal(t, int32(2), got.GetMaxIndexVersion())
+	})
+
+	t.Run("UnknownCollectionID", func(t *testing.T) {
+		builder := newIndexExtraTestBuilder()
+
+		indexes := []*indexpb.FieldIndex{
+			{IndexInfo: &indexpb.IndexInfo{CollectionID: 999, IndexID: 100}},
+		}
+		err := builder.addIndexExtraInfo(indexes)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "collection 999 not in backup")
+	})
+
+	t.Run("IndexNotInBackupInfos", func(t *testing.T) {
+		builder := newIndexExtraTestBuilder()
+
+		indexes := []*indexpb.FieldIndex{
+			{IndexInfo: &indexpb.IndexInfo{CollectionID: 1, IndexID: 300}},
+		}
+		err := builder.addIndexExtraInfo(indexes)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "not in backup index infos")
+	})
+}
+
+func TestBackupCollectionIDs(t *testing.T) {
+	builder := newIndexExtraTestBuilder()
+	builder.addCollection(namespace.New("db1", "coll2"), &backuppb.CollectionBackupInfo{CollectionId: 2})
+
+	assert.ElementsMatch(t, []int64{1, 2}, builder.backupCollectionIDs())
 }

@@ -133,7 +133,30 @@ func (builder *metaBuilder) addSegments(segments []*backuppb.SegmentBackupInfo) 
 	return nil
 }
 
-func (builder *metaBuilder) addIndexExtraInfo(indexes []*indexpb.FieldIndex) {
+// backupCollectionIDs returns the collection ids that have been captured by
+// this backup. The index extra task uses it to scope the etcd field-index scan
+// to the backed-up collections only.
+func (builder *metaBuilder) backupCollectionIDs() []int64 {
+	builder.mu.Lock()
+	defer builder.mu.Unlock()
+
+	colls := builder.data.GetCollectionBackups()
+	ids := make([]int64, 0, len(colls))
+	for _, coll := range colls {
+		ids = append(ids, coll.GetCollectionId())
+	}
+
+	return ids
+}
+
+// addIndexExtraInfo merges the extra index attributes read from etcd into the
+// index infos already collected via DescribeIndex. The caller must only pass
+// indexes that belong to backed-up collections (the etcd scan is scoped per
+// collection). Every index is expected to have a matching IndexInfo; a miss
+// means etcd and DescribeIndex disagree, which would produce an incomplete
+// backup that breaks CDC secondary restore, so it is reported as an error
+// rather than silently skipped.
+func (builder *metaBuilder) addIndexExtraInfo(indexes []*indexpb.FieldIndex) error {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
 
@@ -148,7 +171,16 @@ func (builder *metaBuilder) addIndexExtraInfo(indexes []*indexpb.FieldIndex) {
 
 	for _, index := range indexes {
 		info := index.GetIndexInfo()
-		indexInfo := indexMap[info.GetCollectionID()][info.GetIndexID()]
+		collIndexes, ok := indexMap[info.GetCollectionID()]
+		if !ok {
+			return fmt.Errorf("backup: index extra info references collection %d not in backup", info.GetCollectionID())
+		}
+		indexInfo, ok := collIndexes[info.GetIndexID()]
+		if !ok {
+			return fmt.Errorf("backup: index %d of collection %d exists in etcd but not in backup index infos",
+				info.GetIndexID(), info.GetCollectionID())
+		}
+
 		indexInfo.FieldId = info.GetFieldID()
 		indexInfo.TypeParams = pbconv.MilvusKVToBakKV(info.GetTypeParams())
 		indexInfo.CreateTime = index.GetCreateTime()
@@ -158,6 +190,8 @@ func (builder *metaBuilder) addIndexExtraInfo(indexes []*indexpb.FieldIndex) {
 		indexInfo.MinIndexVersion = info.GetMinIndexVersion()
 		indexInfo.MaxIndexVersion = info.GetMaxIndexVersion()
 	}
+
+	return nil
 }
 
 // addDynamicFields injects the dynamic field schema (read directly from etcd)
