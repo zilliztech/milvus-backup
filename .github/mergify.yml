@@ -1,7 +1,7 @@
 pull_request_rules:
   - name: Add needs-dco label when DCO check failed
     conditions:
-      - base=main
+      - base~=^(main|v0\.5)$
       - -status-success=DCO
     actions:
       label:
@@ -15,7 +15,7 @@ pull_request_rules:
 
   - name: Add dco-passed label when DCO check passed
     conditions:
-      - base=main
+      - base~=^(main|v0\.5)$
       - status-success=DCO
     actions:
       label:
@@ -26,7 +26,7 @@ pull_request_rules:
 
   - name: Test passed for code changed-main
     conditions:
-      - base=main
+      - base~=^(main|v0\.5)$
       - check-success=CI summary
     actions:
       label:
@@ -35,7 +35,7 @@ pull_request_rules:
 
   - name: Test passed for non-code changed
     conditions:
-      - base=main
+      - base~=^(main|v0\.5)$
       - or:
         - -files~=^(?!.*\.(md)).*$
         - -files~=^(?!docs\/).+
@@ -47,7 +47,7 @@ pull_request_rules:
 
   - name: Test passed for mergify changed
     conditions:
-      - base=main
+      - base~=^(main|v0\.5)$
       - -files~=^(?!\.github\/mergify\.yml).*$
     actions:
       label:
@@ -56,7 +56,7 @@ pull_request_rules:
 
   - name: Add kind/improvement tag for dependabot's PR
     conditions:
-      - base=main
+      - base~=^(main|v0\.5)$
       - author=dependabot[bot]
     actions:
       label:
@@ -67,7 +67,7 @@ pull_request_rules:
 
   - name: Blocking PR if missing a related issue or PR doesn't have kind/improvement label
     conditions:
-      - base=main
+      - base~=^(main|v0\.5)$
       - and:
         - -body~=\#[0-9]{1,6}(\s+|$)
         - -body~=https://github.com/zilliztech/milvus-backup/issues/[0-9]{1,6}(\s+|$)
@@ -85,12 +85,12 @@ pull_request_rules:
     conditions:
       - or:
         - and:
-          - base=main
+          - base~=^(main|v0\.5)$
           - or:
             - body~=\#[0-9]{1,6}(\s+|$)
             - body~=https://github.com/zilliztech/milvus-backup/issues/[0-9]{1,6}(\s+|$)
         - and:
-          - base=main
+          - base~=^(main|v0\.5)$
           - label=kind/improvement
     actions:
       label:
@@ -99,7 +99,7 @@ pull_request_rules:
 
   - name: Dismiss block label if automated create PR
     conditions:
-      - base=main
+      - base~=^(main|v0\.5)$
       - title~=\[automated\]
     actions:
       label:
@@ -109,10 +109,22 @@ pull_request_rules:
   - name: Remove ci-passed label when CI fails
     conditions:
       - label!=manual-pass
-      - base=main
+      - base~=^(main|v0\.5)$
       - files~=^(?=.*((\.(go|h|cpp)|CMakeLists.txt))).*$
       - check-success!=CI summary
     actions:
       label:
         remove:
           - ci-passed
+
+  - name: Backport merged PR to v0.5 when labeled
+    conditions:
+      - base=main
+      - label=needs-cherry-pick-v0.5
+    actions:
+      backport:
+        branches:
+          - v0.5
+        title: "[automated] {{ title }} (backport #{{ number }})"
+        assignees:
+          - "{{ author }}"
