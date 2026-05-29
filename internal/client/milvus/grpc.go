@@ -471,7 +471,12 @@ func (g *GrpcClient) checkFeature(ctx context.Context) error {
 // "2.6-20260404-31fb3fc" as "2.6.0-20260404-31fb3fc" — a prerelease of 2.6.0 — which
 // compares LESS than 2.6.x and silently disables features on dev builds.
 func (g *GrpcClient) parseVersionForFeature(ver string) *semver.Version {
-	sem, err := semver.StrictNewVersion(strings.TrimPrefix(ver, "v"))
+	v := strings.TrimPrefix(ver, "v")
+	// Collapse four-part hotfix versions to their release base, e.g. "2.3.22.6" -> "2.3.22".
+	if parts := strings.SplitN(v, ".", 4); len(parts) == 4 {
+		v = strings.Join(parts[:3], ".")
+	}
+	sem, err := semver.StrictNewVersion(v)
 	if err != nil {
 		g.logger.Warn("cannot parse server version as strict semver, treat as latest dev build",
 			zap.String("version", ver), zap.Error(err))

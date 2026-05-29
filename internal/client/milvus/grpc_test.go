@@ -208,6 +208,16 @@ func TestGrpcClient_parseVersionForFeature(t *testing.T) {
 		{"VPrefixV2.6.5_HasMultiL0", "v2.6.5", ">= 2.6.5-0", true},
 		{"VPrefixV2.5.20_HasReplicateMessage", "v2.5.20", ">= 2.5.0-0, < 2.6.0-0", true},
 
+		// Four-part versions collapse to their release base. Without the collapse
+		// these fail StrictNewVersion, fall back to _latestDevVersion, and wrongly
+		// enable features the underlying release does not implement.
+		// "v2.4.0.1-gpu-beta" and "v2.4.0.2-gpu-beta" are real milvusdb/milvus tags;
+		// the trailing component (with its prerelease suffix) is dropped to "2.4.0".
+		{"FourPartV2.4.0.1GpuBeta_NoMultiL0", "v2.4.0.1-gpu-beta", ">= 2.6.5-0", false},
+		{"FourPartV2.4.0.1GpuBeta_NoDescribeDatabase", "v2.4.0.1-gpu-beta", ">= 2.4.3-0", false},
+		{"FourPartV2.3.22.6_NoMultiL0", "v2.3.22.6", ">= 2.6.5-0", false},
+		{"FourPartV2.6.5.3_HasMultiL0", "v2.6.5.3", ">= 2.6.5-0", true},
+
 		// Dev RC tag: must be treated as latest dev (and pass all >= constraints).
 		// Without StrictNewVersion this regresses: lenient parser turns it into
 		// 2.6.0-20260404-31fb3fc, which is LESS than 2.6.5-0 and disables features.
