@@ -1,14 +1,9 @@
 package check
 
 import (
-	"fmt"
-	"io"
-	"text/tabwriter"
-
 	"github.com/spf13/cobra"
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
-	"github.com/zilliztech/milvus-backup/internal/cfg"
 )
 
 func newConfigCmd(opt *root.Options) *cobra.Command {
@@ -21,22 +16,11 @@ func newConfigCmd(opt *root.Options) *cobra.Command {
 - Source: where the value came from (override, env, config, default)
 - Source key: the specific key used to set the value`,
 
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
 			params := opt.InitGlobalVars()
-			printConfig(cmd.OutOrStdout(), params)
+			return params.WriteTable(cmd.OutOrStdout())
 		},
 	}
 
 	return cmd
-}
-
-func printConfig(w io.Writer, c *cfg.Config) {
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(tw, "PARAMETER\tVALUE\tSOURCE\tSOURCE_KEY")
-	fmt.Fprintln(tw, "---------\t-----\t------\t----------")
-
-	for _, e := range c.Entries() {
-		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", e.Name, e.Value, e.Source, e.SourceKey)
-	}
-	tw.Flush()
 }
