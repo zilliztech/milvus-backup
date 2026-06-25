@@ -2,9 +2,12 @@ package restore
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -43,6 +46,14 @@ type options struct {
 	skipCreateCollection bool
 	rbac                 bool
 	useV2Restore         bool
+
+	// resumable restore (breakpoint)
+	segmentsPerBatch int
+	maxRetry         int
+	retryBackoffSec  int
+	maxBackoffSec    int
+	breakpoint       string
+	resume           bool
 }
 
 func (o *options) validate() error {
@@ -81,6 +92,10 @@ func (o *options) validate() error {
 		return errors.New("suffix and rename flag cannot be set at the same time")
 	}
 
+	if o.resume && o.breakpoint == "" {
+		return errors.New("--resume requires --breakpoint to point at the ledger from the previous run")
+	}
+
 	if o.dropExistCollection && o.skipCreateCollection {
 		return errors.New("drop_exist_collection and skip_create_collection cannot be true at the same time")
 	}
@@ -114,6 +129,14 @@ func (o *options) addFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVarP(&o.skipCreateCollection, "skip_create_collection", "", false, "if true, will skip collection, use when collection exist, restore index or data")
 	cmd.Flags().BoolVarP(&o.rbac, "rbac", "", false, "whether restore RBAC meta")
 	cmd.Flags().BoolVarP(&o.useV2Restore, "use_v2_restore", "", false, "if true, use multi-segment merged restore")
+
+	// resumable restore (breakpoint). Only active when --breakpoint is set.
+	cmd.Flags().StringVarP(&o.breakpoint, "breakpoint", "", "", "local JSON file recording restore progress; supply the same path with --resume to continue an interrupted restore")
+	cmd.Flags().BoolVarP(&o.resume, "resume", "", false, "resume from --breakpoint: skip already-imported segments and reconcile in-flight import jobs")
+	cmd.Flags().IntVarP(&o.segmentsPerBatch, "segments_per_batch", "", 0, "max segments per import job (smaller = smaller blast radius on a failure); 0 keeps the default 256")
+	cmd.Flags().IntVarP(&o.maxRetry, "max_retry", "", 0, "extra retries for a failed import job, with exponential backoff (0 = no retry)")
+	cmd.Flags().IntVarP(&o.retryBackoffSec, "retry_backoff_sec", "", 5, "base backoff in seconds between import-job retries")
+	cmd.Flags().IntVarP(&o.maxBackoffSec, "retry_max_backoff_sec", "", 60, "max backoff in seconds between import-job retries")
 }
 
 func (o *options) toOption() *restore.Option {
@@ -128,6 +151,12 @@ func (o *options) toOption() *restore.Option {
 		MetaOnly:             o.metaOnly,
 		UseV2Restore:         o.useV2Restore,
 		RestoreRBAC:          o.rbac,
+
+		SegmentsPerBatch: o.segmentsPerBatch,
+		MaxRetry:         o.maxRetry,
+		RetryBaseBackoff: time.Duration(o.retryBackoffSec) * time.Second,
+		RetryMaxBackoff:  time.Duration(o.maxBackoffSec) * time.Second,
+		Resume:           o.resume,
 	}
 }
 
@@ -286,15 +315,30 @@ func (o *options) toArgs(params *cfg.Config) (restore.TaskArgs, error) {
 		return restore.TaskArgs{}, fmt.Errorf("read backup meta: %w", err)
 	}
 
+	// With a breakpoint the restore identity must be stable across runs (it
+	// drives temp-dir naming, so a re-run can reuse already-copied files). Derive
+	// it deterministically from the breakpoint path. Without a breakpoint, keep
+	// the historical per-run UUID.
+	taskID := uuid.NewString()
+	breakpointPath := o.breakpoint
+	if breakpointPath != "" {
+		if abs, aerr := filepath.Abs(breakpointPath); aerr == nil {
+			breakpointPath = abs
+		}
+		sum := sha256.Sum256([]byte(breakpointPath))
+		taskID = "restore_bp_" + hex.EncodeToString(sum[:8])
+	}
+
 	return restore.TaskArgs{
-		TaskID:        uuid.NewString(),
-		Backup:        backup,
-		Plan:          plan,
-		Option:        o.toOption(),
-		Params:        params,
-		BackupDir:     mpath.BackupDir(params.Minio.BackupRootPath.Val, o.backupName),
-		BackupStorage: backupStorage,
-		MilvusStorage: milvusStorage,
+		TaskID:         taskID,
+		Backup:         backup,
+		Plan:           plan,
+		Option:         o.toOption(),
+		Params:         params,
+		BackupDir:      mpath.BackupDir(params.Minio.BackupRootPath.Val, o.backupName),
+		BackupStorage:  backupStorage,
+		MilvusStorage:  milvusStorage,
+		BreakpointPath: breakpointPath,
 
 		TaskMgr: taskmgr.DefaultMgr(),
 	}, nil

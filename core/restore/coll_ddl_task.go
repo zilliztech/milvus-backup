@@ -75,6 +75,12 @@ func (ddlt *collDDLTask) Execute(ctx context.Context) error {
 }
 
 func (ddlt *collDDLTask) dropExistedColl(ctx context.Context) error {
+	// Resume must never drop: an existing collection may already hold data
+	// imported by a previous run. Resume wins over DropExistCollection.
+	if ddlt.option.Resume {
+		ddlt.logger.Info("resume mode: never drop existing collection")
+		return nil
+	}
 	if !ddlt.option.DropExistCollection {
 		ddlt.logger.Info("skip drop existed collection")
 		return nil
@@ -221,6 +227,20 @@ func (ddlt *collDDLTask) createColl(ctx context.Context) error {
 	if ddlt.option.SkipCreateCollection {
 		ddlt.logger.Info("skip create collection")
 		return nil
+	}
+
+	// Resume mode: if the collection already exists (created by an earlier run
+	// of this same restore) reuse it and skip creation; never recreate. This is
+	// the "create if absent, never drop" semantics that resume needs.
+	if ddlt.option.Resume {
+		exist, err := ddlt.grpcCli.HasCollection(ctx, ddlt.targetNS.DBName(), ddlt.targetNS.CollName())
+		if err != nil {
+			return fmt.Errorf("collection: check collection exist for resume: %w", err)
+		}
+		if exist {
+			ddlt.logger.Info("resume: collection already exists, skip create")
+			return nil
+		}
 	}
 
 	createFields, addFields, err := ddlt.fields()

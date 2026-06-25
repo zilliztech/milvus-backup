@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"path"
 	"slices"
 	"strconv"
@@ -18,6 +19,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/core/restore/breakpoint"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
@@ -61,6 +63,9 @@ type collTask struct {
 	grpcCli    milvus.Grpc
 	restfulCli milvus.Restful
 
+	// bp is the resume ledger; nil when the breakpoint feature is off.
+	bp *breakpoint.Tracker
+
 	tearDownFn struct {
 		mu  sync.Mutex
 		fns []tearDownFn
@@ -99,6 +104,8 @@ type collTaskArgs struct {
 
 	grpcCli    milvus.Grpc
 	restfulCli milvus.Restful
+
+	bp *breakpoint.Tracker
 }
 
 func newCollTask(args collTaskArgs) *collTask {
@@ -139,6 +146,8 @@ func newCollTask(args collTaskArgs) *collTask {
 
 		grpcCli:    args.grpcCli,
 		restfulCli: args.restfulCli,
+
+		bp: args.bp,
 
 		vchTimestamp: struct {
 			mu    sync.RWMutex
@@ -210,12 +219,24 @@ func (ct *collTask) restoreData(ctx context.Context) error {
 }
 
 func (ct *collTask) restoreDataV2(ctx context.Context) error {
+	isolate := ct.bp != nil
+	var (
+		mu       sync.Mutex
+		partErrs []error
+	)
+
 	// restore partition segment
 	ct.logger.Info("start restore partition segment", zap.Int("partition_num", len(ct.collBackup.GetPartitionBackups())))
 	g, subCtx := errgroup.WithContext(ctx)
 	for _, part := range ct.collBackup.GetPartitionBackups() {
 		g.Go(func() error {
 			if err := ct.restorePartitionV2(subCtx, part); err != nil {
+				if isolate {
+					mu.Lock()
+					partErrs = append(partErrs, err)
+					mu.Unlock()
+					return nil
+				}
 				return fmt.Errorf("restore_collection: restore partition v2: %w", err)
 			}
 			return nil
@@ -225,10 +246,18 @@ func (ct *collTask) restoreDataV2(ctx context.Context) error {
 		return fmt.Errorf("restore_collection: wait for partition restore: %w", err)
 	}
 
-	// restore all partition l0 segment
+	// restore all partition l0 segment (still attempted even if some partition
+	// failed, so resume maximizes forward progress)
 	ct.logger.Info("start restore all partition L0 segment", zap.Int("l0_segments", len(ct.collBackup.GetL0Segments())))
 	if err := ct.restoreL0SegV2(ctx, "", ct.collBackup.GetL0Segments()); err != nil {
-		return fmt.Errorf("restore_collection: restore global L0 segment: %w", err)
+		if !isolate {
+			return fmt.Errorf("restore_collection: restore global L0 segment: %w", err)
+		}
+		partErrs = append(partErrs, err)
+	}
+
+	if len(partErrs) > 0 {
+		return fmt.Errorf("restore_collection: %d partition/L0 group(s) incomplete: %w", len(partErrs), errors.Join(partErrs...))
 	}
 
 	return nil
@@ -260,8 +289,16 @@ func (ct *collTask) restoreDataV1(ctx context.Context) error {
 }
 
 func (ct *collTask) tearDown(ctx context.Context) error {
-	if ct.keepTempFiles {
-		ct.logger.Info("skip clean temporary files")
+	// In resumable mode never delete temp files at teardown: a failed run may
+	// leave Milvus import jobs still reading them, and the next --resume run
+	// reuses already-copied files. They are cleaned only after the whole
+	// restore completes (or manually via the breakpoint's temp prefix).
+	if ct.keepTempFiles || ct.bp != nil {
+		if ct.bp != nil {
+			ct.logger.Info("breakpoint enabled: keep temporary files for resume")
+		} else {
+			ct.logger.Info("skip clean temporary files")
+		}
 		return nil
 	}
 
@@ -423,6 +460,21 @@ func (ct *collTask) restoreNotL0SegV2(ctx context.Context, part *backuppb.Partit
 		return fmt.Errorf("restore_collection: get not L0 groups: %w", err)
 	}
 
+	return ct.runBatchesV2(ctx, part.GetPartitionName(), batches, "not-L0")
+}
+
+// runBatchesV2 issues all batches concurrently. In breakpoint mode a single
+// batch failure is isolated (recorded, reported at the end) so its siblings
+// still run and the breakpoint captures their progress; otherwise the first
+// failure aborts the group (legacy behavior).
+func (ct *collTask) runBatchesV2(ctx context.Context, partitionName string, batches []batch, kind string) error {
+	isolate := ct.bp != nil
+	var (
+		mu      sync.Mutex
+		errCnt  int
+		lastErr error
+	)
+
 	g, subCtx := errgroup.WithContext(ctx)
 	for _, b := range batches {
 		if err := ct.bulkInsertSem.Acquire(ctx, 1); err != nil {
@@ -432,19 +484,30 @@ func (ct *collTask) restoreNotL0SegV2(ctx context.Context, part *backuppb.Partit
 			defer ct.bulkInsertSem.Release(1)
 
 			bat, err := ct.copyAndRewriteDir(subCtx, b)
+			if err == nil {
+				err = ct.bulkInsertViaRestful(subCtx, partitionName, bat)
+			}
 			if err != nil {
-				return fmt.Errorf("restore_collection: restore data v2 copy files: %w", err)
+				if isolate {
+					mu.Lock()
+					errCnt++
+					lastErr = err
+					mu.Unlock()
+					ct.logger.Error("batch failed; other batches continue",
+						zap.String("kind", kind), zap.String("partition", partitionName), zap.Error(err))
+					return nil
+				}
+				return fmt.Errorf("restore_collection: restore %s batch: %w", kind, err)
 			}
-			if err := ct.bulkInsertViaRestful(subCtx, part.GetPartitionName(), bat); err != nil {
-				return fmt.Errorf("restore_collection: bulk insert via restful: %w", err)
-			}
-
 			return nil
 		})
 	}
 
 	if err := g.Wait(); err != nil {
-		return fmt.Errorf("restore_collection: wait for not L0 segment restore: %w", err)
+		return fmt.Errorf("restore_collection: wait for %s segment restore: %w", kind, err)
+	}
+	if errCnt > 0 {
+		return fmt.Errorf("restore_collection: %d %s batch(es) failed for partition %q, last error: %w", errCnt, kind, partitionName, lastErr)
 	}
 
 	return nil
@@ -475,32 +538,7 @@ func (ct *collTask) restoreL0SegV2(ctx context.Context, partitionName string, l0
 		return fmt.Errorf("restore_collection: get L0 batches: %w", err)
 	}
 
-	g, subCtx := errgroup.WithContext(ctx)
-	for _, b := range batches {
-		if err := ct.bulkInsertSem.Acquire(ctx, 1); err != nil {
-			return fmt.Errorf("restore_collection: acquire bulk insert semaphore %w", err)
-		}
-
-		g.Go(func() error {
-			defer ct.bulkInsertSem.Release(1)
-
-			bat, err := ct.copyAndRewriteDir(subCtx, b)
-			if err != nil {
-				return fmt.Errorf("restore_collection: restore L0 segment copy files: %w", err)
-			}
-			if err := ct.bulkInsertViaRestful(subCtx, partitionName, bat); err != nil {
-				return fmt.Errorf("restore_collection: restore L0 segment bulk insert via restful: %w", err)
-			}
-
-			return nil
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		return fmt.Errorf("restore_collection: wait for L0 segment restore: %w", err)
-	}
-
-	return nil
+	return ct.runBatchesV2(ctx, partitionName, batches, "L0")
 }
 
 func (ct *collTask) restorePartitionV1(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
@@ -596,6 +634,9 @@ type batchKey struct {
 }
 
 func (ct *collTask) notL0SegBatchesWithGroupID(ctx context.Context, notL0Segs []*backuppb.SegmentBackupInfo) ([]batch, error) {
+	// drop segments already imported in a previous run (resume)
+	notL0Segs = ct.dropCompleted(notL0Segs)
+
 	// group by vchannel and storage version
 	segBatch := lo.GroupBy(notL0Segs, func(seg *backuppb.SegmentBackupInfo) batchKey {
 		return batchKey{vch: seg.GetVChannel(), sv: seg.GetStorageVersion()}
@@ -610,9 +651,10 @@ func (ct *collTask) notL0SegBatchesWithGroupID(ctx context.Context, notL0Segs []
 
 		// because the restful api has a limitation on the number of segments in one request,
 		// we need to chunk the segments into multiple batches
-		chunkedSegs := lo.Chunk(segs, _bulkInsertRestfulAPIChunkSize)
+		chunkedSegs := lo.Chunk(segs, ct.chunkSize())
 		for _, chunk := range chunkedSegs {
 			dirs := make([]partitionDir, 0, len(chunk))
+			segIDs := make([]int64, 0, len(chunk))
 			for _, seg := range chunk {
 				opts := []mpath.Option{
 					mpath.CollectionID(ct.collBackup.GetCollectionId()),
@@ -625,9 +667,10 @@ func (ct *collTask) notL0SegBatchesWithGroupID(ctx context.Context, notL0Segs []
 					return nil, fmt.Errorf("restore_collection: get partition backup binlog files: %w", err)
 				}
 				dirs = append(dirs, dir)
+				segIDs = append(segIDs, seg.GetSegmentId())
 			}
 
-			b := batch{timestamp: ts, partitionDirs: dirs, storageVersion: key.sv}
+			b := batch{timestamp: ts, partitionDirs: dirs, storageVersion: key.sv, segmentIDs: segIDs}
 			batches = append(batches, b)
 		}
 	}
@@ -662,13 +705,16 @@ func (ct *collTask) notL0SegmentBatches(ctx context.Context, part *backuppb.Part
 }
 
 func (ct *collTask) l0SegmentBatches(l0Segs []*backuppb.SegmentBackupInfo) ([]batch, error) {
+	// drop L0 segments already imported in a previous run (resume)
+	l0Segs = ct.dropCompleted(l0Segs)
+
 	segBatch := lo.GroupBy(l0Segs, func(seg *backuppb.SegmentBackupInfo) batchKey {
 		return batchKey{vch: seg.GetVChannel(), sv: seg.GetStorageVersion()}
 	})
 
 	chunkSize := 1
 	if ct.grpcCli.HasFeature(milvus.MultiL0InOneJob) {
-		chunkSize = _bulkInsertRestfulAPIChunkSize
+		chunkSize = ct.chunkSize()
 	}
 
 	var batches []batch
@@ -681,6 +727,7 @@ func (ct *collTask) l0SegmentBatches(l0Segs []*backuppb.SegmentBackupInfo) ([]ba
 		chunkedSegs := lo.Chunk(segs, chunkSize)
 		for _, chunk := range chunkedSegs {
 			dirs := make([]partitionDir, 0, len(chunk))
+			segIDs := make([]int64, 0, len(chunk))
 			for _, seg := range chunk {
 				opts := []mpath.Option{
 					mpath.CollectionID(ct.collBackup.GetCollectionId()),
@@ -690,8 +737,9 @@ func (ct *collTask) l0SegmentBatches(l0Segs []*backuppb.SegmentBackupInfo) ([]ba
 
 				deltaLogDir := mpath.BackupDeltaLogDir(ct.backupDir, opts...)
 				dirs = append(dirs, partitionDir{deltaLogDir: deltaLogDir, size: seg.GetSize()})
+				segIDs = append(segIDs, seg.GetSegmentId())
 			}
-			b := batch{isL0: true, timestamp: ts, partitionDirs: dirs, storageVersion: key.sv}
+			b := batch{isL0: true, timestamp: ts, partitionDirs: dirs, storageVersion: key.sv, segmentIDs: segIDs}
 			batches = append(batches, b)
 		}
 	}
@@ -712,6 +760,42 @@ type batch struct {
 	storageVersion int64
 
 	partitionDirs []partitionDir
+
+	// segmentIDs are the backup segment IDs covered by this batch, used to
+	// record progress in the breakpoint ledger. Empty for the legacy
+	// without-group-id path (which is not segment-resumable).
+	segmentIDs []int64
+}
+
+// chunkSize returns how many segments go into one import job. A positive
+// Option.SegmentsPerBatch overrides the historical default.
+func (ct *collTask) chunkSize() int {
+	if ct.option.SegmentsPerBatch > 0 {
+		return ct.option.SegmentsPerBatch
+	}
+	return _bulkInsertRestfulAPIChunkSize
+}
+
+// dropCompleted filters out segments already confirmed imported in a previous
+// run. A no-op when the breakpoint feature is off or not resuming.
+func (ct *collTask) dropCompleted(segs []*backuppb.SegmentBackupInfo) []*backuppb.SegmentBackupInfo {
+	if ct.bp == nil || !ct.option.Resume {
+		return segs
+	}
+	ns := ct.targetNS.String()
+	kept := segs[:0:0]
+	skipped := 0
+	for _, seg := range segs {
+		if ct.bp.IsCompleted(ns, seg.GetSegmentId()) {
+			skipped++
+			continue
+		}
+		kept = append(kept, seg)
+	}
+	if skipped > 0 {
+		ct.logger.Info("skip already-imported segments (resume)", zap.Int("skipped", skipped), zap.Int("remaining", len(kept)))
+	}
+	return kept
 }
 
 func (ct *collTask) checkBulkInsertViaGrpc(ctx context.Context, jobID int64) error {
@@ -831,6 +915,31 @@ func (ct *collTask) checkBulkInsertViaRestful(ctx context.Context, jobID string)
 	return errors.New("restore_collection: walk into unreachable code")
 }
 
+// retryBackoff returns the exponential backoff (with jitter) for the given
+// retry attempt (1-based). Bounded by Option.RetryBaseBackoff / RetryMaxBackoff.
+func (ct *collTask) retryBackoff(attempt int) time.Duration {
+	base := ct.option.RetryBaseBackoff
+	if base <= 0 {
+		base = 5 * time.Second
+	}
+	maxB := ct.option.RetryMaxBackoff
+	if maxB <= 0 {
+		maxB = 60 * time.Second
+	}
+	d := base
+	for i := 1; i < attempt && d < maxB; i++ {
+		d *= 2
+	}
+	if d > maxB {
+		d = maxB
+	}
+	// up to +25% jitter so concurrent retries don't synchronize (429 storms)
+	if d > 0 {
+		d += time.Duration(rand.Int63n(int64(d)/4 + 1))
+	}
+	return d
+}
+
 func (ct *collTask) bulkInsertViaRestful(ctx context.Context, partition string, b batch) error {
 	ct.logger.Info("start bulk insert via restful", zap.Int("batch_num", len(b.partitionDirs)), zap.String("partition", partition))
 	paths := lo.Map(b.partitionDirs, func(dir partitionDir, _ int) []string { return toPaths(dir) })
@@ -844,20 +953,62 @@ func (ct *collTask) bulkInsertViaRestful(ctx context.Context, partition string, 
 		StorageVersion: b.storageVersion,
 		EZK:            ct.ezk(),
 	}
-
-	jobID, err := ct.restfulCli.BulkInsert(ctx, in)
-	if err != nil {
-		return fmt.Errorf("restore_collection: failed to bulk insert via restful: %w", err)
-	}
-	ct.logger.Info("create bulk insert via restful success", zap.String("job_id", jobID))
-
 	size := lo.SumBy(b.partitionDirs, func(dir partitionDir) int64 { return dir.size })
-	ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.AddRestoreImportJob(ct.targetNS, jobID, size))
-	if err := ct.checkBulkInsertViaRestful(ctx, jobID); err != nil {
-		return fmt.Errorf("restore_collection: check bulk insert via restful: %w", err)
+	record := ct.bp != nil && len(b.segmentIDs) > 0
+
+	attempts := ct.option.MaxRetry + 1
+	if attempts < 1 {
+		attempts = 1
 	}
 
-	return nil
+	var lastErr error
+	for attempt := 0; attempt < attempts; attempt++ {
+		if attempt > 0 {
+			backoff := ct.retryBackoff(attempt)
+			ct.logger.Warn("retry bulk insert after backoff", zap.String("partition", partition),
+				zap.Int("attempt", attempt), zap.Duration("backoff", backoff), zap.Error(lastErr))
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(backoff):
+			}
+		}
+
+		jobID, err := ct.restfulCli.BulkInsert(ctx, in)
+		if err != nil {
+			lastErr = fmt.Errorf("restore_collection: failed to bulk insert via restful: %w", err)
+			continue
+		}
+		ct.logger.Info("create bulk insert via restful success", zap.String("job_id", jobID))
+		ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.AddRestoreImportJob(ct.targetNS, jobID, size))
+
+		// Record the issued job BEFORE polling so a crash mid-poll is recoverable.
+		if record {
+			if err := ct.bp.MarkInflight(jobID, ct.targetNS.String(), b.segmentIDs); err != nil {
+				return fmt.Errorf("restore_collection: record inflight job: %w", err)
+			}
+		}
+
+		if err := ct.checkBulkInsertViaRestful(ctx, jobID); err != nil {
+			lastErr = fmt.Errorf("restore_collection: check bulk insert via restful: %w", err)
+			if record {
+				if ferr := ct.bp.Fail(jobID); ferr != nil {
+					return fmt.Errorf("restore_collection: record failed job: %w", ferr)
+				}
+			}
+			continue
+		}
+
+		// Success: promote this job's segments to the completed set.
+		if record {
+			if err := ct.bp.Complete(jobID); err != nil {
+				return fmt.Errorf("restore_collection: record completed job: %w", err)
+			}
+		}
+		return nil
+	}
+
+	return lastErr
 }
 
 func getProcess(infos []*commonpb.KeyValuePair) int {
