@@ -120,6 +120,38 @@ curl -X POST http://<backup-server>:8080/api/v1/restore \
 > rather than risk duplicating it. The field is `useV2Restore` (camelCase), and the ledger is
 > stored under `<backup-root>/_restore_ledger/` in the backup bucket.
 
+### REST request fields
+
+| JSON field | Meaning | Default |
+| --- | --- | --- |
+| `backup_name` | Name of the backup to restore (required). | — |
+| `useV2Restore` *(camelCase)* | Use the v2 restore path. Resumable restore is on this path — set `true`. | false |
+| `breakpoint` | Stable label identifying this restore; enables resumable mode. Reuse it on every run. | — (off) |
+| `resume` | Skip already-imported segments and reconcile in-flight jobs. Omit on the first run; set `true` on re-runs. | false |
+| `segments_per_batch` | Max segments per import job (smaller = smaller blast radius). | 256 |
+| `max_retry` | Extra retries for a failed import job, with exponential backoff. | 0 |
+| `retry_backoff_sec` / `retry_max_backoff_sec` | Base / cap of the retry backoff (seconds). | 5 / 60 |
+| `async` | Return immediately instead of blocking until the restore finishes. | false |
+
+## REST vs CLI
+
+The same resumable restore is available from the CLI; the only real difference is **where the
+progress ledger is stored** and how you identify the restore.
+
+| Aspect | CLI | REST server |
+| --- | --- | --- |
+| Ledger storage | **Local JSON file** at the `--breakpoint` path | **Object in object storage** (`<backup-root>/_restore_ledger/`) |
+| Identity | The `--breakpoint /path` (a file path) | The `breakpoint` label (a JSON string) |
+| Survives host / pod restart | Only if the path is on persistent disk | **Yes** — it lives in the bucket |
+| Works across replicas | No (file is local to one host) | **Yes** (any replica reads the same object) |
+| Trigger resume | `--resume` flag | `"resume": true` field |
+| Best fit | An operator running the CLI on a stable host | A long-running server in Kubernetes / a pod |
+
+**Why REST uses object storage:** a server typically runs in an ephemeral, possibly replicated
+pod. A local file would be lost on restart and would not be shared across replicas, so resume
+could not work. Storing the ledger in the bucket removes that dependency. The CLI keeps the
+simpler local-file behavior because it runs on a stable host.
+
 ## Recommended settings for slow / unreliable object storage
 
 - **Lower the concurrency:** set `backup.parallelism.importJob` to a small number (e.g. `3`–`10`)
