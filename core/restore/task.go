@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
 	"github.com/samber/lo"
 	"go.uber.org/zap"
@@ -170,10 +171,12 @@ type TaskArgs struct {
 
 	TaskMgr *taskmgr.Mgr
 
-	// BreakpointPath, when non-empty, enables resumable restore: progress is
-	// persisted to this local JSON file and (with Option.Resume) read back to
-	// skip already-imported segments.
-	BreakpointPath string
+	// Breakpoint, when non-nil, enables resumable restore: progress is persisted
+	// through the tracker's Store (a local file for the CLI, an object in object
+	// storage for the HTTP server) and (with Option.Resume) read back to skip
+	// already-imported segments. The caller opens the tracker so it can choose
+	// the storage backend; nil means the feature is off.
+	Breakpoint *breakpoint.Tracker
 }
 
 type Task struct {
@@ -196,14 +199,9 @@ func NewTask(args TaskArgs) (*Task, error) {
 
 	args.TaskMgr.AddRestoreTask(args.TaskID)
 
-	var bp *breakpoint.Tracker
-	if args.BreakpointPath != "" {
-		var err error
-		bp, err = breakpoint.Open(args.BreakpointPath, args.TaskID, args.Backup.GetName())
-		if err != nil {
-			return nil, fmt.Errorf("restore: open breakpoint ledger: %w", err)
-		}
-		logger.Info("breakpoint enabled", zap.String("path", args.BreakpointPath),
+	bp := args.Breakpoint
+	if bp != nil {
+		logger.Info("breakpoint enabled", zap.String("location", bp.Location()),
 			zap.String("restore_id", bp.RestoreID()), zap.Bool("resume", args.Option.Resume))
 	}
 
@@ -368,11 +366,53 @@ func (t *Task) checkCollsExist(ctx context.Context, collTasks []*collTask) error
 	return nil
 }
 
+// collectionRowCount returns the visible row count of a collection (sum of its
+// live persistent segments). Returns 0 if the collection does not exist.
+func collectionRowCount(ctx context.Context, grpc milvus.Grpc, ns namespace.NS) (int64, error) {
+	has, err := grpc.HasCollection(ctx, ns.DBName(), ns.CollName())
+	if err != nil {
+		return 0, fmt.Errorf("restore: check collection exist: %w", err)
+	}
+	if !has {
+		return 0, nil
+	}
+	segs, err := grpc.GetPersistentSegmentInfo(ctx, ns.DBName(), ns.CollName())
+	if err != nil {
+		return 0, fmt.Errorf("restore: get persistent segment info: %w", err)
+	}
+	var rows int64
+	for _, s := range segs {
+		if s.GetState() == commonpb.SegmentState_Dropped {
+			continue // compacted-away segments are not live data
+		}
+		rows += s.GetNumRows()
+	}
+	return rows, nil
+}
+
 func (t *Task) checkCollExist(ctx context.Context, task *collTask) error {
 	// Resume tolerates a pre-existing collection: it was created by an earlier
 	// run of this restore and may already hold imported data. createColl/
 	// dropExistedColl handle the "create if absent, never drop" behavior.
 	if t.args.Option.Resume {
+		// Preventive guard against duplication: if we are told to resume but the
+		// ledger has NO record of progress for this collection (after inflight
+		// reconciliation) while the target already holds data, the breakpoint
+		// label is almost certainly wrong or the ledger was lost. Re-importing
+		// every segment would duplicate. Refuse before importing anything.
+		if t.bp != nil {
+			ns := task.targetNS.String()
+			if t.bp.CompletedCount(ns) == 0 && t.bp.InflightCount(ns) == 0 {
+				rows, err := collectionRowCount(ctx, t.grpc, task.targetNS)
+				if err != nil {
+					return err
+				}
+				if rows > 0 {
+					return fmt.Errorf("restore: resume requested for %s but the breakpoint ledger records no progress while the collection already holds %d rows; "+
+						"the breakpoint label is likely wrong or the ledger was lost. Refusing to avoid duplicating data — verify --breakpoint/breakpoint, or start a fresh restore", ns, rows)
+				}
+			}
+		}
 		return nil
 	}
 
