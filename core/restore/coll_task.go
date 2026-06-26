@@ -195,6 +195,49 @@ func (ct *collTask) privateExecute(ctx context.Context) error {
 		return fmt.Errorf("restore_collection: restore data: %w", err)
 	}
 
+	if err := ct.verifyRowCount(ctx); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// verifyRowCount is a correctness backstop for resumable restore: after a
+// collection's data is fully restored, the target must not hold MORE rows than
+// the backup ever inserted. Because deletes only ever reduce the visible count,
+// "more rows than inserted" is an unambiguous sign of duplication (e.g. a resume
+// that re-imported already-present segments) — fail loudly. Fewer rows is only a
+// warning (expected when the backup contains deletes).
+func (ct *collTask) verifyRowCount(ctx context.Context) error {
+	if ct.bp == nil {
+		return nil // only guard resumable restores
+	}
+
+	var expected int64
+	for _, part := range ct.collBackup.GetPartitionBackups() {
+		for _, seg := range part.GetSegmentBackups() {
+			if !seg.GetIsL0() {
+				expected += seg.GetNumOfRows()
+			}
+		}
+	}
+
+	actual, err := collectionRowCount(ctx, ct.grpcCli, ct.targetNS)
+	if err != nil {
+		return fmt.Errorf("restore_collection: verify row count: %w", err)
+	}
+
+	switch {
+	case actual > expected:
+		return fmt.Errorf("restore_collection: %s holds %d rows but the backup inserted only %d — duplication detected "+
+			"(a resume likely re-imported already-present segments); drop the collection and restore fresh",
+			ct.targetNS.String(), actual, expected)
+	case actual < expected:
+		ct.logger.Warn("restored fewer rows than the backup inserted; expected only if the backup contains deletes",
+			zap.Int64("actual", actual), zap.Int64("expected_inserts", expected))
+	default:
+		ct.logger.Info("row count verified", zap.Int64("rows", actual))
+	}
 	return nil
 }
 

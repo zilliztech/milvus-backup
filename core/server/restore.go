@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore"
+	"github.com/zilliztech/milvus-backup/core/restore/breakpoint"
 	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/filter"
@@ -126,9 +128,13 @@ func (h *restoreHandler) complete() {
 		h.request.RequestId = uuid.NewString()
 	}
 
-	if len(h.request.GetId()) == 0 {
-		taskID := "restore_" + fmt.Sprint(time.Now().UTC().Format("2006_01_02_15_04_05_")) + fmt.Sprint(time.Now().Nanosecond())
-		h.request.Id = taskID
+	// A breakpoint label fixes a STABLE restore id so re-runs line up (it drives
+	// the ledger object key and temp-dir naming); it wins over any caller id.
+	// Otherwise default to a per-run timestamp id.
+	if bp := h.request.GetBreakpoint(); bp != "" {
+		h.request.Id = breakpoint.DeriveID(bp)
+	} else if len(h.request.GetId()) == 0 {
+		h.request.Id = "restore_" + fmt.Sprint(time.Now().UTC().Format("2006_01_02_15_04_05_")) + fmt.Sprint(time.Now().Nanosecond())
 	}
 }
 
@@ -176,6 +182,25 @@ func (h *restoreHandler) newTask(ctx context.Context, backupDir string) (*restor
 		return nil, fmt.Errorf("server: create restore plan: %w", err)
 	}
 
+	// Resumable restore: persist the ledger to object storage (the server may
+	// run in an ephemeral / replicated pod, so a local file would not survive).
+	// The breakpoint label derives a stable id, which drives both the ledger
+	// object key and the temp-dir naming so a re-run lines up. Use a background
+	// context so ledger writes outlive the HTTP request (async restore runs on
+	// context.Background()).
+	var bpTracker *breakpoint.Tracker
+	if label := h.request.GetBreakpoint(); label != "" {
+		// h.request.Id was already set to DeriveID(label) in complete(), so the
+		// ledger key, temp-dir naming and taskmgr tracking all share one id.
+		ledgerKey := path.Join(h.backupRootPath, "_restore_ledger", h.request.GetId()+".json")
+		bpTracker, err = breakpoint.OpenObject(context.Background(), h.backupStorage, ledgerKey, h.request.GetId(), backup.GetName())
+		if err != nil {
+			return nil, fmt.Errorf("server: open breakpoint ledger: %w", err)
+		}
+		log.Info("resumable restore enabled (REST)", zap.String("ledger", ledgerKey),
+			zap.String("restore_id", h.request.GetId()), zap.Bool("resume", h.request.GetResume()))
+	}
+
 	args := restore.TaskArgs{
 		TaskID:        h.request.GetId(),
 		Backup:        backup,
@@ -185,6 +210,7 @@ func (h *restoreHandler) newTask(ctx context.Context, backupDir string) (*restor
 		BackupDir:     backupDir,
 		BackupStorage: h.backupStorage,
 		MilvusStorage: h.milvusStorage,
+		Breakpoint:    bpTracker,
 
 		TaskMgr: taskmgr.DefaultMgr(),
 	}
@@ -262,6 +288,14 @@ func newOptionFromRequest(request *backuppb.RestoreBackupRequest) *restore.Optio
 		TruncateBinlogByTs:   request.GetTruncateBinlogByTs(),
 		RestoreRBAC:          request.GetRbac(),
 		EZKMapping:           request.GetEzkMapping(),
+
+		// resumable restore (breakpoint). The breakpoint tracker itself is
+		// attached in newTask; these knobs come straight from the request.
+		Resume:           request.GetResume(),
+		SegmentsPerBatch: int(request.GetSegmentsPerBatch()),
+		MaxRetry:         int(request.GetMaxRetry()),
+		RetryBaseBackoff: time.Duration(request.GetRetryBackoffSec()) * time.Second,
+		RetryMaxBackoff:  time.Duration(request.GetRetryMaxBackoffSec()) * time.Second,
 	}
 }
 

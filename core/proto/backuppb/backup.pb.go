@@ -2365,10 +2365,17 @@ type RestoreBackupRequest struct {
 	DbCollectionsAfterRename *_struct.Value `protobuf:"bytes,23,opt,name=db_collections_after_rename,json=dbCollectionsAfterRename,proto3" json:"db_collections_after_rename,omitempty"`
 	RestorePlan              *RestorePlan   `protobuf:"bytes,24,opt,name=restorePlan,proto3" json:"restorePlan,omitempty"`
 	// map of old ezk to new ezk, used to replace encryption keys during restore
-	EzkMapping           map[string]string `protobuf:"bytes,25,rep,name=ezkMapping,proto3" json:"ezkMapping,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
-	XXX_NoUnkeyedLiteral struct{}          `json:"-"`
-	XXX_unrecognized     []byte            `json:"-"`
-	XXX_sizecache        int32             `json:"-"`
+	EzkMapping map[string]string `protobuf:"bytes,25,rep,name=ezkMapping,proto3" json:"ezkMapping,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+	// resumable restore (breakpoint) fields
+	Breakpoint           string   `protobuf:"bytes,26,opt,name=breakpoint,proto3" json:"breakpoint,omitempty"`
+	Resume               bool     `protobuf:"varint,27,opt,name=resume,proto3" json:"resume,omitempty"`
+	SegmentsPerBatch     int32    `protobuf:"varint,28,opt,name=segments_per_batch,json=segmentsPerBatch,proto3" json:"segments_per_batch,omitempty"`
+	MaxRetry             int32    `protobuf:"varint,29,opt,name=max_retry,json=maxRetry,proto3" json:"max_retry,omitempty"`
+	RetryBackoffSec      int32    `protobuf:"varint,30,opt,name=retry_backoff_sec,json=retryBackoffSec,proto3" json:"retry_backoff_sec,omitempty"`
+	RetryMaxBackoffSec   int32    `protobuf:"varint,31,opt,name=retry_max_backoff_sec,json=retryMaxBackoffSec,proto3" json:"retry_max_backoff_sec,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
 func (m *RestoreBackupRequest) Reset()         { *m = RestoreBackupRequest{} }
@@ -2570,6 +2577,48 @@ func (m *RestoreBackupRequest) GetEzkMapping() map[string]string {
 		return m.EzkMapping
 	}
 	return nil
+}
+
+func (m *RestoreBackupRequest) GetBreakpoint() string {
+	if m != nil {
+		return m.Breakpoint
+	}
+	return ""
+}
+
+func (m *RestoreBackupRequest) GetResume() bool {
+	if m != nil {
+		return m.Resume
+	}
+	return false
+}
+
+func (m *RestoreBackupRequest) GetSegmentsPerBatch() int32 {
+	if m != nil {
+		return m.SegmentsPerBatch
+	}
+	return 0
+}
+
+func (m *RestoreBackupRequest) GetMaxRetry() int32 {
+	if m != nil {
+		return m.MaxRetry
+	}
+	return 0
+}
+
+func (m *RestoreBackupRequest) GetRetryBackoffSec() int32 {
+	if m != nil {
+		return m.RetryBackoffSec
+	}
+	return 0
+}
+
+func (m *RestoreBackupRequest) GetRetryMaxBackoffSec() int32 {
+	if m != nil {
+		return m.RetryMaxBackoffSec
+	}
+	return 0
 }
 
 type RestorePlan struct {

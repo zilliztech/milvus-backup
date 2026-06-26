@@ -394,6 +394,26 @@ message RestoreBackupRequest {
   RestorePlan restorePlan = 24;
   // map of old ezk to new ezk, used to replace encryption keys during restore
   map<string, string> ezkMapping = 25;
+
+  // ── resumable restore (breakpoint) ──
+  // breakpoint, when non-empty, enables resumable restore. It is a stable label
+  // identifying the restore; the server persists progress to an object in
+  // object storage keyed by it. Pass the same value (with resume=true) to
+  // continue an interrupted restore. (CLI uses --breakpoint as a local path.)
+  string breakpoint = 26;
+  // resume continues from the breakpoint: skip already-imported segments and
+  // reconcile in-flight import jobs. Omit on the first run; set on every re-run.
+  bool resume = 27;
+  // segments_per_batch caps how many segments go into a single import job.
+  // Smaller value => smaller blast radius per failure. 0 keeps the default.
+  int32 segments_per_batch = 28;
+  // max_retry is the number of extra attempts for a failed import job (with
+  // exponential backoff). 0 means no retry.
+  int32 max_retry = 29;
+  // retry_backoff_sec / retry_max_backoff_sec bound the backoff between retries
+  // (seconds). 0 keeps the defaults (5s / 60s).
+  int32 retry_backoff_sec = 30;
+  int32 retry_max_backoff_sec = 31;
 }
 
 message RestorePlan {

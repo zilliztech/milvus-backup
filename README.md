@@ -176,6 +176,8 @@ For more details, refer to the [backup.yaml](configs/backup.yaml) configuration 
 
 3. [Segment Merging Restore](docs/user_guide/mul_seg_restore.md): In segment merging restore mode (v2 restore), multiple segments are grouped into a single job and restored together. This significantly improves restore performance, especially in scenarios with many small segments.
 
+4. [Resumable Restore](docs/user_guide/resumable_restore.md): Opt-in, failure-isolated resumable restore for slow / unreliable object storage. A single import failure no longer aborts the whole restore — re-run with `--resume` to continue from where it left off, with no duplicated or lost data.
+
 
 ## Examples
 

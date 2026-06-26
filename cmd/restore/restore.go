@@ -2,8 +2,6 @@ package restore
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -16,6 +14,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/restore"
+	"github.com/zilliztech/milvus-backup/core/restore/breakpoint"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
@@ -320,25 +319,29 @@ func (o *options) toArgs(params *cfg.Config) (restore.TaskArgs, error) {
 	// it deterministically from the breakpoint path. Without a breakpoint, keep
 	// the historical per-run UUID.
 	taskID := uuid.NewString()
-	breakpointPath := o.breakpoint
-	if breakpointPath != "" {
-		if abs, aerr := filepath.Abs(breakpointPath); aerr == nil {
-			breakpointPath = abs
+	var bpTracker *breakpoint.Tracker
+	if o.breakpoint != "" {
+		bpPath := o.breakpoint
+		if abs, aerr := filepath.Abs(bpPath); aerr == nil {
+			bpPath = abs
 		}
-		sum := sha256.Sum256([]byte(breakpointPath))
-		taskID = "restore_bp_" + hex.EncodeToString(sum[:8])
+		taskID = breakpoint.DeriveID(bpPath)
+		bpTracker, err = breakpoint.OpenFile(bpPath, taskID, backup.GetName())
+		if err != nil {
+			return restore.TaskArgs{}, fmt.Errorf("open breakpoint ledger: %w", err)
+		}
 	}
 
 	return restore.TaskArgs{
-		TaskID:         taskID,
-		Backup:         backup,
-		Plan:           plan,
-		Option:         o.toOption(),
-		Params:         params,
-		BackupDir:      mpath.BackupDir(params.Minio.BackupRootPath.Val, o.backupName),
-		BackupStorage:  backupStorage,
-		MilvusStorage:  milvusStorage,
-		BreakpointPath: breakpointPath,
+		TaskID:        taskID,
+		Backup:        backup,
+		Plan:          plan,
+		Option:        o.toOption(),
+		Params:        params,
+		BackupDir:     mpath.BackupDir(params.Minio.BackupRootPath.Val, o.backupName),
+		BackupStorage: backupStorage,
+		MilvusStorage: milvusStorage,
+		Breakpoint:    bpTracker,
 
 		TaskMgr: taskmgr.DefaultMgr(),
 	}, nil
