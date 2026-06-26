@@ -51,7 +51,7 @@ release.
 | `--retry_max_backoff_sec <s>` | Cap on the backoff (seconds) — avoids hammering a throttling store. | 60 | 60 |
 | `backup.parallelism.importJob` *(config file, not a CLI flag)* | Number of import jobs issued concurrently. The default is high and can overwhelm a slow object store. | 768 | Lower it, e.g. `3`–`10` |
 
-## How to use it
+## Using it from the CLI
 
 ### 1. First run
 
@@ -81,14 +81,54 @@ restore that hits transient storage failures will complete after one or more res
 > says *"re-run with --resume to continue"*). Wrap it in a loop on non-zero with `--resume`
 > if you want it fully unattended.
 
+## Using it over the REST API
+
+When you drive `milvus-backup` through its HTTP server (`POST /api/v1/restore`) the same
+capability is available — and the breakpoint ledger is stored in **object storage** (not a local
+file), so it survives a backup-server pod restart and works across replicas. The `breakpoint`
+field is a stable label you reuse across runs (it keys the ledger object); `resume` continues.
+
+First run (omit `resume`):
+
+```bash
+curl -X POST http://<backup-server>:8080/api/v1/restore \
+  -H 'Content-Type: application/json' -d '{
+    "backup_name": "<backup_name>",
+    "useV2Restore": true,
+    "breakpoint": "my-restore-1",
+    "segments_per_batch": 50,
+    "max_retry": 5
+  }'
+```
+
+Resume (same `breakpoint` label, add `resume`):
+
+```bash
+curl -X POST http://<backup-server>:8080/api/v1/restore \
+  -H 'Content-Type: application/json' -d '{
+    "backup_name": "<backup_name>",
+    "useV2Restore": true,
+    "breakpoint": "my-restore-1",
+    "resume": true,
+    "segments_per_batch": 50,
+    "max_retry": 5
+  }'
+```
+
+> **Reuse the same `breakpoint` label on every run.** A different label points at a different
+> (empty) ledger; the server refuses such a resume when the target collection already holds data,
+> rather than risk duplicating it. The field is `useV2Restore` (camelCase), and the ledger is
+> stored under `<backup-root>/_restore_ledger/` in the backup bucket.
+
 ## Recommended settings for slow / unreliable object storage
 
 - **Lower the concurrency:** set `backup.parallelism.importJob` to a small number (e.g. `3`–`10`)
   so you are not issuing hundreds of simultaneous reads against a struggling store.
 - **Smaller batches:** `--segments_per_batch 50` keeps the cost of redoing any one failed job low.
 - **Enable retries:** `--max_retry 5` absorbs short transient blips without needing a resume.
-- **Run on a stable host:** the breakpoint file is on local disk and must survive between runs.
-  Use a persistent path (or a mounted volume), not an ephemeral container filesystem.
+- **Persist the ledger:** the **CLI** keeps the breakpoint as a local file, so run it on a stable
+  host (or a mounted volume), not an ephemeral filesystem. The **REST server** stores the ledger
+  in object storage, so no stable host is needed there — it survives a pod restart.
 - **Do not drop the target collection between resume runs** — that would discard the progress
   already made.
 
@@ -108,5 +148,10 @@ by Milvus automatically — there is nothing to clean up by hand.
 ## Notes
 
 - This feature is on the `--use_v2_restore` (restful) restore path.
-- The breakpoint file is human-readable JSON; it is safe to inspect, and you may delete it to
-  start a fresh (non-resumable) restore.
+- The ledger is human-readable JSON. The CLI keeps it in the local `--breakpoint` file; the REST
+  server keeps it as an object under `<backup-root>/_restore_ledger/`. Either is safe to inspect,
+  and removing it starts a fresh (non-resumable) restore.
+- Two guards protect against duplication on resume: the server **refuses** a resume whose ledger
+  shows no progress while the target collection already holds data (most often a wrong breakpoint
+  label), and after a restore it **fails loudly** if a collection ends up with more rows than the
+  backup inserted.
