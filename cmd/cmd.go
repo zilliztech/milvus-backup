@@ -13,6 +13,7 @@ import (
 	"github.com/zilliztech/milvus-backup/cmd/restore"
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/cmd/server"
+	"github.com/zilliztech/milvus-backup/cmd/wash"
 )
 
 func Execute() {
@@ -28,6 +29,7 @@ func Execute() {
 	cmd.AddCommand(restore.NewCmd(&opt))
 	cmd.AddCommand(server.NewCmd(&opt))
 	cmd.AddCommand(migrate.NewCmd(&opt))
+	cmd.AddCommand(wash.NewCmd(&opt))
 
 	cmd.SetOut(os.Stdout)
 	cmd.SetErr(os.Stderr)

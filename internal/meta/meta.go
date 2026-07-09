@@ -130,6 +130,61 @@ func Read(ctx context.Context, cli storage.Client, backupDir string) (*backuppb.
 	return readFromLevel(ctx, backupDir, cli)
 }
 
+// Write persists a modified BackupInfo tree back to a backup directory, writing
+// all five meta files (full + the four leveled files) so that both read paths in
+// Read stay consistent. It MUTATES info while splitting it into leveled files
+// (the full-meta bytes are captured first), so the caller must not reuse info
+// afterwards. This is the inverse of levelToTree and mirrors the leveled layout
+// produced by core/backup's meta builder.
+func Write(ctx context.Context, cli storage.Client, backupDir string, info *backuppb.BackupInfo) error {
+	// 1. full meta (authoritative: Read prefers it when present).
+	fullBytes, err := json.Marshal(info)
+	if err != nil {
+		return fmt.Errorf("meta: marshal full meta %w", err)
+	}
+	if err := storage.Write(ctx, cli, mpath.MetaKey(backupDir, mpath.FullMeta), fullBytes); err != nil {
+		return fmt.Errorf("meta: write full meta %w", err)
+	}
+
+	// 2. split the tree into the four leveled files. Segment objects are shared
+	// (only marshaled), so we mutate the collection/partition nesting in place.
+	colls := info.GetCollectionBackups()
+	var parts []*backuppb.PartitionBackupInfo
+	for _, c := range colls {
+		parts = append(parts, c.GetPartitionBackups()...)
+	}
+	var segs []*backuppb.SegmentBackupInfo
+	for _, p := range parts {
+		segs = append(segs, p.GetSegmentBackups()...)
+		p.SegmentBackups = nil
+	}
+	for _, c := range colls {
+		c.PartitionBackups = nil
+		c.L0Segments = nil
+	}
+	info.CollectionBackups = nil // info is now the top-level backup summary
+
+	levels := []struct {
+		metaType mpath.MetaType
+		value    any
+	}{
+		{mpath.BackupMeta, info},
+		{mpath.CollectionMeta, &backuppb.CollectionLevelBackupInfo{Infos: colls}},
+		{mpath.PartitionMeta, &backuppb.PartitionLevelBackupInfo{Infos: parts}},
+		{mpath.SegmentMeta, &backuppb.SegmentLevelBackupInfo{Infos: segs}},
+	}
+	for _, lv := range levels {
+		byts, err := json.Marshal(lv.value)
+		if err != nil {
+			return fmt.Errorf("meta: marshal %s %w", lv.metaType, err)
+		}
+		if err := storage.Write(ctx, cli, mpath.MetaKey(backupDir, lv.metaType), byts); err != nil {
+			return fmt.Errorf("meta: write %s %w", lv.metaType, err)
+		}
+	}
+	return nil
+}
+
 func Exist(ctx context.Context, cli storage.Client, backupDir string) (bool, error) {
 	key := mpath.MetaKey(backupDir, mpath.BackupMeta)
 	exist, err := storage.Exist(ctx, cli, key)
