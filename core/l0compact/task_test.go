@@ -38,6 +38,24 @@ func TestExecuteFoldsAndDropsL0(t *testing.T) {
 		}
 	}
 
+	// The washed backup must be complete: the source data segment's INSERT
+	// binlog must physically exist under dstDir at the same relative path, so
+	// restore can reconstruct import paths. This guards against forgetting to
+	// copy the source data objects into the destination.
+	dstInsertKey := mpath.Join(mpath.BackupInsertLogDir(dstDir,
+		mpath.CollectionID(1), mpath.PartitionID(10), mpath.SegmentID(200), mpath.FieldID(0)),
+		mpath.LogID(1))
+	dstInsertBlob, err := storage.Read(ctx, cli, dstInsertKey)
+	require.NoError(t, err)
+	require.NotEmpty(t, dstInsertBlob)
+
+	// The original L0 deltalog is also copied under dstDir (harmless after drop).
+	dstL0DeltaKey := mpath.Join(mpath.BackupDeltaLogDir(dstDir,
+		mpath.CollectionID(1), mpath.PartitionID(10), mpath.SegmentID(100)),
+		mpath.LogID(1))
+	_, err = storage.Read(ctx, cli, dstL0DeltaKey)
+	require.NoError(t, err)
+
 	// data segment 200 now has a deltalog; read it back and verify it deletes pk=2.
 	seg := findSeg(out, 200)
 	require.NotNil(t, seg)

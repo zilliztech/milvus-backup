@@ -4,12 +4,18 @@ import (
 	"context"
 	"fmt"
 
+	"golang.org/x/sync/semaphore"
+
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/l0compact"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 )
+
+// _copyConcurrency bounds the parallelism when copying the source backup's
+// binlog objects into the washed backup.
+const _copyConcurrency = 10
 
 // Task folds a backup's L0 (delete-only) segments into per-data-segment
 // deltalogs by exact PK membership, then drops the L0 segments from the meta.
@@ -33,6 +39,14 @@ func (t *Task) Execute(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("l0compact: read src meta: %w", err)
 	}
+	// The washed backup must be a complete, restorable backup: restore
+	// reconstructs file paths from dstDir, so every data object (insert_log and
+	// the original delta_log) must physically exist there. Copy the whole
+	// binlogs/ subtree first; folding then appends new deltalogs to dstDir and
+	// dropL0 removes the (now redundant) L0 segments from the meta.
+	if err := t.copyBinlogs(ctx); err != nil {
+		return err
+	}
 	for _, coll := range info.GetCollectionBackups() {
 		if err := t.foldCollection(ctx, coll); err != nil {
 			return err
@@ -41,6 +55,24 @@ func (t *Task) Execute(ctx context.Context) error {
 	dropL0(info)
 	if err := meta.Write(ctx, t.cli, t.dstDir, info); err != nil {
 		return fmt.Errorf("l0compact: write dst meta: %w", err)
+	}
+	return nil
+}
+
+// copyBinlogs copies every object under the source backup's binlogs/ subtree to
+// the same relative path under dstDir, preserving keys. It relies on the storage
+// layer's server-side copy (dest.CopyObject) so large insert binlogs are not
+// buffered in memory. The source backup is left untouched.
+func (t *Task) copyBinlogs(ctx context.Context) error {
+	copyTask := storage.NewCopyPrefixTask(storage.CopyPrefixOpt{
+		Src:        t.cli,
+		Dest:       t.cli,
+		SrcPrefix:  mpath.BackupBinlogDir(t.srcDir),
+		DestPrefix: mpath.BackupBinlogDir(t.dstDir),
+		Sem:        semaphore.NewWeighted(_copyConcurrency),
+	})
+	if err := copyTask.Execute(ctx); err != nil {
+		return fmt.Errorf("l0compact: copy src binlogs to dst: %w", err)
 	}
 	return nil
 }

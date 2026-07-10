@@ -97,6 +97,12 @@ func BackupDeltaLogDir(base string, opts ...Option) string {
 	return Join(path.Join(base, _binlogPrefix, _deltaLogPrefix), opts...) + _separator
 }
 
+// BackupBinlogDir returns the root directory holding all of a backup's binlogs
+// (both insert_log and delta_log subtrees).
+func BackupBinlogDir(base string, opts ...Option) string {
+	return Join(path.Join(base, _binlogPrefix), opts...) + _separator
+}
+
 func BackupDir(backupRoot string, backupName string) string {
 	return path.Join(backupRoot, backupName) + _separator
 }
