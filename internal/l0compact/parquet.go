@@ -124,15 +124,15 @@ func readTable(blob []byte) (arrow.Table, func(), error) {
 	}
 	r, err := pqarrow.NewFileReader(pf, pqarrow.ArrowReadProperties{BatchSize: 1024}, memory.DefaultAllocator)
 	if err != nil {
-		pf.Close()
+		_ = pf.Close()
 		return nil, nil, fmt.Errorf("l0compact: arrow reader: %w", err)
 	}
 	tbl, err := r.ReadTable(context.Background())
 	if err != nil {
-		pf.Close()
+		_ = pf.Close()
 		return nil, nil, fmt.Errorf("l0compact: read table: %w", err)
 	}
-	return tbl, func() { tbl.Release(); pf.Close() }, nil
+	return tbl, func() { tbl.Release(); _ = pf.Close() }, nil
 }
 
 func columnToPKs(col *arrow.Column, t PKType) ([]PrimaryKey, error) {

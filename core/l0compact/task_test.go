@@ -21,7 +21,7 @@ func TestExecuteFoldsAndDropsL0(t *testing.T) {
 	srcDir := filepath.Join(tmp, "src")
 	dstDir := filepath.Join(tmp, "dst")
 
-	info := buildSyntheticV1Backup(t, ctx, cli, srcDir)
+	info := buildSyntheticV1Backup(ctx, t, cli, srcDir)
 	require.NoError(t, meta.Write(ctx, cli, srcDir, info))
 
 	task := NewTask(cli, srcDir, dstDir)
@@ -55,7 +55,7 @@ func TestExecuteFoldsAndDropsL0(t *testing.T) {
 // exported codec funcs (v2-storage format, PK field id 0) and returns the meta
 // tree pointing at them. Data segment 200 holds pks {1,2,3}; a partition-level
 // L0 segment 100 deletes pk=2 at ts=50.
-func buildSyntheticV1Backup(t *testing.T, ctx context.Context, cli storage.Client, srcDir string) *backuppb.BackupInfo {
+func buildSyntheticV1Backup(ctx context.Context, t *testing.T, cli storage.Client, srcDir string) *backuppb.BackupInfo {
 	t.Helper()
 
 	// Data segment insert blob: field_id 0 column carries the PK values {1,2,3}.

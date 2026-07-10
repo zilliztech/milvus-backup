@@ -21,7 +21,6 @@ func Write(ctx context.Context, cli storage.Client, backupDir string, info *back
 	// backup_meta.json = the tree WITHOUT nested collections (top-level scalars).
 	backupLevel := &backuppb.BackupInfo{
 		Id:                   info.GetId(),
-		StateCode:            info.GetStateCode(),
 		Name:                 info.GetName(),
 		BackupTimestamp:      info.GetBackupTimestamp(),
 		Size:                 info.GetSize(),

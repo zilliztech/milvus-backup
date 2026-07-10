@@ -4,7 +4,9 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 )
 
 const v1Magic int32 = 0xfffabc
@@ -88,8 +90,12 @@ func parseV1Envelope(blob []byte) (descriptor, []v1Event, error) {
 	var events []v1Event
 	for {
 		var h eventHeader
-		if err := binary.Read(r, endian, &h); err != nil {
-			break // EOF -> done
+		err := binary.Read(r, endian, &h)
+		if errors.Is(err, io.EOF) {
+			break // no more events
+		}
+		if err != nil {
+			return descriptor{}, nil, fmt.Errorf("l0compact: read event header: %w", err)
 		}
 		payloadLen := int(h.EventLength) - eventHeaderSize - dataEventFixPartSize
 		if payloadLen < 0 {
