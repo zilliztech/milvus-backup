@@ -164,3 +164,37 @@ func columnToUint64(col *arrow.Column) ([]uint64, error) {
 	}
 	return out, nil
 }
+
+// writeParquetStringColumn writes a single String column named/id = fieldID.
+func writeParquetStringColumn(rows []string, fieldID int64) ([]byte, error) {
+	mem := memory.DefaultAllocator
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: strconv.FormatInt(fieldID, 10), Type: arrow.BinaryTypes.String, Metadata: fieldIDMeta(fieldID)},
+	}, nil)
+	b := array.NewRecordBuilder(mem, schema)
+	defer b.Release()
+	sb := b.Field(0).(*array.StringBuilder)
+	for _, s := range rows {
+		sb.Append(s)
+	}
+	rec := b.NewRecord()
+	defer rec.Release()
+	return writeRecord(schema, rec)
+}
+
+// readParquetStringColumn reads column `col` as strings.
+func readParquetStringColumn(blob []byte, col int) ([]string, error) {
+	tbl, rel, err := readTable(blob)
+	if err != nil {
+		return nil, err
+	}
+	defer rel()
+	var out []string
+	for _, chunk := range tbl.Column(col).Data().Chunks() {
+		a := chunk.(*array.String)
+		for i := 0; i < a.Len(); i++ {
+			out = append(out, a.Value(i))
+		}
+	}
+	return out, nil
+}
