@@ -198,3 +198,13 @@ func readParquetStringColumn(blob []byte, col int) ([]string, error) {
 	}
 	return out, nil
 }
+
+// readParquetColumn0 reads column index 0 as PKs — for v1 single-column payloads.
+func readParquetColumn0(blob []byte, t PKType) ([]PrimaryKey, error) {
+	tbl, rel, err := readTable(blob)
+	if err != nil {
+		return nil, err
+	}
+	defer rel()
+	return columnToPKs(tbl.Column(0), t)
+}
