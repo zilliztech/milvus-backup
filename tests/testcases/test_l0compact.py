@@ -198,29 +198,31 @@ class TestL0Compact(TestcaseBase):
     # ------------------------------------------------------------------
     @staticmethod
     def _read_full_meta(backup_name):
-        """Best-effort read of full_meta.json from the MinIO host volume.
+        """Read full_meta.json from MinIO via the object API.
 
         The get_backup HTTP API does not expose L0 segments, so we read the raw
-        meta from disk. Layout may differ in CI, so skip (not fail) if absent.
+        meta object. MinIO stores objects in xl format (a directory on disk), so
+        we must go through the S3 API, not the host volume. Skip (not fail) if
+        the object store is unreachable or the object is absent in CI.
         """
-        path = os.path.join(
-            REPO_ROOT,
-            "deployment",
-            "standalone",
-            "volumes",
-            "minio",
-            "a-bucket",
-            "backup",
-            backup_name,
-            "meta",
-            "full_meta.json",
-        )
-        if not os.path.exists(path):
-            pytest.skip(
-                f"full_meta.json not found at {path}; MinIO volume layout differs in CI"
+        from minio import Minio
+
+        key = f"backup/{backup_name}/meta/full_meta.json"
+        try:
+            client = Minio(
+                "localhost:9000",
+                access_key="minioadmin",
+                secret_key="minioadmin",
+                secure=False,
             )
-        with open(path) as f:
-            return json.load(f)
+            resp = client.get_object("a-bucket", key)
+            try:
+                return json.loads(resp.read())
+            finally:
+                resp.close()
+                resp.release_conn()
+        except Exception as e:
+            pytest.skip(f"cannot read a-bucket/{key} from MinIO: {e}")
 
     @staticmethod
     def _meta_has_l0(meta):
