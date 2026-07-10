@@ -11,7 +11,6 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/l0compact"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/storage"
-	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 )
 
 func TestExecuteFoldsAndDropsL0(t *testing.T) {
@@ -39,21 +38,15 @@ func TestExecuteFoldsAndDropsL0(t *testing.T) {
 	}
 
 	// The washed backup must be complete: the source data segment's INSERT
-	// binlog must physically exist under dstDir at the same relative path, so
+	// binlog must physically exist under dstDir at the reconstructed key, so
 	// restore can reconstruct import paths. This guards against forgetting to
 	// copy the source data objects into the destination.
-	dstInsertKey := mpath.Join(mpath.BackupInsertLogDir(dstDir,
-		mpath.CollectionID(1), mpath.PartitionID(10), mpath.SegmentID(200), mpath.FieldID(0)),
-		mpath.LogID(1))
-	dstInsertBlob, err := storage.Read(ctx, cli, dstInsertKey)
+	dstInsertBlob, err := storage.Read(ctx, cli, insertKey(dstDir, findSeg(info, 200), 0, 1))
 	require.NoError(t, err)
 	require.NotEmpty(t, dstInsertBlob)
 
 	// The original L0 deltalog is also copied under dstDir (harmless after drop).
-	dstL0DeltaKey := mpath.Join(mpath.BackupDeltaLogDir(dstDir,
-		mpath.CollectionID(1), mpath.PartitionID(10), mpath.SegmentID(100)),
-		mpath.LogID(1))
-	_, err = storage.Read(ctx, cli, dstL0DeltaKey)
+	_, err = storage.Read(ctx, cli, deltaKey(dstDir, findSeg(info, 100), 1))
 	require.NoError(t, err)
 
 	// data segment 200 now has a deltalog; read it back and verify it deletes pk=2.
@@ -76,26 +69,6 @@ func TestExecuteFoldsAndDropsL0(t *testing.T) {
 func buildSyntheticV1Backup(ctx context.Context, t *testing.T, cli storage.Client, srcDir string) *backuppb.BackupInfo {
 	t.Helper()
 
-	// Data segment insert blob: field_id 0 column carries the PK values {1,2,3}.
-	insertBlob, err := l0compact.WriteParquetPKTs(
-		[]l0compact.PrimaryKey{{Int: 1}, {Int: 2}, {Int: 3}},
-		[]uint64{0, 0, 0}, l0compact.PKInt64)
-	require.NoError(t, err)
-	insertKey := mpath.Join(mpath.BackupInsertLogDir(srcDir,
-		mpath.CollectionID(1), mpath.PartitionID(10), mpath.SegmentID(200), mpath.FieldID(0)),
-		mpath.LogID(1))
-	require.NoError(t, storage.Write(ctx, cli, insertKey, insertBlob))
-
-	// L0 deltalog blob: deletes pk=2 at ts=50.
-	deltaBlob, err := l0compact.WriteDeltalog(
-		[]l0compact.DeleteEntry{{PK: l0compact.PrimaryKey{Type: l0compact.PKInt64, Int: 2}, Ts: 50}},
-		l0compact.KindV2, l0compact.PKInt64)
-	require.NoError(t, err)
-	deltaKey := mpath.Join(mpath.BackupDeltaLogDir(srcDir,
-		mpath.CollectionID(1), mpath.PartitionID(10), mpath.SegmentID(100)),
-		mpath.LogID(1))
-	require.NoError(t, storage.Write(ctx, cli, deltaKey, deltaBlob))
-
 	dataSeg := &backuppb.SegmentBackupInfo{
 		SegmentId:      200,
 		CollectionId:   1,
@@ -103,9 +76,12 @@ func buildSyntheticV1Backup(ctx context.Context, t *testing.T, cli storage.Clien
 		VChannel:       "vch0",
 		StorageVersion: 2,
 		IsL0:           false,
+		// LogPath is the ORIGINAL milvus source path (bogus here), NOT the backup
+		// key — reads must reconstruct from backupDir, so a bogus LogPath proves
+		// reconstruction is used and guards against reading via LogPath.
 		Binlogs: []*backuppb.FieldBinlog{{
 			FieldID: 0,
-			Binlogs: []*backuppb.Binlog{{LogId: 1, LogPath: insertKey, LogSize: int64(len(insertBlob))}},
+			Binlogs: []*backuppb.Binlog{{LogId: 1, LogPath: "milvus-src/insert_log/does-not-exist"}},
 		}},
 	}
 	l0Seg := &backuppb.SegmentBackupInfo{
@@ -117,9 +93,23 @@ func buildSyntheticV1Backup(ctx context.Context, t *testing.T, cli storage.Clien
 		IsL0:           true,
 		Deltalogs: []*backuppb.FieldBinlog{{
 			FieldID: 0,
-			Binlogs: []*backuppb.Binlog{{LogId: 1, LogPath: deltaKey, LogSize: int64(len(deltaBlob))}},
+			Binlogs: []*backuppb.Binlog{{LogId: 1, LogPath: "milvus-src/delta_log/does-not-exist"}},
 		}},
 	}
+
+	// Write the blobs at the reconstructed backup keys (where fold/restore look).
+	insertBlob, err := l0compact.WriteParquetPKTs(
+		[]l0compact.PrimaryKey{{Int: 1}, {Int: 2}, {Int: 3}},
+		[]uint64{0, 0, 0}, l0compact.PKInt64)
+	require.NoError(t, err)
+	require.NoError(t, storage.Write(ctx, cli, insertKey(srcDir, dataSeg, 0, 1), insertBlob))
+
+	// L0 deltalog blob: deletes pk=2 at ts=50.
+	deltaBlob, err := l0compact.WriteDeltalog(
+		[]l0compact.DeleteEntry{{PK: l0compact.PrimaryKey{Type: l0compact.PKInt64, Int: 2}, Ts: 50}},
+		l0compact.KindV2, l0compact.PKInt64)
+	require.NoError(t, err)
+	require.NoError(t, storage.Write(ctx, cli, deltaKey(srcDir, l0Seg, 1), deltaBlob))
 
 	return &backuppb.BackupInfo{
 		Id:   "bk-1",

@@ -115,7 +115,7 @@ func (t *Task) buildDeleteMap(ctx context.Context, l0segs []*backuppb.SegmentBac
 		}
 		for _, field := range seg.GetDeltalogs() {
 			for _, bl := range field.GetBinlogs() {
-				blob, err := storage.Read(ctx, t.cli, bl.GetLogPath())
+				blob, err := storage.Read(ctx, t.cli, deltaKey(t.srcDir, seg, bl.GetLogId()))
 				if err != nil {
 					return nil, err
 				}
@@ -171,16 +171,7 @@ func (t *Task) foldIntoSegment(ctx context.Context, seg *backuppb.SegmentBackupI
 	}
 	logID := t.nextID
 	t.nextID++
-	opts := []mpath.Option{
-		mpath.CollectionID(seg.GetCollectionId()),
-		mpath.PartitionID(seg.GetPartitionId()),
-		mpath.SegmentID(seg.GetSegmentId()),
-	}
-	if seg.GetGroupId() != 0 {
-		opts = append(opts, mpath.GroupID(seg.GetGroupId()))
-	}
-	deltaDir := mpath.BackupDeltaLogDir(t.dstDir, opts...)
-	key := mpath.Join(deltaDir, mpath.LogID(logID))
+	key := deltaKey(t.dstDir, seg, logID)
 	if err := storage.Write(ctx, t.cli, key, blob); err != nil {
 		return err
 	}
@@ -238,6 +229,28 @@ func channelL0For(coll *backuppb.CollectionBackupInfo, targets []*backuppb.Segme
 	return out
 }
 
+// insertKey / deltaKey reconstruct a backup object key from backupDir + segment
+// identity. The stored Binlog.LogPath is the ORIGINAL milvus source path, not
+// the backup's own key, so reads must reconstruct (mirroring backup's
+// insertLogsAttrs/deltaLogAttrs and restore).
+func insertKey(backupDir string, seg *backuppb.SegmentBackupInfo, fieldID, logID int64) string {
+	dir := mpath.BackupInsertLogDir(backupDir,
+		mpath.CollectionID(seg.GetCollectionId()), mpath.PartitionID(seg.GetPartitionId()),
+		mpath.SegmentID(seg.GetSegmentId()), mpath.GroupID(seg.GetGroupId()))
+	return mpath.Join(dir, mpath.FieldID(fieldID), mpath.LogID(logID))
+}
+
+func deltaKey(backupDir string, seg *backuppb.SegmentBackupInfo, logID int64) string {
+	opts := []mpath.Option{
+		mpath.CollectionID(seg.GetCollectionId()), mpath.PartitionID(seg.GetPartitionId()),
+		mpath.SegmentID(seg.GetSegmentId()),
+	}
+	if seg.GetPartitionId() != allPartitionID {
+		opts = append(opts, mpath.GroupID(seg.GetGroupId()))
+	}
+	return mpath.Join(mpath.BackupDeltaLogDir(backupDir, opts...), mpath.LogID(logID))
+}
+
 // pkBlobs returns the insert binlog blobs to read the PK column from.
 //   - v1: the FieldBinlog whose FieldID == pkFieldID.
 //   - v2: all group binlog blobs (ReadInsertPK scans for the field_id).
@@ -247,14 +260,14 @@ func (t *Task) pkBlobs(ctx context.Context, seg *backuppb.SegmentBackupInfo, pkF
 		for _, f := range seg.GetBinlogs() {
 			if f.GetFieldID() == pkFieldID {
 				for _, bl := range f.GetBinlogs() {
-					paths = append(paths, bl.GetLogPath())
+					paths = append(paths, insertKey(t.srcDir, seg, f.GetFieldID(), bl.GetLogId()))
 				}
 			}
 		}
 	} else {
 		for _, f := range seg.GetBinlogs() {
 			for _, bl := range f.GetBinlogs() {
-				paths = append(paths, bl.GetLogPath())
+				paths = append(paths, insertKey(t.srcDir, seg, f.GetFieldID(), bl.GetLogId()))
 			}
 		}
 	}
