@@ -8,6 +8,7 @@ import (
 	"github.com/zilliztech/milvus-backup/cmd/create"
 	"github.com/zilliztech/milvus-backup/cmd/del"
 	"github.com/zilliztech/milvus-backup/cmd/get"
+	"github.com/zilliztech/milvus-backup/cmd/l0compact"
 	"github.com/zilliztech/milvus-backup/cmd/list"
 	"github.com/zilliztech/milvus-backup/cmd/migrate"
 	"github.com/zilliztech/milvus-backup/cmd/restore"
@@ -24,6 +25,7 @@ func Execute() {
 	cmd.AddCommand(create.NewCmd(&opt))
 	cmd.AddCommand(del.NewCmd(&opt))
 	cmd.AddCommand(get.NewCmd(&opt))
+	cmd.AddCommand(l0compact.NewCmd(&opt))
 	cmd.AddCommand(list.NewCmd(&opt))
 	cmd.AddCommand(restore.NewCmd(&opt))
 	cmd.AddCommand(server.NewCmd(&opt))
