@@ -3,11 +3,15 @@ package l0compact
 import (
 	"context"
 	"fmt"
+	"path"
 
+	"github.com/google/uuid"
+	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/l0compact"
+	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
@@ -39,11 +43,39 @@ func (t *Task) Execute(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("l0compact: read src meta: %w", err)
 	}
+	// Refuse to stack onto a non-empty destination: a leftover half-backup (e.g.
+	// from a previously failed run) would silently mix with this run's objects.
+	keys, _, err := storage.ListPrefixFlat(ctx, t.cli, t.dstDir, true)
+	if err != nil {
+		return fmt.Errorf("l0compact: list dst dir: %w", err)
+	}
+	if len(keys) > 0 {
+		return fmt.Errorf("l0compact: destination %s is not empty (%d objects); choose a fresh output or clear it first", t.dstDir, len(keys))
+	}
+	// New fold deltalogs share the deltaKey namespace with the copied source
+	// deltalogs (which keep their original LogIds). Allocate above the highest
+	// existing LogId so a new fold deltalog can never overwrite a copied one.
+	t.nextID = maxLogID(info) + 1
+
 	// The washed backup must be a complete, restorable backup: restore
 	// reconstructs file paths from dstDir, so every data object (insert_log and
 	// the original delta_log) must physically exist there. Copy the whole
 	// binlogs/ subtree first; folding then appends new deltalogs to dstDir and
 	// dropL0 removes the (now redundant) L0 segments from the meta.
+	if err := t.run(ctx, info); err != nil {
+		// A mid-pipeline failure leaves a meta-less, half-copied backup in dstDir.
+		// Best-effort remove it so the destination is clean for a re-run.
+		if cerr := storage.DeletePrefix(ctx, t.cli, t.dstDir); cerr != nil {
+			log.Warn("l0compact: cleanup dst dir after failure", zap.String("dst", t.dstDir), zap.Error(cerr))
+		}
+		return err
+	}
+	return nil
+}
+
+// run copies binlogs, folds L0 into per-segment deltalogs, drops L0 from the
+// meta, and writes the destination meta. On any error the caller cleans dstDir.
+func (t *Task) run(ctx context.Context, info *backuppb.BackupInfo) error {
 	if err := t.copyBinlogs(ctx); err != nil {
 		return err
 	}
@@ -53,10 +85,47 @@ func (t *Task) Execute(ctx context.Context) error {
 		}
 	}
 	dropL0(info)
+	// The destination is a distinct backup: give it the output name and a fresh
+	// id so `list` doesn't show two backups with the source's identity.
+	info.Name = path.Base(t.dstDir)
+	info.Id = uuid.NewString()
 	if err := meta.Write(ctx, t.cli, t.dstDir, info); err != nil {
 		return fmt.Errorf("l0compact: write dst meta: %w", err)
 	}
 	return nil
+}
+
+// maxLogID returns the highest LogId across every segment's insert binlogs and
+// deltalogs (including collection-level L0 segments) in the backup meta.
+func maxLogID(info *backuppb.BackupInfo) int64 {
+	var max int64
+	scan := func(seg *backuppb.SegmentBackupInfo) {
+		for _, f := range seg.GetBinlogs() {
+			for _, bl := range f.GetBinlogs() {
+				if bl.GetLogId() > max {
+					max = bl.GetLogId()
+				}
+			}
+		}
+		for _, f := range seg.GetDeltalogs() {
+			for _, bl := range f.GetBinlogs() {
+				if bl.GetLogId() > max {
+					max = bl.GetLogId()
+				}
+			}
+		}
+	}
+	for _, coll := range info.GetCollectionBackups() {
+		for _, seg := range coll.GetL0Segments() {
+			scan(seg)
+		}
+		for _, part := range coll.GetPartitionBackups() {
+			for _, seg := range part.GetSegmentBackups() {
+				scan(seg)
+			}
+		}
+	}
+	return max
 }
 
 // copyBinlogs copies every object under the source backup's binlogs/ subtree to
@@ -141,11 +210,7 @@ func (t *Task) foldIntoSegment(ctx context.Context, seg *backuppb.SegmentBackupI
 	if err != nil {
 		return err
 	}
-	blobs, err := t.pkBlobs(ctx, seg, pkFieldID, kind)
-	if err != nil {
-		return err
-	}
-	pks, err := l0compact.ReadInsertPK(blobs, kind, pkFieldID, pkType)
+	pks, err := t.readSegmentPKs(ctx, seg, pkFieldID, kind, pkType)
 	if err != nil {
 		return err
 	}
@@ -251,33 +316,52 @@ func deltaKey(backupDir string, seg *backuppb.SegmentBackupInfo, logID int64) st
 	return mpath.Join(mpath.BackupDeltaLogDir(backupDir, opts...), mpath.LogID(logID))
 }
 
-// pkBlobs returns the insert binlog blobs to read the PK column from.
-//   - v1: the FieldBinlog whose FieldID == pkFieldID.
-//   - v2: all group binlog blobs (ReadInsertPK scans for the field_id).
-func (t *Task) pkBlobs(ctx context.Context, seg *backuppb.SegmentBackupInfo, pkFieldID int64, kind l0compact.StorageKind) ([][]byte, error) {
-	var paths []string
+// readSegmentPKs reads a data segment's primary-key column.
+//   - v1: read the FieldBinlog whose FieldID == pkFieldID (PK is column 0).
+//   - v2: read column-group parquets ONE file at a time and stop at the first
+//     group that carries the PK column. This keeps peak memory to a single group
+//     file instead of buffering every group (incl. large vector columns) at once.
+func (t *Task) readSegmentPKs(ctx context.Context, seg *backuppb.SegmentBackupInfo, pkFieldID int64, kind l0compact.StorageKind, pkType l0compact.PKType) ([]l0compact.PrimaryKey, error) {
 	if kind == l0compact.KindV1 {
+		var blobs [][]byte
 		for _, f := range seg.GetBinlogs() {
-			if f.GetFieldID() == pkFieldID {
-				for _, bl := range f.GetBinlogs() {
-					paths = append(paths, insertKey(t.srcDir, seg, f.GetFieldID(), bl.GetLogId()))
-				}
+			if f.GetFieldID() != pkFieldID {
+				continue
 			}
-		}
-	} else {
-		for _, f := range seg.GetBinlogs() {
 			for _, bl := range f.GetBinlogs() {
-				paths = append(paths, insertKey(t.srcDir, seg, f.GetFieldID(), bl.GetLogId()))
+				b, err := storage.Read(ctx, t.cli, insertKey(t.srcDir, seg, f.GetFieldID(), bl.GetLogId()))
+				if err != nil {
+					return nil, err
+				}
+				blobs = append(blobs, b)
 			}
 		}
+		return l0compact.ReadInsertPK(blobs, kind, pkFieldID, pkType)
 	}
-	var blobs [][]byte
-	for _, p := range paths {
-		b, err := storage.Read(ctx, t.cli, p)
-		if err != nil {
-			return nil, err
+	// v2: probe one group file at a time; the PK column lives in exactly one
+	// column group, so once a group is found to carry it, read the rest of that
+	// group's files and stop (never touch the remaining groups).
+	var out []l0compact.PrimaryKey
+	for _, fb := range seg.GetBinlogs() {
+		groupHasPK := false
+		for _, bl := range fb.GetBinlogs() {
+			blob, err := storage.Read(ctx, t.cli, insertKey(t.srcDir, seg, fb.GetFieldID(), bl.GetLogId()))
+			if err != nil {
+				return nil, err
+			}
+			pks, ok, err := l0compact.ReadParquetColumnByFieldID(blob, pkFieldID, pkType)
+			if err != nil {
+				return nil, err
+			}
+			if !ok {
+				break // this group lacks the PK column; move to the next group
+			}
+			groupHasPK = true
+			out = append(out, pks...)
 		}
-		blobs = append(blobs, b)
+		if groupHasPK {
+			return out, nil
+		}
 	}
-	return blobs, nil
+	return nil, fmt.Errorf("l0compact: PK field %d not found in any insert group parquet", pkFieldID)
 }

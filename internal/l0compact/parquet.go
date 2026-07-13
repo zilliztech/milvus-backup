@@ -140,12 +140,18 @@ func columnToPKs(col *arrow.Column, t PKType) ([]PrimaryKey, error) {
 	for _, chunk := range col.Data().Chunks() {
 		switch t {
 		case PKInt64:
-			a := chunk.(*array.Int64)
+			a, ok := chunk.(*array.Int64)
+			if !ok {
+				return nil, fmt.Errorf("l0compact: expected Int64 column, got %T", chunk)
+			}
 			for i := 0; i < a.Len(); i++ {
 				out = append(out, PrimaryKey{Type: PKInt64, Int: a.Value(i)})
 			}
 		case PKVarChar:
-			a := chunk.(*array.String)
+			a, ok := chunk.(*array.String)
+			if !ok {
+				return nil, fmt.Errorf("l0compact: expected String column, got %T", chunk)
+			}
 			for i := 0; i < a.Len(); i++ {
 				out = append(out, PrimaryKey{Type: PKVarChar, Str: a.Value(i)})
 			}
@@ -157,7 +163,10 @@ func columnToPKs(col *arrow.Column, t PKType) ([]PrimaryKey, error) {
 func columnToUint64(col *arrow.Column) ([]uint64, error) {
 	var out []uint64
 	for _, chunk := range col.Data().Chunks() {
-		a := chunk.(*array.Int64)
+		a, ok := chunk.(*array.Int64)
+		if !ok {
+			return nil, fmt.Errorf("l0compact: expected Int64 column, got %T", chunk)
+		}
 		for i := 0; i < a.Len(); i++ {
 			out = append(out, uint64(a.Value(i)))
 		}
@@ -191,7 +200,10 @@ func readParquetStringColumn(blob []byte, col int) ([]string, error) {
 	defer rel()
 	var out []string
 	for _, chunk := range tbl.Column(col).Data().Chunks() {
-		a := chunk.(*array.String)
+		a, ok := chunk.(*array.String)
+		if !ok {
+			return nil, fmt.Errorf("l0compact: expected String column, got %T", chunk)
+		}
 		for i := 0; i < a.Len(); i++ {
 			out = append(out, a.Value(i))
 		}

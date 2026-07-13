@@ -32,18 +32,24 @@ func ReadDeltalog(blob []byte, kind StorageKind, t PKType) ([]DeleteEntry, error
 		if err != nil {
 			return nil, err
 		}
-		if len(events) == 0 {
-			return nil, nil
-		}
-		payload := events[0].Payload
-		if desc.Extras["version"] == "MULTI_FIELD" {
-			pks, tss, err := ReadParquetPKTs(payload, t)
+		multiField := desc.Extras["version"] == "MULTI_FIELD"
+		var out []DeleteEntry
+		for _, ev := range events {
+			if multiField {
+				pks, tss, err := ReadParquetPKTs(ev.Payload, t)
+				if err != nil {
+					return nil, err
+				}
+				out = append(out, zipEntries(pks, tss)...)
+				continue
+			}
+			entries, err := readV1JSONDeltalog(ev.Payload, t)
 			if err != nil {
 				return nil, err
 			}
-			return zipEntries(pks, tss), nil
+			out = append(out, entries...)
 		}
-		return readV1JSONDeltalog(payload, t)
+		return out, nil
 	default:
 		return nil, fmt.Errorf("l0compact: unknown storage kind %d", kind)
 	}
