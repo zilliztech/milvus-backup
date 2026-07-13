@@ -101,7 +101,22 @@ func (t *Task) run(ctx context.Context, info *backuppb.BackupInfo) error {
 			return err
 		}
 	}
+	// Collect the L0 segments (collection-level + partition-level) BEFORE dropL0
+	// mutates the meta, so their destination delta objects can be cleaned up after.
+	l0segs := allL0Segments(info)
 	dropL0(info)
+	// copyBinlogs copied the whole binlogs/ subtree, including the L0 segments'
+	// delta objects; dropL0 removed those segments from the meta but not from
+	// storage, leaving orphans in the destination. Delete their destination delta
+	// prefixes. Best-effort: an orphan is only wasted space, so a delete failure
+	// warns rather than failing the whole run.
+	for _, seg := range l0segs {
+		dir := deltaDir(t.dstDir, seg)
+		if err := storage.DeletePrefix(ctx, t.cli, dir); err != nil {
+			log.Warn("l0compact: delete orphaned L0 delta objects",
+				zap.Int64("segment_id", seg.GetSegmentId()), zap.String("dir", dir), zap.Error(err))
+		}
+	}
 	// The destination is a distinct backup: give it the output name and a fresh
 	// id so `list` doesn't show two backups with the source's identity.
 	info.Name = path.Base(t.dstDir)
@@ -168,18 +183,59 @@ func (t *Task) foldCollection(ctx context.Context, coll *backuppb.CollectionBack
 	if err != nil {
 		return err
 	}
+	// Channel-level (all-partition) L0 deltalogs are shared by every partition on
+	// the same vchannel. Build each vchannel's PK->ts map once and cache it so the
+	// channel L0 is not re-downloaded/re-decoded once per partition (P× amplification).
+	chanCache := map[string]map[l0compact.PrimaryKey]uint64{}
+	channelMapFor := func(vch string) (map[l0compact.PrimaryKey]uint64, error) {
+		if m, ok := chanCache[vch]; ok {
+			return m, nil
+		}
+		var segs []*backuppb.SegmentBackupInfo
+		for _, s := range coll.GetL0Segments() {
+			if s.GetVChannel() == vch {
+				segs = append(segs, s)
+			}
+		}
+		m, err := t.buildDeleteMap(ctx, segs, pkType)
+		if err != nil {
+			return nil, err
+		}
+		chanCache[vch] = m
+		return m, nil
+	}
+
 	// Gather L0 groups: channel-level (coll.L0Segments) fold into all partitions of
 	// the same vchannel; partition-level (IsL0 in a partition) fold into that partition.
 	for _, part := range coll.GetPartitionBackups() {
 		targets := dataSegments(part) // non-L0 segments in this partition
-		// channel-level L0 for this partition's vchannel(s) plus partition-level L0
-		l0segs := append(channelL0For(coll, targets), partitionL0(part)...)
-		if len(l0segs) == 0 || len(targets) == 0 {
+		channelL0 := channelL0For(coll, targets)
+		partL0 := partitionL0(part)
+		if len(targets) == 0 || (len(channelL0) == 0 && len(partL0) == 0) {
 			continue
 		}
-		delMap, err := t.buildDeleteMap(ctx, l0segs, pkType)
+		// Partition-level L0 is specific to this partition: decode it here.
+		delMap, err := t.buildDeleteMap(ctx, partL0, pkType)
 		if err != nil {
 			return err
+		}
+		// Overlay the cached channel-level map for each vchannel this partition's
+		// targets span, keeping the max delete ts per pk (identical merge to folding
+		// channel + partition L0 into one map, since max-ts is order-independent).
+		vchans := map[string]struct{}{}
+		for _, seg := range targets {
+			vchans[seg.GetVChannel()] = struct{}{}
+		}
+		for vch := range vchans {
+			cm, err := channelMapFor(vch)
+			if err != nil {
+				return err
+			}
+			for pk, ts := range cm {
+				if cur, ok := delMap[pk]; !ok || ts > cur {
+					delMap[pk] = ts
+				}
+			}
 		}
 		for _, seg := range targets {
 			if err := t.foldIntoSegment(ctx, seg, delMap, pkFieldID, pkType); err != nil {
@@ -294,6 +350,19 @@ func dataSegments(part *backuppb.PartitionBackupInfo) []*backuppb.SegmentBackupI
 	return out
 }
 
+// allL0Segments returns every L0 segment in the backup: collection-level
+// (coll.L0Segments) and partition-level (IsL0 within a partition).
+func allL0Segments(info *backuppb.BackupInfo) []*backuppb.SegmentBackupInfo {
+	var out []*backuppb.SegmentBackupInfo
+	for _, coll := range info.GetCollectionBackups() {
+		out = append(out, coll.GetL0Segments()...)
+		for _, part := range coll.GetPartitionBackups() {
+			out = append(out, partitionL0(part)...)
+		}
+	}
+	return out
+}
+
 func partitionL0(part *backuppb.PartitionBackupInfo) []*backuppb.SegmentBackupInfo {
 	var out []*backuppb.SegmentBackupInfo
 	for _, s := range part.GetSegmentBackups() {
@@ -325,28 +394,48 @@ func channelL0For(coll *backuppb.CollectionBackupInfo, targets []*backuppb.Segme
 // the backup's own key, so reads must reconstruct (mirroring backup's
 // insertLogsAttrs/deltaLogAttrs and restore).
 func insertKey(backupDir string, seg *backuppb.SegmentBackupInfo, fieldID, logID int64) string {
-	dir := mpath.BackupInsertLogDir(backupDir,
-		mpath.CollectionID(seg.GetCollectionId()), mpath.PartitionID(seg.GetPartitionId()),
-		mpath.SegmentID(seg.GetSegmentId()), mpath.GroupID(seg.GetGroupId()))
-	return mpath.Join(dir, mpath.FieldID(fieldID), mpath.LogID(logID))
-}
-
-func deltaKey(backupDir string, seg *backuppb.SegmentBackupInfo, logID int64) string {
 	opts := []mpath.Option{
 		mpath.CollectionID(seg.GetCollectionId()), mpath.PartitionID(seg.GetPartitionId()),
 		mpath.SegmentID(seg.GetSegmentId()),
 	}
-	if seg.GetPartitionId() != allPartitionID {
+	// Group-less backups (old writers, GroupId == 0) store objects at
+	// .../{coll}/{part}/{seg}/... with NO group element; mpath.GroupID(0) would
+	// instead write a literal "0" element. Only add the group dir when GroupId != 0
+	// (real v2: GroupId = seg id), matching how restore reconstructs these paths.
+	if seg.GetGroupId() != 0 {
 		opts = append(opts, mpath.GroupID(seg.GetGroupId()))
 	}
-	return mpath.Join(mpath.BackupDeltaLogDir(backupDir, opts...), mpath.LogID(logID))
+	dir := mpath.BackupInsertLogDir(backupDir, opts...)
+	return mpath.Join(dir, mpath.FieldID(fieldID), mpath.LogID(logID))
+}
+
+// deltaDir returns the delta_log directory (prefix, no LogID) for a segment.
+func deltaDir(backupDir string, seg *backuppb.SegmentBackupInfo) string {
+	opts := []mpath.Option{
+		mpath.CollectionID(seg.GetCollectionId()), mpath.PartitionID(seg.GetPartitionId()),
+		mpath.SegmentID(seg.GetSegmentId()),
+	}
+	// Same group-less handling as insertKey: only add the group dir when
+	// GroupId != 0. Collection-level L0 (allPartition) and old group-less
+	// backups have GroupId == 0 and store deltalogs without a group element.
+	if seg.GetGroupId() != 0 {
+		opts = append(opts, mpath.GroupID(seg.GetGroupId()))
+	}
+	return mpath.BackupDeltaLogDir(backupDir, opts...)
+}
+
+func deltaKey(backupDir string, seg *backuppb.SegmentBackupInfo, logID int64) string {
+	return mpath.Join(deltaDir(backupDir, seg), mpath.LogID(logID))
 }
 
 // readSegmentPKs reads a data segment's primary-key column.
 //   - v1: read the FieldBinlog whose FieldID == pkFieldID (PK is column 0).
 //   - v2: read column-group parquets ONE file at a time and stop at the first
-//     group that carries the PK column. This keeps peak memory to a single group
-//     file instead of buffering every group (incl. large vector columns) at once.
+//     group that carries the PK column; within that file only the PK column is
+//     decoded (ReadParquetColumnByFieldID projects it), so the group's other
+//     columns (incl. large vector columns) are never materialized into arrow.
+//     Note storage.Read still buffers the whole group object in memory first — a
+//     fully streaming/ranged read is a follow-up (needs ranged object-store reads).
 func (t *Task) readSegmentPKs(ctx context.Context, seg *backuppb.SegmentBackupInfo, pkFieldID int64, kind l0compact.StorageKind, pkType l0compact.PKType) ([]l0compact.PrimaryKey, error) {
 	if kind == l0compact.KindV1 {
 		var blobs [][]byte
@@ -361,6 +450,12 @@ func (t *Task) readSegmentPKs(ctx context.Context, seg *backuppb.SegmentBackupIn
 				}
 				blobs = append(blobs, b)
 			}
+		}
+		// Mirror the v2 branch: a missing PK binlog must be an error, not a silent
+		// empty result. Otherwise fold produces 0 hits, no deltalog is written, yet
+		// dropL0 still removes the L0 segment — silently losing delete semantics.
+		if len(blobs) == 0 {
+			return nil, fmt.Errorf("l0compact: PK field %d has no insert binlog in segment %d", pkFieldID, seg.GetSegmentId())
 		}
 		return l0compact.ReadInsertPK(blobs, kind, pkFieldID, pkType)
 	}

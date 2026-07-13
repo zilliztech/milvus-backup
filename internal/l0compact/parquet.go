@@ -95,26 +95,60 @@ func ReadParquetPKTs(blob []byte, t PKType) ([]PrimaryKey, []uint64, error) {
 
 // ReadParquetColumnByFieldID finds the column whose PARQUET:field_id == fieldID
 // and returns it as PKs. found=false if no such column (caller tries next file).
+//
+// Only the target (PK) column is decoded: the column index is resolved from the
+// parquet/arrow schema without reading data, then just that one column is read
+// via ReadRowGroups. This avoids materializing the group's other columns (e.g.
+// large vector columns) into memory.
 func ReadParquetColumnByFieldID(blob []byte, fieldID int64, t PKType) ([]PrimaryKey, bool, error) {
-	tbl, rel, err := readTable(blob)
+	pf, err := file.NewParquetReader(bytes.NewReader(blob))
+	if err != nil {
+		return nil, false, fmt.Errorf("l0compact: open parquet: %w", err)
+	}
+	defer func() { _ = pf.Close() }()
+	r, err := pqarrow.NewFileReader(pf, pqarrow.ArrowReadProperties{BatchSize: 1024}, memory.DefaultAllocator)
+	if err != nil {
+		return nil, false, fmt.Errorf("l0compact: arrow reader: %w", err)
+	}
+	sc, err := r.Schema()
+	if err != nil {
+		return nil, false, fmt.Errorf("l0compact: parquet schema: %w", err)
+	}
+	idx := fieldIndexByID(sc, fieldID)
+	if idx < 0 {
+		return nil, false, nil // no such column; caller tries the next group file
+	}
+	rowGroups := make([]int, pf.NumRowGroups())
+	for i := range rowGroups {
+		rowGroups[i] = i
+	}
+	tbl, err := r.ReadRowGroups(context.Background(), []int{idx}, rowGroups)
+	if err != nil {
+		return nil, false, fmt.Errorf("l0compact: read pk column: %w", err)
+	}
+	defer tbl.Release()
+	pks, err := columnToPKs(tbl.Column(0), t)
 	if err != nil {
 		return nil, false, err
 	}
-	defer rel()
+	return pks, true, nil
+}
+
+// fieldIndexByID returns the top-level field index whose PARQUET:field_id
+// metadata equals fieldID, or whose name equals the field-id string (milvus
+// useFieldID=true). Returns -1 if no such column. Reads schema only, no data.
+func fieldIndexByID(sc *arrow.Schema, fieldID int64) int {
 	want := strconv.FormatInt(fieldID, 10)
-	for i := 0; i < int(tbl.NumCols()); i++ {
-		f := tbl.Schema().Field(i)
+	for i, f := range sc.Fields() {
 		if v, ok := f.Metadata.GetValue(fieldIDMetaKey); ok && v == want {
-			pks, err := columnToPKs(tbl.Column(i), t)
-			return pks, err == nil, err
+			return i
 		}
 		// fallback: column name equals field-id string (milvus useFieldID=true)
 		if f.Name == want {
-			pks, err := columnToPKs(tbl.Column(i), t)
-			return pks, err == nil, err
+			return i
 		}
 	}
-	return nil, false, nil
+	return -1
 }
 
 func readTable(blob []byte) (arrow.Table, func(), error) {

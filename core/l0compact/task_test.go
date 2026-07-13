@@ -45,9 +45,11 @@ func TestExecuteFoldsAndDropsL0(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, dstInsertBlob)
 
-	// The original L0 deltalog is also copied under dstDir (harmless after drop).
+	// The L0 segment's delta objects were copied under dstDir but dropL0 removed
+	// the segment from the meta; those orphaned objects must be cleaned up so no
+	// wasted delta_log objects are left behind for the dropped L0 segment.
 	_, err = storage.Read(ctx, cli, deltaKey(dstDir, findSeg(info, 100), 1))
-	require.NoError(t, err)
+	require.Error(t, err)
 
 	// data segment 200 now has a deltalog; read it back and verify it deletes pk=2.
 	seg := findSeg(out, 200)
@@ -97,9 +99,13 @@ func buildSyntheticV1Backup(ctx context.Context, t *testing.T, cli storage.Clien
 	t.Helper()
 
 	dataSeg := &backuppb.SegmentBackupInfo{
-		SegmentId:      200,
-		CollectionId:   1,
-		PartitionId:    10,
+		SegmentId:    200,
+		CollectionId: 1,
+		PartitionId:  10,
+		// Real v2 data segments carry GroupId == SegmentId (see backup's groupID),
+		// so the reconstructed insert/delta keys include the group element. A
+		// group-less seg (GroupId == 0) would instead omit it (old-writer layout).
+		GroupId:        200,
 		VChannel:       "vch0",
 		StorageVersion: 2,
 		IsL0:           false,
