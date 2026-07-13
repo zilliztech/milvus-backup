@@ -206,27 +206,32 @@ class TestL0Compact(TestcaseBase):
 
         The get_backup HTTP API does not expose L0 segments, so we read the raw
         meta object. MinIO stores objects in xl format (a directory on disk), so
-        we must go through the S3 API, not the host volume. Skip (not fail) if
-        the object store is unreachable or the object is absent in CI.
+        we must go through the S3 API, not the host volume. Only skip when the
+        object genuinely does not exist (backup layout differs); any other error
+        (e.g. MinIO unreachable) must FAIL, otherwise a real dropL0 regression
+        would be silently masked as a skipped/passed test.
         """
         from minio import Minio
+        from minio.error import S3Error
 
         key = f"backup/{backup_name}/meta/full_meta.json"
+        client = Minio(
+            "localhost:9000",
+            access_key="minioadmin",
+            secret_key="minioadmin",
+            secure=False,
+        )
         try:
-            client = Minio(
-                "localhost:9000",
-                access_key="minioadmin",
-                secret_key="minioadmin",
-                secure=False,
-            )
             resp = client.get_object("a-bucket", key)
-            try:
-                return json.loads(resp.read())
-            finally:
-                resp.close()
-                resp.release_conn()
-        except Exception as e:
-            pytest.skip(f"cannot read a-bucket/{key} from MinIO: {e}")
+        except S3Error as e:
+            if e.code in ("NoSuchKey", "NoSuchBucket"):
+                pytest.skip(f"a-bucket/{key} absent (backup layout differs): {e}")
+            raise
+        try:
+            return json.loads(resp.read())
+        finally:
+            resp.close()
+            resp.release_conn()
 
     @staticmethod
     def _meta_has_l0(meta):

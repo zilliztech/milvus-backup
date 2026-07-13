@@ -8,9 +8,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
+	"github.com/zilliztech/milvus-backup/core/backup"
 	corel0 "github.com/zilliztech/milvus-backup/core/l0compact"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
-	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 )
@@ -25,11 +25,20 @@ func (o *options) validate() error {
 	if o.name == "" {
 		return errors.New("backup name is required (--name)")
 	}
+	// Validate like `create` does: rejects blanks, special characters, and names
+	// not starting with a letter/underscore — so `/`, `.`, `..` can't escape the
+	// backup root via path.Join.
+	if err := backup.ValidateName(o.name); err != nil {
+		return fmt.Errorf("invalid --name %q: %w", o.name, err)
+	}
 	if o.output == "" {
 		o.output = o.name + "_l0compacted"
 	}
 	if o.output == o.name {
 		return errors.New("output must differ from source backup name")
+	}
+	if err := backup.ValidateName(o.output); err != nil {
+		return fmt.Errorf("invalid --output %q: %w", o.output, err)
 	}
 	return nil
 }
@@ -42,16 +51,9 @@ func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
 	}
 	srcDir := mpath.BackupDir(params.Minio.BackupRootPath.Val, o.name)
 	dstDir := mpath.BackupDir(params.Minio.BackupRootPath.Val, o.output)
-	if !o.force {
-		exist, err := meta.Exist(ctx, cli, dstDir)
-		if err != nil {
-			return fmt.Errorf("l0compact: check destination exist: %w", err)
-		}
-		if exist {
-			return fmt.Errorf("destination backup %s already exists; use --force to overwrite", o.output)
-		}
-	}
-	task := corel0.NewTask(cli, srcDir, dstDir)
+	// Destination handling (reject-if-exists, or clear when --force) lives in the
+	// task so it is applied uniformly.
+	task := corel0.NewTask(cli, srcDir, dstDir, corel0.WithForce(o.force))
 	if err := task.Execute(ctx); err != nil {
 		return err
 	}

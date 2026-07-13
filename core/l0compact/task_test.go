@@ -62,6 +62,31 @@ func TestExecuteFoldsAndDropsL0(t *testing.T) {
 	require.Equal(t, uint64(50), entries[0].Ts)
 }
 
+func TestExecuteForceClearsDestination(t *testing.T) {
+	ctx := context.Background()
+	cli := &storage.LocalClient{}
+	tmp := t.TempDir()
+	srcDir := filepath.Join(tmp, "src")
+	dstDir := filepath.Join(tmp, "dst")
+	info := buildSyntheticV1Backup(ctx, t, cli, srcDir)
+	require.NoError(t, meta.Write(ctx, cli, srcDir, info))
+
+	// A leftover object from a previous run sits in the destination.
+	require.NoError(t, storage.Write(ctx, cli, filepath.Join(dstDir, "leftover"), []byte("stale")))
+
+	// Without --force, a non-empty destination is rejected.
+	require.Error(t, NewTask(cli, srcDir, dstDir).Execute(ctx))
+
+	// With --force, the destination is cleared and the run succeeds.
+	require.NoError(t, NewTask(cli, srcDir, dstDir, WithForce(true)).Execute(ctx))
+	out, err := meta.Read(ctx, cli, dstDir)
+	require.NoError(t, err)
+	require.Nil(t, out.GetCollectionBackups()[0].GetL0Segments())
+	// The stale object was removed by the force clear.
+	_, err = storage.Read(ctx, cli, filepath.Join(dstDir, "leftover"))
+	require.Error(t, err)
+}
+
 // buildSyntheticV1Backup writes insert + delta blobs to storage using only the
 // exported codec funcs (v2-storage format, PK field id 0) and returns the meta
 // tree pointing at them. Data segment 200 holds pks {1,2,3}; a partition-level

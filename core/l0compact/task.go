@@ -28,12 +28,23 @@ type Task struct {
 	cli    storage.Client
 	srcDir string
 	dstDir string
+	force  bool  // clear a non-empty destination instead of erroring
 	nextID int64 // deltalog log id allocator
 }
 
+// Option configures a Task.
+type Option func(*Task)
+
+// WithForce clears a non-empty destination before writing instead of erroring.
+func WithForce(force bool) Option { return func(t *Task) { t.force = force } }
+
 // NewTask builds an l0compact task reading from srcDir and writing to dstDir.
-func NewTask(cli storage.Client, srcDir, dstDir string) *Task {
-	return &Task{cli: cli, srcDir: srcDir, dstDir: dstDir, nextID: 1}
+func NewTask(cli storage.Client, srcDir, dstDir string, opts ...Option) *Task {
+	t := &Task{cli: cli, srcDir: srcDir, dstDir: dstDir, nextID: 1}
+	for _, opt := range opts {
+		opt(t)
+	}
+	return t
 }
 
 // Execute reads the source meta, folds every collection's L0 segments into its
@@ -43,14 +54,20 @@ func (t *Task) Execute(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("l0compact: read src meta: %w", err)
 	}
-	// Refuse to stack onto a non-empty destination: a leftover half-backup (e.g.
-	// from a previously failed run) would silently mix with this run's objects.
+	// Don't stack onto a non-empty destination: a leftover half-backup (e.g. from
+	// a previously failed run) would silently mix with this run's objects. With
+	// --force, clear it first so the run (or a re-run) starts clean.
 	keys, _, err := storage.ListPrefixFlat(ctx, t.cli, t.dstDir, true)
 	if err != nil {
 		return fmt.Errorf("l0compact: list dst dir: %w", err)
 	}
 	if len(keys) > 0 {
-		return fmt.Errorf("l0compact: destination %s is not empty (%d objects); choose a fresh output or clear it first", t.dstDir, len(keys))
+		if !t.force {
+			return fmt.Errorf("l0compact: destination %s is not empty (%d objects); choose a fresh output or use --force", t.dstDir, len(keys))
+		}
+		if err := storage.DeletePrefix(ctx, t.cli, t.dstDir); err != nil {
+			return fmt.Errorf("l0compact: clear destination %s: %w", t.dstDir, err)
+		}
 	}
 	// New fold deltalogs share the deltaKey namespace with the copied source
 	// deltalogs (which keep their original LogIds). Allocate above the highest
