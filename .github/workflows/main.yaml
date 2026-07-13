@@ -77,7 +77,7 @@ jobs:
         milvus_mode: [standalone]
         another_milvus_mode: [standalone]
         source_image_tag: [v2.2.16, v2.3.22, v2.4.23, v2.5.20, 2.6-latest]
-        target_image_tag: [master-latest, 2.6-latest]
+        target_image_tag: [2.6-latest]
         exclude:
           - source_image_tag: 2.6-latest
             target_image_tag: 2.6-latest
@@ -204,10 +204,6 @@ jobs:
         run: |
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.target_image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
-          if [ "${{ matrix.target_image_tag }}" == "master-latest" ]; then
-            yq -i '.common.storage.enablev2 = true' custom_config.yaml
-            yq -i '.common.storage.useLoonFFI = false' custom_config.yaml
-          fi
           cat custom_config.yaml || true
           mkdir -p volumes/etcd volumes/minio volumes/milvus
           sudo chmod -R 777 volumes
@@ -262,8 +258,8 @@ jobs:
         deploy_tools: [docker-compose]
         milvus_mode: [standalone]
         another_milvus_mode: [standalone]
-        source_image_tag: [2.5-latest, 2.5-latest]
-        target_image_tag: [master-latest, 2.6-latest]
+        source_image_tag: [2.5-latest]
+        target_image_tag: [2.6-latest]
         exclude:
           - source_image_tag: 2.6-latest
             target_image_tag: 2.6-latest
@@ -336,10 +332,6 @@ jobs:
           sudo docker compose -f docker-compose.yml down
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.target_image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
-          if [ "${{ matrix.target_image_tag }}" == "master-latest" ]; then
-            yq -i '.common.storage.enablev2 = true' custom_config.yaml
-            yq -i '.common.storage.useLoonFFI = false' custom_config.yaml
-          fi
           cat custom_config.yaml || true
           sudo chmod -R 777 volumes
           sudo docker compose -f docker-compose.yml up -d --wait
@@ -410,7 +402,7 @@ jobs:
         deploy_tools: [docker-compose]
         milvus_mode: [standalone]
         another_milvus_mode: [standalone]
-        image_tag: [master-latest]
+        image_tag: [2.6-latest]
         # mq_type: [pulsar, kafka]  # TODO: add pulsar and kafka
 
     steps:
@@ -450,10 +442,6 @@ jobs:
         run: |
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
-          if [ "${{ matrix.image_tag }}" == "master-latest" ]; then
-            yq -i '.common.storage.enablev2 = true' custom_config.yaml
-            yq -i '.common.storage.useLoonFFI = false' custom_config.yaml
-          fi
           cat custom_config.yaml || true
           mkdir -p volumes/etcd volumes/minio volumes/milvus
           sudo chmod -R 777 volumes
@@ -590,7 +578,7 @@ jobs:
       fail-fast: false
       matrix:
         # Two scenarios:
-        #   - same-version:          source and target are both the latest master.
+        #   - same-version:          source and target are both the latest 2.6.
         #   - cross-version-upgrade: source data is created on a pre-#46419 Milvus
         #     (v2.6.7, where the auto-appended $meta field has no Nullable nor
         #     DefaultValue), then the cluster is upgraded to a CDC-capable image
@@ -601,8 +589,8 @@ jobs:
         #     fixed.
         include:
           - scenario: same-version
-            prepare_image_tag: master-latest
-            run_image_tag: master-latest
+            prepare_image_tag: 2.6-latest
+            run_image_tag: 2.6-latest
           - scenario: cross-version-upgrade
             prepare_image_tag: v2.6.7
             run_image_tag: 2.6-latest
@@ -646,10 +634,6 @@ jobs:
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.prepare_image_tag }}) && echo $tag
           yq -i ".services.upstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
           yq -i ".services.downstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
-          if [ "${{ matrix.prepare_image_tag }}" == "master-latest" ]; then
-            yq -i '.common.storage.useLoonFFI = false' upstream.yaml
-            yq -i '.common.storage.useLoonFFI = false' downstream.yaml
-          fi
           mkdir -p volumes/etcd volumes/minio volumes/upstream volumes/downstream volumes/upstream-runtime volumes/downstream-runtime
           sudo chmod -R 777 volumes
           sudo docker compose -f docker-compose.yml up -d --wait
@@ -700,10 +684,6 @@ jobs:
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.run_image_tag }}) && echo $tag
           yq -i ".services.upstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
           yq -i ".services.downstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
-          if [ "${{ matrix.run_image_tag }}" == "master-latest" ]; then
-            yq -i '.common.storage.useLoonFFI = false' upstream.yaml
-            yq -i '.common.storage.useLoonFFI = false' downstream.yaml
-          fi
           sudo docker compose -f docker-compose.yml up -d --wait
           sudo docker compose -f docker-compose.yml ps -a
 
@@ -830,7 +810,7 @@ jobs:
       matrix:
         deploy_tools: [helm]
         milvus_mode: [standalone]
-        image_tag: [master-latest]
+        image_tag: [2.6-latest]
 
     steps:
       - uses: actions/checkout@v6
@@ -882,9 +862,6 @@ jobs:
             helm repo update
             tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
             yq -i ".image.all.tag=\"${tag}\"" rbac-values.yaml
-            if [ "${{ matrix.image_tag }}" == "master-latest" ]; then
-              yq -i '.extraConfigFiles."user.yaml" += "  storage:\n    useLoonFFI: false\n"' rbac-values.yaml
-            fi
             helm install --wait --debug --timeout 600s milvus-backup milvus/milvus -f rbac-values.yaml
             helm install --wait --debug --timeout 600s milvus-restore milvus/milvus -f rbac-values.yaml
             kubectl get pods
@@ -993,11 +970,8 @@ jobs:
       matrix:
         deploy_tools: [docker-compose]
         milvus_mode: [standalone]
-        image_tag: [master-latest, 2.6-latest]
-        case_tag: [L0, L1, L2, MASTER, RELEASE, RBAC]
-        exclude:
-          - image_tag: 2.6-latest
-            case_tag: MASTER
+        image_tag: [2.6-latest]
+        case_tag: [L0, L1, L2, RELEASE, RBAC]
 
     steps:
       - uses: actions/checkout@v6
@@ -1037,7 +1011,7 @@ jobs:
         shell: bash
         working-directory: deployment/${{ matrix.milvus_mode }}
         run: |
-          if [ ${{ matrix.case_tag }} == "MASTER" ] || [ ${{ matrix.case_tag }} == "RELEASE" ]; then
+          if [ ${{ matrix.case_tag }} == "RELEASE" ]; then
             mv docker-compose-tei.yml docker-compose.yml
           fi
           if [ ${{ matrix.case_tag }} == "RBAC" ]; then
@@ -1045,10 +1019,6 @@ jobs:
           fi
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
-          if [ "${{ matrix.image_tag }}" == "master-latest" ]; then
-            yq -i '.common.storage.enablev2 = true' custom_config.yaml
-            yq -i '.common.storage.useLoonFFI = false' custom_config.yaml
-          fi
           cat custom_config.yaml || true
           mkdir -p volumes/etcd volumes/minio volumes/milvus
           sudo chmod -R 777 volumes
