@@ -2,17 +2,23 @@ package secondary
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
+	"strconv"
 	"sync"
 	"testing"
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
+	"github.com/milvus-io/milvus-proto/go-api/v2/msgpb"
+	"github.com/milvus-io/milvus/pkg/v2/proto/messagespb"
 	"github.com/milvus-io/milvus/pkg/v2/streaming/util/message"
 	"github.com/milvus-io/milvus/pkg/v2/util/funcutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/encoding/protowire"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
@@ -60,6 +66,19 @@ func (s *recordingStream) Forward(_ context.Context, msgs ...*commonpb.Immutable
 func (s *recordingStream) WaitConfirm() {}
 func (s *recordingStream) Close()       {}
 
+func (s *recordingStream) messagesByType(messageType string) []*commonpb.ImmutableMessage {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	var result []*commonpb.ImmutableMessage
+	for _, msg := range s.msgs {
+		if msg.GetProperties()["_t"] == messageType {
+			result = append(result, msg)
+		}
+	}
+	return result
+}
+
 // timestampsByPch returns the timestamps grouped by physical channel, in send order.
 func (s *recordingStream) timestampsByPch() map[string][]uint64 {
 	s.mu.Lock()
@@ -88,6 +107,62 @@ func (r *completedRestful) GetBulkInsertState(context.Context, string, string) (
 }
 
 func (r *completedRestful) GetSegmentInfo(context.Context, string, int64, int64) (*milvus.SegmentInfo, error) {
+	return nil, nil
+}
+
+type sequencedRestful struct {
+	mu     sync.Mutex
+	states []milvus.ImportState
+	calls  int
+}
+
+func (r *sequencedRestful) BulkInsert(context.Context, milvus.BulkInsertV2Input) (string, error) {
+	return "", nil
+}
+
+func (r *sequencedRestful) GetBulkInsertState(context.Context, string, string) (*milvus.GetProcessResp, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	stateIndex := min(r.calls, len(r.states)-1)
+	r.calls++
+	resp := &milvus.GetProcessResp{}
+	resp.Data.State = string(r.states[stateIndex])
+	return resp, nil
+}
+
+func (r *sequencedRestful) GetSegmentInfo(context.Context, string, int64, int64) (*milvus.SegmentInfo, error) {
+	return nil, nil
+}
+
+type perJobSequencedRestful struct {
+	mu    sync.Mutex
+	calls map[string]int
+}
+
+func (r *perJobSequencedRestful) BulkInsert(context.Context, milvus.BulkInsertV2Input) (string, error) {
+	return "", nil
+}
+
+func (r *perJobSequencedRestful) GetBulkInsertState(_ context.Context, _, jobID string) (*milvus.GetProcessResp, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	if r.calls == nil {
+		r.calls = make(map[string]int)
+	}
+	state := milvus.ImportStateUncommitted
+	if r.calls[jobID] > 0 {
+		state = milvus.ImportStateCompleted
+	}
+	r.calls[jobID]++
+
+	resp := &milvus.GetProcessResp{}
+	resp.Data.State = string(state)
+	return resp, nil
+}
+
+func (r *perJobSequencedRestful) GetSegmentInfo(context.Context, string, int64, int64) (*milvus.SegmentInfo, error) {
 	return nil, nil
 }
 
@@ -392,4 +467,157 @@ func TestSendBatches(t *testing.T) {
 
 	// Each batch broadcasts to all vchannels, so total messages = 2 batches * 2 vchannels.
 	assert.Len(t, stream.msgs, 4)
+}
+
+func TestCheckBulkInsertJob_Import2PCStates(t *testing.T) {
+	vchannels := newTestVChannels()
+	collBackup := newTestCollBackup(vchannels, nil, nil)
+
+	t.Run("LegacyCompletedSendsNoCommit", func(t *testing.T) {
+		stream := &recordingStream{}
+		task := newTestDMLTask(t, collBackup, stream)
+		task.restfulCli = &sequencedRestful{states: []milvus.ImportState{milvus.ImportStateCompleted}}
+
+		err := task.checkBulkInsertJob(context.Background(), "101")
+		assert.NoError(t, err)
+		assert.Empty(t, stream.messagesByType(strconv.Itoa(_commitImportMessageType)))
+	})
+
+	t.Run("UncommittedSendsOneCommitAndWaits", func(t *testing.T) {
+		stream := &recordingStream{}
+		restful := &sequencedRestful{states: []milvus.ImportState{
+			milvus.ImportStateUncommitted,
+			milvus.ImportStateCompleted,
+		}}
+		task := newTestDMLTask(t, collBackup, stream)
+		task.restfulCli = restful
+
+		err := task.checkBulkInsertJob(context.Background(), "102")
+		assert.NoError(t, err)
+		assert.Equal(t, 2, restful.calls)
+		assert.Len(t, stream.messagesByType(strconv.Itoa(_commitImportMessageType)), len(vchannels))
+	})
+
+	t.Run("CommittingOnlyWaits", func(t *testing.T) {
+		stream := &recordingStream{}
+		restful := &sequencedRestful{states: []milvus.ImportState{
+			milvus.ImportStateCommitting,
+			milvus.ImportStateCompleted,
+		}}
+		task := newTestDMLTask(t, collBackup, stream)
+		task.restfulCli = restful
+
+		err := task.checkBulkInsertJob(context.Background(), "103")
+		assert.NoError(t, err)
+		assert.Equal(t, 2, restful.calls)
+		assert.Empty(t, stream.messagesByType(strconv.Itoa(_commitImportMessageType)))
+	})
+}
+
+func TestSendImportMsg_DisablesAutoCommit(t *testing.T) {
+	vchannels := newTestVChannels()
+	collBackup := newTestCollBackup(vchannels, nil, nil)
+	stream := &recordingStream{}
+	task := newTestDMLTask(t, collBackup, stream)
+
+	_, err := task.sendImportMsg(context.Background(), 1, batch{
+		timestamp:      100,
+		storageVersion: 2,
+		partitionDirs:  []partitionDir{{insertLogDir: "/insert"}},
+	})
+	assert.NoError(t, err)
+
+	importMessages := stream.messagesByType(strconv.Itoa(int(message.MessageTypeImport)))
+	assert.NotEmpty(t, importMessages)
+	importBody := &msgpb.ImportMsg{}
+	assert.NoError(t, proto.Unmarshal(importMessages[0].GetPayload(), importBody))
+	assert.Equal(t, "false", importBody.GetOptions()["auto_commit"])
+}
+
+func TestSendCommitImportMsg_WireCompatibilityAndFanout(t *testing.T) {
+	vchannels := newTestVChannels()
+	collBackup := newTestCollBackup(vchannels, nil, nil)
+	stream := &recordingStream{}
+	task := newTestDMLTask(t, collBackup, stream)
+	jobID := int64(456)
+
+	err := task.sendCommitImportMsg(context.Background(), jobID)
+	assert.NoError(t, err)
+
+	commitMessages := stream.messagesByType(strconv.Itoa(_commitImportMessageType))
+	assert.Len(t, commitMessages, len(vchannels))
+	for i, msg := range commitMessages {
+		properties := msg.GetProperties()
+		assert.Equal(t, strconv.Itoa(_commitImportMessageType), properties["_t"])
+		assert.Equal(t, strconv.Itoa(_commitImportMessageVersion), properties["_v"])
+		assert.NotEmpty(t, properties["_h"])
+		assert.NotEmpty(t, properties["_bh"])
+		assert.Empty(t, msg.GetPayload())
+		assert.Equal(t, vchannels[i], milvus.GetVch(msg))
+
+		header, decodeErr := base64.StdEncoding.DecodeString(properties["_h"])
+		assert.NoError(t, decodeErr)
+		fieldNumber, wireType, consumed := protowire.ConsumeTag(header)
+		assert.Equal(t, protowire.Number(1), fieldNumber)
+		assert.Equal(t, protowire.VarintType, wireType)
+		collectionID, valueBytes := protowire.ConsumeVarint(header[consumed:])
+		assert.Greater(t, valueBytes, 0)
+		header = header[consumed+valueBytes:]
+		fieldNumber, wireType, consumed = protowire.ConsumeTag(header)
+		assert.Equal(t, protowire.Number(2), fieldNumber)
+		assert.Equal(t, protowire.VarintType, wireType)
+		wireJobID, valueBytes := protowire.ConsumeVarint(header[consumed:])
+		assert.Greater(t, valueBytes, 0)
+		assert.Empty(t, header[consumed+valueBytes:])
+		assert.Equal(t, uint64(collBackup.GetCollectionId()), collectionID)
+		assert.Equal(t, uint64(jobID), wireJobID)
+
+		broadcastHeader := &messagespb.BroadcastHeader{}
+		assert.NoError(t, message.DecodeProto(properties["_bh"], broadcastHeader))
+		assert.NotZero(t, broadcastHeader.GetBroadcastId())
+		assert.Equal(t, vchannels, broadcastHeader.GetVchannels())
+	}
+}
+
+func TestExecute_Import2PCPreservesPhaseAndTimestampOrdering(t *testing.T) {
+	vchannels := newTestVChannels()
+	partitions := []*backuppb.PartitionBackupInfo{
+		{
+			PartitionId:   1,
+			PartitionName: "part1",
+			SegmentBackups: []*backuppb.SegmentBackupInfo{
+				{PartitionId: 1, VChannel: vchannels[0], GroupId: 1, Size: 100, StorageVersion: 2},
+				{PartitionId: 1, VChannel: vchannels[0], GroupId: 2, Size: 100, IsL0: true, StorageVersion: 2},
+			},
+		},
+	}
+	allPartitionL0 := []*backuppb.SegmentBackupInfo{
+		{PartitionId: 1, VChannel: vchannels[0], GroupId: 3, Size: 100, IsL0: true, StorageVersion: 2},
+	}
+	collBackup := newTestCollBackup(vchannels, partitions, allPartitionL0)
+	stream := &recordingStream{}
+	task := newTestDMLTask(t, collBackup, stream)
+	task.restfulCli = &perJobSequencedRestful{}
+
+	err := task.Execute(context.Background())
+	assert.NoError(t, err)
+
+	var messageTypes []string
+	for _, msg := range stream.msgs {
+		messageTypes = append(messageTypes, msg.GetProperties()["_t"])
+	}
+	importType := strconv.Itoa(int(message.MessageTypeImport))
+	commitType := strconv.Itoa(_commitImportMessageType)
+	assert.Equal(t, []string{
+		importType, importType, commitType, commitType,
+		importType, importType, commitType, commitType,
+		importType, importType, commitType, commitType,
+	}, messageTypes)
+
+	for pch, timestamps := range stream.timestampsByPch() {
+		for i := 1; i < len(timestamps); i++ {
+			assert.Greater(t, timestamps[i], timestamps[i-1],
+				"timestamps on pch %s should be strictly increasing, got %v", pch, timestamps)
+		}
+	}
 }

@@ -2,7 +2,7 @@ package secondary
 
 import (
 	"context"
-	"errors"
+	"encoding/base64"
 	"fmt"
 	"math/rand/v2"
 	"strconv"
@@ -11,11 +11,13 @@ import (
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/msgpb"
 	"github.com/milvus-io/milvus/pkg/v2/common"
+	"github.com/milvus-io/milvus/pkg/v2/proto/messagespb"
 	"github.com/milvus-io/milvus/pkg/v2/streaming/util/message"
 	"github.com/milvus-io/milvus/pkg/v2/util/funcutil"
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
+	"google.golang.org/protobuf/encoding/protowire"
 
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 
@@ -31,6 +33,8 @@ const (
 	_bulkInsertTimeout             = 60 * time.Minute
 	_bulkInsertRestfulAPIChunkSize = 256
 	_bulkInsertCheckInterval       = 3 * time.Second
+	_commitImportMessageType       = 45
+	_commitImportMessageVersion    = 2
 )
 
 type partitionDir struct {
@@ -62,6 +66,7 @@ type batch struct {
 func (b *batch) options() map[string]string {
 	opts := map[string]string{
 		"skip_disk_quota_check": "true",
+		"auto_commit":           "false",
 		"end_ts":                strconv.FormatUint(b.timestamp, 10),
 		"storage_version":       strconv.FormatInt(b.storageVersion, 10),
 	}
@@ -247,7 +252,7 @@ func (dmlt *collDMLTask) checkBulkInsertJobs(ctx context.Context, jobIDs []int64
 	g, subCtx := errgroup.WithContext(ctx)
 	for _, jobID := range jobIDs {
 		g.Go(func() error {
-			if err := dmlt.checkBulkInsertJob(subCtx, strconv.Itoa(int(jobID))); err != nil {
+			if err := dmlt.checkBulkInsertJob(subCtx, strconv.FormatInt(jobID, 10)); err != nil {
 				return fmt.Errorf("secondary: check bulk insert job %d: %w", jobID, err)
 			}
 			return nil
@@ -262,40 +267,124 @@ func (dmlt *collDMLTask) checkBulkInsertJobs(ctx context.Context, jobIDs []int64
 }
 
 func (dmlt *collDMLTask) checkBulkInsertJob(ctx context.Context, jobID string) error {
-	// wait for bulk insert job done
+	state, err := dmlt.waitBulkInsertReadyToCommit(ctx, jobID)
+	if err != nil {
+		return err
+	}
+
+	switch state {
+	case milvus.ImportStateCompleted:
+		return nil
+	case milvus.ImportStateUncommitted:
+		parsedJobID, err := strconv.ParseInt(jobID, 10, 64)
+		if err != nil {
+			return fmt.Errorf("secondary: parse bulk insert job id: %w", err)
+		}
+		if err := dmlt.sendCommitImportMsg(ctx, parsedJobID); err != nil {
+			return fmt.Errorf("secondary: send commit import msg: %w", err)
+		}
+	case milvus.ImportStateCommitting:
+		// Another coordinator already initiated the commit; only wait for completion.
+	default:
+		return fmt.Errorf("secondary: unexpected bulk insert state %s", state)
+	}
+
+	return dmlt.waitBulkInsertCompleted(ctx, jobID)
+}
+
+func (dmlt *collDMLTask) waitBulkInsertReadyToCommit(ctx context.Context, jobID string) (milvus.ImportState, error) {
+	return dmlt.waitBulkInsertState(ctx, jobID, func(state milvus.ImportState) bool {
+		return state == milvus.ImportStateCompleted ||
+			state == milvus.ImportStateUncommitted ||
+			state == milvus.ImportStateCommitting
+	})
+}
+
+func (dmlt *collDMLTask) waitBulkInsertCompleted(ctx context.Context, jobID string) error {
+	_, err := dmlt.waitBulkInsertState(ctx, jobID, func(state milvus.ImportState) bool {
+		return state == milvus.ImportStateCompleted
+	})
+	return err
+}
+
+func (dmlt *collDMLTask) waitBulkInsertState(
+	ctx context.Context,
+	jobID string,
+	done func(milvus.ImportState) bool,
+) (milvus.ImportState, error) {
 	var lastProgress int
 	lastUpdateTime := time.Now()
-	for range time.Tick(_bulkInsertCheckInterval) {
+	ticker := time.NewTicker(_bulkInsertCheckInterval)
+	defer ticker.Stop()
+
+	for {
 		resp, err := dmlt.restfulCli.GetBulkInsertState(ctx, dmlt.collBackup.GetDbName(), jobID)
 		if err != nil {
-			return fmt.Errorf("secondary: get bulk insert state: %w", err)
+			return "", fmt.Errorf("secondary: get bulk insert state: %w", err)
 		}
 
+		state := milvus.ImportState(resp.Data.State)
 		dmlt.logger.Info("bulk insert task state", zap.String("job_id", jobID),
 			zap.String("state", resp.Data.State),
 			zap.Int("progress", resp.Data.Progress))
-		switch resp.Data.State {
-		case string(milvus.ImportStateFailed):
-			return fmt.Errorf("secondary: bulk insert failed: %s", resp.Data.Reason)
-		case string(milvus.ImportStateCompleted):
-			dmlt.logger.Info("bulk insert task success", zap.String("job_id", jobID))
-			return nil
-		default:
-			currentProgress := resp.Data.Progress
-			if currentProgress > lastProgress {
-				lastProgress = currentProgress
-				lastUpdateTime = time.Now()
-			} else if time.Since(lastUpdateTime) >= _bulkInsertTimeout {
-				dmlt.logger.Warn("bulk insert task no progress for too long, may milvus is not healthy",
-					zap.String("job_id", jobID),
-					zap.Duration("timeout", _bulkInsertTimeout))
-				lastUpdateTime = time.Now()
+		if state == milvus.ImportStateFailed {
+			return "", fmt.Errorf("secondary: bulk insert failed: %s", resp.Data.Reason)
+		}
+		if done(state) {
+			if state == milvus.ImportStateCompleted {
+				dmlt.logger.Info("bulk insert task success", zap.String("job_id", jobID))
 			}
-			continue
+			return state, nil
+		}
+
+		currentProgress := resp.Data.Progress
+		if currentProgress > lastProgress {
+			lastProgress = currentProgress
+			lastUpdateTime = time.Now()
+		} else if time.Since(lastUpdateTime) >= _bulkInsertTimeout {
+			dmlt.logger.Warn("bulk insert task no progress for too long, may milvus is not healthy",
+				zap.String("job_id", jobID),
+				zap.Duration("timeout", _bulkInsertTimeout))
+			lastUpdateTime = time.Now()
+		}
+
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-ticker.C:
 		}
 	}
+}
 
-	return errors.New("secondary: walk into unreachable code")
+func (dmlt *collDMLTask) sendCommitImportMsg(ctx context.Context, jobID int64) error {
+	header := protowire.AppendTag(nil, 1, protowire.VarintType)
+	header = protowire.AppendVarint(header, uint64(dmlt.collBackup.GetCollectionId()))
+	header = protowire.AppendTag(header, 2, protowire.VarintType)
+	header = protowire.AppendVarint(header, uint64(jobID))
+
+	broadcastHeader, err := message.EncodeProto(&messagespb.BroadcastHeader{
+		Vchannels: dmlt.collBackup.GetVirtualChannelNames(),
+	})
+	if err != nil {
+		return fmt.Errorf("secondary: encode commit import broadcast header: %w", err)
+	}
+
+	properties := map[string]string{
+		"_t":  strconv.Itoa(_commitImportMessageType),
+		"_v":  strconv.Itoa(_commitImportMessageVersion),
+		"_h":  base64.StdEncoding.EncodeToString(header),
+		"_bh": broadcastHeader,
+	}
+
+	if err := dmlt.streamCli.Send(ctx, func(uint64) []message.MutableMessage {
+		broadcast := message.NewBroadcastMutableMessageBeforeAppend(nil, properties).
+			WithBroadcastID(rand.Uint64())
+		return broadcast.SplitIntoMutableMessage()
+	}); err != nil {
+		return fmt.Errorf("secondary: broadcast commit import: %w", err)
+	}
+
+	return nil
 }
 
 func (dmlt *collDMLTask) nonL0SegBatches(ctx context.Context, segs []*backuppb.SegmentBackupInfo) ([]batch, error) {
