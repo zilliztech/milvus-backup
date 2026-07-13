@@ -142,6 +142,10 @@ class TestL0Compact(TestcaseBase):
                 "backup_name": backup_name,
                 "collection_names": [src_name],
                 "collection_suffix": suffix,
+                # The washed backup carries the source's storage version (v2 on
+                # recent Milvus); a v2 backup must be restored with v2 restore, so
+                # its parquet deltalogs are read with the matching reader.
+                "useV2Restore": True,
             }
         )
         log.info(f"restore_backup {backup_name} suffix {suffix}: {res}")
@@ -427,6 +431,7 @@ class TestL0Compact(TestcaseBase):
                     "backup_name": bk,
                     "collection_names": [name],
                     "collection_suffix": "_raw",
+                    "useV2Restore": True,
                 }
             )
             log.info(f"un-washed restore response: {res}")
