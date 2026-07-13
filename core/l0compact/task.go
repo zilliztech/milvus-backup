@@ -247,7 +247,12 @@ func (t *Task) foldIntoSegment(ctx context.Context, seg *backuppb.SegmentBackupI
 	if len(hits) == 0 {
 		return nil
 	}
-	blob, err := l0compact.WriteDeltalog(hits, kind, pkType)
+	// The deltalog is always written in the v1 legacy envelope format regardless
+	// of the segment's storage version: Milvus's bulk-insert/import reads a
+	// segment's deltalogs with the v1 binlog reader (magic 0xfffabc) even on the
+	// v2 restore path, so a bare v2 parquet deltalog fails "parse magic number".
+	// (Insert data is still read per the segment version; only deltalogs are v1.)
+	blob, err := l0compact.WriteDeltalog(hits, l0compact.KindV1, pkType)
 	if err != nil {
 		return err
 	}
@@ -257,6 +262,10 @@ func (t *Task) foldIntoSegment(ctx context.Context, seg *backuppb.SegmentBackupI
 	if err := storage.Write(ctx, t.cli, key, blob); err != nil {
 		return err
 	}
+	// Unlike copied entries (whose LogPath is the original Milvus source path),
+	// this newly folded deltalog only exists inside the backup, so LogPath holds
+	// its backup object key. Restore reconstructs delta paths from the backup dir
+	// and never reads LogPath, so this is inert for restore.
 	seg.Deltalogs = append(seg.GetDeltalogs(), &backuppb.FieldBinlog{
 		FieldID: 0,
 		Binlogs: []*backuppb.Binlog{{LogId: logID, LogPath: key, LogSize: int64(len(blob))}},

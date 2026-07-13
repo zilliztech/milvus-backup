@@ -55,7 +55,9 @@ func TestExecuteFoldsAndDropsL0(t *testing.T) {
 	require.NotEmpty(t, seg.GetDeltalogs())
 	blob, err := storage.Read(ctx, cli, seg.GetDeltalogs()[0].GetBinlogs()[0].GetLogPath())
 	require.NoError(t, err)
-	entries, err := l0compact.ReadDeltalog(blob, l0compact.KindV2, l0compact.PKInt64)
+	// fold deltalogs are always written in v1 envelope format (Milvus import reads
+	// deltalogs with the v1 reader regardless of segment storage version).
+	entries, err := l0compact.ReadDeltalog(blob, l0compact.KindV1, l0compact.PKInt64)
 	require.NoError(t, err)
 	require.Len(t, entries, 1)
 	require.Equal(t, int64(2), entries[0].PK.Int)

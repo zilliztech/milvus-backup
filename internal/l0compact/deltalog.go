@@ -97,12 +97,19 @@ func WriteDeltalog(entries []DeleteEntry, kind StorageKind, t PKType) ([]byte, e
 		rows := make([]string, len(entries))
 		for i, e := range entries {
 			var pkRaw json.RawMessage
+			var err error
 			if t == PKInt64 {
-				pkRaw, _ = json.Marshal(e.PK.Int)
+				pkRaw, err = json.Marshal(e.PK.Int)
 			} else {
-				pkRaw, _ = json.Marshal(e.PK.Str)
+				pkRaw, err = json.Marshal(e.PK.Str)
 			}
-			b, _ := json.Marshal(deleteLogJSON{Pk: pkRaw, Ts: e.Ts, PkType: int64(t)})
+			if err != nil {
+				return nil, fmt.Errorf("l0compact: marshal pk: %w", err)
+			}
+			b, err := json.Marshal(deleteLogJSON{Pk: pkRaw, Ts: e.Ts, PkType: int64(t)})
+			if err != nil {
+				return nil, fmt.Errorf("l0compact: marshal DeleteLog: %w", err)
+			}
 			rows[i] = string(b)
 		}
 		payload, err := writeParquetStringColumn(rows, 0)
