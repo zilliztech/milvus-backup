@@ -7,6 +7,7 @@ import (
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
 	"github.com/milvus-io/milvus/pkg/v2/common"
+	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
@@ -183,6 +184,27 @@ func TestCollDDLTask_properties(t *testing.T) {
 		assert.Equal(t, common.DisableFuncRuntimeCheck, props[1].GetKey())
 		assert.Equal(t, "true", props[1].GetValue())
 	})
+
+	t.Run("DropMaxFieldID", func(t *testing.T) {
+		ddlt := newTestCollDDLTask()
+		ddlt.option.SkipParams.CollectionProperties = []string{"skipped"}
+		ddlt.collBackup = &backuppb.CollectionBackupInfo{
+			Schema: &backuppb.CollectionSchema{
+				Properties: []*backuppb.KeyValuePair{
+					{Key: "key", Value: "val"},
+					{Key: "skipped", Value: "val"},
+					{Key: maxFieldIDKey, Value: "110"},
+				},
+			},
+		}
+
+		props := ddlt.properties()
+		assert.Len(t, props, 1)
+		assert.Equal(t, "key", props[0].GetKey())
+
+		// the caller-configured skip list must not be mutated
+		assert.Equal(t, []string{"skipped"}, ddlt.option.SkipParams.CollectionProperties)
+	})
 }
 
 func TestCollDDLTask_restoreFuncRuntimeCheck(t *testing.T) {
@@ -311,6 +333,41 @@ func TestCollDDLTask_createColl(t *testing.T) {
 			assert.Equal(t, "true", coll.Properties[1].GetValue())
 		})
 		cli.EXPECT().HasFeature(milvus.FuncRuntimeCheck).Return(true).Once()
+		ct.grpcCli = cli
+		err := ct.createColl(context.Background())
+		assert.NoError(t, err)
+	})
+
+	t.Run("DropMaxFieldID", func(t *testing.T) {
+		ct := newTestCollDDLTask()
+		ct.targetNS = namespace.New("db1", "coll1")
+		ct.collBackup = &backuppb.CollectionBackupInfo{
+			Schema: &backuppb.CollectionSchema{
+				Fields: []*backuppb.FieldSchema{{
+					FieldID:      common.StartOfUserFieldID,
+					Name:         "field",
+					DataType:     backuppb.DataType_Int64,
+					IsPrimaryKey: true},
+				},
+				Properties: []*backuppb.KeyValuePair{
+					{Key: "key", Value: "val"},
+					{Key: maxFieldIDKey, Value: "110"},
+				},
+			},
+		}
+
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().CreateCollection(mock.Anything, mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
+			coll := args[1].(milvus.CreateCollectionInput)
+			// Milvus reads max_field_id from both the schema and the request
+			// properties, so it must be absent from both.
+			assert.NotContains(t, lo.Map(coll.Schema.GetProperties(), func(kv *commonpb.KeyValuePair, _ int) string {
+				return kv.GetKey()
+			}), maxFieldIDKey)
+			assert.NotContains(t, lo.Map(coll.Properties, func(kv *commonpb.KeyValuePair, _ int) string {
+				return kv.GetKey()
+			}), maxFieldIDKey)
+		})
 		ct.grpcCli = cli
 		err := ct.createColl(context.Background())
 		assert.NoError(t, err)

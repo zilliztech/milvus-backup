@@ -21,6 +21,19 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/validate"
 )
 
+// maxFieldIDKey is a server-managed collection property that records the highest
+// field ID ever assigned, so that IDs are not reused after a field is dropped.
+// Milvus derives it from the schema when absent, and CreateCollection keeps
+// whichever value is larger, so replaying a backed-up value makes AddField
+// allocate IDs above the source's maximum instead of reproducing the source IDs.
+// The binlog directories are named after the source field IDs, so the import
+// then finds no data for the added fields and silently fills them with NULL.
+// Always drop it and let Milvus recompute it for the restored collection.
+//
+// Not defined in pkg/v2/common at the pinned Milvus version: the property only
+// exists on Milvus master (milvus-io/milvus#48988).
+const maxFieldIDKey = "max_field_id"
+
 type collDDLTask struct {
 	option       *Option
 	collOverride CollOverride
@@ -160,7 +173,10 @@ func (ddlt *collDDLTask) addFields(ctx context.Context, fields []*schemapb.Field
 // properties returns the properties of the collection.
 // If milvus support func runtime check, add disable_auto_function to properties to avoid error when create collection.
 func (ddlt *collDDLTask) properties() []*commonpb.KeyValuePair {
-	props := pbconv.BakKVToMilvusKV(ddlt.collBackup.GetSchema().GetProperties(), ddlt.option.SkipParams.CollectionProperties...)
+	skipKeys := make([]string, 0, len(ddlt.option.SkipParams.CollectionProperties)+1)
+	skipKeys = append(skipKeys, ddlt.option.SkipParams.CollectionProperties...)
+	skipKeys = append(skipKeys, maxFieldIDKey)
+	props := pbconv.BakKVToMilvusKV(ddlt.collBackup.GetSchema().GetProperties(), skipKeys...)
 
 	if len(ddlt.collBackup.GetSchema().GetFunctions()) == 0 {
 		ddlt.logger.Info("no functions, skip disable_auto_function")
@@ -239,7 +255,7 @@ func (ddlt *collDDLTask) createColl(ctx context.Context) error {
 		Functions:          functions,
 		Fields:             createFields,
 		EnableDynamicField: ddlt.collBackup.GetSchema().GetEnableDynamicField(),
-		Properties:         pbconv.BakKVToMilvusKV(ddlt.collBackup.GetSchema().GetProperties()),
+		Properties:         pbconv.BakKVToMilvusKV(ddlt.collBackup.GetSchema().GetProperties(), maxFieldIDKey),
 		StructArrayFields:  structArrayFields,
 	}
 	ddlt.logger.Info("create collection", zap.Any("schema", schema))
