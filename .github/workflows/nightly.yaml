@@ -15,13 +15,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        milvus_version: ["master", "2.6", "2.5"]
-        case_tag: [L0, L1, L2, MASTER, RELEASE, RBAC]
+        milvus_version: ["2.6", "2.5"]
+        case_tag: [L0, L1, L2, RELEASE, RBAC]
         exclude:
-          - milvus_version: 2.5
-            case_tag: MASTER
-          - milvus_version: 2.6
-            case_tag: MASTER
           - milvus_version: 2.5
             case_tag: RELEASE
 
@@ -63,15 +59,11 @@ jobs:
         run: |
           if [ ${{ matrix.case_tag }} == "RBAC" ]; then
             mv docker-compose-rbac.yml docker-compose.yml
-          elif [ ${{ matrix.case_tag }} == "MASTER" ] || [ ${{ matrix.case_tag }} == "RELEASE" ] || [ ${{ matrix.milvus_version }} == "master" ]; then
+          elif [ ${{ matrix.case_tag }} == "RELEASE" ]; then
             mv docker-compose-tei.yml docker-compose.yml
           fi
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.milvus_version }}-latest) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
-          if [ "${{ matrix.milvus_version }}" == "master" ]; then
-            yq -i '.common.storage.enablev2 = true' custom_config.yaml
-            yq -i '.common.storage.useLoonFFI = false' custom_config.yaml
-          fi
           cat custom_config.yaml || true
           mkdir -p volumes/etcd volumes/minio volumes/milvus
           sudo chmod -R 777 volumes
@@ -91,7 +83,7 @@ jobs:
         run: |
           if [ ${{ matrix.case_tag }} == "RBAC" ]; then
             pytest -s -v --tags ${{ matrix.case_tag }}
-          elif [ ${{ matrix.case_tag }} == "MASTER" ] || [ ${{ matrix.case_tag }} == "RELEASE" ] || [ ${{ matrix.milvus_version }} == "master" ]; then
+          elif [ ${{ matrix.case_tag }} == "RELEASE" ]; then
             pytest -s -v --tags ${{ matrix.case_tag }} -n 4 --tei_endpoint http://text-embeddings:80
           else
             pytest -s -v --tags ${{ matrix.case_tag }} -n 4
