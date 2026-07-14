@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 env:
-  go-version: 1.25
+  go-version: 1.26
 
 jobs:
   goreleaser:
