@@ -213,7 +213,9 @@ func newGCPNativeClient(ctx context.Context, cfg Config) (*GCPNativeClient, erro
 		return nil, fmt.Errorf("unable to read credentials file: %w", err)
 	}
 
-	creds, err := google.CredentialsFromJSON(ctx, jsonData, storage.ScopeReadWrite)
+	// Only service account keys are supported, getProjectID below requires the
+	// project_id field that only they carry.
+	creds, err := google.CredentialsFromJSONWithType(ctx, jsonData, google.ServiceAccount, storage.ScopeReadWrite)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create credentials from JSON: %w", err)
 	}
