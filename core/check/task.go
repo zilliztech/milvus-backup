@@ -69,14 +69,6 @@ func (t *Task) writeResult(version string, milvusEmpty bool) error {
 
 	buff = append(buff, []byte("\nMilvus version: "+version+"\n")...)
 
-	buff = append(buff, []byte("Storage:\n")...)
-	buff = append(buff, []byte("  milvus-storage-type: "+t.params.Minio.StorageType.Val+"\n")...)
-	buff = append(buff, []byte("  milvus-bucket: "+t.params.Minio.BucketName.Val+"\n")...)
-	buff = append(buff, []byte("  milvus-rootpath: "+t.params.Minio.RootPath.Val+"\n")...)
-	buff = append(buff, []byte("  backup-storage-type: "+t.params.Minio.BackupStorageType.Val+"\n")...)
-	buff = append(buff, []byte("  backup-bucket: "+t.params.Minio.BackupBucketName.Val+"\n")...)
-	buff = append(buff, []byte("  backup-rootpath: "+t.params.Minio.BackupRootPath.Val+"\n")...)
-
 	if milvusEmpty {
 		buff = append(buff, []byte("\n")...)
 		buff = append(buff, []byte("!!! Milvus root path is empty !!! \n")...)

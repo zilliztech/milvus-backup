@@ -2,7 +2,11 @@ package cfg
 
 import (
 	"cmp"
+	"fmt"
+	"io"
 	"reflect"
+	"strings"
+	"text/tabwriter"
 )
 
 type Resolver interface {
@@ -71,6 +75,31 @@ func (c *Config) Entries() []Entry {
 
 	collect(reflect.ValueOf(c).Elem(), "")
 	return entries
+}
+
+// WriteTable prints all configuration parameters in a table showing the
+// parameter name, current value (secrets masked), the source the value came
+// from (override, env, config, default), and the source key.
+func (c *Config) WriteTable(w io.Writer) error {
+	// Render into a strings.Builder first, whose Write never fails, so the
+	// only error-returning I/O is the single write and flush to the underlying
+	// writer below.
+	var sb strings.Builder
+	fmt.Fprintln(&sb, "PARAMETER\tVALUE\tSOURCE\tSOURCE_KEY")
+	fmt.Fprintln(&sb, "---------\t-----\t------\t----------")
+	for _, e := range c.Entries() {
+		fmt.Fprintf(&sb, "%s\t%s\t%s\t%s\n", e.Name, e.Value, e.Source, e.SourceKey)
+	}
+
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	if _, err := io.WriteString(tw, sb.String()); err != nil {
+		return fmt.Errorf("cfg: write config table: %w", err)
+	}
+	if err := tw.Flush(); err != nil {
+		return fmt.Errorf("cfg: flush config table: %w", err)
+	}
+
+	return nil
 }
 
 type LogFileConfig struct {

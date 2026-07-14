@@ -13,6 +13,16 @@ import (
 
 func (s *Server) handleCheck(c *gin.Context) {
 	ctx := c.Request.Context()
+
+	// Lead the response with the effective configuration and the source of each
+	// value, so a successful check reports what it actually ran against.
+	var buff strings.Builder
+	buff.WriteString("Configuration:\n")
+	if err := s.params.WriteTable(&buff); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
 	grpc, err := milvus.NewGrpc(&s.params.Milvus)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
@@ -29,7 +39,6 @@ func (s *Server) handleCheck(c *gin.Context) {
 		return
 	}
 
-	var buff strings.Builder
 	taskArgs := check.TaskArgs{
 		Params:        s.params,
 		Grpc:          grpc,
