@@ -43,12 +43,12 @@ func (o *secondaryOption) validate() error {
 }
 
 func (o *secondaryOption) toArgs(params *cfg.Config) (secondary.TaskArgs, error) {
-	backupStorage, err := storage.NewBackupStorage(context.Background(), &params.Minio)
+	backupStorage, err := storage.NewBackupStorage(context.Background(), params)
 	if err != nil {
 		return secondary.TaskArgs{}, fmt.Errorf("create backup storage: %w", err)
 	}
 
-	backupDir := mpath.BackupDir(params.Minio.BackupRootPath.Val, o.backupName)
+	backupDir := mpath.BackupDir(params.Backup.Storage.RootPath.Val, o.backupName)
 	exist, err := meta.Exist(context.Background(), backupStorage, backupDir)
 	if err != nil {
 		return secondary.TaskArgs{}, fmt.Errorf("check backup exist: %w", err)

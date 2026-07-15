@@ -71,13 +71,13 @@ func (h *createBackupHandler) complete() {
 }
 
 func (h *createBackupHandler) initClient(ctx context.Context) error {
-	backupStorage, err := storage.NewBackupStorage(ctx, &h.params.Minio)
+	backupStorage, err := storage.NewBackupStorage(ctx, h.params)
 	if err != nil {
 		return err
 	}
 	h.backupStorage = backupStorage
 
-	milvusStorage, err := storage.NewMilvusStorage(ctx, &h.params.Minio)
+	milvusStorage, err := storage.NewMilvusStorage(ctx, h.params)
 	if err != nil {
 		return err
 	}
@@ -202,7 +202,7 @@ func (h *createBackupHandler) toArgs() (backup.TaskArgs, error) {
 		return backup.TaskArgs{}, fmt.Errorf("server: build option: %w", err)
 	}
 
-	backupRoot := h.params.Minio.BackupRootPath.Val
+	backupRoot := h.params.Backup.Storage.RootPath.Val
 	if h.request.GetBackupRootPath() != "" {
 		backupRoot = h.request.GetBackupRootPath()
 		log.Info("use backup root from request", zap.String("backup_root", backupRoot))

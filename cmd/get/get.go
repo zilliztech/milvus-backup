@@ -35,12 +35,12 @@ func (o *options) validate() error {
 func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
 	ctx := context.Background()
 
-	backupStorage, err := storage.NewBackupStorage(ctx, &params.Minio)
+	backupStorage, err := storage.NewBackupStorage(ctx, params)
 	if err != nil {
 		return fmt.Errorf("create backup storage: %w", err)
 	}
 
-	backupDir := mpath.BackupDir(params.Minio.BackupRootPath.Val, o.backupName)
+	backupDir := mpath.BackupDir(params.Backup.Storage.RootPath.Val, o.backupName)
 	backupInfo, err := meta.Read(ctx, backupStorage, backupDir)
 	if err != nil {
 		return fmt.Errorf("read backup meta: %w", err)

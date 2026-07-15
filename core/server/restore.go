@@ -133,7 +133,10 @@ func (h *restoreHandler) complete() {
 }
 
 func (h *restoreHandler) initClient(ctx context.Context) error {
-	backupCfg := storage.BackupStorageConfig(&h.params.Minio)
+	backupCfg := storage.BuildConfig(
+		&h.params.Backup.Storage,
+		h.params.Transfer.MultipartCopyThresholdMiB.Val,
+	)
 	if h.request.GetBucketName() != "" {
 		log.Info("use bucket name from request", zap.String("bucketName", h.request.GetBucketName()))
 		backupCfg.Bucket = h.request.GetBucketName()
@@ -146,13 +149,13 @@ func (h *restoreHandler) initClient(ctx context.Context) error {
 		return fmt.Errorf("server: create backup bucket: %w", err)
 	}
 
-	backupRootPath := h.params.Minio.BackupRootPath.Val
+	backupRootPath := h.params.Backup.Storage.RootPath.Val
 	if h.request.GetPath() != "" {
 		log.Info("use path from request", zap.String("path", h.request.GetPath()))
 		backupRootPath = h.request.GetPath()
 	}
 
-	milvusStorage, err := storage.NewMilvusStorage(ctx, &h.params.Minio)
+	milvusStorage, err := storage.NewMilvusStorage(ctx, h.params)
 	if err != nil {
 		return fmt.Errorf("server: create milvus storage: %w", err)
 	}

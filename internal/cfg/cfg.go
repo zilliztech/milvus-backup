@@ -23,27 +23,33 @@ func resolve(s *source, rs ...Resolver) error {
 }
 
 type Config struct {
-	Log    LogConfig
-	HTTP   HTTPConfig
-	Cloud  CloudConfig
-	Milvus MilvusConfig
-	Minio  MinioConfig
-	Backup BackupConfig
+	Log      LogConfig
+	HTTP     HTTPConfig
+	Cloud    CloudConfig
+	Milvus   MilvusConfig
+	Transfer TransferConfig
+	Backup   BackupConfig
+	Restore  RestoreConfig
 }
 
 func New() *Config {
 	return &Config{
-		Log:    newLogConfig(),
-		HTTP:   newHTTPConfig(),
-		Cloud:  newCloudConfig(),
-		Milvus: newMilvusConfig(),
-		Minio:  newMinioConfig(),
-		Backup: newBackupConfig(),
+		Log:      newLogConfig(),
+		HTTP:     newHTTPConfig(),
+		Cloud:    newCloudConfig(),
+		Milvus:   newMilvusConfig(),
+		Transfer: newTransferConfig(),
+		Backup:   newBackupConfig(),
+		Restore:  newRestoreConfig(),
 	}
 }
 
 func (c *Config) Resolve(s *source) error {
-	return resolve(s, &c.Log, &c.HTTP, &c.Cloud, &c.Milvus, &c.Minio, &c.Backup)
+	if err := resolve(s, &c.Log, &c.HTTP, &c.Cloud, &c.Milvus); err != nil {
+		return err
+	}
+	c.Backup.Storage.inherit(&c.Milvus.Storage)
+	return resolve(s, &c.Transfer, &c.Backup, &c.Restore)
 }
 
 func (c *Config) Entries() []Entry {
@@ -85,10 +91,14 @@ func (c *Config) WriteTable(w io.Writer) error {
 	// only error-returning I/O is the single write and flush to the underlying
 	// writer below.
 	var sb strings.Builder
-	fmt.Fprintln(&sb, "PARAMETER\tVALUE\tSOURCE\tSOURCE_KEY")
-	fmt.Fprintln(&sb, "---------\t-----\t------\t----------")
+	fmt.Fprintln(&sb, "PARAMETER\tVALUE\tSOURCE\tSOURCE_KEY\tSTATUS")
+	fmt.Fprintln(&sb, "---------\t-----\t------\t----------\t------")
 	for _, e := range c.Entries() {
-		fmt.Fprintf(&sb, "%s\t%s\t%s\t%s\n", e.Name, e.Value, e.Source, e.SourceKey)
+		status := ""
+		if e.Deprecated {
+			status = "deprecated; use " + e.Replacement
+		}
+		fmt.Fprintf(&sb, "%s\t%s\t%s\t%s\t%s\n", e.Name, e.Value, e.Source, e.SourceKey, status)
 	}
 
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
@@ -188,7 +198,8 @@ type MilvusConfig struct {
 
 	RPCChannelName Value[string]
 
-	Etcd EtcdConfig
+	Etcd    EtcdConfig
+	Storage StorageConfig
 }
 
 func newMilvusConfig() MilvusConfig {
@@ -213,6 +224,7 @@ func newMilvusConfig() MilvusConfig {
 			Endpoints: Value[string]{Default: "localhost:2379", Keys: []string{"milvus.etcd.endpoints"}},
 			RootPath:  Value[string]{Default: "by-dev", Keys: []string{"milvus.etcd.rootPath"}},
 		},
+		Storage: newMilvusStorageConfig(),
 	}
 }
 
@@ -224,15 +236,17 @@ func (c *MilvusConfig) Resolve(s *source) error {
 		&c.MTLSCertPath, &c.MTLSKeyPath,
 		&c.RPCChannelName,
 		&c.Etcd.Endpoints, &c.Etcd.RootPath,
+		&c.Storage,
 	)
 }
 
-type MinioConfig struct {
-	StorageType Value[string]
-
-	Address Value[string]
-	Port    Value[int]
-	Region  Value[string]
+// StorageConfig describes one storage endpoint. It is shared by the Milvus
+// source storage and the backup destination storage.
+type StorageConfig struct {
+	Provider Value[string]
+	Address  Value[string]
+	Port     Value[int]
+	Region   Value[string]
 
 	AccessKeyID       Value[string]
 	SecretAccessKey   Value[string]
@@ -244,110 +258,151 @@ type MinioConfig struct {
 	RootPath    Value[string]
 	UseIAM      Value[bool]
 	IAMEndpoint Value[string]
-
-	BackupStorageType Value[string]
-	BackupAddress     Value[string]
-	BackupPort        Value[int]
-	BackupRegion      Value[string]
-
-	BackupAccessKeyID       Value[string]
-	BackupSecretAccessKey   Value[string]
-	BackupToken             Value[string]
-	BackupGcpCredentialJSON Value[string]
-	BackupUseSSL            Value[bool]
-	BackupBucketName        Value[string]
-	BackupRootPath          Value[string]
-	BackupUseIAM            Value[bool]
-	BackupIAMEndpoint       Value[string]
-
-	CrossStorage Value[bool]
-
-	// MultipartCopyThresholdMiB is the file size threshold above which multipart copy is used.
-	// Default is 500 MiB. GCP does not support multipart copy and will always use single copy.
-	MultipartCopyThresholdMiB Value[int64]
 }
 
-func newMinioConfig() MinioConfig {
-	// Defaults align with configs/backup.yaml and old paramtable constants.
-	return MinioConfig{
-		StorageType: Value[string]{Default: "minio", Keys: []string{"storage.storageType", "minio.storageType", "minio.cloudProvider"}},
+func newMilvusStorageConfig() StorageConfig {
+	return StorageConfig{
+		Provider: Value[string]{Default: "minio", Keys: []string{"milvus.storage.provider", "storage.storageType", "minio.storageType", "minio.cloudProvider"}, EnvKeys: []string{"MILVUS_STORAGE_PROVIDER"}},
+		Address:  Value[string]{Default: "localhost", Keys: []string{"milvus.storage.address", "minio.address"}, EnvKeys: []string{"MILVUS_STORAGE_ADDRESS", "MINIO_ADDRESS"}},
+		Port:     Value[int]{Default: 9000, Keys: []string{"milvus.storage.port", "minio.port"}, EnvKeys: []string{"MILVUS_STORAGE_PORT", "MINIO_PORT"}},
+		Region:   Value[string]{Default: "", Keys: []string{"milvus.storage.region", "minio.region"}, EnvKeys: []string{"MILVUS_STORAGE_REGION", "MINIO_REGION"}},
 
-		Address: Value[string]{Default: "localhost", Keys: []string{"minio.address"}, EnvKeys: []string{"MINIO_ADDRESS"}},
-		Port:    Value[int]{Default: 9000, Keys: []string{"minio.port"}, EnvKeys: []string{"MINIO_PORT"}},
-		Region:  Value[string]{Default: "", Keys: []string{"minio.region"}, EnvKeys: []string{"MINIO_REGION"}},
+		AccessKeyID:       Value[string]{Default: "minioadmin", Keys: []string{"milvus.storage.accessKeyID", "minio.accessKeyID"}, EnvKeys: []string{"MILVUS_STORAGE_ACCESS_KEY", "MINIO_ACCESS_KEY"}},
+		SecretAccessKey:   Value[string]{Default: "minioadmin", Keys: []string{"milvus.storage.secretAccessKey", "minio.secretAccessKey"}, EnvKeys: []string{"MILVUS_STORAGE_SECRET_KEY", "MINIO_SECRET_KEY"}, Opts: SecretValue},
+		Token:             Value[string]{Default: "", Keys: []string{"milvus.storage.token", "minio.token"}, EnvKeys: []string{"MILVUS_STORAGE_TOKEN", "MINIO_TOKEN"}, Opts: SecretValue},
+		GcpCredentialJSON: Value[string]{Default: "", Keys: []string{"milvus.storage.gcpCredentialJSON", "minio.gcpCredentialJSON"}, EnvKeys: []string{"MILVUS_STORAGE_GCP_KEY_JSON", "GCP_KEY_JSON"}, Opts: SecretValue},
 
-		AccessKeyID:       Value[string]{Default: "minioadmin", Keys: []string{"minio.accessKeyID"}, EnvKeys: []string{"MINIO_ACCESS_KEY"}},
-		SecretAccessKey:   Value[string]{Default: "minioadmin", Keys: []string{"minio.secretAccessKey"}, EnvKeys: []string{"MINIO_SECRET_KEY"}, Opts: SecretValue},
-		Token:             Value[string]{Default: "", Keys: []string{"minio.token"}, EnvKeys: []string{"MINIO_TOKEN"}, Opts: SecretValue},
-		GcpCredentialJSON: Value[string]{Default: "", Keys: []string{"minio.gcpCredentialJSON"}, EnvKeys: []string{"GCP_KEY_JSON"}, Opts: SecretValue},
-
-		UseSSL:      Value[bool]{Default: false, Keys: []string{"minio.useSSL"}, EnvKeys: []string{"MINIO_USE_SSL"}},
-		BucketName:  Value[string]{Default: "a-bucket", Keys: []string{"minio.bucketName"}, EnvKeys: []string{"MINIO_BUCKET_NAME"}},
-		RootPath:    Value[string]{Default: "files", Keys: []string{"minio.rootPath"}, EnvKeys: []string{"MINIO_ROOT_PATH"}},
-		UseIAM:      Value[bool]{Default: false, Keys: []string{"minio.useIAM"}, EnvKeys: []string{"MINIO_USE_IAM"}},
-		IAMEndpoint: Value[string]{Default: "", Keys: []string{"minio.iamEndpoint"}, EnvKeys: []string{"MINIO_IAM_ENDPOINT"}},
-
-		// Backup fields default to corresponding "milvus storage" values at resolve time.
-		BackupStorageType: Value[string]{Default: "", Keys: []string{"storage.backupStorageType", "minio.backupStorageType"}},
-		BackupAddress:     Value[string]{Default: "", Keys: []string{"minio.backupAddress"}, EnvKeys: []string{"MINIO_BACKUP_ADDRESS"}},
-		BackupPort:        Value[int]{Default: 0, Keys: []string{"minio.backupPort"}, EnvKeys: []string{"MINIO_BACKUP_PORT"}},
-		BackupRegion:      Value[string]{Default: "", Keys: []string{"minio.backupRegion"}, EnvKeys: []string{"MINIO_BACKUP_REGION"}},
-
-		BackupAccessKeyID:       Value[string]{Default: "", Keys: []string{"minio.backupAccessKeyID"}, EnvKeys: []string{"MINIO_BACKUP_ACCESS_KEY"}},
-		BackupSecretAccessKey:   Value[string]{Default: "", Keys: []string{"minio.backupSecretAccessKey"}, EnvKeys: []string{"MINIO_BACKUP_SECRET_KEY"}, Opts: SecretValue},
-		BackupToken:             Value[string]{Default: "", Keys: []string{"minio.backupToken"}, EnvKeys: []string{"MINIO_BACKUP_TOKEN"}, Opts: SecretValue},
-		BackupGcpCredentialJSON: Value[string]{Default: "", Keys: []string{"minio.backupGcpCredentialJSON"}, EnvKeys: []string{"BACKUP_GCP_KEY_JSON"}, Opts: SecretValue},
-		BackupUseSSL:            Value[bool]{Default: false, Keys: []string{"minio.backupUseSSL"}, EnvKeys: []string{"MINIO_BACKUP_USE_SSL"}},
-		BackupBucketName:        Value[string]{Default: "", Keys: []string{"minio.backupBucketName"}, EnvKeys: []string{"MINIO_BACKUP_BUCKET_NAME"}},
-		BackupRootPath:          Value[string]{Default: "", Keys: []string{"minio.backupRootPath"}, EnvKeys: []string{"MINIO_BACKUP_ROOT_PATH"}},
-		BackupUseIAM:            Value[bool]{Default: false, Keys: []string{"minio.backupUseIAM"}, EnvKeys: []string{"MINIO_BACKUP_USE_IAM"}},
-		BackupIAMEndpoint:       Value[string]{Default: "", Keys: []string{"minio.backupIamEndpoint"}, EnvKeys: []string{"MINIO_BACKUP_IAM_ENDPOINT"}},
-
-		CrossStorage: Value[bool]{Default: false, Keys: []string{"minio.crossStorage"}},
-
-		MultipartCopyThresholdMiB: Value[int64]{Default: 500, Keys: []string{"minio.multipartCopyThresholdMiB"}},
+		UseSSL:      Value[bool]{Default: false, Keys: []string{"milvus.storage.useSSL", "minio.useSSL"}, EnvKeys: []string{"MILVUS_STORAGE_USE_SSL", "MINIO_USE_SSL"}},
+		BucketName:  Value[string]{Default: "a-bucket", Keys: []string{"milvus.storage.bucketName", "minio.bucketName"}, EnvKeys: []string{"MILVUS_STORAGE_BUCKET_NAME", "MINIO_BUCKET_NAME"}},
+		RootPath:    Value[string]{Default: "files", Keys: []string{"milvus.storage.rootPath", "minio.rootPath"}, EnvKeys: []string{"MILVUS_STORAGE_ROOT_PATH", "MINIO_ROOT_PATH"}},
+		UseIAM:      Value[bool]{Default: false, Keys: []string{"milvus.storage.useIAM", "minio.useIAM"}, EnvKeys: []string{"MILVUS_STORAGE_USE_IAM", "MINIO_USE_IAM"}},
+		IAMEndpoint: Value[string]{Default: "", Keys: []string{"milvus.storage.iamEndpoint", "minio.iamEndpoint"}, EnvKeys: []string{"MILVUS_STORAGE_IAM_ENDPOINT", "MINIO_IAM_ENDPOINT"}},
 	}
 }
 
-func (c *MinioConfig) Resolve(s *source) error {
-	// Resolve "milvus storage" fields first.
-	if err := resolve(s,
-		&c.StorageType, &c.Address, &c.Port, &c.Region,
+func newBackupStorageConfig() StorageConfig {
+	return StorageConfig{
+		Provider: Value[string]{Keys: []string{"backup.storage.provider", "storage.backupStorageType", "minio.backupStorageType"}, EnvKeys: []string{"BACKUP_STORAGE_PROVIDER"}},
+		Address:  Value[string]{Keys: []string{"backup.storage.address", "minio.backupAddress"}, EnvKeys: []string{"BACKUP_STORAGE_ADDRESS", "MINIO_BACKUP_ADDRESS"}},
+		Port:     Value[int]{Keys: []string{"backup.storage.port", "minio.backupPort"}, EnvKeys: []string{"BACKUP_STORAGE_PORT", "MINIO_BACKUP_PORT"}},
+		Region:   Value[string]{Keys: []string{"backup.storage.region", "minio.backupRegion"}, EnvKeys: []string{"BACKUP_STORAGE_REGION", "MINIO_BACKUP_REGION"}},
+
+		AccessKeyID:       Value[string]{Keys: []string{"backup.storage.accessKeyID", "minio.backupAccessKeyID"}, EnvKeys: []string{"BACKUP_STORAGE_ACCESS_KEY", "MINIO_BACKUP_ACCESS_KEY"}},
+		SecretAccessKey:   Value[string]{Keys: []string{"backup.storage.secretAccessKey", "minio.backupSecretAccessKey"}, EnvKeys: []string{"BACKUP_STORAGE_SECRET_KEY", "MINIO_BACKUP_SECRET_KEY"}, Opts: SecretValue},
+		Token:             Value[string]{Keys: []string{"backup.storage.token", "minio.backupToken"}, EnvKeys: []string{"BACKUP_STORAGE_TOKEN", "MINIO_BACKUP_TOKEN"}, Opts: SecretValue},
+		GcpCredentialJSON: Value[string]{Keys: []string{"backup.storage.gcpCredentialJSON", "minio.backupGcpCredentialJSON"}, EnvKeys: []string{"BACKUP_STORAGE_GCP_KEY_JSON", "BACKUP_GCP_KEY_JSON"}, Opts: SecretValue},
+
+		UseSSL:      Value[bool]{Keys: []string{"backup.storage.useSSL", "minio.backupUseSSL"}, EnvKeys: []string{"BACKUP_STORAGE_USE_SSL", "MINIO_BACKUP_USE_SSL"}},
+		BucketName:  Value[string]{Keys: []string{"backup.storage.bucketName", "minio.backupBucketName"}, EnvKeys: []string{"BACKUP_STORAGE_BUCKET_NAME", "MINIO_BACKUP_BUCKET_NAME"}},
+		RootPath:    Value[string]{Keys: []string{"backup.storage.rootPath", "minio.backupRootPath"}, EnvKeys: []string{"BACKUP_STORAGE_ROOT_PATH", "MINIO_BACKUP_ROOT_PATH"}},
+		UseIAM:      Value[bool]{Keys: []string{"backup.storage.useIAM", "minio.backupUseIAM"}, EnvKeys: []string{"BACKUP_STORAGE_USE_IAM", "MINIO_BACKUP_USE_IAM"}},
+		IAMEndpoint: Value[string]{Keys: []string{"backup.storage.iamEndpoint", "minio.backupIamEndpoint"}, EnvKeys: []string{"BACKUP_STORAGE_IAM_ENDPOINT", "MINIO_BACKUP_IAM_ENDPOINT"}},
+	}
+}
+
+func (c *StorageConfig) inherit(source *StorageConfig) {
+	c.Provider.Default = source.Provider.Val
+	c.Address.Default = source.Address.Val
+	c.Port.Default = source.Port.Val
+	c.Region.Default = source.Region.Val
+	c.AccessKeyID.Default = source.AccessKeyID.Val
+	c.SecretAccessKey.Default = source.SecretAccessKey.Val
+	c.Token.Default = source.Token.Val
+	c.GcpCredentialJSON.Default = source.GcpCredentialJSON.Val
+	c.UseSSL.Default = source.UseSSL.Val
+	c.BucketName.Default = source.BucketName.Val
+	c.RootPath.Default = cmp.Or(source.RootPath.Val, "backup")
+	c.UseIAM.Default = source.UseIAM.Val
+	c.IAMEndpoint.Default = source.IAMEndpoint.Val
+}
+
+func (c *StorageConfig) Resolve(s *source) error {
+	return resolve(s,
+		&c.Provider, &c.Address, &c.Port, &c.Region,
 		&c.AccessKeyID, &c.SecretAccessKey, &c.Token, &c.GcpCredentialJSON,
 		&c.UseSSL, &c.BucketName, &c.RootPath, &c.UseIAM, &c.IAMEndpoint,
-	); err != nil {
-		return err
-	}
-
-	// Backward-compatible defaults: if backup configs are not provided, inherit from primary configs.
-	c.BackupStorageType.Default = cmp.Or(c.BackupStorageType.Default, c.StorageType.Val)
-	c.BackupAddress.Default = cmp.Or(c.BackupAddress.Default, c.Address.Val)
-	c.BackupPort.Default = cmp.Or(c.BackupPort.Default, c.Port.Val)
-	c.BackupRegion.Default = cmp.Or(c.BackupRegion.Default, c.Region.Val)
-	c.BackupAccessKeyID.Default = cmp.Or(c.BackupAccessKeyID.Default, c.AccessKeyID.Val)
-	c.BackupSecretAccessKey.Default = cmp.Or(c.BackupSecretAccessKey.Default, c.SecretAccessKey.Val)
-	c.BackupToken.Default = cmp.Or(c.BackupToken.Default, c.Token.Val)
-	c.BackupUseSSL.Default = c.BackupUseSSL.Default || c.UseSSL.Val
-	c.BackupBucketName.Default = cmp.Or(c.BackupBucketName.Default, c.BucketName.Val)
-	c.BackupRootPath.Default = cmp.Or(c.BackupRootPath.Default, c.RootPath.Val, "backup")
-	c.BackupUseIAM.Default = c.BackupUseIAM.Default || c.UseIAM.Val
-	c.BackupIAMEndpoint.Default = cmp.Or(c.BackupIAMEndpoint.Default, c.IAMEndpoint.Val)
-
-	return resolve(s,
-		&c.BackupStorageType, &c.BackupAddress, &c.BackupPort, &c.BackupRegion,
-		&c.BackupAccessKeyID, &c.BackupSecretAccessKey, &c.BackupToken, &c.BackupGcpCredentialJSON,
-		&c.BackupUseSSL, &c.BackupBucketName, &c.BackupRootPath, &c.BackupUseIAM, &c.BackupIAMEndpoint,
-		&c.CrossStorage,
-		&c.MultipartCopyThresholdMiB,
 	)
 }
 
-type BackupParallelismConfig struct {
-	CopyData          Value[int]
-	BackupCollection  Value[int]
-	BackupSegment     Value[int]
-	RestoreCollection Value[int]
-	ImportJob         Value[int]
+const (
+	TransferModeAuto      = "auto"
+	TransferModeDirect    = "direct"
+	TransferModeStreaming = "streaming"
+)
+
+type TransferConfig struct {
+	// Mode controls how objects move between the two storage endpoints:
+	// auto chooses conservatively, direct uses the storage COPY API, and
+	// streaming downloads and uploads through the milvus-backup process.
+	Mode Value[string]
+
+	// Concurrency limits the number of objects being copied at the same time.
+	Concurrency Value[int]
+
+	// MultipartCopyThresholdMiB is the file size threshold above which multipart copy is used.
+	MultipartCopyThresholdMiB Value[int64]
+}
+
+func newTransferConfig() TransferConfig {
+	return TransferConfig{
+		Mode: Value[string]{Default: TransferModeAuto, Keys: []string{"transfer.mode", "backup.transfer.mode"}, EnvKeys: []string{"TRANSFER_MODE", "BACKUP_TRANSFER_MODE"}},
+		Concurrency: Value[int]{
+			Default: 128,
+			Keys:    []string{"transfer.concurrency", "backup.parallelism.copydata"},
+			EnvKeys: []string{"TRANSFER_CONCURRENCY", "BACKUP_PARALLELISM_COPYDATA"},
+		},
+		MultipartCopyThresholdMiB: Value[int64]{
+			Default: 500,
+			Keys:    []string{"transfer.multipartCopyThresholdMiB", "backup.transfer.multipartCopyThresholdMiB", "minio.multipartCopyThresholdMiB"},
+			EnvKeys: []string{"TRANSFER_MULTIPART_COPY_THRESHOLD_MIB", "BACKUP_TRANSFER_MULTIPART_COPY_THRESHOLD_MIB"},
+		},
+	}
+}
+
+func (c *TransferConfig) Resolve(s *source) error {
+	// Resolve the canonical mode first. The legacy crossStorage boolean maps to
+	// streaming=true and auto=false, matching the historical automatic fallback
+	// when providers differ.
+	canonical := c.Mode
+	canonical.Default = ""
+	if err := canonical.Resolve(s); err != nil {
+		return err
+	}
+	if canonical.Used.Kind != SourceDefault {
+		c.Mode = canonical
+	} else {
+		legacy := Value[bool]{Default: false, Keys: []string{"minio.crossStorage"}}
+		if err := legacy.Resolve(s); err != nil {
+			return err
+		}
+		c.Mode.Val = TransferModeAuto
+		c.Mode.Used = Used{Kind: SourceDefault}
+		if legacy.Used.Kind != SourceDefault {
+			c.Mode.Used = legacy.Used
+			if legacy.Val {
+				c.Mode.Val = TransferModeStreaming
+			}
+		}
+	}
+
+	switch c.Mode.Val {
+	case TransferModeAuto, TransferModeDirect, TransferModeStreaming:
+	default:
+		return fmt.Errorf("cfg: unsupported transfer.mode %q (want auto, direct, or streaming)", c.Mode.Val)
+	}
+
+	if err := resolve(s, &c.Concurrency, &c.MultipartCopyThresholdMiB); err != nil {
+		return err
+	}
+	if c.Concurrency.Val <= 0 {
+		return fmt.Errorf("cfg: transfer.concurrency must be greater than zero")
+	}
+	return nil
+}
+
+type BackupConcurrencyConfig struct {
+	Collections Value[int]
+	Segments    Value[int]
 }
 
 type BackupGCPauseConfig struct {
@@ -356,21 +411,18 @@ type BackupGCPauseConfig struct {
 }
 
 type BackupConfig struct {
-	Parallelism   BackupParallelismConfig
-	KeepTempFiles Value[bool]
-	GCPause       BackupGCPauseConfig
+	Storage     StorageConfig
+	Concurrency BackupConcurrencyConfig
+	GCPause     BackupGCPauseConfig
 }
 
 func newBackupConfig() BackupConfig {
 	return BackupConfig{
-		Parallelism: BackupParallelismConfig{
-			CopyData:          Value[int]{Default: 128, Keys: []string{"backup.parallelism.copydata"}, EnvKeys: []string{"BACKUP_PARALLELISM_COPYDATA"}},
-			BackupCollection:  Value[int]{Default: 4, Keys: []string{"backup.parallelism.backupCollection"}, EnvKeys: []string{"BACKUP_PARALLELISM_BACKUP_COLLECTION"}},
-			BackupSegment:     Value[int]{Default: 1024, Keys: []string{"backup.parallelism.backupSegment"}},
-			RestoreCollection: Value[int]{Default: 2, Keys: []string{"backup.parallelism.restoreCollection"}, EnvKeys: []string{"BACKUP_PARALLELISM_RESTORE_COLLECTION"}},
-			ImportJob:         Value[int]{Default: 768, Keys: []string{"backup.parallelism.importJob"}},
+		Storage: newBackupStorageConfig(),
+		Concurrency: BackupConcurrencyConfig{
+			Collections: Value[int]{Default: 4, Keys: []string{"backup.concurrency.collections", "backup.parallelism.backupCollection"}, EnvKeys: []string{"BACKUP_CONCURRENCY_COLLECTIONS", "BACKUP_PARALLELISM_BACKUP_COLLECTION"}},
+			Segments:    Value[int]{Default: 1024, Keys: []string{"backup.concurrency.segments", "backup.parallelism.backupSegment"}, EnvKeys: []string{"BACKUP_CONCURRENCY_SEGMENTS"}},
 		},
-		KeepTempFiles: Value[bool]{Default: false, Keys: []string{"backup.keepTempFiles"}, EnvKeys: []string{"BACKUP_KEEP_TEMP_FILES"}},
 		GCPause: BackupGCPauseConfig{
 			Enable:  Value[bool]{Default: true, Keys: []string{"backup.gcPause.enable"}, EnvKeys: []string{"BACKUP_GC_PAUSE_ENABLE"}},
 			Address: Value[string]{Default: "http://localhost:9091", Keys: []string{"backup.gcPause.address"}, EnvKeys: []string{"BACKUP_GC_PAUSE_ADDRESS"}},
@@ -379,10 +431,48 @@ func newBackupConfig() BackupConfig {
 }
 
 func (c *BackupConfig) Resolve(s *source) error {
-	return resolve(s,
-		&c.Parallelism.CopyData, &c.Parallelism.BackupCollection, &c.Parallelism.BackupSegment,
-		&c.Parallelism.RestoreCollection, &c.Parallelism.ImportJob,
-		&c.KeepTempFiles,
+	if err := resolve(s,
+		&c.Storage,
+		&c.Concurrency.Collections, &c.Concurrency.Segments,
 		&c.GCPause.Enable, &c.GCPause.Address,
-	)
+	); err != nil {
+		return err
+	}
+	if c.Concurrency.Collections.Val <= 0 || c.Concurrency.Segments.Val <= 0 {
+		return fmt.Errorf("cfg: backup concurrency values must be greater than zero")
+	}
+	return nil
+}
+
+type RestoreConcurrencyConfig struct {
+	Collections Value[int]
+	ImportJobs  Value[int]
+}
+
+type RestoreConfig struct {
+	Concurrency   RestoreConcurrencyConfig
+	KeepTempFiles Value[bool]
+}
+
+func newRestoreConfig() RestoreConfig {
+	return RestoreConfig{
+		Concurrency: RestoreConcurrencyConfig{
+			Collections: Value[int]{Default: 2, Keys: []string{"restore.concurrency.collections", "backup.parallelism.restoreCollection"}, EnvKeys: []string{"RESTORE_CONCURRENCY_COLLECTIONS", "BACKUP_PARALLELISM_RESTORE_COLLECTION"}},
+			ImportJobs:  Value[int]{Default: 768, Keys: []string{"restore.concurrency.importJobs", "backup.parallelism.importJob"}, EnvKeys: []string{"RESTORE_CONCURRENCY_IMPORT_JOBS"}},
+		},
+		KeepTempFiles: Value[bool]{Default: false, Keys: []string{"restore.keepTempFiles", "backup.keepTempFiles"}, EnvKeys: []string{"RESTORE_KEEP_TEMP_FILES", "BACKUP_KEEP_TEMP_FILES"}},
+	}
+}
+
+func (c *RestoreConfig) Resolve(s *source) error {
+	if err := resolve(s,
+		&c.Concurrency.Collections, &c.Concurrency.ImportJobs,
+		&c.KeepTempFiles,
+	); err != nil {
+		return err
+	}
+	if c.Concurrency.Collections.Val <= 0 || c.Concurrency.ImportJobs.Val <= 0 {
+		return fmt.Errorf("cfg: restore concurrency values must be greater than zero")
+	}
+	return nil
 }

@@ -45,11 +45,11 @@ type concurrencyThrottling struct {
 type collTaskArgs struct {
 	TaskID string
 
-	MilvusStorage  storage.Client
-	MilvusRootPath string
-	CrossStorage   bool
-	BackupStorage  storage.Client
-	BackupDir      string
+	MilvusStorage      storage.Client
+	MilvusRootPath     string
+	CopyThroughProcess bool
+	BackupStorage      storage.Client
+	BackupDir          string
 
 	Throttling concurrencyThrottling
 

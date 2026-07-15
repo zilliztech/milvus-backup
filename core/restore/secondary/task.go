@@ -244,7 +244,7 @@ func (t *Task) runCollTasks(ctx context.Context) error {
 	loadArgs := t.loadTaskArgs()
 
 	g, subCtx := errgroup.WithContext(ctx)
-	g.SetLimit(t.args.Params.Backup.Parallelism.RestoreCollection.Val)
+	g.SetLimit(t.args.Params.Restore.Concurrency.Collections.Val)
 	for _, coll := range t.args.Backup.GetCollectionBackups() {
 		g.Go(func() error {
 			return t.runCollTask(subCtx, dbNameBackup[coll.GetDbName()], coll, ddlArgs, dmlArgs, loadArgs)

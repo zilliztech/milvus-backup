@@ -8,6 +8,7 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/retry"
 )
@@ -47,8 +48,8 @@ type copier interface {
 	copy(ctx context.Context, copyAttr CopyAttr) error
 }
 
-// remoteCopier copy data from src to dest by calling dest.CopyObject
-type remoteCopier struct {
+// directCopier copies data with the destination storage's native COPY API.
+type directCopier struct {
 	src  Client
 	dest Client
 
@@ -57,7 +58,7 @@ type remoteCopier struct {
 	logger *zap.Logger
 }
 
-func (rp *remoteCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
+func (rp *directCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
 	rp.logger.Debug("copy object", zap.String("src", copyAttr.Src.Key), zap.String("dest", copyAttr.DestKey))
 
 	start := time.Now()
@@ -65,7 +66,7 @@ func (rp *remoteCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
 		i := CopyObjectInput{SrcCli: rp.src, SrcAttr: copyAttr.Src, DestKey: copyAttr.DestKey}
 
 		if err := rp.dest.CopyObject(ctx, i); err != nil {
-			return fmt.Errorf("storage: remote copier copy object %w", err)
+			return fmt.Errorf("storage: direct copier copy object %w", err)
 		}
 
 		return nil
@@ -78,8 +79,9 @@ func (rp *remoteCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
 	return err
 }
 
-// serverCopier copy data from src to dest by backup server
-type serverCopier struct {
+// streamingCopier downloads from the source and uploads to the destination
+// through the milvus-backup process.
+type streamingCopier struct {
 	src  Client
 	dest Client
 
@@ -88,13 +90,13 @@ type serverCopier struct {
 	logger *zap.Logger
 }
 
-func (sc *serverCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
+func (sc *streamingCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
 	sc.logger.Debug("copy object", zap.String("src_key", copyAttr.Src.Key), zap.String("dest_key", copyAttr.DestKey))
 
 	return retry.Do(ctx, func() error {
 		obj, err := sc.src.GetObject(ctx, copyAttr.Src.Key)
 		if err != nil {
-			return fmt.Errorf("storage: server copier get object %w", err)
+			return fmt.Errorf("storage: streaming copier get object %w", err)
 		}
 		defer obj.Body.Close()
 
@@ -105,22 +107,41 @@ func (sc *serverCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
 
 		i := UploadObjectInput{Body: body, Key: copyAttr.DestKey, Size: copyAttr.Src.Length}
 		if err := sc.dest.UploadObject(ctx, i); err != nil {
-			return fmt.Errorf("storage: server copier upload object %w", err)
+			return fmt.Errorf("storage: streaming copier upload object %w", err)
 		}
 
 		return nil
 	})
 }
 
-func newCopier(src, dest Client, copyByServer bool, opt copierOpt) copier {
+func SameBackend(left, right Config) bool {
+	return left.Provider == right.Provider &&
+		left.Endpoint == right.Endpoint &&
+		left.UseSSL == right.UseSSL &&
+		left.Region == right.Region &&
+		left.Credential.AzureAccountName == right.Credential.AzureAccountName
+}
+
+func CopyThroughProcess(mode string, src, dest Client) bool {
+	switch mode {
+	case cfg.TransferModeDirect:
+		return false
+	case cfg.TransferModeStreaming:
+		return true
+	default:
+		return !SameBackend(src.Config(), dest.Config())
+	}
+}
+
+func newCopier(src, dest Client, copyThroughProcess bool, opt copierOpt) copier {
 	logger := log.L().With(
 		zap.String("src", src.Config().Bucket),
 		zap.String("dest", dest.Config().Bucket),
 	)
 
-	if copyByServer {
-		return &serverCopier{src: src, dest: dest, opt: opt, logger: logger.With(zap.String("copier", "server"))}
+	if copyThroughProcess {
+		return &streamingCopier{src: src, dest: dest, opt: opt, logger: logger.With(zap.String("copier", "streaming"))}
 	}
 
-	return &remoteCopier{src: src, dest: dest, opt: opt, logger: logger.With(zap.String("copier", "remote"))}
+	return &directCopier{src: src, dest: dest, opt: opt, logger: logger.With(zap.String("copier", "direct"))}
 }

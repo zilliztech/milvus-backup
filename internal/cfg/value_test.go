@@ -48,6 +48,18 @@ func TestValueDisplay(t *testing.T) {
 		// fixed-length masking: "su" + "****" + "et"
 		assert.Equal(t, "su****et", entry.Value)
 	})
+
+	t.Run("DeprecatedAliasShowsReplacement", func(t *testing.T) {
+		v := Value[string]{
+			Keys: []string{"milvus.storage.address", "minio.address"},
+			Val:  "localhost",
+			Used: Used{Kind: SourceConfigFile, Key: "minio.address"},
+		}
+		entry := v.Display("Milvus.Storage.Address")
+
+		assert.True(t, entry.Deprecated)
+		assert.Equal(t, "milvus.storage.address", entry.Replacement)
+	})
 }
 
 func TestConfigEntries(t *testing.T) {
@@ -67,8 +79,13 @@ func TestConfigEntries(t *testing.T) {
 		"Log.Console",
 		"Milvus.Address",
 		"Milvus.Port",
-		"Minio.BucketName",
-		"Backup.KeepTempFiles",
+		"Milvus.Storage.BucketName",
+		"Backup.Storage.BucketName",
+		"Transfer.Mode",
+		"Transfer.Concurrency",
+		"Backup.Concurrency.Collections",
+		"Restore.Concurrency.Collections",
+		"Restore.KeepTempFiles",
 	}
 
 	for _, field := range expectedFields {

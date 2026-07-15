@@ -42,10 +42,10 @@ func NewCmd(opt *root.Options) *cobra.Command {
 			grpc, err := milvus.NewGrpc(&params.Milvus)
 			cobra.CheckErr(err)
 
-			milvusStorage, err := storage.NewMilvusStorage(ctx, &params.Minio)
+			milvusStorage, err := storage.NewMilvusStorage(ctx, params)
 			cobra.CheckErr(err)
 
-			backupStorage, err := storage.NewBackupStorage(ctx, &params.Minio)
+			backupStorage, err := storage.NewBackupStorage(ctx, params)
 			cobra.CheckErr(err)
 
 			taskArgs := check.TaskArgs{

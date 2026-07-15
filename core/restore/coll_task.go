@@ -48,7 +48,7 @@ type collTask struct {
 
 	targetNS namespace.NS
 
-	crossStorage  bool
+	transferMode  string
 	keepTempFiles bool
 	copySem       *semaphore.Weighted
 	bulkInsertSem *semaphore.Weighted
@@ -89,7 +89,7 @@ type collTaskArgs struct {
 
 	backupDir     string
 	keepTempFiles bool
-	crossStorage  bool
+	transferMode  string
 
 	backupStorage storage.Client
 	milvusStorage storage.Client
@@ -130,7 +130,7 @@ func newCollTask(args collTaskArgs) *collTask {
 		copySem:       args.copySem,
 		bulkInsertSem: args.bulkInsertSem,
 
-		crossStorage:  args.crossStorage,
+		transferMode:  args.transferMode,
 		keepTempFiles: args.keepTempFiles,
 		backupDir:     args.backupDir,
 
@@ -315,12 +315,12 @@ func (ct *collTask) copyToMilvusBucket(ctx context.Context, tempDir, srcPrefix s
 	ct.logger.Info("milvus and backup store in different bucket, copy the data first", zap.String("temp_dir", tempDir))
 	dest := path.Join(tempDir, strings.Replace(srcPrefix, ct.backupDir, "", 1)) + "/"
 	opt := storage.CopyPrefixOpt{
-		Sem:          ct.copySem,
-		Src:          ct.backupStorage,
-		Dest:         ct.milvusStorage,
-		SrcPrefix:    srcPrefix,
-		DestPrefix:   dest,
-		CopyByServer: true,
+		Sem:                ct.copySem,
+		Src:                ct.backupStorage,
+		Dest:               ct.milvusStorage,
+		SrcPrefix:          srcPrefix,
+		DestPrefix:         dest,
+		CopyThroughProcess: storage.CopyThroughProcess(ct.transferMode, ct.backupStorage, ct.milvusStorage),
 	}
 
 	ct.logger.Info("copy temporary restore file", zap.String("src", srcPrefix), zap.String("dest", dest))
@@ -344,9 +344,9 @@ func (ct *collTask) copyToMilvusBucket(ctx context.Context, tempDir, srcPrefix s
 
 func (ct *collTask) copyAndRewriteDir(ctx context.Context, b batch) (batch, error) {
 	isSameBucket := ct.milvusStorage.Config().Bucket == ct.backupStorage.Config().Bucket
-	isSameStorage := ct.backupStorage.Config().Provider == ct.milvusStorage.Config().Provider
-	// if milvus bucket and backup bucket are not the same, should copy the data first
-	if isSameBucket && isSameStorage && !ct.crossStorage {
+	isSameBackend := storage.SameBackend(ct.backupStorage.Config(), ct.milvusStorage.Config())
+	// Data already in the Milvus bucket can be imported in place.
+	if isSameBucket && isSameBackend {
 		ct.logger.Info("milvus and backup store in the same bucket, no need to copy the data")
 		return b, nil
 	}

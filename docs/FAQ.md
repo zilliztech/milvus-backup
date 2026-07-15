@@ -46,11 +46,11 @@ This error usually means the target Milvus cannot read the restored binlog files
 
 **Why does this happen?**
 
-During restore, milvus-backup copies backup data into the bucket specified by `minio.bucketName` in `backup.yaml`, then asks Milvus to import from there via BulkInsert. If that bucket is not the one the target Milvus is actually using, Milvus finds no files and returns `no binlog to import`.
+During restore, milvus-backup copies backup data into the bucket specified by `milvus.storage.bucketName` in `backup.yaml`, then asks Milvus to import from there via BulkInsert. If that bucket is not the one the target Milvus is actually using, Milvus finds no files and returns `no binlog to import`.
 
 **How to fix it?**
 
-Run `./milvus-backup check config` to print the resolved configuration, and make sure `minio.bucketName` matches the bucket that the **target Milvus** is actually using. Run `./milvus-backup check` to verify connectivity.
+Run `./milvus-backup check config` to print the resolved configuration, and make sure `milvus.storage.bucketName` matches the bucket that the **target Milvus** is actually using. Run `./milvus-backup check` to verify connectivity.
 
 **Related issues:** [#1026](https://github.com/zilliztech/milvus-backup/issues/1026), [#1006](https://github.com/zilliztech/milvus-backup/issues/1006), [#923](https://github.com/zilliztech/milvus-backup/issues/923), [#895](https://github.com/zilliztech/milvus-backup/issues/895)
 
@@ -72,7 +72,7 @@ Upgrade the **target** Milvus to **v2.6.12 or newer**. The fix ([milvus-io/milvu
 
 ### Backup fails with `segment xxx has no insert logs`
 
-This error means milvus-backup cannot list any binlog files for the segment under the configured object storage path. It almost always indicates that the `minio` section in `backup.yaml` does not match the storage the source Milvus is actually using.
+This error means milvus-backup cannot list any binlog files for the segment under the configured object storage path. It almost always indicates that the `milvus.storage` section in `backup.yaml` does not match the storage the source Milvus is actually using.
 
 **How to fix it?**
 
@@ -88,6 +88,6 @@ If the output contains:
 !!! Milvus root path is empty !!!
 ```
 
-then at least one of `minio.address` / `minio.bucketName` / `minio.rootPath` in `backup.yaml` disagrees with the source Milvus configuration. `rootPath` is the most frequent culprit — an empty string, `files`, and `/files` all behave differently. Align each field with the source Milvus config and retry.
+then at least one of `milvus.storage.address` / `milvus.storage.bucketName` / `milvus.storage.rootPath` in `backup.yaml` disagrees with the source Milvus configuration. `rootPath` is the most frequent culprit — an empty string, `files`, and `/files` all behave differently. Align each field with the source Milvus config and retry.
 
 **Related issues:** [#1033](https://github.com/zilliztech/milvus-backup/issues/1033), [#441](https://github.com/zilliztech/milvus-backup/issues/441), [#183](https://github.com/zilliztech/milvus-backup/issues/183), [#176](https://github.com/zilliztech/milvus-backup/issues/176)

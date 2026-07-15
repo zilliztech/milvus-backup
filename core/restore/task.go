@@ -167,8 +167,8 @@ func NewTask(args TaskArgs) (*Task, error) {
 	return &Task{
 		args: args,
 
-		copySem:       semaphore.NewWeighted(int64(args.Params.Backup.Parallelism.CopyData.Val)),
-		bulkInsertSem: semaphore.NewWeighted(int64(args.Params.Backup.Parallelism.ImportJob.Val)),
+		copySem:       semaphore.NewWeighted(int64(args.Params.Transfer.Concurrency.Val)),
+		bulkInsertSem: semaphore.NewWeighted(int64(args.Params.Restore.Concurrency.ImportJobs.Val)),
 
 		logger: logger,
 	}, nil
@@ -267,8 +267,8 @@ func (t *Task) newCollTask(dbBackup *backuppb.DatabaseBackupInfo, collBackup *ba
 			collBackup:    collBackup,
 			option:        t.args.Option,
 			collOverride:  t.args.Plan.CollOverrides[targetNS.String()],
-			crossStorage:  t.args.Params.Minio.CrossStorage.Val,
-			keepTempFiles: t.args.Params.Backup.KeepTempFiles.Val,
+			transferMode:  t.args.Params.Transfer.Mode.Val,
+			keepTempFiles: t.args.Params.Restore.KeepTempFiles.Val,
 			backupDir:     t.args.BackupDir,
 			backupStorage: t.args.BackupStorage,
 			milvusStorage: t.args.MilvusStorage,
@@ -509,7 +509,7 @@ func (t *Task) runCollTasks(ctx context.Context, collTasks []*collTask) error {
 	t.logger.Info("start restore collection")
 
 	g, subCtx := errgroup.WithContext(ctx)
-	g.SetLimit(t.args.Params.Backup.Parallelism.RestoreCollection.Val)
+	g.SetLimit(t.args.Params.Restore.Concurrency.Collections.Val)
 	for _, collTask := range collTasks {
 		g.Go(func() error {
 			if err := collTask.Execute(subCtx); err != nil {
