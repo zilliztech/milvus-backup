@@ -46,3 +46,27 @@ assert.Len(t, got.GetCollectionBackups(), 1)         // the actual check
 
 Use PascalCase for sub-test names in `t.Run()`, e.g. `t.Run("SecretValueIsMasked", ...)`.
 See `internal/cfg/value_test.go` for a table-driven test in the intended style.
+
+## Commit titles
+
+Use etcd-style subjects — `scope: short description in lowercase`:
+
+```
+backup: scope index extra etcd scan to backed-up collections
+restore: add support for partial collection restore
+storage: replace per-file copy verification with batched prefix verify
+ci: skip workflow runs for non-code path changes
+```
+
+- **scope** is the component or area touched: `backup`, `restore`, `storage`, `milvus`,
+  `stream`, `migrate`, `cfg`, `client`, `ci`, `docs`, `test`, ...
+- description starts lowercase, imperative mood ("add", not "added"), no trailing period
+- keep the subject under 72 characters
+
+Do not use Conventional Commits (`feat:`, `fix(storage):`). A few exist in history, but etcd
+style is the convention here by a wide margin. `build(deps):` commits are dependabot's and are
+exempt — they are generated, not written.
+
+**PRs are squash-merged, so the PR title is what lands in git history — not your local commit
+subjects.** A 21-commit PR merges as one commit whose subject is the PR title with ` (#NNNN)`
+appended by GitHub. Apply this rule to the PR title above all, and leave room for the suffix.
