@@ -3,3 +3,11 @@ log:
 dataNode:
   segment:
     insertBufSize: 4096 # 4KB
+dataCoord:
+  compaction:
+    # Disable background auto compaction so L0 (delete-only) segments are NOT
+    # folded away before a backup is taken. The l0compact e2e suite relies on L0
+    # segments surviving into the backup meta so it can exercise the CLI that
+    # folds them into per-segment deltalogs. Auto compaction would silently
+    # remove L0 and make the tests non-deterministic.
+    enableAutoCompaction: false
