@@ -14,15 +14,15 @@ const (
 	RequiredValue
 )
 
-//go:generate stringer -type=SourceKind
+//go:generate stringer -type=SourceKind -linecomment
 type SourceKind uint8
 
 const (
-	SourceUnknown SourceKind = iota
-	SourceOverride
-	SourceEnv
-	SourceConfigFile
-	SourceDefault
+	SourceUnknown    SourceKind = iota // unknown
+	SourceOverride                     // override
+	SourceEnv                          // env
+	SourceConfigFile                   // config
+	SourceDefault                      // default
 )
 
 type Used struct {
