@@ -47,8 +47,9 @@ type copier interface {
 	copy(ctx context.Context, copyAttr CopyAttr) error
 }
 
-// remoteCopier copy data from src to dest by calling dest.CopyObject
-type remoteCopier struct {
+// directCopier copies data with the destination storage's native COPY API,
+// so the object never passes through this process.
+type directCopier struct {
 	src  Client
 	dest Client
 
@@ -57,29 +58,30 @@ type remoteCopier struct {
 	logger *zap.Logger
 }
 
-func (rp *remoteCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
-	rp.logger.Debug("copy object", zap.String("src", copyAttr.Src.Key), zap.String("dest", copyAttr.DestKey))
+func (dc *directCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
+	dc.logger.Debug("copy object", zap.String("src", copyAttr.Src.Key), zap.String("dest", copyAttr.DestKey))
 
 	start := time.Now()
 	err := retry.Do(ctx, func() error {
-		i := CopyObjectInput{SrcCli: rp.src, SrcAttr: copyAttr.Src, DestKey: copyAttr.DestKey}
+		i := CopyObjectInput{SrcCli: dc.src, SrcAttr: copyAttr.Src, DestKey: copyAttr.DestKey}
 
-		if err := rp.dest.CopyObject(ctx, i); err != nil {
-			return fmt.Errorf("storage: remote copier copy object %w", err)
+		if err := dc.dest.CopyObject(ctx, i); err != nil {
+			return fmt.Errorf("storage: direct copier copy object %w", err)
 		}
 
 		return nil
 	})
 
-	if err == nil && rp.opt.traceFn != nil {
-		rp.opt.traceFn(copyAttr.Src.Length, time.Since(start))
+	if err == nil && dc.opt.traceFn != nil {
+		dc.opt.traceFn(copyAttr.Src.Length, time.Since(start))
 	}
 
 	return err
 }
 
-// serverCopier copy data from src to dest by backup server
-type serverCopier struct {
+// streamingCopier downloads from src and uploads to dest, so the object is
+// streamed through this process.
+type streamingCopier struct {
 	src  Client
 	dest Client
 
@@ -88,13 +90,13 @@ type serverCopier struct {
 	logger *zap.Logger
 }
 
-func (sc *serverCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
+func (sc *streamingCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
 	sc.logger.Debug("copy object", zap.String("src_key", copyAttr.Src.Key), zap.String("dest_key", copyAttr.DestKey))
 
 	return retry.Do(ctx, func() error {
 		obj, err := sc.src.GetObject(ctx, copyAttr.Src.Key)
 		if err != nil {
-			return fmt.Errorf("storage: server copier get object %w", err)
+			return fmt.Errorf("storage: streaming copier get object %w", err)
 		}
 		defer obj.Body.Close()
 
@@ -105,22 +107,22 @@ func (sc *serverCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
 
 		i := UploadObjectInput{Body: body, Key: copyAttr.DestKey, Size: copyAttr.Src.Length}
 		if err := sc.dest.UploadObject(ctx, i); err != nil {
-			return fmt.Errorf("storage: server copier upload object %w", err)
+			return fmt.Errorf("storage: streaming copier upload object %w", err)
 		}
 
 		return nil
 	})
 }
 
-func newCopier(src, dest Client, copyByServer bool, opt copierOpt) copier {
+func newCopier(src, dest Client, streaming bool, opt copierOpt) copier {
 	logger := log.L().With(
 		zap.String("src", src.Config().Bucket),
 		zap.String("dest", dest.Config().Bucket),
 	)
 
-	if copyByServer {
-		return &serverCopier{src: src, dest: dest, opt: opt, logger: logger.With(zap.String("copier", "server"))}
+	if streaming {
+		return &streamingCopier{src: src, dest: dest, opt: opt, logger: logger.With(zap.String("copier", "streaming"))}
 	}
 
-	return &remoteCopier{src: src, dest: dest, opt: opt, logger: logger.With(zap.String("copier", "remote"))}
+	return &directCopier{src: src, dest: dest, opt: opt, logger: logger.With(zap.String("copier", "direct"))}
 }

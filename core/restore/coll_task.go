@@ -315,12 +315,12 @@ func (ct *collTask) copyToMilvusBucket(ctx context.Context, tempDir, srcPrefix s
 	ct.logger.Info("milvus and backup store in different bucket, copy the data first", zap.String("temp_dir", tempDir))
 	dest := path.Join(tempDir, strings.Replace(srcPrefix, ct.backupDir, "", 1)) + "/"
 	opt := storage.CopyPrefixOpt{
-		Sem:          ct.copySem,
-		Src:          ct.backupStorage,
-		Dest:         ct.milvusStorage,
-		SrcPrefix:    srcPrefix,
-		DestPrefix:   dest,
-		CopyByServer: true,
+		Sem:        ct.copySem,
+		Src:        ct.backupStorage,
+		Dest:       ct.milvusStorage,
+		SrcPrefix:  srcPrefix,
+		DestPrefix: dest,
+		Streaming:  true,
 	}
 
 	ct.logger.Info("copy temporary restore file", zap.String("src", srcPrefix), zap.String("dest", dest))

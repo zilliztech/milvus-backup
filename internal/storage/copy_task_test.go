@@ -85,7 +85,7 @@ func TestCopyObjectsTask_Execute(t *testing.T) {
 		assert.NoError(t, task.Execute(context.Background()))
 	})
 
-	t.Run("CopyByServerUploadsAll", func(t *testing.T) {
+	t.Run("StreamingUploadsAll", func(t *testing.T) {
 		src := NewMockClient(t)
 		dest := NewMockClient(t)
 		src.EXPECT().Config().Return(Config{Bucket: "src"}).Maybe()
@@ -96,7 +96,7 @@ func TestCopyObjectsTask_Execute(t *testing.T) {
 		dest.EXPECT().UploadObject(mock.Anything, UploadObjectInput{Body: body, Key: "x", Size: 2}).Return(nil).Once()
 
 		attrs := []CopyAttr{{Src: ObjectAttr{Key: "a", Length: 2}, DestKey: "x"}}
-		task := NewCopyObjectsTask(CopyObjectsOpt{Src: src, Dest: dest, Attrs: attrs, Sem: semaphore.NewWeighted(1), CopyByServer: true})
+		task := NewCopyObjectsTask(CopyObjectsOpt{Src: src, Dest: dest, Attrs: attrs, Sem: semaphore.NewWeighted(1), Streaming: true})
 		assert.NoError(t, task.Execute(context.Background()))
 	})
 

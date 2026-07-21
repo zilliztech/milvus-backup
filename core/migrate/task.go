@@ -257,7 +257,7 @@ func (t *Task) copyToCloud(ctx context.Context) error {
 			t.taskMgr.UpdateMigrateTask(t.taskID, taskmgr.IncMigrateCopiedSize(size, cost))
 		},
 
-		CopyByServer: true,
+		Streaming: true,
 	}
 
 	copyTask := storage.NewCopyPrefixTask(opt)

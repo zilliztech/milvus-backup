@@ -134,12 +134,12 @@ func (t *Task) checkWriteAndCopy(ctx context.Context) error {
 	}
 	t.logger.Info("try to copy", zap.Bool("cross_storage", crossStorage), zap.String("dest_key", destKey))
 	opt := storage.CopyPrefixOpt{
-		Src:          t.milvusStorage,
-		Dest:         t.backupStorage,
-		SrcPrefix:    srcKey,
-		DestPrefix:   destKey,
-		Sem:          semaphore.NewWeighted(1),
-		CopyByServer: crossStorage,
+		Src:        t.milvusStorage,
+		Dest:       t.backupStorage,
+		SrcPrefix:  srcKey,
+		DestPrefix: destKey,
+		Sem:        semaphore.NewWeighted(1),
+		Streaming:  crossStorage,
 	}
 	task := storage.NewCopyPrefixTask(opt)
 	if err := task.Execute(ctx); err != nil {

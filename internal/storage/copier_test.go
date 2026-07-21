@@ -37,11 +37,11 @@ func TestTrackReader_Read(t *testing.T) {
 	})
 }
 
-func TestRemoteCopier_Copy(t *testing.T) {
+func TestDirectCopier_Copy(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		dest := NewMockClient(t)
 		src := NewMockClient(t)
-		rp := &remoteCopier{src: src, dest: dest, logger: zap.NewNop()}
+		rp := &directCopier{src: src, dest: dest, logger: zap.NewNop()}
 
 		in := CopyObjectInput{SrcCli: src, SrcAttr: ObjectAttr{Key: "a/b", Length: 5}, DestKey: "c/d"}
 		dest.EXPECT().CopyObject(mock.Anything, in).Return(nil).Once()
@@ -54,7 +54,7 @@ func TestRemoteCopier_Copy(t *testing.T) {
 	t.Run("CopyObjectError", func(t *testing.T) {
 		dest := NewMockClient(t)
 		src := NewMockClient(t)
-		rp := &remoteCopier{src: src, dest: dest, logger: zap.NewNop()}
+		rp := &directCopier{src: src, dest: dest, logger: zap.NewNop()}
 
 		in := CopyObjectInput{SrcCli: src, SrcAttr: ObjectAttr{Key: "a/b", Length: 5}, DestKey: "c/d"}
 		dest.EXPECT().CopyObject(mock.Anything, in).Return(assert.AnError).Once()
@@ -71,7 +71,7 @@ func TestRemoteCopier_Copy(t *testing.T) {
 	t.Run("RetryThenSuccess", func(t *testing.T) {
 		dest := NewMockClient(t)
 		src := NewMockClient(t)
-		rp := &remoteCopier{src: src, dest: dest, logger: zap.NewNop()}
+		rp := &directCopier{src: src, dest: dest, logger: zap.NewNop()}
 
 		in := CopyObjectInput{SrcCli: src, SrcAttr: ObjectAttr{Key: "a/b", Length: 5}, DestKey: "c/d"}
 		dest.EXPECT().CopyObject(mock.Anything, in).Return(assert.AnError).Once()
@@ -87,7 +87,7 @@ func TestRemoteCopier_Copy(t *testing.T) {
 		src := NewMockClient(t)
 
 		var traced bool
-		rp := &remoteCopier{src: src, dest: dest, logger: zap.NewNop(), opt: copierOpt{
+		rp := &directCopier{src: src, dest: dest, logger: zap.NewNop(), opt: copierOpt{
 			traceFn: func(size int64, cost time.Duration) {
 				traced = true
 				assert.Equal(t, int64(5), size)
@@ -108,7 +108,7 @@ func TestRemoteCopier_Copy(t *testing.T) {
 		src := NewMockClient(t)
 
 		var traced bool
-		rp := &remoteCopier{src: src, dest: dest, logger: zap.NewNop(), opt: copierOpt{
+		rp := &directCopier{src: src, dest: dest, logger: zap.NewNop(), opt: copierOpt{
 			traceFn: func(size int64, cost time.Duration) {
 				traced = true
 			},
@@ -127,11 +127,11 @@ func TestRemoteCopier_Copy(t *testing.T) {
 	})
 }
 
-func TestServerCopier_Copy(t *testing.T) {
+func TestStreamingCopier_Copy(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		dest := NewMockClient(t)
 		src := NewMockClient(t)
-		sp := &serverCopier{src: src, dest: dest, logger: zap.NewNop()}
+		sp := &streamingCopier{src: src, dest: dest, logger: zap.NewNop()}
 
 		body := io.NopCloser(bytes.NewReader([]byte("hello")))
 		obj := &Object{Body: body, Length: 5}

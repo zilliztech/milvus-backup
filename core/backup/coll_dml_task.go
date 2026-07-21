@@ -526,11 +526,11 @@ func (dmlt *collDMLTask) backupSegmentData(ctx context.Context, seg *backuppb.Se
 	attrs = append(attrs, insertAttrs...)
 	attrs = append(attrs, deltaAttrs...)
 	opt := storage.CopyObjectsOpt{
-		Src:          dmlt.milvusStorage,
-		Dest:         dmlt.backupStorage,
-		Attrs:        attrs,
-		CopyByServer: dmlt.crossStorage,
-		Sem:          dmlt.throttling.CopySem,
+		Src:       dmlt.milvusStorage,
+		Dest:      dmlt.backupStorage,
+		Attrs:     attrs,
+		Streaming: dmlt.crossStorage,
+		Sem:       dmlt.throttling.CopySem,
 		TraceFn: func(size int64, cost time.Duration) {
 			dmlt.taskMgr.UpdateBackupTask(dmlt.taskID, taskmgr.IncBackupCollCopiedSize(dmlt.ns, size, cost))
 		},
