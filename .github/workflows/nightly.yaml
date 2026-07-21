@@ -30,7 +30,7 @@ jobs:
           python-version: '3.10'
           cache: pip
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: ${{ env.go-version }}
           cache: true
@@ -133,7 +133,7 @@ jobs:
           python-version: '3.10'
           cache: pip
 
-      - uses: actions/setup-go@v6
+      - uses: actions/setup-go@v7
         with:
           go-version: ${{ env.go-version }}
           cache: true
