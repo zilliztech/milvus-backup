@@ -22,7 +22,7 @@ func TestConfigWriteTable(t *testing.T) {
 		assert.Contains(t, output, "SOURCE_KEY")
 		assert.Contains(t, output, "Log.Level")
 		assert.Contains(t, output, "Milvus.Address")
-		assert.Contains(t, output, "SourceDefault")
+		assert.Contains(t, output, "default")
 	})
 
 	t.Run("Override", func(t *testing.T) {
@@ -34,7 +34,7 @@ func TestConfigWriteTable(t *testing.T) {
 
 		output := buf.String()
 		assert.Contains(t, output, "192.168.1.100")
-		assert.Contains(t, output, "SourceOverride")
+		assert.Contains(t, output, "override")
 	})
 
 	t.Run("SecretIsMasked", func(t *testing.T) {
