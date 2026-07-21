@@ -48,11 +48,11 @@ The table below shows which Milvus versions can restore backups created from oth
 Milvus-backup provides command line and API server for usage.
 
 ### Configuration
-In order to use Milvus-Backup, access to Milvus proxy and Minio cluster is required. Configuration settings related to this access can be edited in [backup.yaml](configs/backup.yaml).
+To use Milvus Backup, it must be able to access the Milvus proxy, the storage used by Milvus, and the backup destination. Configure these endpoints in [backup.yaml](configs/backup.yaml).
 
 > [!NOTE]
 >
-> Please ensure that the configuration settings for Minio are accurate. There may be variations in the default value of Minio's configuration depending on how Milvus is deployed, either by docker-compose or k8s.
+> Ensure that `milvus.storage` matches the storage configuration of the Milvus deployment. Defaults can differ between Docker Compose, Kubernetes, and cloud deployments.
 > |field|docker-compose |helm|
 > |---|---|---|
 > |bucketName|a-bucket|milvus-bucket|
@@ -138,37 +138,34 @@ Below is a summary of the configurations supported in `backup.yaml`:
 |                   | `serverName `                   | Server name                                                                                                  | `localhost`             |
 |                   | `mtlsCertPath`                  | Path to your mtls certificate file                                                                           | `/path/to/certificate`  |
 |                   | `mtlsKeyPath `                  | Path to your mtls key file                                                                                   | `/path/to/key`          |
-| `minio`           | `storageType`                   | Storage type for Milvus (e.g., `local`, `minio`, `s3`, `aws`, `gcp`, `ali(aliyun)`, `azure`, `tc(tencent)`, `gcpnative`). Use `gcpnative` for the Google Cloud Platform provider.          | `minio`                 |
-|                   | `address`                       | MinIO/S3 address.                                                                                            | `localhost`             |
-|                   | `port`                          | MinIO/S3 port.                                                                                               | `9000`                  |
-|                   | `accessKeyID`                   | MinIO/S3 access key ID.                                                                                      | `minioadmin`            |
-|                   | `secretAccessKey`               | MinIO/S3 secret access key.                                                                                  | `minioadmin`            |
-|                   | `gcpCredentialJSON`             | Path to your GCP credential JSON key file. Used only for the "gcpnative" cloud provider.                     | `/path/to/json-key-file`       |
-|                   | `useSSL`                        | Whether to use SSL for MinIO/S3.                                                                             | `false`                 |
-|                   | `bucketName`                    | Bucket name in MinIO/S3.                                                                                     | `a-bucket`              |
-|                   | `rootPath`                      | Storage root path in MinIO/S3.                                                                               | `files`                 |
-| `minio (backup)`  | `backupStorageType`             | Backup storage type (e.g., `local`, `minio`, `s3`, `aws`, `gcp`, `ali(aliyun)`, `azure`, `tc(tencent)`, `gcpnative`). Use `gcpnative` for the Google Cloud Platform provider.                       | `minio`                 |
-|                   | `backupAddress`                 | Address of backup storagße.                                                                                   | `localhost`             |
-|                   | `backupPort`                    | Port of backup storage.                                                                                      | `9000`                  |
-|                   | `backupUseSSL`                  | Whether to use SSL for backup storage.                                                                       | `false`                 |
-|                   | `backupAccessKeyID`             | Backup storage access key ID.                                                                                | `minioadmin`            |
-|                   | `backupSecretAccessKey`         | Backup storage secret access key.                                                                            | `minioadmin`            |
-|                   | `backupGcpCredentialJSON`       | Path to your GCP credential JSON key file. Used only for the "gcpnative" cloud provider.                     | `/path/to/json-key-file`       |
-|                   | `backupBucketName`              | Bucket name for backups.                                                                                     | `a-bucket`              |
-|                   | `backupRootPath`                | Root path to store backup data.                                                                              | `backup`                |
-|                   | `crossStorage`                  | Enable cross-storage backups (e.g., MinIO to AWS S3).                                                        | `false`                 |
-| `backup`          | `maxSegmentGroupSize`           | Maximum segment group size for backups.                                                                      | `2G`                    |
-|                   | `parallelism.backupCollection`  | Collection-level parallelism for backup.                                                                     | `4`                     |
-|                   | `parallelism.copydata`          | Thread pool size for copying data.                                                                           | `128`                   |
-|                   | `parallelism.restoreCollection` | Collection-level parallelism for restore.                                                                    | `2`                     |
-|                   | `keepTempFiles`                 | Whether to keep temporary files during restore (for debugging).                                              | `false`                 |
+| `milvus.storage`  | `provider`                      | Provider used by Milvus: `local`, `minio`, `s3`, `aws`, `gcp`, `gcpnative`, `ali`, `azure`, `tc`, or `hwc`. | `minio`                 |
+|                   | `address`                       | Milvus storage endpoint address.                                                                             | `localhost`             |
+|                   | `port`                          | Milvus storage endpoint port.                                                                                | `9000`                  |
+|                   | `accessKeyID`                   | Milvus storage access key ID.                                                                                | `minioadmin`            |
+|                   | `secretAccessKey`               | Milvus storage secret access key.                                                                            | `minioadmin`            |
+|                   | `gcpCredentialJSON`             | Path to the GCP credential JSON key file for `gcpnative`.                                                    | `/path/to/json-key-file`|
+|                   | `useSSL`                        | Whether to use SSL.                                                                                          | `false`                 |
+|                   | `bucketName`                    | Bucket used by Milvus.                                                                                       | `a-bucket`              |
+|                   | `rootPath`                      | Storage root path used by Milvus.                                                                            | `files`                 |
+| `backup.storage`  | `provider`                      | Provider used to store backups.                                                                              | Inherits Milvus storage |
+|                   | `address`                       | Backup storage endpoint address.                                                                             | Inherits Milvus storage |
+|                   | `port`                          | Backup storage endpoint port.                                                                                | Inherits Milvus storage |
+|                   | `bucketName`                    | Bucket used to store backups.                                                                                | Inherits Milvus storage |
+|                   | `rootPath`                      | Root path used to store backups.                                                                             | Inherits Milvus storage |
+| `transfer`        | `mode`                          | `auto`, `direct` (storage COPY API), or `streaming` (through milvus-backup).                                 | `auto`                  |
+|                   | `concurrency`                   | Maximum number of objects transferred concurrently during backup, restore, check, or migrate.                | `128`                   |
+|                   | `multipartCopyThresholdMiB`     | Threshold above which multipart direct copy is used.                                                         | `500`                   |
+| `backup`          | `concurrency.collections`       | Maximum number of backup collection tasks executed concurrently.                                             | `4`                     |
+|                   | `concurrency.segments`          | Maximum number of backup segment tasks executed concurrently.                                                | `1024`                  |
 |                   | `gcPause.enable`                | Pause Milvus garbage collection during backup.                                                               | `true`                  |
-|                   | `gcPause.seconds`               | Duration to pause garbage collection (in seconds).                                                           | `7200`                  |
 |                   | `gcPause.address`               | Address for Milvus garbage collection API.                                                                   | `http://localhost:9091` |
+| `restore`         | `concurrency.collections`       | Maximum number of restore collection tasks executed concurrently.                                            | `2`                     |
+|                   | `concurrency.importJobs`        | Maximum number of Milvus import jobs submitted concurrently.                                                 | `768`                   |
+|                   | `keepTempFiles`                 | Keep temporary restore files for debugging.                                                                  | `false`                 |
 
 For more details, refer to the [backup.yaml](configs/backup.yaml) configuration file.
 
-### Advanced feature
+### Advanced features
 
 1. [Cross Storage Backup](docs/user_guide/cross_storage.md): Data is read from the source storage and written to a different storage through the Milvus-backup service. Such as, S3 -> local, S3 a -> S3 b. 
 
@@ -186,17 +183,20 @@ For more details, refer to the [backup.yaml](configs/backup.yaml) configuration 
 To back up Milvus data to an AWS S3 bucket, you need to configure the `backup.yaml` file with the following settings:
 
 ```yaml
-# Backup storage configs: Configure the storage where you want to save the backup data
-backupStorageType: "aws"                     # Specifies the storage type as AWS S3
-backupAddress: s3.{your-aws-region}.amazonaws.com  # Address of AWS S3 (replace {your-aws-region} with your bucket's region)
-backupPort: 443                              # Default port for AWS S3
-backupAccessKeyID: <your-access-key-id>      # Access key ID for your AWS S3
-backupSecretAccessKey: <your-secret-key>     # Secret access key for AWS S3
-backupGcpCredentialJSON: "/path/to/file"     # Path to your GCP credential JSON key file. Used only for the "gcpnative" cloud provider.
-backupBucketName: "your-bucket-name"         # Bucket name where the backups will be stored
-backupRootPath: "backups"                    # Root path inside the bucket to store backups
-backupUseSSL: true                           # Use SSL for secure connections (Required)
-crossStorage: "true"                         # Required for minio to S3 backups
+backup:
+  storage:
+    provider: "aws"
+    address: s3.{your-aws-region}.amazonaws.com
+    port: 443
+    accessKeyID: <your-access-key-id>
+    secretAccessKey: <your-secret-key>
+    bucketName: "your-bucket-name"
+    rootPath: "backups"
+    useSSL: true
+
+transfer:
+  mode: auto
+  concurrency: 128
 ```
 
 

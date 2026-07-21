@@ -67,7 +67,7 @@ func (h *delHandler) validate() error {
 }
 
 func (h *delHandler) initClient(ctx context.Context) error {
-	backupStorage, err := storage.NewBackupStorage(ctx, &h.params.Minio)
+	backupStorage, err := storage.NewBackupStorage(ctx, h.params)
 	if err != nil {
 		return fmt.Errorf("server: create backup storage: %w", err)
 	}
@@ -93,7 +93,7 @@ func (h *delHandler) run(ctx context.Context) *backuppb.DeleteBackupResponse {
 		return resp
 	}
 
-	task := del.NewTask(h.backupStorage, mpath.BackupDir(h.params.Minio.BackupRootPath.Val, h.req.GetBackupName()))
+	task := del.NewTask(h.backupStorage, mpath.BackupDir(h.params.Backup.Storage.RootPath.Val, h.req.GetBackupName()))
 	if err := task.Execute(ctx); err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()

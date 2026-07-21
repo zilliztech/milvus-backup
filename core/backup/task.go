@@ -69,7 +69,7 @@ type Task struct {
 	milvusStorage  storage.Client
 	milvusRootPath string
 
-	crossStorage bool
+	copyThroughProcess bool
 
 	backupStorage storage.Client
 	backupDir     string
@@ -107,10 +107,11 @@ func newGCCtrl(taskID string, pauseGC bool, grpc milvus.Grpc, manage milvus.Mana
 func NewTask(args TaskArgs) (*Task, error) {
 	logger := log.L().With(zap.String("task_id", args.TaskID))
 
-	crossStorage := args.Params.Minio.CrossStorage.Val
-	if args.BackupStorage.Config().Provider != args.MilvusStorage.Config().Provider {
-		crossStorage = true
-	}
+	copyThroughProcess := storage.CopyThroughProcess(
+		args.Params.Transfer.Mode.Val,
+		args.MilvusStorage,
+		args.BackupStorage,
+	)
 
 	mb := newMetaBuilder(args.TaskID, args.Option.BackupName)
 	err := args.TaskMgr.AddBackupTask(args.TaskID, args.Option.BackupName)
@@ -119,9 +120,9 @@ func NewTask(args TaskArgs) (*Task, error) {
 	}
 
 	throttling := concurrencyThrottling{
-		CollSem: semaphore.NewWeighted(int64(args.Params.Backup.Parallelism.BackupCollection.Val)),
-		SegSem:  semaphore.NewWeighted(int64(args.Params.Backup.Parallelism.BackupSegment.Val)),
-		CopySem: semaphore.NewWeighted(int64(args.Params.Backup.Parallelism.CopyData.Val)),
+		CollSem: semaphore.NewWeighted(int64(args.Params.Backup.Concurrency.Collections.Val)),
+		SegSem:  semaphore.NewWeighted(int64(args.Params.Backup.Concurrency.Segments.Val)),
+		CopySem: semaphore.NewWeighted(int64(args.Params.Transfer.Concurrency.Val)),
 	}
 
 	return &Task{
@@ -134,9 +135,9 @@ func NewTask(args TaskArgs) (*Task, error) {
 		params: args.Params,
 
 		milvusStorage:  args.MilvusStorage,
-		milvusRootPath: args.Params.Minio.RootPath.Val,
+		milvusRootPath: args.Params.Milvus.Storage.RootPath.Val,
 
-		crossStorage: crossStorage,
+		copyThroughProcess: copyThroughProcess,
 
 		backupStorage: args.BackupStorage,
 		backupDir:     args.BackupDir,
@@ -391,18 +392,18 @@ func (t *Task) backupDatabase(ctx context.Context, dbNames []string) error {
 
 func (t *Task) newCollTaskArgs() collTaskArgs {
 	return collTaskArgs{
-		TaskID:         t.taskID,
-		MilvusStorage:  t.milvusStorage,
-		MilvusRootPath: t.milvusRootPath,
-		CrossStorage:   t.crossStorage,
-		BackupStorage:  t.backupStorage,
-		BackupDir:      t.backupDir,
-		Throttling:     t.throttling,
-		MetaBuilder:    t.metaBuilder,
-		TaskMgr:        t.taskMgr,
-		Grpc:           t.grpc,
-		Restful:        t.restful,
-		gcCtrl:         t.gcCtrl,
+		TaskID:             t.taskID,
+		MilvusStorage:      t.milvusStorage,
+		MilvusRootPath:     t.milvusRootPath,
+		CopyThroughProcess: t.copyThroughProcess,
+		BackupStorage:      t.backupStorage,
+		BackupDir:          t.backupDir,
+		Throttling:         t.throttling,
+		MetaBuilder:        t.metaBuilder,
+		TaskMgr:            t.taskMgr,
+		Grpc:               t.grpc,
+		Restful:            t.restful,
+		gcCtrl:             t.gcCtrl,
 	}
 }
 

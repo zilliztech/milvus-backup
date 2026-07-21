@@ -12,67 +12,9 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
-func newBackupCredential(params *cfg.MinioConfig) Credential {
+func newCredential(params *cfg.StorageConfig) Credential {
 	var cred Credential
-	if params.BackupStorageType.Val == cfg.CloudProviderAzure {
-		cred.AzureAccountName = params.BackupAccessKeyID.Val
-	}
-
-	if params.BackupUseIAM.Val {
-		cred.Type = IAM
-		cred.IAMEndpoint = params.BackupIAMEndpoint.Val
-		return cred
-	}
-
-	if params.BackupStorageType.Val == cfg.CloudProviderGCPNative &&
-		params.BackupGcpCredentialJSON.Val != "" {
-		cred.Type = GCPCredJSON
-		cred.GCPCredJSON = params.BackupGcpCredentialJSON.Val
-		return cred
-	}
-
-	cred.Type = Static
-	cred.AK = params.BackupAccessKeyID.Val
-	cred.SK = params.BackupSecretAccessKey.Val
-	cred.Token = params.BackupToken.Val
-	return cred
-}
-
-func BackupStorageConfig(params *cfg.MinioConfig) Config {
-	ep := net.JoinHostPort(params.BackupAddress.Val, strconv.Itoa(params.BackupPort.Val))
-	return Config{
-		Provider:                  params.BackupStorageType.Val,
-		Endpoint:                  ep,
-		UseSSL:                    params.BackupUseSSL.Val,
-		Bucket:                    params.BackupBucketName.Val,
-		Credential:                newBackupCredential(params),
-		Region:                    params.BackupRegion.Val,
-		MultipartCopyThresholdMiB: params.MultipartCopyThresholdMiB.Val,
-	}
-}
-
-func NewBackupStorage(ctx context.Context, params *cfg.MinioConfig) (Client, error) {
-	ep := net.JoinHostPort(params.BackupAddress.Val, strconv.Itoa(params.BackupPort.Val))
-	log.Info("create backup storage client",
-		zap.String("endpoint", ep),
-		zap.String("bucket", params.BackupBucketName.Val))
-
-	cfg := BackupStorageConfig(params)
-
-	cli, err := NewClient(ctx, cfg)
-	if err != nil {
-		return nil, fmt.Errorf("create backup storage client: %w", err)
-	}
-	if err := CreateBucketIfNotExist(ctx, cli, ""); err != nil {
-		return nil, fmt.Errorf("create backup storage client: %w", err)
-	}
-
-	return cli, nil
-}
-
-func newMilvusCredential(params *cfg.MinioConfig) Credential {
-	var cred Credential
-	if params.StorageType.Val == cfg.CloudProviderAzure {
+	if params.Provider.Val == cfg.CloudProviderAzure {
 		cred.AzureAccountName = params.AccessKeyID.Val
 	}
 
@@ -82,7 +24,7 @@ func newMilvusCredential(params *cfg.MinioConfig) Credential {
 		return cred
 	}
 
-	if params.StorageType.Val == cfg.CloudProviderGCPNative &&
+	if params.Provider.Val == cfg.CloudProviderGCPNative &&
 		params.GcpCredentialJSON.Val != "" {
 		cred.Type = GCPCredJSON
 		cred.GCPCredJSON = params.GcpCredentialJSON.Val
@@ -96,28 +38,49 @@ func newMilvusCredential(params *cfg.MinioConfig) Credential {
 	return cred
 }
 
-func MilvusStorageConfig(params *cfg.MinioConfig) Config {
+func BuildConfig(params *cfg.StorageConfig, multipartCopyThresholdMiB int64) Config {
 	ep := net.JoinHostPort(params.Address.Val, strconv.Itoa(params.Port.Val))
 	return Config{
-		Provider:                  params.StorageType.Val,
+		Provider:                  params.Provider.Val,
 		Endpoint:                  ep,
 		UseSSL:                    params.UseSSL.Val,
-		Credential:                newMilvusCredential(params),
 		Bucket:                    params.BucketName.Val,
+		Credential:                newCredential(params),
 		Region:                    params.Region.Val,
-		MultipartCopyThresholdMiB: params.MultipartCopyThresholdMiB.Val,
+		MultipartCopyThresholdMiB: multipartCopyThresholdMiB,
 	}
 }
 
-func NewMilvusStorage(ctx context.Context, params *cfg.MinioConfig) (Client, error) {
-	ep := net.JoinHostPort(params.Address.Val, strconv.Itoa(params.Port.Val))
+func NewBackupStorage(ctx context.Context, params *cfg.Config) (Client, error) {
+	storageParams := &params.Backup.Storage
+	ep := net.JoinHostPort(storageParams.Address.Val, strconv.Itoa(storageParams.Port.Val))
+	log.Info("create backup storage client",
+		zap.String("endpoint", ep),
+		zap.String("bucket", storageParams.BucketName.Val))
+
+	conf := BuildConfig(storageParams, params.Transfer.MultipartCopyThresholdMiB.Val)
+
+	cli, err := NewClient(ctx, conf)
+	if err != nil {
+		return nil, fmt.Errorf("create backup storage client: %w", err)
+	}
+	if err := CreateBucketIfNotExist(ctx, cli, ""); err != nil {
+		return nil, fmt.Errorf("create backup storage client: %w", err)
+	}
+
+	return cli, nil
+}
+
+func NewMilvusStorage(ctx context.Context, params *cfg.Config) (Client, error) {
+	storageParams := &params.Milvus.Storage
+	ep := net.JoinHostPort(storageParams.Address.Val, strconv.Itoa(storageParams.Port.Val))
 	log.Info("create milvus storage client",
 		zap.String("endpoint", ep),
-		zap.String("bucket", params.BucketName.Val))
+		zap.String("bucket", storageParams.BucketName.Val))
 
-	cfg := MilvusStorageConfig(params)
+	conf := BuildConfig(storageParams, params.Transfer.MultipartCopyThresholdMiB.Val)
 
-	return NewClient(ctx, cfg)
+	return NewClient(ctx, conf)
 }
 
 func NewClient(ctx context.Context, conf Config) (Client, error) {

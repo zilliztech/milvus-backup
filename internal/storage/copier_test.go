@@ -10,6 +10,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
+
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 )
 
 func TestTrackReader_Read(t *testing.T) {
@@ -37,11 +39,11 @@ func TestTrackReader_Read(t *testing.T) {
 	})
 }
 
-func TestRemoteCopier_Copy(t *testing.T) {
+func TestDirectCopier_Copy(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		dest := NewMockClient(t)
 		src := NewMockClient(t)
-		rp := &remoteCopier{src: src, dest: dest, logger: zap.NewNop()}
+		rp := &directCopier{src: src, dest: dest, logger: zap.NewNop()}
 
 		in := CopyObjectInput{SrcCli: src, SrcAttr: ObjectAttr{Key: "a/b", Length: 5}, DestKey: "c/d"}
 		dest.EXPECT().CopyObject(mock.Anything, in).Return(nil).Once()
@@ -54,7 +56,7 @@ func TestRemoteCopier_Copy(t *testing.T) {
 	t.Run("CopyObjectError", func(t *testing.T) {
 		dest := NewMockClient(t)
 		src := NewMockClient(t)
-		rp := &remoteCopier{src: src, dest: dest, logger: zap.NewNop()}
+		rp := &directCopier{src: src, dest: dest, logger: zap.NewNop()}
 
 		in := CopyObjectInput{SrcCli: src, SrcAttr: ObjectAttr{Key: "a/b", Length: 5}, DestKey: "c/d"}
 		dest.EXPECT().CopyObject(mock.Anything, in).Return(assert.AnError).Once()
@@ -71,7 +73,7 @@ func TestRemoteCopier_Copy(t *testing.T) {
 	t.Run("RetryThenSuccess", func(t *testing.T) {
 		dest := NewMockClient(t)
 		src := NewMockClient(t)
-		rp := &remoteCopier{src: src, dest: dest, logger: zap.NewNop()}
+		rp := &directCopier{src: src, dest: dest, logger: zap.NewNop()}
 
 		in := CopyObjectInput{SrcCli: src, SrcAttr: ObjectAttr{Key: "a/b", Length: 5}, DestKey: "c/d"}
 		dest.EXPECT().CopyObject(mock.Anything, in).Return(assert.AnError).Once()
@@ -87,7 +89,7 @@ func TestRemoteCopier_Copy(t *testing.T) {
 		src := NewMockClient(t)
 
 		var traced bool
-		rp := &remoteCopier{src: src, dest: dest, logger: zap.NewNop(), opt: copierOpt{
+		rp := &directCopier{src: src, dest: dest, logger: zap.NewNop(), opt: copierOpt{
 			traceFn: func(size int64, cost time.Duration) {
 				traced = true
 				assert.Equal(t, int64(5), size)
@@ -108,7 +110,7 @@ func TestRemoteCopier_Copy(t *testing.T) {
 		src := NewMockClient(t)
 
 		var traced bool
-		rp := &remoteCopier{src: src, dest: dest, logger: zap.NewNop(), opt: copierOpt{
+		rp := &directCopier{src: src, dest: dest, logger: zap.NewNop(), opt: copierOpt{
 			traceFn: func(size int64, cost time.Duration) {
 				traced = true
 			},
@@ -127,11 +129,11 @@ func TestRemoteCopier_Copy(t *testing.T) {
 	})
 }
 
-func TestServerCopier_Copy(t *testing.T) {
+func TestStreamingCopier_Copy(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		dest := NewMockClient(t)
 		src := NewMockClient(t)
-		sp := &serverCopier{src: src, dest: dest, logger: zap.NewNop()}
+		sp := &streamingCopier{src: src, dest: dest, logger: zap.NewNop()}
 
 		body := io.NopCloser(bytes.NewReader([]byte("hello")))
 		obj := &Object{Body: body, Length: 5}
@@ -143,5 +145,53 @@ func TestServerCopier_Copy(t *testing.T) {
 		attr := CopyAttr{Src: ObjectAttr{Key: "a/b", Length: 5}, DestKey: "c/d"}
 		err := sp.copy(context.Background(), attr)
 		assert.NoError(t, err)
+	})
+}
+
+func TestCopyThroughProcess(t *testing.T) {
+	newClients := func(srcCfg, destCfg Config) (Client, Client) {
+		src := NewMockClient(t)
+		dest := NewMockClient(t)
+		src.EXPECT().Config().Return(srcCfg).Maybe()
+		dest.EXPECT().Config().Return(destCfg).Maybe()
+		return src, dest
+	}
+
+	t.Run("explicit_modes", func(t *testing.T) {
+		src, dest := newClients(Config{}, Config{})
+		assert.False(t, CopyThroughProcess(cfg.TransferModeDirect, src, dest))
+		assert.True(t, CopyThroughProcess(cfg.TransferModeStreaming, src, dest))
+	})
+
+	t.Run("auto_direct_for_same_backend", func(t *testing.T) {
+		src, dest := newClients(
+			Config{Provider: cfg.Minio, Endpoint: "minio:9000"},
+			Config{Provider: cfg.Minio, Endpoint: "minio:9000"},
+		)
+		assert.False(t, CopyThroughProcess(cfg.TransferModeAuto, src, dest))
+	})
+
+	t.Run("auto_streams_for_different_endpoint", func(t *testing.T) {
+		src, dest := newClients(
+			Config{Provider: cfg.Minio, Endpoint: "minio-a:9000"},
+			Config{Provider: cfg.Minio, Endpoint: "minio-b:9000"},
+		)
+		assert.True(t, CopyThroughProcess(cfg.TransferModeAuto, src, dest))
+	})
+
+	t.Run("auto_streams_for_different_provider", func(t *testing.T) {
+		src, dest := newClients(
+			Config{Provider: cfg.Minio, Endpoint: "storage:9000"},
+			Config{Provider: cfg.S3, Endpoint: "storage:9000"},
+		)
+		assert.True(t, CopyThroughProcess(cfg.TransferModeAuto, src, dest))
+	})
+
+	t.Run("auto_streams_for_different_azure_account", func(t *testing.T) {
+		src, dest := newClients(
+			Config{Provider: cfg.CloudProviderAzure, Endpoint: "core.windows.net:443", UseSSL: true, Credential: Credential{AzureAccountName: "account-a"}},
+			Config{Provider: cfg.CloudProviderAzure, Endpoint: "core.windows.net:443", UseSSL: true, Credential: Credential{AzureAccountName: "account-b"}},
+		)
+		assert.True(t, CopyThroughProcess(cfg.TransferModeAuto, src, dest))
 	})
 }

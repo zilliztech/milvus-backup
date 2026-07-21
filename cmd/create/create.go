@@ -217,16 +217,16 @@ func (o *options) toOption(params *cfg.Config) (backup.Option, error) {
 }
 
 func (o *options) toArgs(params *cfg.Config) (backup.TaskArgs, error) {
-	backupStorage, err := storage.NewBackupStorage(context.Background(), &params.Minio)
+	backupStorage, err := storage.NewBackupStorage(context.Background(), params)
 	if err != nil {
 		return backup.TaskArgs{}, fmt.Errorf("create backup storage: %w", err)
 	}
-	milvusStorage, err := storage.NewMilvusStorage(context.Background(), &params.Minio)
+	milvusStorage, err := storage.NewMilvusStorage(context.Background(), params)
 	if err != nil {
 		return backup.TaskArgs{}, fmt.Errorf("create milvus storage: %w", err)
 	}
 
-	backupDir := mpath.BackupDir(params.Minio.BackupRootPath.Val, o.backupName)
+	backupDir := mpath.BackupDir(params.Backup.Storage.RootPath.Val, o.backupName)
 	option, err := o.toOption(params)
 	if err != nil {
 		return backup.TaskArgs{}, err

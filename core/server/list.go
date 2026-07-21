@@ -31,7 +31,7 @@ func (s *Server) handleListBackups(c *gin.Context) {
 		return
 	}
 
-	backupStorage, err := storage.NewBackupStorage(c.Request.Context(), &s.params.Minio)
+	backupStorage, err := storage.NewBackupStorage(c.Request.Context(), s.params)
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
@@ -39,7 +39,7 @@ func (s *Server) handleListBackups(c *gin.Context) {
 		return
 	}
 
-	summaries, err := meta.List(c.Request.Context(), backupStorage, s.params.Minio.BackupRootPath.Val)
+	summaries, err := meta.List(c.Request.Context(), backupStorage, s.params.Backup.Storage.RootPath.Val)
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()

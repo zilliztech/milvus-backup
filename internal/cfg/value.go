@@ -47,10 +47,12 @@ type Value[T primitive] struct {
 }
 
 type Entry struct {
-	Name      string
-	Value     string
-	Source    SourceKind
-	SourceKey string
+	Name        string
+	Value       string
+	Source      SourceKind
+	SourceKey   string
+	Deprecated  bool
+	Replacement string
 }
 
 type Displayer interface {
@@ -62,12 +64,40 @@ func (val *Value[T]) Display(name string) Entry {
 	if val.IsSecret() {
 		value = maskSecret(value)
 	}
-	return Entry{
+	entry := Entry{
 		Name:      name,
 		Value:     value,
 		Source:    val.Used.Kind,
 		SourceKey: val.Used.Key,
 	}
+
+	if val.Used.Kind == SourceDefault || val.Used.Key == "" {
+		return entry
+	}
+
+	usedKey := strings.ToLower(val.Used.Key)
+	canonicalKey := ""
+	for _, key := range val.EnvKeys {
+		if strings.EqualFold(key, usedKey) {
+			canonicalKey = firstKey(val.EnvKeys)
+			break
+		}
+	}
+	if canonicalKey == "" {
+		canonicalKey = firstKey(val.Keys)
+	}
+	if canonicalKey != "" && !strings.EqualFold(canonicalKey, usedKey) {
+		entry.Deprecated = true
+		entry.Replacement = canonicalKey
+	}
+	return entry
+}
+
+func firstKey(keys []string) string {
+	if len(keys) == 0 {
+		return ""
+	}
+	return keys[0]
 }
 
 func maskSecret(s string) string {

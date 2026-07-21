@@ -76,7 +76,7 @@ func (h *getBackupHandler) validate() error {
 }
 
 func (h *getBackupHandler) initClient(ctx context.Context) error {
-	cli, err := storage.NewBackupStorage(ctx, &h.params.Minio)
+	cli, err := storage.NewBackupStorage(ctx, h.params)
 	if err != nil {
 		return fmt.Errorf("server: init backup storage client %w", err)
 	}
@@ -137,7 +137,7 @@ func (h *getBackupHandler) get(ctx context.Context) *backuppb.BackupInfoResponse
 
 func (h *getBackupHandler) readFromStorage(ctx context.Context, backupName string) (*backuppb.BackupInfo, int64, error) {
 	// get backup meta from storage
-	backupRootPath := h.params.Minio.BackupRootPath.Val
+	backupRootPath := h.params.Backup.Storage.RootPath.Val
 	if h.request.GetPath() != "" {
 		backupRootPath = h.request.GetPath()
 	}
