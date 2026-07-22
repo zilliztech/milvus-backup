@@ -33,7 +33,7 @@ brew install zilliztech/tap/milvus-backup
 
 ## Configuration
 
-Milvus Backup must be able to connect to Milvus, etcd, and the object storage used by Milvus. Copy the example configuration and update it for your deployment:
+Milvus Backup must be able to connect to Milvus, the storage used by Milvus, and the backup destination. Copy the example configuration and update it for your deployment:
 
 ```shell
 cp configs/backup.yaml backup.yaml
@@ -41,7 +41,7 @@ cp configs/backup.yaml backup.yaml
 
 The main sections are:
 
-- `milvus`: Milvus address, credentials, TLS settings, and etcd configuration.
+- `milvus`: Milvus address, credentials, and TLS settings. The etcd settings are only required when using `--backup_index_extra`.
 - `minio`: source storage and backup storage settings. Despite the section name, it also supports S3, AWS, GCP, Aliyun, Azure, Tencent Cloud, and local storage.
 - `backup`: backup and restore concurrency, temporary file handling, and garbage collection pause settings.
 - `log`: log level and output settings.
