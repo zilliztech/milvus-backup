@@ -45,7 +45,7 @@ assert.Len(t, got.GetCollectionBackups(), 1)         // the actual check
 ```
 
 Use PascalCase for sub-test names in `t.Run()`, e.g. `t.Run("SecretValueIsMasked", ...)`.
-See `internal/cfg/value_test.go` for a table-driven test in the intended style.
+See `internal/cfg/param/value_test.go` for a table-driven test in the intended style.
 
 ## Commit titles
 

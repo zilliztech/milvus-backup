@@ -1,4 +1,8 @@
-package cfg
+// Package param holds the schema-independent machinery every milvus-backup
+// configuration version is built from: typed parameters, the sources they
+// resolve from (--set overrides, environment, config file, default), and the
+// table that reports what each one resolved to.
+package param
 
 import (
 	"fmt"
@@ -30,13 +34,14 @@ type Used struct {
 	Key  string
 }
 
-type primitive interface {
+// Primitive is the set of scalar types a Value can hold.
+type Primitive interface {
 	~int | ~int8 | ~int16 | ~int32 | ~int64 |
 		~uint | ~uint8 | ~uint16 | ~uint32 | ~uint64 |
 		~float32 | ~float64 | ~string | ~bool
 }
 
-type Value[T primitive] struct {
+type Value[T Primitive] struct {
 	Default T
 	Keys    []string
 	EnvKeys []string
@@ -44,17 +49,6 @@ type Value[T primitive] struct {
 
 	Val  T
 	Used Used
-}
-
-type Entry struct {
-	Name      string
-	Value     string
-	Source    SourceKind
-	SourceKey string
-}
-
-type Displayer interface {
-	Display(name string) Entry
 }
 
 func (val *Value[T]) Display(name string) Entry {
@@ -70,15 +64,13 @@ func (val *Value[T]) Display(name string) Entry {
 	}
 }
 
-func maskSecret(s string) string {
-	if s == "" {
-		return ""
-	}
-	if len(s) <= 4 {
-		return "****"
-	}
-	return s[:2] + "****" + s[len(s)-2:]
-}
+func (val *Value[T]) ConfigKeys() []string { return val.Keys }
+func (val *Value[T]) EnvNames() []string   { return val.EnvKeys }
+
+// IsDefault reports whether the value fell back to its default, i.e. no source
+// set it explicitly. Validation uses it to reject fields that do not belong to
+// the selected provider or authentication type.
+func (val *Value[T]) IsDefault() bool { return val.Used.Kind == SourceDefault }
 
 func (val *Value[T]) isRequired() bool { return val.Opts&RequiredValue != 0 }
 func (val *Value[T]) IsSecret() bool   { return val.Opts&SecretValue != 0 }
@@ -300,7 +292,7 @@ func coerceUint64(raw any) (uint64, error) {
 	}
 }
 
-func (val *Value[T]) resolveOverride(s *source) (bool, error) {
+func (val *Value[T]) resolveOverride(s *Source) (bool, error) {
 	keys := make([]string, 0, len(val.Keys)+len(val.EnvKeys))
 	keys = append(keys, val.Keys...)
 	keys = append(keys, val.EnvKeys...)
@@ -319,7 +311,7 @@ func (val *Value[T]) resolveOverride(s *source) (bool, error) {
 	return false, nil
 }
 
-func (val *Value[T]) resolveEnv(s *source) (bool, error) {
+func (val *Value[T]) resolveEnv(s *Source) (bool, error) {
 	for _, key := range val.EnvKeys {
 		if raw, ok := s.lookupEnv(key); ok {
 			parsed, err := val.parseValue(raw)
@@ -335,7 +327,7 @@ func (val *Value[T]) resolveEnv(s *source) (bool, error) {
 	return false, nil
 }
 
-func (val *Value[T]) resolveConfigFile(s *source) (bool, error) {
+func (val *Value[T]) resolveConfigFile(s *Source) (bool, error) {
 	for _, key := range val.Keys {
 		if raw, ok := s.lookupConfigFile(key); ok {
 			parsed, err := val.parseAny(raw)
@@ -352,7 +344,7 @@ func (val *Value[T]) resolveConfigFile(s *source) (bool, error) {
 	return false, nil
 }
 
-func (val *Value[T]) Resolve(s *source) error {
+func (val *Value[T]) Resolve(s *Source) error {
 	// precedence: override > env > config file > default
 	ok, err := val.resolveOverride(s)
 	if err != nil {

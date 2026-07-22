@@ -1,0 +1,80 @@
+configVersion: v2
+
+log:
+  level: debug
+  console: false
+  file:
+    path: /var/log/backup.log
+    maxSizeMiB: 100
+    maxDays: 7
+    maxBackups: 3
+
+server:
+  debugMode: true
+  swaggerBasePath: /backup
+
+milvus:
+  user: root
+  password: Milvus
+
+  grpc:
+    address: milvus-proxy
+    port: 19531
+    tlsMode: mutual
+    caCertPath: /certs/ca.pem
+    serverName: milvus.example.com
+    mtlsCertPath: /certs/client.pem
+    mtlsKeyPath: /certs/client.key
+
+  rest:
+    endpoint: https://milvus-rest.example.com
+
+  management:
+    endpoint: http://milvus-datacoord:9091
+
+  replicate:
+    rpcChannelName: by-dev-replicate-msg
+
+  etcd:
+    endpoints:
+      - etcd-0:2379
+      - etcd-1:2379
+    rootPath: by-dev
+
+  storage:
+    provider: s3
+    address: s3.us-west-2.amazonaws.com
+    port: 443
+    region: us-west-2
+    useSSL: true
+    bucketName: milvus-bucket
+    rootPath: files
+    auth:
+      type: static
+      accessKeyID: milvus-ak
+      secretAccessKey: milvus-sk
+      sessionToken: milvus-token
+
+backup:
+  storage:
+    bucketName: backup-bucket
+    rootPath: backup
+  concurrency:
+    collections: 8
+    segments: 512
+  pauseGC: false
+
+restore:
+  concurrency:
+    collections: 3
+    importJobs: 64
+  keepTempFiles: true
+
+transfer:
+  mode: streaming
+  concurrency: 64
+  multipartCopyThresholdMiB: 128
+
+zillizCloud:
+  endpoint: https://api.cloud.zilliz.com
+  apiKey: an-api-key
