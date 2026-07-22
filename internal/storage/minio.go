@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sort"
 	"sync"
+	"time"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -30,6 +31,11 @@ const (
 	_maxParts         int64 = 10000
 
 	_maxCopyPartParallelism = 10
+
+	// aborting an unfinished multipart upload runs on a context detached from the
+	// caller's, so it needs its own bound to avoid hanging the copy path
+	_abortTimeout  = 30 * time.Second
+	_abortAttempts = 3
 )
 
 var _ Client = (*MinioClient)(nil)
@@ -162,6 +168,30 @@ func (m *MinioClient) copyPart(ctx context.Context, i copyPartInput) (minio.Comp
 	return output, err
 }
 
+// abortMultipartUpload cleans up an unfinished multipart upload.
+//
+// The caller reaches here precisely when something went wrong, and the most common
+// reason is that ctx was canceled -- the user canceled the backup, or a sibling copy
+// failed and tore down the shared context. Aborting with that ctx would fail
+// immediately and leave the already uploaded parts behind, billed until a bucket
+// lifecycle rule reaps them. So detach from the caller's cancellation and give the
+// abort its own deadline instead.
+func (m *MinioClient) abortMultipartUpload(ctx context.Context, destKey, uploadID string) {
+	abortCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), _abortTimeout)
+	defer cancel()
+
+	err := retry.Do(abortCtx, func() error {
+		if err := m.core.AbortMultipartUpload(abortCtx, m.cfg.Bucket, destKey, uploadID); err != nil {
+			return fmt.Errorf("storage: %s abort multipart upload %w", m.cfg.Provider, err)
+		}
+		return nil
+	}, retry.Attempts(_abortAttempts))
+	if err != nil {
+		m.logger.Error("abort multipart upload failed", zap.Error(err),
+			zap.String("dest_key", destKey), zap.String("upload_id", uploadID))
+	}
+}
+
 type sortableCompletedParts []minio.CompletePart
 
 func (a sortableCompletedParts) Len() int           { return len(a) }
@@ -183,10 +213,7 @@ func (m *MinioClient) multiPartCopy(ctx context.Context, srcCli *MinioClient, i 
 	defer func() {
 		if err != nil {
 			m.logger.Error("multi part copy failed, abort multipart upload", zap.Error(err), zap.String("upload_id", uploadID))
-
-			if err := m.core.AbortMultipartUpload(ctx, m.cfg.Bucket, i.DestKey, uploadID); err != nil {
-				m.logger.Error("abort multipart upload failed", zap.Error(err))
-			}
+			m.abortMultipartUpload(ctx, i.DestKey, uploadID)
 		}
 	}()
 
