@@ -1,17 +1,18 @@
 package v2
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
 	"github.com/zilliztech/milvus-backup/internal/cfg/param"
+	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
 // Load loads a v2 configuration from yaml + overrides + env.
 //
 // precedence: overrides (--set) > env > config file > default, among the names
-// the v2 schema defines. v1 names are rejected, not aliased.
+// the v2 schema defines. v1 names are not aliased; they are warned about and
+// ignored.
 func Load(configPath string, overrides map[string]string) (*Config, error) {
 	src, err := param.NewSource(configPath, overrides)
 	if err != nil {
@@ -29,10 +30,11 @@ func LoadFrom(src *param.Source) (*Config, error) {
 	if err := checkVersion(src); err != nil {
 		return nil, err
 	}
-	// Reject unknown names before resolving, so a typo is reported as a typo
-	// rather than as whatever the default silently did instead.
-	if err := checkKeys(cfg, src); err != nil {
-		return nil, err
+	// Unknown names are warned about and ignored, not rejected: a stray or
+	// misspelled key should not stop a backup. They are never applied either
+	// way, so resolving proceeds from the declared keys alone.
+	for _, w := range checkKeys(cfg, src) {
+		log.Warn(w)
 	}
 	if err := cfg.Resolve(src); err != nil {
 		return nil, err
@@ -66,17 +68,17 @@ func checkVersion(src *param.Source) error {
 	return nil
 }
 
-// checkKeys rejects every config file key and --set path the v2 schema does
-// not declare, so misspellings and v1 leftovers fail instead of falling back
-// to a default.
-func checkKeys(cfg *Config, src *param.Source) error {
+// checkKeys returns a warning for every config file key and --set path the v2
+// schema does not declare. Unknown names are ignored rather than applied, so a
+// misspelling or v1 leftover is surfaced without stopping the load.
+func checkKeys(cfg *Config, src *param.Source) []string {
 	configKeys, envNames := param.DeclaredKeys(cfg)
 	configKeys[strings.ToLower(VersionKey)] = struct{}{}
 
-	var errs []error
+	var warnings []string
 	for _, key := range src.ConfigFileKeys() {
 		if _, ok := configKeys[key]; !ok {
-			errs = append(errs, unknownKeyErr("config file key", key))
+			warnings = append(warnings, unknownKeyWarning("config file key", key))
 		}
 	}
 
@@ -86,21 +88,21 @@ func checkKeys(cfg *Config, src *param.Source) error {
 		_, isConfigKey := configKeys[strings.ToLower(key)]
 		_, isEnvName := envNames[strings.ToLower(key)]
 		if !isConfigKey && !isEnvName {
-			errs = append(errs, unknownKeyErr("--set key", key))
+			warnings = append(warnings, unknownKeyWarning("--set key", key))
 		}
 	}
 
-	return errors.Join(errs...)
+	return warnings
 }
 
-func unknownKeyErr(kind, key string) error {
+func unknownKeyWarning(kind, key string) string {
 	to, isLegacy := Migration(key)
 	switch {
 	case isLegacy && to == "":
-		return fmt.Errorf("cfg: v1 %s %q was removed in v2", kind, key)
+		return fmt.Sprintf("cfg: v1 %s %q was removed in v2, ignoring it", kind, key)
 	case isLegacy:
-		return fmt.Errorf("cfg: v1 %s %q is not accepted by a v2 config, use %s instead", kind, key, to)
+		return fmt.Sprintf("cfg: v1 %s %q is not accepted by a v2 config, ignoring it; use %s instead", kind, key, to)
 	default:
-		return fmt.Errorf("cfg: unknown v2 %s %q", kind, key)
+		return fmt.Sprintf("cfg: unknown v2 %s %q, ignoring it", kind, key)
 	}
 }
