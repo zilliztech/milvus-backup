@@ -8,6 +8,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/zilliztech/milvus-backup/internal/cfg/param"
 )
 
 // writeYAML writes content to a temp file and returns its path. header is
@@ -117,44 +119,78 @@ func TestLoad_Version(t *testing.T) {
 	})
 }
 
-func TestLoad_RejectsUnknownKeys(t *testing.T) {
+// checkKeys warns about every unknown key but never fails the load, so the
+// warnings are asserted on its return value rather than on an error.
+func TestCheckKeys(t *testing.T) {
+	cfg := New()
+
+	warningsFor := func(t *testing.T, yaml string, overrides map[string]string) []string {
+		t.Helper()
+
+		var path string
+		if yaml != "" {
+			path = writeYAML(t, yaml)
+		}
+		src, err := param.NewSource(path, overrides)
+		require.NoError(t, err)
+
+		return checkKeys(cfg, src)
+	}
+
 	t.Run("Misspelled", func(t *testing.T) {
-		_, err := Load(writeYAML(t, "milvus:\n  grpc:\n    adress: localhost\n"), nil) //nolint:misspell // the typo is what is under test
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), `unknown v2 config file key "milvus.grpc.adress"`)
+		w := warningsFor(t, "milvus:\n  grpc:\n    adress: localhost\n", nil) //nolint:misspell // the typo is what is under test
+		require.Len(t, w, 1)
+		assert.Contains(t, w[0], `unknown v2 config file key "milvus.grpc.adress"`)
+		assert.Contains(t, w[0], "ignoring it")
 	})
 
 	t.Run("V1Key", func(t *testing.T) {
-		_, err := Load(writeYAML(t, "milvus:\n  address: localhost\n"), nil)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), `v1 config file key "milvus.address"`)
-		assert.Contains(t, err.Error(), "milvus.grpc.address")
+		w := warningsFor(t, "milvus:\n  address: localhost\n", nil)
+		require.Len(t, w, 1)
+		assert.Contains(t, w[0], `v1 config file key "milvus.address"`)
+		assert.Contains(t, w[0], "milvus.grpc.address")
 	})
 
 	t.Run("RemovedV1Key", func(t *testing.T) {
-		_, err := Load(writeYAML(t, "http:\n  enabled: true\n"), nil)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), `"http.enabled" was removed in v2`)
+		w := warningsFor(t, "http:\n  enabled: true\n", nil)
+		require.Len(t, w, 1)
+		assert.Contains(t, w[0], `"http.enabled" was removed in v2`)
 	})
 
 	t.Run("EveryUnknownKeyIsReported", func(t *testing.T) {
-		_, err := Load(writeYAML(t, "minio:\n  address: localhost\n  port: 9000\n"), nil)
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), "milvus.storage.address")
-		assert.Contains(t, err.Error(), "milvus.storage.port")
+		w := warningsFor(t, "minio:\n  address: localhost\n  port: 9000\n", nil)
+		joined := strings.Join(w, "\n")
+		assert.Contains(t, joined, "milvus.storage.address")
+		assert.Contains(t, joined, "milvus.storage.port")
 	})
 
 	t.Run("V1Override", func(t *testing.T) {
-		_, err := Load("", map[string]string{"MILVUS_ADDRESS": "localhost"})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), `v1 --set key "MILVUS_ADDRESS"`)
-		assert.Contains(t, err.Error(), "MILVUS_GRPC_ADDRESS")
+		w := warningsFor(t, "", map[string]string{"MILVUS_ADDRESS": "localhost"})
+		require.Len(t, w, 1)
+		assert.Contains(t, w[0], `v1 --set key "MILVUS_ADDRESS"`)
+		assert.Contains(t, w[0], "MILVUS_GRPC_ADDRESS")
 	})
 
 	t.Run("UnknownOverride", func(t *testing.T) {
-		_, err := Load("", map[string]string{"milvus.grpc.hostname": "localhost"})
-		require.Error(t, err)
-		assert.Contains(t, err.Error(), `unknown v2 --set key "milvus.grpc.hostname"`)
+		w := warningsFor(t, "", map[string]string{"milvus.grpc.hostname": "localhost"})
+		require.Len(t, w, 1)
+		assert.Contains(t, w[0], `unknown v2 --set key "milvus.grpc.hostname"`)
+	})
+}
+
+// An unknown key is warned about and then ignored, so loading succeeds and the
+// affected field keeps its default rather than the stray value.
+func TestLoad_UnknownKeysAreIgnored(t *testing.T) {
+	t.Run("MisspelledConfigKey", func(t *testing.T) {
+		c, err := Load(writeYAML(t, "milvus:\n  grpc:\n    adress: 10.0.0.1\n"), nil) //nolint:misspell // the typo is what is under test
+		require.NoError(t, err)
+		assert.Equal(t, "localhost", c.Milvus.Grpc.Address.Val)
+	})
+
+	t.Run("V1Override", func(t *testing.T) {
+		c, err := Load("", map[string]string{"MILVUS_ADDRESS": "10.0.0.1"})
+		require.NoError(t, err)
+		assert.Equal(t, "localhost", c.Milvus.Grpc.Address.Val)
 	})
 }
 
