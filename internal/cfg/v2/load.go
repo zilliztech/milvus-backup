@@ -94,7 +94,7 @@ func checkKeys(cfg *Config, src *param.Source) error {
 }
 
 func unknownKeyErr(kind, key string) error {
-	to, isLegacy := migration(key)
+	to, isLegacy := Migration(key)
 	switch {
 	case isLegacy && to == "":
 		return fmt.Errorf("cfg: v1 %s %q was removed in v2", kind, key)

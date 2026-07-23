@@ -39,6 +39,15 @@ type Field interface {
 	Display(name string) Entry
 	ConfigKeys() []string
 	EnvNames() []string
+
+	// YAMLValue returns the resolved value as a Go value ready to be marshaled
+	// back to a YAML config file. Unlike Display it never masks secrets, since
+	// the rendered file must hold the value that actually resolves.
+	YAMLValue() any
+
+	// UseDefault sets the value to its declared default with a default source,
+	// without consulting any external source.
+	UseDefault()
 }
 
 func maskSecret(s string) string {
@@ -86,6 +95,14 @@ func Entries(cfg any) []Entry {
 	Walk(cfg, func(name string, field Field) { entries = append(entries, field.Display(name)) })
 
 	return entries
+}
+
+// Defaults sets every parameter of cfg to its declared default, without
+// consulting any external source. A caller that then populates only some fields
+// (such as a config migration) still starts from a fully resolved baseline, so
+// the fields it leaves alone report as defaulted rather than as unset.
+func Defaults(cfg any) {
+	Walk(cfg, func(_ string, field Field) { field.UseDefault() })
 }
 
 // DeclaredKeys returns every config file key and environment variable name the

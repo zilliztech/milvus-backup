@@ -66,6 +66,12 @@ func (val *Value[T]) Display(name string) Entry {
 
 func (val *Value[T]) ConfigKeys() []string { return val.Keys }
 func (val *Value[T]) EnvNames() []string   { return val.EnvKeys }
+func (val *Value[T]) YAMLValue() any       { return val.Val }
+
+func (val *Value[T]) UseDefault() {
+	val.Val = val.Default
+	val.Used = Used{Kind: SourceDefault}
+}
 
 // IsDefault reports whether the value fell back to its default, i.e. no source
 // set it explicitly. Validation uses it to reject fields that do not belong to
