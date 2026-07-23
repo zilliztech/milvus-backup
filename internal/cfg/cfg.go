@@ -2,25 +2,24 @@ package cfg
 
 import (
 	"cmp"
-	"fmt"
 	"io"
-	"reflect"
-	"strings"
-	"text/tabwriter"
+
+	"github.com/zilliztech/milvus-backup/internal/cfg/param"
 )
 
-type Resolver interface {
-	Resolve(*source) error
-}
+// The v1 schema is built on the shared parameter machinery in cfg/param.
+// These aliases keep the historical cfg.Value / cfg.Entry spellings working.
+type (
+	Value[T param.Primitive] = param.Value[T]
+	Entry                    = param.Entry
+	Used                     = param.Used
+	SourceKind               = param.SourceKind
+)
 
-func resolve(s *source, rs ...Resolver) error {
-	for _, r := range rs {
-		if err := r.Resolve(s); err != nil {
-			return err
-		}
-	}
-	return nil
-}
+const (
+	SecretValue   = param.SecretValue
+	RequiredValue = param.RequiredValue
+)
 
 type Config struct {
 	Log    LogConfig
@@ -42,65 +41,16 @@ func New() *Config {
 	}
 }
 
-func (c *Config) Resolve(s *source) error {
-	return resolve(s, &c.Log, &c.HTTP, &c.Cloud, &c.Milvus, &c.Minio, &c.Backup)
+func (c *Config) Resolve(s *param.Source) error {
+	return param.Resolve(s, &c.Log, &c.HTTP, &c.Cloud, &c.Milvus, &c.Minio, &c.Backup)
 }
 
-func (c *Config) Entries() []Entry {
-	var (
-		entries       []Entry
-		displayerType = reflect.TypeOf((*Displayer)(nil)).Elem()
-		collect       func(v reflect.Value, prefix string)
-	)
-
-	collect = func(v reflect.Value, prefix string) {
-		t := v.Type()
-		for i := range v.NumField() {
-			field := v.Field(i)
-			name := t.Field(i).Name
-			if prefix != "" {
-				name = prefix + "." + name
-			}
-
-			if field.Addr().Type().Implements(displayerType) {
-				entries = append(entries, field.Addr().Interface().(Displayer).Display(name))
-				continue
-			}
-
-			if field.Kind() == reflect.Struct {
-				collect(field, name)
-			}
-		}
-	}
-
-	collect(reflect.ValueOf(c).Elem(), "")
-	return entries
-}
+func (c *Config) Entries() []Entry { return param.Entries(c) }
 
 // WriteTable prints all configuration parameters in a table showing the
 // parameter name, current value (secrets masked), the source the value came
 // from (override, env, config, default), and the source key.
-func (c *Config) WriteTable(w io.Writer) error {
-	// Render into a strings.Builder first, whose Write never fails, so the
-	// only error-returning I/O is the single write and flush to the underlying
-	// writer below.
-	var sb strings.Builder
-	fmt.Fprintln(&sb, "PARAMETER\tVALUE\tSOURCE\tSOURCE_KEY")
-	fmt.Fprintln(&sb, "---------\t-----\t------\t----------")
-	for _, e := range c.Entries() {
-		fmt.Fprintf(&sb, "%s\t%s\t%s\t%s\n", e.Name, e.Value, e.Source, e.SourceKey)
-	}
-
-	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
-	if _, err := io.WriteString(tw, sb.String()); err != nil {
-		return fmt.Errorf("cfg: write config table: %w", err)
-	}
-	if err := tw.Flush(); err != nil {
-		return fmt.Errorf("cfg: flush config table: %w", err)
-	}
-
-	return nil
-}
+func (c *Config) WriteTable(w io.Writer) error { return param.WriteTable(w, c.Entries()) }
 
 type LogFileConfig struct {
 	Filename   Value[string]
@@ -128,8 +78,8 @@ func newLogConfig() LogConfig {
 	}
 }
 
-func (c *LogConfig) Resolve(s *source) error {
-	return resolve(s, &c.Level, &c.Console, &c.File.Filename, &c.File.MaxSize, &c.File.MaxDays, &c.File.MaxBackups)
+func (c *LogConfig) Resolve(s *param.Source) error {
+	return param.Resolve(s, &c.Level, &c.Console, &c.File.Filename, &c.File.MaxSize, &c.File.MaxDays, &c.File.MaxBackups)
 }
 
 type HTTPConfig struct {
@@ -146,8 +96,8 @@ func newHTTPConfig() HTTPConfig {
 	}
 }
 
-func (c *HTTPConfig) Resolve(s *source) error {
-	return resolve(s, &c.Enabled, &c.DebugMode, &c.SwaggerBasePath)
+func (c *HTTPConfig) Resolve(s *param.Source) error {
+	return param.Resolve(s, &c.Enabled, &c.DebugMode, &c.SwaggerBasePath)
 }
 
 type CloudConfig struct {
@@ -162,8 +112,8 @@ func newCloudConfig() CloudConfig {
 	}
 }
 
-func (c *CloudConfig) Resolve(s *source) error {
-	return resolve(s, &c.Address, &c.APIKey)
+func (c *CloudConfig) Resolve(s *param.Source) error {
+	return param.Resolve(s, &c.Address, &c.APIKey)
 }
 
 type EtcdConfig struct {
@@ -216,8 +166,8 @@ func newMilvusConfig() MilvusConfig {
 	}
 }
 
-func (c *MilvusConfig) Resolve(s *source) error {
-	return resolve(s,
+func (c *MilvusConfig) Resolve(s *param.Source) error {
+	return param.Resolve(s,
 		&c.Address, &c.Port,
 		&c.User, &c.Password,
 		&c.TLSMode, &c.CACertPath, &c.ServerName,
@@ -309,9 +259,9 @@ func newMinioConfig() MinioConfig {
 	}
 }
 
-func (c *MinioConfig) Resolve(s *source) error {
+func (c *MinioConfig) Resolve(s *param.Source) error {
 	// Resolve "milvus storage" fields first.
-	if err := resolve(s,
+	if err := param.Resolve(s,
 		&c.StorageType, &c.Address, &c.Port, &c.Region,
 		&c.AccessKeyID, &c.SecretAccessKey, &c.Token, &c.GcpCredentialJSON,
 		&c.UseSSL, &c.BucketName, &c.RootPath, &c.UseIAM, &c.IAMEndpoint,
@@ -333,7 +283,7 @@ func (c *MinioConfig) Resolve(s *source) error {
 	c.BackupUseIAM.Default = c.BackupUseIAM.Default || c.UseIAM.Val
 	c.BackupIAMEndpoint.Default = cmp.Or(c.BackupIAMEndpoint.Default, c.IAMEndpoint.Val)
 
-	return resolve(s,
+	return param.Resolve(s,
 		&c.BackupStorageType, &c.BackupAddress, &c.BackupPort, &c.BackupRegion,
 		&c.BackupAccessKeyID, &c.BackupSecretAccessKey, &c.BackupToken, &c.BackupGcpCredentialJSON,
 		&c.BackupUseSSL, &c.BackupBucketName, &c.BackupRootPath, &c.BackupUseIAM, &c.BackupIAMEndpoint,
@@ -378,8 +328,8 @@ func newBackupConfig() BackupConfig {
 	}
 }
 
-func (c *BackupConfig) Resolve(s *source) error {
-	return resolve(s,
+func (c *BackupConfig) Resolve(s *param.Source) error {
+	return param.Resolve(s,
 		&c.Parallelism.CopyData, &c.Parallelism.BackupCollection, &c.Parallelism.BackupSegment,
 		&c.Parallelism.RestoreCollection, &c.Parallelism.ImportJob,
 		&c.KeepTempFiles,

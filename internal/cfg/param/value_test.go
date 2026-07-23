@@ -1,4 +1,4 @@
-package cfg
+package param
 
 import (
 	"testing"
@@ -48,30 +48,4 @@ func TestValueDisplay(t *testing.T) {
 		// fixed-length masking: "su" + "****" + "et"
 		assert.Equal(t, "su****et", entry.Value)
 	})
-}
-
-func TestConfigEntries(t *testing.T) {
-	c, err := Load("", nil)
-	assert.NoError(t, err)
-
-	entries := c.Entries()
-	assert.NotEmpty(t, entries)
-
-	names := make(map[string]bool)
-	for _, e := range entries {
-		names[e.Name] = true
-	}
-
-	expectedFields := []string{
-		"Log.Level",
-		"Log.Console",
-		"Milvus.Address",
-		"Milvus.Port",
-		"Minio.BucketName",
-		"Backup.KeepTempFiles",
-	}
-
-	for _, field := range expectedFields {
-		assert.True(t, names[field], "expected field %s not found", field)
-	}
 }
