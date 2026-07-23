@@ -34,6 +34,12 @@ func (l *List) Display(name string) Entry {
 
 func (l *List) ConfigKeys() []string { return l.Keys }
 func (l *List) EnvNames() []string   { return l.EnvKeys }
+func (l *List) YAMLValue() any       { return l.Val }
+
+func (l *List) UseDefault() {
+	l.Val = slices.Clone(l.Default)
+	l.Used = Used{Kind: SourceDefault}
+}
 
 func (l *List) IsDefault() bool { return l.Used.Kind == SourceDefault }
 

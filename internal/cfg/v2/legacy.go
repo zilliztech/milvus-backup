@@ -120,9 +120,10 @@ var legacyEnvKeys = map[string]string{
 	"backup_gc_pause_address":               "MILVUS_MANAGEMENT_ENDPOINT",
 }
 
-// migration returns what replaced key in v2, and whether key is a known v1
-// name at all. An empty replacement means the key was removed outright.
-func migration(key string) (string, bool) {
+// Migration returns what replaced key in v2, and whether key is a known v1
+// name at all. An empty replacement means the key was removed outright. key is
+// a v1 config file key or environment variable name, matched case-insensitively.
+func Migration(key string) (string, bool) {
 	key = strings.ToLower(key)
 	if to, ok := legacyKeys[key]; ok {
 		return to, true
