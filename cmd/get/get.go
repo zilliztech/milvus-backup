@@ -66,7 +66,7 @@ func NewCmd(opt *root.Options) *cobra.Command {
 	var o options
 	cmd := &cobra.Command{
 		Use:   "get",
-		Short: "get subcommand get backup by name.",
+		Short: "get a backup by name",
 
 		RunE: func(cmd *cobra.Command, args []string) error {
 			params := opt.InitGlobalVars()

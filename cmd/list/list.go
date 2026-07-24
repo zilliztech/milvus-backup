@@ -62,7 +62,7 @@ func NewCmd(opt *root.Options) *cobra.Command {
 	var o options
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "Shows all backup in object storage.",
+		Short: "list all backups in object storage",
 
 		Run: func(cmd *cobra.Command, args []string) {
 			params := opt.InitGlobalVars()

@@ -65,7 +65,7 @@ func NewCmd(opt *root.Options) *cobra.Command {
 	var o options
 	cmd := &cobra.Command{
 		Use:   "l0compact",
-		Short: "Fold a backup's L0 (delete-only) segments into per-segment deltalogs so it restores without L0 import (writes a full physical copy).",
+		Short: "fold a backup's L0 (delete-only) segments into per-segment deltalogs so it restores without L0 import",
 		Long: "Fold a backup's L0 (delete-only) segments into per-segment deltalogs so it restores without L0 import.\n\n" +
 			"The output is a complete, standalone backup: every insert_log and delta_log object from the source is\n" +
 			"physically copied into the output backup (the source is left untouched). This roughly doubles the\n" +

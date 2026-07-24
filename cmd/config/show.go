@@ -9,7 +9,7 @@ import (
 func newShowCmd(opt *root.Options) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "show",
-		Short: "Print all configuration parameters with their values and sources",
+		Short: "print all configuration parameters with their values and sources",
 		Long: `Print all configuration parameters in a table format showing:
 - Parameter name (config file key)
 - Current value (secrets are masked)

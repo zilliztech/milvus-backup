@@ -362,8 +362,7 @@ func NewCmd(opt *root.Options) *cobra.Command {
 	var o options
 	cmd := &cobra.Command{
 		Use:   "restore",
-		Short: "restore a backup",
-		Long:  "restore a backup",
+		Short: "restore a backup into Milvus",
 
 		RunE: func(cmd *cobra.Command, args []string) error {
 			params := opt.InitGlobalVars()

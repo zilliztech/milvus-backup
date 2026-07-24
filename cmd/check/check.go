@@ -28,7 +28,7 @@ func writeConfig(w io.Writer, c *cfg.Config) error {
 func NewCmd(opt *root.Options) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "check",
-		Short: "check if the connects is right.",
+		Short: "check connectivity to Milvus and object storage",
 
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := context.Background()
