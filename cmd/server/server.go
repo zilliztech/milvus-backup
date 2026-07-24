@@ -66,7 +66,7 @@ func NewCmd(opt *root.Options) *cobra.Command {
 	var o options
 	cmd := &cobra.Command{
 		Use:   "server",
-		Short: "server subcommand start milvus-backup RESTAPI server.",
+		Short: "start the milvus-backup REST API server",
 
 		RunE: func(cmd *cobra.Command, args []string) error {
 			params := opt.InitGlobalVars()

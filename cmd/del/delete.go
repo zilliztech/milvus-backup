@@ -51,7 +51,7 @@ func NewCmd(opt *root.Options) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "delete",
-		Short: "delete backup by name.",
+		Short: "delete a backup by name",
 
 		RunE: func(cmd *cobra.Command, args []string) error {
 			params := opt.InitGlobalVars()

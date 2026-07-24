@@ -67,7 +67,7 @@ func NewCmd(opt *root.Options) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "migrate",
-		Short: "migrate the backup data to zilliz cloud cluster",
+		Short: "migrate backup data to a Zilliz Cloud cluster",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			params := opt.InitGlobalVars()
 

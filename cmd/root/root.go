@@ -38,8 +38,8 @@ func NewCmd(opt *Options) *cobra.Command {
 			DisableDefaultCmd: true,
 		},
 		Use:   "milvus-backup",
-		Short: "milvus-backup is a backup&restore tool for milvus.",
-		Long:  `milvus-backup is a backup&restore tool for milvus.`,
+		Short: "milvus-backup is a backup & restore tool for Milvus",
+		Long:  `milvus-backup is a backup & restore tool for Milvus.`,
 		Run: func(cmd *cobra.Command, args []string) {
 			cmd.Printf("execute %s args:%v error:%v\n", cmd.Name(), args, errors.New("unrecognized command"))
 			os.Exit(1)

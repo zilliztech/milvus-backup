@@ -99,7 +99,7 @@ func newSecondaryCmd(opt *root.Options) *cobra.Command {
 	var o secondaryOption
 	cmd := &cobra.Command{
 		Use:   "secondary",
-		Short: "restore backup to secondary cluster",
+		Short: "restore a backup to a secondary cluster",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			params := opt.InitGlobalVars()
 
