@@ -19,10 +19,12 @@ import (
 type ImportState string
 
 const (
-	ImportStatePending   ImportState = "Pending"
-	ImportStateImporting ImportState = "Importing"
-	ImportStateCompleted ImportState = "Completed"
-	ImportStateFailed    ImportState = "Failed"
+	ImportStatePending     ImportState = "Pending"
+	ImportStateImporting   ImportState = "Importing"
+	ImportStateUncommitted ImportState = "Uncommitted"
+	ImportStateCommitting  ImportState = "Committing"
+	ImportStateCompleted   ImportState = "Completed"
+	ImportStateFailed      ImportState = "Failed"
 )
 
 type BulkInsertV2Input struct {
