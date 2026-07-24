@@ -1,6 +1,11 @@
 package l0compact
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
 // envHeaderArgs configures the descriptor fields used by buildV1Envelope.
 type envHeaderArgs struct {
@@ -15,9 +20,7 @@ type envHeaderArgs struct {
 func buildV1Envelope(t *testing.T, args envHeaderArgs, payload []byte) []byte {
 	t.Helper()
 	blob, err := BuildV1Envelope(args.typeCode, args.payloadType, args.fieldID, args.extras, payload)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return blob
 }
 
@@ -31,16 +34,10 @@ func TestEnvelopeRoundTrip(t *testing.T) {
 	}, payload)
 
 	desc, events, err := parseV1Envelope(blob)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if desc.PayloadDataType != 20 || desc.FieldID != 0 {
-		t.Fatalf("desc=%+v", desc)
-	}
-	if len(events) != 1 || string(events[0].Payload) != string(payload) {
-		t.Fatalf("events=%d payload mismatch", len(events))
-	}
-	if _, ok := desc.Extras["version"]; ok {
-		t.Fatal("json variant should have no MULTI_FIELD version")
-	}
+	require.NoError(t, err)
+	assert.EqualValues(t, 20, desc.PayloadDataType)
+	assert.EqualValues(t, 0, desc.FieldID)
+	require.Len(t, events, 1)
+	assert.Equal(t, payload, events[0].Payload)
+	assert.NotContains(t, desc.Extras, "version", "json variant should have no MULTI_FIELD version")
 }

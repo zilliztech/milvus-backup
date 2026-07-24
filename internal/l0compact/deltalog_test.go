@@ -4,36 +4,27 @@ import (
 	"bytes"
 	"encoding/binary"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestDeltalogV1JSONRoundTrip(t *testing.T) {
 	in := []DeleteEntry{{PK: PrimaryKey{Type: PKInt64, Int: 42}, Ts: 100}}
 	blob, err := WriteDeltalog(in, KindV1, PKInt64)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	out, err := ReadDeltalog(blob, KindV1, PKInt64)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(out) != 1 || out[0].PK.Int != 42 || out[0].Ts != 100 {
-		t.Fatalf("got %+v", out)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, in, out)
 }
 
 func TestDeltalogV2RoundTripVarChar(t *testing.T) {
 	in := []DeleteEntry{{PK: PrimaryKey{Type: PKVarChar, Str: "k1"}, Ts: 7}}
 	blob, err := WriteDeltalog(in, KindV2, PKVarChar)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	out, err := ReadDeltalog(blob, KindV2, PKVarChar)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(out) != 1 || out[0].PK.Str != "k1" || out[0].Ts != 7 {
-		t.Fatalf("got %+v", out)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, in, out)
 }
 
 // TestDeltalogV1MultiEvent guards the fix for a v1 deltalog file that carries
@@ -43,27 +34,17 @@ func TestDeltalogV2RoundTripVarChar(t *testing.T) {
 func TestDeltalogV1MultiEvent(t *testing.T) {
 	// event 1 (via the normal writer): pk=1 @ ts=10
 	blob, err := WriteDeltalog([]DeleteEntry{{PK: PrimaryKey{Type: PKInt64, Int: 1}, Ts: 10}}, KindV1, PKInt64)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	// append a second Delete event to the SAME file: pk=2 @ ts=20
 	payload2, err := writeParquetStringColumn([]string{`{"pk":2,"ts":20,"pkType":5}`}, 0)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	blob = append(blob, buildDeltaEvent(payload2)...)
 
 	out, err := ReadDeltalog(blob, KindV1, PKInt64)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(out) != 2 { // was 1 before the fix
-		t.Fatalf("want 2 entries from 2 events, got %d: %+v", len(out), out)
-	}
+	require.NoError(t, err)
+	require.Len(t, out, 2, "want 2 entries from 2 events") // was 1 before the fix
 	seen := map[int64]uint64{out[0].PK.Int: out[0].Ts, out[1].PK.Int: out[1].Ts}
-	if seen[1] != 10 || seen[2] != 20 {
-		t.Fatalf("got %+v", out)
-	}
+	assert.Equal(t, map[int64]uint64{1: 10, 2: 20}, seen)
 }
 
 // buildDeltaEvent encodes one v1 Delete data event: 17B header + 16B fixpart + payload.
@@ -78,13 +59,11 @@ func buildDeltaEvent(payload []byte) []byte {
 
 func TestDeltalogV1MultiFieldRead(t *testing.T) {
 	// multi-field variant: envelope with version=MULTI_FIELD wrapping a 2-col parquet.
-	payload, _ := WriteParquetPKTs([]PrimaryKey{{Type: PKInt64, Int: 9}}, []uint64{3}, PKInt64)
-	blob, _ := BuildV1Envelope(eventDelete, 5 /*Int64*/, 0, map[string]string{"version": "MULTI_FIELD"}, payload)
+	payload, err := WriteParquetPKTs([]PrimaryKey{{Type: PKInt64, Int: 9}}, []uint64{3}, PKInt64)
+	require.NoError(t, err)
+	blob, err := BuildV1Envelope(eventDelete, 5 /*Int64*/, 0, map[string]string{"version": "MULTI_FIELD"}, payload)
+	require.NoError(t, err)
 	out, err := ReadDeltalog(blob, KindV1, PKInt64)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(out) != 1 || out[0].PK.Int != 9 || out[0].Ts != 3 {
-		t.Fatalf("got %+v", out)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, []DeleteEntry{{PK: PrimaryKey{Type: PKInt64, Int: 9}, Ts: 3}}, out)
 }
