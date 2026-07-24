@@ -1,13 +1,18 @@
 // Package migrate translates a resolved v1 configuration into a v2
-// configuration plus a report of everything that needs a human's attention.
+// configuration. Two entry points share one field mapping: Migrate, which also
+// returns a report of everything that needs a human's attention and backs the
+// `config migrate` command, and Translate, which the config loader uses to run
+// an existing v1 file through the v2 schema.
 //
 // Migration renames configuration keys and environment variables; it does not
 // relocate values between mechanisms. A value the operator keeps in an
 // environment variable stays there: the v2 file records the v2 variable name to
-// set rather than baking the secret into the file.
+// set rather than baking the secret into the file. Translate is the exception,
+// since a running process needs the secret itself rather than advice about it.
 package migrate
 
 import (
+	"fmt"
 	"os"
 	"strings"
 
@@ -21,12 +26,43 @@ import (
 // warnings, the embedded comments, the environment renames, and any validation
 // problems (via Report.Err) that --strict promotes to a failure.
 func Migrate(src *cfg.Config) (*v2.Config, *Report) {
+	r := newReport()
+	out := translate(src, r)
+
+	scanLegacyEnv(src, r)
+	r.recordValidation(out.Validate())
+
+	return out, r
+}
+
+// Translate maps a resolved v1 configuration into a complete v2 configuration
+// for the config loader, which decodes a v1 file with the v1 schema and then
+// translates it, rather than teaching the v2 schema to read v1 names.
+//
+// It differs from Migrate in the two ways a running process needs: every value
+// is carried into the result, including a secret that reached v1 through an
+// environment variable, which the loader needs in hand to connect; and the v2
+// validation problems are returned as an error instead of being collected for
+// a human to read.
+func Translate(src *cfg.Config) (*v2.Config, error) {
+	out := translate(src, nil)
+
+	if err := out.Validate(); err != nil {
+		return nil, fmt.Errorf("cfg: translate v1 config to v2: %w", err)
+	}
+
+	return out, nil
+}
+
+// translate applies the v1 to v2 field mapping shared by Migrate and Translate.
+// A nil report selects the loader path: nothing is reported, and secrets are
+// copied into the config rather than deferred to an environment variable.
+func translate(src *cfg.Config, r *Report) *v2.Config {
 	out := v2.New()
 	// Start from a fully defaulted baseline so the fields with no v1 source
 	// report as defaulted, which the v2 validator relies on to tell an
 	// inapplicable credential from one left unset.
 	param.Defaults(out)
-	r := newReport()
 
 	migrateLog(src, out)
 	migrateServer(src, out, r)
@@ -36,10 +72,7 @@ func Migrate(src *cfg.Config) (*v2.Config, *Report) {
 	migrateTransfer(src, out, r)
 	migrateCloud(src, out, r)
 
-	scanLegacyEnv(src, r)
-	r.recordValidation(out.Validate())
-
-	return out, r
+	return out
 }
 
 func migrateLog(src *cfg.Config, out *v2.Config) {
@@ -268,8 +301,12 @@ func effective(field, primary *cfg.Value[string]) *cfg.Value[string] {
 // environment variable: then it leaves the v2 field at its default and records
 // that the secret must be supplied through the v2 variable instead of being
 // written into the file.
+//
+// That withholding only makes sense for a file someone is about to read. On the
+// loader path (a nil report) the secret is always copied, because a running
+// process needs the resolved value to connect.
 func mapSecret(out, in *cfg.Value[string], v2env string, r *Report) {
-	if in.Used.Kind == param.SourceEnv {
+	if r != nil && in.Used.Kind == param.SourceEnv {
 		r.comment(out, "set via env "+v2env)
 		r.deferToEnv(out)
 		r.warnf("%s is supplied via environment variable %s in v1; set %s in your v2 deployment (its value was not written to the file)",

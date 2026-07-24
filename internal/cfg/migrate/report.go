@@ -13,6 +13,11 @@ import (
 // about values that changed meaning, the per-field comments embedded in the
 // output file, the validation problems the migrated config still has, and the
 // v1 environment variables that need renaming.
+//
+// A nil *Report is valid and discards everything written to it. It marks the
+// runtime translate path, which maps a v1 config into v2 without producing
+// migration advice for anyone to read, so every method here tolerates a nil
+// receiver.
 type Report struct {
 	// Comments maps a lower-cased v2 config key to the head comment Render
 	// writes above it.
@@ -41,11 +46,17 @@ func newReport() *Report {
 }
 
 func (r *Report) warnf(format string, args ...any) {
+	if r == nil {
+		return
+	}
 	r.Warnings = append(r.Warnings, fmt.Sprintf(format, args...))
 }
 
 // comment records a head comment for a v2 field, keyed by its config key.
 func (r *Report) comment(f param.Field, text string) {
+	if r == nil {
+		return
+	}
 	if keys := f.ConfigKeys(); len(keys) > 0 {
 		r.Comments[strings.ToLower(keys[0])] = text
 	}
@@ -54,12 +65,18 @@ func (r *Report) comment(f param.Field, text string) {
 // commentKey records a head comment for a v2 field named directly by its
 // config key, for callers that do not hold the field.
 func (r *Report) commentKey(key, text string) {
+	if r == nil {
+		return
+	}
 	r.Comments[strings.ToLower(key)] = text
 }
 
 // deferToEnv marks a field as supplied through an environment variable, so its
 // empty value in the file is expected rather than a validation error.
 func (r *Report) deferToEnv(f param.Field) {
+	if r == nil {
+		return
+	}
 	if keys := f.ConfigKeys(); len(keys) > 0 {
 		r.deferred[strings.ToLower(keys[0])] = true
 	}
@@ -69,7 +86,7 @@ func (r *Report) deferToEnv(f param.Field) {
 // every problem except those on fields whose value the operator deliberately
 // left in an environment variable, which are empty in the file on purpose.
 func (r *Report) recordValidation(err error) {
-	if err == nil {
+	if r == nil || err == nil {
 		return
 	}
 
