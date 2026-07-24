@@ -50,7 +50,7 @@ During restore, milvus-backup copies backup data into the bucket specified by `m
 
 **How to fix it?**
 
-Run `./milvus-backup check config` to print the resolved configuration, and make sure `minio.bucketName` matches the bucket that the **target Milvus** is actually using. Run `./milvus-backup check` to verify connectivity.
+Run `./milvus-backup config show` to print the resolved configuration, and make sure `minio.bucketName` matches the bucket that the **target Milvus** is actually using. Run `./milvus-backup check` to verify connectivity.
 
 **Related issues:** [#1026](https://github.com/zilliztech/milvus-backup/issues/1026), [#1006](https://github.com/zilliztech/milvus-backup/issues/1006), [#923](https://github.com/zilliztech/milvus-backup/issues/923), [#895](https://github.com/zilliztech/milvus-backup/issues/895)
 
