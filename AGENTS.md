@@ -70,3 +70,23 @@ exempt — they are generated, not written.
 **PRs are squash-merged, so the PR title is what lands in git history — not your local commit
 subjects.** A 21-commit PR merges as one commit whose subject is the PR title with ` (#NNNN)`
 appended by GitHub. Apply this rule to the PR title above all, and leave room for the suffix.
+
+## Pull requests
+
+Every PR targeting `main` (or `v0.5`) must either link an issue or be marked as an improvement,
+or mergify labels it `do-not-merge/missing-related-issue` and blocks the merge:
+
+- **Simple improvement** — a refactor, cleanup, test-only change, doc tweak, or similar chore
+  that nobody would file a bug for. Skip the issue and add `/kind improvement` to the PR body.
+- **Anything else** — a bug fix or a feature. Open an issue that describes what you're doing,
+  then reference it from the PR body (`issue: #1234`, or the full issue URL). The issue carries
+  the problem statement and the record of what you did; the PR just points at it.
+
+When you do link an issue, match the verb to how much of it the PR resolves:
+
+- `Fixes #1234` only when the PR fully closes the issue — GitHub auto-closes it on merge.
+- `Related to #1234` / `Part of #1234` for partial work, so the issue stays open.
+
+Why the two paths: mergify recognizes a linked issue by a `#1234` reference or an issues URL in
+the body, and the improvement path by the `kind/improvement` label that `/kind improvement`
+adds. Exactly one of the two must be present, or the merge is blocked.
