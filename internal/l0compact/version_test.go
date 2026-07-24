@@ -1,16 +1,19 @@
 package l0compact
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+)
 
 func TestClassifyVersion(t *testing.T) {
 	cases := map[int64]StorageKind{0: KindV1, 1: KindV1, 2: KindV2, 3: KindV2}
 	for v, want := range cases {
 		got, err := ClassifyVersion(v)
-		if err != nil || got != want {
-			t.Fatalf("v=%d got=%v err=%v want=%v", v, got, err, want)
-		}
+		assert.NoError(t, err)
+		assert.Equal(t, want, got)
 	}
-	if _, err := ClassifyVersion(4); err == nil {
-		t.Fatal("want fail-fast on version 4")
-	}
+
+	_, err := ClassifyVersion(4)
+	assert.Error(t, err, "want fail-fast on version 4")
 }

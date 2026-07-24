@@ -6,6 +6,8 @@ import (
 	"github.com/apache/arrow/go/v17/arrow"
 	"github.com/apache/arrow/go/v17/arrow/array"
 	"github.com/apache/arrow/go/v17/arrow/memory"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // buildSingleInt64Parquet builds a bare single-column Int64 parquet blob,
@@ -25,23 +27,18 @@ func buildSingleInt64Parquet(t *testing.T, vals []int64) []byte {
 	rec := b.NewRecord()
 	defer rec.Release()
 	blob, err := writeRecord(schema, rec)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 	return blob
 }
 
 func TestReadInsertPKV1(t *testing.T) {
 	// v1 insert: envelope (Insert event, PayloadDataType=Int64) wrapping a single Int64 column parquet.
 	payload := buildSingleInt64Parquet(t, []int64{11, 22}) // helper in test file
-	blob, _ := BuildV1Envelope(eventInsert, 5, 100, map[string]string{}, payload)
+	blob, err := BuildV1Envelope(eventInsert, 5, 100, map[string]string{}, payload)
+	require.NoError(t, err)
 	pks, err := ReadInsertPK([][]byte{blob}, KindV1, 100, PKInt64)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(pks) != 2 || pks[0].Int != 11 || pks[1].Int != 22 {
-		t.Fatalf("got %+v", pks)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, []PrimaryKey{{Type: PKInt64, Int: 11}, {Type: PKInt64, Int: 22}}, pks)
 }
 
 func TestReadInsertPKV2ByFieldID(t *testing.T) {
@@ -49,10 +46,6 @@ func TestReadInsertPKV2ByFieldID(t *testing.T) {
 	g0 := buildTaggedParquetInt64(t, map[int64][]int64{1: {0, 0}}) // system col, no pk
 	g1 := buildTaggedParquetInt64(t, map[int64][]int64{100: {5, 6}})
 	pks, err := ReadInsertPK([][]byte{g0, g1}, KindV2, 100, PKInt64)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(pks) != 2 || pks[0].Int != 5 || pks[1].Int != 6 {
-		t.Fatalf("got %+v", pks)
-	}
+	require.NoError(t, err)
+	assert.Equal(t, []PrimaryKey{{Type: PKInt64, Int: 5}, {Type: PKInt64, Int: 6}}, pks)
 }
