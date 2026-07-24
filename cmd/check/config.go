@@ -2,23 +2,20 @@ package check
 
 import (
 	"github.com/spf13/cobra"
-
-	"github.com/zilliztech/milvus-backup/cmd/root"
 )
 
-func newConfigCmd(opt *root.Options) *cobra.Command {
+// newConfigCmd is the deprecated predecessor of "config show". It stays only to
+// redirect existing callers to the new command and prints nothing else; cobra
+// emits the deprecation notice and hides it from the help listing.
+//
+// TODO: remove this alias in a release after 0.6.0.
+func newConfigCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "config",
-		Short: "Print all configuration parameters with their values and sources",
-		Long: `Print all configuration parameters in a table format showing:
-- Parameter name (config file key)
-- Current value (secrets are masked)
-- Source: where the value came from (override, env, config, default)
-- Source key: the specific key used to set the value`,
-
+		Use:        "config",
+		Short:      `Deprecated: use "config show" instead`,
+		Deprecated: `use "config show" instead; this alias will be removed in a release after 0.6.0`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			params := opt.InitGlobalVars()
-			return params.WriteTable(cmd.OutOrStdout())
+			return nil
 		},
 	}
 

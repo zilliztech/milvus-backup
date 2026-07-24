@@ -14,6 +14,7 @@ func NewCmd(opt *root.Options) *cobra.Command {
 		Short: "inspect and migrate milvus-backup configuration",
 	}
 
+	cmd.AddCommand(newShowCmd(opt))
 	cmd.AddCommand(newMigrateCmd(opt))
 
 	return cmd
