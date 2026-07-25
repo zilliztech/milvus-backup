@@ -48,7 +48,7 @@ type collTask struct {
 
 	targetNS namespace.NS
 
-	crossStorage  bool
+	streaming     bool
 	keepTempFiles bool
 	copySem       *semaphore.Weighted
 	bulkInsertSem *semaphore.Weighted
@@ -89,7 +89,7 @@ type collTaskArgs struct {
 
 	backupDir     string
 	keepTempFiles bool
-	crossStorage  bool
+	streaming     bool
 
 	backupStorage storage.Client
 	milvusStorage storage.Client
@@ -130,7 +130,7 @@ func newCollTask(args collTaskArgs) *collTask {
 		copySem:       args.copySem,
 		bulkInsertSem: args.bulkInsertSem,
 
-		crossStorage:  args.crossStorage,
+		streaming:     args.streaming,
 		keepTempFiles: args.keepTempFiles,
 		backupDir:     args.backupDir,
 
@@ -346,7 +346,7 @@ func (ct *collTask) copyAndRewriteDir(ctx context.Context, b batch) (batch, erro
 	isSameBucket := ct.milvusStorage.Config().Bucket == ct.backupStorage.Config().Bucket
 	isSameStorage := ct.backupStorage.Config().Provider == ct.milvusStorage.Config().Provider
 	// if milvus bucket and backup bucket are not the same, should copy the data first
-	if isSameBucket && isSameStorage && !ct.crossStorage {
+	if isSameBucket && isSameStorage && !ct.streaming {
 		ct.logger.Info("milvus and backup store in the same bucket, no need to copy the data")
 		return b, nil
 	}

@@ -6,11 +6,11 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/zilliztech/milvus-backup/internal/cfg"
+	"github.com/zilliztech/milvus-backup/internal/cfg/loader"
 )
 
 func TestWriteConfig(t *testing.T) {
-	c, err := cfg.Load("", nil)
+	c, err := loader.Load("", nil)
 	assert.NoError(t, err)
 
 	var buf bytes.Buffer
@@ -19,5 +19,5 @@ func TestWriteConfig(t *testing.T) {
 	out := buf.String()
 	assert.Contains(t, out, "Configuration:")
 	assert.Contains(t, out, "PARAMETER")
-	assert.Contains(t, out, "Milvus.Address")
+	assert.Contains(t, out, "Milvus.Grpc.Address")
 }

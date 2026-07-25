@@ -12,7 +12,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/backup"
-	"github.com/zilliztech/milvus-backup/internal/cfg"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
@@ -191,7 +191,7 @@ func (o *options) toStrategy() (backup.Strategy, error) {
 	return backup.StrategyAuto, nil
 }
 
-func (o *options) toOption(params *cfg.Config) (backup.Option, error) {
+func (o *options) toOption(params *v2.Config) (backup.Option, error) {
 	f, err := o.toFilter()
 	if err != nil {
 		return backup.Option{}, err
@@ -204,7 +204,7 @@ func (o *options) toOption(params *cfg.Config) (backup.Option, error) {
 
 	return backup.Option{
 		BackupName: o.backupName,
-		PauseGC:    params.Backup.GCPause.Enable.Val,
+		PauseGC:    params.Backup.PauseGC.Val,
 
 		Strategy: strategy,
 
@@ -216,17 +216,17 @@ func (o *options) toOption(params *cfg.Config) (backup.Option, error) {
 	}, nil
 }
 
-func (o *options) toArgs(params *cfg.Config) (backup.TaskArgs, error) {
-	backupStorage, err := storage.NewBackupStorage(context.Background(), &params.Minio)
+func (o *options) toArgs(params *v2.Config) (backup.TaskArgs, error) {
+	backupStorage, err := storage.NewBackupStorage(context.Background(), params)
 	if err != nil {
 		return backup.TaskArgs{}, fmt.Errorf("create backup storage: %w", err)
 	}
-	milvusStorage, err := storage.NewMilvusStorage(context.Background(), &params.Minio)
+	milvusStorage, err := storage.NewMilvusStorage(context.Background(), params)
 	if err != nil {
 		return backup.TaskArgs{}, fmt.Errorf("create milvus storage: %w", err)
 	}
 
-	backupDir := mpath.BackupDir(params.Minio.BackupRootPath.Val, o.backupName)
+	backupDir := mpath.BackupDir(params.Backup.Storage.RootPath.Val, o.backupName)
 	option, err := o.toOption(params)
 	if err != nil {
 		return backup.TaskArgs{}, err
@@ -243,7 +243,7 @@ func (o *options) toArgs(params *cfg.Config) (backup.TaskArgs, error) {
 	}, nil
 }
 
-func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
+func (o *options) run(cmd *cobra.Command, params *v2.Config) error {
 	start := time.Now()
 
 	args, err := o.toArgs(params)

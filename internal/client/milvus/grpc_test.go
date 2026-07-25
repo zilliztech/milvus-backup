@@ -16,7 +16,8 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
-	"github.com/zilliztech/milvus-backup/internal/cfg"
+	"github.com/zilliztech/milvus-backup/internal/cfg/param"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
@@ -29,21 +30,30 @@ func TestGrpcAuth(t *testing.T) {
 }
 
 func TestTransCred(t *testing.T) {
-	cred, err := transCred(&cfg.MilvusConfig{TLSMode: cfg.Value[int]{Val: 3}})
-	assert.Error(t, err)
-	assert.Nil(t, cred)
+	t.Run("Disabled", func(t *testing.T) {
+		cred, err := transCred(&v2.MilvusGrpcConfig{TLSMode: param.Value[string]{Val: v2.TLSDisabled}})
+		assert.NoError(t, err)
+		assert.Equal(t, insecure.NewCredentials(), cred)
+	})
 
-	cred, err = transCred(&cfg.MilvusConfig{TLSMode: cfg.Value[int]{Val: 0}})
-	assert.NoError(t, err)
-	assert.Equal(t, insecure.NewCredentials(), cred)
+	t.Run("Server", func(t *testing.T) {
+		cred, err := transCred(&v2.MilvusGrpcConfig{TLSMode: param.Value[string]{Val: v2.TLSServer}})
+		assert.NoError(t, err)
+		assert.NotNil(t, cred)
+	})
 
-	cred, err = transCred(&cfg.MilvusConfig{TLSMode: cfg.Value[int]{Val: 1}})
-	assert.NoError(t, err)
-	assert.NotNil(t, cred)
-
-	cred, err = transCred(&cfg.MilvusConfig{TLSMode: cfg.Value[int]{Val: 2}})
-	assert.NoError(t, err)
-	assert.NotNil(t, cred)
+	// v1 quietly fell back to server TLS when the mutual key pair was missing
+	// or unreadable. Configuration validation rules out a missing pair, and an
+	// unreadable one is an error rather than a weaker connection.
+	t.Run("MutualWithUnreadableKeyPair", func(t *testing.T) {
+		cred, err := transCred(&v2.MilvusGrpcConfig{
+			TLSMode:      param.Value[string]{Val: v2.TLSMutual},
+			MTLSCertPath: param.Value[string]{Val: "/no/such/cert.pem"},
+			MTLSKeyPath:  param.Value[string]{Val: "/no/such/key.pem"},
+		})
+		assert.Error(t, err)
+		assert.Nil(t, cred)
+	})
 }
 
 func TestIsUnimplemented(t *testing.T) {

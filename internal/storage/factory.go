@@ -8,58 +8,91 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/zilliztech/milvus-backup/internal/cfg"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
-func newBackupCredential(params *cfg.MinioConfig) Credential {
-	var cred Credential
-	if params.BackupStorageType.Val == cfg.CloudProviderAzure {
-		cred.AzureAccountName = params.BackupAccessKeyID.Val
-	}
+// newCredential maps a storage section's auth onto the credential the clients
+// take. v2 names the authentication method outright, so this is a switch on
+// auth.type rather than v1's guesswork over the provider, the useIAM flag and
+// whether a GCP credential file happened to be set.
+func newCredential(s *v2.StorageConfig) Credential {
+	auth := &s.Auth
 
-	if params.BackupUseIAM.Val {
-		cred.Type = IAM
-		cred.IAMEndpoint = params.BackupIAMEndpoint.Val
-		return cred
-	}
+	// Azure builds its service URL from the account name whichever way it
+	// authenticates, so the name is carried on every credential.
+	cred := Credential{AzureAccountName: s.AccountName.Val}
 
-	if params.BackupStorageType.Val == cfg.CloudProviderGCPNative &&
-		params.BackupGcpCredentialJSON.Val != "" {
+	switch auth.Type.Val {
+	case v2.AuthSharedKey:
+		// Azure signs with the account name and one of its access keys.
+		cred.Type = Static
+		cred.AK = s.AccountName.Val
+		cred.SK = auth.AccountKey.Val
+	case v2.AuthServiceAccount:
 		cred.Type = GCPCredJSON
-		cred.GCPCredJSON = params.BackupGcpCredentialJSON.Val
-		return cred
+		cred.GCPCredJSON = auth.CredentialsFile.Val
+	case v2.AuthIAM:
+		cred.Type = IAM
+		cred.IAMEndpoint = auth.Endpoint.Val
+	case v2.AuthDefault:
+		// The provider SDK resolves credentials on its own: an instance role,
+		// workload identity, or DefaultAzureCredential. That is what the clients
+		// already do for IAM when there is no endpoint to fetch from.
+		cred.Type = IAM
+	default:
+		cred.Type = Static
+		cred.AK = auth.AccessKeyID.Val
+		cred.SK = auth.SecretAccessKey.Val
+		cred.Token = auth.SessionToken.Val
 	}
 
-	cred.Type = Static
-	cred.AK = params.BackupAccessKeyID.Val
-	cred.SK = params.BackupSecretAccessKey.Val
-	cred.Token = params.BackupToken.Val
 	return cred
 }
 
-func BackupStorageConfig(params *cfg.MinioConfig) Config {
-	ep := net.JoinHostPort(params.BackupAddress.Val, strconv.Itoa(params.BackupPort.Val))
+// storageConfig maps one storage section onto a client config.
+// multipartCopyThresholdMiB is passed in because it belongs to the transfer
+// policy rather than to either backend: it describes how bytes move between
+// them.
+func storageConfig(s *v2.StorageConfig, multipartCopyThresholdMiB int64) Config {
 	return Config{
-		Provider:                  params.BackupStorageType.Val,
-		Endpoint:                  ep,
-		UseSSL:                    params.BackupUseSSL.Val,
-		Bucket:                    params.BackupBucketName.Val,
-		Credential:                newBackupCredential(params),
-		Region:                    params.BackupRegion.Val,
-		MultipartCopyThresholdMiB: params.MultipartCopyThresholdMiB.Val,
+		Provider:                  s.Provider.Val,
+		Endpoint:                  net.JoinHostPort(s.Address.Val, strconv.Itoa(s.Port.Val)),
+		UseSSL:                    s.UseSSL.Val,
+		Region:                    s.Region.Val,
+		Credential:                newCredential(s),
+		Bucket:                    s.BucketName.Val,
+		MultipartCopyThresholdMiB: multipartCopyThresholdMiB,
 	}
 }
 
-func NewBackupStorage(ctx context.Context, params *cfg.MinioConfig) (Client, error) {
-	ep := net.JoinHostPort(params.BackupAddress.Val, strconv.Itoa(params.BackupPort.Val))
+// MilvusStorageConfig describes the backend the Milvus deployment keeps its
+// data in.
+func MilvusStorageConfig(c *v2.Config) Config {
+	return storageConfig(&c.Milvus.Storage, c.Transfer.MultipartCopyThresholdMiB.Val)
+}
+
+// BackupStorageConfig describes the backend backup data is written to.
+func BackupStorageConfig(c *v2.Config) Config {
+	return storageConfig(&c.Backup.Storage, c.Transfer.MultipartCopyThresholdMiB.Val)
+}
+
+func NewMilvusStorage(ctx context.Context, c *v2.Config) (Client, error) {
+	conf := MilvusStorageConfig(c)
+	log.Info("create milvus storage client",
+		zap.String("endpoint", conf.Endpoint),
+		zap.String("bucket", conf.Bucket))
+
+	return NewClient(ctx, conf)
+}
+
+func NewBackupStorage(ctx context.Context, c *v2.Config) (Client, error) {
+	conf := BackupStorageConfig(c)
 	log.Info("create backup storage client",
-		zap.String("endpoint", ep),
-		zap.String("bucket", params.BackupBucketName.Val))
+		zap.String("endpoint", conf.Endpoint),
+		zap.String("bucket", conf.Bucket))
 
-	cfg := BackupStorageConfig(params)
-
-	cli, err := NewClient(ctx, cfg)
+	cli, err := NewClient(ctx, conf)
 	if err != nil {
 		return nil, fmt.Errorf("create backup storage client: %w", err)
 	}
@@ -70,73 +103,54 @@ func NewBackupStorage(ctx context.Context, params *cfg.MinioConfig) (Client, err
 	return cli, nil
 }
 
-func newMilvusCredential(params *cfg.MinioConfig) Credential {
-	var cred Credential
-	if params.StorageType.Val == cfg.CloudProviderAzure {
-		cred.AzureAccountName = params.AccessKeyID.Val
-	}
-
-	if params.UseIAM.Val {
-		cred.Type = IAM
-		cred.IAMEndpoint = params.IAMEndpoint.Val
-		return cred
-	}
-
-	if params.StorageType.Val == cfg.CloudProviderGCPNative &&
-		params.GcpCredentialJSON.Val != "" {
-		cred.Type = GCPCredJSON
-		cred.GCPCredJSON = params.GcpCredentialJSON.Val
-		return cred
-	}
-
-	cred.Type = Static
-	cred.AK = params.AccessKeyID.Val
-	cred.SK = params.SecretAccessKey.Val
-	cred.Token = params.Token.Val
-	return cred
-}
-
-func MilvusStorageConfig(params *cfg.MinioConfig) Config {
-	ep := net.JoinHostPort(params.Address.Val, strconv.Itoa(params.Port.Val))
-	return Config{
-		Provider:                  params.StorageType.Val,
-		Endpoint:                  ep,
-		UseSSL:                    params.UseSSL.Val,
-		Credential:                newMilvusCredential(params),
-		Bucket:                    params.BucketName.Val,
-		Region:                    params.Region.Val,
-		MultipartCopyThresholdMiB: params.MultipartCopyThresholdMiB.Val,
+// UseStreaming reports whether objects have to be streamed through
+// milvus-backup rather than copied by the storage service itself.
+//
+// v1 asked this as the boolean minio.crossStorage, and separately forced
+// streaming when the two providers differed. v2 states the policy directly:
+// auto keeps that rule, while direct and streaming pin the answer.
+func UseStreaming(mode string, src, dest Config) bool {
+	switch mode {
+	case v2.TransferStreaming:
+		return true
+	case v2.TransferDirect:
+		return false
+	default:
+		return !sameBackend(src, dest)
 	}
 }
 
-func NewMilvusStorage(ctx context.Context, params *cfg.MinioConfig) (Client, error) {
-	ep := net.JoinHostPort(params.Address.Val, strconv.Itoa(params.Port.Val))
-	log.Info("create milvus storage client",
-		zap.String("endpoint", ep),
-		zap.String("bucket", params.BucketName.Val))
-
-	cfg := MilvusStorageConfig(params)
-
-	return NewClient(ctx, cfg)
+// sameBackend reports whether two configs name the same backend, i.e. the same
+// provider reached at the same endpoint. Buckets and root paths may differ
+// within one backend, so they are not compared.
+func sameBackend(a, b Config) bool {
+	return a.Provider == b.Provider &&
+		a.Endpoint == b.Endpoint &&
+		a.Region == b.Region &&
+		a.UseSSL == b.UseSSL &&
+		a.Credential.AzureAccountName == b.Credential.AzureAccountName
 }
 
 func NewClient(ctx context.Context, conf Config) (Client, error) {
+	// v2 gives each provider exactly one name, so the v1 spelling aliases (ali,
+	// alibaba, alicloud, tc) do not reach here: they are folded into the
+	// canonical name while the configuration is loaded.
 	switch conf.Provider {
-	case cfg.CloudProviderAli, cfg.CloudProviderAliyun, cfg.CloudProviderAlibaba, cfg.CloudProviderAliCloud:
+	case v2.ProviderAliyun:
 		return newAliyunClient(conf)
-	case cfg.CloudProviderAWS, cfg.S3, cfg.Minio:
+	case v2.ProviderAWS, v2.ProviderS3, v2.ProviderMinio:
 		return newMinioClient(conf)
-	case cfg.CloudProviderAzure:
+	case v2.ProviderAzure:
 		return newAzureClient(conf)
-	case cfg.CloudProviderTencent, cfg.CloudProviderTencentShort:
+	case v2.ProviderTencent:
 		return newTencentClient(conf)
-	case cfg.CloudProviderGCP:
+	case v2.ProviderGCP:
 		return newGCPClient(conf)
-	case cfg.CloudProviderGCPNative:
+	case v2.ProviderGCPNative:
 		return newGCPNativeClient(ctx, conf)
-	case cfg.CloudProviderHwc:
+	case v2.ProviderHwc:
 		return NewHwcClient(conf)
-	case cfg.Local:
+	case v2.ProviderLocal:
 		return newLocalClient(conf), nil
 	default:
 		return nil, fmt.Errorf("storage: unsupported storage type: %s", conf.Provider)

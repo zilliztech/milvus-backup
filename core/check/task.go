@@ -11,7 +11,7 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
 
-	"github.com/zilliztech/milvus-backup/internal/cfg"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/storage"
@@ -19,7 +19,7 @@ import (
 )
 
 type TaskArgs struct {
-	Params *cfg.Config
+	Params *v2.Config
 
 	Grpc milvus.Grpc
 
@@ -32,7 +32,7 @@ type TaskArgs struct {
 type Task struct {
 	logger *zap.Logger
 
-	params *cfg.Config
+	params *v2.Config
 
 	grpc milvus.Grpc
 
@@ -88,7 +88,7 @@ func (t *Task) writeResult(version string, milvusEmpty bool) error {
 
 func (t *Task) checkMilvusStorage(ctx context.Context) (bool, error) {
 	t.logger.Info("check milvus storage")
-	files, _, err := storage.ListPrefixFlat(ctx, t.milvusStorage, mpath.MilvusRootDir(t.params.Minio.RootPath.Val), true)
+	files, _, err := storage.ListPrefixFlat(ctx, t.milvusStorage, mpath.MilvusRootDir(t.params.Milvus.Storage.RootPath.Val), true)
 	if err != nil {
 		return false, fmt.Errorf("check: list milvus root dir %w", err)
 	}
@@ -104,7 +104,7 @@ func (t *Task) checkMilvusStorage(ctx context.Context) (bool, error) {
 
 func (t *Task) checkBackupStorage(ctx context.Context) error {
 	t.logger.Info("check backup storage")
-	_, _, err := storage.ListPrefixFlat(ctx, t.backupStorage, mpath.BackupRootDir(t.params.Minio.BackupRootPath.Val), false)
+	_, _, err := storage.ListPrefixFlat(ctx, t.backupStorage, mpath.BackupRootDir(t.params.Backup.Storage.RootPath.Val), false)
 	if err != nil {
 		return fmt.Errorf("check: list backup root dir %w", err)
 	}
@@ -114,8 +114,8 @@ func (t *Task) checkBackupStorage(ctx context.Context) error {
 
 func (t *Task) checkWriteAndCopy(ctx context.Context) error {
 	t.logger.Info("check write and copy")
-	srcKey := path.Join(t.params.Minio.RootPath.Val, "milvus_backup_check_src_"+uuid.NewString())
-	destKey := path.Join(t.params.Minio.BackupRootPath.Val, "milvus_backup_check_dst_"+uuid.NewString())
+	srcKey := path.Join(t.params.Milvus.Storage.RootPath.Val, "milvus_backup_check_src_"+uuid.NewString())
+	destKey := path.Join(t.params.Backup.Storage.RootPath.Val, "milvus_backup_check_dst_"+uuid.NewString())
 	if err := storage.Write(ctx, t.milvusStorage, srcKey, []byte{1}); err != nil {
 		return fmt.Errorf("check: write to milvus storage %w", err)
 	}
@@ -128,18 +128,16 @@ func (t *Task) checkWriteAndCopy(ctx context.Context) error {
 	t.logger.Info("write to milvus storage success", zap.String("key", srcKey))
 
 	t.logger.Info("copy from milvus storage to backup storage")
-	crossStorage := t.params.Minio.CrossStorage.Val
-	if t.backupStorage.Config().Provider != t.milvusStorage.Config().Provider {
-		crossStorage = true
-	}
-	t.logger.Info("try to copy", zap.Bool("cross_storage", crossStorage), zap.String("dest_key", destKey))
+	streaming := storage.UseStreaming(t.params.Transfer.Mode.Val,
+		t.milvusStorage.Config(), t.backupStorage.Config())
+	t.logger.Info("try to copy", zap.Bool("streaming", streaming), zap.String("dest_key", destKey))
 	opt := storage.CopyPrefixOpt{
 		Src:        t.milvusStorage,
 		Dest:       t.backupStorage,
 		SrcPrefix:  srcKey,
 		DestPrefix: destKey,
 		Sem:        semaphore.NewWeighted(1),
-		Streaming:  crossStorage,
+		Streaming:  streaming,
 	}
 	task := storage.NewCopyPrefixTask(opt)
 	if err := task.Execute(ctx); err != nil {

@@ -15,7 +15,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore"
 	"github.com/zilliztech/milvus-backup/core/utils"
-	"github.com/zilliztech/milvus-backup/internal/cfg"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
@@ -51,7 +51,7 @@ func (s *Server) handleRestoreBackup(c *gin.Context) {
 }
 
 type restoreHandler struct {
-	params  *cfg.Config
+	params  *v2.Config
 	request *backuppb.RestoreBackupRequest
 
 	backupStorage  storage.Client
@@ -60,7 +60,7 @@ type restoreHandler struct {
 	milvusStorage storage.Client
 }
 
-func newRestoreHandler(request *backuppb.RestoreBackupRequest, params *cfg.Config) *restoreHandler {
+func newRestoreHandler(request *backuppb.RestoreBackupRequest, params *v2.Config) *restoreHandler {
 	return &restoreHandler{request: request, params: params}
 }
 
@@ -133,7 +133,7 @@ func (h *restoreHandler) complete() {
 }
 
 func (h *restoreHandler) initClient(ctx context.Context) error {
-	backupCfg := storage.BackupStorageConfig(&h.params.Minio)
+	backupCfg := storage.BackupStorageConfig(h.params)
 	if h.request.GetBucketName() != "" {
 		log.Info("use bucket name from request", zap.String("bucketName", h.request.GetBucketName()))
 		backupCfg.Bucket = h.request.GetBucketName()
@@ -146,13 +146,13 @@ func (h *restoreHandler) initClient(ctx context.Context) error {
 		return fmt.Errorf("server: create backup bucket: %w", err)
 	}
 
-	backupRootPath := h.params.Minio.BackupRootPath.Val
+	backupRootPath := h.params.Backup.Storage.RootPath.Val
 	if h.request.GetPath() != "" {
 		log.Info("use path from request", zap.String("path", h.request.GetPath()))
 		backupRootPath = h.request.GetPath()
 	}
 
-	milvusStorage, err := storage.NewMilvusStorage(ctx, &h.params.Minio)
+	milvusStorage, err := storage.NewMilvusStorage(ctx, h.params)
 	if err != nil {
 		return fmt.Errorf("server: create milvus storage: %w", err)
 	}

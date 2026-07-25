@@ -12,7 +12,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore/conv"
-	"github.com/zilliztech/milvus-backup/internal/cfg"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
@@ -138,7 +138,7 @@ type TaskArgs struct {
 	Plan   *Plan
 	Option *Option
 
-	Params *cfg.Config
+	Params *v2.Config
 
 	BackupDir     string
 	BackupStorage storage.Client
@@ -149,6 +149,10 @@ type TaskArgs struct {
 
 type Task struct {
 	args TaskArgs
+
+	// streaming is decided once: it depends on the transfer policy and the two
+	// backends, none of which vary per collection.
+	streaming bool
 
 	grpc    milvus.Grpc
 	restful milvus.Restful
@@ -167,8 +171,11 @@ func NewTask(args TaskArgs) (*Task, error) {
 	return &Task{
 		args: args,
 
-		copySem:       semaphore.NewWeighted(int64(args.Params.Backup.Parallelism.CopyData.Val)),
-		bulkInsertSem: semaphore.NewWeighted(int64(args.Params.Backup.Parallelism.ImportJob.Val)),
+		streaming: storage.UseStreaming(args.Params.Transfer.Mode.Val,
+			args.BackupStorage.Config(), args.MilvusStorage.Config()),
+
+		copySem:       semaphore.NewWeighted(int64(args.Params.Transfer.Concurrency.Val)),
+		bulkInsertSem: semaphore.NewWeighted(int64(args.Params.Restore.Concurrency.ImportJobs.Val)),
 
 		logger: logger,
 	}, nil
@@ -267,8 +274,8 @@ func (t *Task) newCollTask(dbBackup *backuppb.DatabaseBackupInfo, collBackup *ba
 			collBackup:    collBackup,
 			option:        t.args.Option,
 			collOverride:  t.args.Plan.CollOverrides[targetNS.String()],
-			crossStorage:  t.args.Params.Minio.CrossStorage.Val,
-			keepTempFiles: t.args.Params.Backup.KeepTempFiles.Val,
+			streaming:     t.streaming,
+			keepTempFiles: t.args.Params.Restore.KeepTempFiles.Val,
 			backupDir:     t.args.BackupDir,
 			backupStorage: t.args.BackupStorage,
 			milvusStorage: t.args.MilvusStorage,
@@ -509,7 +516,7 @@ func (t *Task) runCollTasks(ctx context.Context, collTasks []*collTask) error {
 	t.logger.Info("start restore collection")
 
 	g, subCtx := errgroup.WithContext(ctx)
-	g.SetLimit(t.args.Params.Backup.Parallelism.RestoreCollection.Val)
+	g.SetLimit(t.args.Params.Restore.Concurrency.Collections.Val)
 	for _, collTask := range collTasks {
 		g.Go(func() error {
 			if err := collTask.Execute(subCtx); err != nil {

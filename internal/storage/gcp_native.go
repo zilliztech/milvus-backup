@@ -192,6 +192,14 @@ func isStandardGCSEndpoint(endpoint string) bool {
 }
 
 func newGCPNativeClient(ctx context.Context, cfg Config) (*GCPNativeClient, error) {
+	// This client only knows how to read a service account key file. Say so
+	// here: without the check the missing path surfaces as a bare "unable to
+	// read credentials file: open :" from the read below.
+	if cfg.Credential.Type != GCPCredJSON {
+		return nil, fmt.Errorf("storage: gcpnative needs a service account credentials file, got credential type %s",
+			cfg.Credential.Type)
+	}
+
 	var opts []option.ClientOption
 	// Only set a custom endpoint for a genuine non-GCS host (an emulator).
 	// For the standard GCS service we must leave the endpoint unset so the

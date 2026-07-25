@@ -13,7 +13,7 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
-	"github.com/zilliztech/milvus-backup/internal/cfg"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/retry"
 )
@@ -93,7 +93,7 @@ func (m *MinioClient) CopyObject(ctx context.Context, i CopyObjectInput) error {
 
 	// gcp does not support multipart copy
 	threshold := m.multipartCopyThreshold()
-	if i.SrcAttr.Length >= threshold && srcCli.cfg.Provider != cfg.CloudProviderGCP {
+	if i.SrcAttr.Length >= threshold && srcCli.cfg.Provider != v2.ProviderGCP {
 		m.logger.Debug("copy object by multipart", zap.String("src_key", i.SrcAttr.Key), zap.String("dest_key", i.DestKey))
 		return m.multiPartCopy(ctx, srcCli, i)
 	}

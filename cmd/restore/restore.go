@@ -13,7 +13,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/restore"
-	"github.com/zilliztech/milvus-backup/internal/cfg"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
@@ -257,22 +257,22 @@ func (o *options) renameCollectionNamesToMapper() (*restore.TableMapper, error) 
 	return newTableMapperFromCollRename(renameMap)
 }
 
-func (o *options) toArgs(params *cfg.Config) (restore.TaskArgs, error) {
+func (o *options) toArgs(params *v2.Config) (restore.TaskArgs, error) {
 	plan, err := o.toPlan()
 	if err != nil {
 		return restore.TaskArgs{}, err
 	}
 
-	backupStorage, err := storage.NewBackupStorage(context.Background(), &params.Minio)
+	backupStorage, err := storage.NewBackupStorage(context.Background(), params)
 	if err != nil {
 		return restore.TaskArgs{}, fmt.Errorf("create backup storage: %w", err)
 	}
-	milvusStorage, err := storage.NewMilvusStorage(context.Background(), &params.Minio)
+	milvusStorage, err := storage.NewMilvusStorage(context.Background(), params)
 	if err != nil {
 		return restore.TaskArgs{}, fmt.Errorf("create milvus storage: %w", err)
 	}
 
-	backupDir := mpath.BackupDir(params.Minio.BackupRootPath.Val, o.backupName)
+	backupDir := mpath.BackupDir(params.Backup.Storage.RootPath.Val, o.backupName)
 	exist, err := meta.Exist(context.Background(), backupStorage, backupDir)
 	if err != nil {
 		return restore.TaskArgs{}, fmt.Errorf("check backup exist: %w", err)
@@ -292,7 +292,7 @@ func (o *options) toArgs(params *cfg.Config) (restore.TaskArgs, error) {
 		Plan:          plan,
 		Option:        o.toOption(),
 		Params:        params,
-		BackupDir:     mpath.BackupDir(params.Minio.BackupRootPath.Val, o.backupName),
+		BackupDir:     mpath.BackupDir(params.Backup.Storage.RootPath.Val, o.backupName),
 		BackupStorage: backupStorage,
 		MilvusStorage: milvusStorage,
 
@@ -300,7 +300,7 @@ func (o *options) toArgs(params *cfg.Config) (restore.TaskArgs, error) {
 	}, nil
 }
 
-func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
+func (o *options) run(cmd *cobra.Command, params *v2.Config) error {
 	start := time.Now()
 
 	args, err := o.toArgs(params)

@@ -11,7 +11,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/sync/semaphore"
 
-	"github.com/zilliztech/milvus-backup/internal/cfg"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/client/cloud"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
@@ -153,9 +153,9 @@ func (v *volume) apply(ctx context.Context) error {
 func newVolumeStorage(ctx context.Context, vol *volume) (storage.Client, error) {
 	var cred storage.Credential
 	switch vol.currentResp.resp.Cloud {
-	case cfg.CloudProviderGCP:
+	case v2.ProviderGCP:
 		cred = storage.Credential{Type: storage.OAuth2TokenSource, OAuth2TokenSource: vol}
-	case cfg.CloudProviderAWS:
+	case v2.ProviderAWS:
 		cred = storage.Credential{Type: storage.MinioCredProvider, MinioCredProvider: vol}
 	default:
 		return nil, fmt.Errorf("migrate: unsupported cloud provider %s", vol.currentResp.resp.Cloud)
@@ -194,17 +194,17 @@ type Task struct {
 	copySem *semaphore.Weighted
 }
 
-func NewTask(taskID, backupName, clusterID string, params *cfg.Config) (*Task, error) {
+func NewTask(taskID, backupName, clusterID string, params *v2.Config) (*Task, error) {
 	logger := log.With(zap.String("task_id", taskID))
-	cloudCli := cloud.NewClient(params.Cloud.Address.Val, params.Cloud.APIKey.Val)
+	cloudCli := cloud.NewClient(params.Cloud.Endpoint.Val, params.Cloud.APIKey.Val)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	backupStorage, err := storage.NewBackupStorage(ctx, &params.Minio)
+	backupStorage, err := storage.NewBackupStorage(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("migrate: new backup storage %w", err)
 	}
-	backupDir := mpath.BackupDir(params.Minio.BackupRootPath.Val, backupName)
+	backupDir := mpath.BackupDir(params.Backup.Storage.RootPath.Val, backupName)
 
 	return &Task{
 		logger: logger,
@@ -220,7 +220,7 @@ func NewTask(taskID, backupName, clusterID string, params *cfg.Config) (*Task, e
 
 		// use taskID as volume prefix
 		volume:  newVolume(clusterID, taskID, cloudCli),
-		copySem: semaphore.NewWeighted(int64(params.Backup.Parallelism.CopyData.Val)),
+		copySem: semaphore.NewWeighted(int64(params.Transfer.Concurrency.Val)),
 	}, nil
 }
 

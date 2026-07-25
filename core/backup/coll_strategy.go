@@ -47,7 +47,7 @@ type collTaskArgs struct {
 
 	MilvusStorage  storage.Client
 	MilvusRootPath string
-	CrossStorage   bool
+	Streaming      bool
 	BackupStorage  storage.Client
 	BackupDir      string
 

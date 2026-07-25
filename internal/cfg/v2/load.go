@@ -46,6 +46,32 @@ func LoadFrom(src *param.Source) (*Config, error) {
 	return cfg, nil
 }
 
+// DeclaredVersion returns the schema version the config file declares, and
+// whether it declares one at all. The version dispatcher reads it to pick the
+// schema a file is decoded with.
+//
+// Declaring nothing means one of two things, which the caller tells apart by
+// whether there is a file: a source with no config file is env-only, and a file
+// without the key predates the discriminator, which arrived with v2.
+func DeclaredVersion(src *param.Source) (string, bool) {
+	if src.ConfigFilePath() == "" {
+		return "", false
+	}
+
+	raw, ok := src.ConfigFileValue(VersionKey)
+	if !ok {
+		return "", false
+	}
+	// A version that is not a string is still a declaration, just an unusable
+	// one. Report it as written so the caller can quote it back.
+	version, ok := raw.(string)
+	if !ok {
+		return fmt.Sprint(raw), true
+	}
+
+	return version, true
+}
+
 // checkVersion verifies the file carries the v2 discriminator. A source with
 // no config file is env-only and has no version to check.
 func checkVersion(src *param.Source) error {
@@ -53,16 +79,14 @@ func checkVersion(src *param.Source) error {
 		return nil
 	}
 
-	raw, ok := src.ConfigFileValue(VersionKey)
+	version, ok := DeclaredVersion(src)
 	if !ok {
 		return fmt.Errorf("cfg: %s is not a v2 config: missing %q, expected %q",
 			src.ConfigFilePath(), VersionKey, Version)
 	}
-
-	version, ok := raw.(string)
-	if !ok || !strings.EqualFold(version, Version) {
+	if !strings.EqualFold(version, Version) {
 		return fmt.Errorf("cfg: %s declares %s %v, but the v2 loader only accepts %q",
-			src.ConfigFilePath(), VersionKey, raw, Version)
+			src.ConfigFilePath(), VersionKey, version, Version)
 	}
 
 	return nil

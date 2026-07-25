@@ -13,7 +13,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/backup"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/utils"
-	"github.com/zilliztech/milvus-backup/internal/cfg"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
@@ -51,7 +51,7 @@ func (s *Server) handleCreateBackup(c *gin.Context) {
 }
 
 type createBackupHandler struct {
-	params *cfg.Config
+	params *v2.Config
 
 	request *backuppb.CreateBackupRequest
 
@@ -60,7 +60,7 @@ type createBackupHandler struct {
 	milvusStorage storage.Client
 }
 
-func newCreateBackupHandler(request *backuppb.CreateBackupRequest, params *cfg.Config) *createBackupHandler {
+func newCreateBackupHandler(request *backuppb.CreateBackupRequest, params *v2.Config) *createBackupHandler {
 	return &createBackupHandler{request: request, params: params}
 }
 
@@ -71,13 +71,13 @@ func (h *createBackupHandler) complete() {
 }
 
 func (h *createBackupHandler) initClient(ctx context.Context) error {
-	backupStorage, err := storage.NewBackupStorage(ctx, &h.params.Minio)
+	backupStorage, err := storage.NewBackupStorage(ctx, h.params)
 	if err != nil {
 		return err
 	}
 	h.backupStorage = backupStorage
 
-	milvusStorage, err := storage.NewMilvusStorage(ctx, &h.params.Minio)
+	milvusStorage, err := storage.NewMilvusStorage(ctx, h.params)
 	if err != nil {
 		return err
 	}
@@ -169,7 +169,7 @@ func (h *createBackupHandler) toStrategy() (backup.Strategy, error) {
 	return backup.StrategyAuto, nil
 }
 
-func (h *createBackupHandler) toOption(params *cfg.Config) (backup.Option, error) {
+func (h *createBackupHandler) toOption(params *v2.Config) (backup.Option, error) {
 	f, err := h.toFilter()
 	if err != nil {
 		return backup.Option{}, fmt.Errorf("server: build filter: %w", err)
@@ -187,7 +187,7 @@ func (h *createBackupHandler) toOption(params *cfg.Config) (backup.Option, error
 
 	return backup.Option{
 		BackupName:       h.request.GetBackupName(),
-		PauseGC:          h.request.GetGcPauseEnable() || params.Backup.GCPause.Enable.Val,
+		PauseGC:          h.request.GetGcPauseEnable() || params.Backup.PauseGC.Val,
 		ManageAddr:       manageAddr,
 		Strategy:         strategy,
 		BackupRBAC:       h.request.GetRbac(),
@@ -202,7 +202,7 @@ func (h *createBackupHandler) toArgs() (backup.TaskArgs, error) {
 		return backup.TaskArgs{}, fmt.Errorf("server: build option: %w", err)
 	}
 
-	backupRoot := h.params.Minio.BackupRootPath.Val
+	backupRoot := h.params.Backup.Storage.RootPath.Val
 	if h.request.GetBackupRootPath() != "" {
 		backupRoot = h.request.GetBackupRootPath()
 		log.Info("use backup root from request", zap.String("backup_root", backupRoot))

@@ -9,7 +9,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/migrate"
-	"github.com/zilliztech/milvus-backup/internal/cfg"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
@@ -30,7 +30,7 @@ func (o *options) validate() error {
 	return nil
 }
 
-func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
+func (o *options) run(cmd *cobra.Command, params *v2.Config) error {
 	taskID := uuid.NewString()
 	task, err := migrate.NewTask(taskID, o.backupName, o.clusterID, params)
 	if err != nil {

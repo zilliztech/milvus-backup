@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -12,7 +11,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"github.com/zilliztech/milvus-backup/core/tasklet"
-	"github.com/zilliztech/milvus-backup/internal/cfg"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
@@ -37,7 +36,7 @@ type TaskArgs struct {
 	BackupStorage storage.Client
 	BackupDir     string
 
-	Params *cfg.Config
+	Params *v2.Config
 
 	TaskMgr *taskmgr.Mgr
 }
@@ -64,12 +63,12 @@ type Task struct {
 	logger *zap.Logger
 
 	option Option
-	params *cfg.Config
+	params *v2.Config
 
 	milvusStorage  storage.Client
 	milvusRootPath string
 
-	crossStorage bool
+	streaming bool
 
 	backupStorage storage.Client
 	backupDir     string
@@ -107,10 +106,8 @@ func newGCCtrl(taskID string, pauseGC bool, grpc milvus.Grpc, manage milvus.Mana
 func NewTask(args TaskArgs) (*Task, error) {
 	logger := log.L().With(zap.String("task_id", args.TaskID))
 
-	crossStorage := args.Params.Minio.CrossStorage.Val
-	if args.BackupStorage.Config().Provider != args.MilvusStorage.Config().Provider {
-		crossStorage = true
-	}
+	streaming := storage.UseStreaming(args.Params.Transfer.Mode.Val,
+		args.MilvusStorage.Config(), args.BackupStorage.Config())
 
 	mb := newMetaBuilder(args.TaskID, args.Option.BackupName)
 	err := args.TaskMgr.AddBackupTask(args.TaskID, args.Option.BackupName)
@@ -119,9 +116,9 @@ func NewTask(args TaskArgs) (*Task, error) {
 	}
 
 	throttling := concurrencyThrottling{
-		CollSem: semaphore.NewWeighted(int64(args.Params.Backup.Parallelism.BackupCollection.Val)),
-		SegSem:  semaphore.NewWeighted(int64(args.Params.Backup.Parallelism.BackupSegment.Val)),
-		CopySem: semaphore.NewWeighted(int64(args.Params.Backup.Parallelism.CopyData.Val)),
+		CollSem: semaphore.NewWeighted(int64(args.Params.Backup.Concurrency.Collections.Val)),
+		SegSem:  semaphore.NewWeighted(int64(args.Params.Backup.Concurrency.Segments.Val)),
+		CopySem: semaphore.NewWeighted(int64(args.Params.Transfer.Concurrency.Val)),
 	}
 
 	return &Task{
@@ -134,9 +131,9 @@ func NewTask(args TaskArgs) (*Task, error) {
 		params: args.Params,
 
 		milvusStorage:  args.MilvusStorage,
-		milvusRootPath: args.Params.Minio.RootPath.Val,
+		milvusRootPath: args.Params.Milvus.Storage.RootPath.Val,
 
-		crossStorage: crossStorage,
+		streaming: streaming,
 
 		backupStorage: args.BackupStorage,
 		backupDir:     args.BackupDir,
@@ -149,7 +146,7 @@ func NewTask(args TaskArgs) (*Task, error) {
 
 		taskMgr: args.TaskMgr,
 
-		rpcChannelName: args.Params.Milvus.RPCChannelName.Val,
+		rpcChannelName: args.Params.Milvus.Replicate.RPCChannelName.Val,
 	}, nil
 }
 
@@ -166,16 +163,15 @@ func (t *Task) initClients() error {
 	}
 	t.restful = restfulCli
 
-	manageAddr := t.params.Backup.GCPause.Address.Val
+	manageAddr := t.params.Milvus.Management.Endpoint.Val
 	if t.option.ManageAddr != "" {
 		manageAddr = t.option.ManageAddr
 	}
 	t.manage = milvus.NewManage(manageAddr)
 
 	if t.option.BackupIndexExtra {
-		endpoints := strings.Split(t.params.Milvus.Etcd.Endpoints.Val, ",")
 		etcdCli, err := clientv3.New(clientv3.Config{
-			Endpoints:   endpoints,
+			Endpoints:   t.params.Milvus.Etcd.Endpoints.Val,
 			DialTimeout: 5 * time.Second,
 		})
 		if err != nil {
@@ -394,7 +390,7 @@ func (t *Task) newCollTaskArgs() collTaskArgs {
 		TaskID:         t.taskID,
 		MilvusStorage:  t.milvusStorage,
 		MilvusRootPath: t.milvusRootPath,
-		CrossStorage:   t.crossStorage,
+		Streaming:      t.streaming,
 		BackupStorage:  t.backupStorage,
 		BackupDir:      t.backupDir,
 		Throttling:     t.throttling,
