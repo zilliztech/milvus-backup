@@ -168,11 +168,16 @@ func NewTask(args TaskArgs) (*Task, error) {
 
 	args.TaskMgr.AddRestoreTask(args.TaskID)
 
+	streaming := storage.UseStreaming(args.Params.Transfer.Mode.Val,
+		args.BackupStorage.Config(), args.MilvusStorage.Config())
+	logger.Info("resolved transfer mode",
+		zap.String("transfer_mode", args.Params.Transfer.Mode.Val),
+		zap.Bool("streaming", streaming))
+
 	return &Task{
 		args: args,
 
-		streaming: storage.UseStreaming(args.Params.Transfer.Mode.Val,
-			args.BackupStorage.Config(), args.MilvusStorage.Config()),
+		streaming: streaming,
 
 		copySem:       semaphore.NewWeighted(int64(args.Params.Transfer.Concurrency.Val)),
 		bulkInsertSem: semaphore.NewWeighted(int64(args.Params.Restore.Concurrency.ImportJobs.Val)),

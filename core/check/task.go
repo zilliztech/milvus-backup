@@ -130,7 +130,10 @@ func (t *Task) checkWriteAndCopy(ctx context.Context) error {
 	t.logger.Info("copy from milvus storage to backup storage")
 	streaming := storage.UseStreaming(t.params.Transfer.Mode.Val,
 		t.milvusStorage.Config(), t.backupStorage.Config())
-	t.logger.Info("try to copy", zap.Bool("streaming", streaming), zap.String("dest_key", destKey))
+	t.logger.Info("try to copy",
+		zap.String("transfer_mode", t.params.Transfer.Mode.Val),
+		zap.Bool("streaming", streaming),
+		zap.String("dest_key", destKey))
 	opt := storage.CopyPrefixOpt{
 		Src:        t.milvusStorage,
 		Dest:       t.backupStorage,

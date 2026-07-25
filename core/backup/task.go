@@ -108,6 +108,9 @@ func NewTask(args TaskArgs) (*Task, error) {
 
 	streaming := storage.UseStreaming(args.Params.Transfer.Mode.Val,
 		args.MilvusStorage.Config(), args.BackupStorage.Config())
+	logger.Info("resolved transfer mode",
+		zap.String("transfer_mode", args.Params.Transfer.Mode.Val),
+		zap.Bool("streaming", streaming))
 
 	mb := newMetaBuilder(args.TaskID, args.Option.BackupName)
 	err := args.TaskMgr.AddBackupTask(args.TaskID, args.Option.BackupName)
