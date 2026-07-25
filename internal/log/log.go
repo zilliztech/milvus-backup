@@ -125,9 +125,21 @@ func initFileLog(cfg *FileLogConfig) (*lumberjack.Logger, error) {
 	}, nil
 }
 
+// newStdLogger builds the logger the package starts with, the one in use until
+// InitLogger replaces it with the configured one.
+//
+// It writes to stderr rather than going through initLogger, which builds its
+// sinks from the file and console settings and so would have none to build from
+// here. Anything logged while the configuration is still being read — an
+// unknown key, a deprecated schema version — would otherwise be discarded,
+// which is the opposite of what a warning raised at that point is for. stderr
+// keeps it clear of the stdout a command writes its own output to.
+//
+// No caller skip: the package-level Warn and friends already add one for their
+// own frame, and the logger InitLogger builds adds none.
 func newStdLogger() (*zap.Logger, *ZapProperties) {
 	conf := &Config{Level: "info", File: FileLogConfig{}}
-	lg, r, _ := initLogger(conf, zap.AddCallerSkip(1))
+	lg, r, _ := InitLoggerWithWriteSyncer(conf, zapcore.AddSync(os.Stderr))
 	return lg, r
 }
 
