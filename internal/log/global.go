@@ -59,39 +59,6 @@ func Fatal(msg string, fields ...zap.Field) {
 	L().WithOptions(zap.AddCallerSkip(1)).Fatal(msg, fields...)
 }
 
-// RatedDebug print logs at debug level
-// it limit log print to avoid too many logs
-// return true if log successfully
-func RatedDebug(cost float64, msg string, fields ...zap.Field) bool {
-	if R().CheckCredit(cost) {
-		L().Debug(msg, fields...)
-		return true
-	}
-	return false
-}
-
-// RatedInfo print logs at info level
-// it limit log print to avoid too many logs
-// return true if log successfully
-func RatedInfo(cost float64, msg string, fields ...zap.Field) bool {
-	if R().CheckCredit(cost) {
-		L().Info(msg, fields...)
-		return true
-	}
-	return false
-}
-
-// RatedWarn print logs at warn level
-// it limit log print to avoid too many logs
-// return true if log successfully
-func RatedWarn(cost float64, msg string, fields ...zap.Field) bool {
-	if R().CheckCredit(cost) {
-		L().Warn(msg, fields...)
-		return true
-	}
-	return false
-}
-
 // With creates a child logger and adds structured context to it.
 // Fields added to the child don't affect the parent, and vice versa.
 func With(fields ...zap.Field) *zap.Logger {
@@ -100,10 +67,10 @@ func With(fields ...zap.Field) *zap.Logger {
 
 // SetLevel alters the logging level.
 func SetLevel(l zapcore.Level) {
-	_globalP.Load().(*ZapProperties).Level.SetLevel(l)
+	_globalP.Load().Level.SetLevel(l)
 }
 
 // GetLevel gets the logging level.
 func GetLevel() zapcore.Level {
-	return _globalP.Load().(*ZapProperties).Level.Level()
+	return _globalP.Load().Level.Level()
 }
