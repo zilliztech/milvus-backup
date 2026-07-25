@@ -1,0 +1,37 @@
+# Milvus on Google Cloud Storage, with backups kept in a second bucket of the
+# same account.
+#
+# backup.storage names only what differs: the provider, endpoint and service
+# account credentials are inherited from milvus.storage. Both ends are the same
+# backend, so the default transfer mode (auto) lets GCS copy the objects.
+configVersion: v2
+
+milvus:
+  user: "root"
+  password: "Milvus"
+
+  grpc:
+    address: localhost
+    port: 19530
+
+  storage:
+    # gcpnative uses the Google Cloud Storage API. Use the gcp provider instead
+    # to reach GCS through its S3-compatible interoperability endpoint, which
+    # takes an interoperability key pair as static credentials.
+    provider: gcpnative
+    address: storage.googleapis.com
+    port: 443
+    useSSL: true
+    bucketName: "<your-milvus-bucket>"
+    rootPath: "files"
+
+    auth:
+      type: serviceAccount
+      # Path to the service account JSON file, not the JSON itself. Supply it
+      # through MILVUS_STORAGE_AUTH_CREDENTIALS_FILE to keep it out of the file.
+      credentialsFile: "/path/to/service-account.json"
+
+backup:
+  storage:
+    bucketName: "<your-backup-bucket>"
+    rootPath: "backup"

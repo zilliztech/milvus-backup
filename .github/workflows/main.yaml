@@ -66,6 +66,21 @@ jobs:
           fail_ci_if_error: true
           token: ${{ secrets.CODECOV_TOKEN }}
 
+  check-sample-configs:
+    name: Check sample configs
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Set up Go ${{ env.go-version }}
+        uses: actions/setup-go@v7
+        with:
+          go-version: ${{ env.go-version }}
+          cache: true
+      # The samples in configs/ are what people copy, so a broken one is
+      # otherwise only found by the person copying it.
+      - name: Load every sample config
+        run: make check-configs
+
   test-backup-restore-cross-version:
     needs: unit-test-go
     name: Backup and restore cross version
@@ -1083,6 +1098,7 @@ jobs:
     needs:
       - lint
       - unit-test-go
+      - check-sample-configs
       - test-backup-restore-cross-version
       - test-backup-restore-after-upgrade
       - test-backup-restore-cli

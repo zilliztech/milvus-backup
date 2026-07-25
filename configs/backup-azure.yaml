@@ -1,14 +1,10 @@
-# The schema version this file is written in. Required by v2.
+# Milvus on Azure Blob Storage, with backups kept in a second container of the
+# same storage account.
+#
+# Both ends are the same account, so the default transfer mode (auto) lets
+# Azure copy the blobs rather than streaming them through milvus-backup.
 configVersion: v2
 
-# Configures the system log output.
-log:
-  level: info # Only supports debug, info, warn, error, panic, or fatal. Default 'info'.
-  console: true # whether print log to console
-  file:
-    path: "logs/backup.log"
-
-# The Milvus deployment to back up, and the storage it keeps its data in.
 milvus:
   user: "root"
   password: "Milvus"
@@ -16,13 +12,6 @@ milvus:
   grpc:
     address: localhost
     port: 19530
-    # disabled, server (verify the server certificate), or mutual (also present
-    # a client certificate).
-    tlsMode: disabled
-
-  replicate:
-    # Milvus replicate msg channel name, default is by-dev-replicate-msg
-    rpcChannelName: "by-dev-replicate-msg"
 
   # Milvus storage configs, make them the same with milvus config.
   storage:
@@ -31,9 +20,9 @@ milvus:
     port: 443
     region: "westus2"
     useSSL: true
-    # The Azure storage account, required by the azure provider. Supply it
-    # through MILVUS_STORAGE_ACCOUNT_NAME rather than writing it here.
-    accountName: ""
+    # The Azure storage account, required by the azure provider. Prefer
+    # MILVUS_STORAGE_ACCOUNT_NAME over writing it here.
+    accountName: "<your-storage-account>"
     # For azure the bucket is the blob container.
     bucketName: "milvus-data"
     rootPath: "milvus/azure-instance"
@@ -41,54 +30,19 @@ milvus:
     auth:
       # Azure signs with the account name and one of its access keys.
       type: sharedKey
-      # Supply through MILVUS_STORAGE_AUTH_ACCOUNT_KEY.
-      accountKey: ""
+      # Prefer MILVUS_STORAGE_AUTH_ACCOUNT_KEY over writing the key here.
+      accountKey: "<your-account-key>"
 
 backup:
-  # Where backup data is written. Anything left out is inherited from
-  # milvus.storage, so only what differs is named here.
+  # The provider, endpoint and region are inherited from milvus.storage; only
+  # the container, the root path and the credentials are named again.
   storage:
-    accountName: ""
+    accountName: "<your-storage-account>"
     # Backup data is stored under bucketName/rootPath.
     bucketName: "milvus-data"
     rootPath: "backup"
 
     auth:
       type: sharedKey
-      # Supply through BACKUP_STORAGE_AUTH_ACCOUNT_KEY.
-      accountKey: ""
-
-  concurrency:
-    # number of collections to backup in parallel.
-    collections: 4
-    # number of segments to backup in parallel
-    segments: 1024
-
-  # Pause GC during backup through the Milvus management endpoint.
-  pauseGC: true
-
-restore:
-  concurrency:
-    # Collection level parallelism to restore
-    collections: 2
-    # max number of import jobs to run in parallel,
-    # should be less than milvus's config dataCoord.import.maxImportJobNum
-    importJobs: 768
-
-  # keep temporary files during restore, only use to debug
-  keepTempFiles: false
-
-# How objects move between the two storage backends. Both ends are the same
-# Azure account here, so auto asks the storage service to copy.
-transfer:
-  mode: auto
-
-  # number of threads to copy data. reduce it if blocks your storage's network bandwidth
-  concurrency: 128
-
-# Zilliz Cloud config.
-# If you want to migrate data to Zilliz Cloud, you need to configure the following parameters.
-# Otherwise, you can ignore it.
-zillizCloud:
-  endpoint: https://api.cloud.zilliz.com
-  apiKey: <your-api-key>
+      # Prefer BACKUP_STORAGE_AUTH_ACCOUNT_KEY over writing the key here.
+      accountKey: "<your-account-key>"

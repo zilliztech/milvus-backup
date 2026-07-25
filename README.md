@@ -41,23 +41,49 @@ cp configs/backup.yaml backup.yaml
 
 The main sections are:
 
-- `milvus`: Milvus address, credentials, and TLS settings. The etcd settings are only required when using `--backup_index_extra`.
-- `minio`: source storage and backup storage settings. Despite the section name, it also supports S3, AWS, GCP, Aliyun, Azure, Tencent Cloud, and local storage.
-- `backup`: backup and restore concurrency, temporary file handling, and garbage collection pause settings.
+- `milvus`: how to reach Milvus — credentials, the gRPC endpoint and its TLS settings — and under `milvus.storage`, the storage the deployment keeps its data in. The `milvus.etcd` settings are only required when using `--backup_index_extra`.
+- `backup`: where backup data is written, under `backup.storage`, and how much of the backup runs in parallel.
+- `restore`: restore concurrency and temporary file handling.
+- `transfer`: how objects move between the two storage backends.
 - `log`: log level and output settings.
+
+Both storage sections describe a backend the same way, and `backup.storage` inherits anything it does not name from `milvus.storage`. Backing up into the same backend takes little more than a bucket name; `rootPath` is the exception, and always defaults to `backup`.
+
+### Configuration examples
+
+| File | Scenario |
+|------|----------|
+| [backup.yaml](configs/backup.yaml) | MinIO, with every setting spelled out |
+| [backup-s3.yaml](configs/backup-s3.yaml) | Milvus on MinIO, backups on AWS S3 |
+| [backup-gcp.yaml](configs/backup-gcp.yaml) | Google Cloud Storage with a service account |
+| [backup-azure.yaml](configs/backup-azure.yaml) | Azure Blob Storage with an account key |
+| [backup-iam.yaml](configs/backup-iam.yaml) | AWS S3 with an instance role, no keys in the file |
+| [backup-local.yaml](configs/backup-local.yaml) | Milvus on MinIO, backups on a local disk |
 
 Use values that match the Milvus deployment. In common installations, the storage defaults differ:
 
 | Field | Docker Compose | Helm |
 |-------|----------------|------|
-| `bucketName` | `a-bucket` | `milvus-bucket` |
-| `rootPath` | `files` | `file` |
+| `milvus.storage.bucketName` | `a-bucket` | `milvus-bucket` |
+| `milvus.storage.rootPath` | `files` | `file` |
 
-See [configs/backup.yaml](configs/backup.yaml) for all available settings. Configuration values can also be supplied through [environment variables](docs/user_guide/env_variables.md) or overridden with `--set`:
+Configuration values can also be supplied through [environment variables](docs/user_guide/env_variables.md) or overridden with `--set`:
 
 ```shell
 milvus-backup --set MILVUS_USER=root --set MILVUS_PASSWORD=Milvus list
 ```
+
+Run `milvus-backup config show` to print the resolved configuration along with where each value came from.
+
+### Upgrading an existing configuration file
+
+Configuration files carry a `configVersion`. A file written before it existed still loads — it is read with the older schema and translated, with a warning naming the file. Convert one with:
+
+```shell
+milvus-backup config migrate --config backup.yaml -o backup-v2.yaml
+```
+
+The migration report is written to stderr and lists everything that needs a decision, such as a secret that has to move to a renamed environment variable. The converted file goes to stdout, or to `-o`.
 
 ## Command-line usage
 
@@ -110,35 +136,45 @@ See the [API demo](docs/user_guide/api_demo.md) for example requests. The Swagge
 
 ## Advanced features
 
-- [Cross-storage backup](docs/user_guide/cross_storage.md): copy backup data between different storage systems, such as MinIO and AWS S3.
+- [Storage transfer](docs/user_guide/transfer.md): copy backup data between different storage systems, such as MinIO and AWS S3.
 - [RBAC backup and restore](docs/user_guide/rbac.md): include Milvus RBAC metadata in a backup or restore operation.
 - [Segment merging restore](docs/user_guide/mul_seg_restore.md): group small segments into fewer import jobs to improve restore performance.
 
 ### Cross-storage example
 
-The source storage settings must match the storage used by Milvus. Configure the backup destination under the same `minio` section:
+The `milvus.storage` settings must match the storage used by Milvus. Describe the backup destination under `backup.storage`:
 
 ```yaml
-minio:
-  storageType: "minio"
-  address: localhost
-  port: 9000
-  accessKeyID: minioadmin
-  secretAccessKey: minioadmin
-  bucketName: a-bucket
-  rootPath: files
+configVersion: v2
 
-  backupStorageType: "aws"
-  backupAddress: s3.us-east-1.amazonaws.com
-  backupPort: 443
-  backupRegion: us-east-1
-  backupAccessKeyID: <your-access-key-id>
-  backupSecretAccessKey: <your-secret-access-key>
-  backupBucketName: <your-bucket-name>
-  backupRootPath: backups
-  backupUseSSL: true
-  crossStorage: true
+milvus:
+  storage:
+    provider: minio
+    address: localhost
+    port: 9000
+    bucketName: a-bucket
+    rootPath: files
+    auth:
+      type: static
+      accessKeyID: minioadmin
+      secretAccessKey: minioadmin
+
+backup:
+  storage:
+    provider: aws
+    address: s3.us-east-1.amazonaws.com
+    port: 443
+    region: us-east-1
+    useSSL: true
+    bucketName: <your-bucket-name>
+    rootPath: backups
+    auth:
+      type: static
+      accessKeyID: <your-access-key-id>
+      secretAccessKey: <your-secret-access-key>
 ```
+
+The two ends are different backends, so the default `transfer.mode` of `auto` streams the objects through milvus-backup rather than asking either service to copy them. See [configs/backup-s3.yaml](configs/backup-s3.yaml) for the complete file.
 
 Do not commit storage credentials to the repository. Prefer environment variables or another secret-management mechanism in production.
 
