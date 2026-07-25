@@ -2,7 +2,6 @@ package create
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -10,28 +9,30 @@ import (
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
+	"github.com/zilliztech/milvus-backup/cmd/flags"
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/backup"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/filter"
-	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
+// removedFlags are the create flags dropped in 0.6, after 0.5 accepted them with
+// a deprecation warning.
+var removedFlags = []flags.Removed{
+	{Name: "colls", Shorthand: "c", Advice: "use --filter instead"},
+	{Name: "databases", Shorthand: "d", Advice: "use --filter instead"},
+	{Name: "database_collections", Shorthand: "a", Advice: "use --filter instead"},
+	{Name: "force", Shorthand: "f", NoValue: true, Advice: "use --strategy=skip_flush instead"},
+	{Name: "meta_only", NoValue: true, Advice: "use --strategy=meta_only instead"},
+}
+
 type options struct {
 	backupName string
 
-	collectionNames string
-	databases       string
-	dbCollections   string
-
 	filter string
-
-	force    bool
-	metaOnly bool
 
 	strategy string
 
@@ -41,23 +42,6 @@ type options struct {
 }
 
 func (o *options) validate() error {
-	if len(o.collectionNames) != 0 {
-		log.Warn("collection_names is deprecated, use --filter instead !")
-	}
-	if len(o.databases) != 0 {
-		log.Warn("databases is deprecated, use --filter instead !")
-	}
-	if len(o.dbCollections) != 0 {
-		log.Warn("database_collections is deprecated, use --filter instead !")
-	}
-
-	if o.force {
-		log.Warn("force is deprecated, use --strategy=skip_flush instead !")
-	}
-	if o.metaOnly {
-		log.Warn("meta_only is deprecated, use --strategy=meta_only instead !")
-	}
-
 	if len(o.backupName) != 0 && backup.ValidateName(o.backupName) != nil {
 		return fmt.Errorf("invalid backup name %s", o.backupName)
 	}
@@ -80,115 +64,28 @@ func (o *options) complete() error {
 func (o *options) addFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.backupName, "name", "n", "", "backup name, if unset will generate a name automatically")
 
-	cmd.Flags().StringVarP(&o.collectionNames, "colls", "c", "", "[DEPRECATED] use --filter instead. collectionNames to backup, use ',' to connect multiple collections")
-	cmd.Flags().StringVarP(&o.databases, "databases", "d", "", "[DEPRECATED] use --filter instead. databases to backup")
-	cmd.Flags().StringVarP(&o.dbCollections, "database_collections", "a", "", "[DEPRECATED] use --filter instead. databases and collections")
 	cmd.Flags().StringVarP(&o.filter, "filter", "", "", "specify which collections to backup, if not set, backup all collections. example: db1.coll1,db2.col1")
 
-	cmd.Flags().BoolVarP(&o.force, "force", "f", false, "[DEPRECATED] use --strategy=skip_flush instead. force backup, will skip flush, should make sure data has been stored into disk when using it")
-	cmd.Flags().BoolVarP(&o.metaOnly, "meta_only", "", false, "[DEPRECATED] use --strategy=meta_only instead. only backup collection meta instead of data")
 	cmd.Flags().StringVarP(&o.strategy, "strategy", "", "", "backup strategy, one of [meta_only, skip_flush, bulk_flush, serial_flush], if not set will auto select")
 
 	cmd.Flags().BoolVarP(&o.backupIndexExtra, "backup_index_extra", "", false, "whether backup index extra info")
 
 	cmd.Flags().BoolVarP(&o.rbac, "rbac", "", false, "whether backup RBAC meta")
+
+	flags.AddRemoved(cmd, removedFlags)
 }
 
 func (o *options) toFilter() (filter.Filter, error) {
-	if o.filter != "" {
-		return o.parseFilter(o.filter)
+	if o.filter == "" {
+		return filter.Filter{}, nil
 	}
 
-	if o.dbCollections != "" {
-		return o.dbCollectionsToFilter()
-	}
-
-	if o.collectionNames != "" {
-		return o.collectionNamesToFilter()
-	}
-
-	if o.databases != "" {
-		return o.databasesToFilter()
-	}
-
-	return filter.Filter{}, nil
-}
-
-func (o *options) parseFilter(filterStr string) (filter.Filter, error) {
-	f, err := filter.Parse(filterStr)
+	f, err := filter.Parse(o.filter)
 	if err != nil {
 		return filter.Filter{}, fmt.Errorf("parse filter: %w", err)
 	}
 
 	return f, nil
-}
-
-func (o *options) collectionNamesToFilter() (filter.Filter, error) {
-	nsStrs := strings.Split(o.collectionNames, ",")
-
-	dbCollFilter := make(map[string]filter.CollFilter, len(nsStrs))
-	for _, nsStr := range nsStrs {
-		ns, err := namespace.Parse(nsStr)
-		if err != nil {
-			return filter.Filter{}, fmt.Errorf("invalid collection name %s", nsStrs)
-		}
-
-		if _, ok := dbCollFilter[ns.DBName()]; !ok {
-			dbCollFilter[ns.DBName()] = filter.CollFilter{CollName: make(map[string]struct{})}
-		}
-		dbCollFilter[ns.DBName()].CollName[ns.CollName()] = struct{}{}
-	}
-
-	return filter.Filter{DBCollFilter: dbCollFilter}, nil
-}
-
-func (o *options) dbCollectionsToFilter() (filter.Filter, error) {
-	dbColls := make(map[string][]string)
-	if err := json.Unmarshal([]byte(o.dbCollections), &dbColls); err != nil {
-		return filter.Filter{}, fmt.Errorf("unmarshal dbCollections: %w", err)
-	}
-
-	dbCollFilter := make(map[string]filter.CollFilter)
-	for dbName, colls := range dbColls {
-		if len(colls) == 0 {
-			dbCollFilter[dbName] = filter.CollFilter{AllowAll: true}
-		} else {
-			collName := make(map[string]struct{}, len(colls))
-			for _, coll := range colls {
-				collName[coll] = struct{}{}
-			}
-			dbCollFilter[dbName] = filter.CollFilter{CollName: collName}
-		}
-	}
-
-	return filter.Filter{DBCollFilter: dbCollFilter}, nil
-}
-
-func (o *options) databasesToFilter() (filter.Filter, error) {
-	splits := strings.Split(o.databases, ",")
-	dbCollFilter := make(map[string]filter.CollFilter, len(splits))
-	for _, db := range splits {
-		dbCollFilter[db] = filter.CollFilter{AllowAll: true}
-	}
-
-	return filter.Filter{DBCollFilter: dbCollFilter}, nil
-}
-
-func (o *options) toStrategy() (backup.Strategy, error) {
-	if o.strategy != "" {
-		// already validated in validate()
-		return backup.ParseStrategy(o.strategy)
-	}
-
-	if o.force {
-		return backup.StrategySkipFlush, nil
-	}
-
-	if o.metaOnly {
-		return backup.StrategyMetaOnly, nil
-	}
-
-	return backup.StrategyAuto, nil
 }
 
 func (o *options) toOption(params *v2.Config) (backup.Option, error) {
@@ -197,7 +94,8 @@ func (o *options) toOption(params *v2.Config) (backup.Option, error) {
 		return backup.Option{}, err
 	}
 
-	strategy, err := o.toStrategy()
+	// already validated in validate()
+	strategy, err := backup.ParseStrategy(o.strategy)
 	if err != nil {
 		return backup.Option{}, err
 	}
@@ -275,6 +173,10 @@ func NewCmd(opt *root.Options) *cobra.Command {
 		Short: "create a backup",
 
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := flags.CheckRemoved(cmd, removedFlags); err != nil {
+				return err
+			}
+
 			params := opt.InitGlobalVars()
 
 			if err := o.complete(); err != nil {

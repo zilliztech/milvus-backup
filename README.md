@@ -86,6 +86,33 @@ The main commands are:
 
 Run `milvus-backup <command> --help` for command-specific flags. See the [CLI end-to-end guide](docs/user_guide/e2e_demo_cli.md) for a complete backup and restore example.
 
+### Selecting collections
+
+`--filter` limits a command to some of the collections instead of all of them. It takes a comma-separated list, where an entry is a collection in the default database (`coll1`), a collection in a named database (`db1.coll1`), or every collection in a database (`db1.*`):
+
+```shell
+# back up two collections
+milvus-backup create -n my_backup --filter hello_milvus,db1.hello_milvus2
+
+# back up every collection in db1 (quoted, so the shell does not expand the *)
+milvus-backup create -n my_backup --filter 'db1.*'
+
+# restore the whole backup
+milvus-backup restore -n my_backup
+```
+
+On `restore`, `--filter` names collections as they will exist in the target Milvus, so it matches the name **after** `--suffix` or `--rename` has been applied:
+
+```shell
+# restores hello_milvus from the backup into a new hello_milvus_recover
+milvus-backup restore -n my_backup -s _recover --filter hello_milvus_recover
+
+# restores db1.coll1 into db2.coll1
+milvus-backup restore -n my_backup -r db1.coll1:db2.coll1 --filter db2.coll1
+```
+
+Filtering on the pre-rename name matches nothing and restores nothing.
+
 ## API server
 
 Start the REST API server with:
