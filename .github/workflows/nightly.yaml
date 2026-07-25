@@ -148,15 +148,15 @@ jobs:
         shell: bash
         working-directory: deployment/${{ matrix.milvus_mode }}
         run: |
-          yq -i '.minio.rootPath = "${{ matrix.milvus_minio_rootpath }}"' values.yaml
+          yq -i '.milvus.storage.rootPath = "${{ matrix.milvus_minio_rootpath }}"' values.yaml
       - name: Build
         timeout-minutes: 5
         shell: bash
         run: |
           if [ ${{ matrix.deploy_tools }} == 'helm' ]; then
-            yq -i '.minio.bucketName = "milvus-bucket"' configs/backup.yaml
-            yq -i '.minio.rootPath = "${{ matrix.milvus_minio_rootpath }}"' configs/backup.yaml
-            yq -i '.minio.backupBucketName = "${{ matrix.backup_bucket_name }}"' configs/backup.yaml
+            yq -i '.milvus.storage.bucketName = "milvus-bucket"' configs/backup.yaml
+            yq -i '.milvus.storage.rootPath = "${{ matrix.milvus_minio_rootpath }}"' configs/backup.yaml
+            yq -i '.backup.storage.bucketName = "${{ matrix.backup_bucket_name }}"' configs/backup.yaml
 
           fi
           yq -i '.log.level = "debug"' configs/backup.yaml
