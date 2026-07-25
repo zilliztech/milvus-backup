@@ -2,12 +2,12 @@ package list
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/samber/lo"
 	"github.com/spf13/cobra"
 
+	"github.com/zilliztech/milvus-backup/cmd/flags"
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
@@ -15,27 +15,13 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
-type options struct {
-	collectionName string
+// removedFlags are the list flags dropped in 0.6.
+var removedFlags = []flags.Removed{
+	{Name: "collection", Shorthand: "c", Advice: "listing backups by collection is no longer supported"},
 }
 
-func (o *options) validate() error {
-	if o.collectionName != "" {
-		return errors.New("collectionName is deprecated")
-	}
-
-	return nil
-}
-
-func (o *options) addFlags(cmd *cobra.Command) {
-	cmd.Flags().StringVarP(&o.collectionName, "collection", "c", "", "[DEPRECATED] only list backups contains a certain collection")
-}
-
-func (o *options) run(cmd *cobra.Command, params *v2.Config) error {
+func run(cmd *cobra.Command, params *v2.Config) error {
 	ctx := context.Background()
-	if err := o.validate(); err != nil {
-		return err
-	}
 
 	backupStorage, err := storage.NewBackupStorage(ctx, params)
 	if err != nil {
@@ -59,19 +45,23 @@ func (o *options) run(cmd *cobra.Command, params *v2.Config) error {
 }
 
 func NewCmd(opt *root.Options) *cobra.Command {
-	var o options
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "list all backups in object storage",
 
-		Run: func(cmd *cobra.Command, args []string) {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := flags.CheckRemoved(cmd, removedFlags); err != nil {
+				return err
+			}
+
 			params := opt.InitGlobalVars()
-			err := o.run(cmd, params)
-			cobra.CheckErr(err)
+			cobra.CheckErr(run(cmd, params))
+
+			return nil
 		},
 	}
 
-	o.addFlags(cmd)
+	flags.AddRemoved(cmd, removedFlags)
 
 	return cmd
 }

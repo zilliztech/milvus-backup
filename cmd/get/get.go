@@ -7,6 +7,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/zilliztech/milvus-backup/cmd/flags"
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/meta"
@@ -15,14 +16,19 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 )
 
+// removedFlags are the get flags dropped in 0.6.
+var removedFlags = []flags.Removed{
+	{Name: "detail", Shorthand: "d", NoValue: true, Advice: "get always prints the complete backup info"},
+}
+
 type options struct {
 	backupName string
-	detail     bool
 }
 
 func (o *options) addFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.backupName, "name", "n", "", "get backup with this name")
-	cmd.Flags().BoolVarP(&o.detail, "detail", "d", false, "[DEPRECATED] get complete backup info")
+
+	flags.AddRemoved(cmd, removedFlags)
 }
 
 func (o *options) validate() error {
@@ -69,6 +75,10 @@ func NewCmd(opt *root.Options) *cobra.Command {
 		Short: "get a backup by name",
 
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := flags.CheckRemoved(cmd, removedFlags); err != nil {
+				return err
+			}
+
 			params := opt.InitGlobalVars()
 
 			if err := o.validate(); err != nil {

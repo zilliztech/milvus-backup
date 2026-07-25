@@ -390,8 +390,10 @@ jobs:
         timeout-minutes: 5
         shell: bash
         run: |
-          ./milvus-backup restore -n my_backup -c hello_milvus -s _recover
-          ./milvus-backup restore -n my_backup -c hello_milvus2 -s _recover
+          # --filter matches the collection name after -s is applied, so it
+          # names hello_milvus_recover rather than hello_milvus.
+          ./milvus-backup restore -n my_backup --filter hello_milvus_recover -s _recover
+          ./milvus-backup restore -n my_backup --filter hello_milvus2_recover -s _recover
       - name: Verify data
         timeout-minutes: 5
         shell: bash

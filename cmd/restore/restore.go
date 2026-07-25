@@ -2,7 +2,6 @@ package restore
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -11,11 +10,11 @@ import (
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
+	"github.com/zilliztech/milvus-backup/cmd/flags"
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/restore"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/filter"
-	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/storage"
@@ -23,17 +22,22 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
+// removedFlags are the restore flags dropped in 0.6, after 0.5 accepted them
+// with a deprecation warning.
+var removedFlags = []flags.Removed{
+	{Name: "collections", Shorthand: "c", Advice: "use --filter instead"},
+	{Name: "databases", Shorthand: "d", Advice: "use --filter instead"},
+	{Name: "database_collections", Shorthand: "a", Advice: "use --filter instead"},
+	{Name: "restore_index", NoValue: true, Advice: "use --rebuild_index instead"},
+}
+
 type options struct {
 	backupName            string
 	renameSuffix          string
 	renameCollectionNames string
 
-	collectionNames     string
-	databases           string
-	databaseCollections string
-	filter              string
+	filter string
 
-	restoreIndex bool
 	rebuildIndex bool
 
 	metaOnly             bool
@@ -51,32 +55,6 @@ func (o *options) validate() error {
 		return errors.New("backup name is required")
 	}
 
-	if o.collectionNames != "" || o.databases != "" || o.databaseCollections != "" {
-		log.Warn("collection_names, databases and database_collections are deprecated, use filter instead !")
-	}
-
-	if o.filter != "" && o.collectionNames != "" {
-		return errors.New("filter and collection_names cannot be set at the same time")
-	}
-	if o.filter != "" && o.databases != "" {
-		return errors.New("filter and databases cannot be set at the same time")
-	}
-	if o.filter != "" && o.databaseCollections != "" {
-		return errors.New("filter and database_collections cannot be set at the same time")
-	}
-
-	if o.collectionNames != "" && o.databaseCollections != "" {
-		return errors.New("collection_names and database_collections cannot be set at the same time")
-	}
-
-	if o.collectionNames != "" && o.databases != "" {
-		return errors.New("collection_names and databases cannot be set at the same time")
-	}
-
-	if o.databaseCollections != "" && o.databases != "" {
-		return errors.New("database_collections and databases cannot be set at the same time")
-	}
-
 	if o.renameSuffix != "" && o.renameCollectionNames != "" {
 		return errors.New("suffix and rename flag cannot be set at the same time")
 	}
@@ -85,25 +63,17 @@ func (o *options) validate() error {
 		return errors.New("drop_exist_collection and skip_create_collection cannot be true at the same time")
 	}
 
-	if o.restoreIndex {
-		log.Warn("restore_index is deprecated, use rebuild_index instead")
-	}
-
 	return nil
 }
 
 func (o *options) addFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.backupName, "name", "n", "", "backup name to restore")
 
-	cmd.Flags().StringVarP(&o.databases, "databases", "d", "", "[DEPRECATED] Use --filter instead. databases to restore, if not set, restore all databases")
-	cmd.Flags().StringVarP(&o.databaseCollections, "database_collections", "a", "", "[DEPRECATED] Use --filter instead. databases and collections to restore, json format: {\"db1\":[\"c1\", \"c2\"],\"db2\":[]}")
-	cmd.Flags().StringVarP(&o.collectionNames, "collections", "c", "", "[DEPRECATED] Use --filter instead. collectionNames to restore")
-	cmd.Flags().StringVarP(&o.filter, "filter", "", "", "Specify which collections to restore, if not set, restore all collections in backup. example: db1.coll1,db2.coll2")
+	cmd.Flags().StringVarP(&o.filter, "filter", "", "", "Specify which collections to restore, if not set, restore all collections in backup. Matched against the name after --suffix or --rename is applied. example: db1.coll1,db2.coll2")
 
 	cmd.Flags().StringVarP(&o.renameSuffix, "suffix", "s", "", "add a suffix to collection name to restore")
 	cmd.Flags().StringVarP(&o.renameCollectionNames, "rename", "r", "", "rename collections to new names, format: db1.collection1:db2.collection1_new,db1.collection2:db2.collection2_new")
 
-	cmd.Flags().BoolVarP(&o.restoreIndex, "restore_index", "", false, "[DEPRECATED] Use --rebuild_index instead. restore index info")
 	cmd.Flags().BoolVarP(&o.rebuildIndex, "rebuild_index", "", false, "Rebuild index from meta information.")
 
 	cmd.Flags().BoolVarP(&o.metaOnly, "meta_only", "", false, "if true, restore meta only")
@@ -114,14 +84,14 @@ func (o *options) addFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVarP(&o.skipCreateCollection, "skip_create_collection", "", false, "if true, will skip collection, use when collection exist, restore index or data")
 	cmd.Flags().BoolVarP(&o.rbac, "rbac", "", false, "whether restore RBAC meta")
 	cmd.Flags().BoolVarP(&o.useV2Restore, "use_v2_restore", "", false, "if true, use multi-segment merged restore")
+
+	flags.AddRemoved(cmd, removedFlags)
 }
 
 func (o *options) toOption() *restore.Option {
-	rebuildIndex := o.restoreIndex || o.rebuildIndex
-
 	return &restore.Option{
 		DropExistIndex:       o.dropExistIndex,
-		RebuildIndex:         rebuildIndex,
+		RebuildIndex:         o.rebuildIndex,
 		UseAutoIndex:         o.useAutoIndex,
 		DropExistCollection:  o.dropExistCollection,
 		SkipCreateCollection: o.skipCreateCollection,
@@ -133,22 +103,6 @@ func (o *options) toOption() *restore.Option {
 
 func (o *options) toTaskFilter() (filter.Filter, error) {
 	return filter.Parse(o.filter)
-}
-
-func (o *options) toBackupFilter() (filter.Filter, error) {
-	if o.collectionNames != "" {
-		return o.collectionNamesToBackupFilter()
-	}
-
-	if o.databases != "" {
-		return o.databasesToBackupFilter()
-	}
-
-	if o.databaseCollections != "" {
-		return o.dbCollectionsToBackupFilter()
-	}
-
-	return filter.Filter{}, nil
 }
 
 func (o *options) toCollMapper() (restore.CollMapper, error) {
@@ -164,11 +118,6 @@ func (o *options) toCollMapper() (restore.CollMapper, error) {
 }
 
 func (o *options) toPlan() (*restore.Plan, error) {
-	backupFilter, err := o.toBackupFilter()
-	if err != nil {
-		return nil, err
-	}
-
 	collMapper, err := o.toCollMapper()
 	if err != nil {
 		return nil, err
@@ -179,66 +128,14 @@ func (o *options) toPlan() (*restore.Plan, error) {
 		return nil, err
 	}
 
+	// Plan.BackupFilter is left unset: it exists for the removed database and
+	// collection flags, and the HTTP API is the only caller that still has them.
 	return &restore.Plan{
-		BackupFilter: backupFilter,
-
 		// not support db mapping now
 		CollMapper: collMapper,
 
 		TaskFilter: taskFilter,
 	}, nil
-}
-
-func (o *options) collectionNamesToBackupFilter() (filter.Filter, error) {
-	collFilter := make(map[string]filter.CollFilter)
-
-	nsStrs := strings.Split(o.collectionNames, ",")
-	for _, nsStr := range nsStrs {
-		ns, err := namespace.Parse(nsStr)
-		if err != nil {
-			return filter.Filter{}, fmt.Errorf("invalid collection name %s", nsStr)
-		}
-
-		if _, ok := collFilter[ns.DBName()]; !ok {
-			collFilter[ns.DBName()] = filter.CollFilter{CollName: make(map[string]struct{})}
-		}
-		collFilter[ns.DBName()].CollName[ns.CollName()] = struct{}{}
-	}
-
-	return filter.Filter{DBCollFilter: collFilter}, nil
-}
-
-func (o *options) databasesToBackupFilter() (filter.Filter, error) {
-	collFilter := make(map[string]filter.CollFilter)
-
-	splits := strings.Split(o.databases, ",")
-	for _, db := range splits {
-		collFilter[db] = filter.CollFilter{AllowAll: true}
-	}
-
-	return filter.Filter{DBCollFilter: collFilter}, nil
-}
-
-func (o *options) dbCollectionsToBackupFilter() (filter.Filter, error) {
-	dbColls := make(map[string][]string)
-	if err := json.Unmarshal([]byte(o.databaseCollections), &dbColls); err != nil {
-		return filter.Filter{}, fmt.Errorf("unmarshal dbCollections: %w", err)
-	}
-
-	collFilter := make(map[string]filter.CollFilter)
-	for dbName, colls := range dbColls {
-		if len(colls) == 0 {
-			collFilter[dbName] = filter.CollFilter{AllowAll: true}
-		} else {
-			collName := make(map[string]struct{}, len(colls))
-			for _, coll := range colls {
-				collName[coll] = struct{}{}
-			}
-			collFilter[dbName] = filter.CollFilter{CollName: collName}
-		}
-	}
-
-	return filter.Filter{DBCollFilter: collFilter}, nil
 }
 
 func (o *options) renameCollectionNamesToMapper() (*restore.TableMapper, error) {
@@ -363,8 +260,20 @@ func NewCmd(opt *root.Options) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "restore",
 		Short: "restore a backup into Milvus",
+		Long: "Restore a backup into Milvus.\n\n" +
+			"--filter names collections as they will exist in the target Milvus, that is, after\n" +
+			"--suffix or --rename has been applied. Restoring only hello_milvus under a _recover\n" +
+			"suffix is therefore \"--suffix _recover --filter hello_milvus_recover\", not\n" +
+			"\"--filter hello_milvus\", which matches nothing.\n\n" +
+			"The removed --collections, --databases and --database_collections selected\n" +
+			"collections by their name in the backup instead; --filter is not a drop-in\n" +
+			"replacement for them when the restore also renames.",
 
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := flags.CheckRemoved(cmd, removedFlags); err != nil {
+				return err
+			}
+
 			params := opt.InitGlobalVars()
 
 			if err := o.validate(); err != nil {
