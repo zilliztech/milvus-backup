@@ -656,11 +656,11 @@ jobs:
         shell: bash
         run: |
           yq -i '.log.level = "debug"' configs/backup.yaml
-          yq -i '.milvus.port = 19530' configs/backup.yaml
-          yq -i '.minio.bucketName = "milvus-backup-test"' configs/backup.yaml
-          yq -i '.minio.rootPath = "backup-test-upstream"' configs/backup.yaml
-          yq -i '.minio.backupBucketName = "milvus-backup-test"' configs/backup.yaml
-          yq -i '.milvus.rpcChannelName = "backup-test-upstream-replicate-msg"' configs/backup.yaml
+          yq -i '.milvus.grpc.port = 19530' configs/backup.yaml
+          yq -i '.milvus.storage.bucketName = "milvus-backup-test"' configs/backup.yaml
+          yq -i '.milvus.storage.rootPath = "backup-test-upstream"' configs/backup.yaml
+          yq -i '.backup.storage.bucketName = "milvus-backup-test"' configs/backup.yaml
+          yq -i '.milvus.replicate.rpcChannelName = "backup-test-upstream-replicate-msg"' configs/backup.yaml
           yq -i '.milvus.etcd.rootPath = "backup-test-upstream"' configs/backup.yaml
           cat configs/backup.yaml
 
@@ -731,7 +731,7 @@ jobs:
         timeout-minutes: 1
         shell: bash
         run: |
-          yq -i '.milvus.port = 19500' configs/backup.yaml
+          yq -i '.milvus.grpc.port = 19500' configs/backup.yaml
           cat configs/backup.yaml
 
       - name: Restore secondary
@@ -835,12 +835,12 @@ jobs:
         shell: bash
         run: |
           yq -i '.log.level = "debug"' configs/backup.yaml
-          yq -i '.minio.bucketName = "milvus-bucket"' configs/backup.yaml
-          yq -i '.minio.rootPath = "file"' configs/backup.yaml
-          yq -i '.minio.backupPort = 9010' configs/backup.yaml
-          yq -i '.minio.backupBucketName = "milvus-bucket"' configs/backup.yaml
-          yq -i '.minio.backupRootPath = "backup"' configs/backup.yaml
-          yq -i '.minio.crossStorage = true' configs/backup.yaml
+          yq -i '.milvus.storage.bucketName = "milvus-bucket"' configs/backup.yaml
+          yq -i '.milvus.storage.rootPath = "file"' configs/backup.yaml
+          yq -i '.backup.storage.port = 9010' configs/backup.yaml
+          yq -i '.backup.storage.bucketName = "milvus-bucket"' configs/backup.yaml
+          yq -i '.backup.storage.rootPath = "backup"' configs/backup.yaml
+          yq -i '.transfer.mode = "streaming"' configs/backup.yaml
           cat configs/backup.yaml || true
           go get
           go build
@@ -912,8 +912,8 @@ jobs:
         timeout-minutes: 5
         shell: bash
         run: |
-          yq -i '.milvus.port = 19531' configs/backup.yaml
-          yq -i '.minio.port = 9010' configs/backup.yaml
+          yq -i '.milvus.grpc.port = 19531' configs/backup.yaml
+          yq -i '.milvus.storage.port = 9010' configs/backup.yaml
       - name: Restore backup
         timeout-minutes: 5
         shell: bash

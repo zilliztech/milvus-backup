@@ -44,9 +44,9 @@ jobs:
         shell: bash
         run: |
           if [ ${{ matrix.deploy_tools }} == 'helm' ]; then
-            yq -i '.minio.bucketName = "milvus-bucket"' configs/backup.yaml
-            yq -i '.minio.backupBucketName = "milvus-bucket"' configs/backup.yaml
-            yq -i '.minio.rootPath = "file"' configs/backup.yaml
+            yq -i '.milvus.storage.bucketName = "milvus-bucket"' configs/backup.yaml
+            yq -i '.backup.storage.bucketName = "milvus-bucket"' configs/backup.yaml
+            yq -i '.milvus.storage.rootPath = "file"' configs/backup.yaml
           fi
           yq -i '.log.level = "debug"' configs/backup.yaml
           cat configs/backup.yaml || true

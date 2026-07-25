@@ -83,8 +83,8 @@ jobs:
         run: |
           # Update backup config with unique paths
           cp backup-azure.yaml backup.yaml
-          yq -i ".minio.rootPath = \"${{ steps.paths.outputs.milvus_root }}\"" backup.yaml
-          yq -i ".minio.backupRootPath = \"${{ steps.paths.outputs.backup_root }}\"" backup.yaml
+          yq -i ".milvus.storage.rootPath = \"${{ steps.paths.outputs.milvus_root }}\"" backup.yaml
+          yq -i ".backup.storage.rootPath = \"${{ steps.paths.outputs.backup_root }}\"" backup.yaml
 
       - name: Milvus deploy
         timeout-minutes: 15
@@ -95,7 +95,7 @@ jobs:
           AZURE_STORAGE_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
         run: |
           # Update Milvus config with unique root path
-          yq -i ".minio.rootPath = \"${{ steps.paths.outputs.milvus_root }}\"" user-az-storage.yaml
+          yq -i ".milvus.storage.rootPath = \"${{ steps.paths.outputs.milvus_root }}\"" user-az-storage.yaml
 
           # Deploy Milvus
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
@@ -130,10 +130,10 @@ jobs:
         timeout-minutes: 5
         shell: bash
         env:
-          MINIO_ACCESS_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
-          MINIO_SECRET_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
-          MINIO_BACKUP_ACCESS_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
-          MINIO_BACKUP_SECRET_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+          MILVUS_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          MILVUS_STORAGE_AUTH_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+          BACKUP_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          BACKUP_STORAGE_AUTH_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
         run: |
           ./milvus-backup check
           ./milvus-backup list
@@ -144,10 +144,10 @@ jobs:
         timeout-minutes: 5
         shell: bash
         env:
-          MINIO_ACCESS_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
-          MINIO_SECRET_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
-          MINIO_BACKUP_ACCESS_KEY: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
-          MINIO_BACKUP_SECRET_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+          MILVUS_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          MILVUS_STORAGE_AUTH_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
+          BACKUP_STORAGE_ACCOUNT_NAME: ${{ secrets.AZURE_STORAGE_ACCOUNT }}
+          BACKUP_STORAGE_AUTH_ACCOUNT_KEY: ${{ secrets.AZURE_STORAGE_KEY }}
         run: |
           ./milvus-backup restore -n my_backup -s _recover
       
