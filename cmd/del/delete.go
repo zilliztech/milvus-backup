@@ -9,7 +9,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/del"
-	"github.com/zilliztech/milvus-backup/internal/cfg"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 )
@@ -30,13 +30,13 @@ func (o *options) addFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.name, "name", "n", "", "delete backup with this name")
 }
 
-func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
-	backupStorage, err := storage.NewBackupStorage(context.Background(), &params.Minio)
+func (o *options) run(cmd *cobra.Command, params *v2.Config) error {
+	backupStorage, err := storage.NewBackupStorage(context.Background(), params)
 	if err != nil {
 		return fmt.Errorf("delete: create backup storage: %w", err)
 	}
 
-	task := del.NewTask(backupStorage, mpath.BackupDir(params.Minio.BackupRootPath.Val, o.name))
+	task := del.NewTask(backupStorage, mpath.BackupDir(params.Backup.Storage.RootPath.Val, o.name))
 	if err := task.Execute(context.Background()); err != nil {
 		return fmt.Errorf("delete: execute task: %w", err)
 	}

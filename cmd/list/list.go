@@ -10,7 +10,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/internal/cfg"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 )
@@ -31,18 +31,18 @@ func (o *options) addFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.collectionName, "collection", "c", "", "[DEPRECATED] only list backups contains a certain collection")
 }
 
-func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
+func (o *options) run(cmd *cobra.Command, params *v2.Config) error {
 	ctx := context.Background()
 	if err := o.validate(); err != nil {
 		return err
 	}
 
-	backupStorage, err := storage.NewBackupStorage(ctx, &params.Minio)
+	backupStorage, err := storage.NewBackupStorage(ctx, params)
 	if err != nil {
 		return fmt.Errorf("cmd: create backup storage %w", err)
 	}
 
-	summaries, err := meta.List(ctx, backupStorage, params.Minio.BackupRootPath.Val)
+	summaries, err := meta.List(ctx, backupStorage, params.Backup.Storage.RootPath.Val)
 	if err != nil {
 		return fmt.Errorf("cmd: list backup %w", err)
 	}

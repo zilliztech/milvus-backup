@@ -40,7 +40,6 @@ import (
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
 
-	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/progressbar"
 )
 
@@ -57,19 +56,11 @@ func init() {
 	_globalR.Store(r)
 }
 
-func InitLogger(params *cfg.LogConfig) {
-	cfg := &Config{
-		Level:   params.Level.Val,
-		Console: params.Console.Val,
-		File: FileLogConfig{
-			Filename:   params.File.Filename.Val,
-			MaxSize:    params.File.MaxSize.Val,
-			MaxDays:    params.File.MaxDays.Val,
-			MaxBackups: params.File.MaxBackups.Val,
-		},
-	}
-
-	lg, p, err := initLogger(cfg)
+// InitLogger replaces the global logger with one built from conf. The caller
+// maps its own configuration onto Config, which keeps this package free of any
+// configuration schema — the schema packages log through it.
+func InitLogger(conf *Config) {
+	lg, p, err := initLogger(conf)
 	if err != nil {
 		panic(err)
 	}

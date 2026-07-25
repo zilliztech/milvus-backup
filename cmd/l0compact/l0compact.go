@@ -10,7 +10,7 @@ import (
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/backup"
 	corel0 "github.com/zilliztech/milvus-backup/core/l0compact"
-	"github.com/zilliztech/milvus-backup/internal/cfg"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 )
@@ -43,14 +43,14 @@ func (o *options) validate() error {
 	return nil
 }
 
-func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
+func (o *options) run(cmd *cobra.Command, params *v2.Config) error {
 	ctx := context.Background()
-	cli, err := storage.NewBackupStorage(ctx, &params.Minio)
+	cli, err := storage.NewBackupStorage(ctx, params)
 	if err != nil {
 		return fmt.Errorf("l0compact: create storage: %w", err)
 	}
-	srcDir := mpath.BackupDir(params.Minio.BackupRootPath.Val, o.name)
-	dstDir := mpath.BackupDir(params.Minio.BackupRootPath.Val, o.output)
+	srcDir := mpath.BackupDir(params.Backup.Storage.RootPath.Val, o.name)
+	dstDir := mpath.BackupDir(params.Backup.Storage.RootPath.Val, o.output)
 	// Destination handling (reject-if-exists, or clear when --force) lives in the
 	// task so it is applied uniformly.
 	task := corel0.NewTask(cli, srcDir, dstDir, corel0.WithForce(o.force))

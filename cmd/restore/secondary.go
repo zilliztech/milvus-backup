@@ -10,7 +10,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/restore/secondary"
-	"github.com/zilliztech/milvus-backup/internal/cfg"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
@@ -42,13 +42,13 @@ func (o *secondaryOption) validate() error {
 	return nil
 }
 
-func (o *secondaryOption) toArgs(params *cfg.Config) (secondary.TaskArgs, error) {
-	backupStorage, err := storage.NewBackupStorage(context.Background(), &params.Minio)
+func (o *secondaryOption) toArgs(params *v2.Config) (secondary.TaskArgs, error) {
+	backupStorage, err := storage.NewBackupStorage(context.Background(), params)
 	if err != nil {
 		return secondary.TaskArgs{}, fmt.Errorf("create backup storage: %w", err)
 	}
 
-	backupDir := mpath.BackupDir(params.Minio.BackupRootPath.Val, o.backupName)
+	backupDir := mpath.BackupDir(params.Backup.Storage.RootPath.Val, o.backupName)
 	exist, err := meta.Exist(context.Background(), backupStorage, backupDir)
 	if err != nil {
 		return secondary.TaskArgs{}, fmt.Errorf("check backup exist: %w", err)
@@ -77,7 +77,7 @@ func (o *secondaryOption) toArgs(params *cfg.Config) (secondary.TaskArgs, error)
 	}, nil
 }
 
-func (o *secondaryOption) run(cmd *cobra.Command, params *cfg.Config) error {
+func (o *secondaryOption) run(cmd *cobra.Command, params *v2.Config) error {
 	args, err := o.toArgs(params)
 	if err != nil {
 		return err

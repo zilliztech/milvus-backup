@@ -7,7 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/zilliztech/milvus-backup/internal/cfg"
+	"github.com/zilliztech/milvus-backup/internal/cfg/loader"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
@@ -16,20 +17,37 @@ type Options struct {
 	YamlOverrides []string
 }
 
-func (o *Options) InitGlobalVars() *cfg.Config {
+// InitGlobalVars loads the configuration, whichever schema version the file is
+// written in, and initializes logging from it. Everything downstream sees v2.
+func (o *Options) InitGlobalVars() *v2.Config {
 	overrides, err := parseOverrides(o.YamlOverrides)
 	if err != nil {
 		panic(err)
 	}
 
-	params, err := cfg.Load(o.Config, overrides)
+	params, err := loader.Load(o.Config, overrides)
 	if err != nil {
 		panic(err)
 	}
 
-	log.InitLogger(&params.Log)
+	log.InitLogger(logConfig(&params.Log))
 
 	return params
+}
+
+// logConfig maps the log section onto the logger's own configuration, so the
+// log package does not have to know about a configuration schema.
+func logConfig(c *v2.LogConfig) *log.Config {
+	return &log.Config{
+		Level:   c.Level.Val,
+		Console: c.Console.Val,
+		File: log.FileLogConfig{
+			Filename:   c.File.Path.Val,
+			MaxSize:    c.File.MaxSizeMiB.Val,
+			MaxDays:    c.File.MaxDays.Val,
+			MaxBackups: c.File.MaxBackups.Val,
+		},
+	}
 }
 
 func NewCmd(opt *Options) *cobra.Command {

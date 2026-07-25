@@ -16,7 +16,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/restore/conv"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/internal/cfg"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
@@ -32,7 +32,7 @@ type TaskArgs struct {
 
 	Backup *backuppb.BackupInfo
 
-	Params *cfg.Config
+	Params *v2.Config
 
 	BackupDir     string
 	BackupStorage storage.Client
@@ -244,7 +244,7 @@ func (t *Task) runCollTasks(ctx context.Context) error {
 	loadArgs := t.loadTaskArgs()
 
 	g, subCtx := errgroup.WithContext(ctx)
-	g.SetLimit(t.args.Params.Backup.Parallelism.RestoreCollection.Val)
+	g.SetLimit(t.args.Params.Restore.Concurrency.Collections.Val)
 	for _, coll := range t.args.Backup.GetCollectionBackups() {
 		g.Go(func() error {
 			return t.runCollTask(subCtx, dbNameBackup[coll.GetDbName()], coll, ddlArgs, dmlArgs, loadArgs)

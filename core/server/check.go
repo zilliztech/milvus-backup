@@ -28,12 +28,12 @@ func (s *Server) handleCheck(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	milvusStorage, err := storage.NewMilvusStorage(ctx, &s.params.Minio)
+	milvusStorage, err := storage.NewMilvusStorage(ctx, s.params)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	backupStorage, err := storage.NewBackupStorage(ctx, &s.params.Minio)
+	backupStorage, err := storage.NewBackupStorage(ctx, s.params)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return

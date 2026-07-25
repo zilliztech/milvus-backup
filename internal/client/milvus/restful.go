@@ -2,7 +2,6 @@ package milvus
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -11,7 +10,7 @@ import (
 	"github.com/imroc/req/v3"
 	"go.uber.org/zap"
 
-	"github.com/zilliztech/milvus-backup/internal/cfg"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/retry"
 )
@@ -250,25 +249,31 @@ func restfulAuth(username, password string) string {
 	return ""
 }
 
-func NewRestful(cfg *cfg.MilvusConfig) (*RestfulClient, error) {
-	host := net.JoinHostPort(cfg.Address.Val, strconv.Itoa(cfg.Port.Val))
-	log.Info("new milvus restful client", zap.String("host", host))
-
-	var baseURL string
-	switch cfg.TLSMode.Val {
-	case 0:
-		baseURL = "http://" + host
-	case 1, 2:
-		baseURL = "https://" + host
-	default:
-		return nil, errors.New("client: invalid tls mode")
-	}
+func NewRestful(c *v2.MilvusConfig) (*RestfulClient, error) {
+	baseURL := restfulBaseURL(c)
+	log.Info("new milvus restful client", zap.String("baseURL", baseURL))
 
 	cli := req.C().SetBaseURL(baseURL)
 
-	if auth := restfulAuth(cfg.User.Val, cfg.Password.Val); len(auth) != 0 {
+	if auth := restfulAuth(c.User.Val, c.Password.Val); len(auth) != 0 {
 		cli.SetCommonBearerAuthToken(auth)
 	}
 
 	return &RestfulClient{cli: cli}, nil
+}
+
+// restfulBaseURL uses the configured REST endpoint, and derives one from the
+// gRPC connection when none is set, which covers the deployments where a single
+// proxy serves both protocols.
+func restfulBaseURL(c *v2.MilvusConfig) string {
+	if endpoint := c.Rest.Endpoint.Val; endpoint != "" {
+		return endpoint
+	}
+
+	host := net.JoinHostPort(c.Grpc.Address.Val, strconv.Itoa(c.Grpc.Port.Val))
+	if c.Grpc.TLSMode.Val == v2.TLSDisabled {
+		return "http://" + host
+	}
+
+	return "https://" + host
 }

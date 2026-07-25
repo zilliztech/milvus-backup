@@ -9,13 +9,13 @@ import (
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/check"
-	"github.com/zilliztech/milvus-backup/internal/cfg"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
 // writeConfig prints a labeled table of the effective configuration to w.
-func writeConfig(w io.Writer, c *cfg.Config) error {
+func writeConfig(w io.Writer, c *v2.Config) error {
 	if _, err := io.WriteString(w, "Configuration:\n"); err != nil {
 		return fmt.Errorf("check: write config header: %w", err)
 	}
@@ -42,10 +42,10 @@ func NewCmd(opt *root.Options) *cobra.Command {
 			grpc, err := milvus.NewGrpc(&params.Milvus)
 			cobra.CheckErr(err)
 
-			milvusStorage, err := storage.NewMilvusStorage(ctx, &params.Minio)
+			milvusStorage, err := storage.NewMilvusStorage(ctx, params)
 			cobra.CheckErr(err)
 
-			backupStorage, err := storage.NewBackupStorage(ctx, &params.Minio)
+			backupStorage, err := storage.NewBackupStorage(ctx, params)
 			cobra.CheckErr(err)
 
 			taskArgs := check.TaskArgs{

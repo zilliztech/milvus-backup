@@ -13,7 +13,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore/secondary"
 	"github.com/zilliztech/milvus-backup/core/tasklet"
-	"github.com/zilliztech/milvus-backup/internal/cfg"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
@@ -47,12 +47,12 @@ func (s *Server) handleRestoreSecondary(c *gin.Context) {
 	c.JSON(http.StatusOK, resp)
 }
 
-func newRestoreSecondaryHandler(request *backuppb.RestoreSecondaryRequest, params *cfg.Config) *restoreSecondaryHandler {
+func newRestoreSecondaryHandler(request *backuppb.RestoreSecondaryRequest, params *v2.Config) *restoreSecondaryHandler {
 	return &restoreSecondaryHandler{request: request, params: params}
 }
 
 type restoreSecondaryHandler struct {
-	params  *cfg.Config
+	params  *v2.Config
 	request *backuppb.RestoreSecondaryRequest
 
 	backupStorage  storage.Client
@@ -122,12 +122,12 @@ func (h *restoreSecondaryHandler) run(ctx context.Context) *backuppb.RestoreBack
 }
 
 func (h *restoreSecondaryHandler) initClient(ctx context.Context) error {
-	backupStorage, err := storage.NewBackupStorage(ctx, &h.params.Minio)
+	backupStorage, err := storage.NewBackupStorage(ctx, h.params)
 	if err != nil {
 		return fmt.Errorf("server: create backup storage: %w", err)
 	}
 
-	backupRootPath := h.params.Minio.BackupRootPath.Val
+	backupRootPath := h.params.Backup.Storage.RootPath.Val
 	if len(h.request.GetPath()) != 0 {
 		backupRootPath = h.request.GetPath()
 	}

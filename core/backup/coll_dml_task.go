@@ -30,7 +30,7 @@ type collDMLTask struct {
 	milvusStorage  storage.Client
 	milvusRootPath string
 
-	crossStorage bool
+	streaming bool
 
 	backupStorage storage.Client
 	backupDir     string
@@ -58,7 +58,7 @@ func newCollDMLTask(ns namespace.NS, args collTaskArgs) *collDMLTask {
 		milvusStorage:  args.MilvusStorage,
 		milvusRootPath: args.MilvusRootPath,
 
-		crossStorage: args.CrossStorage,
+		streaming: args.Streaming,
 
 		backupStorage: args.BackupStorage,
 		backupDir:     args.BackupDir,
@@ -529,7 +529,7 @@ func (dmlt *collDMLTask) backupSegmentData(ctx context.Context, seg *backuppb.Se
 		Src:       dmlt.milvusStorage,
 		Dest:      dmlt.backupStorage,
 		Attrs:     attrs,
-		Streaming: dmlt.crossStorage,
+		Streaming: dmlt.streaming,
 		Sem:       dmlt.throttling.CopySem,
 		TraceFn: func(size int64, cost time.Duration) {
 			dmlt.taskMgr.UpdateBackupTask(dmlt.taskID, taskmgr.IncBackupCollCopiedSize(dmlt.ns, size, cost))

@@ -9,7 +9,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/server"
-	"github.com/zilliztech/milvus-backup/internal/cfg"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 )
 
 const (
@@ -49,7 +49,7 @@ func (o *options) addFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.port, "port", "p", "", "Port to listen")
 }
 
-func (o *options) run(params *cfg.Config) error {
+func (o *options) run(params *v2.Config) error {
 	srv, err := server.New(params, server.Port(o.port))
 	if err != nil {
 		return fmt.Errorf("fail to create server, %w", err)
