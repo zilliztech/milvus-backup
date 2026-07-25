@@ -1,0 +1,41 @@
+# Milvus on AWS S3, authenticating with an instance role instead of a key pair.
+#
+# Nothing in this file is a secret, which is the point: on EKS the credentials
+# come from the pod's service account (IRSA), and on EC2 from the instance
+# profile. The same shape works for the other S3-compatible providers.
+configVersion: v2
+
+milvus:
+  user: "root"
+  password: "Milvus"
+
+  grpc:
+    address: localhost
+    port: 19530
+
+  storage:
+    provider: aws
+    address: s3.us-east-1.amazonaws.com
+    port: 443
+    region: us-east-1
+    useSSL: true
+    bucketName: "<your-milvus-bucket>"
+    rootPath: "files"
+
+    auth:
+      # iam fetches credentials from an IAM endpoint. AWS and GCP read instance
+      # metadata from a well-known address, so the endpoint is left unset here;
+      # MinIO needs one configured.
+      type: iam
+      # endpoint: "http://minio-iam.internal"
+      #
+      # auth.type default is the other credential-free option: it hands the
+      # decision to the provider SDK, which covers workload identity and
+      # DefaultAzureCredential.
+
+backup:
+  # The provider, endpoint and auth type are inherited from milvus.storage, so
+  # the backup bucket authenticates the same way.
+  storage:
+    bucketName: "<your-backup-bucket>"
+    rootPath: "backup"

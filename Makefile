@@ -25,6 +25,16 @@ build:
 	@GO111MODULE=on CGO_ENABLED=0 go build -ldflags '$(LDFLAGS)' -o $(BINARY_NAME)
 	@echo "Building Backup binary done"
 
+# Load every sample config with the built binary. The samples are what people
+# copy, so a broken one is otherwise only found by the person copying it.
+check-configs: build
+	@echo "Loading sample configs..."
+	@for f in configs/*.yaml; do \
+		./$(BINARY_NAME) config show --config $$f > /dev/null \
+			|| { echo "FAILED to load $$f"; exit 1; }; \
+	done
+	@echo "Sample configs loaded"
+
 gen:
 	./scripts/gen_swag.sh
 	./scripts/gen_proto.sh
@@ -45,4 +55,4 @@ lint:
 	@golangci-lint run ./...
 	@echo Lint passed
 
-.PHONY: all build gen lint
+.PHONY: all build check-configs gen lint

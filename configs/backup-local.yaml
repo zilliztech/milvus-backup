@@ -1,0 +1,33 @@
+# Milvus on MinIO, with backups written to a local directory.
+#
+# Local storage is a path: it has no endpoint and no credentials, so the
+# backup side names only the provider and where to write. Objects are streamed
+# through milvus-backup, since no storage service can copy between the two.
+configVersion: v2
+
+milvus:
+  user: "root"
+  password: "Milvus"
+
+  grpc:
+    address: localhost
+    port: 19530
+
+  storage:
+    provider: minio
+    address: localhost
+    port: 9000
+    bucketName: "a-bucket"
+    rootPath: "files"
+
+    auth:
+      type: static
+      accessKeyID: minioadmin
+      secretAccessKey: minioadmin
+
+backup:
+  storage:
+    provider: local
+    # The directory backup data is written to. Make sure the process can write
+    # to it, and that it has room for the whole backup.
+    rootPath: "/var/lib/milvus-backup"

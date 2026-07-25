@@ -1,0 +1,45 @@
+# Milvus keeps its data in MinIO, and backups go to AWS S3.
+#
+# The two ends are different backends, so the default transfer mode (auto)
+# streams objects through milvus-backup instead of asking either service to
+# copy them.
+configVersion: v2
+
+milvus:
+  user: "root"
+  password: "Milvus"
+
+  grpc:
+    address: localhost
+    port: 19530
+
+  # The storage the Milvus deployment itself uses. Match your milvus.yaml.
+  storage:
+    provider: minio
+    address: localhost
+    port: 9000
+    bucketName: "a-bucket"
+    rootPath: "files"
+
+    auth:
+      type: static
+      accessKeyID: minioadmin
+      secretAccessKey: minioadmin
+
+backup:
+  # Nothing is inherited here: every field differs from milvus.storage.
+  storage:
+    provider: aws
+    address: s3.us-east-1.amazonaws.com
+    port: 443
+    region: us-east-1
+    useSSL: true
+    bucketName: "<your-bucket-name>"
+    rootPath: "backups"
+
+    auth:
+      type: static
+      # Prefer BACKUP_STORAGE_AUTH_ACCESS_KEY_ID and
+      # BACKUP_STORAGE_AUTH_SECRET_ACCESS_KEY over writing keys into the file.
+      accessKeyID: "<your-access-key-id>"
+      secretAccessKey: "<your-secret-access-key>"
