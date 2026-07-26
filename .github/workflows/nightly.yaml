@@ -183,9 +183,11 @@ jobs:
             kubectl get pods
             kubectl port-forward service/milvus-backup 19530 >/dev/null 2>&1 &
             kubectl port-forward service/milvus-backup-minio 9000  >/dev/null 2>&1 &
+            kubectl port-forward service/milvus-backup 9091 >/dev/null 2>&1 &
             sleep 10
             nc -vz 127.0.0.1 19530
             nc -vz 127.0.0.1 9000
+            nc -vz 127.0.0.1 9091
             sleep 10
             kubectl get pods -n default | grep milvus-backup
           fi
