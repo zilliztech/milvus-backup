@@ -35,7 +35,6 @@ import (
 	"os"
 	"sync/atomic"
 
-	"github.com/uber/jaeger-client-go/utils"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"gopkg.in/natefinch/lumberjack.v2"
@@ -43,17 +42,17 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/progressbar"
 )
 
-var _globalL, _globalP, _globalS, _globalR atomic.Value
+var (
+	_globalL atomic.Pointer[zap.Logger]
+	_globalP atomic.Pointer[ZapProperties]
+	_globalS atomic.Pointer[zap.SugaredLogger]
+)
 
 func init() {
 	l, p := newStdLogger()
 	_globalL.Store(l)
 	_globalP.Store(p)
-	s := _globalL.Load().(*zap.Logger).Sugar()
-	_globalS.Store(s)
-
-	r := utils.NewRateLimiter(1.0, 60.0)
-	_globalR.Store(r)
+	_globalS.Store(l.Sugar())
 }
 
 // InitLogger replaces the global logger with one built from conf. The caller
@@ -146,18 +145,13 @@ func newStdLogger() (*zap.Logger, *ZapProperties) {
 // L returns the global Logger, which can be reconfigured with ReplaceGlobals.
 // It's safe for concurrent use.
 func L() *zap.Logger {
-	return _globalL.Load().(*zap.Logger)
+	return _globalL.Load()
 }
 
 // S returns the global SugaredLogger, which can be reconfigured with
 // ReplaceGlobals. It's safe for concurrent use.
 func S() *zap.SugaredLogger {
-	return _globalS.Load().(*zap.SugaredLogger)
-}
-
-// R returns utils.ReconfigurableRateLimiter.
-func R() *utils.ReconfigurableRateLimiter {
-	return _globalR.Load().(*utils.ReconfigurableRateLimiter)
+	return _globalS.Load()
 }
 
 // ReplaceGlobals replaces the global Logger and SugaredLogger.
