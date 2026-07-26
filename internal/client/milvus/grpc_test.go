@@ -10,6 +10,7 @@ import (
 	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
@@ -194,63 +195,124 @@ func TestReplicateMessageConstraint(t *testing.T) {
 	}
 }
 
+// Real strings observed from a Zilliz Cloud instance: Connect reports the product
+// description, GetVersion reports an internal build tag whose branch could not be resolved
+// at build time and therefore reads "unknown".
+const (
+	_cloudDesc     = "Zilliz Cloud Vector Database(Compatible with Milvus 2.6)"
+	_cloudBuildTag = "unknown-20260608-7ea6e3526"
+)
+
 func TestGrpcClient_parseVersionForFeature(t *testing.T) {
 	tests := []struct {
 		name           string
-		version        string
+		versions       []string
 		wantConstraint string
 		wantPass       bool
 	}{
 		// Strict semver: real release versions match constraints based on actual values.
-		{"Release2.6.0_NoMultiL0", "2.6.0", ">= 2.6.5-0", false},
-		{"Release2.6.5_HasMultiL0", "2.6.5", ">= 2.6.5-0", true},
-		{"Release2.6.11_HasFlushAll", "2.6.11", ">= 2.6.11-0", true},
-		{"Release2.6.10_NoFlushAll", "2.6.10", ">= 2.6.11-0", false},
+		{"Release2.6.0_NoMultiL0", []string{"2.6.0"}, ">= 2.6.5-0", false},
+		{"Release2.6.5_HasMultiL0", []string{"2.6.5"}, ">= 2.6.5-0", true},
+		{"Release2.6.11_HasFlushAll", []string{"2.6.11"}, ">= 2.6.11-0", true},
+		{"Release2.6.10_NoFlushAll", []string{"2.6.10"}, ">= 2.6.11-0", false},
 
 		// Milvus releases report build tags with a leading "v" (e.g. "v2.2.16").
 		// Without v-prefix stripping these would fall back to _latestDevVersion and
 		// incorrectly enable features the old release does not implement (e.g.
 		// DescribeDatabase on v2.2.16, which then crashes with Unimplemented).
-		{"VPrefixV2.2.16_NoDescribeDatabase", "v2.2.16", ">= 2.4.3-0", false},
-		{"VPrefixV2.3.22_NoDescribeDatabase", "v2.3.22", ">= 2.4.3-0", false},
-		{"VPrefixV2.4.23_HasDescribeDatabase", "v2.4.23", ">= 2.4.3-0", true},
-		{"VPrefixV2.5.20_NoMultiL0", "v2.5.20", ">= 2.6.5-0", false},
-		{"VPrefixV2.6.5_HasMultiL0", "v2.6.5", ">= 2.6.5-0", true},
-		{"VPrefixV2.5.20_HasReplicateMessage", "v2.5.20", ">= 2.5.0-0, < 2.6.0-0", true},
+		{"VPrefixV2.2.16_NoDescribeDatabase", []string{"v2.2.16"}, ">= 2.4.3-0", false},
+		{"VPrefixV2.3.22_NoDescribeDatabase", []string{"v2.3.22"}, ">= 2.4.3-0", false},
+		{"VPrefixV2.4.23_HasDescribeDatabase", []string{"v2.4.23"}, ">= 2.4.3-0", true},
+		{"VPrefixV2.5.20_NoMultiL0", []string{"v2.5.20"}, ">= 2.6.5-0", false},
+		{"VPrefixV2.6.5_HasMultiL0", []string{"v2.6.5"}, ">= 2.6.5-0", true},
+		{"VPrefixV2.5.20_HasReplicateMessage", []string{"v2.5.20"}, ">= 2.5.0-0, < 2.6.0-0", true},
 
 		// Four-part versions collapse to their release base. Without the collapse
 		// these fail StrictNewVersion, fall back to _latestDevVersion, and wrongly
 		// enable features the underlying release does not implement.
 		// "v2.4.0.1-gpu-beta" and "v2.4.0.2-gpu-beta" are real milvusdb/milvus tags;
 		// the trailing component (with its prerelease suffix) is dropped to "2.4.0".
-		{"FourPartV2.4.0.1GpuBeta_NoMultiL0", "v2.4.0.1-gpu-beta", ">= 2.6.5-0", false},
-		{"FourPartV2.4.0.1GpuBeta_NoDescribeDatabase", "v2.4.0.1-gpu-beta", ">= 2.4.3-0", false},
-		{"FourPartV2.3.22.6_NoMultiL0", "v2.3.22.6", ">= 2.6.5-0", false},
-		{"FourPartV2.6.5.3_HasMultiL0", "v2.6.5.3", ">= 2.6.5-0", true},
+		{"FourPartV2.4.0.1GpuBeta_NoMultiL0", []string{"v2.4.0.1-gpu-beta"}, ">= 2.6.5-0", false},
+		{"FourPartV2.4.0.1GpuBeta_NoDescribeDatabase", []string{"v2.4.0.1-gpu-beta"}, ">= 2.4.3-0", false},
+		{"FourPartV2.3.22.6_NoMultiL0", []string{"v2.3.22.6"}, ">= 2.6.5-0", false},
+		{"FourPartV2.6.5.3_HasMultiL0", []string{"v2.6.5.3"}, ">= 2.6.5-0", true},
 
-		// Dev RC tag: must be treated as latest dev (and pass all >= constraints).
-		// Without StrictNewVersion this regresses: lenient parser turns it into
-		// 2.6.0-20260404-31fb3fc, which is LESS than 2.6.5-0 and disables features.
-		{"DevTag2.6_HasMultiL0", "2.6-20260404-31fb3fc", ">= 2.6.5-0", true},
-		{"DevTag2.6_HasFlushAll", "2.6-20260404-31fb3fc", ">= 2.6.11-0", true},
-		{"DevTag2.6_HasGC", "2.6-20260404-31fb3fc", ">= 2.6.8-0", true},
+		// Dev build tag: the branch names the line, so it resolves to the head of that line
+		// and passes every constraint within it. Without StrictNewVersion this regresses:
+		// the lenient parser turns it into 2.6.0-20260404-31fb3fc, which is LESS than
+		// 2.6.5-0 and disables features.
+		{"DevTag2.6_HasMultiL0", []string{"2.6-20260404-31fb3fc"}, ">= 2.6.5-0", true},
+		{"DevTag2.6_HasFlushAll", []string{"2.6-20260404-31fb3fc"}, ">= 2.6.11-0", true},
+		{"DevTag2.6_HasGC", []string{"2.6-20260404-31fb3fc"}, ">= 2.6.8-0", true},
+		{"DevTag2.6_NoReplicateMessage", []string{"2.6-20260404-31fb3fc"}, ">= 2.5.0-0, < 2.6.0-0", false},
 
-		// Master tag: also treated as latest dev.
-		{"MasterTag_HasFlushAll", "master-20260226-abcdef", ">= 2.6.11-0", true},
+		// A dev build of the 2.5 line must stay inside it. Resolving it to _latestDevVersion
+		// instead wrongly disables ReplicateMessage, the one feature with an upper bound.
+		{"DevTag2.5_HasReplicateMessage", []string{"2.5-20260404-31fb3fc"}, ">= 2.5.0-0, < 2.6.0-0", true},
+		{"DevTag2.5_NoFlushAll", []string{"2.5-20260404-31fb3fc"}, ">= 2.6.11-0", false},
 
-		// Empty string: also falls back to dev.
-		{"Empty_HasFlushAll", "", ">= 2.6.11-0", true},
+		// Zilliz Cloud answers Connect with a product description naming the Milvus line and
+		// GetVersion with a build tag that has no version in it at all. The description is
+		// the only source that knows anything, so it decides.
+		{"CloudDesc_HasFlushAll", []string{_cloudDesc, _cloudBuildTag}, ">= 2.6.11-0", true},
+		{"CloudDesc_HasDescribeDatabase", []string{_cloudDesc, _cloudBuildTag}, ">= 2.4.3-0", true},
+		{"CloudDesc_NoReplicateMessage", []string{_cloudDesc, _cloudBuildTag}, ">= 2.5.0-0, < 2.6.0-0", false},
+		{"CloudDesc_DoesNotLeakPastTheLine", []string{_cloudDesc, _cloudBuildTag}, ">= 2.7.0-0", false},
+
+		// The version must be read from the Milvus line, not from a number that happens to
+		// appear earlier in the product name.
+		{"CloudDescWithProductVersion_NoReplicateMessage", []string{"Zilliz Cloud 3.0 Vector Database(Compatible with Milvus 2.5)"}, ">= 2.5.0-0, < 2.6.0-0", true},
+
+		// A release version wins over an embedded one whichever call reported it.
+		{"ReleaseBeatsDescription", []string{_cloudDesc, "2.6.10"}, ">= 2.6.11-0", false},
+		{"ReleaseBeatsDescriptionReversed", []string{"2.6.10", _cloudDesc}, ">= 2.6.11-0", false},
+
+		// Build tags that carry only a branch, a date and a commit: nothing to parse.
+		{"UnknownBranchTag_HasFlushAll", []string{_cloudBuildTag}, ">= 2.6.11-0", true},
+		{"MasterTag_HasFlushAll", []string{"master-20260226-abcdef"}, ">= 2.6.11-0", true},
+
+		// Empty strings: also fall back to dev.
+		{"Empty_HasFlushAll", []string{""}, ">= 2.6.11-0", true},
+		{"AllEmpty_HasFlushAll", []string{"", ""}, ">= 2.6.11-0", true},
 	}
 
 	cli := &GrpcClient{logger: zap.NewNop()}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			sem := cli.parseVersionForFeature(tt.version)
+			sem := cli.parseVersionForFeature(tt.versions...)
 			constraint, err := semver.NewConstraint(tt.wantConstraint)
 			assert.NoError(t, err)
 			assert.Equal(t, tt.wantPass, constraint.Check(sem))
 		})
 	}
+}
+
+func TestEmbeddedVersion(t *testing.T) {
+	tests := []struct {
+		name    string
+		version string
+		want    string
+	}{
+		{"MinorOnlyResolvesToHeadOfLine", "2.6-20260404-31fb3fc", "2.6.9999"},
+		{"DescriptionMinorOnly", _cloudDesc, "2.6.9999"},
+		{"DescriptionWithPatchKeepsPatch", "Zilliz Cloud Vector Database(Compatible with Milvus 2.5.8)", "2.5.8"},
+		{"NoSeparatorBeforeVersion", "milvus2.6", "2.6.9999"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			sem, ok := embeddedVersion(tt.version)
+			require.True(t, ok)
+			assert.Equal(t, tt.want, sem.String())
+		})
+	}
+
+	t.Run("NoVersionAtAll", func(t *testing.T) {
+		for _, ver := range []string{_cloudBuildTag, "master-20260226-abcdef", ""} {
+			_, ok := embeddedVersion(ver)
+			assert.False(t, ok, ver)
+		}
+	})
 }
 
 func TestGrpcClient_GetVersion(t *testing.T) {
