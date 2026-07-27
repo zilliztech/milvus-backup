@@ -52,6 +52,7 @@ const (
 	CollectionLevelGCControl
 	FuncRuntimeCheck
 	ReplicateMessage
+	Snapshot
 )
 
 type featureTuple struct {
@@ -86,6 +87,9 @@ var _featureTuples = []featureTuple{
 	// ReplicateMessage is only used by 2.5 CDC for incremental data replication.
 	// Since 2.5 CDC is no longer maintained, consider removing this in the future.
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.5.0-0, < 2.6.0-0")), Flag: ReplicateMessage},
+	// Snapshot landed on the 3.0 line. The 2.6 branch carries no snapshot code at all, and no
+	// 2.6.x tag exposes the RPCs, so this is a clean major-line boundary rather than a patch one.
+	{Constraints: lo.Must(semver.NewConstraint(">= 3.0.0-0")), Flag: Snapshot},
 }
 
 func defaultDialOpt() []grpc.DialOption {
@@ -150,6 +154,11 @@ type Grpc interface {
 	RestoreRBAC(ctx context.Context, rbacMeta *milvuspb.RBACMeta) error
 	ReplicateMessage(ctx context.Context, channelName string) (string, error)
 	CreateReplicateStream(ctx context.Context, sourceClusterID string) (milvuspb.MilvusService_CreateReplicateStreamClient, error)
+	CreateSnapshot(ctx context.Context, db, collName, snapshotName string, compactionProtection time.Duration) error
+	DropSnapshot(ctx context.Context, db, collName, snapshotName string) error
+	DescribeSnapshot(ctx context.Context, db, collName, snapshotName string) (*milvuspb.DescribeSnapshotResponse, error)
+	PinSnapshotData(ctx context.Context, db, collName, snapshotName string, ttl time.Duration) (int64, error)
+	UnpinSnapshotData(ctx context.Context, pinID int64) error
 }
 
 const (
@@ -1120,4 +1129,114 @@ func (g *GrpcClient) CreateReplicateStream(ctx context.Context, sourceClusterID 
 	}
 
 	return stream, nil
+}
+
+// errSnapshotUnsupported is returned by every snapshot call when the server predates the feature,
+// so callers get one recognizable error instead of an opaque "unknown method" from gRPC.
+var errSnapshotUnsupported = errors.New("client: the server does not support snapshot")
+
+// CreateSnapshot freezes a point-in-time view of a collection. It only registers metadata; no
+// binlog is copied. compactionProtection additionally holds off compaction of the referenced
+// segments for that long — pass 0 to leave compaction alone. Protection against GC needs no
+// duration: it lasts as long as the snapshot exists.
+func (g *GrpcClient) CreateSnapshot(ctx context.Context, db, collName, snapshotName string, compactionProtection time.Duration) error {
+	if !g.HasFeature(Snapshot) {
+		return errSnapshotUnsupported
+	}
+
+	ctx = g.newCtxWithDB(ctx, db)
+	in := &milvuspb.CreateSnapshotRequest{
+		CollectionName:              collName,
+		Name:                        snapshotName,
+		CompactionProtectionSeconds: int64(compactionProtection.Seconds()),
+	}
+	resp, err := g.srv.CreateSnapshot(ctx, in)
+	if err := checkResponse(resp, err); err != nil {
+		return fmt.Errorf("client: create snapshot failed: %w", err)
+	}
+
+	return nil
+}
+
+// DropSnapshot deletes a snapshot. The server rejects the call while the snapshot has active
+// pins, so unpin before dropping.
+func (g *GrpcClient) DropSnapshot(ctx context.Context, db, collName, snapshotName string) error {
+	if !g.HasFeature(Snapshot) {
+		return errSnapshotUnsupported
+	}
+
+	ctx = g.newCtxWithDB(ctx, db)
+	in := &milvuspb.DropSnapshotRequest{CollectionName: collName, Name: snapshotName}
+	resp, err := g.srv.DropSnapshot(ctx, in)
+	if err := checkResponse(resp, err); err != nil {
+		return fmt.Errorf("client: drop snapshot failed: %w", err)
+	}
+
+	return nil
+}
+
+// DescribeSnapshot returns the snapshot metadata. The response carries no segment list, but its
+// S3Location points at the metadata file that does — the server writes that path for every
+// snapshot, not only exported ones.
+func (g *GrpcClient) DescribeSnapshot(ctx context.Context, db, collName, snapshotName string) (*milvuspb.DescribeSnapshotResponse, error) {
+	if !g.HasFeature(Snapshot) {
+		return nil, errSnapshotUnsupported
+	}
+
+	ctx = g.newCtxWithDB(ctx, db)
+	in := &milvuspb.DescribeSnapshotRequest{CollectionName: collName, Name: snapshotName}
+	resp, err := g.srv.DescribeSnapshot(ctx, in)
+	if err := checkResponse(resp, err); err != nil {
+		return nil, fmt.Errorf("client: describe snapshot failed: %w", err)
+	}
+
+	return resp, nil
+}
+
+// PinSnapshotData takes a lease on a snapshot and returns the pin id to release it with. While a
+// pin is active the snapshot cannot be dropped — not by DropSnapshot, and not by the cascade that
+// runs when the collection itself is dropped — which keeps the referenced binlogs safe from GC
+// for the whole copy window.
+//
+// ttl must be at least one second. The wire field is in seconds and treats 0 as "never expires",
+// which would leave a snapshot that no API can release if the caller dies before unpinning, so a
+// zero or sub-second duration is rejected here rather than silently sent.
+func (g *GrpcClient) PinSnapshotData(ctx context.Context, db, collName, snapshotName string, ttl time.Duration) (int64, error) {
+	if !g.HasFeature(Snapshot) {
+		return 0, errSnapshotUnsupported
+	}
+
+	ttlSeconds := int64(ttl.Seconds())
+	if ttlSeconds <= 0 {
+		return 0, fmt.Errorf("client: snapshot pin ttl must be at least one second, got %s", ttl)
+	}
+
+	ctx = g.newCtxWithDB(ctx, db)
+	in := &milvuspb.PinSnapshotDataRequest{
+		CollectionName: collName,
+		Name:           snapshotName,
+		TtlSeconds:     ttlSeconds,
+	}
+	resp, err := g.srv.PinSnapshotData(ctx, in)
+	if err := checkResponse(resp, err); err != nil {
+		return 0, fmt.Errorf("client: pin snapshot data failed: %w", err)
+	}
+
+	return resp.GetPinId(), nil
+}
+
+// UnpinSnapshotData releases a pin. It is idempotent: unpinning an id that was already released
+// or has expired succeeds.
+func (g *GrpcClient) UnpinSnapshotData(ctx context.Context, pinID int64) error {
+	if !g.HasFeature(Snapshot) {
+		return errSnapshotUnsupported
+	}
+
+	ctx = g.newCtx(ctx)
+	resp, err := g.srv.UnpinSnapshotData(ctx, &milvuspb.UnpinSnapshotDataRequest{PinId: pinID})
+	if err := checkResponse(resp, err); err != nil {
+		return fmt.Errorf("client: unpin snapshot data failed: %w", err)
+	}
+
+	return nil
 }

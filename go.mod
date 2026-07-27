@@ -17,7 +17,7 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/huaweicloud/huaweicloud-sdk-go-v3 v0.1.205
 	github.com/imroc/req/v3 v3.59.0
-	github.com/milvus-io/milvus-proto/go-api/v2 v2.6.6-0.20260202035249-b2c299650f7e
+	github.com/milvus-io/milvus-proto/go-api/v2 v2.6.6-0.20260424094539-35123cf8e6bf
 	github.com/minio/minio-go/v7 v7.2.1
 	github.com/samber/lo v1.53.0
 	github.com/spf13/cobra v1.10.2
