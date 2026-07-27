@@ -3,6 +3,21 @@
 // A configuration file is decoded entirely as one schema version: v2 accepts
 // only v2 keys, environment variables and --set paths, and rejects everything
 // else instead of carrying per-key aliases. See internal/cfg for the v1 schema.
+//
+// Only credentials carry an environment variable. Everything else is named by
+// its config key alone, and --set overrides it for a single run. Two reasons:
+//
+// A credential is the one value that has to come from outside the file. It
+// arrives from a Kubernetes Secret, a CI secret store, or an operator, none of
+// which want to template a config file to deliver it.
+//
+// Everything else is safer without one, because Kubernetes injects a variable
+// for every Service in the namespace: a Service named milvus turns into
+// MILVUS_PORT=tcp://10.0.0.1:19530, which is exactly the shape a connection
+// parameter would claim. v1 named that parameter MILVUS_PORT and had the
+// injected value silently override the config file, reported twice as a
+// connection bug (#197, #617). Credential names are not at risk: the injected
+// names always end in _PORT, _HOST or _SERVICE_*.
 package v2
 
 import (
@@ -132,13 +147,13 @@ type LogConfig struct {
 
 func newLogConfig() LogConfig {
 	return LogConfig{
-		Level:   param.Value[string]{Default: "info", Keys: []string{"log.level"}, EnvKeys: []string{"LOG_LEVEL"}},
-		Console: param.Value[bool]{Default: true, Keys: []string{"log.console"}, EnvKeys: []string{"LOG_CONSOLE"}},
+		Level:   param.Value[string]{Default: "info", Keys: []string{"log.level"}},
+		Console: param.Value[bool]{Default: true, Keys: []string{"log.console"}},
 		File: LogFileConfig{
-			Path:       param.Value[string]{Default: "logs/backup.log", Keys: []string{"log.file.path"}, EnvKeys: []string{"LOG_FILE_PATH"}},
-			MaxSizeMiB: param.Value[int]{Default: 300, Keys: []string{"log.file.maxSizeMiB"}, EnvKeys: []string{"LOG_FILE_MAX_SIZE_MIB"}},
-			MaxDays:    param.Value[int]{Default: 0, Keys: []string{"log.file.maxDays"}, EnvKeys: []string{"LOG_FILE_MAX_DAYS"}},
-			MaxBackups: param.Value[int]{Default: 0, Keys: []string{"log.file.maxBackups"}, EnvKeys: []string{"LOG_FILE_MAX_BACKUPS"}},
+			Path:       param.Value[string]{Default: "logs/backup.log", Keys: []string{"log.file.path"}},
+			MaxSizeMiB: param.Value[int]{Default: 300, Keys: []string{"log.file.maxSizeMiB"}},
+			MaxDays:    param.Value[int]{Default: 0, Keys: []string{"log.file.maxDays"}},
+			MaxBackups: param.Value[int]{Default: 0, Keys: []string{"log.file.maxBackups"}},
 		},
 	}
 }
@@ -155,8 +170,8 @@ type ServerConfig struct {
 
 func newServerConfig() ServerConfig {
 	return ServerConfig{
-		DebugMode:       param.Value[bool]{Default: false, Keys: []string{"server.debugMode"}, EnvKeys: []string{"SERVER_DEBUG_MODE"}},
-		SwaggerBasePath: param.Value[string]{Default: "", Keys: []string{"server.swaggerBasePath"}, EnvKeys: []string{"SERVER_SWAGGER_BASE_PATH"}},
+		DebugMode:       param.Value[bool]{Default: false, Keys: []string{"server.debugMode"}},
+		SwaggerBasePath: param.Value[string]{Default: "", Keys: []string{"server.swaggerBasePath"}},
 	}
 }
 
@@ -226,33 +241,33 @@ func newMilvusConfig() MilvusConfig {
 		Password: param.Value[string]{Default: "", Keys: []string{"milvus.password"}, EnvKeys: []string{"MILVUS_PASSWORD"}, Opts: param.SecretValue},
 
 		Grpc: MilvusGrpcConfig{
-			Address: param.Value[string]{Default: "localhost", Keys: []string{"milvus.grpc.address"}, EnvKeys: []string{"MILVUS_GRPC_ADDRESS"}},
-			Port:    param.Value[int]{Default: 19530, Keys: []string{"milvus.grpc.port"}, EnvKeys: []string{"MILVUS_GRPC_PORT"}},
+			Address: param.Value[string]{Default: "localhost", Keys: []string{"milvus.grpc.address"}},
+			Port:    param.Value[int]{Default: 19530, Keys: []string{"milvus.grpc.port"}},
 
-			TLSMode: param.Value[string]{Default: TLSDisabled, Keys: []string{"milvus.grpc.tlsMode"}, EnvKeys: []string{"MILVUS_GRPC_TLS_MODE"}},
+			TLSMode: param.Value[string]{Default: TLSDisabled, Keys: []string{"milvus.grpc.tlsMode"}},
 
-			CACertPath: param.Value[string]{Default: "", Keys: []string{"milvus.grpc.caCertPath"}, EnvKeys: []string{"MILVUS_GRPC_CA_CERT_PATH"}},
-			ServerName: param.Value[string]{Default: "", Keys: []string{"milvus.grpc.serverName"}, EnvKeys: []string{"MILVUS_GRPC_SERVER_NAME"}},
+			CACertPath: param.Value[string]{Default: "", Keys: []string{"milvus.grpc.caCertPath"}},
+			ServerName: param.Value[string]{Default: "", Keys: []string{"milvus.grpc.serverName"}},
 
-			MTLSCertPath: param.Value[string]{Default: "", Keys: []string{"milvus.grpc.mtlsCertPath"}, EnvKeys: []string{"MILVUS_GRPC_MTLS_CERT_PATH"}},
-			MTLSKeyPath:  param.Value[string]{Default: "", Keys: []string{"milvus.grpc.mtlsKeyPath"}, EnvKeys: []string{"MILVUS_GRPC_MTLS_KEY_PATH"}},
+			MTLSCertPath: param.Value[string]{Default: "", Keys: []string{"milvus.grpc.mtlsCertPath"}},
+			MTLSKeyPath:  param.Value[string]{Default: "", Keys: []string{"milvus.grpc.mtlsKeyPath"}},
 		},
 
 		Rest: MilvusRestConfig{
-			Endpoint: param.Value[string]{Default: "", Keys: []string{"milvus.rest.endpoint"}, EnvKeys: []string{"MILVUS_REST_ENDPOINT"}},
+			Endpoint: param.Value[string]{Default: "", Keys: []string{"milvus.rest.endpoint"}},
 		},
 
 		Management: MilvusManagementConfig{
-			Endpoint: param.Value[string]{Default: "http://localhost:9091", Keys: []string{"milvus.management.endpoint"}, EnvKeys: []string{"MILVUS_MANAGEMENT_ENDPOINT"}},
+			Endpoint: param.Value[string]{Default: "http://localhost:9091", Keys: []string{"milvus.management.endpoint"}},
 		},
 
 		Replicate: MilvusReplicateConfig{
-			RPCChannelName: param.Value[string]{Default: "by-dev-replicate-msg", Keys: []string{"milvus.replicate.rpcChannelName"}, EnvKeys: []string{"MILVUS_REPLICATE_RPC_CHANNEL_NAME"}},
+			RPCChannelName: param.Value[string]{Default: "by-dev-replicate-msg", Keys: []string{"milvus.replicate.rpcChannelName"}},
 		},
 
 		Etcd: MilvusEtcdConfig{
-			Endpoints: param.List{Default: []string{"localhost:2379"}, Keys: []string{"milvus.etcd.endpoints"}, EnvKeys: []string{"MILVUS_ETCD_ENDPOINTS"}},
-			RootPath:  param.Value[string]{Default: "by-dev", Keys: []string{"milvus.etcd.rootPath"}, EnvKeys: []string{"MILVUS_ETCD_ROOT_PATH"}},
+			Endpoints: param.List{Default: []string{"localhost:2379"}, Keys: []string{"milvus.etcd.endpoints"}},
+			RootPath:  param.Value[string]{Default: "by-dev", Keys: []string{"milvus.etcd.rootPath"}},
 		},
 
 		Storage: newStorageConfig("milvus.storage", "MILVUS_STORAGE"),
@@ -291,10 +306,10 @@ func newBackupConfig() BackupConfig {
 	return BackupConfig{
 		Storage: storage,
 		Concurrency: BackupConcurrencyConfig{
-			Collections: param.Value[int]{Default: 4, Keys: []string{"backup.concurrency.collections"}, EnvKeys: []string{"BACKUP_CONCURRENCY_COLLECTIONS"}},
-			Segments:    param.Value[int]{Default: 1024, Keys: []string{"backup.concurrency.segments"}, EnvKeys: []string{"BACKUP_CONCURRENCY_SEGMENTS"}},
+			Collections: param.Value[int]{Default: 4, Keys: []string{"backup.concurrency.collections"}},
+			Segments:    param.Value[int]{Default: 1024, Keys: []string{"backup.concurrency.segments"}},
 		},
-		PauseGC: param.Value[bool]{Default: true, Keys: []string{"backup.pauseGC"}, EnvKeys: []string{"BACKUP_PAUSE_GC"}},
+		PauseGC: param.Value[bool]{Default: true, Keys: []string{"backup.pauseGC"}},
 	}
 }
 
@@ -321,13 +336,13 @@ type RestoreConfig struct {
 func newRestoreConfig() RestoreConfig {
 	return RestoreConfig{
 		Concurrency: RestoreConcurrencyConfig{
-			Collections: param.Value[int]{Default: 2, Keys: []string{"restore.concurrency.collections"}, EnvKeys: []string{"RESTORE_CONCURRENCY_COLLECTIONS"}},
+			Collections: param.Value[int]{Default: 2, Keys: []string{"restore.concurrency.collections"}},
 			// Should be less than the Milvus dataCoord.import.maxImportJobNum.
-			ImportJobs: param.Value[int]{Default: 768, Keys: []string{"restore.concurrency.importJobs"}, EnvKeys: []string{"RESTORE_CONCURRENCY_IMPORT_JOBS"}},
+			ImportJobs: param.Value[int]{Default: 768, Keys: []string{"restore.concurrency.importJobs"}},
 		},
 		// Should be less than the Milvus dataCoord.import.maxImportFileNumPerReq.
 		MaxSegmentsPerImportJob: param.Value[int]{Default: 256, Keys: []string{"restore.maxSegmentsPerImportJob"}},
-		KeepTempFiles:           param.Value[bool]{Default: false, Keys: []string{"restore.keepTempFiles"}, EnvKeys: []string{"RESTORE_KEEP_TEMP_FILES"}},
+		KeepTempFiles:           param.Value[bool]{Default: false, Keys: []string{"restore.keepTempFiles"}},
 	}
 }
 
@@ -348,9 +363,9 @@ type TransferConfig struct {
 
 func newTransferConfig() TransferConfig {
 	return TransferConfig{
-		Mode:                      param.Value[string]{Default: TransferAuto, Keys: []string{"transfer.mode"}, EnvKeys: []string{"TRANSFER_MODE"}},
-		Concurrency:               param.Value[int]{Default: 128, Keys: []string{"transfer.concurrency"}, EnvKeys: []string{"TRANSFER_CONCURRENCY"}},
-		MultipartCopyThresholdMiB: param.Value[int64]{Default: 500, Keys: []string{"transfer.multipartCopyThresholdMiB"}, EnvKeys: []string{"TRANSFER_MULTIPART_COPY_THRESHOLD_MIB"}},
+		Mode:                      param.Value[string]{Default: TransferAuto, Keys: []string{"transfer.mode"}},
+		Concurrency:               param.Value[int]{Default: 128, Keys: []string{"transfer.concurrency"}},
+		MultipartCopyThresholdMiB: param.Value[int64]{Default: 500, Keys: []string{"transfer.multipartCopyThresholdMiB"}},
 	}
 }
 
@@ -367,7 +382,7 @@ type CloudConfig struct {
 
 func newCloudConfig() CloudConfig {
 	return CloudConfig{
-		Endpoint: param.Value[string]{Default: "https://api.cloud.zilliz.com", Keys: []string{"zillizCloud.endpoint"}, EnvKeys: []string{"ZILLIZ_CLOUD_ENDPOINT"}},
+		Endpoint: param.Value[string]{Default: "https://api.cloud.zilliz.com", Keys: []string{"zillizCloud.endpoint"}},
 		APIKey:   param.Value[string]{Default: "", Keys: []string{"zillizCloud.apiKey"}, EnvKeys: []string{"ZILLIZ_CLOUD_API_KEY"}, Opts: param.SecretValue},
 	}
 }

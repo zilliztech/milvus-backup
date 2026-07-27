@@ -83,26 +83,27 @@ func TestLoad_V1EnvNamesStillResolve(t *testing.T) {
 }
 
 // A v2 file is resolved with v2 names only, so a v1 variable left set in the
-// environment is inert rather than quietly winning.
+// environment is inert rather than quietly winning. Both names below spell the
+// same credential.
 func TestLoad_V2FileIgnoresV1EnvNames(t *testing.T) {
-	t.Setenv("MILVUS_ADDRESS", "from-v1-env")
-	t.Setenv("MILVUS_GRPC_ADDRESS", "from-v2-env")
+	t.Setenv("MINIO_SECRET_KEY", "from-v1-env")
+	t.Setenv("MILVUS_STORAGE_AUTH_SECRET_ACCESS_KEY", "from-v2-env")
 
 	out, err := Load(write(t, "configVersion: v2\n"), nil)
 	require.NoError(t, err)
 
-	assert.Equal(t, "from-v2-env", out.Milvus.Grpc.Address.Val)
+	assert.Equal(t, "from-v2-env", out.Milvus.Storage.Auth.SecretAccessKey.Val)
 }
 
 // With no file there is no discriminator to read, and nothing to be backward
 // compatible with either: overrides and env name v2 parameters.
 func TestLoad_NoConfigFileUsesV2Names(t *testing.T) {
-	t.Setenv("MILVUS_GRPC_ADDRESS", "from-v2-env")
+	t.Setenv("MILVUS_PASSWORD", "from-v2-env")
 
-	out, err := Load("", map[string]string{"MILVUS_GRPC_PORT": "19531"})
+	out, err := Load("", map[string]string{"milvus.grpc.port": "19531"})
 	require.NoError(t, err)
 
-	assert.Equal(t, "from-v2-env", out.Milvus.Grpc.Address.Val)
+	assert.Equal(t, "from-v2-env", out.Milvus.Password.Val)
 	assert.Equal(t, 19531, out.Milvus.Grpc.Port.Val)
 }
 

@@ -47,27 +47,30 @@ type StorageConfig struct {
 	Auth StorageAuthConfig
 }
 
-// newStorageConfig builds a storage section rooted at keyPrefix, with
-// environment variables rooted at envPrefix.
+// newStorageConfig builds a storage section rooted at keyPrefix, with the
+// credential environment variables rooted at envPrefix. Only the credentials
+// carry one: see the package documentation for why.
 func newStorageConfig(keyPrefix, envPrefix string) StorageConfig {
 	key := func(name string) []string { return []string{keyPrefix + "." + name} }
 	env := func(name string) []string { return []string{envPrefix + "_" + name} }
 
 	return StorageConfig{
-		Provider: param.Value[string]{Default: ProviderMinio, Keys: key("provider"), EnvKeys: env("PROVIDER")},
+		Provider: param.Value[string]{Default: ProviderMinio, Keys: key("provider")},
 
-		Address: param.Value[string]{Default: "localhost", Keys: key("address"), EnvKeys: env("ADDRESS")},
-		Port:    param.Value[int]{Default: 9000, Keys: key("port"), EnvKeys: env("PORT")},
-		Region:  param.Value[string]{Default: "", Keys: key("region"), EnvKeys: env("REGION")},
-		UseSSL:  param.Value[bool]{Default: false, Keys: key("useSSL"), EnvKeys: env("USE_SSL")},
+		Address: param.Value[string]{Default: "localhost", Keys: key("address")},
+		Port:    param.Value[int]{Default: 9000, Keys: key("port")},
+		Region:  param.Value[string]{Default: "", Keys: key("region")},
+		UseSSL:  param.Value[bool]{Default: false, Keys: key("useSSL")},
 
+		// The account name is half of the Azure credential: it is what the
+		// account key belongs to, and deployments hand out the two together.
 		AccountName: param.Value[string]{Default: "", Keys: key("accountName"), EnvKeys: env("ACCOUNT_NAME")},
 
-		BucketName: param.Value[string]{Default: "a-bucket", Keys: key("bucketName"), EnvKeys: env("BUCKET_NAME")},
-		RootPath:   param.Value[string]{Default: "files", Keys: key("rootPath"), EnvKeys: env("ROOT_PATH")},
+		BucketName: param.Value[string]{Default: "a-bucket", Keys: key("bucketName")},
+		RootPath:   param.Value[string]{Default: "files", Keys: key("rootPath")},
 
 		Auth: StorageAuthConfig{
-			Type: param.Value[string]{Default: AuthStatic, Keys: key("auth.type"), EnvKeys: env("AUTH_TYPE")},
+			Type: param.Value[string]{Default: AuthStatic, Keys: key("auth.type")},
 
 			AccessKeyID:     param.Value[string]{Default: "minioadmin", Keys: key("auth.accessKeyID"), EnvKeys: env("AUTH_ACCESS_KEY_ID")},
 			SecretAccessKey: param.Value[string]{Default: "minioadmin", Keys: key("auth.secretAccessKey"), EnvKeys: env("AUTH_SECRET_ACCESS_KEY"), Opts: param.SecretValue},
@@ -77,7 +80,7 @@ func newStorageConfig(keyPrefix, envPrefix string) StorageConfig {
 
 			CredentialsFile: param.Value[string]{Default: "", Keys: key("auth.credentialsFile"), EnvKeys: env("AUTH_CREDENTIALS_FILE")},
 
-			Endpoint: param.Value[string]{Default: "", Keys: key("auth.endpoint"), EnvKeys: env("AUTH_ENDPOINT")},
+			Endpoint: param.Value[string]{Default: "", Keys: key("auth.endpoint")},
 		},
 	}
 }
