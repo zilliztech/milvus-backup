@@ -1,0 +1,52 @@
+name: Clear needs-information
+
+# `triage/needs-information` is a state bit meaning "waiting on the reporter".
+# Once they answer, the ball is back with us and the label has to come off —
+# otherwise stale.yaml keeps counting down and eventually closes an issue that
+# is actually waiting on a maintainer. Removing it by hand works right up until
+# the day somebody forgets, so it is done here instead.
+#
+# The label is cleared when either:
+#   - the person who opened the issue comments (they are who we were waiting on), or
+#   - anyone outside the org comments (a third party supplying details).
+#
+# A maintainer commenting does not clear it: asking a follow-up question means we
+# are still waiting. `stale` is removed at the same time so the countdown does not
+# linger until the next scheduled run.
+
+on:
+  issue_comment:
+    types: [created]
+
+permissions:
+  issues: write
+
+jobs:
+  clear:
+    if: >
+      github.event.issue.pull_request == null &&
+      github.event.comment.user.type != 'Bot' &&
+      contains(github.event.issue.labels.*.name, 'triage/needs-information') &&
+      (
+        github.event.comment.user.login == github.event.issue.user.login ||
+        !contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association)
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/github-script@v7
+        with:
+          script: |
+            for (const name of ['triage/needs-information', 'stale']) {
+              try {
+                await github.rest.issues.removeLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: context.issue.number,
+                  name,
+                });
+                core.info(`removed ${name}`);
+              } catch (err) {
+                // 404 just means the label was not on the issue.
+                if (err.status !== 404) throw err;
+              }
+            }
