@@ -15,85 +15,7 @@ from pymilvus import (
     Collection,
     MilvusClient,
 )
-from pymilvus.exceptions import MilvusException
 import argparse
-
-
-SCHEMA_VERSION_CONSISTENT_KEY = "schema_version_consistent_segments"
-SCHEMA_VERSION_TOTAL_KEY = "schema_version_total_segments"
-
-
-def is_schema_version_not_ready(exc):
-    message = str(exc)
-    return (
-        "schema version" in message
-        and (
-            "not ready" in message
-            or "consistency check failed" in message
-        )
-    )
-
-
-def wait_schema_version_consistent(client, collection_name, timeout=60, poll_interval=0.2):
-    deadline = time.time() + timeout
-    last_consistent = None
-    last_total = None
-
-    while time.time() < deadline:
-        stats = client.get_collection_stats(collection_name=collection_name)
-        consistent = stats.get(SCHEMA_VERSION_CONSISTENT_KEY)
-        total = stats.get(SCHEMA_VERSION_TOTAL_KEY)
-
-        if consistent is None and total is None:
-            return
-        if consistent is not None and total is not None and int(consistent) == int(total):
-            return
-
-        last_consistent = consistent
-        last_total = total
-        time.sleep(poll_interval)
-
-    raise TimeoutError(
-        f"schema version is not consistent for {collection_name}: "
-        f"{last_consistent}/{last_total} segments are consistent"
-    )
-
-
-def add_collection_field_with_schema_retry(
-    client,
-    collection_name,
-    field_name,
-    data_type,
-    timeout=120,
-    **kwargs,
-):
-    deadline = time.time() + timeout
-    last_error = None
-
-    while time.time() < deadline:
-        wait_schema_version_consistent(
-            client,
-            collection_name,
-            timeout=max(1, min(30, deadline - time.time())),
-        )
-        try:
-            return client.add_collection_field(
-                collection_name=collection_name,
-                field_name=field_name,
-                data_type=data_type,
-                **kwargs,
-            )
-        except MilvusException as exc:
-            if not is_schema_version_not_ready(exc):
-                raise
-            last_error = exc
-            print(f"schema version not ready after adding fields, retrying: {exc}")
-            time.sleep(1)
-
-    raise TimeoutError(
-        f"timed out adding field {field_name} to {collection_name}"
-    ) from last_error
-
 
 
 def main(uri="http://127.0.0.1:19530", token="root:Milvus", stage=None, total_entities=3000):
@@ -356,11 +278,10 @@ def main_added(uri="http://127.0.0.1:19530", token="root:Milvus", total_entities
         ("added_json", DataType.JSON, {"nullable": True}),
     ]
     for field_name, data_type, kwargs in added_fields:
-        add_collection_field_with_schema_retry(
-            client,
-            "hello_milvus_added",
-            field_name,
-            data_type,
+        client.add_collection_field(
+            collection_name="hello_milvus_added",
+            field_name=field_name,
+            data_type=data_type,
             **kwargs,
         )
         print(f"added field {field_name} ({data_type.name}) {kwargs}")
