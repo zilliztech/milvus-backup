@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/milvus-io/milvus/pkg/v2/util/typeutil"
 	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
@@ -235,6 +236,11 @@ func (t *Task) privateExecute(ctx context.Context) error {
 		return fmt.Errorf("backup: list db and collection: %w", err)
 	}
 
+	collections, err = t.excludeExternalColl(ctx, collections)
+	if err != nil {
+		return fmt.Errorf("backup: exclude external collection: %w", err)
+	}
+
 	if err := t.backupDatabase(ctx, dbNames); err != nil {
 		return fmt.Errorf("backup: run db task: %w", err)
 	}
@@ -362,6 +368,35 @@ func (t *Task) listFilteredDBAndNSS(ctx context.Context, f filter.Filter) ([]str
 		zap.Strings("ns", nsStrings(nss)))
 
 	return dbNames, nss, nil
+}
+
+// excludeExternalColl drops the external collections from nss. An external collection
+// only holds a mapping to data owned by an external source, so Milvus has no binlog to
+// copy and a restore has nothing to rebuild it from. Backing one up would produce an
+// entry that can never be restored, so skip it and keep going with the rest.
+func (t *Task) excludeExternalColl(ctx context.Context, nss []namespace.NS) ([]namespace.NS, error) {
+	remain := make([]namespace.NS, 0, len(nss))
+	var external []namespace.NS
+
+	for _, ns := range nss {
+		resp, err := t.grpc.DescribeCollection(ctx, ns.DBName(), ns.CollName())
+		if err != nil {
+			return nil, fmt.Errorf("backup: describe collection %s: %w", ns, err)
+		}
+
+		if typeutil.IsExternalCollection(resp.GetSchema()) {
+			external = append(external, ns)
+			continue
+		}
+		remain = append(remain, ns)
+	}
+
+	if len(external) != 0 {
+		t.logger.Info("skip external collections, their data is not stored in milvus",
+			zap.Strings("ns", nsStrings(external)))
+	}
+
+	return remain, nil
 }
 
 func nsStrings(nss []namespace.NS) []string {

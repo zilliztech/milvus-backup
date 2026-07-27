@@ -2,9 +2,11 @@ package backup
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
+	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
@@ -153,5 +155,54 @@ func TestTask_listDBAndNSS(t *testing.T) {
 		_, _, err := task.listDBAndNSS(ctx)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "filter collection db1.not_exist not found")
+	})
+}
+
+func TestTask_excludeExternalColl(t *testing.T) {
+	ctx := context.Background()
+
+	externalResp := &milvuspb.DescribeCollectionResponse{
+		Schema: &schemapb.CollectionSchema{Fields: []*schemapb.FieldSchema{
+			{Name: "id", ExternalField: "id"},
+			{Name: "vec", ExternalField: "vec"},
+		}},
+	}
+	normalResp := &milvuspb.DescribeCollectionResponse{
+		Schema: &schemapb.CollectionSchema{Fields: []*schemapb.FieldSchema{
+			{Name: "id"},
+			{Name: "vec"},
+		}},
+	}
+
+	t.Run("Normal", func(t *testing.T) {
+		mockGrpc := milvus.NewMockGrpc(t)
+		mockGrpc.EXPECT().DescribeCollection(ctx, "db1", "coll1").Return(normalResp, nil).Once()
+		mockGrpc.EXPECT().DescribeCollection(ctx, "db1", "coll2").Return(externalResp, nil).Once()
+		mockGrpc.EXPECT().DescribeCollection(ctx, "db2", "coll3").Return(normalResp, nil).Once()
+
+		task := &Task{logger: zap.NewNop(), grpc: mockGrpc}
+
+		nss, err := task.excludeExternalColl(ctx, []namespace.NS{
+			namespace.New("db1", "coll1"),
+			namespace.New("db1", "coll2"),
+			namespace.New("db2", "coll3"),
+		})
+		assert.NoError(t, err)
+		assert.Equal(t, []namespace.NS{
+			namespace.New("db1", "coll1"),
+			namespace.New("db2", "coll3"),
+		}, nss)
+	})
+
+	t.Run("DescribeCollectionFailed", func(t *testing.T) {
+		mockGrpc := milvus.NewMockGrpc(t)
+		mockGrpc.EXPECT().DescribeCollection(ctx, "db1", "coll1").
+			Return(nil, errors.New("mock error")).Once()
+
+		task := &Task{logger: zap.NewNop(), grpc: mockGrpc}
+
+		_, err := task.excludeExternalColl(ctx, []namespace.NS{namespace.New("db1", "coll1")})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "describe collection db1.coll1")
 	})
 }
