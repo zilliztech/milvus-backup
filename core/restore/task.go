@@ -288,6 +288,8 @@ func (t *Task) newCollTask(dbBackup *backuppb.DatabaseBackupInfo, collBackup *ba
 			bulkInsertSem: t.bulkInsertSem,
 			grpcCli:       t.grpc,
 			restfulCli:    t.restful,
+
+			maxSegsPerImportJob: t.args.Params.Restore.MaxSegmentsPerImportJob.Val,
 		}
 
 		tasks = append(tasks, newCollTask(args))

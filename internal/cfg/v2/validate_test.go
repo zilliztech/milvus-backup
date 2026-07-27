@@ -169,6 +169,11 @@ func TestValidate_Concurrency(t *testing.T) {
 			wantErr: "restore.concurrency.importJobs: invalid value -1",
 		},
 		{
+			name:    "RestoreMaxSegmentsPerImportJob",
+			yaml:    "restore:\n  maxSegmentsPerImportJob: 0\n",
+			wantErr: "restore.maxSegmentsPerImportJob: invalid value 0",
+		},
+		{
 			name:    "TransferConcurrency",
 			yaml:    "transfer:\n  concurrency: 0\n",
 			wantErr: "transfer.concurrency: invalid value 0",

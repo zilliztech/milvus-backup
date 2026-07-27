@@ -28,9 +28,8 @@ import (
 )
 
 const (
-	_bulkInsertTimeout             = 60 * time.Minute
-	_bulkInsertCheckInterval       = 3 * time.Second
-	_bulkInsertRestfulAPIChunkSize = 256
+	_bulkInsertTimeout       = 60 * time.Minute
+	_bulkInsertCheckInterval = 3 * time.Second
 )
 
 type tearDownFn func(ctx context.Context) error
@@ -52,6 +51,10 @@ type collTask struct {
 	keepTempFiles bool
 	copySem       *semaphore.Weighted
 	bulkInsertSem *semaphore.Weighted
+
+	// maxSegsPerImportJob is how many segments at most are merged into one
+	// import job, because Milvus limits how many files one request may carry.
+	maxSegsPerImportJob int
 
 	backupDir     string
 	backupStorage storage.Client
@@ -90,6 +93,8 @@ type collTaskArgs struct {
 	backupDir     string
 	keepTempFiles bool
 	streaming     bool
+
+	maxSegsPerImportJob int
 
 	backupStorage storage.Client
 	milvusStorage storage.Client
@@ -133,6 +138,8 @@ func newCollTask(args collTaskArgs) *collTask {
 		streaming:     args.streaming,
 		keepTempFiles: args.keepTempFiles,
 		backupDir:     args.backupDir,
+
+		maxSegsPerImportJob: args.maxSegsPerImportJob,
 
 		backupStorage: args.backupStorage,
 		milvusStorage: args.milvusStorage,
@@ -610,7 +617,7 @@ func (ct *collTask) notL0SegBatchesWithGroupID(ctx context.Context, notL0Segs []
 
 		// because the restful api has a limitation on the number of segments in one request,
 		// we need to chunk the segments into multiple batches
-		chunkedSegs := lo.Chunk(segs, _bulkInsertRestfulAPIChunkSize)
+		chunkedSegs := lo.Chunk(segs, ct.maxSegsPerImportJob)
 		for _, chunk := range chunkedSegs {
 			dirs := make([]partitionDir, 0, len(chunk))
 			for _, seg := range chunk {
@@ -668,7 +675,7 @@ func (ct *collTask) l0SegmentBatches(l0Segs []*backuppb.SegmentBackupInfo) ([]ba
 
 	chunkSize := 1
 	if ct.grpcCli.HasFeature(milvus.MultiL0InOneJob) {
-		chunkSize = _bulkInsertRestfulAPIChunkSize
+		chunkSize = ct.maxSegsPerImportJob
 	}
 
 	var batches []batch

@@ -25,3 +25,12 @@ To enable the v2 restore mode, use the `--use_v2_restore` flag:
 To enable the v2 restore mode, set the `use_v2_restore` field to `true` in the request body:
 
 ![mul_seg_restore](./figs/mul_seg_restore.png)
+
+## How many Segments are merged
+
+At most 256 Segments go into one BulkInsert job by default. Milvus rejects a request carrying more files than `dataCoord.import.maxImportFileNumPerReq` allows, so a deployment that lowered that limit has to lower this one to match:
+
+```yaml
+restore:
+  maxSegmentsPerImportJob: 256
+```
