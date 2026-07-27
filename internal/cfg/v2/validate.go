@@ -91,6 +91,7 @@ func (c *RestoreConfig) validate() error {
 	return errors.Join(
 		validatePositive(&c.Concurrency.Collections),
 		validatePositive(&c.Concurrency.ImportJobs),
+		validatePositive(&c.MaxSegmentsPerImportJob),
 	)
 }
 

@@ -138,6 +138,10 @@ restore:
     # should be less than milvus's config dataCoord.import.maxImportJobNum
     importJobs: 768
 
+  # max number of segments merged into one import job,
+  # should be less than milvus's config dataCoord.import.maxImportFileNumPerReq
+  maxSegmentsPerImportJob: 256
+
   # keep temporary files during restore, only use to debug
   keepTempFiles: false
 

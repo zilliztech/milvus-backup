@@ -14,7 +14,7 @@ import (
 )
 
 func newTestCollTask() *collTask {
-	return &collTask{logger: zap.NewNop(), option: &Option{}}
+	return &collTask{logger: zap.NewNop(), option: &Option{}, maxSegsPerImportJob: 256}
 }
 
 func TestGetFailedReason(t *testing.T) {
@@ -165,6 +165,24 @@ func TestL0SegmentBatches(t *testing.T) {
 				require.Empty(t, dir.insertLogDir)
 				require.NotEmpty(t, dir.deltaLogDir)
 			}
+		}
+	})
+
+	// Each vchannel holds 5 segments, so a limit of 2 splits it into 2+2+1.
+	t.Run("MaxSegsPerImportJob", func(t *testing.T) {
+		ct := newTestCollTask()
+		ct.collBackup = &backuppb.CollectionBackupInfo{CollectionId: 1}
+		ct.maxSegsPerImportJob = 2
+		grpcCli := milvus.NewMockGrpc(t)
+		grpcCli.EXPECT().HasFeature(milvus.MultiL0InOneJob).Return(true).Once()
+		ct.grpcCli = grpcCli
+
+		batches, err := ct.l0SegmentBatches(segs)
+		assert.NoError(t, err)
+		assert.Len(t, batches, 6)
+
+		for _, b := range batches {
+			require.LessOrEqual(t, len(b.partitionDirs), 2)
 		}
 	})
 }

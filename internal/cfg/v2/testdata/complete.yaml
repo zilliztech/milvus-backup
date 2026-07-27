@@ -68,6 +68,7 @@ restore:
   concurrency:
     collections: 3
     importJobs: 64
+  maxSegmentsPerImportJob: 128
   keepTempFiles: true
 
 transfer:

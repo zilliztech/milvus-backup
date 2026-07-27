@@ -308,7 +308,13 @@ type RestoreConcurrencyConfig struct {
 }
 
 type RestoreConfig struct {
-	Concurrency   RestoreConcurrencyConfig
+	Concurrency RestoreConcurrencyConfig
+
+	// MaxSegmentsPerImportJob caps how many segments are merged into one import
+	// job. Milvus limits how many files a single import request may carry, so a
+	// deployment that lowered that limit has to lower this one as well.
+	MaxSegmentsPerImportJob param.Value[int]
+
 	KeepTempFiles param.Value[bool]
 }
 
@@ -319,12 +325,14 @@ func newRestoreConfig() RestoreConfig {
 			// Should be less than the Milvus dataCoord.import.maxImportJobNum.
 			ImportJobs: param.Value[int]{Default: 768, Keys: []string{"restore.concurrency.importJobs"}, EnvKeys: []string{"RESTORE_CONCURRENCY_IMPORT_JOBS"}},
 		},
-		KeepTempFiles: param.Value[bool]{Default: false, Keys: []string{"restore.keepTempFiles"}, EnvKeys: []string{"RESTORE_KEEP_TEMP_FILES"}},
+		// Should be less than the Milvus dataCoord.import.maxImportFileNumPerReq.
+		MaxSegmentsPerImportJob: param.Value[int]{Default: 256, Keys: []string{"restore.maxSegmentsPerImportJob"}},
+		KeepTempFiles:           param.Value[bool]{Default: false, Keys: []string{"restore.keepTempFiles"}, EnvKeys: []string{"RESTORE_KEEP_TEMP_FILES"}},
 	}
 }
 
 func (c *RestoreConfig) Resolve(s *param.Source) error {
-	return param.Resolve(s, &c.Concurrency.Collections, &c.Concurrency.ImportJobs, &c.KeepTempFiles)
+	return param.Resolve(s, &c.Concurrency.Collections, &c.Concurrency.ImportJobs, &c.MaxSegmentsPerImportJob, &c.KeepTempFiles)
 }
 
 // TransferConfig is the object transfer policy shared by backup, restore,

@@ -38,6 +38,7 @@ func TestLoad_Defaults(t *testing.T) {
 	assert.Equal(t, "files", c.Milvus.Storage.RootPath.Val)
 
 	assert.True(t, c.Backup.PauseGC.Val)
+	assert.Equal(t, 256, c.Restore.MaxSegmentsPerImportJob.Val)
 	assert.Equal(t, TransferAuto, c.Transfer.Mode.Val)
 	assert.Equal(t, int64(500), c.Transfer.MultipartCopyThresholdMiB.Val)
 }
@@ -67,6 +68,7 @@ func TestLoad_CompleteFile(t *testing.T) {
 	assert.Equal(t, 8, c.Backup.Concurrency.Collections.Val)
 	assert.False(t, c.Backup.PauseGC.Val)
 	assert.Equal(t, 3, c.Restore.Concurrency.Collections.Val)
+	assert.Equal(t, 128, c.Restore.MaxSegmentsPerImportJob.Val)
 	assert.True(t, c.Restore.KeepTempFiles.Val)
 	assert.Equal(t, TransferStreaming, c.Transfer.Mode.Val)
 	assert.Equal(t, "an-api-key", c.Cloud.APIKey.Val)
