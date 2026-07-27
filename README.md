@@ -67,10 +67,11 @@ Use values that match the Milvus deployment. In common installations, the storag
 | `milvus.storage.bucketName` | `a-bucket` | `milvus-bucket` |
 | `milvus.storage.rootPath` | `files` | `file` |
 
-Configuration values can also be supplied through [environment variables](docs/user_guide/env_variables.md) or overridden with `--set`:
+Credentials can also be supplied through [environment variables](docs/user_guide/env_variables.md), and any value can be overridden for a single run with `--set`:
 
 ```shell
 milvus-backup --set MILVUS_USER=root --set MILVUS_PASSWORD=Milvus list
+milvus-backup --set milvus.grpc.address=milvus-proxy list
 ```
 
 Run `milvus-backup config show` to print the resolved configuration along with where each value came from.
@@ -83,7 +84,7 @@ Configuration files carry a `configVersion`. A file written before it existed st
 milvus-backup config migrate --config backup.yaml -o backup-v2.yaml
 ```
 
-The migration report is written to stderr and lists everything that needs a decision, such as a secret that has to move to a renamed environment variable. The converted file goes to stdout, or to `-o`.
+The migration report is written to stderr and lists everything that needs a decision, such as a secret that has to move to a renamed environment variable, or a v1 variable whose parameter now belongs in the file. The converted file goes to stdout, or to `-o`.
 
 ## Command-line usage
 

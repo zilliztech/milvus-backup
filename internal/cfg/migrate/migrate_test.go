@@ -275,13 +275,28 @@ minio:
 }
 
 func TestMigrate_LegacyEnvReport(t *testing.T) {
-	t.Setenv("MILVUS_ADDRESS", "milvus-proxy")
+	// A v1 variable that named a credential is answered with the v2 variable,
+	// and one that named anything else with the config key that replaced it,
+	// since v2 keeps environment variables for credentials only.
+	t.Run("Credential", func(t *testing.T) {
+		t.Setenv("MINIO_SECRET_KEY", "sk")
 
-	_, report := Migrate(loadV1(t, "milvus:\n  user: root\n"))
+		_, report := Migrate(loadV1(t, "milvus:\n  user: root\n"))
 
-	require.Len(t, report.EnvRenames, 1)
-	assert.Equal(t, "MILVUS_ADDRESS", report.EnvRenames[0].From)
-	assert.Contains(t, report.EnvRenames[0].To, "MILVUS_GRPC_ADDRESS")
+		require.Len(t, report.EnvRenames, 1)
+		assert.Equal(t, "MINIO_SECRET_KEY", report.EnvRenames[0].From)
+		assert.Contains(t, report.EnvRenames[0].To, "MILVUS_STORAGE_AUTH_SECRET_ACCESS_KEY")
+	})
+
+	t.Run("NotACredential", func(t *testing.T) {
+		t.Setenv("MILVUS_ADDRESS", "milvus-proxy")
+
+		_, report := Migrate(loadV1(t, "milvus:\n  user: root\n"))
+
+		require.Len(t, report.EnvRenames, 1)
+		assert.Equal(t, "MILVUS_ADDRESS", report.EnvRenames[0].From)
+		assert.Contains(t, report.EnvRenames[0].To, "milvus.grpc.address config key")
+	})
 }
 
 // Migrating then rendering must produce a file the v2 loader accepts.

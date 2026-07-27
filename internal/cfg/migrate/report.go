@@ -135,7 +135,7 @@ func (r *Report) WriteTo(w io.Writer, srcPath string) {
 	}
 
 	if len(r.EnvRenames) > 0 {
-		fmt.Fprintln(w, "v1 environment variables are set but inert under a v2 config, rename them:")
+		fmt.Fprintln(w, "v1 environment variables are set but inert under a v2 config, replace them with:")
 		for _, er := range r.EnvRenames {
 			fmt.Fprintf(w, "  %s -> %s\n", er.From, er.To)
 		}

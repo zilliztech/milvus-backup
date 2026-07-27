@@ -166,11 +166,19 @@ func TestCheckKeys(t *testing.T) {
 		assert.Contains(t, joined, "milvus.storage.port")
 	})
 
+	// A v1 variable that configured something other than a credential is
+	// answered with a config key: v2 has no environment variable to rename it to.
 	t.Run("V1Override", func(t *testing.T) {
 		w := warningsFor(t, "", map[string]string{"MILVUS_ADDRESS": "localhost"})
 		require.Len(t, w, 1)
 		assert.Contains(t, w[0], `v1 --set key "MILVUS_ADDRESS"`)
-		assert.Contains(t, w[0], "MILVUS_GRPC_ADDRESS")
+		assert.Contains(t, w[0], "milvus.grpc.address")
+	})
+
+	t.Run("V1CredentialOverride", func(t *testing.T) {
+		w := warningsFor(t, "", map[string]string{"MINIO_SECRET_KEY": "sk"})
+		require.Len(t, w, 1)
+		assert.Contains(t, w[0], "MILVUS_STORAGE_AUTH_SECRET_ACCESS_KEY")
 	})
 
 	t.Run("UnknownOverride", func(t *testing.T) {
@@ -196,44 +204,77 @@ func TestLoad_UnknownKeysAreIgnored(t *testing.T) {
 	})
 }
 
+// Precedence is exercised on a credential, since those are the only parameters
+// an environment variable can reach.
 func TestLoad_Precedence(t *testing.T) {
-	p := writeYAML(t, "milvus:\n  grpc:\n    port: 12345\n")
+	p := writeYAML(t, "milvus:\n  user: fromfile\n")
 
 	t.Run("ConfigFile", func(t *testing.T) {
 		c, err := Load(p, nil)
 		require.NoError(t, err)
-		assert.Equal(t, 12345, c.Milvus.Grpc.Port.Val)
+		assert.Equal(t, "fromfile", c.Milvus.User.Val)
 	})
 
 	t.Run("EnvOverridesConfigFile", func(t *testing.T) {
-		t.Setenv("MILVUS_GRPC_PORT", "23456")
+		t.Setenv("MILVUS_USER", "fromenv")
 
 		c, err := Load(p, nil)
 		require.NoError(t, err)
-		assert.Equal(t, 23456, c.Milvus.Grpc.Port.Val)
+		assert.Equal(t, "fromenv", c.Milvus.User.Val)
 	})
 
 	t.Run("OverrideOverridesEnv", func(t *testing.T) {
-		t.Setenv("MILVUS_GRPC_PORT", "23456")
+		t.Setenv("MILVUS_USER", "fromenv")
 
-		c, err := Load(p, map[string]string{"MILVUS_GRPC_PORT": "34567"})
+		c, err := Load(p, map[string]string{"MILVUS_USER": "fromset"})
 		require.NoError(t, err)
-		assert.Equal(t, 34567, c.Milvus.Grpc.Port.Val)
+		assert.Equal(t, "fromset", c.Milvus.User.Val)
 	})
 
 	t.Run("OverrideByConfigKey", func(t *testing.T) {
-		c, err := Load(p, map[string]string{"milvus.grpc.port": "45678"})
+		c, err := Load(p, map[string]string{"milvus.user": "frombykey"})
 		require.NoError(t, err)
-		assert.Equal(t, 45678, c.Milvus.Grpc.Port.Val)
+		assert.Equal(t, "frombykey", c.Milvus.User.Val)
 	})
 
 	// A v1 environment variable is not an alias: it names nothing in v2.
 	t.Run("V1EnvIsIgnored", func(t *testing.T) {
 		t.Setenv("MILVUS_PORT", "23456")
 
+		c, err := Load(writeYAML(t, "milvus:\n  grpc:\n    port: 12345\n"), nil)
+		require.NoError(t, err)
+		assert.Equal(t, 12345, c.Milvus.Grpc.Port.Val)
+	})
+}
+
+// Everything that is not a credential is named by its config key alone, so an
+// environment variable spelled after it is inert — including the Kubernetes
+// service variables whose names collide with a connection parameter.
+func TestLoad_EnvIsCredentialsOnly(t *testing.T) {
+	p := writeYAML(t, "milvus:\n  grpc:\n    port: 12345\n")
+
+	t.Run("ConnectionEnvIsIgnored", func(t *testing.T) {
+		t.Setenv("MILVUS_GRPC_PORT", "tcp://10.0.0.1:19530")
+
 		c, err := Load(p, nil)
 		require.NoError(t, err)
 		assert.Equal(t, 12345, c.Milvus.Grpc.Port.Val)
+	})
+
+	t.Run("StorageEnvIsIgnored", func(t *testing.T) {
+		t.Setenv("MILVUS_STORAGE_ADDRESS", "10.0.0.1")
+
+		c, err := Load(p, nil)
+		require.NoError(t, err)
+		assert.Equal(t, "localhost", c.Milvus.Storage.Address.Val)
+	})
+
+	t.Run("CredentialEnvApplies", func(t *testing.T) {
+		t.Setenv("MILVUS_STORAGE_AUTH_SECRET_ACCESS_KEY", "sk")
+
+		c, err := Load(p, nil)
+		require.NoError(t, err)
+		assert.Equal(t, "sk", c.Milvus.Storage.Auth.SecretAccessKey.Val)
 	})
 }
 
@@ -253,7 +294,7 @@ func TestLoad_EtcdEndpoints(t *testing.T) {
 	})
 
 	t.Run("Override", func(t *testing.T) {
-		c, err := Load("", map[string]string{"MILVUS_ETCD_ENDPOINTS": "a:2379, b:2379"})
+		c, err := Load("", map[string]string{"milvus.etcd.endpoints": "a:2379, b:2379"})
 		require.NoError(t, err)
 		assert.Equal(t, []string{"a:2379", "b:2379"}, c.Milvus.Etcd.Endpoints.Val)
 	})
