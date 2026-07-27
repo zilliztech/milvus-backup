@@ -594,8 +594,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Two scenarios:
+        # Three scenarios:
         #   - same-version:          source and target are both the latest 2.6.
+        #   - same-version-master:   source and target are both the latest master,
+        #     the only line that has import two-phase commit. #1080 dropped master
+        #     from CI because red master jobs hid regressions on the released
+        #     line; this brings it back for secondary restore alone, next to the
+        #     2.6 scenario rather than in place of it, so the 2PC path is covered
+        #     without master failures masking a 2.6 one.
         #   - cross-version-upgrade: source data is created on a pre-#46419 Milvus
         #     (v2.6.7, where the auto-appended $meta field has no Nullable nor
         #     DefaultValue), then the cluster is upgraded to a CDC-capable image
@@ -608,6 +614,9 @@ jobs:
           - scenario: same-version
             prepare_image_tag: 2.6-latest
             run_image_tag: 2.6-latest
+          - scenario: same-version-master
+            prepare_image_tag: master-latest
+            run_image_tag: master-latest
           - scenario: cross-version-upgrade
             prepare_image_tag: v2.6.7
             run_image_tag: 2.6-latest
