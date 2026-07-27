@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	semver "github.com/Masterminds/semver/v3"
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
@@ -12,6 +13,7 @@ import (
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
@@ -402,5 +404,223 @@ func TestGrpcClient_ListIndex(t *testing.T) {
 		indexes, err := cli.ListIndex(context.Background(), "db", "coll")
 		assert.Error(t, err)
 		assert.Nil(t, indexes)
+	})
+}
+
+func TestSnapshotConstraint(t *testing.T) {
+	tests := []struct {
+		name    string
+		version string
+		want    bool
+	}{
+		{"Milvus2.6.20", "2.6.20", false},
+		{"Milvus2.7.0", "2.7.0", false},
+		{"Milvus3.0.0", "3.0.0", true},
+		{"Milvus3.0.0RC", "3.0.0-rc1", true},
+		{"Milvus3.1.0", "3.1.0", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, tuple := range _featureTuples {
+				if tuple.Flag == Snapshot {
+					ver, err := semver.NewVersion(tt.version)
+					require.NoError(t, err)
+					assert.Equal(t, tt.want, tuple.Constraints.Check(ver))
+					return
+				}
+			}
+			t.Fatal("Snapshot not found in _featureTuples")
+		})
+	}
+}
+
+// A server without the feature must be refused before any RPC goes out, so the mock is created
+// with no expectations — reaching the wire would fail the test.
+func TestGrpcClient_SnapshotUnsupported(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("CreateSnapshot", func(t *testing.T) {
+		cli := &GrpcClient{srv: NewMockMilvusServiceClient(t), flags: 0}
+		assert.ErrorIs(t, cli.CreateSnapshot(ctx, "db", "coll", "snap", 0), errSnapshotUnsupported)
+	})
+
+	t.Run("DropSnapshot", func(t *testing.T) {
+		cli := &GrpcClient{srv: NewMockMilvusServiceClient(t), flags: 0}
+		assert.ErrorIs(t, cli.DropSnapshot(ctx, "db", "coll", "snap"), errSnapshotUnsupported)
+	})
+
+	t.Run("DescribeSnapshot", func(t *testing.T) {
+		cli := &GrpcClient{srv: NewMockMilvusServiceClient(t), flags: 0}
+		resp, err := cli.DescribeSnapshot(ctx, "db", "coll", "snap")
+		assert.ErrorIs(t, err, errSnapshotUnsupported)
+		assert.Nil(t, resp)
+	})
+
+	t.Run("PinSnapshotData", func(t *testing.T) {
+		cli := &GrpcClient{srv: NewMockMilvusServiceClient(t), flags: 0}
+		pinID, err := cli.PinSnapshotData(ctx, "db", "coll", "snap", time.Hour)
+		assert.ErrorIs(t, err, errSnapshotUnsupported)
+		assert.Zero(t, pinID)
+	})
+
+	t.Run("UnpinSnapshotData", func(t *testing.T) {
+		cli := &GrpcClient{srv: NewMockMilvusServiceClient(t), flags: 0}
+		assert.ErrorIs(t, cli.UnpinSnapshotData(ctx, 42), errSnapshotUnsupported)
+	})
+}
+
+func TestGrpcClient_CreateSnapshot(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
+
+		var got *milvuspb.CreateSnapshotRequest
+		mockSrv.EXPECT().CreateSnapshot(mock.Anything, mock.Anything).
+			Run(func(_ context.Context, in *milvuspb.CreateSnapshotRequest, _ ...grpc.CallOption) { got = in }).
+			Return(&commonpb.Status{Code: 0}, nil)
+
+		require.NoError(t, cli.CreateSnapshot(context.Background(), "db", "coll", "snap", 90*time.Minute))
+		assert.Equal(t, "coll", got.GetCollectionName())
+		assert.Equal(t, "snap", got.GetName())
+		assert.EqualValues(t, 5400, got.GetCompactionProtectionSeconds())
+	})
+
+	t.Run("NoCompactionProtection", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
+
+		var got *milvuspb.CreateSnapshotRequest
+		mockSrv.EXPECT().CreateSnapshot(mock.Anything, mock.Anything).
+			Run(func(_ context.Context, in *milvuspb.CreateSnapshotRequest, _ ...grpc.CallOption) { got = in }).
+			Return(&commonpb.Status{Code: 0}, nil)
+
+		require.NoError(t, cli.CreateSnapshot(context.Background(), "db", "coll", "snap", 0))
+		assert.Zero(t, got.GetCompactionProtectionSeconds())
+	})
+
+	t.Run("StatusError", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
+
+		mockSrv.EXPECT().CreateSnapshot(mock.Anything, mock.Anything).
+			Return(&commonpb.Status{Code: 1, Reason: "already exists"}, nil)
+
+		assert.Error(t, cli.CreateSnapshot(context.Background(), "db", "coll", "snap", 0))
+	})
+}
+
+func TestGrpcClient_DescribeSnapshot(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
+
+		mockSrv.EXPECT().DescribeSnapshot(mock.Anything, mock.Anything).Return(&milvuspb.DescribeSnapshotResponse{
+			Status:     &commonpb.Status{Code: 0},
+			Name:       "snap",
+			S3Location: "files/snapshots/100/metadata/200.json",
+		}, nil)
+
+		resp, err := cli.DescribeSnapshot(context.Background(), "db", "coll", "snap")
+		require.NoError(t, err)
+		assert.Equal(t, "files/snapshots/100/metadata/200.json", resp.GetS3Location())
+	})
+
+	t.Run("GrpcError", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
+
+		mockSrv.EXPECT().DescribeSnapshot(mock.Anything, mock.Anything).Return(nil, errors.New("grpc error"))
+
+		resp, err := cli.DescribeSnapshot(context.Background(), "db", "coll", "snap")
+		assert.Error(t, err)
+		assert.Nil(t, resp)
+	})
+}
+
+func TestGrpcClient_PinSnapshotData(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
+
+		var got *milvuspb.PinSnapshotDataRequest
+		mockSrv.EXPECT().PinSnapshotData(mock.Anything, mock.Anything).
+			Run(func(_ context.Context, in *milvuspb.PinSnapshotDataRequest, _ ...grpc.CallOption) { got = in }).
+			Return(&milvuspb.PinSnapshotDataResponse{Status: &commonpb.Status{Code: 0}, PinId: 7}, nil)
+
+		pinID, err := cli.PinSnapshotData(context.Background(), "db", "coll", "snap", 2*time.Hour)
+		require.NoError(t, err)
+		assert.EqualValues(t, 7, pinID)
+		assert.EqualValues(t, 7200, got.GetTtlSeconds())
+	})
+
+	// A zero ttl means "never expires" on the wire, and no API can release such a pin if the
+	// caller dies. Both cases below would round down to zero, so neither may reach the server —
+	// the mock has no expectations, so an RPC would fail the test.
+	t.Run("RejectsZeroTTL", func(t *testing.T) {
+		cli := &GrpcClient{srv: NewMockMilvusServiceClient(t), flags: Snapshot}
+
+		pinID, err := cli.PinSnapshotData(context.Background(), "db", "coll", "snap", 0)
+		assert.Error(t, err)
+		assert.Zero(t, pinID)
+	})
+
+	t.Run("RejectsSubSecondTTL", func(t *testing.T) {
+		cli := &GrpcClient{srv: NewMockMilvusServiceClient(t), flags: Snapshot}
+
+		pinID, err := cli.PinSnapshotData(context.Background(), "db", "coll", "snap", 500*time.Millisecond)
+		assert.Error(t, err)
+		assert.Zero(t, pinID)
+	})
+}
+
+func TestGrpcClient_UnpinSnapshotData(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
+
+		var got *milvuspb.UnpinSnapshotDataRequest
+		mockSrv.EXPECT().UnpinSnapshotData(mock.Anything, mock.Anything).
+			Run(func(_ context.Context, in *milvuspb.UnpinSnapshotDataRequest, _ ...grpc.CallOption) { got = in }).
+			Return(&commonpb.Status{Code: 0}, nil)
+
+		require.NoError(t, cli.UnpinSnapshotData(context.Background(), 7))
+		assert.EqualValues(t, 7, got.GetPinId())
+	})
+
+	t.Run("StatusError", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
+
+		mockSrv.EXPECT().UnpinSnapshotData(mock.Anything, mock.Anything).
+			Return(&commonpb.Status{Code: 1, Reason: "some error"}, nil)
+
+		assert.Error(t, cli.UnpinSnapshotData(context.Background(), 7))
+	})
+}
+
+func TestGrpcClient_DropSnapshot(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
+
+		var got *milvuspb.DropSnapshotRequest
+		mockSrv.EXPECT().DropSnapshot(mock.Anything, mock.Anything).
+			Run(func(_ context.Context, in *milvuspb.DropSnapshotRequest, _ ...grpc.CallOption) { got = in }).
+			Return(&commonpb.Status{Code: 0}, nil)
+
+		require.NoError(t, cli.DropSnapshot(context.Background(), "db", "coll", "snap"))
+		assert.Equal(t, "coll", got.GetCollectionName())
+		assert.Equal(t, "snap", got.GetName())
+	})
+
+	t.Run("StatusError", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
+
+		mockSrv.EXPECT().DropSnapshot(mock.Anything, mock.Anything).
+			Return(&commonpb.Status{Code: 1, Reason: "snapshot is pinned"}, nil)
+
+		assert.Error(t, cli.DropSnapshot(context.Background(), "db", "coll", "snap"))
 	})
 }

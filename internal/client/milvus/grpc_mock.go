@@ -6,6 +6,7 @@ package milvus
 
 import (
 	"context"
+	"time"
 
 	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
@@ -67,7 +68,7 @@ type MockGrpc_AddField_Call struct {
 //   - db string
 //   - collName string
 //   - field *schemapb.FieldSchema
-func (_e *MockGrpc_Expecter) AddField(ctx interface{}, db interface{}, collName interface{}, field interface{}) *MockGrpc_AddField_Call {
+func (_e *MockGrpc_Expecter) AddField(ctx any, db any, collName any, field any) *MockGrpc_AddField_Call {
 	return &MockGrpc_AddField_Call{Call: _e.mock.On("AddField", ctx, db, collName, field)}
 }
 
@@ -136,7 +137,7 @@ type MockGrpc_AlterCollection_Call struct {
 //   - db string
 //   - collName string
 //   - properties []*commonpb.KeyValuePair
-func (_e *MockGrpc_Expecter) AlterCollection(ctx interface{}, db interface{}, collName interface{}, properties interface{}) *MockGrpc_AlterCollection_Call {
+func (_e *MockGrpc_Expecter) AlterCollection(ctx any, db any, collName any, properties any) *MockGrpc_AlterCollection_Call {
 	return &MockGrpc_AlterCollection_Call{Call: _e.mock.On("AlterCollection", ctx, db, collName, properties)}
 }
 
@@ -213,7 +214,7 @@ type MockGrpc_BackupRBAC_Call struct {
 
 // BackupRBAC is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MockGrpc_Expecter) BackupRBAC(ctx interface{}) *MockGrpc_BackupRBAC_Call {
+func (_e *MockGrpc_Expecter) BackupRBAC(ctx any) *MockGrpc_BackupRBAC_Call {
 	return &MockGrpc_BackupRBAC_Call{Call: _e.mock.On("BackupRBAC", ctx)}
 }
 
@@ -274,7 +275,7 @@ type MockGrpc_BulkInsert_Call struct {
 // BulkInsert is a helper method to define mock.On call
 //   - ctx context.Context
 //   - input GrpcBulkInsertInput
-func (_e *MockGrpc_Expecter) BulkInsert(ctx interface{}, input interface{}) *MockGrpc_BulkInsert_Call {
+func (_e *MockGrpc_Expecter) BulkInsert(ctx any, input any) *MockGrpc_BulkInsert_Call {
 	return &MockGrpc_BulkInsert_Call{Call: _e.mock.On("BulkInsert", ctx, input)}
 }
 
@@ -375,7 +376,7 @@ type MockGrpc_CreateCollection_Call struct {
 // CreateCollection is a helper method to define mock.On call
 //   - ctx context.Context
 //   - input CreateCollectionInput
-func (_e *MockGrpc_Expecter) CreateCollection(ctx interface{}, input interface{}) *MockGrpc_CreateCollection_Call {
+func (_e *MockGrpc_Expecter) CreateCollection(ctx any, input any) *MockGrpc_CreateCollection_Call {
 	return &MockGrpc_CreateCollection_Call{Call: _e.mock.On("CreateCollection", ctx, input)}
 }
 
@@ -432,7 +433,7 @@ type MockGrpc_CreateDatabase_Call struct {
 // CreateDatabase is a helper method to define mock.On call
 //   - ctx context.Context
 //   - dbName string
-func (_e *MockGrpc_Expecter) CreateDatabase(ctx interface{}, dbName interface{}) *MockGrpc_CreateDatabase_Call {
+func (_e *MockGrpc_Expecter) CreateDatabase(ctx any, dbName any) *MockGrpc_CreateDatabase_Call {
 	return &MockGrpc_CreateDatabase_Call{Call: _e.mock.On("CreateDatabase", ctx, dbName)}
 }
 
@@ -489,7 +490,7 @@ type MockGrpc_CreateIndex_Call struct {
 // CreateIndex is a helper method to define mock.On call
 //   - ctx context.Context
 //   - input CreateIndexInput
-func (_e *MockGrpc_Expecter) CreateIndex(ctx interface{}, input interface{}) *MockGrpc_CreateIndex_Call {
+func (_e *MockGrpc_Expecter) CreateIndex(ctx any, input any) *MockGrpc_CreateIndex_Call {
 	return &MockGrpc_CreateIndex_Call{Call: _e.mock.On("CreateIndex", ctx, input)}
 }
 
@@ -548,7 +549,7 @@ type MockGrpc_CreatePartition_Call struct {
 //   - db string
 //   - collName string
 //   - partitionName string
-func (_e *MockGrpc_Expecter) CreatePartition(ctx interface{}, db interface{}, collName interface{}, partitionName interface{}) *MockGrpc_CreatePartition_Call {
+func (_e *MockGrpc_Expecter) CreatePartition(ctx any, db any, collName any, partitionName any) *MockGrpc_CreatePartition_Call {
 	return &MockGrpc_CreatePartition_Call{Call: _e.mock.On("CreatePartition", ctx, db, collName, partitionName)}
 }
 
@@ -626,7 +627,7 @@ type MockGrpc_CreateReplicateStream_Call struct {
 // CreateReplicateStream is a helper method to define mock.On call
 //   - ctx context.Context
 //   - sourceClusterID string
-func (_e *MockGrpc_Expecter) CreateReplicateStream(ctx interface{}, sourceClusterID interface{}) *MockGrpc_CreateReplicateStream_Call {
+func (_e *MockGrpc_Expecter) CreateReplicateStream(ctx any, sourceClusterID any) *MockGrpc_CreateReplicateStream_Call {
 	return &MockGrpc_CreateReplicateStream_Call{Call: _e.mock.On("CreateReplicateStream", ctx, sourceClusterID)}
 }
 
@@ -654,6 +655,81 @@ func (_c *MockGrpc_CreateReplicateStream_Call) Return(milvusService_CreateReplic
 }
 
 func (_c *MockGrpc_CreateReplicateStream_Call) RunAndReturn(run func(ctx context.Context, sourceClusterID string) (milvuspb.MilvusService_CreateReplicateStreamClient, error)) *MockGrpc_CreateReplicateStream_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// CreateSnapshot provides a mock function for the type MockGrpc
+func (_mock *MockGrpc) CreateSnapshot(ctx context.Context, db string, collName string, snapshotName string, compactionProtection time.Duration) error {
+	ret := _mock.Called(ctx, db, collName, snapshotName, compactionProtection)
+
+	if len(ret) == 0 {
+		panic("no return value specified for CreateSnapshot")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, time.Duration) error); ok {
+		r0 = returnFunc(ctx, db, collName, snapshotName, compactionProtection)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockGrpc_CreateSnapshot_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CreateSnapshot'
+type MockGrpc_CreateSnapshot_Call struct {
+	*mock.Call
+}
+
+// CreateSnapshot is a helper method to define mock.On call
+//   - ctx context.Context
+//   - db string
+//   - collName string
+//   - snapshotName string
+//   - compactionProtection time.Duration
+func (_e *MockGrpc_Expecter) CreateSnapshot(ctx any, db any, collName any, snapshotName any, compactionProtection any) *MockGrpc_CreateSnapshot_Call {
+	return &MockGrpc_CreateSnapshot_Call{Call: _e.mock.On("CreateSnapshot", ctx, db, collName, snapshotName, compactionProtection)}
+}
+
+func (_c *MockGrpc_CreateSnapshot_Call) Run(run func(ctx context.Context, db string, collName string, snapshotName string, compactionProtection time.Duration)) *MockGrpc_CreateSnapshot_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		var arg4 time.Duration
+		if args[4] != nil {
+			arg4 = args[4].(time.Duration)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
+	})
+	return _c
+}
+
+func (_c *MockGrpc_CreateSnapshot_Call) Return(err error) *MockGrpc_CreateSnapshot_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockGrpc_CreateSnapshot_Call) RunAndReturn(run func(ctx context.Context, db string, collName string, snapshotName string, compactionProtection time.Duration) error) *MockGrpc_CreateSnapshot_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -695,7 +771,7 @@ type MockGrpc_DescribeCollection_Call struct {
 //   - ctx context.Context
 //   - db string
 //   - collName string
-func (_e *MockGrpc_Expecter) DescribeCollection(ctx interface{}, db interface{}, collName interface{}) *MockGrpc_DescribeCollection_Call {
+func (_e *MockGrpc_Expecter) DescribeCollection(ctx any, db any, collName any) *MockGrpc_DescribeCollection_Call {
 	return &MockGrpc_DescribeCollection_Call{Call: _e.mock.On("DescribeCollection", ctx, db, collName)}
 }
 
@@ -768,7 +844,7 @@ type MockGrpc_DescribeDatabase_Call struct {
 // DescribeDatabase is a helper method to define mock.On call
 //   - ctx context.Context
 //   - dbName string
-func (_e *MockGrpc_Expecter) DescribeDatabase(ctx interface{}, dbName interface{}) *MockGrpc_DescribeDatabase_Call {
+func (_e *MockGrpc_Expecter) DescribeDatabase(ctx any, dbName any) *MockGrpc_DescribeDatabase_Call {
 	return &MockGrpc_DescribeDatabase_Call{Call: _e.mock.On("DescribeDatabase", ctx, dbName)}
 }
 
@@ -800,6 +876,86 @@ func (_c *MockGrpc_DescribeDatabase_Call) RunAndReturn(run func(ctx context.Cont
 	return _c
 }
 
+// DescribeSnapshot provides a mock function for the type MockGrpc
+func (_mock *MockGrpc) DescribeSnapshot(ctx context.Context, db string, collName string, snapshotName string) (*milvuspb.DescribeSnapshotResponse, error) {
+	ret := _mock.Called(ctx, db, collName, snapshotName)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DescribeSnapshot")
+	}
+
+	var r0 *milvuspb.DescribeSnapshotResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string) (*milvuspb.DescribeSnapshotResponse, error)); ok {
+		return returnFunc(ctx, db, collName, snapshotName)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string) *milvuspb.DescribeSnapshotResponse); ok {
+		r0 = returnFunc(ctx, db, collName, snapshotName)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.DescribeSnapshotResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, string) error); ok {
+		r1 = returnFunc(ctx, db, collName, snapshotName)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockGrpc_DescribeSnapshot_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DescribeSnapshot'
+type MockGrpc_DescribeSnapshot_Call struct {
+	*mock.Call
+}
+
+// DescribeSnapshot is a helper method to define mock.On call
+//   - ctx context.Context
+//   - db string
+//   - collName string
+//   - snapshotName string
+func (_e *MockGrpc_Expecter) DescribeSnapshot(ctx any, db any, collName any, snapshotName any) *MockGrpc_DescribeSnapshot_Call {
+	return &MockGrpc_DescribeSnapshot_Call{Call: _e.mock.On("DescribeSnapshot", ctx, db, collName, snapshotName)}
+}
+
+func (_c *MockGrpc_DescribeSnapshot_Call) Run(run func(ctx context.Context, db string, collName string, snapshotName string)) *MockGrpc_DescribeSnapshot_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *MockGrpc_DescribeSnapshot_Call) Return(describeSnapshotResponse *milvuspb.DescribeSnapshotResponse, err error) *MockGrpc_DescribeSnapshot_Call {
+	_c.Call.Return(describeSnapshotResponse, err)
+	return _c
+}
+
+func (_c *MockGrpc_DescribeSnapshot_Call) RunAndReturn(run func(ctx context.Context, db string, collName string, snapshotName string) (*milvuspb.DescribeSnapshotResponse, error)) *MockGrpc_DescribeSnapshot_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // DropCollection provides a mock function for the type MockGrpc
 func (_mock *MockGrpc) DropCollection(ctx context.Context, db string, collectionName string) error {
 	ret := _mock.Called(ctx, db, collectionName)
@@ -826,7 +982,7 @@ type MockGrpc_DropCollection_Call struct {
 //   - ctx context.Context
 //   - db string
 //   - collectionName string
-func (_e *MockGrpc_Expecter) DropCollection(ctx interface{}, db interface{}, collectionName interface{}) *MockGrpc_DropCollection_Call {
+func (_e *MockGrpc_Expecter) DropCollection(ctx any, db any, collectionName any) *MockGrpc_DropCollection_Call {
 	return &MockGrpc_DropCollection_Call{Call: _e.mock.On("DropCollection", ctx, db, collectionName)}
 }
 
@@ -890,7 +1046,7 @@ type MockGrpc_DropIndex_Call struct {
 //   - db string
 //   - collName string
 //   - indexName string
-func (_e *MockGrpc_Expecter) DropIndex(ctx interface{}, db interface{}, collName interface{}, indexName interface{}) *MockGrpc_DropIndex_Call {
+func (_e *MockGrpc_Expecter) DropIndex(ctx any, db any, collName any, indexName any) *MockGrpc_DropIndex_Call {
 	return &MockGrpc_DropIndex_Call{Call: _e.mock.On("DropIndex", ctx, db, collName, indexName)}
 }
 
@@ -932,6 +1088,75 @@ func (_c *MockGrpc_DropIndex_Call) RunAndReturn(run func(ctx context.Context, db
 	return _c
 }
 
+// DropSnapshot provides a mock function for the type MockGrpc
+func (_mock *MockGrpc) DropSnapshot(ctx context.Context, db string, collName string, snapshotName string) error {
+	ret := _mock.Called(ctx, db, collName, snapshotName)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DropSnapshot")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string) error); ok {
+		r0 = returnFunc(ctx, db, collName, snapshotName)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockGrpc_DropSnapshot_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DropSnapshot'
+type MockGrpc_DropSnapshot_Call struct {
+	*mock.Call
+}
+
+// DropSnapshot is a helper method to define mock.On call
+//   - ctx context.Context
+//   - db string
+//   - collName string
+//   - snapshotName string
+func (_e *MockGrpc_Expecter) DropSnapshot(ctx any, db any, collName any, snapshotName any) *MockGrpc_DropSnapshot_Call {
+	return &MockGrpc_DropSnapshot_Call{Call: _e.mock.On("DropSnapshot", ctx, db, collName, snapshotName)}
+}
+
+func (_c *MockGrpc_DropSnapshot_Call) Run(run func(ctx context.Context, db string, collName string, snapshotName string)) *MockGrpc_DropSnapshot_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *MockGrpc_DropSnapshot_Call) Return(err error) *MockGrpc_DropSnapshot_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockGrpc_DropSnapshot_Call) RunAndReturn(run func(ctx context.Context, db string, collName string, snapshotName string) error) *MockGrpc_DropSnapshot_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Flush provides a mock function for the type MockGrpc
 func (_mock *MockGrpc) Flush(ctx context.Context, db string, collName string) (*milvuspb.FlushResponse, error) {
 	ret := _mock.Called(ctx, db, collName)
@@ -969,7 +1194,7 @@ type MockGrpc_Flush_Call struct {
 //   - ctx context.Context
 //   - db string
 //   - collName string
-func (_e *MockGrpc_Expecter) Flush(ctx interface{}, db interface{}, collName interface{}) *MockGrpc_Flush_Call {
+func (_e *MockGrpc_Expecter) Flush(ctx any, db any, collName any) *MockGrpc_Flush_Call {
 	return &MockGrpc_Flush_Call{Call: _e.mock.On("Flush", ctx, db, collName)}
 }
 
@@ -1041,7 +1266,7 @@ type MockGrpc_FlushAll_Call struct {
 
 // FlushAll is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MockGrpc_Expecter) FlushAll(ctx interface{}) *MockGrpc_FlushAll_Call {
+func (_e *MockGrpc_Expecter) FlushAll(ctx any) *MockGrpc_FlushAll_Call {
 	return &MockGrpc_FlushAll_Call{Call: _e.mock.On("FlushAll", ctx)}
 }
 
@@ -1104,7 +1329,7 @@ type MockGrpc_GetBulkInsertState_Call struct {
 // GetBulkInsertState is a helper method to define mock.On call
 //   - ctx context.Context
 //   - taskID int64
-func (_e *MockGrpc_Expecter) GetBulkInsertState(ctx interface{}, taskID interface{}) *MockGrpc_GetBulkInsertState_Call {
+func (_e *MockGrpc_Expecter) GetBulkInsertState(ctx any, taskID any) *MockGrpc_GetBulkInsertState_Call {
 	return &MockGrpc_GetBulkInsertState_Call{Call: _e.mock.On("GetBulkInsertState", ctx, taskID)}
 }
 
@@ -1178,9 +1403,9 @@ type MockGrpc_GetLoadingProgress_Call struct {
 //   - db string
 //   - collName string
 //   - partitionNames ...string
-func (_e *MockGrpc_Expecter) GetLoadingProgress(ctx interface{}, db interface{}, collName interface{}, partitionNames ...interface{}) *MockGrpc_GetLoadingProgress_Call {
+func (_e *MockGrpc_Expecter) GetLoadingProgress(ctx any, db any, collName any, partitionNames ...any) *MockGrpc_GetLoadingProgress_Call {
 	return &MockGrpc_GetLoadingProgress_Call{Call: _e.mock.On("GetLoadingProgress",
-		append([]interface{}{ctx, db, collName}, partitionNames...)...)}
+		append([]any{ctx, db, collName}, partitionNames...)...)}
 }
 
 func (_c *MockGrpc_GetLoadingProgress_Call) Run(run func(ctx context.Context, db string, collName string, partitionNames ...string)) *MockGrpc_GetLoadingProgress_Call {
@@ -1260,7 +1485,7 @@ type MockGrpc_GetPersistentSegmentInfo_Call struct {
 //   - ctx context.Context
 //   - db string
 //   - collName string
-func (_e *MockGrpc_Expecter) GetPersistentSegmentInfo(ctx interface{}, db interface{}, collName interface{}) *MockGrpc_GetPersistentSegmentInfo_Call {
+func (_e *MockGrpc_Expecter) GetPersistentSegmentInfo(ctx any, db any, collName any) *MockGrpc_GetPersistentSegmentInfo_Call {
 	return &MockGrpc_GetPersistentSegmentInfo_Call{Call: _e.mock.On("GetPersistentSegmentInfo", ctx, db, collName)}
 }
 
@@ -1330,7 +1555,7 @@ type MockGrpc_GetVersion_Call struct {
 
 // GetVersion is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MockGrpc_Expecter) GetVersion(ctx interface{}) *MockGrpc_GetVersion_Call {
+func (_e *MockGrpc_Expecter) GetVersion(ctx any) *MockGrpc_GetVersion_Call {
 	return &MockGrpc_GetVersion_Call{Call: _e.mock.On("GetVersion", ctx)}
 }
 
@@ -1392,7 +1617,7 @@ type MockGrpc_HasCollection_Call struct {
 //   - ctx context.Context
 //   - db string
 //   - collName string
-func (_e *MockGrpc_Expecter) HasCollection(ctx interface{}, db interface{}, collName interface{}) *MockGrpc_HasCollection_Call {
+func (_e *MockGrpc_Expecter) HasCollection(ctx any, db any, collName any) *MockGrpc_HasCollection_Call {
 	return &MockGrpc_HasCollection_Call{Call: _e.mock.On("HasCollection", ctx, db, collName)}
 }
 
@@ -1453,7 +1678,7 @@ type MockGrpc_HasFeature_Call struct {
 
 // HasFeature is a helper method to define mock.On call
 //   - flag FeatureFlag
-func (_e *MockGrpc_Expecter) HasFeature(flag interface{}) *MockGrpc_HasFeature_Call {
+func (_e *MockGrpc_Expecter) HasFeature(flag any) *MockGrpc_HasFeature_Call {
 	return &MockGrpc_HasFeature_Call{Call: _e.mock.On("HasFeature", flag)}
 }
 
@@ -1516,7 +1741,7 @@ type MockGrpc_HasPartition_Call struct {
 //   - db string
 //   - collName string
 //   - partitionName string
-func (_e *MockGrpc_Expecter) HasPartition(ctx interface{}, db interface{}, collName interface{}, partitionName interface{}) *MockGrpc_HasPartition_Call {
+func (_e *MockGrpc_Expecter) HasPartition(ctx any, db any, collName any, partitionName any) *MockGrpc_HasPartition_Call {
 	return &MockGrpc_HasPartition_Call{Call: _e.mock.On("HasPartition", ctx, db, collName, partitionName)}
 }
 
@@ -1594,7 +1819,7 @@ type MockGrpc_ListCollections_Call struct {
 // ListCollections is a helper method to define mock.On call
 //   - ctx context.Context
 //   - db string
-func (_e *MockGrpc_Expecter) ListCollections(ctx interface{}, db interface{}) *MockGrpc_ListCollections_Call {
+func (_e *MockGrpc_Expecter) ListCollections(ctx any, db any) *MockGrpc_ListCollections_Call {
 	return &MockGrpc_ListCollections_Call{Call: _e.mock.On("ListCollections", ctx, db)}
 }
 
@@ -1661,7 +1886,7 @@ type MockGrpc_ListDatabases_Call struct {
 
 // ListDatabases is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MockGrpc_Expecter) ListDatabases(ctx interface{}) *MockGrpc_ListDatabases_Call {
+func (_e *MockGrpc_Expecter) ListDatabases(ctx any) *MockGrpc_ListDatabases_Call {
 	return &MockGrpc_ListDatabases_Call{Call: _e.mock.On("ListDatabases", ctx)}
 }
 
@@ -1725,7 +1950,7 @@ type MockGrpc_ListIndex_Call struct {
 //   - ctx context.Context
 //   - db string
 //   - collName string
-func (_e *MockGrpc_Expecter) ListIndex(ctx interface{}, db interface{}, collName interface{}) *MockGrpc_ListIndex_Call {
+func (_e *MockGrpc_Expecter) ListIndex(ctx any, db any, collName any) *MockGrpc_ListIndex_Call {
 	return &MockGrpc_ListIndex_Call{Call: _e.mock.On("ListIndex", ctx, db, collName)}
 }
 
@@ -1758,6 +1983,90 @@ func (_c *MockGrpc_ListIndex_Call) Return(indexDescriptions []*milvuspb.IndexDes
 }
 
 func (_c *MockGrpc_ListIndex_Call) RunAndReturn(run func(ctx context.Context, db string, collName string) ([]*milvuspb.IndexDescription, error)) *MockGrpc_ListIndex_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// PinSnapshotData provides a mock function for the type MockGrpc
+func (_mock *MockGrpc) PinSnapshotData(ctx context.Context, db string, collName string, snapshotName string, ttl time.Duration) (int64, error) {
+	ret := _mock.Called(ctx, db, collName, snapshotName, ttl)
+
+	if len(ret) == 0 {
+		panic("no return value specified for PinSnapshotData")
+	}
+
+	var r0 int64
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, time.Duration) (int64, error)); ok {
+		return returnFunc(ctx, db, collName, snapshotName, ttl)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, time.Duration) int64); ok {
+		r0 = returnFunc(ctx, db, collName, snapshotName, ttl)
+	} else {
+		r0 = ret.Get(0).(int64)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, string, time.Duration) error); ok {
+		r1 = returnFunc(ctx, db, collName, snapshotName, ttl)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockGrpc_PinSnapshotData_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'PinSnapshotData'
+type MockGrpc_PinSnapshotData_Call struct {
+	*mock.Call
+}
+
+// PinSnapshotData is a helper method to define mock.On call
+//   - ctx context.Context
+//   - db string
+//   - collName string
+//   - snapshotName string
+//   - ttl time.Duration
+func (_e *MockGrpc_Expecter) PinSnapshotData(ctx any, db any, collName any, snapshotName any, ttl any) *MockGrpc_PinSnapshotData_Call {
+	return &MockGrpc_PinSnapshotData_Call{Call: _e.mock.On("PinSnapshotData", ctx, db, collName, snapshotName, ttl)}
+}
+
+func (_c *MockGrpc_PinSnapshotData_Call) Run(run func(ctx context.Context, db string, collName string, snapshotName string, ttl time.Duration)) *MockGrpc_PinSnapshotData_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		var arg4 time.Duration
+		if args[4] != nil {
+			arg4 = args[4].(time.Duration)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
+	})
+	return _c
+}
+
+func (_c *MockGrpc_PinSnapshotData_Call) Return(n int64, err error) *MockGrpc_PinSnapshotData_Call {
+	_c.Call.Return(n, err)
+	return _c
+}
+
+func (_c *MockGrpc_PinSnapshotData_Call) RunAndReturn(run func(ctx context.Context, db string, collName string, snapshotName string, ttl time.Duration) (int64, error)) *MockGrpc_PinSnapshotData_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1796,7 +2105,7 @@ type MockGrpc_ReplicateMessage_Call struct {
 // ReplicateMessage is a helper method to define mock.On call
 //   - ctx context.Context
 //   - channelName string
-func (_e *MockGrpc_Expecter) ReplicateMessage(ctx interface{}, channelName interface{}) *MockGrpc_ReplicateMessage_Call {
+func (_e *MockGrpc_Expecter) ReplicateMessage(ctx any, channelName any) *MockGrpc_ReplicateMessage_Call {
 	return &MockGrpc_ReplicateMessage_Call{Call: _e.mock.On("ReplicateMessage", ctx, channelName)}
 }
 
@@ -1853,7 +2162,7 @@ type MockGrpc_RestoreRBAC_Call struct {
 // RestoreRBAC is a helper method to define mock.On call
 //   - ctx context.Context
 //   - rbacMeta *milvuspb.RBACMeta
-func (_e *MockGrpc_Expecter) RestoreRBAC(ctx interface{}, rbacMeta interface{}) *MockGrpc_RestoreRBAC_Call {
+func (_e *MockGrpc_Expecter) RestoreRBAC(ctx any, rbacMeta any) *MockGrpc_RestoreRBAC_Call {
 	return &MockGrpc_RestoreRBAC_Call{Call: _e.mock.On("RestoreRBAC", ctx, rbacMeta)}
 }
 
@@ -1922,7 +2231,7 @@ type MockGrpc_ShowPartitions_Call struct {
 //   - ctx context.Context
 //   - db string
 //   - collName string
-func (_e *MockGrpc_Expecter) ShowPartitions(ctx interface{}, db interface{}, collName interface{}) *MockGrpc_ShowPartitions_Call {
+func (_e *MockGrpc_Expecter) ShowPartitions(ctx any, db any, collName any) *MockGrpc_ShowPartitions_Call {
 	return &MockGrpc_ShowPartitions_Call{Call: _e.mock.On("ShowPartitions", ctx, db, collName)}
 }
 
@@ -1955,6 +2264,63 @@ func (_c *MockGrpc_ShowPartitions_Call) Return(showPartitionsResponse *milvuspb.
 }
 
 func (_c *MockGrpc_ShowPartitions_Call) RunAndReturn(run func(ctx context.Context, db string, collName string) (*milvuspb.ShowPartitionsResponse, error)) *MockGrpc_ShowPartitions_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UnpinSnapshotData provides a mock function for the type MockGrpc
+func (_mock *MockGrpc) UnpinSnapshotData(ctx context.Context, pinID int64) error {
+	ret := _mock.Called(ctx, pinID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for UnpinSnapshotData")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int64) error); ok {
+		r0 = returnFunc(ctx, pinID)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockGrpc_UnpinSnapshotData_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UnpinSnapshotData'
+type MockGrpc_UnpinSnapshotData_Call struct {
+	*mock.Call
+}
+
+// UnpinSnapshotData is a helper method to define mock.On call
+//   - ctx context.Context
+//   - pinID int64
+func (_e *MockGrpc_Expecter) UnpinSnapshotData(ctx any, pinID any) *MockGrpc_UnpinSnapshotData_Call {
+	return &MockGrpc_UnpinSnapshotData_Call{Call: _e.mock.On("UnpinSnapshotData", ctx, pinID)}
+}
+
+func (_c *MockGrpc_UnpinSnapshotData_Call) Run(run func(ctx context.Context, pinID int64)) *MockGrpc_UnpinSnapshotData_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 int64
+		if args[1] != nil {
+			arg1 = args[1].(int64)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockGrpc_UnpinSnapshotData_Call) Return(err error) *MockGrpc_UnpinSnapshotData_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockGrpc_UnpinSnapshotData_Call) RunAndReturn(run func(ctx context.Context, pinID int64) error) *MockGrpc_UnpinSnapshotData_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -84,9 +84,9 @@ type MockMilvusServiceClient_AddCollectionField_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.AddCollectionFieldRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) AddCollectionField(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_AddCollectionField_Call {
+func (_e *MockMilvusServiceClient_Expecter) AddCollectionField(ctx any, in any, opts ...any) *MockMilvusServiceClient_AddCollectionField_Call {
 	return &MockMilvusServiceClient_AddCollectionField_Call{Call: _e.mock.On("AddCollectionField",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_AddCollectionField_Call) Run(run func(ctx context.Context, in *milvuspb.AddCollectionFieldRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_AddCollectionField_Call {
@@ -167,9 +167,9 @@ type MockMilvusServiceClient_AddCollectionFunction_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.AddCollectionFunctionRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) AddCollectionFunction(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_AddCollectionFunction_Call {
+func (_e *MockMilvusServiceClient_Expecter) AddCollectionFunction(ctx any, in any, opts ...any) *MockMilvusServiceClient_AddCollectionFunction_Call {
 	return &MockMilvusServiceClient_AddCollectionFunction_Call{Call: _e.mock.On("AddCollectionFunction",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_AddCollectionFunction_Call) Run(run func(ctx context.Context, in *milvuspb.AddCollectionFunctionRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_AddCollectionFunction_Call {
@@ -250,9 +250,9 @@ type MockMilvusServiceClient_AddFileResource_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.AddFileResourceRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) AddFileResource(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_AddFileResource_Call {
+func (_e *MockMilvusServiceClient_Expecter) AddFileResource(ctx any, in any, opts ...any) *MockMilvusServiceClient_AddFileResource_Call {
 	return &MockMilvusServiceClient_AddFileResource_Call{Call: _e.mock.On("AddFileResource",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_AddFileResource_Call) Run(run func(ctx context.Context, in *milvuspb.AddFileResourceRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_AddFileResource_Call {
@@ -333,9 +333,9 @@ type MockMilvusServiceClient_AddUserTags_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.AddUserTagsRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) AddUserTags(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_AddUserTags_Call {
+func (_e *MockMilvusServiceClient_Expecter) AddUserTags(ctx any, in any, opts ...any) *MockMilvusServiceClient_AddUserTags_Call {
 	return &MockMilvusServiceClient_AddUserTags_Call{Call: _e.mock.On("AddUserTags",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_AddUserTags_Call) Run(run func(ctx context.Context, in *milvuspb.AddUserTagsRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_AddUserTags_Call {
@@ -416,9 +416,9 @@ type MockMilvusServiceClient_AllocTimestamp_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.AllocTimestampRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) AllocTimestamp(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_AllocTimestamp_Call {
+func (_e *MockMilvusServiceClient_Expecter) AllocTimestamp(ctx any, in any, opts ...any) *MockMilvusServiceClient_AllocTimestamp_Call {
 	return &MockMilvusServiceClient_AllocTimestamp_Call{Call: _e.mock.On("AllocTimestamp",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_AllocTimestamp_Call) Run(run func(ctx context.Context, in *milvuspb.AllocTimestampRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_AllocTimestamp_Call {
@@ -499,9 +499,9 @@ type MockMilvusServiceClient_AlterAlias_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.AlterAliasRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) AlterAlias(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_AlterAlias_Call {
+func (_e *MockMilvusServiceClient_Expecter) AlterAlias(ctx any, in any, opts ...any) *MockMilvusServiceClient_AlterAlias_Call {
 	return &MockMilvusServiceClient_AlterAlias_Call{Call: _e.mock.On("AlterAlias",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_AlterAlias_Call) Run(run func(ctx context.Context, in *milvuspb.AlterAliasRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_AlterAlias_Call {
@@ -582,9 +582,9 @@ type MockMilvusServiceClient_AlterCollection_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.AlterCollectionRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) AlterCollection(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_AlterCollection_Call {
+func (_e *MockMilvusServiceClient_Expecter) AlterCollection(ctx any, in any, opts ...any) *MockMilvusServiceClient_AlterCollection_Call {
 	return &MockMilvusServiceClient_AlterCollection_Call{Call: _e.mock.On("AlterCollection",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_AlterCollection_Call) Run(run func(ctx context.Context, in *milvuspb.AlterCollectionRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_AlterCollection_Call {
@@ -665,9 +665,9 @@ type MockMilvusServiceClient_AlterCollectionField_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.AlterCollectionFieldRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) AlterCollectionField(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_AlterCollectionField_Call {
+func (_e *MockMilvusServiceClient_Expecter) AlterCollectionField(ctx any, in any, opts ...any) *MockMilvusServiceClient_AlterCollectionField_Call {
 	return &MockMilvusServiceClient_AlterCollectionField_Call{Call: _e.mock.On("AlterCollectionField",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_AlterCollectionField_Call) Run(run func(ctx context.Context, in *milvuspb.AlterCollectionFieldRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_AlterCollectionField_Call {
@@ -748,9 +748,9 @@ type MockMilvusServiceClient_AlterCollectionFunction_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.AlterCollectionFunctionRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) AlterCollectionFunction(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_AlterCollectionFunction_Call {
+func (_e *MockMilvusServiceClient_Expecter) AlterCollectionFunction(ctx any, in any, opts ...any) *MockMilvusServiceClient_AlterCollectionFunction_Call {
 	return &MockMilvusServiceClient_AlterCollectionFunction_Call{Call: _e.mock.On("AlterCollectionFunction",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_AlterCollectionFunction_Call) Run(run func(ctx context.Context, in *milvuspb.AlterCollectionFunctionRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_AlterCollectionFunction_Call {
@@ -831,9 +831,9 @@ type MockMilvusServiceClient_AlterCollectionSchema_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.AlterCollectionSchemaRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) AlterCollectionSchema(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_AlterCollectionSchema_Call {
+func (_e *MockMilvusServiceClient_Expecter) AlterCollectionSchema(ctx any, in any, opts ...any) *MockMilvusServiceClient_AlterCollectionSchema_Call {
 	return &MockMilvusServiceClient_AlterCollectionSchema_Call{Call: _e.mock.On("AlterCollectionSchema",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_AlterCollectionSchema_Call) Run(run func(ctx context.Context, in *milvuspb.AlterCollectionSchemaRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_AlterCollectionSchema_Call {
@@ -914,9 +914,9 @@ type MockMilvusServiceClient_AlterDatabase_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.AlterDatabaseRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) AlterDatabase(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_AlterDatabase_Call {
+func (_e *MockMilvusServiceClient_Expecter) AlterDatabase(ctx any, in any, opts ...any) *MockMilvusServiceClient_AlterDatabase_Call {
 	return &MockMilvusServiceClient_AlterDatabase_Call{Call: _e.mock.On("AlterDatabase",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_AlterDatabase_Call) Run(run func(ctx context.Context, in *milvuspb.AlterDatabaseRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_AlterDatabase_Call {
@@ -997,9 +997,9 @@ type MockMilvusServiceClient_AlterIndex_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.AlterIndexRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) AlterIndex(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_AlterIndex_Call {
+func (_e *MockMilvusServiceClient_Expecter) AlterIndex(ctx any, in any, opts ...any) *MockMilvusServiceClient_AlterIndex_Call {
 	return &MockMilvusServiceClient_AlterIndex_Call{Call: _e.mock.On("AlterIndex",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_AlterIndex_Call) Run(run func(ctx context.Context, in *milvuspb.AlterIndexRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_AlterIndex_Call {
@@ -1080,9 +1080,9 @@ type MockMilvusServiceClient_BackupRBAC_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.BackupRBACMetaRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) BackupRBAC(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_BackupRBAC_Call {
+func (_e *MockMilvusServiceClient_Expecter) BackupRBAC(ctx any, in any, opts ...any) *MockMilvusServiceClient_BackupRBAC_Call {
 	return &MockMilvusServiceClient_BackupRBAC_Call{Call: _e.mock.On("BackupRBAC",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_BackupRBAC_Call) Run(run func(ctx context.Context, in *milvuspb.BackupRBACMetaRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_BackupRBAC_Call {
@@ -1163,9 +1163,9 @@ type MockMilvusServiceClient_BatchDescribeCollection_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.BatchDescribeCollectionRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) BatchDescribeCollection(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_BatchDescribeCollection_Call {
+func (_e *MockMilvusServiceClient_Expecter) BatchDescribeCollection(ctx any, in any, opts ...any) *MockMilvusServiceClient_BatchDescribeCollection_Call {
 	return &MockMilvusServiceClient_BatchDescribeCollection_Call{Call: _e.mock.On("BatchDescribeCollection",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_BatchDescribeCollection_Call) Run(run func(ctx context.Context, in *milvuspb.BatchDescribeCollectionRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_BatchDescribeCollection_Call {
@@ -1246,9 +1246,9 @@ type MockMilvusServiceClient_BatchUpdateManifest_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.BatchUpdateManifestRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) BatchUpdateManifest(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_BatchUpdateManifest_Call {
+func (_e *MockMilvusServiceClient_Expecter) BatchUpdateManifest(ctx any, in any, opts ...any) *MockMilvusServiceClient_BatchUpdateManifest_Call {
 	return &MockMilvusServiceClient_BatchUpdateManifest_Call{Call: _e.mock.On("BatchUpdateManifest",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_BatchUpdateManifest_Call) Run(run func(ctx context.Context, in *milvuspb.BatchUpdateManifestRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_BatchUpdateManifest_Call {
@@ -1329,9 +1329,9 @@ type MockMilvusServiceClient_CalcDistance_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.CalcDistanceRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) CalcDistance(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_CalcDistance_Call {
+func (_e *MockMilvusServiceClient_Expecter) CalcDistance(ctx any, in any, opts ...any) *MockMilvusServiceClient_CalcDistance_Call {
 	return &MockMilvusServiceClient_CalcDistance_Call{Call: _e.mock.On("CalcDistance",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_CalcDistance_Call) Run(run func(ctx context.Context, in *milvuspb.CalcDistanceRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_CalcDistance_Call {
@@ -1412,9 +1412,9 @@ type MockMilvusServiceClient_CheckHealth_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.CheckHealthRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) CheckHealth(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_CheckHealth_Call {
+func (_e *MockMilvusServiceClient_Expecter) CheckHealth(ctx any, in any, opts ...any) *MockMilvusServiceClient_CheckHealth_Call {
 	return &MockMilvusServiceClient_CheckHealth_Call{Call: _e.mock.On("CheckHealth",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_CheckHealth_Call) Run(run func(ctx context.Context, in *milvuspb.CheckHealthRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_CheckHealth_Call {
@@ -1495,9 +1495,9 @@ type MockMilvusServiceClient_ComputePhraseMatchSlop_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.ComputePhraseMatchSlopRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) ComputePhraseMatchSlop(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_ComputePhraseMatchSlop_Call {
+func (_e *MockMilvusServiceClient_Expecter) ComputePhraseMatchSlop(ctx any, in any, opts ...any) *MockMilvusServiceClient_ComputePhraseMatchSlop_Call {
 	return &MockMilvusServiceClient_ComputePhraseMatchSlop_Call{Call: _e.mock.On("ComputePhraseMatchSlop",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_ComputePhraseMatchSlop_Call) Run(run func(ctx context.Context, in *milvuspb.ComputePhraseMatchSlopRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_ComputePhraseMatchSlop_Call {
@@ -1578,9 +1578,9 @@ type MockMilvusServiceClient_Connect_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.ConnectRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) Connect(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_Connect_Call {
+func (_e *MockMilvusServiceClient_Expecter) Connect(ctx any, in any, opts ...any) *MockMilvusServiceClient_Connect_Call {
 	return &MockMilvusServiceClient_Connect_Call{Call: _e.mock.On("Connect",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_Connect_Call) Run(run func(ctx context.Context, in *milvuspb.ConnectRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_Connect_Call {
@@ -1661,9 +1661,9 @@ type MockMilvusServiceClient_CreateAlias_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.CreateAliasRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) CreateAlias(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_CreateAlias_Call {
+func (_e *MockMilvusServiceClient_Expecter) CreateAlias(ctx any, in any, opts ...any) *MockMilvusServiceClient_CreateAlias_Call {
 	return &MockMilvusServiceClient_CreateAlias_Call{Call: _e.mock.On("CreateAlias",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_CreateAlias_Call) Run(run func(ctx context.Context, in *milvuspb.CreateAliasRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_CreateAlias_Call {
@@ -1744,9 +1744,9 @@ type MockMilvusServiceClient_CreateCollection_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.CreateCollectionRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) CreateCollection(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_CreateCollection_Call {
+func (_e *MockMilvusServiceClient_Expecter) CreateCollection(ctx any, in any, opts ...any) *MockMilvusServiceClient_CreateCollection_Call {
 	return &MockMilvusServiceClient_CreateCollection_Call{Call: _e.mock.On("CreateCollection",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_CreateCollection_Call) Run(run func(ctx context.Context, in *milvuspb.CreateCollectionRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_CreateCollection_Call {
@@ -1827,9 +1827,9 @@ type MockMilvusServiceClient_CreateCredential_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.CreateCredentialRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) CreateCredential(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_CreateCredential_Call {
+func (_e *MockMilvusServiceClient_Expecter) CreateCredential(ctx any, in any, opts ...any) *MockMilvusServiceClient_CreateCredential_Call {
 	return &MockMilvusServiceClient_CreateCredential_Call{Call: _e.mock.On("CreateCredential",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_CreateCredential_Call) Run(run func(ctx context.Context, in *milvuspb.CreateCredentialRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_CreateCredential_Call {
@@ -1910,9 +1910,9 @@ type MockMilvusServiceClient_CreateDatabase_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.CreateDatabaseRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) CreateDatabase(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_CreateDatabase_Call {
+func (_e *MockMilvusServiceClient_Expecter) CreateDatabase(ctx any, in any, opts ...any) *MockMilvusServiceClient_CreateDatabase_Call {
 	return &MockMilvusServiceClient_CreateDatabase_Call{Call: _e.mock.On("CreateDatabase",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_CreateDatabase_Call) Run(run func(ctx context.Context, in *milvuspb.CreateDatabaseRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_CreateDatabase_Call {
@@ -1993,9 +1993,9 @@ type MockMilvusServiceClient_CreateIndex_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.CreateIndexRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) CreateIndex(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_CreateIndex_Call {
+func (_e *MockMilvusServiceClient_Expecter) CreateIndex(ctx any, in any, opts ...any) *MockMilvusServiceClient_CreateIndex_Call {
 	return &MockMilvusServiceClient_CreateIndex_Call{Call: _e.mock.On("CreateIndex",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_CreateIndex_Call) Run(run func(ctx context.Context, in *milvuspb.CreateIndexRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_CreateIndex_Call {
@@ -2076,9 +2076,9 @@ type MockMilvusServiceClient_CreatePartition_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.CreatePartitionRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) CreatePartition(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_CreatePartition_Call {
+func (_e *MockMilvusServiceClient_Expecter) CreatePartition(ctx any, in any, opts ...any) *MockMilvusServiceClient_CreatePartition_Call {
 	return &MockMilvusServiceClient_CreatePartition_Call{Call: _e.mock.On("CreatePartition",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_CreatePartition_Call) Run(run func(ctx context.Context, in *milvuspb.CreatePartitionRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_CreatePartition_Call {
@@ -2159,9 +2159,9 @@ type MockMilvusServiceClient_CreatePrivilegeGroup_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.CreatePrivilegeGroupRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) CreatePrivilegeGroup(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_CreatePrivilegeGroup_Call {
+func (_e *MockMilvusServiceClient_Expecter) CreatePrivilegeGroup(ctx any, in any, opts ...any) *MockMilvusServiceClient_CreatePrivilegeGroup_Call {
 	return &MockMilvusServiceClient_CreatePrivilegeGroup_Call{Call: _e.mock.On("CreatePrivilegeGroup",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_CreatePrivilegeGroup_Call) Run(run func(ctx context.Context, in *milvuspb.CreatePrivilegeGroupRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_CreatePrivilegeGroup_Call {
@@ -2241,9 +2241,9 @@ type MockMilvusServiceClient_CreateReplicateStream_Call struct {
 // CreateReplicateStream is a helper method to define mock.On call
 //   - ctx context.Context
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) CreateReplicateStream(ctx interface{}, opts ...interface{}) *MockMilvusServiceClient_CreateReplicateStream_Call {
+func (_e *MockMilvusServiceClient_Expecter) CreateReplicateStream(ctx any, opts ...any) *MockMilvusServiceClient_CreateReplicateStream_Call {
 	return &MockMilvusServiceClient_CreateReplicateStream_Call{Call: _e.mock.On("CreateReplicateStream",
-		append([]interface{}{ctx}, opts...)...)}
+		append([]any{ctx}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_CreateReplicateStream_Call) Run(run func(ctx context.Context, opts ...grpc.CallOption)) *MockMilvusServiceClient_CreateReplicateStream_Call {
@@ -2319,9 +2319,9 @@ type MockMilvusServiceClient_CreateResourceGroup_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.CreateResourceGroupRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) CreateResourceGroup(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_CreateResourceGroup_Call {
+func (_e *MockMilvusServiceClient_Expecter) CreateResourceGroup(ctx any, in any, opts ...any) *MockMilvusServiceClient_CreateResourceGroup_Call {
 	return &MockMilvusServiceClient_CreateResourceGroup_Call{Call: _e.mock.On("CreateResourceGroup",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_CreateResourceGroup_Call) Run(run func(ctx context.Context, in *milvuspb.CreateResourceGroupRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_CreateResourceGroup_Call {
@@ -2402,9 +2402,9 @@ type MockMilvusServiceClient_CreateRole_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.CreateRoleRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) CreateRole(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_CreateRole_Call {
+func (_e *MockMilvusServiceClient_Expecter) CreateRole(ctx any, in any, opts ...any) *MockMilvusServiceClient_CreateRole_Call {
 	return &MockMilvusServiceClient_CreateRole_Call{Call: _e.mock.On("CreateRole",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_CreateRole_Call) Run(run func(ctx context.Context, in *milvuspb.CreateRoleRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_CreateRole_Call {
@@ -2485,9 +2485,9 @@ type MockMilvusServiceClient_CreateRowPolicy_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.CreateRowPolicyRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) CreateRowPolicy(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_CreateRowPolicy_Call {
+func (_e *MockMilvusServiceClient_Expecter) CreateRowPolicy(ctx any, in any, opts ...any) *MockMilvusServiceClient_CreateRowPolicy_Call {
 	return &MockMilvusServiceClient_CreateRowPolicy_Call{Call: _e.mock.On("CreateRowPolicy",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_CreateRowPolicy_Call) Run(run func(ctx context.Context, in *milvuspb.CreateRowPolicyRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_CreateRowPolicy_Call {
@@ -2568,9 +2568,9 @@ type MockMilvusServiceClient_CreateSnapshot_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.CreateSnapshotRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) CreateSnapshot(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_CreateSnapshot_Call {
+func (_e *MockMilvusServiceClient_Expecter) CreateSnapshot(ctx any, in any, opts ...any) *MockMilvusServiceClient_CreateSnapshot_Call {
 	return &MockMilvusServiceClient_CreateSnapshot_Call{Call: _e.mock.On("CreateSnapshot",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_CreateSnapshot_Call) Run(run func(ctx context.Context, in *milvuspb.CreateSnapshotRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_CreateSnapshot_Call {
@@ -2651,9 +2651,9 @@ type MockMilvusServiceClient_Delete_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.DeleteRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) Delete(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_Delete_Call {
+func (_e *MockMilvusServiceClient_Expecter) Delete(ctx any, in any, opts ...any) *MockMilvusServiceClient_Delete_Call {
 	return &MockMilvusServiceClient_Delete_Call{Call: _e.mock.On("Delete",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_Delete_Call) Run(run func(ctx context.Context, in *milvuspb.DeleteRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_Delete_Call {
@@ -2734,9 +2734,9 @@ type MockMilvusServiceClient_DeleteCredential_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.DeleteCredentialRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) DeleteCredential(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_DeleteCredential_Call {
+func (_e *MockMilvusServiceClient_Expecter) DeleteCredential(ctx any, in any, opts ...any) *MockMilvusServiceClient_DeleteCredential_Call {
 	return &MockMilvusServiceClient_DeleteCredential_Call{Call: _e.mock.On("DeleteCredential",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_DeleteCredential_Call) Run(run func(ctx context.Context, in *milvuspb.DeleteCredentialRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_DeleteCredential_Call {
@@ -2817,9 +2817,9 @@ type MockMilvusServiceClient_DeleteUserTags_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.DeleteUserTagsRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) DeleteUserTags(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_DeleteUserTags_Call {
+func (_e *MockMilvusServiceClient_Expecter) DeleteUserTags(ctx any, in any, opts ...any) *MockMilvusServiceClient_DeleteUserTags_Call {
 	return &MockMilvusServiceClient_DeleteUserTags_Call{Call: _e.mock.On("DeleteUserTags",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_DeleteUserTags_Call) Run(run func(ctx context.Context, in *milvuspb.DeleteUserTagsRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_DeleteUserTags_Call {
@@ -2900,9 +2900,9 @@ type MockMilvusServiceClient_DescribeAlias_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.DescribeAliasRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) DescribeAlias(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_DescribeAlias_Call {
+func (_e *MockMilvusServiceClient_Expecter) DescribeAlias(ctx any, in any, opts ...any) *MockMilvusServiceClient_DescribeAlias_Call {
 	return &MockMilvusServiceClient_DescribeAlias_Call{Call: _e.mock.On("DescribeAlias",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_DescribeAlias_Call) Run(run func(ctx context.Context, in *milvuspb.DescribeAliasRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_DescribeAlias_Call {
@@ -2983,9 +2983,9 @@ type MockMilvusServiceClient_DescribeCollection_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.DescribeCollectionRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) DescribeCollection(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_DescribeCollection_Call {
+func (_e *MockMilvusServiceClient_Expecter) DescribeCollection(ctx any, in any, opts ...any) *MockMilvusServiceClient_DescribeCollection_Call {
 	return &MockMilvusServiceClient_DescribeCollection_Call{Call: _e.mock.On("DescribeCollection",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_DescribeCollection_Call) Run(run func(ctx context.Context, in *milvuspb.DescribeCollectionRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_DescribeCollection_Call {
@@ -3066,9 +3066,9 @@ type MockMilvusServiceClient_DescribeDatabase_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.DescribeDatabaseRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) DescribeDatabase(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_DescribeDatabase_Call {
+func (_e *MockMilvusServiceClient_Expecter) DescribeDatabase(ctx any, in any, opts ...any) *MockMilvusServiceClient_DescribeDatabase_Call {
 	return &MockMilvusServiceClient_DescribeDatabase_Call{Call: _e.mock.On("DescribeDatabase",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_DescribeDatabase_Call) Run(run func(ctx context.Context, in *milvuspb.DescribeDatabaseRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_DescribeDatabase_Call {
@@ -3149,9 +3149,9 @@ type MockMilvusServiceClient_DescribeIndex_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.DescribeIndexRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) DescribeIndex(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_DescribeIndex_Call {
+func (_e *MockMilvusServiceClient_Expecter) DescribeIndex(ctx any, in any, opts ...any) *MockMilvusServiceClient_DescribeIndex_Call {
 	return &MockMilvusServiceClient_DescribeIndex_Call{Call: _e.mock.On("DescribeIndex",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_DescribeIndex_Call) Run(run func(ctx context.Context, in *milvuspb.DescribeIndexRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_DescribeIndex_Call {
@@ -3232,9 +3232,9 @@ type MockMilvusServiceClient_DescribeResourceGroup_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.DescribeResourceGroupRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) DescribeResourceGroup(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_DescribeResourceGroup_Call {
+func (_e *MockMilvusServiceClient_Expecter) DescribeResourceGroup(ctx any, in any, opts ...any) *MockMilvusServiceClient_DescribeResourceGroup_Call {
 	return &MockMilvusServiceClient_DescribeResourceGroup_Call{Call: _e.mock.On("DescribeResourceGroup",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_DescribeResourceGroup_Call) Run(run func(ctx context.Context, in *milvuspb.DescribeResourceGroupRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_DescribeResourceGroup_Call {
@@ -3315,9 +3315,9 @@ type MockMilvusServiceClient_DescribeSegmentIndexData_Call struct {
 //   - ctx context.Context
 //   - in *federpb.DescribeSegmentIndexDataRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) DescribeSegmentIndexData(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_DescribeSegmentIndexData_Call {
+func (_e *MockMilvusServiceClient_Expecter) DescribeSegmentIndexData(ctx any, in any, opts ...any) *MockMilvusServiceClient_DescribeSegmentIndexData_Call {
 	return &MockMilvusServiceClient_DescribeSegmentIndexData_Call{Call: _e.mock.On("DescribeSegmentIndexData",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_DescribeSegmentIndexData_Call) Run(run func(ctx context.Context, in *federpb.DescribeSegmentIndexDataRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_DescribeSegmentIndexData_Call {
@@ -3398,9 +3398,9 @@ type MockMilvusServiceClient_DescribeSnapshot_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.DescribeSnapshotRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) DescribeSnapshot(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_DescribeSnapshot_Call {
+func (_e *MockMilvusServiceClient_Expecter) DescribeSnapshot(ctx any, in any, opts ...any) *MockMilvusServiceClient_DescribeSnapshot_Call {
 	return &MockMilvusServiceClient_DescribeSnapshot_Call{Call: _e.mock.On("DescribeSnapshot",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_DescribeSnapshot_Call) Run(run func(ctx context.Context, in *milvuspb.DescribeSnapshotRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_DescribeSnapshot_Call {
@@ -3481,9 +3481,9 @@ type MockMilvusServiceClient_DropAlias_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.DropAliasRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) DropAlias(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_DropAlias_Call {
+func (_e *MockMilvusServiceClient_Expecter) DropAlias(ctx any, in any, opts ...any) *MockMilvusServiceClient_DropAlias_Call {
 	return &MockMilvusServiceClient_DropAlias_Call{Call: _e.mock.On("DropAlias",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_DropAlias_Call) Run(run func(ctx context.Context, in *milvuspb.DropAliasRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_DropAlias_Call {
@@ -3564,9 +3564,9 @@ type MockMilvusServiceClient_DropCollection_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.DropCollectionRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) DropCollection(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_DropCollection_Call {
+func (_e *MockMilvusServiceClient_Expecter) DropCollection(ctx any, in any, opts ...any) *MockMilvusServiceClient_DropCollection_Call {
 	return &MockMilvusServiceClient_DropCollection_Call{Call: _e.mock.On("DropCollection",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_DropCollection_Call) Run(run func(ctx context.Context, in *milvuspb.DropCollectionRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_DropCollection_Call {
@@ -3647,9 +3647,9 @@ type MockMilvusServiceClient_DropCollectionFunction_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.DropCollectionFunctionRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) DropCollectionFunction(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_DropCollectionFunction_Call {
+func (_e *MockMilvusServiceClient_Expecter) DropCollectionFunction(ctx any, in any, opts ...any) *MockMilvusServiceClient_DropCollectionFunction_Call {
 	return &MockMilvusServiceClient_DropCollectionFunction_Call{Call: _e.mock.On("DropCollectionFunction",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_DropCollectionFunction_Call) Run(run func(ctx context.Context, in *milvuspb.DropCollectionFunctionRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_DropCollectionFunction_Call {
@@ -3730,9 +3730,9 @@ type MockMilvusServiceClient_DropDatabase_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.DropDatabaseRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) DropDatabase(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_DropDatabase_Call {
+func (_e *MockMilvusServiceClient_Expecter) DropDatabase(ctx any, in any, opts ...any) *MockMilvusServiceClient_DropDatabase_Call {
 	return &MockMilvusServiceClient_DropDatabase_Call{Call: _e.mock.On("DropDatabase",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_DropDatabase_Call) Run(run func(ctx context.Context, in *milvuspb.DropDatabaseRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_DropDatabase_Call {
@@ -3813,9 +3813,9 @@ type MockMilvusServiceClient_DropIndex_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.DropIndexRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) DropIndex(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_DropIndex_Call {
+func (_e *MockMilvusServiceClient_Expecter) DropIndex(ctx any, in any, opts ...any) *MockMilvusServiceClient_DropIndex_Call {
 	return &MockMilvusServiceClient_DropIndex_Call{Call: _e.mock.On("DropIndex",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_DropIndex_Call) Run(run func(ctx context.Context, in *milvuspb.DropIndexRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_DropIndex_Call {
@@ -3896,9 +3896,9 @@ type MockMilvusServiceClient_DropPartition_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.DropPartitionRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) DropPartition(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_DropPartition_Call {
+func (_e *MockMilvusServiceClient_Expecter) DropPartition(ctx any, in any, opts ...any) *MockMilvusServiceClient_DropPartition_Call {
 	return &MockMilvusServiceClient_DropPartition_Call{Call: _e.mock.On("DropPartition",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_DropPartition_Call) Run(run func(ctx context.Context, in *milvuspb.DropPartitionRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_DropPartition_Call {
@@ -3979,9 +3979,9 @@ type MockMilvusServiceClient_DropPrivilegeGroup_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.DropPrivilegeGroupRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) DropPrivilegeGroup(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_DropPrivilegeGroup_Call {
+func (_e *MockMilvusServiceClient_Expecter) DropPrivilegeGroup(ctx any, in any, opts ...any) *MockMilvusServiceClient_DropPrivilegeGroup_Call {
 	return &MockMilvusServiceClient_DropPrivilegeGroup_Call{Call: _e.mock.On("DropPrivilegeGroup",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_DropPrivilegeGroup_Call) Run(run func(ctx context.Context, in *milvuspb.DropPrivilegeGroupRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_DropPrivilegeGroup_Call {
@@ -4062,9 +4062,9 @@ type MockMilvusServiceClient_DropResourceGroup_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.DropResourceGroupRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) DropResourceGroup(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_DropResourceGroup_Call {
+func (_e *MockMilvusServiceClient_Expecter) DropResourceGroup(ctx any, in any, opts ...any) *MockMilvusServiceClient_DropResourceGroup_Call {
 	return &MockMilvusServiceClient_DropResourceGroup_Call{Call: _e.mock.On("DropResourceGroup",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_DropResourceGroup_Call) Run(run func(ctx context.Context, in *milvuspb.DropResourceGroupRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_DropResourceGroup_Call {
@@ -4145,9 +4145,9 @@ type MockMilvusServiceClient_DropRole_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.DropRoleRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) DropRole(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_DropRole_Call {
+func (_e *MockMilvusServiceClient_Expecter) DropRole(ctx any, in any, opts ...any) *MockMilvusServiceClient_DropRole_Call {
 	return &MockMilvusServiceClient_DropRole_Call{Call: _e.mock.On("DropRole",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_DropRole_Call) Run(run func(ctx context.Context, in *milvuspb.DropRoleRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_DropRole_Call {
@@ -4228,9 +4228,9 @@ type MockMilvusServiceClient_DropRowPolicy_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.DropRowPolicyRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) DropRowPolicy(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_DropRowPolicy_Call {
+func (_e *MockMilvusServiceClient_Expecter) DropRowPolicy(ctx any, in any, opts ...any) *MockMilvusServiceClient_DropRowPolicy_Call {
 	return &MockMilvusServiceClient_DropRowPolicy_Call{Call: _e.mock.On("DropRowPolicy",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_DropRowPolicy_Call) Run(run func(ctx context.Context, in *milvuspb.DropRowPolicyRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_DropRowPolicy_Call {
@@ -4311,9 +4311,9 @@ type MockMilvusServiceClient_DropSnapshot_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.DropSnapshotRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) DropSnapshot(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_DropSnapshot_Call {
+func (_e *MockMilvusServiceClient_Expecter) DropSnapshot(ctx any, in any, opts ...any) *MockMilvusServiceClient_DropSnapshot_Call {
 	return &MockMilvusServiceClient_DropSnapshot_Call{Call: _e.mock.On("DropSnapshot",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_DropSnapshot_Call) Run(run func(ctx context.Context, in *milvuspb.DropSnapshotRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_DropSnapshot_Call {
@@ -4394,9 +4394,9 @@ type MockMilvusServiceClient_Dummy_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.DummyRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) Dummy(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_Dummy_Call {
+func (_e *MockMilvusServiceClient_Expecter) Dummy(ctx any, in any, opts ...any) *MockMilvusServiceClient_Dummy_Call {
 	return &MockMilvusServiceClient_Dummy_Call{Call: _e.mock.On("Dummy",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_Dummy_Call) Run(run func(ctx context.Context, in *milvuspb.DummyRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_Dummy_Call {
@@ -4430,6 +4430,89 @@ func (_c *MockMilvusServiceClient_Dummy_Call) Return(dummyResponse *milvuspb.Dum
 }
 
 func (_c *MockMilvusServiceClient_Dummy_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.DummyRequest, opts ...grpc.CallOption) (*milvuspb.DummyResponse, error)) *MockMilvusServiceClient_Dummy_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// DumpMessages provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) DumpMessages(ctx context.Context, in *milvuspb.DumpMessagesRequest, opts ...grpc.CallOption) (milvuspb.MilvusService_DumpMessagesClient, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for DumpMessages")
+	}
+
+	var r0 milvuspb.MilvusService_DumpMessagesClient
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.DumpMessagesRequest, ...grpc.CallOption) (milvuspb.MilvusService_DumpMessagesClient, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.DumpMessagesRequest, ...grpc.CallOption) milvuspb.MilvusService_DumpMessagesClient); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(milvuspb.MilvusService_DumpMessagesClient)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.DumpMessagesRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_DumpMessages_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DumpMessages'
+type MockMilvusServiceClient_DumpMessages_Call struct {
+	*mock.Call
+}
+
+// DumpMessages is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.DumpMessagesRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) DumpMessages(ctx any, in any, opts ...any) *MockMilvusServiceClient_DumpMessages_Call {
+	return &MockMilvusServiceClient_DumpMessages_Call{Call: _e.mock.On("DumpMessages",
+		append([]any{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_DumpMessages_Call) Run(run func(ctx context.Context, in *milvuspb.DumpMessagesRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_DumpMessages_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.DumpMessagesRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.DumpMessagesRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_DumpMessages_Call) Return(milvusService_DumpMessagesClient milvuspb.MilvusService_DumpMessagesClient, err error) *MockMilvusServiceClient_DumpMessages_Call {
+	_c.Call.Return(milvusService_DumpMessagesClient, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_DumpMessages_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.DumpMessagesRequest, opts ...grpc.CallOption) (milvuspb.MilvusService_DumpMessagesClient, error)) *MockMilvusServiceClient_DumpMessages_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -4477,9 +4560,9 @@ type MockMilvusServiceClient_Flush_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.FlushRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) Flush(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_Flush_Call {
+func (_e *MockMilvusServiceClient_Expecter) Flush(ctx any, in any, opts ...any) *MockMilvusServiceClient_Flush_Call {
 	return &MockMilvusServiceClient_Flush_Call{Call: _e.mock.On("Flush",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_Flush_Call) Run(run func(ctx context.Context, in *milvuspb.FlushRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_Flush_Call {
@@ -4560,9 +4643,9 @@ type MockMilvusServiceClient_FlushAll_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.FlushAllRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) FlushAll(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_FlushAll_Call {
+func (_e *MockMilvusServiceClient_Expecter) FlushAll(ctx any, in any, opts ...any) *MockMilvusServiceClient_FlushAll_Call {
 	return &MockMilvusServiceClient_FlushAll_Call{Call: _e.mock.On("FlushAll",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_FlushAll_Call) Run(run func(ctx context.Context, in *milvuspb.FlushAllRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_FlushAll_Call {
@@ -4643,9 +4726,9 @@ type MockMilvusServiceClient_GetCollectionStatistics_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.GetCollectionStatisticsRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) GetCollectionStatistics(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_GetCollectionStatistics_Call {
+func (_e *MockMilvusServiceClient_Expecter) GetCollectionStatistics(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetCollectionStatistics_Call {
 	return &MockMilvusServiceClient_GetCollectionStatistics_Call{Call: _e.mock.On("GetCollectionStatistics",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_GetCollectionStatistics_Call) Run(run func(ctx context.Context, in *milvuspb.GetCollectionStatisticsRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetCollectionStatistics_Call {
@@ -4726,9 +4809,9 @@ type MockMilvusServiceClient_GetCompactionState_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.GetCompactionStateRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) GetCompactionState(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_GetCompactionState_Call {
+func (_e *MockMilvusServiceClient_Expecter) GetCompactionState(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetCompactionState_Call {
 	return &MockMilvusServiceClient_GetCompactionState_Call{Call: _e.mock.On("GetCompactionState",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_GetCompactionState_Call) Run(run func(ctx context.Context, in *milvuspb.GetCompactionStateRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetCompactionState_Call {
@@ -4809,9 +4892,9 @@ type MockMilvusServiceClient_GetCompactionStateWithPlans_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.GetCompactionPlansRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) GetCompactionStateWithPlans(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_GetCompactionStateWithPlans_Call {
+func (_e *MockMilvusServiceClient_Expecter) GetCompactionStateWithPlans(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetCompactionStateWithPlans_Call {
 	return &MockMilvusServiceClient_GetCompactionStateWithPlans_Call{Call: _e.mock.On("GetCompactionStateWithPlans",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_GetCompactionStateWithPlans_Call) Run(run func(ctx context.Context, in *milvuspb.GetCompactionPlansRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetCompactionStateWithPlans_Call {
@@ -4892,9 +4975,9 @@ type MockMilvusServiceClient_GetComponentStates_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.GetComponentStatesRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) GetComponentStates(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_GetComponentStates_Call {
+func (_e *MockMilvusServiceClient_Expecter) GetComponentStates(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetComponentStates_Call {
 	return &MockMilvusServiceClient_GetComponentStates_Call{Call: _e.mock.On("GetComponentStates",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_GetComponentStates_Call) Run(run func(ctx context.Context, in *milvuspb.GetComponentStatesRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetComponentStates_Call {
@@ -4975,9 +5058,9 @@ type MockMilvusServiceClient_GetFlushAllState_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.GetFlushAllStateRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) GetFlushAllState(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_GetFlushAllState_Call {
+func (_e *MockMilvusServiceClient_Expecter) GetFlushAllState(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetFlushAllState_Call {
 	return &MockMilvusServiceClient_GetFlushAllState_Call{Call: _e.mock.On("GetFlushAllState",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_GetFlushAllState_Call) Run(run func(ctx context.Context, in *milvuspb.GetFlushAllStateRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetFlushAllState_Call {
@@ -5058,9 +5141,9 @@ type MockMilvusServiceClient_GetFlushState_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.GetFlushStateRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) GetFlushState(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_GetFlushState_Call {
+func (_e *MockMilvusServiceClient_Expecter) GetFlushState(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetFlushState_Call {
 	return &MockMilvusServiceClient_GetFlushState_Call{Call: _e.mock.On("GetFlushState",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_GetFlushState_Call) Run(run func(ctx context.Context, in *milvuspb.GetFlushStateRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetFlushState_Call {
@@ -5141,9 +5224,9 @@ type MockMilvusServiceClient_GetImportState_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.GetImportStateRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) GetImportState(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_GetImportState_Call {
+func (_e *MockMilvusServiceClient_Expecter) GetImportState(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetImportState_Call {
 	return &MockMilvusServiceClient_GetImportState_Call{Call: _e.mock.On("GetImportState",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_GetImportState_Call) Run(run func(ctx context.Context, in *milvuspb.GetImportStateRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetImportState_Call {
@@ -5224,9 +5307,9 @@ type MockMilvusServiceClient_GetIndexBuildProgress_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.GetIndexBuildProgressRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) GetIndexBuildProgress(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_GetIndexBuildProgress_Call {
+func (_e *MockMilvusServiceClient_Expecter) GetIndexBuildProgress(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetIndexBuildProgress_Call {
 	return &MockMilvusServiceClient_GetIndexBuildProgress_Call{Call: _e.mock.On("GetIndexBuildProgress",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_GetIndexBuildProgress_Call) Run(run func(ctx context.Context, in *milvuspb.GetIndexBuildProgressRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetIndexBuildProgress_Call {
@@ -5307,9 +5390,9 @@ type MockMilvusServiceClient_GetIndexState_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.GetIndexStateRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) GetIndexState(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_GetIndexState_Call {
+func (_e *MockMilvusServiceClient_Expecter) GetIndexState(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetIndexState_Call {
 	return &MockMilvusServiceClient_GetIndexState_Call{Call: _e.mock.On("GetIndexState",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_GetIndexState_Call) Run(run func(ctx context.Context, in *milvuspb.GetIndexStateRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetIndexState_Call {
@@ -5390,9 +5473,9 @@ type MockMilvusServiceClient_GetIndexStatistics_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.GetIndexStatisticsRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) GetIndexStatistics(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_GetIndexStatistics_Call {
+func (_e *MockMilvusServiceClient_Expecter) GetIndexStatistics(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetIndexStatistics_Call {
 	return &MockMilvusServiceClient_GetIndexStatistics_Call{Call: _e.mock.On("GetIndexStatistics",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_GetIndexStatistics_Call) Run(run func(ctx context.Context, in *milvuspb.GetIndexStatisticsRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetIndexStatistics_Call {
@@ -5473,9 +5556,9 @@ type MockMilvusServiceClient_GetLoadState_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.GetLoadStateRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) GetLoadState(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_GetLoadState_Call {
+func (_e *MockMilvusServiceClient_Expecter) GetLoadState(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetLoadState_Call {
 	return &MockMilvusServiceClient_GetLoadState_Call{Call: _e.mock.On("GetLoadState",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_GetLoadState_Call) Run(run func(ctx context.Context, in *milvuspb.GetLoadStateRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetLoadState_Call {
@@ -5556,9 +5639,9 @@ type MockMilvusServiceClient_GetLoadingProgress_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.GetLoadingProgressRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) GetLoadingProgress(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_GetLoadingProgress_Call {
+func (_e *MockMilvusServiceClient_Expecter) GetLoadingProgress(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetLoadingProgress_Call {
 	return &MockMilvusServiceClient_GetLoadingProgress_Call{Call: _e.mock.On("GetLoadingProgress",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_GetLoadingProgress_Call) Run(run func(ctx context.Context, in *milvuspb.GetLoadingProgressRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetLoadingProgress_Call {
@@ -5639,9 +5722,9 @@ type MockMilvusServiceClient_GetMetrics_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.GetMetricsRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) GetMetrics(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_GetMetrics_Call {
+func (_e *MockMilvusServiceClient_Expecter) GetMetrics(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetMetrics_Call {
 	return &MockMilvusServiceClient_GetMetrics_Call{Call: _e.mock.On("GetMetrics",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_GetMetrics_Call) Run(run func(ctx context.Context, in *milvuspb.GetMetricsRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetMetrics_Call {
@@ -5722,9 +5805,9 @@ type MockMilvusServiceClient_GetPartitionStatistics_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.GetPartitionStatisticsRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) GetPartitionStatistics(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_GetPartitionStatistics_Call {
+func (_e *MockMilvusServiceClient_Expecter) GetPartitionStatistics(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetPartitionStatistics_Call {
 	return &MockMilvusServiceClient_GetPartitionStatistics_Call{Call: _e.mock.On("GetPartitionStatistics",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_GetPartitionStatistics_Call) Run(run func(ctx context.Context, in *milvuspb.GetPartitionStatisticsRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetPartitionStatistics_Call {
@@ -5805,9 +5888,9 @@ type MockMilvusServiceClient_GetPersistentSegmentInfo_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.GetPersistentSegmentInfoRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) GetPersistentSegmentInfo(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_GetPersistentSegmentInfo_Call {
+func (_e *MockMilvusServiceClient_Expecter) GetPersistentSegmentInfo(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetPersistentSegmentInfo_Call {
 	return &MockMilvusServiceClient_GetPersistentSegmentInfo_Call{Call: _e.mock.On("GetPersistentSegmentInfo",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_GetPersistentSegmentInfo_Call) Run(run func(ctx context.Context, in *milvuspb.GetPersistentSegmentInfoRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetPersistentSegmentInfo_Call {
@@ -5888,9 +5971,9 @@ type MockMilvusServiceClient_GetQuerySegmentInfo_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.GetQuerySegmentInfoRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) GetQuerySegmentInfo(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_GetQuerySegmentInfo_Call {
+func (_e *MockMilvusServiceClient_Expecter) GetQuerySegmentInfo(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetQuerySegmentInfo_Call {
 	return &MockMilvusServiceClient_GetQuerySegmentInfo_Call{Call: _e.mock.On("GetQuerySegmentInfo",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_GetQuerySegmentInfo_Call) Run(run func(ctx context.Context, in *milvuspb.GetQuerySegmentInfoRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetQuerySegmentInfo_Call {
@@ -5971,9 +6054,9 @@ type MockMilvusServiceClient_GetRefreshExternalCollectionProgress_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.GetRefreshExternalCollectionProgressRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) GetRefreshExternalCollectionProgress(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_GetRefreshExternalCollectionProgress_Call {
+func (_e *MockMilvusServiceClient_Expecter) GetRefreshExternalCollectionProgress(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetRefreshExternalCollectionProgress_Call {
 	return &MockMilvusServiceClient_GetRefreshExternalCollectionProgress_Call{Call: _e.mock.On("GetRefreshExternalCollectionProgress",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_GetRefreshExternalCollectionProgress_Call) Run(run func(ctx context.Context, in *milvuspb.GetRefreshExternalCollectionProgressRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetRefreshExternalCollectionProgress_Call {
@@ -6054,9 +6137,9 @@ type MockMilvusServiceClient_GetReplicas_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.GetReplicasRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) GetReplicas(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_GetReplicas_Call {
+func (_e *MockMilvusServiceClient_Expecter) GetReplicas(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetReplicas_Call {
 	return &MockMilvusServiceClient_GetReplicas_Call{Call: _e.mock.On("GetReplicas",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_GetReplicas_Call) Run(run func(ctx context.Context, in *milvuspb.GetReplicasRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetReplicas_Call {
@@ -6137,9 +6220,9 @@ type MockMilvusServiceClient_GetReplicateConfiguration_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.GetReplicateConfigurationRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) GetReplicateConfiguration(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_GetReplicateConfiguration_Call {
+func (_e *MockMilvusServiceClient_Expecter) GetReplicateConfiguration(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetReplicateConfiguration_Call {
 	return &MockMilvusServiceClient_GetReplicateConfiguration_Call{Call: _e.mock.On("GetReplicateConfiguration",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_GetReplicateConfiguration_Call) Run(run func(ctx context.Context, in *milvuspb.GetReplicateConfigurationRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetReplicateConfiguration_Call {
@@ -6220,9 +6303,9 @@ type MockMilvusServiceClient_GetReplicateInfo_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.GetReplicateInfoRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) GetReplicateInfo(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_GetReplicateInfo_Call {
+func (_e *MockMilvusServiceClient_Expecter) GetReplicateInfo(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetReplicateInfo_Call {
 	return &MockMilvusServiceClient_GetReplicateInfo_Call{Call: _e.mock.On("GetReplicateInfo",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_GetReplicateInfo_Call) Run(run func(ctx context.Context, in *milvuspb.GetReplicateInfoRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetReplicateInfo_Call {
@@ -6303,9 +6386,9 @@ type MockMilvusServiceClient_GetRestoreSnapshotState_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.GetRestoreSnapshotStateRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) GetRestoreSnapshotState(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_GetRestoreSnapshotState_Call {
+func (_e *MockMilvusServiceClient_Expecter) GetRestoreSnapshotState(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetRestoreSnapshotState_Call {
 	return &MockMilvusServiceClient_GetRestoreSnapshotState_Call{Call: _e.mock.On("GetRestoreSnapshotState",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_GetRestoreSnapshotState_Call) Run(run func(ctx context.Context, in *milvuspb.GetRestoreSnapshotStateRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetRestoreSnapshotState_Call {
@@ -6386,9 +6469,9 @@ type MockMilvusServiceClient_GetUserTags_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.GetUserTagsRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) GetUserTags(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_GetUserTags_Call {
+func (_e *MockMilvusServiceClient_Expecter) GetUserTags(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetUserTags_Call {
 	return &MockMilvusServiceClient_GetUserTags_Call{Call: _e.mock.On("GetUserTags",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_GetUserTags_Call) Run(run func(ctx context.Context, in *milvuspb.GetUserTagsRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetUserTags_Call {
@@ -6469,9 +6552,9 @@ type MockMilvusServiceClient_GetVersion_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.GetVersionRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) GetVersion(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_GetVersion_Call {
+func (_e *MockMilvusServiceClient_Expecter) GetVersion(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetVersion_Call {
 	return &MockMilvusServiceClient_GetVersion_Call{Call: _e.mock.On("GetVersion",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_GetVersion_Call) Run(run func(ctx context.Context, in *milvuspb.GetVersionRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetVersion_Call {
@@ -6552,9 +6635,9 @@ type MockMilvusServiceClient_HasCollection_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.HasCollectionRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) HasCollection(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_HasCollection_Call {
+func (_e *MockMilvusServiceClient_Expecter) HasCollection(ctx any, in any, opts ...any) *MockMilvusServiceClient_HasCollection_Call {
 	return &MockMilvusServiceClient_HasCollection_Call{Call: _e.mock.On("HasCollection",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_HasCollection_Call) Run(run func(ctx context.Context, in *milvuspb.HasCollectionRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_HasCollection_Call {
@@ -6635,9 +6718,9 @@ type MockMilvusServiceClient_HasPartition_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.HasPartitionRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) HasPartition(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_HasPartition_Call {
+func (_e *MockMilvusServiceClient_Expecter) HasPartition(ctx any, in any, opts ...any) *MockMilvusServiceClient_HasPartition_Call {
 	return &MockMilvusServiceClient_HasPartition_Call{Call: _e.mock.On("HasPartition",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_HasPartition_Call) Run(run func(ctx context.Context, in *milvuspb.HasPartitionRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_HasPartition_Call {
@@ -6718,9 +6801,9 @@ type MockMilvusServiceClient_HybridSearch_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.HybridSearchRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) HybridSearch(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_HybridSearch_Call {
+func (_e *MockMilvusServiceClient_Expecter) HybridSearch(ctx any, in any, opts ...any) *MockMilvusServiceClient_HybridSearch_Call {
 	return &MockMilvusServiceClient_HybridSearch_Call{Call: _e.mock.On("HybridSearch",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_HybridSearch_Call) Run(run func(ctx context.Context, in *milvuspb.HybridSearchRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_HybridSearch_Call {
@@ -6801,9 +6884,9 @@ type MockMilvusServiceClient_Import_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.ImportRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) Import(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_Import_Call {
+func (_e *MockMilvusServiceClient_Expecter) Import(ctx any, in any, opts ...any) *MockMilvusServiceClient_Import_Call {
 	return &MockMilvusServiceClient_Import_Call{Call: _e.mock.On("Import",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_Import_Call) Run(run func(ctx context.Context, in *milvuspb.ImportRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_Import_Call {
@@ -6884,9 +6967,9 @@ type MockMilvusServiceClient_Insert_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.InsertRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) Insert(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_Insert_Call {
+func (_e *MockMilvusServiceClient_Expecter) Insert(ctx any, in any, opts ...any) *MockMilvusServiceClient_Insert_Call {
 	return &MockMilvusServiceClient_Insert_Call{Call: _e.mock.On("Insert",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_Insert_Call) Run(run func(ctx context.Context, in *milvuspb.InsertRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_Insert_Call {
@@ -6967,9 +7050,9 @@ type MockMilvusServiceClient_ListAliases_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.ListAliasesRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) ListAliases(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_ListAliases_Call {
+func (_e *MockMilvusServiceClient_Expecter) ListAliases(ctx any, in any, opts ...any) *MockMilvusServiceClient_ListAliases_Call {
 	return &MockMilvusServiceClient_ListAliases_Call{Call: _e.mock.On("ListAliases",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_ListAliases_Call) Run(run func(ctx context.Context, in *milvuspb.ListAliasesRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_ListAliases_Call {
@@ -7050,9 +7133,9 @@ type MockMilvusServiceClient_ListCredUsers_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.ListCredUsersRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) ListCredUsers(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_ListCredUsers_Call {
+func (_e *MockMilvusServiceClient_Expecter) ListCredUsers(ctx any, in any, opts ...any) *MockMilvusServiceClient_ListCredUsers_Call {
 	return &MockMilvusServiceClient_ListCredUsers_Call{Call: _e.mock.On("ListCredUsers",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_ListCredUsers_Call) Run(run func(ctx context.Context, in *milvuspb.ListCredUsersRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_ListCredUsers_Call {
@@ -7133,9 +7216,9 @@ type MockMilvusServiceClient_ListDatabases_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.ListDatabasesRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) ListDatabases(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_ListDatabases_Call {
+func (_e *MockMilvusServiceClient_Expecter) ListDatabases(ctx any, in any, opts ...any) *MockMilvusServiceClient_ListDatabases_Call {
 	return &MockMilvusServiceClient_ListDatabases_Call{Call: _e.mock.On("ListDatabases",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_ListDatabases_Call) Run(run func(ctx context.Context, in *milvuspb.ListDatabasesRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_ListDatabases_Call {
@@ -7216,9 +7299,9 @@ type MockMilvusServiceClient_ListFileResources_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.ListFileResourcesRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) ListFileResources(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_ListFileResources_Call {
+func (_e *MockMilvusServiceClient_Expecter) ListFileResources(ctx any, in any, opts ...any) *MockMilvusServiceClient_ListFileResources_Call {
 	return &MockMilvusServiceClient_ListFileResources_Call{Call: _e.mock.On("ListFileResources",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_ListFileResources_Call) Run(run func(ctx context.Context, in *milvuspb.ListFileResourcesRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_ListFileResources_Call {
@@ -7299,9 +7382,9 @@ type MockMilvusServiceClient_ListImportTasks_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.ListImportTasksRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) ListImportTasks(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_ListImportTasks_Call {
+func (_e *MockMilvusServiceClient_Expecter) ListImportTasks(ctx any, in any, opts ...any) *MockMilvusServiceClient_ListImportTasks_Call {
 	return &MockMilvusServiceClient_ListImportTasks_Call{Call: _e.mock.On("ListImportTasks",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_ListImportTasks_Call) Run(run func(ctx context.Context, in *milvuspb.ListImportTasksRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_ListImportTasks_Call {
@@ -7382,9 +7465,9 @@ type MockMilvusServiceClient_ListIndexedSegment_Call struct {
 //   - ctx context.Context
 //   - in *federpb.ListIndexedSegmentRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) ListIndexedSegment(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_ListIndexedSegment_Call {
+func (_e *MockMilvusServiceClient_Expecter) ListIndexedSegment(ctx any, in any, opts ...any) *MockMilvusServiceClient_ListIndexedSegment_Call {
 	return &MockMilvusServiceClient_ListIndexedSegment_Call{Call: _e.mock.On("ListIndexedSegment",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_ListIndexedSegment_Call) Run(run func(ctx context.Context, in *federpb.ListIndexedSegmentRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_ListIndexedSegment_Call {
@@ -7465,9 +7548,9 @@ type MockMilvusServiceClient_ListPrivilegeGroups_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.ListPrivilegeGroupsRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) ListPrivilegeGroups(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_ListPrivilegeGroups_Call {
+func (_e *MockMilvusServiceClient_Expecter) ListPrivilegeGroups(ctx any, in any, opts ...any) *MockMilvusServiceClient_ListPrivilegeGroups_Call {
 	return &MockMilvusServiceClient_ListPrivilegeGroups_Call{Call: _e.mock.On("ListPrivilegeGroups",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_ListPrivilegeGroups_Call) Run(run func(ctx context.Context, in *milvuspb.ListPrivilegeGroupsRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_ListPrivilegeGroups_Call {
@@ -7548,9 +7631,9 @@ type MockMilvusServiceClient_ListRefreshExternalCollectionJobs_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.ListRefreshExternalCollectionJobsRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) ListRefreshExternalCollectionJobs(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_ListRefreshExternalCollectionJobs_Call {
+func (_e *MockMilvusServiceClient_Expecter) ListRefreshExternalCollectionJobs(ctx any, in any, opts ...any) *MockMilvusServiceClient_ListRefreshExternalCollectionJobs_Call {
 	return &MockMilvusServiceClient_ListRefreshExternalCollectionJobs_Call{Call: _e.mock.On("ListRefreshExternalCollectionJobs",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_ListRefreshExternalCollectionJobs_Call) Run(run func(ctx context.Context, in *milvuspb.ListRefreshExternalCollectionJobsRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_ListRefreshExternalCollectionJobs_Call {
@@ -7631,9 +7714,9 @@ type MockMilvusServiceClient_ListResourceGroups_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.ListResourceGroupsRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) ListResourceGroups(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_ListResourceGroups_Call {
+func (_e *MockMilvusServiceClient_Expecter) ListResourceGroups(ctx any, in any, opts ...any) *MockMilvusServiceClient_ListResourceGroups_Call {
 	return &MockMilvusServiceClient_ListResourceGroups_Call{Call: _e.mock.On("ListResourceGroups",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_ListResourceGroups_Call) Run(run func(ctx context.Context, in *milvuspb.ListResourceGroupsRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_ListResourceGroups_Call {
@@ -7714,9 +7797,9 @@ type MockMilvusServiceClient_ListRestoreSnapshotJobs_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.ListRestoreSnapshotJobsRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) ListRestoreSnapshotJobs(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_ListRestoreSnapshotJobs_Call {
+func (_e *MockMilvusServiceClient_Expecter) ListRestoreSnapshotJobs(ctx any, in any, opts ...any) *MockMilvusServiceClient_ListRestoreSnapshotJobs_Call {
 	return &MockMilvusServiceClient_ListRestoreSnapshotJobs_Call{Call: _e.mock.On("ListRestoreSnapshotJobs",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_ListRestoreSnapshotJobs_Call) Run(run func(ctx context.Context, in *milvuspb.ListRestoreSnapshotJobsRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_ListRestoreSnapshotJobs_Call {
@@ -7797,9 +7880,9 @@ type MockMilvusServiceClient_ListRowPolicies_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.ListRowPoliciesRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) ListRowPolicies(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_ListRowPolicies_Call {
+func (_e *MockMilvusServiceClient_Expecter) ListRowPolicies(ctx any, in any, opts ...any) *MockMilvusServiceClient_ListRowPolicies_Call {
 	return &MockMilvusServiceClient_ListRowPolicies_Call{Call: _e.mock.On("ListRowPolicies",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_ListRowPolicies_Call) Run(run func(ctx context.Context, in *milvuspb.ListRowPoliciesRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_ListRowPolicies_Call {
@@ -7880,9 +7963,9 @@ type MockMilvusServiceClient_ListSnapshots_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.ListSnapshotsRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) ListSnapshots(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_ListSnapshots_Call {
+func (_e *MockMilvusServiceClient_Expecter) ListSnapshots(ctx any, in any, opts ...any) *MockMilvusServiceClient_ListSnapshots_Call {
 	return &MockMilvusServiceClient_ListSnapshots_Call{Call: _e.mock.On("ListSnapshots",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_ListSnapshots_Call) Run(run func(ctx context.Context, in *milvuspb.ListSnapshotsRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_ListSnapshots_Call {
@@ -7963,9 +8046,9 @@ type MockMilvusServiceClient_ListUsersWithTag_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.ListUsersWithTagRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) ListUsersWithTag(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_ListUsersWithTag_Call {
+func (_e *MockMilvusServiceClient_Expecter) ListUsersWithTag(ctx any, in any, opts ...any) *MockMilvusServiceClient_ListUsersWithTag_Call {
 	return &MockMilvusServiceClient_ListUsersWithTag_Call{Call: _e.mock.On("ListUsersWithTag",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_ListUsersWithTag_Call) Run(run func(ctx context.Context, in *milvuspb.ListUsersWithTagRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_ListUsersWithTag_Call {
@@ -8046,9 +8129,9 @@ type MockMilvusServiceClient_LoadBalance_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.LoadBalanceRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) LoadBalance(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_LoadBalance_Call {
+func (_e *MockMilvusServiceClient_Expecter) LoadBalance(ctx any, in any, opts ...any) *MockMilvusServiceClient_LoadBalance_Call {
 	return &MockMilvusServiceClient_LoadBalance_Call{Call: _e.mock.On("LoadBalance",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_LoadBalance_Call) Run(run func(ctx context.Context, in *milvuspb.LoadBalanceRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_LoadBalance_Call {
@@ -8129,9 +8212,9 @@ type MockMilvusServiceClient_LoadCollection_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.LoadCollectionRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) LoadCollection(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_LoadCollection_Call {
+func (_e *MockMilvusServiceClient_Expecter) LoadCollection(ctx any, in any, opts ...any) *MockMilvusServiceClient_LoadCollection_Call {
 	return &MockMilvusServiceClient_LoadCollection_Call{Call: _e.mock.On("LoadCollection",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_LoadCollection_Call) Run(run func(ctx context.Context, in *milvuspb.LoadCollectionRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_LoadCollection_Call {
@@ -8212,9 +8295,9 @@ type MockMilvusServiceClient_LoadPartitions_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.LoadPartitionsRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) LoadPartitions(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_LoadPartitions_Call {
+func (_e *MockMilvusServiceClient_Expecter) LoadPartitions(ctx any, in any, opts ...any) *MockMilvusServiceClient_LoadPartitions_Call {
 	return &MockMilvusServiceClient_LoadPartitions_Call{Call: _e.mock.On("LoadPartitions",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_LoadPartitions_Call) Run(run func(ctx context.Context, in *milvuspb.LoadPartitionsRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_LoadPartitions_Call {
@@ -8295,9 +8378,9 @@ type MockMilvusServiceClient_ManualCompaction_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.ManualCompactionRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) ManualCompaction(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_ManualCompaction_Call {
+func (_e *MockMilvusServiceClient_Expecter) ManualCompaction(ctx any, in any, opts ...any) *MockMilvusServiceClient_ManualCompaction_Call {
 	return &MockMilvusServiceClient_ManualCompaction_Call{Call: _e.mock.On("ManualCompaction",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_ManualCompaction_Call) Run(run func(ctx context.Context, in *milvuspb.ManualCompactionRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_ManualCompaction_Call {
@@ -8378,9 +8461,9 @@ type MockMilvusServiceClient_OperatePrivilege_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.OperatePrivilegeRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) OperatePrivilege(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_OperatePrivilege_Call {
+func (_e *MockMilvusServiceClient_Expecter) OperatePrivilege(ctx any, in any, opts ...any) *MockMilvusServiceClient_OperatePrivilege_Call {
 	return &MockMilvusServiceClient_OperatePrivilege_Call{Call: _e.mock.On("OperatePrivilege",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_OperatePrivilege_Call) Run(run func(ctx context.Context, in *milvuspb.OperatePrivilegeRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_OperatePrivilege_Call {
@@ -8461,9 +8544,9 @@ type MockMilvusServiceClient_OperatePrivilegeGroup_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.OperatePrivilegeGroupRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) OperatePrivilegeGroup(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_OperatePrivilegeGroup_Call {
+func (_e *MockMilvusServiceClient_Expecter) OperatePrivilegeGroup(ctx any, in any, opts ...any) *MockMilvusServiceClient_OperatePrivilegeGroup_Call {
 	return &MockMilvusServiceClient_OperatePrivilegeGroup_Call{Call: _e.mock.On("OperatePrivilegeGroup",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_OperatePrivilegeGroup_Call) Run(run func(ctx context.Context, in *milvuspb.OperatePrivilegeGroupRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_OperatePrivilegeGroup_Call {
@@ -8544,9 +8627,9 @@ type MockMilvusServiceClient_OperatePrivilegeV2_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.OperatePrivilegeV2Request
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) OperatePrivilegeV2(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_OperatePrivilegeV2_Call {
+func (_e *MockMilvusServiceClient_Expecter) OperatePrivilegeV2(ctx any, in any, opts ...any) *MockMilvusServiceClient_OperatePrivilegeV2_Call {
 	return &MockMilvusServiceClient_OperatePrivilegeV2_Call{Call: _e.mock.On("OperatePrivilegeV2",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_OperatePrivilegeV2_Call) Run(run func(ctx context.Context, in *milvuspb.OperatePrivilegeV2Request, opts ...grpc.CallOption)) *MockMilvusServiceClient_OperatePrivilegeV2_Call {
@@ -8627,9 +8710,9 @@ type MockMilvusServiceClient_OperateUserRole_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.OperateUserRoleRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) OperateUserRole(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_OperateUserRole_Call {
+func (_e *MockMilvusServiceClient_Expecter) OperateUserRole(ctx any, in any, opts ...any) *MockMilvusServiceClient_OperateUserRole_Call {
 	return &MockMilvusServiceClient_OperateUserRole_Call{Call: _e.mock.On("OperateUserRole",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_OperateUserRole_Call) Run(run func(ctx context.Context, in *milvuspb.OperateUserRoleRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_OperateUserRole_Call {
@@ -8663,6 +8746,89 @@ func (_c *MockMilvusServiceClient_OperateUserRole_Call) Return(status *commonpb.
 }
 
 func (_c *MockMilvusServiceClient_OperateUserRole_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.OperateUserRoleRequest, opts ...grpc.CallOption) (*commonpb.Status, error)) *MockMilvusServiceClient_OperateUserRole_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// PinSnapshotData provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) PinSnapshotData(ctx context.Context, in *milvuspb.PinSnapshotDataRequest, opts ...grpc.CallOption) (*milvuspb.PinSnapshotDataResponse, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for PinSnapshotData")
+	}
+
+	var r0 *milvuspb.PinSnapshotDataResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.PinSnapshotDataRequest, ...grpc.CallOption) (*milvuspb.PinSnapshotDataResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.PinSnapshotDataRequest, ...grpc.CallOption) *milvuspb.PinSnapshotDataResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.PinSnapshotDataResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.PinSnapshotDataRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_PinSnapshotData_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'PinSnapshotData'
+type MockMilvusServiceClient_PinSnapshotData_Call struct {
+	*mock.Call
+}
+
+// PinSnapshotData is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.PinSnapshotDataRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) PinSnapshotData(ctx any, in any, opts ...any) *MockMilvusServiceClient_PinSnapshotData_Call {
+	return &MockMilvusServiceClient_PinSnapshotData_Call{Call: _e.mock.On("PinSnapshotData",
+		append([]any{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_PinSnapshotData_Call) Run(run func(ctx context.Context, in *milvuspb.PinSnapshotDataRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_PinSnapshotData_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.PinSnapshotDataRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.PinSnapshotDataRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_PinSnapshotData_Call) Return(pinSnapshotDataResponse *milvuspb.PinSnapshotDataResponse, err error) *MockMilvusServiceClient_PinSnapshotData_Call {
+	_c.Call.Return(pinSnapshotDataResponse, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_PinSnapshotData_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.PinSnapshotDataRequest, opts ...grpc.CallOption) (*milvuspb.PinSnapshotDataResponse, error)) *MockMilvusServiceClient_PinSnapshotData_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -8710,9 +8876,9 @@ type MockMilvusServiceClient_Query_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.QueryRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) Query(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_Query_Call {
+func (_e *MockMilvusServiceClient_Expecter) Query(ctx any, in any, opts ...any) *MockMilvusServiceClient_Query_Call {
 	return &MockMilvusServiceClient_Query_Call{Call: _e.mock.On("Query",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_Query_Call) Run(run func(ctx context.Context, in *milvuspb.QueryRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_Query_Call {
@@ -8793,9 +8959,9 @@ type MockMilvusServiceClient_RefreshExternalCollection_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.RefreshExternalCollectionRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) RefreshExternalCollection(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_RefreshExternalCollection_Call {
+func (_e *MockMilvusServiceClient_Expecter) RefreshExternalCollection(ctx any, in any, opts ...any) *MockMilvusServiceClient_RefreshExternalCollection_Call {
 	return &MockMilvusServiceClient_RefreshExternalCollection_Call{Call: _e.mock.On("RefreshExternalCollection",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_RefreshExternalCollection_Call) Run(run func(ctx context.Context, in *milvuspb.RefreshExternalCollectionRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_RefreshExternalCollection_Call {
@@ -8876,9 +9042,9 @@ type MockMilvusServiceClient_RegisterLink_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.RegisterLinkRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) RegisterLink(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_RegisterLink_Call {
+func (_e *MockMilvusServiceClient_Expecter) RegisterLink(ctx any, in any, opts ...any) *MockMilvusServiceClient_RegisterLink_Call {
 	return &MockMilvusServiceClient_RegisterLink_Call{Call: _e.mock.On("RegisterLink",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_RegisterLink_Call) Run(run func(ctx context.Context, in *milvuspb.RegisterLinkRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_RegisterLink_Call {
@@ -8959,9 +9125,9 @@ type MockMilvusServiceClient_ReleaseCollection_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.ReleaseCollectionRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) ReleaseCollection(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_ReleaseCollection_Call {
+func (_e *MockMilvusServiceClient_Expecter) ReleaseCollection(ctx any, in any, opts ...any) *MockMilvusServiceClient_ReleaseCollection_Call {
 	return &MockMilvusServiceClient_ReleaseCollection_Call{Call: _e.mock.On("ReleaseCollection",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_ReleaseCollection_Call) Run(run func(ctx context.Context, in *milvuspb.ReleaseCollectionRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_ReleaseCollection_Call {
@@ -9042,9 +9208,9 @@ type MockMilvusServiceClient_ReleasePartitions_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.ReleasePartitionsRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) ReleasePartitions(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_ReleasePartitions_Call {
+func (_e *MockMilvusServiceClient_Expecter) ReleasePartitions(ctx any, in any, opts ...any) *MockMilvusServiceClient_ReleasePartitions_Call {
 	return &MockMilvusServiceClient_ReleasePartitions_Call{Call: _e.mock.On("ReleasePartitions",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_ReleasePartitions_Call) Run(run func(ctx context.Context, in *milvuspb.ReleasePartitionsRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_ReleasePartitions_Call {
@@ -9125,9 +9291,9 @@ type MockMilvusServiceClient_RemoveFileResource_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.RemoveFileResourceRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) RemoveFileResource(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_RemoveFileResource_Call {
+func (_e *MockMilvusServiceClient_Expecter) RemoveFileResource(ctx any, in any, opts ...any) *MockMilvusServiceClient_RemoveFileResource_Call {
 	return &MockMilvusServiceClient_RemoveFileResource_Call{Call: _e.mock.On("RemoveFileResource",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_RemoveFileResource_Call) Run(run func(ctx context.Context, in *milvuspb.RemoveFileResourceRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_RemoveFileResource_Call {
@@ -9208,9 +9374,9 @@ type MockMilvusServiceClient_RenameCollection_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.RenameCollectionRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) RenameCollection(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_RenameCollection_Call {
+func (_e *MockMilvusServiceClient_Expecter) RenameCollection(ctx any, in any, opts ...any) *MockMilvusServiceClient_RenameCollection_Call {
 	return &MockMilvusServiceClient_RenameCollection_Call{Call: _e.mock.On("RenameCollection",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_RenameCollection_Call) Run(run func(ctx context.Context, in *milvuspb.RenameCollectionRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_RenameCollection_Call {
@@ -9291,9 +9457,9 @@ type MockMilvusServiceClient_ReplicateMessage_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.ReplicateMessageRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) ReplicateMessage(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_ReplicateMessage_Call {
+func (_e *MockMilvusServiceClient_Expecter) ReplicateMessage(ctx any, in any, opts ...any) *MockMilvusServiceClient_ReplicateMessage_Call {
 	return &MockMilvusServiceClient_ReplicateMessage_Call{Call: _e.mock.On("ReplicateMessage",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_ReplicateMessage_Call) Run(run func(ctx context.Context, in *milvuspb.ReplicateMessageRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_ReplicateMessage_Call {
@@ -9374,9 +9540,9 @@ type MockMilvusServiceClient_RestoreRBAC_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.RestoreRBACMetaRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) RestoreRBAC(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_RestoreRBAC_Call {
+func (_e *MockMilvusServiceClient_Expecter) RestoreRBAC(ctx any, in any, opts ...any) *MockMilvusServiceClient_RestoreRBAC_Call {
 	return &MockMilvusServiceClient_RestoreRBAC_Call{Call: _e.mock.On("RestoreRBAC",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_RestoreRBAC_Call) Run(run func(ctx context.Context, in *milvuspb.RestoreRBACMetaRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_RestoreRBAC_Call {
@@ -9457,9 +9623,9 @@ type MockMilvusServiceClient_RestoreSnapshot_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.RestoreSnapshotRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) RestoreSnapshot(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_RestoreSnapshot_Call {
+func (_e *MockMilvusServiceClient_Expecter) RestoreSnapshot(ctx any, in any, opts ...any) *MockMilvusServiceClient_RestoreSnapshot_Call {
 	return &MockMilvusServiceClient_RestoreSnapshot_Call{Call: _e.mock.On("RestoreSnapshot",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_RestoreSnapshot_Call) Run(run func(ctx context.Context, in *milvuspb.RestoreSnapshotRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_RestoreSnapshot_Call {
@@ -9540,9 +9706,9 @@ type MockMilvusServiceClient_RunAnalyzer_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.RunAnalyzerRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) RunAnalyzer(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_RunAnalyzer_Call {
+func (_e *MockMilvusServiceClient_Expecter) RunAnalyzer(ctx any, in any, opts ...any) *MockMilvusServiceClient_RunAnalyzer_Call {
 	return &MockMilvusServiceClient_RunAnalyzer_Call{Call: _e.mock.On("RunAnalyzer",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_RunAnalyzer_Call) Run(run func(ctx context.Context, in *milvuspb.RunAnalyzerRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_RunAnalyzer_Call {
@@ -9623,9 +9789,9 @@ type MockMilvusServiceClient_Search_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.SearchRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) Search(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_Search_Call {
+func (_e *MockMilvusServiceClient_Expecter) Search(ctx any, in any, opts ...any) *MockMilvusServiceClient_Search_Call {
 	return &MockMilvusServiceClient_Search_Call{Call: _e.mock.On("Search",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_Search_Call) Run(run func(ctx context.Context, in *milvuspb.SearchRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_Search_Call {
@@ -9706,9 +9872,9 @@ type MockMilvusServiceClient_SelectGrant_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.SelectGrantRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) SelectGrant(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_SelectGrant_Call {
+func (_e *MockMilvusServiceClient_Expecter) SelectGrant(ctx any, in any, opts ...any) *MockMilvusServiceClient_SelectGrant_Call {
 	return &MockMilvusServiceClient_SelectGrant_Call{Call: _e.mock.On("SelectGrant",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_SelectGrant_Call) Run(run func(ctx context.Context, in *milvuspb.SelectGrantRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_SelectGrant_Call {
@@ -9789,9 +9955,9 @@ type MockMilvusServiceClient_SelectRole_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.SelectRoleRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) SelectRole(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_SelectRole_Call {
+func (_e *MockMilvusServiceClient_Expecter) SelectRole(ctx any, in any, opts ...any) *MockMilvusServiceClient_SelectRole_Call {
 	return &MockMilvusServiceClient_SelectRole_Call{Call: _e.mock.On("SelectRole",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_SelectRole_Call) Run(run func(ctx context.Context, in *milvuspb.SelectRoleRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_SelectRole_Call {
@@ -9872,9 +10038,9 @@ type MockMilvusServiceClient_SelectUser_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.SelectUserRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) SelectUser(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_SelectUser_Call {
+func (_e *MockMilvusServiceClient_Expecter) SelectUser(ctx any, in any, opts ...any) *MockMilvusServiceClient_SelectUser_Call {
 	return &MockMilvusServiceClient_SelectUser_Call{Call: _e.mock.On("SelectUser",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_SelectUser_Call) Run(run func(ctx context.Context, in *milvuspb.SelectUserRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_SelectUser_Call {
@@ -9955,9 +10121,9 @@ type MockMilvusServiceClient_ShowCollections_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.ShowCollectionsRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) ShowCollections(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_ShowCollections_Call {
+func (_e *MockMilvusServiceClient_Expecter) ShowCollections(ctx any, in any, opts ...any) *MockMilvusServiceClient_ShowCollections_Call {
 	return &MockMilvusServiceClient_ShowCollections_Call{Call: _e.mock.On("ShowCollections",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_ShowCollections_Call) Run(run func(ctx context.Context, in *milvuspb.ShowCollectionsRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_ShowCollections_Call {
@@ -10038,9 +10204,9 @@ type MockMilvusServiceClient_ShowPartitions_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.ShowPartitionsRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) ShowPartitions(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_ShowPartitions_Call {
+func (_e *MockMilvusServiceClient_Expecter) ShowPartitions(ctx any, in any, opts ...any) *MockMilvusServiceClient_ShowPartitions_Call {
 	return &MockMilvusServiceClient_ShowPartitions_Call{Call: _e.mock.On("ShowPartitions",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_ShowPartitions_Call) Run(run func(ctx context.Context, in *milvuspb.ShowPartitionsRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_ShowPartitions_Call {
@@ -10121,9 +10287,9 @@ type MockMilvusServiceClient_TransferNode_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.TransferNodeRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) TransferNode(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_TransferNode_Call {
+func (_e *MockMilvusServiceClient_Expecter) TransferNode(ctx any, in any, opts ...any) *MockMilvusServiceClient_TransferNode_Call {
 	return &MockMilvusServiceClient_TransferNode_Call{Call: _e.mock.On("TransferNode",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_TransferNode_Call) Run(run func(ctx context.Context, in *milvuspb.TransferNodeRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_TransferNode_Call {
@@ -10204,9 +10370,9 @@ type MockMilvusServiceClient_TransferReplica_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.TransferReplicaRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) TransferReplica(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_TransferReplica_Call {
+func (_e *MockMilvusServiceClient_Expecter) TransferReplica(ctx any, in any, opts ...any) *MockMilvusServiceClient_TransferReplica_Call {
 	return &MockMilvusServiceClient_TransferReplica_Call{Call: _e.mock.On("TransferReplica",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_TransferReplica_Call) Run(run func(ctx context.Context, in *milvuspb.TransferReplicaRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_TransferReplica_Call {
@@ -10287,9 +10453,9 @@ type MockMilvusServiceClient_TruncateCollection_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.TruncateCollectionRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) TruncateCollection(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_TruncateCollection_Call {
+func (_e *MockMilvusServiceClient_Expecter) TruncateCollection(ctx any, in any, opts ...any) *MockMilvusServiceClient_TruncateCollection_Call {
 	return &MockMilvusServiceClient_TruncateCollection_Call{Call: _e.mock.On("TruncateCollection",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_TruncateCollection_Call) Run(run func(ctx context.Context, in *milvuspb.TruncateCollectionRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_TruncateCollection_Call {
@@ -10323,6 +10489,89 @@ func (_c *MockMilvusServiceClient_TruncateCollection_Call) Return(truncateCollec
 }
 
 func (_c *MockMilvusServiceClient_TruncateCollection_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.TruncateCollectionRequest, opts ...grpc.CallOption) (*milvuspb.TruncateCollectionResponse, error)) *MockMilvusServiceClient_TruncateCollection_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UnpinSnapshotData provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) UnpinSnapshotData(ctx context.Context, in *milvuspb.UnpinSnapshotDataRequest, opts ...grpc.CallOption) (*commonpb.Status, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for UnpinSnapshotData")
+	}
+
+	var r0 *commonpb.Status
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.UnpinSnapshotDataRequest, ...grpc.CallOption) (*commonpb.Status, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.UnpinSnapshotDataRequest, ...grpc.CallOption) *commonpb.Status); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*commonpb.Status)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.UnpinSnapshotDataRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_UnpinSnapshotData_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UnpinSnapshotData'
+type MockMilvusServiceClient_UnpinSnapshotData_Call struct {
+	*mock.Call
+}
+
+// UnpinSnapshotData is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.UnpinSnapshotDataRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) UnpinSnapshotData(ctx any, in any, opts ...any) *MockMilvusServiceClient_UnpinSnapshotData_Call {
+	return &MockMilvusServiceClient_UnpinSnapshotData_Call{Call: _e.mock.On("UnpinSnapshotData",
+		append([]any{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_UnpinSnapshotData_Call) Run(run func(ctx context.Context, in *milvuspb.UnpinSnapshotDataRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_UnpinSnapshotData_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.UnpinSnapshotDataRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.UnpinSnapshotDataRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_UnpinSnapshotData_Call) Return(status *commonpb.Status, err error) *MockMilvusServiceClient_UnpinSnapshotData_Call {
+	_c.Call.Return(status, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_UnpinSnapshotData_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.UnpinSnapshotDataRequest, opts ...grpc.CallOption) (*commonpb.Status, error)) *MockMilvusServiceClient_UnpinSnapshotData_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -10370,9 +10619,9 @@ type MockMilvusServiceClient_UpdateCredential_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.UpdateCredentialRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) UpdateCredential(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_UpdateCredential_Call {
+func (_e *MockMilvusServiceClient_Expecter) UpdateCredential(ctx any, in any, opts ...any) *MockMilvusServiceClient_UpdateCredential_Call {
 	return &MockMilvusServiceClient_UpdateCredential_Call{Call: _e.mock.On("UpdateCredential",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_UpdateCredential_Call) Run(run func(ctx context.Context, in *milvuspb.UpdateCredentialRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_UpdateCredential_Call {
@@ -10453,9 +10702,9 @@ type MockMilvusServiceClient_UpdateReplicateConfiguration_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.UpdateReplicateConfigurationRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) UpdateReplicateConfiguration(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_UpdateReplicateConfiguration_Call {
+func (_e *MockMilvusServiceClient_Expecter) UpdateReplicateConfiguration(ctx any, in any, opts ...any) *MockMilvusServiceClient_UpdateReplicateConfiguration_Call {
 	return &MockMilvusServiceClient_UpdateReplicateConfiguration_Call{Call: _e.mock.On("UpdateReplicateConfiguration",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_UpdateReplicateConfiguration_Call) Run(run func(ctx context.Context, in *milvuspb.UpdateReplicateConfigurationRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_UpdateReplicateConfiguration_Call {
@@ -10536,9 +10785,9 @@ type MockMilvusServiceClient_UpdateResourceGroups_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.UpdateResourceGroupsRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) UpdateResourceGroups(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_UpdateResourceGroups_Call {
+func (_e *MockMilvusServiceClient_Expecter) UpdateResourceGroups(ctx any, in any, opts ...any) *MockMilvusServiceClient_UpdateResourceGroups_Call {
 	return &MockMilvusServiceClient_UpdateResourceGroups_Call{Call: _e.mock.On("UpdateResourceGroups",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_UpdateResourceGroups_Call) Run(run func(ctx context.Context, in *milvuspb.UpdateResourceGroupsRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_UpdateResourceGroups_Call {
@@ -10619,9 +10868,9 @@ type MockMilvusServiceClient_Upsert_Call struct {
 //   - ctx context.Context
 //   - in *milvuspb.UpsertRequest
 //   - opts ...grpc.CallOption
-func (_e *MockMilvusServiceClient_Expecter) Upsert(ctx interface{}, in interface{}, opts ...interface{}) *MockMilvusServiceClient_Upsert_Call {
+func (_e *MockMilvusServiceClient_Expecter) Upsert(ctx any, in any, opts ...any) *MockMilvusServiceClient_Upsert_Call {
 	return &MockMilvusServiceClient_Upsert_Call{Call: _e.mock.On("Upsert",
-		append([]interface{}{ctx, in}, opts...)...)}
+		append([]any{ctx, in}, opts...)...)}
 }
 
 func (_c *MockMilvusServiceClient_Upsert_Call) Run(run func(ctx context.Context, in *milvuspb.UpsertRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_Upsert_Call {
