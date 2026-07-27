@@ -10,6 +10,7 @@ import (
 	"math"
 	"net"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -58,11 +59,22 @@ type featureTuple struct {
 	Flag        FeatureFlag
 }
 
-// _latestDevVersion is used as a fallback when the server returns a version string
-// that is not a strict MAJOR.MINOR.PATCH semver (e.g. "master-20260226-abcdef" or
-// "2.6-20260404-31fb3fc" from dev builds). It ensures lower-bound constraints (>= X)
-// pass while upper-bound constraints (< Y) correctly fail.
+// _latestDevVersion is used as a fallback when none of the strings the server reports about
+// itself contains a version at all, e.g. the build tags "master-20260226-abcdef" or
+// "unknown-20260608-7ea6e3526", which carry only a branch name, a build date and a commit.
+// It ensures lower-bound constraints (>= X) pass while upper-bound constraints (< Y)
+// correctly fail.
 var _latestDevVersion = semver.MustParse("99.0.0")
+
+// _headOfLinePatch stands in for the patch level of a version that is only known down to
+// MAJOR.MINOR: the "2.6" in the dev build tag "2.6-20260404-31fb3fc", or in the vendor
+// description "Zilliz Cloud Vector Database(Compatible with Milvus 2.6)". Such a server sits
+// somewhere on the 2.6 line and is far more likely to be at its head than at 2.6.0, so it is
+// treated as the newest patch of that line.
+//
+// Unlike _latestDevVersion this still fails the constraints of every other line, which is what
+// keeps ReplicateMessage ("< 2.6.0-0") enabled on a 2.5 dev build and disabled on a 2.6 one.
+const _headOfLinePatch = 9999
 
 var _featureTuples = []featureTuple{
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.4.3-0")), Flag: DescribeDatabase},
@@ -428,7 +440,7 @@ func (g *GrpcClient) checkFeature(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("client: get version: %w", err)
 	}
-	sem := g.parseVersionForFeature(ver)
+	sem := g.parseVersionForFeature(g.serverVersion, ver)
 
 	for _, tuple := range _featureTuples {
 		if tuple.Constraints.Check(sem) {
@@ -442,29 +454,95 @@ func (g *GrpcClient) checkFeature(ctx context.Context) error {
 	return nil
 }
 
-// parseVersionForFeature parses a server version for feature constraint checking.
+// releaseVersion parses ver as an exact MAJOR.MINOR.PATCH release version.
 //
-// It strips an optional leading "v" (Milvus releases report build tags like "v2.2.16")
-// and then uses StrictNewVersion, which requires MAJOR.MINOR.PATCH. This deliberately
-// rejects dev build tags like "2.6-20260404-31fb3fc" or "master-20260226-abcdef" so
-// they fall through to _latestDevVersion.
+// It strips an optional leading "v" (Milvus releases report build tags like "v2.2.16") and
+// then uses StrictNewVersion. This deliberately rejects dev build tags like
+// "2.6-20260404-31fb3fc" or "master-20260226-abcdef", leaving them to embeddedVersion.
 //
 // The lenient semver.NewVersion cannot be used here because it parses
 // "2.6-20260404-31fb3fc" as "2.6.0-20260404-31fb3fc" — a prerelease of 2.6.0 — which
 // compares LESS than 2.6.x and silently disables features on dev builds.
-func (g *GrpcClient) parseVersionForFeature(ver string) *semver.Version {
+func releaseVersion(ver string) (*semver.Version, bool) {
 	v := strings.TrimPrefix(ver, "v")
 	// Collapse four-part hotfix versions to their release base, e.g. "2.3.22.6" -> "2.3.22".
 	if parts := strings.SplitN(v, ".", 4); len(parts) == 4 {
 		v = strings.Join(parts[:3], ".")
 	}
+
 	sem, err := semver.StrictNewVersion(v)
 	if err != nil {
-		g.logger.Warn("cannot parse server version as strict semver, treat as latest dev build",
-			zap.String("version", ver), zap.Error(err))
-		return _latestDevVersion
+		return nil, false
 	}
-	return sem
+
+	return sem, true
+}
+
+// _versionPattern recovers MAJOR.MINOR[.PATCH] from a string that is not a version itself.
+// It matches only at the start of the string, for dev build tags like "2.6-20260404-31fb3fc",
+// or right after "Milvus", for vendor descriptions like
+// "Zilliz Cloud Vector Database(Compatible with Milvus 2.6)". Anchoring both alternatives is
+// what keeps an unrelated number elsewhere in a product name from being read as the server
+// version.
+var _versionPattern = regexp.MustCompile(`(?i)(?:^|milvus[ _-]*)v?(\d+)\.(\d+)(?:\.(\d+))?`)
+
+// embeddedVersion recovers a version embedded in a string that is not a release version
+// itself, such as a dev build tag or a vendor product description. A match that stops at
+// MAJOR.MINOR resolves to the head of that line, see _headOfLinePatch.
+func embeddedVersion(ver string) (*semver.Version, bool) {
+	match := _versionPattern.FindStringSubmatch(ver)
+	if match == nil {
+		return nil, false
+	}
+
+	major, err := strconv.ParseUint(match[1], 10, 64)
+	if err != nil {
+		return nil, false
+	}
+	minor, err := strconv.ParseUint(match[2], 10, 64)
+	if err != nil {
+		return nil, false
+	}
+
+	patch := uint64(_headOfLinePatch)
+	if match[3] != "" {
+		if patch, err = strconv.ParseUint(match[3], 10, 64); err != nil {
+			return nil, false
+		}
+	}
+
+	return semver.New(major, minor, patch, "", ""), true
+}
+
+// parseVersionForFeature picks the version to check feature constraints against out of every
+// string the server reports about itself.
+//
+// Connect and GetVersion answer with the same build tag on open source Milvus, but not on
+// hosted ones: Zilliz Cloud answers Connect with a product description that names the Milvus
+// line ("... (Compatible with Milvus 2.6)") and GetVersion with an internal build tag that
+// carries no version at all ("unknown-20260608-7ea6e3526"). Taking all of them means the one
+// source that does know the version is used. An exact release version wins over an embedded
+// one no matter which call reported it.
+func (g *GrpcClient) parseVersionForFeature(vers ...string) *semver.Version {
+	for _, ver := range vers {
+		if sem, ok := releaseVersion(ver); ok {
+			g.logger.Info("check features against the server release version",
+				zap.String("version", ver), zap.String("resolved", sem.String()))
+			return sem
+		}
+	}
+
+	for _, ver := range vers {
+		if sem, ok := embeddedVersion(ver); ok {
+			g.logger.Info("the server does not report a release version, check features against the version embedded in it",
+				zap.String("version", ver), zap.String("resolved", sem.String()))
+			return sem
+		}
+	}
+
+	g.logger.Warn("the server reports no version at all, treat it as the latest dev build",
+		zap.Strings("versions", vers))
+	return _latestDevVersion
 }
 
 func (g *GrpcClient) CreateDatabase(ctx context.Context, dbName string) error {
