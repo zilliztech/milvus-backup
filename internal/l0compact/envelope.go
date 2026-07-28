@@ -33,7 +33,10 @@ const dataEventFixPartSize = 16 // {StartTimestamp, EndTimestamp uint64}
 type descriptor struct {
 	CollectionID, PartitionID, SegmentID, FieldID int64
 	PayloadDataType                               int32
-	Extras                                        map[string]string
+	// Extras is milvus' descriptor extra map. Its values are heterogeneous:
+	// insert binlogs carry nullable as a bool next to string entries such as
+	// original_size, so it cannot be decoded into map[string]string.
+	Extras map[string]any
 }
 
 type v1Event struct {
@@ -79,7 +82,7 @@ func parseV1Envelope(blob []byte) (descriptor, []v1Event, error) {
 	if _, err := readFull(r, extraBytes); err != nil {
 		return descriptor{}, nil, fmt.Errorf("l0compact: read extras: %w", err)
 	}
-	d.Extras = map[string]string{}
+	d.Extras = map[string]any{}
 	if extraLen > 0 {
 		if err := json.Unmarshal(extraBytes, &d.Extras); err != nil {
 			return descriptor{}, nil, fmt.Errorf("l0compact: unmarshal extras: %w", err)
@@ -115,7 +118,7 @@ func parseV1Envelope(blob []byte) (descriptor, []v1Event, error) {
 }
 
 // BuildV1Envelope wraps a single parquet payload as a v1 binlog file with one data event.
-func BuildV1Envelope(typeCode int8, payloadType int32, fieldID int64, extras map[string]string, payload []byte) ([]byte, error) {
+func BuildV1Envelope(typeCode int8, payloadType int32, fieldID int64, extras map[string]any, payload []byte) ([]byte, error) {
 	var buf bytes.Buffer
 	_ = binary.Write(&buf, endian, v1Magic)
 

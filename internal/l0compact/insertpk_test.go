@@ -34,7 +34,7 @@ func buildSingleInt64Parquet(t *testing.T, vals []int64) []byte {
 func TestReadInsertPKV1(t *testing.T) {
 	// v1 insert: envelope (Insert event, PayloadDataType=Int64) wrapping a single Int64 column parquet.
 	payload := buildSingleInt64Parquet(t, []int64{11, 22}) // helper in test file
-	blob, err := BuildV1Envelope(eventInsert, 5, 100, map[string]string{}, payload)
+	blob, err := BuildV1Envelope(eventInsert, 5, 100, map[string]any{}, payload)
 	require.NoError(t, err)
 	pks, err := ReadInsertPK([][]byte{blob}, KindV1, 100, PKInt64)
 	require.NoError(t, err)

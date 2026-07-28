@@ -117,7 +117,7 @@ func WriteDeltalog(entries []DeleteEntry, kind StorageKind, t PKType) ([]byte, e
 			return nil, err
 		}
 		// json variant: PayloadDataType = String(20), field id 0, no version extra.
-		return BuildV1Envelope(eventDelete, 20, 0, map[string]string{}, payload)
+		return BuildV1Envelope(eventDelete, 20, 0, map[string]any{}, payload)
 	default:
 		return nil, fmt.Errorf("l0compact: unknown storage kind %d", kind)
 	}
