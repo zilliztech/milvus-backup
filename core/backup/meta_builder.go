@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
-	"github.com/milvus-io/milvus/pkg/v2/proto/indexpb"
+	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
+	"github.com/milvus-io/milvus/pkg/v3/proto/indexpb"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 

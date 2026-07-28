@@ -4,8 +4,8 @@ import (
 	"encoding/base64"
 	"fmt"
 
-	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
-	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
+	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
+	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
 
