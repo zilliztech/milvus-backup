@@ -71,7 +71,7 @@ type MockManage_GetEZK_Call struct {
 // GetEZK is a helper method to define mock.On call
 //   - ctx context.Context
 //   - dbName string
-func (_e *MockManage_Expecter) GetEZK(ctx interface{}, dbName interface{}) *MockManage_GetEZK_Call {
+func (_e *MockManage_Expecter) GetEZK(ctx any, dbName any) *MockManage_GetEZK_Call {
 	return &MockManage_GetEZK_Call{Call: _e.mock.On("GetEZK", ctx, dbName)}
 }
 
@@ -143,9 +143,9 @@ type MockManage_PauseGC_Call struct {
 // PauseGC is a helper method to define mock.On call
 //   - ctx context.Context
 //   - opts ...Option[pauseGCOption]
-func (_e *MockManage_Expecter) PauseGC(ctx interface{}, opts ...interface{}) *MockManage_PauseGC_Call {
+func (_e *MockManage_Expecter) PauseGC(ctx any, opts ...any) *MockManage_PauseGC_Call {
 	return &MockManage_PauseGC_Call{Call: _e.mock.On("PauseGC",
-		append([]interface{}{ctx}, opts...)...)}
+		append([]any{ctx}, opts...)...)}
 }
 
 func (_c *MockManage_PauseGC_Call) Run(run func(ctx context.Context, opts ...Option[pauseGCOption])) *MockManage_PauseGC_Call {
@@ -209,9 +209,9 @@ type MockManage_ResumeGC_Call struct {
 // ResumeGC is a helper method to define mock.On call
 //   - ctx context.Context
 //   - opts ...Option[resumeGCOpt]
-func (_e *MockManage_Expecter) ResumeGC(ctx interface{}, opts ...interface{}) *MockManage_ResumeGC_Call {
+func (_e *MockManage_Expecter) ResumeGC(ctx any, opts ...any) *MockManage_ResumeGC_Call {
 	return &MockManage_ResumeGC_Call{Call: _e.mock.On("ResumeGC",
-		append([]interface{}{ctx}, opts...)...)}
+		append([]any{ctx}, opts...)...)}
 }
 
 func (_c *MockManage_ResumeGC_Call) Run(run func(ctx context.Context, opts ...Option[resumeGCOpt])) *MockManage_ResumeGC_Call {
