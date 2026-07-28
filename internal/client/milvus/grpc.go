@@ -17,9 +17,9 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 	grpcretry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
-	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
-	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
-	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
+	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
+	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
+	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"

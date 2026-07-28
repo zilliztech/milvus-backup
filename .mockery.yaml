@@ -2,7 +2,7 @@ template: testify
 filename: "{{.InterfaceName | camelcase | firstLower }}_mock.go"
 packages:
 
-  github.com/milvus-io/milvus-proto/go-api/v2/milvuspb:
+  github.com/milvus-io/milvus-proto/go-api/v3/milvuspb:
     config:
       include-auto-generated: true
       dir: internal/client/milvus

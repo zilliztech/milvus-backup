@@ -3,7 +3,7 @@ package backup
 import (
 	"testing"
 
-	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
+	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"

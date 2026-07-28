@@ -5,8 +5,8 @@ import (
 	"math/rand/v2"
 	"sort"
 
-	"github.com/milvus-io/milvus/pkg/v2/proto/messagespb"
-	"github.com/milvus-io/milvus/pkg/v2/streaming/util/message"
+	"github.com/milvus-io/milvus/pkg/v3/proto/messagespb"
+	"github.com/milvus-io/milvus/pkg/v3/streaming/util/message"
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 

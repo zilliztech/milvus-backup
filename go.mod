@@ -1,6 +1,6 @@
 module github.com/zilliztech/milvus-backup
 
-go 1.26
+go 1.26.5
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.22.0
@@ -17,7 +17,8 @@ require (
 	github.com/grpc-ecosystem/go-grpc-middleware v1.4.0
 	github.com/huaweicloud/huaweicloud-sdk-go-v3 v0.1.205
 	github.com/imroc/req/v3 v3.59.0
-	github.com/milvus-io/milvus-proto/go-api/v2 v2.6.6-0.20260424094539-35123cf8e6bf
+	github.com/milvus-io/milvus-proto/go-api/v3 v3.0.0-20260727091820-f95888a4df32
+	github.com/milvus-io/milvus/pkg/v3 v3.0.0-20260728030618-14564e26159c
 	github.com/minio/minio-go/v7 v7.2.1
 	github.com/samber/lo v1.53.0
 	github.com/spf13/cobra v1.10.2
@@ -48,7 +49,6 @@ require (
 	github.com/minio/asm2plan9s v0.0.0-20200509001527-cdd76441f9d8 // indirect
 	github.com/minio/c2goasm v0.0.0-20190812172519-36a3d3bbc4f3 // indirect
 	github.com/pierrec/lz4/v4 v4.1.22 // indirect
-	github.com/uber/jaeger-client-go v2.30.0+incompatible // indirect
 	github.com/zeebo/xxh3 v1.1.0 // indirect
 	go.mongodb.org/mongo-driver/v2 v2.8.0 // indirect
 	golang.org/x/telemetry v0.0.0-20260708182218-49f421fb7959 // indirect
@@ -135,7 +135,6 @@ require (
 	github.com/leodido/go-urn v1.4.0 // indirect
 	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/mattn/go-runewidth v0.0.24 // indirect
-	github.com/milvus-io/milvus/pkg/v2 v2.6.4-0.20260227131920-650bc7f9a5b3
 	github.com/minio/crc64nvme v1.1.1 // indirect
 	github.com/minio/md5-simd v1.1.2 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
