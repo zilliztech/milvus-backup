@@ -39,6 +39,19 @@ message DatabaseBackupInfo {
   string ezk = 4;
 }
 
+/**
+ * Where a collection's exported snapshot bundle lives.
+ */
+message SnapshotBackupInfo {
+  // Relative to the backup directory, e.g. snapshots/449577/metadata/449580.json,
+  // so that moving the backup to another bucket or prefix keeps it restorable.
+  string metadata_path = 1;
+  // As reported by the export job that wrote the bundle. total_bytes covers index
+  // files, so it is not comparable with the size the binlog format records.
+  int64 total_files = 2;
+  int64 total_bytes = 3;
+}
+
 message CollectionBackupInfo {
   string id = 1;
   // BackupTaskStateCode state_code = 2 [deprecated=true];
@@ -69,6 +82,8 @@ message CollectionBackupInfo {
   repeated string virtual_channel_names = 25;
   repeated string physical_channel_names = 26;
   repeated string aliases = 28;
+  // set only in the snapshot format
+  SnapshotBackupInfo snapshot_backup = 29;
 }
 
 message PartitionBackupInfo {
@@ -127,6 +142,10 @@ message BackupInfo {
   map<string, string> flush_all_msgs_base64 = 15; // key is pchannel, value is base64 encoded ImmutableMessage
   string control_channel_name = 16;
   repeated string physical_channel_names = 17;
+  // Which format the backup was written in: empty for the binlog format, "snapshot"
+  // for exported snapshot bundles. A string rather than an enum because this meta is
+  // stored as plain json, where an enum would land as a bare integer.
+  string format = 18;
 }
 
 message RPCChannelInfo {
@@ -226,6 +245,8 @@ message BackupInfoBrief {
 
   // sum of all meta files size
   int64 meta_size = 15;
+  // see BackupInfo.format
+  string format = 16;
 }
 
 message CollectionBackupInfoBrief {

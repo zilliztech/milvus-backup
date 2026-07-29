@@ -16,6 +16,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
@@ -164,6 +165,13 @@ type Task struct {
 }
 
 func NewTask(args TaskArgs) (*Task, error) {
+	// Without this a snapshot-format backup would go down the binlog path, find no
+	// segments, and report a successful restore of an empty collection.
+	if format := args.Backup.GetFormat(); format != meta.FormatBinlog {
+		return nil, fmt.Errorf("restore: backup %s was taken in the %q format, which this version of milvus-backup cannot restore",
+			args.Backup.GetName(), format)
+	}
+
 	logger := log.With(zap.String("backup_name", args.Backup.GetName()), zap.String("task_id", args.TaskID))
 
 	args.TaskMgr.AddRestoreTask(args.TaskID)

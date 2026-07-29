@@ -118,6 +118,7 @@ func NewBackupInfoBrief(task taskmgr.BackupTaskView, backup *backuppb.BackupInfo
 		brief.MilvusVersion = backup.GetMilvusVersion()
 		brief.RpcChannelInfo = backup.GetRpcChannelInfo()
 		brief.DatabaseBackups = backup.GetDatabaseBackups()
+		brief.Format = backup.GetFormat()
 	}
 
 	return brief

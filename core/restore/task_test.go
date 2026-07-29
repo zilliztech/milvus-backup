@@ -14,6 +14,7 @@ import (
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/filter"
+	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
@@ -27,6 +28,19 @@ func newTestTask() *Task {
 			Params: &v2.Config{},
 		},
 	}
+}
+
+// A format this path cannot restore has to be refused up front. Restoring it would
+// find no segments and report a successful restore of an empty collection.
+func TestNewTask_RefusesUnknownFormat(t *testing.T) {
+	args := TaskArgs{
+		TaskID: "task-1",
+		Backup: &backuppb.BackupInfo{Name: "mybackup", Format: meta.FormatSnapshot},
+	}
+
+	task, err := NewTask(args)
+	assert.ErrorContains(t, err, "snapshot")
+	assert.Nil(t, task)
 }
 
 func TestTask_CheckCollExist(t *testing.T) {

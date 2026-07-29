@@ -16,6 +16,9 @@ definitions:
         type: integer
       errorMessage:
         type: string
+      format:
+        description: see BackupInfo.format
+        type: string
       id:
         description: from task
         type: string
@@ -512,6 +515,12 @@ definitions:
       dropExistIndex:
         description: if true, drop existing index of target collection before create
         type: boolean
+      ezkMapping:
+        additionalProperties:
+          type: string
+        description: map of old ezk to new ezk, used to replace encryption keys during
+          restore
+        type: object
       id:
         type: string
       maxShardNum:
@@ -593,10 +602,19 @@ definitions:
     type: object
   backuppb.RestoreCollectionMapping:
     properties:
+      override:
+        $ref: '#/definitions/backuppb.RestoreCollectionOverride'
       source:
         type: string
       target:
         type: string
+    type: object
+  backuppb.RestoreCollectionOverride:
+    properties:
+      description:
+        type: string
+      shardNum:
+        type: integer
     type: object
   backuppb.RestoreCollectionTaskResponse:
     properties:
