@@ -5679,6 +5679,89 @@ func (_c *MockMilvusServiceClient_GetComponentStates_Call) RunAndReturn(run func
 	return _c
 }
 
+// GetExportSnapshotState provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) GetExportSnapshotState(ctx context.Context, in *milvuspb.GetExportSnapshotStateRequest, opts ...grpc.CallOption) (*milvuspb.GetExportSnapshotStateResponse, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetExportSnapshotState")
+	}
+
+	var r0 *milvuspb.GetExportSnapshotStateResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.GetExportSnapshotStateRequest, ...grpc.CallOption) (*milvuspb.GetExportSnapshotStateResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.GetExportSnapshotStateRequest, ...grpc.CallOption) *milvuspb.GetExportSnapshotStateResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.GetExportSnapshotStateResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.GetExportSnapshotStateRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_GetExportSnapshotState_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetExportSnapshotState'
+type MockMilvusServiceClient_GetExportSnapshotState_Call struct {
+	*mock.Call
+}
+
+// GetExportSnapshotState is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.GetExportSnapshotStateRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) GetExportSnapshotState(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetExportSnapshotState_Call {
+	return &MockMilvusServiceClient_GetExportSnapshotState_Call{Call: _e.mock.On("GetExportSnapshotState",
+		append([]any{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_GetExportSnapshotState_Call) Run(run func(ctx context.Context, in *milvuspb.GetExportSnapshotStateRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetExportSnapshotState_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.GetExportSnapshotStateRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.GetExportSnapshotStateRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_GetExportSnapshotState_Call) Return(getExportSnapshotStateResponse *milvuspb.GetExportSnapshotStateResponse, err error) *MockMilvusServiceClient_GetExportSnapshotState_Call {
+	_c.Call.Return(getExportSnapshotStateResponse, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_GetExportSnapshotState_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.GetExportSnapshotStateRequest, opts ...grpc.CallOption) (*milvuspb.GetExportSnapshotStateResponse, error)) *MockMilvusServiceClient_GetExportSnapshotState_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetFlushAllState provides a mock function for the type MockMilvusServiceClient
 func (_mock *MockMilvusServiceClient) GetFlushAllState(ctx context.Context, in *milvuspb.GetFlushAllStateRequest, opts ...grpc.CallOption) (*milvuspb.GetFlushAllStateResponse, error) {
 	var tmpRet mock.Arguments

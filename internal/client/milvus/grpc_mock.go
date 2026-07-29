@@ -1157,6 +1157,72 @@ func (_c *MockGrpc_DropSnapshot_Call) RunAndReturn(run func(ctx context.Context,
 	return _c
 }
 
+// ExportSnapshot provides a mock function for the type MockGrpc
+func (_mock *MockGrpc) ExportSnapshot(ctx context.Context, input ExportSnapshotInput) (int64, error) {
+	ret := _mock.Called(ctx, input)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ExportSnapshot")
+	}
+
+	var r0 int64
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, ExportSnapshotInput) (int64, error)); ok {
+		return returnFunc(ctx, input)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, ExportSnapshotInput) int64); ok {
+		r0 = returnFunc(ctx, input)
+	} else {
+		r0 = ret.Get(0).(int64)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, ExportSnapshotInput) error); ok {
+		r1 = returnFunc(ctx, input)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockGrpc_ExportSnapshot_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ExportSnapshot'
+type MockGrpc_ExportSnapshot_Call struct {
+	*mock.Call
+}
+
+// ExportSnapshot is a helper method to define mock.On call
+//   - ctx context.Context
+//   - input ExportSnapshotInput
+func (_e *MockGrpc_Expecter) ExportSnapshot(ctx any, input any) *MockGrpc_ExportSnapshot_Call {
+	return &MockGrpc_ExportSnapshot_Call{Call: _e.mock.On("ExportSnapshot", ctx, input)}
+}
+
+func (_c *MockGrpc_ExportSnapshot_Call) Run(run func(ctx context.Context, input ExportSnapshotInput)) *MockGrpc_ExportSnapshot_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 ExportSnapshotInput
+		if args[1] != nil {
+			arg1 = args[1].(ExportSnapshotInput)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockGrpc_ExportSnapshot_Call) Return(n int64, err error) *MockGrpc_ExportSnapshot_Call {
+	_c.Call.Return(n, err)
+	return _c
+}
+
+func (_c *MockGrpc_ExportSnapshot_Call) RunAndReturn(run func(ctx context.Context, input ExportSnapshotInput) (int64, error)) *MockGrpc_ExportSnapshot_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Flush provides a mock function for the type MockGrpc
 func (_mock *MockGrpc) Flush(ctx context.Context, db string, collName string) (*milvuspb.FlushResponse, error) {
 	ret := _mock.Called(ctx, db, collName)
@@ -1361,6 +1427,74 @@ func (_c *MockGrpc_GetBulkInsertState_Call) RunAndReturn(run func(ctx context.Co
 	return _c
 }
 
+// GetExportSnapshotState provides a mock function for the type MockGrpc
+func (_mock *MockGrpc) GetExportSnapshotState(ctx context.Context, jobID int64) (*milvuspb.ExportSnapshotInfo, error) {
+	ret := _mock.Called(ctx, jobID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetExportSnapshotState")
+	}
+
+	var r0 *milvuspb.ExportSnapshotInfo
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int64) (*milvuspb.ExportSnapshotInfo, error)); ok {
+		return returnFunc(ctx, jobID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int64) *milvuspb.ExportSnapshotInfo); ok {
+		r0 = returnFunc(ctx, jobID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.ExportSnapshotInfo)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int64) error); ok {
+		r1 = returnFunc(ctx, jobID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockGrpc_GetExportSnapshotState_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetExportSnapshotState'
+type MockGrpc_GetExportSnapshotState_Call struct {
+	*mock.Call
+}
+
+// GetExportSnapshotState is a helper method to define mock.On call
+//   - ctx context.Context
+//   - jobID int64
+func (_e *MockGrpc_Expecter) GetExportSnapshotState(ctx any, jobID any) *MockGrpc_GetExportSnapshotState_Call {
+	return &MockGrpc_GetExportSnapshotState_Call{Call: _e.mock.On("GetExportSnapshotState", ctx, jobID)}
+}
+
+func (_c *MockGrpc_GetExportSnapshotState_Call) Run(run func(ctx context.Context, jobID int64)) *MockGrpc_GetExportSnapshotState_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 int64
+		if args[1] != nil {
+			arg1 = args[1].(int64)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockGrpc_GetExportSnapshotState_Call) Return(exportSnapshotInfo *milvuspb.ExportSnapshotInfo, err error) *MockGrpc_GetExportSnapshotState_Call {
+	_c.Call.Return(exportSnapshotInfo, err)
+	return _c
+}
+
+func (_c *MockGrpc_GetExportSnapshotState_Call) RunAndReturn(run func(ctx context.Context, jobID int64) (*milvuspb.ExportSnapshotInfo, error)) *MockGrpc_GetExportSnapshotState_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetLoadingProgress provides a mock function for the type MockGrpc
 func (_mock *MockGrpc) GetLoadingProgress(ctx context.Context, db string, collName string, partitionNames ...string) (int64, error) {
 	var tmpRet mock.Arguments
@@ -1518,6 +1652,74 @@ func (_c *MockGrpc_GetPersistentSegmentInfo_Call) Return(persistentSegmentInfos 
 }
 
 func (_c *MockGrpc_GetPersistentSegmentInfo_Call) RunAndReturn(run func(ctx context.Context, db string, collName string) ([]*milvuspb.PersistentSegmentInfo, error)) *MockGrpc_GetPersistentSegmentInfo_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetRestoreSnapshotState provides a mock function for the type MockGrpc
+func (_mock *MockGrpc) GetRestoreSnapshotState(ctx context.Context, jobID int64) (*milvuspb.RestoreSnapshotInfo, error) {
+	ret := _mock.Called(ctx, jobID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetRestoreSnapshotState")
+	}
+
+	var r0 *milvuspb.RestoreSnapshotInfo
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int64) (*milvuspb.RestoreSnapshotInfo, error)); ok {
+		return returnFunc(ctx, jobID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int64) *milvuspb.RestoreSnapshotInfo); ok {
+		r0 = returnFunc(ctx, jobID)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.RestoreSnapshotInfo)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int64) error); ok {
+		r1 = returnFunc(ctx, jobID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockGrpc_GetRestoreSnapshotState_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetRestoreSnapshotState'
+type MockGrpc_GetRestoreSnapshotState_Call struct {
+	*mock.Call
+}
+
+// GetRestoreSnapshotState is a helper method to define mock.On call
+//   - ctx context.Context
+//   - jobID int64
+func (_e *MockGrpc_Expecter) GetRestoreSnapshotState(ctx any, jobID any) *MockGrpc_GetRestoreSnapshotState_Call {
+	return &MockGrpc_GetRestoreSnapshotState_Call{Call: _e.mock.On("GetRestoreSnapshotState", ctx, jobID)}
+}
+
+func (_c *MockGrpc_GetRestoreSnapshotState_Call) Run(run func(ctx context.Context, jobID int64)) *MockGrpc_GetRestoreSnapshotState_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 int64
+		if args[1] != nil {
+			arg1 = args[1].(int64)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockGrpc_GetRestoreSnapshotState_Call) Return(restoreSnapshotInfo *milvuspb.RestoreSnapshotInfo, err error) *MockGrpc_GetRestoreSnapshotState_Call {
+	_c.Call.Return(restoreSnapshotInfo, err)
+	return _c
+}
+
+func (_c *MockGrpc_GetRestoreSnapshotState_Call) RunAndReturn(run func(ctx context.Context, jobID int64) (*milvuspb.RestoreSnapshotInfo, error)) *MockGrpc_GetRestoreSnapshotState_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1987,90 +2189,6 @@ func (_c *MockGrpc_ListIndex_Call) RunAndReturn(run func(ctx context.Context, db
 	return _c
 }
 
-// PinSnapshotData provides a mock function for the type MockGrpc
-func (_mock *MockGrpc) PinSnapshotData(ctx context.Context, db string, collName string, snapshotName string, ttl time.Duration) (int64, error) {
-	ret := _mock.Called(ctx, db, collName, snapshotName, ttl)
-
-	if len(ret) == 0 {
-		panic("no return value specified for PinSnapshotData")
-	}
-
-	var r0 int64
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, time.Duration) (int64, error)); ok {
-		return returnFunc(ctx, db, collName, snapshotName, ttl)
-	}
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, time.Duration) int64); ok {
-		r0 = returnFunc(ctx, db, collName, snapshotName, ttl)
-	} else {
-		r0 = ret.Get(0).(int64)
-	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string, string, time.Duration) error); ok {
-		r1 = returnFunc(ctx, db, collName, snapshotName, ttl)
-	} else {
-		r1 = ret.Error(1)
-	}
-	return r0, r1
-}
-
-// MockGrpc_PinSnapshotData_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'PinSnapshotData'
-type MockGrpc_PinSnapshotData_Call struct {
-	*mock.Call
-}
-
-// PinSnapshotData is a helper method to define mock.On call
-//   - ctx context.Context
-//   - db string
-//   - collName string
-//   - snapshotName string
-//   - ttl time.Duration
-func (_e *MockGrpc_Expecter) PinSnapshotData(ctx any, db any, collName any, snapshotName any, ttl any) *MockGrpc_PinSnapshotData_Call {
-	return &MockGrpc_PinSnapshotData_Call{Call: _e.mock.On("PinSnapshotData", ctx, db, collName, snapshotName, ttl)}
-}
-
-func (_c *MockGrpc_PinSnapshotData_Call) Run(run func(ctx context.Context, db string, collName string, snapshotName string, ttl time.Duration)) *MockGrpc_PinSnapshotData_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		var arg1 string
-		if args[1] != nil {
-			arg1 = args[1].(string)
-		}
-		var arg2 string
-		if args[2] != nil {
-			arg2 = args[2].(string)
-		}
-		var arg3 string
-		if args[3] != nil {
-			arg3 = args[3].(string)
-		}
-		var arg4 time.Duration
-		if args[4] != nil {
-			arg4 = args[4].(time.Duration)
-		}
-		run(
-			arg0,
-			arg1,
-			arg2,
-			arg3,
-			arg4,
-		)
-	})
-	return _c
-}
-
-func (_c *MockGrpc_PinSnapshotData_Call) Return(n int64, err error) *MockGrpc_PinSnapshotData_Call {
-	_c.Call.Return(n, err)
-	return _c
-}
-
-func (_c *MockGrpc_PinSnapshotData_Call) RunAndReturn(run func(ctx context.Context, db string, collName string, snapshotName string, ttl time.Duration) (int64, error)) *MockGrpc_PinSnapshotData_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
 // ReplicateMessage provides a mock function for the type MockGrpc
 func (_mock *MockGrpc) ReplicateMessage(ctx context.Context, channelName string) (string, error) {
 	ret := _mock.Called(ctx, channelName)
@@ -2133,6 +2251,72 @@ func (_c *MockGrpc_ReplicateMessage_Call) Return(s string, err error) *MockGrpc_
 }
 
 func (_c *MockGrpc_ReplicateMessage_Call) RunAndReturn(run func(ctx context.Context, channelName string) (string, error)) *MockGrpc_ReplicateMessage_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// RestoreExternalSnapshot provides a mock function for the type MockGrpc
+func (_mock *MockGrpc) RestoreExternalSnapshot(ctx context.Context, input RestoreExternalSnapshotInput) (int64, error) {
+	ret := _mock.Called(ctx, input)
+
+	if len(ret) == 0 {
+		panic("no return value specified for RestoreExternalSnapshot")
+	}
+
+	var r0 int64
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, RestoreExternalSnapshotInput) (int64, error)); ok {
+		return returnFunc(ctx, input)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, RestoreExternalSnapshotInput) int64); ok {
+		r0 = returnFunc(ctx, input)
+	} else {
+		r0 = ret.Get(0).(int64)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, RestoreExternalSnapshotInput) error); ok {
+		r1 = returnFunc(ctx, input)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockGrpc_RestoreExternalSnapshot_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'RestoreExternalSnapshot'
+type MockGrpc_RestoreExternalSnapshot_Call struct {
+	*mock.Call
+}
+
+// RestoreExternalSnapshot is a helper method to define mock.On call
+//   - ctx context.Context
+//   - input RestoreExternalSnapshotInput
+func (_e *MockGrpc_Expecter) RestoreExternalSnapshot(ctx any, input any) *MockGrpc_RestoreExternalSnapshot_Call {
+	return &MockGrpc_RestoreExternalSnapshot_Call{Call: _e.mock.On("RestoreExternalSnapshot", ctx, input)}
+}
+
+func (_c *MockGrpc_RestoreExternalSnapshot_Call) Run(run func(ctx context.Context, input RestoreExternalSnapshotInput)) *MockGrpc_RestoreExternalSnapshot_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 RestoreExternalSnapshotInput
+		if args[1] != nil {
+			arg1 = args[1].(RestoreExternalSnapshotInput)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockGrpc_RestoreExternalSnapshot_Call) Return(n int64, err error) *MockGrpc_RestoreExternalSnapshot_Call {
+	_c.Call.Return(n, err)
+	return _c
+}
+
+func (_c *MockGrpc_RestoreExternalSnapshot_Call) RunAndReturn(run func(ctx context.Context, input RestoreExternalSnapshotInput) (int64, error)) *MockGrpc_RestoreExternalSnapshot_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -2264,63 +2448,6 @@ func (_c *MockGrpc_ShowPartitions_Call) Return(showPartitionsResponse *milvuspb.
 }
 
 func (_c *MockGrpc_ShowPartitions_Call) RunAndReturn(run func(ctx context.Context, db string, collName string) (*milvuspb.ShowPartitionsResponse, error)) *MockGrpc_ShowPartitions_Call {
-	_c.Call.Return(run)
-	return _c
-}
-
-// UnpinSnapshotData provides a mock function for the type MockGrpc
-func (_mock *MockGrpc) UnpinSnapshotData(ctx context.Context, pinID int64) error {
-	ret := _mock.Called(ctx, pinID)
-
-	if len(ret) == 0 {
-		panic("no return value specified for UnpinSnapshotData")
-	}
-
-	var r0 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, int64) error); ok {
-		r0 = returnFunc(ctx, pinID)
-	} else {
-		r0 = ret.Error(0)
-	}
-	return r0
-}
-
-// MockGrpc_UnpinSnapshotData_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UnpinSnapshotData'
-type MockGrpc_UnpinSnapshotData_Call struct {
-	*mock.Call
-}
-
-// UnpinSnapshotData is a helper method to define mock.On call
-//   - ctx context.Context
-//   - pinID int64
-func (_e *MockGrpc_Expecter) UnpinSnapshotData(ctx any, pinID any) *MockGrpc_UnpinSnapshotData_Call {
-	return &MockGrpc_UnpinSnapshotData_Call{Call: _e.mock.On("UnpinSnapshotData", ctx, pinID)}
-}
-
-func (_c *MockGrpc_UnpinSnapshotData_Call) Run(run func(ctx context.Context, pinID int64)) *MockGrpc_UnpinSnapshotData_Call {
-	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 context.Context
-		if args[0] != nil {
-			arg0 = args[0].(context.Context)
-		}
-		var arg1 int64
-		if args[1] != nil {
-			arg1 = args[1].(int64)
-		}
-		run(
-			arg0,
-			arg1,
-		)
-	})
-	return _c
-}
-
-func (_c *MockGrpc_UnpinSnapshotData_Call) Return(err error) *MockGrpc_UnpinSnapshotData_Call {
-	_c.Call.Return(err)
-	return _c
-}
-
-func (_c *MockGrpc_UnpinSnapshotData_Call) RunAndReturn(run func(ctx context.Context, pinID int64) error) *MockGrpc_UnpinSnapshotData_Call {
 	_c.Call.Return(run)
 	return _c
 }
