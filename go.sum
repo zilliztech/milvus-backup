@@ -315,8 +315,8 @@ github.com/mattn/go-isatty v0.0.22 h1:j8l17JJ9i6VGPUFUYoTUKPSgKe/83EYU2zBC7YNKMw
 github.com/mattn/go-isatty v0.0.22/go.mod h1:ZXfXG4SQHsB/w3ZeOYbR0PrPwLy+n6xiMrJlRFqopa4=
 github.com/mattn/go-runewidth v0.0.24 h1:cpokDiIn0MGnhdHwuWnJBITySJ20QyNGnY2kR/ay2DU=
 github.com/mattn/go-runewidth v0.0.24/go.mod h1:XBkDxAl56ILZc9knddidhrOlY5R/pDhgLpndooCuJAs=
-github.com/milvus-io/milvus-proto/go-api/v3 v3.0.0-20260727091820-f95888a4df32 h1:k/PgOJknox0nM2mp1XxhvJsVvjzoxwsaE52NHnpdE0Q=
-github.com/milvus-io/milvus-proto/go-api/v3 v3.0.0-20260727091820-f95888a4df32/go.mod h1:rbKpv5JToISTKTTLl0duL5r6wbYnjJ9SsD0QgXMzKy0=
+github.com/milvus-io/milvus-proto/go-api/v3 v3.0.0-20260729035609-9f7d27f3eb7f h1:RQTIWNpsWmzQfVhSZgdGEYlOxCpdKbPzI1uuDJ4ghe4=
+github.com/milvus-io/milvus-proto/go-api/v3 v3.0.0-20260729035609-9f7d27f3eb7f/go.mod h1:rbKpv5JToISTKTTLl0duL5r6wbYnjJ9SsD0QgXMzKy0=
 github.com/milvus-io/milvus/pkg/v3 v3.0.0-20260728030618-14564e26159c h1:mdkUttDRkjKZg49GuFmtQXVhEOhpdP6RldcdEJ4nD7g=
 github.com/milvus-io/milvus/pkg/v3 v3.0.0-20260728030618-14564e26159c/go.mod h1:cBwzQXJwXvk69b+4NJ218LMX5Dsg27zV7pIvAIraA8Q=
 github.com/minio/asm2plan9s v0.0.0-20200509001527-cdd76441f9d8 h1:AMFGa4R4MiIpspGNG7Z948v4n35fFGB3RR3G/ry4FWs=
