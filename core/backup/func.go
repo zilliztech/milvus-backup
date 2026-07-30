@@ -44,6 +44,7 @@ var _strategyMap = map[string]Strategy{
 	"skip_flush":   StrategySkipFlush,
 	"bulk_flush":   StrategyBulkFlush,
 	"serial_flush": StrategySerialFlush,
+	"snapshot":     StrategySnapshot,
 }
 
 func SupportStrategy() []string { return lo.Keys(_strategyMap) }

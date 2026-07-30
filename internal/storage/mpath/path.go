@@ -56,6 +56,14 @@ const (
 	_deltaLogPrefix  = "delta_log"
 )
 
+// BundleDirName is where a snapshot-format backup keeps the bundle Milvus exports:
+// its metadata, its manifests and the data files they reference, under one prefix
+// beside the meta this tool writes.
+const BundleDirName = "bundle"
+
+// BackupBundleDir returns the directory an exported snapshot bundle is written to.
+func BackupBundleDir(backupDir string) string { return path.Join(backupDir, BundleDirName) }
+
 func Join(base string, options ...Option) string {
 	elem := make([]string, 0, 8)
 	elem = append(elem, base)

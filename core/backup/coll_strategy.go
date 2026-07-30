@@ -28,6 +28,7 @@ const (
 	StrategySkipFlush
 	StrategyBulkFlush
 	StrategySerialFlush
+	StrategySnapshot
 )
 
 // concurrencyThrottling:
@@ -124,6 +125,88 @@ func newDMLTasks(nss []namespace.NS, args collTaskArgs) []collTask {
 	}
 
 	return dmlTasks
+}
+
+// snapshotStrategy backs up through Milvus snapshots: milvus-backup orchestrates and
+// Milvus moves the bytes. It needs a 3.0 server, and produces backups in a format only
+// a milvus-backup that understands it can restore.
+type snapshotStrategy struct {
+	nss []namespace.NS
+
+	target     snapshotTarget
+	backupName string
+
+	args collTaskArgs
+
+	logger *zap.Logger
+}
+
+func newSnapshotStrategy(nss []namespace.NS, backupName string, target snapshotTarget, args collTaskArgs) *snapshotStrategy {
+	return &snapshotStrategy{
+		nss:        nss,
+		target:     target,
+		backupName: backupName,
+		args:       args,
+		logger:     log.With(zap.String("task_id", args.TaskID)),
+	}
+}
+
+// snapshotName is what the collection is frozen under while it is exported. Backup
+// names allow a leading digit and snapshot names do not, hence the prefix; the backup
+// name itself is already restricted to letters, digits and underscores.
+func (ss *snapshotStrategy) snapshotName() string { return "mbk_" + ss.backupName }
+
+func (ss *snapshotStrategy) Execute(ctx context.Context) error {
+	ddlTasks := newDDLTasks(ss.nss, ss.args)
+	if err := concurrentExecCollTask(ctx, ss.args.Throttling.CollSem, ddlTasks); err != nil {
+		return fmt.Errorf("backup: execute ddl task %w", err)
+	}
+
+	if err := ss.flushAll(ctx); err != nil {
+		return fmt.Errorf("backup: flush all %w", err)
+	}
+
+	// Each collection creates its snapshot immediately before submitting the export
+	// that pins it, so there is no window where a snapshot sits unpinned waiting its
+	// turn. The collection semaphore bounds how many exports are in flight, which
+	// matters because a job starts its timeout when DataCoord accepts it, not when it
+	// starts copying — anything queued beyond what
+	// dataCoord.snapshot.exportMaxConcurrentJobs can run burns that budget waiting.
+	snapshotTasks := make([]collTask, 0, len(ss.nss))
+	for _, ns := range ss.nss {
+		task := func(ctx context.Context) error {
+			if err := newCollSnapshotTask(ns, ss.snapshotName(), ss.target, ss.args).Execute(ctx); err != nil {
+				ss.args.TaskMgr.UpdateBackupTask(ss.args.TaskID, taskmgr.SetBackupCollFail(ns, err))
+				return fmt.Errorf("backup: execute snapshot task %w", err)
+			}
+
+			ss.args.TaskMgr.UpdateBackupTask(ss.args.TaskID, taskmgr.SetBackupCollSuccess(ns))
+			return nil
+		}
+		snapshotTasks = append(snapshotTasks, task)
+	}
+
+	if err := concurrentExecCollTask(ctx, ss.args.Throttling.CollSem, snapshotTasks); err != nil {
+		return fmt.Errorf("backup: concurrent execute snapshot task %w", err)
+	}
+
+	return nil
+}
+
+// flushAll seals what is still growing. A snapshot admits only the segments below its
+// channel seek positions, so without this it would hold whatever the last automatic
+// flush left behind rather than the collections as they are now.
+//
+// One call covers every collection. A collection whose snapshot is taken well after this
+// is still bounded by its own channel checkpoint at creation time, so writes since the
+// flush are in it only as far as automatic flushing has carried them. How far behind the
+// last collection runs is up to dataCoord.snapshot.exportMaxConcurrentJobs — refreshable,
+// with no upper bound, and 1 until an operator raises it.
+//
+// FlushAll needs no feature check here: it arrived in 2.6.11 and this strategy already
+// requires 3.0.
+func (ss *snapshotStrategy) flushAll(ctx context.Context) error {
+	return flushAllAndRecord(ctx, ss.args, ss.logger)
 }
 
 type metaOnlyStrategy struct {
@@ -303,14 +386,20 @@ func (bf *bulkFlushStrategy) Execute(ctx context.Context) error {
 }
 
 func (bf *bulkFlushStrategy) flushAllAndBackupTS(ctx context.Context) error {
-	bf.logger.Info("start flush all")
+	return flushAllAndRecord(ctx, bf.args, bf.logger)
+}
+
+// flushAllAndRecord seals every collection in the cluster and records what the response
+// says about it: the control and physical channels, and the flush messages per channel.
+func flushAllAndRecord(ctx context.Context, args collTaskArgs, logger *zap.Logger) error {
+	logger.Info("start flush all")
 
 	start := time.Now()
-	resp, err := bf.args.Grpc.FlushAll(ctx)
+	resp, err := args.Grpc.FlushAll(ctx)
 	if err != nil {
 		return fmt.Errorf("backup: flush all %w", err)
 	}
-	bf.logger.Info("flush all done", zap.Any("resp", resp), zap.Duration("cost", time.Since(start)))
+	logger.Info("flush all done", zap.Any("resp", resp), zap.Duration("cost", time.Since(start)))
 
 	pchs := resp.GetClusterInfo().GetPchannels()
 	cch := resp.GetClusterInfo().GetCchannel()
@@ -325,6 +414,6 @@ func (bf *bulkFlushStrategy) flushAllAndBackupTS(ctx context.Context) error {
 		flushAllMsg[pch] = base64.StdEncoding.EncodeToString(byts)
 	}
 
-	bf.args.MetaBuilder.setClusterInfoAndTSS(cch, pchs, flushAllMsg)
+	args.MetaBuilder.setClusterInfoAndTSS(cch, pchs, flushAllMsg)
 	return nil
 }
