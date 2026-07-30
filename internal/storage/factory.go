@@ -116,14 +116,14 @@ func UseStreaming(mode string, src, dest Config) bool {
 	case v2.TransferDirect:
 		return false
 	default:
-		return !sameBackend(src, dest)
+		return !SameBackend(src, dest)
 	}
 }
 
-// sameBackend reports whether two configs name the same backend, i.e. the same
+// SameBackend reports whether two configs name the same backend, i.e. the same
 // provider reached at the same endpoint. Buckets and root paths may differ
 // within one backend, so they are not compared.
-func sameBackend(a, b Config) bool {
+func SameBackend(a, b Config) bool {
 	return a.Provider == b.Provider &&
 		a.Endpoint == b.Endpoint &&
 		a.Region == b.Region &&

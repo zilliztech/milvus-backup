@@ -15,6 +15,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
@@ -227,8 +228,15 @@ func (t *Task) privateExecute(ctx context.Context) error {
 	}
 	t.metaBuilder.setVersion(version)
 
-	t.gcCtrl.PauseGC(ctx)
-	defer t.gcCtrl.ResumeGC(ctx)
+	t.metaBuilder.setFormat(t.format())
+
+	// Pausing GC is the binlog path's way of holding the files still while they are
+	// copied one by one. A snapshot does that itself, unconditionally and only for the
+	// collection being backed up, so the cluster-wide advisory is not asked for.
+	if t.option.Strategy != StrategySnapshot {
+		t.gcCtrl.PauseGC(ctx)
+		defer t.gcCtrl.ResumeGC(ctx)
+	}
 
 	dbNames, collections, err := t.listDBAndNSS(ctx)
 	if err != nil {
@@ -263,6 +271,28 @@ func (t *Task) privateExecute(ctx context.Context) error {
 
 	t.logger.Info("backup successfully")
 	return nil
+}
+
+func (t *Task) newSnapshotStrategy(nss []namespace.NS, args collTaskArgs) (tasklet.Tasklet, error) {
+	target, err := newSnapshotTarget(t.milvusStorage.Config(), t.backupStorage.Config(), t.backupDir)
+	if err != nil {
+		return nil, err
+	}
+
+	t.logger.Info("use snapshot strategy",
+		zap.String("target_path", target.Path),
+		zap.Bool("external_spec_set", target.ExternalSpec != ""))
+
+	return newSnapshotStrategy(nss, t.option.BackupName, target, args), nil
+}
+
+// format is the value recorded in the backup meta, which the strategy decides.
+func (t *Task) format() string {
+	if t.option.Strategy == StrategySnapshot {
+		return meta.FormatSnapshot
+	}
+
+	return meta.FormatBinlog
 }
 
 func (t *Task) prepare(ctx context.Context) error {
@@ -428,7 +458,18 @@ func (t *Task) selectStrategy(nss []namespace.NS) (tasklet.Tasklet, error) {
 	args := t.newCollTaskArgs()
 
 	switch t.option.Strategy {
+	case StrategySnapshot:
+		if !t.grpc.HasFeature(milvus.Snapshot) {
+			return nil, fmt.Errorf("backup: the snapshot strategy needs a milvus 3.0 or newer server")
+		}
+
+		return t.newSnapshotStrategy(nss, args)
 	case StrategyAuto:
+		// Not the snapshot strategy, even on a server that reports the feature. The
+		// flag is a version constraint, and the server side of the export landed in
+		// stages: Milvus master serves CreateSnapshot and DescribeSnapshot today but
+		// answers ExportSnapshot with "not implemented". Auto can move here once the
+		// export is released and the constraint can name a version that has it.
 		if t.grpc.HasFeature(milvus.FlushAll) {
 			t.logger.Info("use bulk flush strategy")
 			return newBulkFlushStrategy(nss, args), nil
@@ -540,10 +581,17 @@ func (t *Task) writeMeta(ctx context.Context) error {
 	entries := []metaEntry{
 		{Type: mpath.BackupMeta, Fn: t.metaBuilder.buildBackupMeta},
 		{Type: mpath.CollectionMeta, Fn: t.metaBuilder.buildCollectionMeta},
-		{Type: mpath.PartitionMeta, Fn: t.metaBuilder.buildPartitionMeta},
-		{Type: mpath.SegmentMeta, Fn: t.metaBuilder.buildSegmentMeta},
-		{Type: mpath.FullMeta, Fn: t.metaBuilder.buildFullMeta},
 	}
+	// The snapshot format has no segments, so the partition and segment files have
+	// nothing to hold. meta.Write makes the same call for the same reason: writing them
+	// empty would add a read path through levelToTree, which derives a collection's
+	// size by summing segments.
+	if t.format() != meta.FormatSnapshot {
+		entries = append(entries,
+			metaEntry{Type: mpath.PartitionMeta, Fn: t.metaBuilder.buildPartitionMeta},
+			metaEntry{Type: mpath.SegmentMeta, Fn: t.metaBuilder.buildSegmentMeta})
+	}
+	entries = append(entries, metaEntry{Type: mpath.FullMeta, Fn: t.metaBuilder.buildFullMeta})
 
 	for _, entry := range entries {
 		data, err := entry.Fn()
