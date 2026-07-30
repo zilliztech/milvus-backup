@@ -158,6 +158,8 @@ func newCollTask(args collTaskArgs) *collTask {
 	}
 }
 
+func (ct *collTask) TargetNS() namespace.NS { return ct.targetNS }
+
 func (ct *collTask) Execute(ctx context.Context) error {
 	ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.SetRestoreCollExecuting(ct.targetNS))
 
