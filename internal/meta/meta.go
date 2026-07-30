@@ -20,6 +20,14 @@ const (
 	LoadStateLoaded  = "Loaded"
 )
 
+// The values BackupInfo.format takes. Binlog is the empty string because that is what
+// every backup written before the field existed reads back as, and those are exactly
+// the ones in that format.
+const (
+	FormatBinlog   = ""
+	FormatSnapshot = "snapshot"
+)
+
 func readFromFull(ctx context.Context, backupDir string, cli storage.Client) (*backuppb.BackupInfo, error) {
 	bytes, err := storage.Read(ctx, cli, mpath.MetaKey(backupDir, mpath.FullMeta))
 	if err != nil {

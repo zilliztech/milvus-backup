@@ -312,6 +312,10 @@ const docTemplate = `{
                 "errorMessage": {
                     "type": "string"
                 },
+                "format": {
+                    "description": "see BackupInfo.format",
+                    "type": "string"
+                },
                 "id": {
                     "description": "from task",
                     "type": "string"
@@ -996,6 +1000,13 @@ const docTemplate = `{
                     "description": "if true, drop existing index of target collection before create",
                     "type": "boolean"
                 },
+                "ezkMapping": {
+                    "description": "map of old ezk to new ezk, used to replace encryption keys during restore",
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "string"
+                    }
+                },
                 "id": {
                     "type": "string"
                 },
@@ -1116,11 +1127,25 @@ const docTemplate = `{
         "backuppb.RestoreCollectionMapping": {
             "type": "object",
             "properties": {
+                "override": {
+                    "$ref": "#/definitions/backuppb.RestoreCollectionOverride"
+                },
                 "source": {
                     "type": "string"
                 },
                 "target": {
                     "type": "string"
+                }
+            }
+        },
+        "backuppb.RestoreCollectionOverride": {
+            "type": "object",
+            "properties": {
+                "description": {
+                    "type": "string"
+                },
+                "shardNum": {
+                    "type": "integer"
                 }
             }
         },

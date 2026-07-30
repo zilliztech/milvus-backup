@@ -10,9 +10,12 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 )
 
-// Write persists a BackupInfo tree as full_meta.json plus the four leveled
-// files, inverse of levelToTree. Read() prefers full_meta; Exist()/List() rely
-// on backup_meta.json — so all five are written.
+// Write persists a BackupInfo tree as full_meta.json plus the leveled files, inverse
+// of levelToTree. Read() prefers full_meta; Exist()/List() rely on backup_meta.json.
+//
+// The snapshot format stops after collection_meta.json: it has no segments. Writing
+// the last two files empty would add a read path through levelToTree, which sums
+// segments for a collection's size and would report zero for this format.
 func Write(ctx context.Context, cli storage.Client, backupDir string, info *backuppb.BackupInfo) error {
 	if err := writeJSON(ctx, cli, backupDir, mpath.FullMeta, info); err != nil {
 		return err
@@ -22,6 +25,7 @@ func Write(ctx context.Context, cli storage.Client, backupDir string, info *back
 	backupLevel := &backuppb.BackupInfo{
 		Id:                   info.GetId(),
 		Name:                 info.GetName(),
+		Format:               info.GetFormat(),
 		BackupTimestamp:      info.GetBackupTimestamp(),
 		Size:                 info.GetSize(),
 		MilvusVersion:        info.GetMilvusVersion(),
@@ -53,6 +57,11 @@ func Write(ctx context.Context, cli storage.Client, backupDir string, info *back
 	if err := writeJSON(ctx, cli, backupDir, mpath.CollectionMeta, &backuppb.CollectionLevelBackupInfo{Infos: colls}); err != nil {
 		return err
 	}
+
+	if info.GetFormat() == FormatSnapshot {
+		return nil
+	}
+
 	if err := writeJSON(ctx, cli, backupDir, mpath.PartitionMeta, &backuppb.PartitionLevelBackupInfo{Infos: parts}); err != nil {
 		return err
 	}
