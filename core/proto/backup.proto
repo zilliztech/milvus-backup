@@ -209,6 +209,8 @@ message CreateBackupRequest {
   // strategy for backup, one of [meta_only, skip_flush, bulk_flush, serial_flush], if not set will auto select
   string strategy = 14;
   bool with_index_extra = 15;
+  // format for backup, one of [auto, binlog, snapshot], if not set will auto select
+  string format = 16;
 }
 
 /**

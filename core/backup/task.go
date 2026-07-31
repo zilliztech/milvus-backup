@@ -49,6 +49,7 @@ type Option struct {
 	ManageAddr string
 
 	Strategy Strategy
+	Format   Format
 
 	BackupRBAC bool
 
@@ -90,6 +91,12 @@ type Task struct {
 	taskMgr *taskmgr.Mgr
 
 	rpcChannelName string
+
+	// resolvedFormat is what the requested format resolved to against the server,
+	// and snapshotTarget where the snapshot format exports its bundles. Both are
+	// set in privateExecute before any collection work starts.
+	resolvedFormat string
+	snapshotTarget snapshotTarget
 }
 
 func newGCCtrl(taskID string, pauseGC bool, grpc milvus.Grpc, manage milvus.Manage) gcCtrl {
@@ -228,14 +235,30 @@ func (t *Task) privateExecute(ctx context.Context) error {
 	}
 	t.metaBuilder.setVersion(version)
 
-	t.metaBuilder.setFormat(t.format())
+	format, err := t.resolveFormat()
+	if err != nil {
+		return err
+	}
+	t.resolvedFormat = format
+	t.metaBuilder.setFormat(format)
 
 	// Pausing GC is the binlog path's way of holding the files still while they are
 	// copied one by one. A snapshot does that itself, unconditionally and only for the
 	// collection being backed up, so the cluster-wide advisory is not asked for.
-	if t.option.Strategy != StrategySnapshot {
+	if t.resolvedFormat != meta.FormatSnapshot {
 		t.gcCtrl.PauseGC(ctx)
 		defer t.gcCtrl.ResumeGC(ctx)
+	}
+
+	if t.resolvedFormat == meta.FormatSnapshot {
+		target, err := newSnapshotTarget(t.milvusStorage.Config(), t.backupStorage.Config(), t.backupDir)
+		if err != nil {
+			return fmt.Errorf("backup: build snapshot target: %w", err)
+		}
+		t.snapshotTarget = target
+		t.logger.Info("use snapshot format",
+			zap.String("target_path", target.Path),
+			zap.Bool("external_spec_set", target.ExternalSpec != ""))
 	}
 
 	dbNames, collections, err := t.listDBAndNSS(ctx)
@@ -273,27 +296,55 @@ func (t *Task) privateExecute(ctx context.Context) error {
 	return nil
 }
 
-func (t *Task) newSnapshotStrategy(nss []namespace.NS, args collTaskArgs) (tasklet.Tasklet, error) {
-	target, err := newSnapshotTarget(t.milvusStorage.Config(), t.backupStorage.Config(), t.backupDir)
-	if err != nil {
-		return nil, err
+// resolveFormat maps the requested format to the artifact the backup is written
+// in. Auto follows the version fork but stays on the binlog path for now: the
+// server side of the export landed in stages, and current master answers
+// ExportSnapshot with "not implemented", so auto cannot yet name a version that
+// has the whole flow. --format=snapshot is the explicit escape hatch until it
+// can, and --format=binlog is refused on a server that cannot take it.
+func (t *Task) resolveFormat() (string, error) {
+	switch t.option.Format {
+	case FormatSnapshot:
+		if !t.grpc.HasFeature(milvus.Snapshot) {
+			return "", fmt.Errorf("backup: the snapshot format needs a milvus 3.0 or newer server")
+		}
+		return meta.FormatSnapshot, nil
+	case FormatBinlog:
+		if t.grpc.HasFeature(milvus.Snapshot) {
+			return "", fmt.Errorf("backup: the binlog format is not compatible with a milvus 3.0 or newer server")
+		}
+		return meta.FormatBinlog, nil
+	default: // FormatAuto
+		return meta.FormatBinlog, nil
 	}
-
-	t.logger.Info("use snapshot strategy",
-		zap.String("target_path", target.Path),
-		zap.Bool("external_spec_set", target.ExternalSpec != ""))
-
-	return newSnapshotStrategy(nss, t.option.BackupName, target, args), nil
 }
 
-// format is the value recorded in the backup meta, which the strategy decides.
-func (t *Task) format() string {
-	if t.option.Strategy == StrategySnapshot {
-		return meta.FormatSnapshot
-	}
+// newDataTask builds the per-collection data task for the resolved format. The
+// plans go through this factory, so one flush orchestration runs whichever
+// artifact the format asks for.
+func (t *Task) newDataTask(format string) dataTaskFactory {
+	return func(ns namespace.NS, args collTaskArgs) tasklet.Tasklet {
+		if format == meta.FormatSnapshot {
+			// The plan's flush is what makes the boundary fresh: a snapshot admits only
+			// the segments below its channel seek positions, so without one it would
+			// hold whatever the last automatic flush left behind.
+			//
+			// Each collection creates its snapshot immediately before the export that
+			// pins it, so no snapshot sits unpinned waiting its turn. The collection
+			// semaphore bounds how many exports are in flight: a job starts its timeout
+			// when DataCoord accepts it, so anything queued beyond what
+			// dataCoord.snapshot.exportMaxConcurrentJobs can run burns that budget.
+			return newCollSnapshotTask(ns, t.snapshotName(), t.snapshotTarget, args)
+		}
 
-	return meta.FormatBinlog
+		return newCollDMLTask(ns, args)
+	}
 }
+
+// snapshotName is what the collection is frozen under while it is exported. Backup
+// names allow a leading digit and snapshot names do not, hence the prefix; the backup
+// name itself is already restricted to letters, digits and underscores.
+func (t *Task) snapshotName() string { return "mbk_" + t.option.BackupName }
 
 func (t *Task) prepare(ctx context.Context) error {
 	exist, err := storage.Exist(ctx, t.backupStorage, t.backupDir)
@@ -441,12 +492,12 @@ func (t *Task) backupCollection(ctx context.Context, nss []namespace.NS) error {
 	t.taskMgr.UpdateBackupTask(t.taskID, taskmgr.AddBackupCollTasks(nss))
 	t.taskMgr.UpdateBackupTask(t.taskID, taskmgr.SetBackupCollectionExecuting())
 
-	strategy, err := t.selectStrategy(nss)
+	plan, err := t.selectPlan(nss, t.option.Strategy, t.resolvedFormat)
 	if err != nil {
-		return fmt.Errorf("backup: select strategy: %w", err)
+		return fmt.Errorf("backup: select plan: %w", err)
 	}
-	if err := strategy.Execute(ctx); err != nil {
-		return fmt.Errorf("backup: execute collection strategy: %w", err)
+	if err := plan.Execute(ctx); err != nil {
+		return fmt.Errorf("backup: execute collection plan: %w", err)
 	}
 
 	t.logger.Info("backup all collections successfully")
@@ -454,42 +505,36 @@ func (t *Task) backupCollection(ctx context.Context, nss []namespace.NS) error {
 	return nil
 }
 
-func (t *Task) selectStrategy(nss []namespace.NS) (tasklet.Tasklet, error) {
+// selectPlan composes the two option axes into the plan that runs: the strategy
+// picks the flush orchestration, the format picks what artifact its data step
+// produces. The plans themselves know nothing about the format — they receive
+// the factory that does.
+func (t *Task) selectPlan(nss []namespace.NS, strategy Strategy, format string) (tasklet.Tasklet, error) {
 	args := t.newCollTaskArgs()
+	newData := t.newDataTask(format)
 
-	switch t.option.Strategy {
-	case StrategySnapshot:
-		if !t.grpc.HasFeature(milvus.Snapshot) {
-			return nil, fmt.Errorf("backup: the snapshot strategy needs a milvus 3.0 or newer server")
-		}
-
-		return t.newSnapshotStrategy(nss, args)
+	switch strategy {
 	case StrategyAuto:
-		// Not the snapshot strategy, even on a server that reports the feature. The
-		// flag is a version constraint, and the server side of the export landed in
-		// stages: Milvus master serves CreateSnapshot and DescribeSnapshot today but
-		// answers ExportSnapshot with "not implemented". Auto can move here once the
-		// export is released and the constraint can name a version that has it.
 		if t.grpc.HasFeature(milvus.FlushAll) {
-			t.logger.Info("use bulk flush strategy")
-			return newBulkFlushStrategy(nss, args), nil
+			t.logger.Info("use bulk flush plan")
+			return newBulkFlushPlan(nss, args, newData), nil
 		}
-		t.logger.Info("use serial flush strategy")
-		return newSerialFlushStrategy(nss, args), nil
+		t.logger.Info("use serial flush plan")
+		return newSerialFlushPlan(nss, args, newData), nil
 	case StrategyMetaOnly:
-		t.logger.Info("use meta only strategy")
-		return newMetaOnlyStrategy(nss, t.newCollTaskArgs()), nil
+		t.logger.Info("use meta only plan")
+		return newMetaOnlyPlan(nss, args), nil
 	case StrategySkipFlush:
-		t.logger.Info("use skip flush strategy")
-		return newSkipFlushStrategy(nss, t.newCollTaskArgs()), nil
+		t.logger.Info("use skip flush plan")
+		return newSkipFlushPlan(nss, args, newData), nil
 	case StrategyBulkFlush:
-		t.logger.Info("use bulk flush strategy")
-		return newBulkFlushStrategy(nss, t.newCollTaskArgs()), nil
+		t.logger.Info("use bulk flush plan")
+		return newBulkFlushPlan(nss, args, newData), nil
 	case StrategySerialFlush:
-		t.logger.Info("use serial flush strategy")
-		return newSerialFlushStrategy(nss, t.newCollTaskArgs()), nil
+		t.logger.Info("use serial flush plan")
+		return newSerialFlushPlan(nss, args, newData), nil
 	default:
-		return nil, fmt.Errorf("backup: unsupported strategy: %s", t.option.Strategy)
+		return nil, fmt.Errorf("backup: unsupported strategy: %s", strategy)
 	}
 }
 
@@ -586,7 +631,7 @@ func (t *Task) writeMeta(ctx context.Context) error {
 	// nothing to hold. meta.Write makes the same call for the same reason: writing them
 	// empty would add a read path through levelToTree, which derives a collection's
 	// size by summing segments.
-	if t.format() != meta.FormatSnapshot {
+	if t.resolvedFormat != meta.FormatSnapshot {
 		entries = append(entries,
 			metaEntry{Type: mpath.PartitionMeta, Fn: t.metaBuilder.buildPartitionMeta},
 			metaEntry{Type: mpath.SegmentMeta, Fn: t.metaBuilder.buildSegmentMeta})

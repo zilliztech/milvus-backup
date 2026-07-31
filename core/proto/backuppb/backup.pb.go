@@ -1377,6 +1377,8 @@ type CreateBackupRequest struct {
 	// strategy for backup, one of [meta_only, skip_flush, bulk_flush, serial_flush], if not set will auto select
 	Strategy             string   `protobuf:"bytes,14,opt,name=strategy,proto3" json:"strategy,omitempty"`
 	WithIndexExtra       bool     `protobuf:"varint,15,opt,name=with_index_extra,json=withIndexExtra,proto3" json:"with_index_extra,omitempty"`
+	// format for backup, one of [auto, binlog, snapshot], if not set will auto select
+	Format               string   `protobuf:"bytes,16,opt,name=format,proto3" json:"format,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`
@@ -1515,6 +1517,13 @@ func (m *CreateBackupRequest) GetWithIndexExtra() bool {
 		return m.WithIndexExtra
 	}
 	return false
+}
+
+func (m *CreateBackupRequest) GetFormat() string {
+	if m != nil {
+		return m.Format
+	}
+	return ""
 }
 
 // *

@@ -34,8 +34,40 @@ func TestParseStrategy(t *testing.T) {
 		}
 	})
 
+	t.Run("SnapshotIsNotAStrategy", func(t *testing.T) {
+		_, err := ParseStrategy("snapshot")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "--format=snapshot")
+	})
+
 	t.Run("Invalid", func(t *testing.T) {
 		_, err := ParseStrategy("invalid")
+		assert.Error(t, err)
+	})
+}
+
+func TestSupportFormat(t *testing.T) {
+	formats := SupportFormat()
+	assert.Len(t, formats, len(_formatMap))
+}
+
+func TestParseFormat(t *testing.T) {
+	t.Run("Empty", func(t *testing.T) {
+		f, err := ParseFormat("")
+		assert.NoError(t, err)
+		assert.Equal(t, FormatAuto, f)
+	})
+
+	t.Run("Valid", func(t *testing.T) {
+		for _, format := range SupportFormat() {
+			f, err := ParseFormat(format)
+			assert.NoError(t, err)
+			assert.Equal(t, _formatMap[format], f)
+		}
+	})
+
+	t.Run("Invalid", func(t *testing.T) {
+		_, err := ParseFormat("invalid")
 		assert.Error(t, err)
 	})
 }

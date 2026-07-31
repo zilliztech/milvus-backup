@@ -169,6 +169,14 @@ func (h *createBackupHandler) toStrategy() (backup.Strategy, error) {
 	return backup.StrategyAuto, nil
 }
 
+func (h *createBackupHandler) toFormat() (backup.Format, error) {
+	if h.request.GetFormat() != "" {
+		return backup.ParseFormat(h.request.GetFormat())
+	}
+
+	return backup.FormatAuto, nil
+}
+
 func (h *createBackupHandler) toOption(params *v2.Config) (backup.Option, error) {
 	f, err := h.toFilter()
 	if err != nil {
@@ -178,6 +186,11 @@ func (h *createBackupHandler) toOption(params *v2.Config) (backup.Option, error)
 	strategy, err := h.toStrategy()
 	if err != nil {
 		return backup.Option{}, fmt.Errorf("server: build strategy: %w", err)
+	}
+
+	format, err := h.toFormat()
+	if err != nil {
+		return backup.Option{}, fmt.Errorf("server: build format: %w", err)
 	}
 
 	manageAddr := ""
@@ -190,6 +203,7 @@ func (h *createBackupHandler) toOption(params *v2.Config) (backup.Option, error)
 		PauseGC:          h.request.GetGcPauseEnable() || params.Backup.PauseGC.Val,
 		ManageAddr:       manageAddr,
 		Strategy:         strategy,
+		Format:           format,
 		BackupRBAC:       h.request.GetRbac(),
 		BackupIndexExtra: h.request.GetWithIndexExtra(),
 		Filter:           f,
