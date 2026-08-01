@@ -13,12 +13,11 @@ func _() {
 	_ = x[StrategySkipFlush-2]
 	_ = x[StrategyBulkFlush-3]
 	_ = x[StrategySerialFlush-4]
-	_ = x[StrategySnapshot-5]
 }
 
-const _Strategy_name = "StrategyAutoStrategyMetaOnlyStrategySkipFlushStrategyBulkFlushStrategySerialFlushStrategySnapshot"
+const _Strategy_name = "StrategyAutoStrategyMetaOnlyStrategySkipFlushStrategyBulkFlushStrategySerialFlush"
 
-var _Strategy_index = [...]uint8{0, 12, 28, 45, 62, 81, 97}
+var _Strategy_index = [...]uint8{0, 12, 28, 45, 62, 81}
 
 func (i Strategy) String() string {
 	idx := int(i) - 0

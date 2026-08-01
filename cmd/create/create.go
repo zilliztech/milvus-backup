@@ -36,6 +36,8 @@ type options struct {
 
 	strategy string
 
+	format string
+
 	backupIndexExtra bool
 
 	rbac bool
@@ -48,6 +50,10 @@ func (o *options) validate() error {
 
 	if _, err := backup.ParseStrategy(o.strategy); err != nil {
 		return fmt.Errorf("invalid strategy %s, only support %s", o.strategy, strings.Join(backup.SupportStrategy(), ","))
+	}
+
+	if _, err := backup.ParseFormat(o.format); err != nil {
+		return fmt.Errorf("invalid format %s, only support %s", o.format, strings.Join(backup.SupportFormat(), ","))
 	}
 
 	return nil
@@ -67,6 +73,8 @@ func (o *options) addFlags(cmd *cobra.Command) {
 	cmd.Flags().StringVarP(&o.filter, "filter", "", "", "specify which collections to backup, if not set, backup all collections. example: db1.coll1,db2.col1")
 
 	cmd.Flags().StringVarP(&o.strategy, "strategy", "", "", "backup strategy, one of [meta_only, skip_flush, bulk_flush, serial_flush], if not set will auto select")
+
+	cmd.Flags().StringVarP(&o.format, "format", "", "", "backup format, one of [auto, binlog, snapshot], if not set will auto select")
 
 	cmd.Flags().BoolVarP(&o.backupIndexExtra, "backup_index_extra", "", false, "whether backup index extra info")
 
@@ -100,11 +108,19 @@ func (o *options) toOption(params *v2.Config) (backup.Option, error) {
 		return backup.Option{}, err
 	}
 
+	// already validated in validate()
+	format, err := backup.ParseFormat(o.format)
+	if err != nil {
+		return backup.Option{}, err
+	}
+
 	return backup.Option{
 		BackupName: o.backupName,
 		PauseGC:    params.Backup.PauseGC.Val,
 
 		Strategy: strategy,
+
+		Format: format,
 
 		BackupRBAC: o.rbac,
 
