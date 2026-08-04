@@ -742,7 +742,10 @@ jobs:
         run: |
           ./milvus-backup check
           ./milvus-backup list
-          ./milvus-backup create -n my_backup --backup_index_extra
+          # Pin binlog until ExportSnapshot lands on the milvus master line: master
+          # reports the snapshot feature, so auto resolves to the snapshot format
+          # there, which its export RPC does not implement yet.
+          ./milvus-backup create -n my_backup --backup_index_extra --format=binlog
           ./milvus-backup list
 
       - name: Init downstream replicate configuration

@@ -7,10 +7,12 @@ import (
 	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/filter"
+	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 )
 
@@ -154,4 +156,72 @@ func TestTask_listDBAndNSS(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "filter collection db1.not_exist not found")
 	})
+}
+
+func TestTask_resolveFormat(t *testing.T) {
+	tests := []struct {
+		name      string
+		format    Format
+		snapshot  bool
+		want      string
+		wantError string
+	}{
+		{
+			name:     "AutoPicksSnapshotOn3_0",
+			format:   FormatAuto,
+			snapshot: true,
+			want:     meta.FormatSnapshot,
+		},
+		{
+			name:   "AutoPicksBinlogOnOldServer",
+			format: FormatAuto,
+			want:   meta.FormatBinlog,
+		},
+		{
+			name:     "SnapshotPinnedOn3_0",
+			format:   FormatSnapshot,
+			snapshot: true,
+			want:     meta.FormatSnapshot,
+		},
+		{
+			name:      "SnapshotRefusedOnOldServer",
+			format:    FormatSnapshot,
+			wantError: "snapshot format needs a milvus 3.0 or newer server",
+		},
+		{
+			name:     "BinlogAcceptedOn3_0",
+			format:   FormatBinlog,
+			snapshot: true,
+			want:     meta.FormatBinlog,
+		},
+		{
+			name:   "BinlogPinnedOnOldServer",
+			format: FormatBinlog,
+			want:   meta.FormatBinlog,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockGrpc := milvus.NewMockGrpc(t)
+			if tt.format != FormatBinlog {
+				mockGrpc.EXPECT().HasFeature(milvus.Snapshot).Return(tt.snapshot).Once()
+			}
+
+			task := &Task{
+				logger: zap.NewNop(),
+				grpc:   mockGrpc,
+				option: Option{Format: tt.format},
+			}
+
+			got, err := task.resolveFormat()
+			if tt.wantError != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantError)
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, got)
+		})
+	}
 }

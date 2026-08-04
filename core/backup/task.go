@@ -297,11 +297,12 @@ func (t *Task) privateExecute(ctx context.Context) error {
 }
 
 // resolveFormat maps the requested format to the artifact the backup is written
-// in. Auto follows the version fork but stays on the binlog path for now: the
-// server side of the export landed in stages, and current master answers
-// ExportSnapshot with "not implemented", so auto cannot yet name a version that
-// has the whole flow. --format=snapshot is the explicit escape hatch until it
-// can, and --format=binlog is refused on a server that cannot take it.
+// in. Auto follows the version fork: a 3.0 or newer server gets the snapshot
+// format, anything older falls back to binlogs. --format=snapshot needs a 3.0+
+// server. --format=binlog is accepted on any server for now: milvus master has
+// not implemented ExportSnapshot yet, so auto cannot rely on it there, and the
+// explicit pin is the way to keep producing binlog backups on the 3.0 line.
+// Revisit the acceptance once the export lands on master.
 func (t *Task) resolveFormat() (string, error) {
 	switch t.option.Format {
 	case FormatSnapshot:
@@ -310,11 +311,11 @@ func (t *Task) resolveFormat() (string, error) {
 		}
 		return meta.FormatSnapshot, nil
 	case FormatBinlog:
-		if t.grpc.HasFeature(milvus.Snapshot) {
-			return "", fmt.Errorf("backup: the binlog format is not compatible with a milvus 3.0 or newer server")
-		}
 		return meta.FormatBinlog, nil
 	default: // FormatAuto
+		if t.grpc.HasFeature(milvus.Snapshot) {
+			return meta.FormatSnapshot, nil
+		}
 		return meta.FormatBinlog, nil
 	}
 }
