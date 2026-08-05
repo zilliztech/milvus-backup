@@ -3,8 +3,9 @@ package restore
 import (
 	"context"
 	"fmt"
+	"strings"
 
-	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
+	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
@@ -16,6 +17,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
@@ -150,6 +152,12 @@ type TaskArgs struct {
 type Task struct {
 	args TaskArgs
 
+	// format is the backup's, which decides how every collection in it is restored.
+	format string
+	// snapshotSource is where the bundles are read from, and is only set for the
+	// snapshot format.
+	snapshotSource snapshotSource
+
 	// streaming is decided once: it depends on the transfer policy and the two
 	// backends, none of which vary per collection.
 	streaming bool
@@ -164,29 +172,120 @@ type Task struct {
 }
 
 func NewTask(args TaskArgs) (*Task, error) {
+	// Without this an unknown format would go down the binlog path, find no segments, and
+	// report a successful restore of an empty collection.
+	format := args.Backup.GetFormat()
+	if format != meta.FormatBinlog && format != meta.FormatSnapshot {
+		return nil, fmt.Errorf("restore: backup %s was taken in the %q format, which this version of milvus-backup cannot restore",
+			args.Backup.GetName(), format)
+	}
+
 	logger := log.With(zap.String("backup_name", args.Backup.GetName()), zap.String("task_id", args.TaskID))
 
-	args.TaskMgr.AddRestoreTask(args.TaskID)
-
-	streaming := storage.UseStreaming(args.Params.Transfer.Mode.Val,
-		args.BackupStorage.Config(), args.MilvusStorage.Config())
-	logger.Info("resolved transfer mode",
-		zap.String("transfer_mode", args.Params.Transfer.Mode.Val),
-		zap.Bool("streaming", streaming))
-
-	return &Task{
+	task := &Task{
 		args: args,
 
-		streaming: streaming,
+		format: format,
 
 		copySem:       semaphore.NewWeighted(int64(args.Params.Transfer.Concurrency.Val)),
 		bulkInsertSem: semaphore.NewWeighted(int64(args.Params.Restore.Concurrency.ImportJobs.Val)),
 
 		logger: logger,
-	}, nil
+	}
+
+	if format == meta.FormatSnapshot {
+		if err := checkSnapshotSupport(args.Plan, args.Option); err != nil {
+			return nil, err
+		}
+		if ignored := snapshotIgnoredOptions(args.Option); len(ignored) != 0 {
+			logger.Warn("options do not apply to a snapshot format backup and are ignored",
+				zap.Strings("options", ignored))
+		}
+
+		source, err := newSnapshotSource(args.MilvusStorage.Config(), args.BackupStorage.Config(), args.BackupDir)
+		if err != nil {
+			return nil, err
+		}
+		task.snapshotSource = source
+		logger.Info("restore from snapshot bundles",
+			zap.String("source_uri", source.dirURI),
+			zap.Bool("external_spec_set", source.externalSpec != ""))
+	} else {
+		task.streaming = storage.UseStreaming(args.Params.Transfer.Mode.Val,
+			args.BackupStorage.Config(), args.MilvusStorage.Config())
+		logger.Info("resolved transfer mode",
+			zap.String("transfer_mode", args.Params.Transfer.Mode.Val),
+			zap.Bool("streaming", task.streaming))
+	}
+
+	args.TaskMgr.AddRestoreTask(args.TaskID)
+
+	return task, nil
 }
 
-func (t *Task) newDBAndCollTasks(backup *backuppb.BackupInfo) ([]*databaseTask, []*collTask) {
+// The snapshot path hands the whole restore to Milvus: it creates the collection from the
+// schema in the bundle, restores its indexes and partitions, and copies the data in. Options
+// that ask for something else would silently hand back a collection nobody asked for.
+func checkSnapshotSupport(plan *Plan, opt *Option) error {
+	var unsupported []string
+	if opt.SkipCreateCollection {
+		unsupported = append(unsupported, "skip_create_collection")
+	}
+	if opt.MetaOnly {
+		unsupported = append(unsupported, "meta_only")
+	}
+	if opt.MaxShardNum != 0 {
+		unsupported = append(unsupported, "max_shard_num")
+	}
+	if opt.TruncateBinlogByTs {
+		unsupported = append(unsupported, "truncate_binlog_by_ts")
+	}
+	if len(opt.EZKMapping) != 0 {
+		unsupported = append(unsupported, "ezk_mapping")
+	}
+	if len(opt.SkipParams.CollectionProperties) != 0 || len(opt.SkipParams.FieldIndexParams) != 0 ||
+		len(opt.SkipParams.FieldTypeParams) != 0 || len(opt.SkipParams.IndexParams) != 0 {
+		unsupported = append(unsupported, "skip_params")
+	}
+	if len(plan.CollOverrides) != 0 {
+		unsupported = append(unsupported, "collection overrides")
+	}
+
+	if len(unsupported) != 0 {
+		return fmt.Errorf("restore: %s cannot be used with a snapshot format backup",
+			strings.Join(unsupported, ", "))
+	}
+
+	return nil
+}
+
+// snapshotIgnoredOptions names the options the snapshot path does not read: Milvus restores
+// the bundle's own indexes either way, and there is no import job to pick an api for.
+func snapshotIgnoredOptions(opt *Option) []string {
+	var ignored []string
+	if opt.DropExistIndex {
+		ignored = append(ignored, "drop_exist_index")
+	}
+	if opt.RebuildIndex {
+		ignored = append(ignored, "restore_index")
+	}
+	if opt.UseAutoIndex {
+		ignored = append(ignored, "use_auto_index")
+	}
+	if opt.UseV2Restore {
+		ignored = append(ignored, "use_v2_restore")
+	}
+
+	return ignored
+}
+
+// collectionTask restores one collection, in whichever format the backup was taken.
+type collectionTask interface {
+	TargetNS() namespace.NS
+	Execute(ctx context.Context) error
+}
+
+func (t *Task) newDBAndCollTasks(backup *backuppb.BackupInfo) ([]*databaseTask, []collectionTask) {
 	dbNames := lo.Map(backup.GetDatabaseBackups(), func(db *backuppb.DatabaseBackupInfo, _ int) string { return db.GetDbName() })
 	t.logger.Info("databases in backup", zap.Strings("db_names", dbNames))
 	collNSs := lo.Map(backup.GetCollectionBackups(), func(coll *backuppb.CollectionBackupInfo, _ int) string {
@@ -209,7 +308,7 @@ func (t *Task) newDBAndCollTasks(backup *backuppb.BackupInfo) ([]*databaseTask, 
 	collTasks := t.newCollTasks(dbBackups, collBackups)
 	dbNames = lo.Map(dbTasks, func(db *databaseTask, _ int) string { return db.targetName })
 	t.logger.Info("databases task after mapping", zap.Strings("db_names", dbNames))
-	collNSs = lo.Map(collTasks, func(coll *collTask, _ int) string { return coll.targetNS.String() })
+	collNSs = lo.Map(collTasks, func(coll collectionTask, _ int) string { return coll.TargetNS().String() })
 	t.logger.Info("collections task after mapping", zap.Strings("ns", collNSs))
 
 	// filter task
@@ -217,7 +316,7 @@ func (t *Task) newDBAndCollTasks(backup *backuppb.BackupInfo) ([]*databaseTask, 
 	collTasks = t.filterCollTask(collTasks)
 	dbNames = lo.Map(dbTasks, func(db *databaseTask, _ int) string { return db.targetName })
 	t.logger.Info("databases task after filtering", zap.Strings("db_names", dbNames))
-	collNSs = lo.Map(collTasks, func(coll *collTask, _ int) string { return coll.targetNS.String() })
+	collNSs = lo.Map(collTasks, func(coll collectionTask, _ int) string { return coll.TargetNS().String() })
 	t.logger.Info("collections task after filtering", zap.Strings("coll_names", collNSs))
 
 	return dbTasks, collTasks
@@ -264,13 +363,27 @@ func (t *Task) newDBTasks(dbBackups []*backuppb.DatabaseBackupInfo) []*databaseT
 	return dbTasks
 }
 
-func (t *Task) newCollTask(dbBackup *backuppb.DatabaseBackupInfo, collBackup *backuppb.CollectionBackupInfo) []*collTask {
+func (t *Task) newCollTask(dbBackup *backuppb.DatabaseBackupInfo, collBackup *backuppb.CollectionBackupInfo) []collectionTask {
 	sourceNS := namespace.New(collBackup.GetDbName(), collBackup.GetCollectionName())
 	targetNSes := t.args.Plan.CollMapper.TagetNS(sourceNS)
 
-	tasks := make([]*collTask, 0, len(targetNSes))
+	tasks := make([]collectionTask, 0, len(targetNSes))
 	for _, targetNS := range targetNSes {
 		t.logger.Debug("generate restore collection task", zap.String("source", sourceNS.String()), zap.String("target", targetNS.String()))
+
+		if t.format == meta.FormatSnapshot {
+			tasks = append(tasks, newCollSnapshotTask(collSnapshotTaskArgs{
+				taskID:     t.args.TaskID,
+				collBackup: collBackup,
+				targetNS:   targetNS,
+				source:     t.snapshotSource,
+				dropExist:  t.args.Option.DropExistCollection,
+				grpcCli:    t.grpc,
+				taskMgr:    t.args.TaskMgr,
+			}))
+			continue
+		}
+
 		args := collTaskArgs{
 			taskID:        t.args.TaskID,
 			taskMgr:       t.args.TaskMgr,
@@ -298,12 +411,12 @@ func (t *Task) newCollTask(dbBackup *backuppb.DatabaseBackupInfo, collBackup *ba
 	return tasks
 }
 
-func (t *Task) newCollTasks(dbBackups []*backuppb.DatabaseBackupInfo, collBackups []*backuppb.CollectionBackupInfo) []*collTask {
+func (t *Task) newCollTasks(dbBackups []*backuppb.DatabaseBackupInfo, collBackups []*backuppb.CollectionBackupInfo) []collectionTask {
 	nameDBBackup := lo.SliceToMap(dbBackups, func(dbBackup *backuppb.DatabaseBackupInfo) (string, *backuppb.DatabaseBackupInfo) {
 		return dbBackup.GetDbName(), dbBackup
 	})
 
-	collTasks := make([]*collTask, 0, len(collBackups))
+	collTasks := make([]collectionTask, 0, len(collBackups))
 	for _, collBackup := range collBackups {
 		dbBackup := nameDBBackup[collBackup.GetDbName()]
 		tasks := t.newCollTask(dbBackup, collBackup)
@@ -319,16 +432,16 @@ func (t *Task) filterDBTask(dbTask []*databaseTask) []*databaseTask {
 	})
 }
 
-func (t *Task) filterCollTask(collTasks []*collTask) []*collTask {
-	return lo.Filter(collTasks, func(task *collTask, _ int) bool {
-		return t.args.Plan.TaskFilter.AllowNS(task.targetNS)
+func (t *Task) filterCollTask(collTasks []collectionTask) []collectionTask {
+	return lo.Filter(collTasks, func(task collectionTask, _ int) bool {
+		return t.args.Plan.TaskFilter.AllowNS(task.TargetNS())
 	})
 }
 
 // checkCollsExist check if the collection exist in target milvus, if collection exist, return error.
-func (t *Task) checkCollsExist(ctx context.Context, collTasks []*collTask) error {
+func (t *Task) checkCollsExist(ctx context.Context, collTasks []collectionTask) error {
 	for _, collTask := range collTasks {
-		if err := t.checkCollExist(ctx, collTask); err != nil {
+		if err := t.checkCollExist(ctx, collTask.TargetNS()); err != nil {
 			return err
 		}
 	}
@@ -336,24 +449,24 @@ func (t *Task) checkCollsExist(ctx context.Context, collTasks []*collTask) error
 	return nil
 }
 
-func (t *Task) checkCollExist(ctx context.Context, task *collTask) error {
-	has, err := t.grpc.HasCollection(ctx, task.targetNS.DBName(), task.targetNS.CollName())
+func (t *Task) checkCollExist(ctx context.Context, targetNS namespace.NS) error {
+	has, err := t.grpc.HasCollection(ctx, targetNS.DBName(), targetNS.CollName())
 	if err != nil {
 		return fmt.Errorf("restore: check collection %w", err)
 	}
 
 	if t.args.Option.SkipCreateCollection && t.args.Option.DropExistCollection {
-		return fmt.Errorf("restore: skip create and drop exist collection can not be true at the same time collection %s", task.targetNS.String())
+		return fmt.Errorf("restore: skip create and drop exist collection can not be true at the same time collection %s", targetNS.String())
 	}
 
 	// collection not exist and not create collection
 	if !has && t.args.Option.SkipCreateCollection {
-		return fmt.Errorf("restore: collection not exist, database %s collection %s", task.targetNS.DBName(), task.targetNS.CollName())
+		return fmt.Errorf("restore: collection not exist, database %s collection %s", targetNS.DBName(), targetNS.CollName())
 	}
 
 	// collection existed and not drop collection
 	if has && !t.args.Option.SkipCreateCollection && !t.args.Option.DropExistCollection {
-		return fmt.Errorf("restore: collection already exist, database %s collection %s", task.targetNS.DBName(), task.targetNS.CollName())
+		return fmt.Errorf("restore: collection already exist, database %s collection %s", targetNS.DBName(), targetNS.CollName())
 	}
 
 	return nil
@@ -402,6 +515,12 @@ func (t *Task) Execute(ctx context.Context) error {
 
 func (t *Task) privateExecute(ctx context.Context) error {
 	t.args.TaskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreExecuting())
+
+	// The server is only known once the client is connected, so this cannot be part of
+	// NewTask. Checking it once here beats one identical failure per collection.
+	if t.format == meta.FormatSnapshot && !t.grpc.HasFeature(milvus.Snapshot) {
+		return fmt.Errorf("restore: a snapshot format backup needs a milvus 3.0 or newer server")
+	}
 
 	dbTasks, collTasks := t.newDBAndCollTasks(t.args.Backup)
 
@@ -496,7 +615,7 @@ func (t *Task) runDBTasks(ctx context.Context, dbTasks []*databaseTask) error {
 }
 
 // prepareDB create database if not exist, for restore collection task.
-func (t *Task) prepareDB(ctx context.Context, collTasks []*collTask) error {
+func (t *Task) prepareDB(ctx context.Context, collTasks []collectionTask) error {
 	dbInTarget, err := t.grpc.ListDatabases(ctx)
 	if err != nil {
 		return fmt.Errorf("restore: list databases %w", err)
@@ -504,7 +623,7 @@ func (t *Task) prepareDB(ctx context.Context, collTasks []*collTask) error {
 
 	dbs := make(map[string]struct{})
 	for _, collTask := range collTasks {
-		dbs[collTask.targetNS.DBName()] = struct{}{}
+		dbs[collTask.TargetNS().DBName()] = struct{}{}
 	}
 	dbsNeedToRestores := lo.Keys(dbs)
 
@@ -519,7 +638,7 @@ func (t *Task) prepareDB(ctx context.Context, collTasks []*collTask) error {
 	return nil
 }
 
-func (t *Task) runCollTasks(ctx context.Context, collTasks []*collTask) error {
+func (t *Task) runCollTasks(ctx context.Context, collTasks []collectionTask) error {
 	t.logger.Info("start restore collection")
 
 	g, subCtx := errgroup.WithContext(ctx)

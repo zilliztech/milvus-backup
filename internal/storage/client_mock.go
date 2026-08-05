@@ -71,7 +71,7 @@ type MockClient_BucketExist_Call struct {
 // BucketExist is a helper method to define mock.On call
 //   - ctx context.Context
 //   - prefix string
-func (_e *MockClient_Expecter) BucketExist(ctx interface{}, prefix interface{}) *MockClient_BucketExist_Call {
+func (_e *MockClient_Expecter) BucketExist(ctx any, prefix any) *MockClient_BucketExist_Call {
 	return &MockClient_BucketExist_Call{Call: _e.mock.On("BucketExist", ctx, prefix)}
 }
 
@@ -172,7 +172,7 @@ type MockClient_CopyObject_Call struct {
 // CopyObject is a helper method to define mock.On call
 //   - ctx context.Context
 //   - i CopyObjectInput
-func (_e *MockClient_Expecter) CopyObject(ctx interface{}, i interface{}) *MockClient_CopyObject_Call {
+func (_e *MockClient_Expecter) CopyObject(ctx any, i any) *MockClient_CopyObject_Call {
 	return &MockClient_CopyObject_Call{Call: _e.mock.On("CopyObject", ctx, i)}
 }
 
@@ -228,7 +228,7 @@ type MockClient_CreateBucket_Call struct {
 
 // CreateBucket is a helper method to define mock.On call
 //   - ctx context.Context
-func (_e *MockClient_Expecter) CreateBucket(ctx interface{}) *MockClient_CreateBucket_Call {
+func (_e *MockClient_Expecter) CreateBucket(ctx any) *MockClient_CreateBucket_Call {
 	return &MockClient_CreateBucket_Call{Call: _e.mock.On("CreateBucket", ctx)}
 }
 
@@ -280,7 +280,7 @@ type MockClient_DeleteObject_Call struct {
 // DeleteObject is a helper method to define mock.On call
 //   - ctx context.Context
 //   - key string
-func (_e *MockClient_Expecter) DeleteObject(ctx interface{}, key interface{}) *MockClient_DeleteObject_Call {
+func (_e *MockClient_Expecter) DeleteObject(ctx any, key any) *MockClient_DeleteObject_Call {
 	return &MockClient_DeleteObject_Call{Call: _e.mock.On("DeleteObject", ctx, key)}
 }
 
@@ -348,7 +348,7 @@ type MockClient_GetObject_Call struct {
 // GetObject is a helper method to define mock.On call
 //   - ctx context.Context
 //   - key string
-func (_e *MockClient_Expecter) GetObject(ctx interface{}, key interface{}) *MockClient_GetObject_Call {
+func (_e *MockClient_Expecter) GetObject(ctx any, key any) *MockClient_GetObject_Call {
 	return &MockClient_GetObject_Call{Call: _e.mock.On("GetObject", ctx, key)}
 }
 
@@ -414,7 +414,7 @@ type MockClient_HeadObject_Call struct {
 // HeadObject is a helper method to define mock.On call
 //   - ctx context.Context
 //   - key string
-func (_e *MockClient_Expecter) HeadObject(ctx interface{}, key interface{}) *MockClient_HeadObject_Call {
+func (_e *MockClient_Expecter) HeadObject(ctx any, key any) *MockClient_HeadObject_Call {
 	return &MockClient_HeadObject_Call{Call: _e.mock.On("HeadObject", ctx, key)}
 }
 
@@ -483,7 +483,7 @@ type MockClient_ListPrefix_Call struct {
 //   - ctx context.Context
 //   - prefix string
 //   - recursive bool
-func (_e *MockClient_Expecter) ListPrefix(ctx interface{}, prefix interface{}, recursive interface{}) *MockClient_ListPrefix_Call {
+func (_e *MockClient_Expecter) ListPrefix(ctx any, prefix any, recursive any) *MockClient_ListPrefix_Call {
 	return &MockClient_ListPrefix_Call{Call: _e.mock.On("ListPrefix", ctx, prefix, recursive)}
 }
 
@@ -545,7 +545,7 @@ type MockClient_UploadObject_Call struct {
 // UploadObject is a helper method to define mock.On call
 //   - ctx context.Context
 //   - i UploadObjectInput
-func (_e *MockClient_Expecter) UploadObject(ctx interface{}, i interface{}) *MockClient_UploadObject_Call {
+func (_e *MockClient_Expecter) UploadObject(ctx any, i any) *MockClient_UploadObject_Call {
 	return &MockClient_UploadObject_Call{Call: _e.mock.On("UploadObject", ctx, i)}
 }
 

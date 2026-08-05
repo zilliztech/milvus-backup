@@ -148,7 +148,9 @@ jobs:
         shell: bash
         working-directory: deployment/${{ matrix.milvus_mode }}
         run: |
-          yq -i '.milvus.storage.rootPath = "${{ matrix.milvus_minio_rootpath }}"' values.yaml
+          # values.yaml holds the milvus helm chart's values, not a milvus-backup config,
+          # so this key is the chart's own spelling and does not track the backup schema.
+          yq -i '.minio.rootPath = "${{ matrix.milvus_minio_rootpath }}"' values.yaml
       - name: Build
         timeout-minutes: 5
         shell: bash

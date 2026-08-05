@@ -61,7 +61,7 @@ func TestDeltalogV1MultiFieldRead(t *testing.T) {
 	// multi-field variant: envelope with version=MULTI_FIELD wrapping a 2-col parquet.
 	payload, err := WriteParquetPKTs([]PrimaryKey{{Type: PKInt64, Int: 9}}, []uint64{3}, PKInt64)
 	require.NoError(t, err)
-	blob, err := BuildV1Envelope(eventDelete, 5 /*Int64*/, 0, map[string]string{"version": "MULTI_FIELD"}, payload)
+	blob, err := BuildV1Envelope(eventDelete, 5 /*Int64*/, 0, map[string]any{"version": "MULTI_FIELD"}, payload)
 	require.NoError(t, err)
 	out, err := ReadDeltalog(blob, KindV1, PKInt64)
 	require.NoError(t, err)

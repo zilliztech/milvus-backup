@@ -7,9 +7,9 @@ package milvus
 import (
 	"context"
 
-	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
-	"github.com/milvus-io/milvus-proto/go-api/v2/federpb"
-	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
+	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
+	"github.com/milvus-io/milvus-proto/go-api/v3/federpb"
+	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
 	mock "github.com/stretchr/testify/mock"
 	"google.golang.org/grpc"
 )
@@ -203,6 +203,89 @@ func (_c *MockMilvusServiceClient_AddCollectionFunction_Call) Return(status *com
 }
 
 func (_c *MockMilvusServiceClient_AddCollectionFunction_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.AddCollectionFunctionRequest, opts ...grpc.CallOption) (*commonpb.Status, error)) *MockMilvusServiceClient_AddCollectionFunction_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// AddCollectionStructField provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) AddCollectionStructField(ctx context.Context, in *milvuspb.AddCollectionStructFieldRequest, opts ...grpc.CallOption) (*commonpb.Status, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for AddCollectionStructField")
+	}
+
+	var r0 *commonpb.Status
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.AddCollectionStructFieldRequest, ...grpc.CallOption) (*commonpb.Status, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.AddCollectionStructFieldRequest, ...grpc.CallOption) *commonpb.Status); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*commonpb.Status)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.AddCollectionStructFieldRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_AddCollectionStructField_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'AddCollectionStructField'
+type MockMilvusServiceClient_AddCollectionStructField_Call struct {
+	*mock.Call
+}
+
+// AddCollectionStructField is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.AddCollectionStructFieldRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) AddCollectionStructField(ctx any, in any, opts ...any) *MockMilvusServiceClient_AddCollectionStructField_Call {
+	return &MockMilvusServiceClient_AddCollectionStructField_Call{Call: _e.mock.On("AddCollectionStructField",
+		append([]any{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_AddCollectionStructField_Call) Run(run func(ctx context.Context, in *milvuspb.AddCollectionStructFieldRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_AddCollectionStructField_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.AddCollectionStructFieldRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.AddCollectionStructFieldRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_AddCollectionStructField_Call) Return(status *commonpb.Status, err error) *MockMilvusServiceClient_AddCollectionStructField_Call {
+	_c.Call.Return(status, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_AddCollectionStructField_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.AddCollectionStructFieldRequest, opts ...grpc.CallOption) (*commonpb.Status, error)) *MockMilvusServiceClient_AddCollectionStructField_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -1033,6 +1116,89 @@ func (_c *MockMilvusServiceClient_AlterIndex_Call) Return(status *commonpb.Statu
 }
 
 func (_c *MockMilvusServiceClient_AlterIndex_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.AlterIndexRequest, opts ...grpc.CallOption) (*commonpb.Status, error)) *MockMilvusServiceClient_AlterIndex_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// AlterRole provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) AlterRole(ctx context.Context, in *milvuspb.AlterRoleRequest, opts ...grpc.CallOption) (*commonpb.Status, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for AlterRole")
+	}
+
+	var r0 *commonpb.Status
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.AlterRoleRequest, ...grpc.CallOption) (*commonpb.Status, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.AlterRoleRequest, ...grpc.CallOption) *commonpb.Status); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*commonpb.Status)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.AlterRoleRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_AlterRole_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'AlterRole'
+type MockMilvusServiceClient_AlterRole_Call struct {
+	*mock.Call
+}
+
+// AlterRole is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.AlterRoleRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) AlterRole(ctx any, in any, opts ...any) *MockMilvusServiceClient_AlterRole_Call {
+	return &MockMilvusServiceClient_AlterRole_Call{Call: _e.mock.On("AlterRole",
+		append([]any{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_AlterRole_Call) Run(run func(ctx context.Context, in *milvuspb.AlterRoleRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_AlterRole_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.AlterRoleRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.AlterRoleRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_AlterRole_Call) Return(status *commonpb.Status, err error) *MockMilvusServiceClient_AlterRole_Call {
+	_c.Call.Return(status, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_AlterRole_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.AlterRoleRequest, opts ...grpc.CallOption) (*commonpb.Status, error)) *MockMilvusServiceClient_AlterRole_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -2033,6 +2199,89 @@ func (_c *MockMilvusServiceClient_CreateIndex_Call) RunAndReturn(run func(ctx co
 	return _c
 }
 
+// CreateNamespace provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) CreateNamespace(ctx context.Context, in *milvuspb.CreateNamespaceRequest, opts ...grpc.CallOption) (*milvuspb.CreateNamespaceResponse, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for CreateNamespace")
+	}
+
+	var r0 *milvuspb.CreateNamespaceResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.CreateNamespaceRequest, ...grpc.CallOption) (*milvuspb.CreateNamespaceResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.CreateNamespaceRequest, ...grpc.CallOption) *milvuspb.CreateNamespaceResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.CreateNamespaceResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.CreateNamespaceRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_CreateNamespace_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CreateNamespace'
+type MockMilvusServiceClient_CreateNamespace_Call struct {
+	*mock.Call
+}
+
+// CreateNamespace is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.CreateNamespaceRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) CreateNamespace(ctx any, in any, opts ...any) *MockMilvusServiceClient_CreateNamespace_Call {
+	return &MockMilvusServiceClient_CreateNamespace_Call{Call: _e.mock.On("CreateNamespace",
+		append([]any{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_CreateNamespace_Call) Run(run func(ctx context.Context, in *milvuspb.CreateNamespaceRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_CreateNamespace_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.CreateNamespaceRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.CreateNamespaceRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_CreateNamespace_Call) Return(createNamespaceResponse *milvuspb.CreateNamespaceResponse, err error) *MockMilvusServiceClient_CreateNamespace_Call {
+	_c.Call.Return(createNamespaceResponse, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_CreateNamespace_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.CreateNamespaceRequest, opts ...grpc.CallOption) (*milvuspb.CreateNamespaceResponse, error)) *MockMilvusServiceClient_CreateNamespace_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // CreatePartition provides a mock function for the type MockMilvusServiceClient
 func (_mock *MockMilvusServiceClient) CreatePartition(ctx context.Context, in *milvuspb.CreatePartitionRequest, opts ...grpc.CallOption) (*commonpb.Status, error) {
 	var tmpRet mock.Arguments
@@ -2774,6 +3023,89 @@ func (_c *MockMilvusServiceClient_DeleteCredential_Call) RunAndReturn(run func(c
 	return _c
 }
 
+// DeleteRLSPrincipalTags provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) DeleteRLSPrincipalTags(ctx context.Context, in *milvuspb.DeleteRLSPrincipalTagsRequest, opts ...grpc.CallOption) (*commonpb.Status, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for DeleteRLSPrincipalTags")
+	}
+
+	var r0 *commonpb.Status
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.DeleteRLSPrincipalTagsRequest, ...grpc.CallOption) (*commonpb.Status, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.DeleteRLSPrincipalTagsRequest, ...grpc.CallOption) *commonpb.Status); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*commonpb.Status)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.DeleteRLSPrincipalTagsRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_DeleteRLSPrincipalTags_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DeleteRLSPrincipalTags'
+type MockMilvusServiceClient_DeleteRLSPrincipalTags_Call struct {
+	*mock.Call
+}
+
+// DeleteRLSPrincipalTags is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.DeleteRLSPrincipalTagsRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) DeleteRLSPrincipalTags(ctx any, in any, opts ...any) *MockMilvusServiceClient_DeleteRLSPrincipalTags_Call {
+	return &MockMilvusServiceClient_DeleteRLSPrincipalTags_Call{Call: _e.mock.On("DeleteRLSPrincipalTags",
+		append([]any{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_DeleteRLSPrincipalTags_Call) Run(run func(ctx context.Context, in *milvuspb.DeleteRLSPrincipalTagsRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_DeleteRLSPrincipalTags_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.DeleteRLSPrincipalTagsRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.DeleteRLSPrincipalTagsRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_DeleteRLSPrincipalTags_Call) Return(status *commonpb.Status, err error) *MockMilvusServiceClient_DeleteRLSPrincipalTags_Call {
+	_c.Call.Return(status, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_DeleteRLSPrincipalTags_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.DeleteRLSPrincipalTagsRequest, opts ...grpc.CallOption) (*commonpb.Status, error)) *MockMilvusServiceClient_DeleteRLSPrincipalTags_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // DeleteUserTags provides a mock function for the type MockMilvusServiceClient
 func (_mock *MockMilvusServiceClient) DeleteUserTags(ctx context.Context, in *milvuspb.DeleteUserTagsRequest, opts ...grpc.CallOption) (*commonpb.Status, error) {
 	var tmpRet mock.Arguments
@@ -3185,6 +3517,172 @@ func (_c *MockMilvusServiceClient_DescribeIndex_Call) Return(describeIndexRespon
 }
 
 func (_c *MockMilvusServiceClient_DescribeIndex_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.DescribeIndexRequest, opts ...grpc.CallOption) (*milvuspb.DescribeIndexResponse, error)) *MockMilvusServiceClient_DescribeIndex_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// DescribeNamespace provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) DescribeNamespace(ctx context.Context, in *milvuspb.DescribeNamespaceRequest, opts ...grpc.CallOption) (*milvuspb.DescribeNamespaceResponse, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for DescribeNamespace")
+	}
+
+	var r0 *milvuspb.DescribeNamespaceResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.DescribeNamespaceRequest, ...grpc.CallOption) (*milvuspb.DescribeNamespaceResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.DescribeNamespaceRequest, ...grpc.CallOption) *milvuspb.DescribeNamespaceResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.DescribeNamespaceResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.DescribeNamespaceRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_DescribeNamespace_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DescribeNamespace'
+type MockMilvusServiceClient_DescribeNamespace_Call struct {
+	*mock.Call
+}
+
+// DescribeNamespace is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.DescribeNamespaceRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) DescribeNamespace(ctx any, in any, opts ...any) *MockMilvusServiceClient_DescribeNamespace_Call {
+	return &MockMilvusServiceClient_DescribeNamespace_Call{Call: _e.mock.On("DescribeNamespace",
+		append([]any{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_DescribeNamespace_Call) Run(run func(ctx context.Context, in *milvuspb.DescribeNamespaceRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_DescribeNamespace_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.DescribeNamespaceRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.DescribeNamespaceRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_DescribeNamespace_Call) Return(describeNamespaceResponse *milvuspb.DescribeNamespaceResponse, err error) *MockMilvusServiceClient_DescribeNamespace_Call {
+	_c.Call.Return(describeNamespaceResponse, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_DescribeNamespace_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.DescribeNamespaceRequest, opts ...grpc.CallOption) (*milvuspb.DescribeNamespaceResponse, error)) *MockMilvusServiceClient_DescribeNamespace_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// DescribePrewarmTask provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) DescribePrewarmTask(ctx context.Context, in *milvuspb.DescribePrewarmTaskRequest, opts ...grpc.CallOption) (*milvuspb.DescribePrewarmTaskResponse, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for DescribePrewarmTask")
+	}
+
+	var r0 *milvuspb.DescribePrewarmTaskResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.DescribePrewarmTaskRequest, ...grpc.CallOption) (*milvuspb.DescribePrewarmTaskResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.DescribePrewarmTaskRequest, ...grpc.CallOption) *milvuspb.DescribePrewarmTaskResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.DescribePrewarmTaskResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.DescribePrewarmTaskRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_DescribePrewarmTask_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DescribePrewarmTask'
+type MockMilvusServiceClient_DescribePrewarmTask_Call struct {
+	*mock.Call
+}
+
+// DescribePrewarmTask is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.DescribePrewarmTaskRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) DescribePrewarmTask(ctx any, in any, opts ...any) *MockMilvusServiceClient_DescribePrewarmTask_Call {
+	return &MockMilvusServiceClient_DescribePrewarmTask_Call{Call: _e.mock.On("DescribePrewarmTask",
+		append([]any{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_DescribePrewarmTask_Call) Run(run func(ctx context.Context, in *milvuspb.DescribePrewarmTaskRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_DescribePrewarmTask_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.DescribePrewarmTaskRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.DescribePrewarmTaskRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_DescribePrewarmTask_Call) Return(describePrewarmTaskResponse *milvuspb.DescribePrewarmTaskResponse, err error) *MockMilvusServiceClient_DescribePrewarmTask_Call {
+	_c.Call.Return(describePrewarmTaskResponse, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_DescribePrewarmTask_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.DescribePrewarmTaskRequest, opts ...grpc.CallOption) (*milvuspb.DescribePrewarmTaskResponse, error)) *MockMilvusServiceClient_DescribePrewarmTask_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -3853,6 +4351,89 @@ func (_c *MockMilvusServiceClient_DropIndex_Call) RunAndReturn(run func(ctx cont
 	return _c
 }
 
+// DropNamespace provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) DropNamespace(ctx context.Context, in *milvuspb.DropNamespaceRequest, opts ...grpc.CallOption) (*milvuspb.DropNamespaceResponse, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for DropNamespace")
+	}
+
+	var r0 *milvuspb.DropNamespaceResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.DropNamespaceRequest, ...grpc.CallOption) (*milvuspb.DropNamespaceResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.DropNamespaceRequest, ...grpc.CallOption) *milvuspb.DropNamespaceResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.DropNamespaceResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.DropNamespaceRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_DropNamespace_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DropNamespace'
+type MockMilvusServiceClient_DropNamespace_Call struct {
+	*mock.Call
+}
+
+// DropNamespace is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.DropNamespaceRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) DropNamespace(ctx any, in any, opts ...any) *MockMilvusServiceClient_DropNamespace_Call {
+	return &MockMilvusServiceClient_DropNamespace_Call{Call: _e.mock.On("DropNamespace",
+		append([]any{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_DropNamespace_Call) Run(run func(ctx context.Context, in *milvuspb.DropNamespaceRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_DropNamespace_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.DropNamespaceRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.DropNamespaceRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_DropNamespace_Call) Return(dropNamespaceResponse *milvuspb.DropNamespaceResponse, err error) *MockMilvusServiceClient_DropNamespace_Call {
+	_c.Call.Return(dropNamespaceResponse, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_DropNamespace_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.DropNamespaceRequest, opts ...grpc.CallOption) (*milvuspb.DropNamespaceResponse, error)) *MockMilvusServiceClient_DropNamespace_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // DropPartition provides a mock function for the type MockMilvusServiceClient
 func (_mock *MockMilvusServiceClient) DropPartition(ctx context.Context, in *milvuspb.DropPartitionRequest, opts ...grpc.CallOption) (*commonpb.Status, error) {
 	var tmpRet mock.Arguments
@@ -4517,6 +5098,89 @@ func (_c *MockMilvusServiceClient_DumpMessages_Call) RunAndReturn(run func(ctx c
 	return _c
 }
 
+// ExportSnapshot provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) ExportSnapshot(ctx context.Context, in *milvuspb.ExportSnapshotRequest, opts ...grpc.CallOption) (*milvuspb.ExportSnapshotResponse, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for ExportSnapshot")
+	}
+
+	var r0 *milvuspb.ExportSnapshotResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.ExportSnapshotRequest, ...grpc.CallOption) (*milvuspb.ExportSnapshotResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.ExportSnapshotRequest, ...grpc.CallOption) *milvuspb.ExportSnapshotResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.ExportSnapshotResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.ExportSnapshotRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_ExportSnapshot_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ExportSnapshot'
+type MockMilvusServiceClient_ExportSnapshot_Call struct {
+	*mock.Call
+}
+
+// ExportSnapshot is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.ExportSnapshotRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) ExportSnapshot(ctx any, in any, opts ...any) *MockMilvusServiceClient_ExportSnapshot_Call {
+	return &MockMilvusServiceClient_ExportSnapshot_Call{Call: _e.mock.On("ExportSnapshot",
+		append([]any{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_ExportSnapshot_Call) Run(run func(ctx context.Context, in *milvuspb.ExportSnapshotRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_ExportSnapshot_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.ExportSnapshotRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.ExportSnapshotRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_ExportSnapshot_Call) Return(exportSnapshotResponse *milvuspb.ExportSnapshotResponse, err error) *MockMilvusServiceClient_ExportSnapshot_Call {
+	_c.Call.Return(exportSnapshotResponse, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_ExportSnapshot_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.ExportSnapshotRequest, opts ...grpc.CallOption) (*milvuspb.ExportSnapshotResponse, error)) *MockMilvusServiceClient_ExportSnapshot_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Flush provides a mock function for the type MockMilvusServiceClient
 func (_mock *MockMilvusServiceClient) Flush(ctx context.Context, in *milvuspb.FlushRequest, opts ...grpc.CallOption) (*milvuspb.FlushResponse, error) {
 	var tmpRet mock.Arguments
@@ -5011,6 +5675,89 @@ func (_c *MockMilvusServiceClient_GetComponentStates_Call) Return(componentState
 }
 
 func (_c *MockMilvusServiceClient_GetComponentStates_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.GetComponentStatesRequest, opts ...grpc.CallOption) (*milvuspb.ComponentStates, error)) *MockMilvusServiceClient_GetComponentStates_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetExportSnapshotState provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) GetExportSnapshotState(ctx context.Context, in *milvuspb.GetExportSnapshotStateRequest, opts ...grpc.CallOption) (*milvuspb.GetExportSnapshotStateResponse, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetExportSnapshotState")
+	}
+
+	var r0 *milvuspb.GetExportSnapshotStateResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.GetExportSnapshotStateRequest, ...grpc.CallOption) (*milvuspb.GetExportSnapshotStateResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.GetExportSnapshotStateRequest, ...grpc.CallOption) *milvuspb.GetExportSnapshotStateResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.GetExportSnapshotStateResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.GetExportSnapshotStateRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_GetExportSnapshotState_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetExportSnapshotState'
+type MockMilvusServiceClient_GetExportSnapshotState_Call struct {
+	*mock.Call
+}
+
+// GetExportSnapshotState is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.GetExportSnapshotStateRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) GetExportSnapshotState(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetExportSnapshotState_Call {
+	return &MockMilvusServiceClient_GetExportSnapshotState_Call{Call: _e.mock.On("GetExportSnapshotState",
+		append([]any{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_GetExportSnapshotState_Call) Run(run func(ctx context.Context, in *milvuspb.GetExportSnapshotStateRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetExportSnapshotState_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.GetExportSnapshotStateRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.GetExportSnapshotStateRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_GetExportSnapshotState_Call) Return(getExportSnapshotStateResponse *milvuspb.GetExportSnapshotStateResponse, err error) *MockMilvusServiceClient_GetExportSnapshotState_Call {
+	_c.Call.Return(getExportSnapshotStateResponse, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_GetExportSnapshotState_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.GetExportSnapshotStateRequest, opts ...grpc.CallOption) (*milvuspb.GetExportSnapshotStateResponse, error)) *MockMilvusServiceClient_GetExportSnapshotState_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -5762,6 +6509,89 @@ func (_c *MockMilvusServiceClient_GetMetrics_Call) RunAndReturn(run func(ctx con
 	return _c
 }
 
+// GetNamespaceStats provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) GetNamespaceStats(ctx context.Context, in *milvuspb.GetNamespaceStatsRequest, opts ...grpc.CallOption) (*milvuspb.GetNamespaceStatsResponse, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetNamespaceStats")
+	}
+
+	var r0 *milvuspb.GetNamespaceStatsResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.GetNamespaceStatsRequest, ...grpc.CallOption) (*milvuspb.GetNamespaceStatsResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.GetNamespaceStatsRequest, ...grpc.CallOption) *milvuspb.GetNamespaceStatsResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.GetNamespaceStatsResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.GetNamespaceStatsRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_GetNamespaceStats_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetNamespaceStats'
+type MockMilvusServiceClient_GetNamespaceStats_Call struct {
+	*mock.Call
+}
+
+// GetNamespaceStats is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.GetNamespaceStatsRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) GetNamespaceStats(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetNamespaceStats_Call {
+	return &MockMilvusServiceClient_GetNamespaceStats_Call{Call: _e.mock.On("GetNamespaceStats",
+		append([]any{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_GetNamespaceStats_Call) Run(run func(ctx context.Context, in *milvuspb.GetNamespaceStatsRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetNamespaceStats_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.GetNamespaceStatsRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.GetNamespaceStatsRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_GetNamespaceStats_Call) Return(getNamespaceStatsResponse *milvuspb.GetNamespaceStatsResponse, err error) *MockMilvusServiceClient_GetNamespaceStats_Call {
+	_c.Call.Return(getNamespaceStatsResponse, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_GetNamespaceStats_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.GetNamespaceStatsRequest, opts ...grpc.CallOption) (*milvuspb.GetNamespaceStatsResponse, error)) *MockMilvusServiceClient_GetNamespaceStats_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetPartitionStatistics provides a mock function for the type MockMilvusServiceClient
 func (_mock *MockMilvusServiceClient) GetPartitionStatistics(ctx context.Context, in *milvuspb.GetPartitionStatisticsRequest, opts ...grpc.CallOption) (*milvuspb.GetPartitionStatisticsResponse, error) {
 	var tmpRet mock.Arguments
@@ -6007,6 +6837,89 @@ func (_c *MockMilvusServiceClient_GetQuerySegmentInfo_Call) Return(getQuerySegme
 }
 
 func (_c *MockMilvusServiceClient_GetQuerySegmentInfo_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.GetQuerySegmentInfoRequest, opts ...grpc.CallOption) (*milvuspb.GetQuerySegmentInfoResponse, error)) *MockMilvusServiceClient_GetQuerySegmentInfo_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetRLSPrincipalTags provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) GetRLSPrincipalTags(ctx context.Context, in *milvuspb.GetRLSPrincipalTagsRequest, opts ...grpc.CallOption) (*milvuspb.GetRLSPrincipalTagsResponse, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetRLSPrincipalTags")
+	}
+
+	var r0 *milvuspb.GetRLSPrincipalTagsResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.GetRLSPrincipalTagsRequest, ...grpc.CallOption) (*milvuspb.GetRLSPrincipalTagsResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.GetRLSPrincipalTagsRequest, ...grpc.CallOption) *milvuspb.GetRLSPrincipalTagsResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.GetRLSPrincipalTagsResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.GetRLSPrincipalTagsRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_GetRLSPrincipalTags_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetRLSPrincipalTags'
+type MockMilvusServiceClient_GetRLSPrincipalTags_Call struct {
+	*mock.Call
+}
+
+// GetRLSPrincipalTags is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.GetRLSPrincipalTagsRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) GetRLSPrincipalTags(ctx any, in any, opts ...any) *MockMilvusServiceClient_GetRLSPrincipalTags_Call {
+	return &MockMilvusServiceClient_GetRLSPrincipalTags_Call{Call: _e.mock.On("GetRLSPrincipalTags",
+		append([]any{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_GetRLSPrincipalTags_Call) Run(run func(ctx context.Context, in *milvuspb.GetRLSPrincipalTagsRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_GetRLSPrincipalTags_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.GetRLSPrincipalTagsRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.GetRLSPrincipalTagsRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_GetRLSPrincipalTags_Call) Return(getRLSPrincipalTagsResponse *milvuspb.GetRLSPrincipalTagsResponse, err error) *MockMilvusServiceClient_GetRLSPrincipalTags_Call {
+	_c.Call.Return(getRLSPrincipalTagsResponse, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_GetRLSPrincipalTags_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.GetRLSPrincipalTagsRequest, opts ...grpc.CallOption) (*milvuspb.GetRLSPrincipalTagsResponse, error)) *MockMilvusServiceClient_GetRLSPrincipalTags_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -6671,6 +7584,89 @@ func (_c *MockMilvusServiceClient_HasCollection_Call) Return(boolResponse *milvu
 }
 
 func (_c *MockMilvusServiceClient_HasCollection_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.HasCollectionRequest, opts ...grpc.CallOption) (*milvuspb.BoolResponse, error)) *MockMilvusServiceClient_HasCollection_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// HasNamespace provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) HasNamespace(ctx context.Context, in *milvuspb.HasNamespaceRequest, opts ...grpc.CallOption) (*milvuspb.HasNamespaceResponse, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for HasNamespace")
+	}
+
+	var r0 *milvuspb.HasNamespaceResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.HasNamespaceRequest, ...grpc.CallOption) (*milvuspb.HasNamespaceResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.HasNamespaceRequest, ...grpc.CallOption) *milvuspb.HasNamespaceResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.HasNamespaceResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.HasNamespaceRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_HasNamespace_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'HasNamespace'
+type MockMilvusServiceClient_HasNamespace_Call struct {
+	*mock.Call
+}
+
+// HasNamespace is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.HasNamespaceRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) HasNamespace(ctx any, in any, opts ...any) *MockMilvusServiceClient_HasNamespace_Call {
+	return &MockMilvusServiceClient_HasNamespace_Call{Call: _e.mock.On("HasNamespace",
+		append([]any{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_HasNamespace_Call) Run(run func(ctx context.Context, in *milvuspb.HasNamespaceRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_HasNamespace_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.HasNamespaceRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.HasNamespaceRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_HasNamespace_Call) Return(hasNamespaceResponse *milvuspb.HasNamespaceResponse, err error) *MockMilvusServiceClient_HasNamespace_Call {
+	_c.Call.Return(hasNamespaceResponse, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_HasNamespace_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.HasNamespaceRequest, opts ...grpc.CallOption) (*milvuspb.HasNamespaceResponse, error)) *MockMilvusServiceClient_HasNamespace_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -7505,6 +8501,89 @@ func (_c *MockMilvusServiceClient_ListIndexedSegment_Call) RunAndReturn(run func
 	return _c
 }
 
+// ListNamespaces provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) ListNamespaces(ctx context.Context, in *milvuspb.ListNamespacesRequest, opts ...grpc.CallOption) (*milvuspb.ListNamespacesResponse, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListNamespaces")
+	}
+
+	var r0 *milvuspb.ListNamespacesResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.ListNamespacesRequest, ...grpc.CallOption) (*milvuspb.ListNamespacesResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.ListNamespacesRequest, ...grpc.CallOption) *milvuspb.ListNamespacesResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.ListNamespacesResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.ListNamespacesRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_ListNamespaces_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListNamespaces'
+type MockMilvusServiceClient_ListNamespaces_Call struct {
+	*mock.Call
+}
+
+// ListNamespaces is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.ListNamespacesRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) ListNamespaces(ctx any, in any, opts ...any) *MockMilvusServiceClient_ListNamespaces_Call {
+	return &MockMilvusServiceClient_ListNamespaces_Call{Call: _e.mock.On("ListNamespaces",
+		append([]any{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_ListNamespaces_Call) Run(run func(ctx context.Context, in *milvuspb.ListNamespacesRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_ListNamespaces_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.ListNamespacesRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.ListNamespacesRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_ListNamespaces_Call) Return(listNamespacesResponse *milvuspb.ListNamespacesResponse, err error) *MockMilvusServiceClient_ListNamespaces_Call {
+	_c.Call.Return(listNamespacesResponse, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_ListNamespaces_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.ListNamespacesRequest, opts ...grpc.CallOption) (*milvuspb.ListNamespacesResponse, error)) *MockMilvusServiceClient_ListNamespaces_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // ListPrivilegeGroups provides a mock function for the type MockMilvusServiceClient
 func (_mock *MockMilvusServiceClient) ListPrivilegeGroups(ctx context.Context, in *milvuspb.ListPrivilegeGroupsRequest, opts ...grpc.CallOption) (*milvuspb.ListPrivilegeGroupsResponse, error) {
 	var tmpRet mock.Arguments
@@ -7584,6 +8663,89 @@ func (_c *MockMilvusServiceClient_ListPrivilegeGroups_Call) Return(listPrivilege
 }
 
 func (_c *MockMilvusServiceClient_ListPrivilegeGroups_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.ListPrivilegeGroupsRequest, opts ...grpc.CallOption) (*milvuspb.ListPrivilegeGroupsResponse, error)) *MockMilvusServiceClient_ListPrivilegeGroups_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ListRLSPrincipals provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) ListRLSPrincipals(ctx context.Context, in *milvuspb.ListRLSPrincipalsRequest, opts ...grpc.CallOption) (*milvuspb.ListRLSPrincipalsResponse, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListRLSPrincipals")
+	}
+
+	var r0 *milvuspb.ListRLSPrincipalsResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.ListRLSPrincipalsRequest, ...grpc.CallOption) (*milvuspb.ListRLSPrincipalsResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.ListRLSPrincipalsRequest, ...grpc.CallOption) *milvuspb.ListRLSPrincipalsResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.ListRLSPrincipalsResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.ListRLSPrincipalsRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_ListRLSPrincipals_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListRLSPrincipals'
+type MockMilvusServiceClient_ListRLSPrincipals_Call struct {
+	*mock.Call
+}
+
+// ListRLSPrincipals is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.ListRLSPrincipalsRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) ListRLSPrincipals(ctx any, in any, opts ...any) *MockMilvusServiceClient_ListRLSPrincipals_Call {
+	return &MockMilvusServiceClient_ListRLSPrincipals_Call{Call: _e.mock.On("ListRLSPrincipals",
+		append([]any{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_ListRLSPrincipals_Call) Run(run func(ctx context.Context, in *milvuspb.ListRLSPrincipalsRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_ListRLSPrincipals_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.ListRLSPrincipalsRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.ListRLSPrincipalsRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_ListRLSPrincipals_Call) Return(listRLSPrincipalsResponse *milvuspb.ListRLSPrincipalsResponse, err error) *MockMilvusServiceClient_ListRLSPrincipals_Call {
+	_c.Call.Return(listRLSPrincipalsResponse, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_ListRLSPrincipals_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.ListRLSPrincipalsRequest, opts ...grpc.CallOption) (*milvuspb.ListRLSPrincipalsResponse, error)) *MockMilvusServiceClient_ListRLSPrincipals_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -8833,6 +9995,89 @@ func (_c *MockMilvusServiceClient_PinSnapshotData_Call) RunAndReturn(run func(ct
 	return _c
 }
 
+// Prewarm provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) Prewarm(ctx context.Context, in *milvuspb.PrewarmRequest, opts ...grpc.CallOption) (*milvuspb.PrewarmResponse, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for Prewarm")
+	}
+
+	var r0 *milvuspb.PrewarmResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.PrewarmRequest, ...grpc.CallOption) (*milvuspb.PrewarmResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.PrewarmRequest, ...grpc.CallOption) *milvuspb.PrewarmResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.PrewarmResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.PrewarmRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_Prewarm_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'Prewarm'
+type MockMilvusServiceClient_Prewarm_Call struct {
+	*mock.Call
+}
+
+// Prewarm is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.PrewarmRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) Prewarm(ctx any, in any, opts ...any) *MockMilvusServiceClient_Prewarm_Call {
+	return &MockMilvusServiceClient_Prewarm_Call{Call: _e.mock.On("Prewarm",
+		append([]any{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_Prewarm_Call) Run(run func(ctx context.Context, in *milvuspb.PrewarmRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_Prewarm_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.PrewarmRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.PrewarmRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_Prewarm_Call) Return(prewarmResponse *milvuspb.PrewarmResponse, err error) *MockMilvusServiceClient_Prewarm_Call {
+	_c.Call.Return(prewarmResponse, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_Prewarm_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.PrewarmRequest, opts ...grpc.CallOption) (*milvuspb.PrewarmResponse, error)) *MockMilvusServiceClient_Prewarm_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // Query provides a mock function for the type MockMilvusServiceClient
 func (_mock *MockMilvusServiceClient) Query(ctx context.Context, in *milvuspb.QueryRequest, opts ...grpc.CallOption) (*milvuspb.QueryResults, error) {
 	var tmpRet mock.Arguments
@@ -9497,6 +10742,89 @@ func (_c *MockMilvusServiceClient_ReplicateMessage_Call) RunAndReturn(run func(c
 	return _c
 }
 
+// RestoreExternalSnapshot provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) RestoreExternalSnapshot(ctx context.Context, in *milvuspb.RestoreExternalSnapshotRequest, opts ...grpc.CallOption) (*milvuspb.RestoreExternalSnapshotResponse, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for RestoreExternalSnapshot")
+	}
+
+	var r0 *milvuspb.RestoreExternalSnapshotResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.RestoreExternalSnapshotRequest, ...grpc.CallOption) (*milvuspb.RestoreExternalSnapshotResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.RestoreExternalSnapshotRequest, ...grpc.CallOption) *milvuspb.RestoreExternalSnapshotResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.RestoreExternalSnapshotResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.RestoreExternalSnapshotRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_RestoreExternalSnapshot_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'RestoreExternalSnapshot'
+type MockMilvusServiceClient_RestoreExternalSnapshot_Call struct {
+	*mock.Call
+}
+
+// RestoreExternalSnapshot is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.RestoreExternalSnapshotRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) RestoreExternalSnapshot(ctx any, in any, opts ...any) *MockMilvusServiceClient_RestoreExternalSnapshot_Call {
+	return &MockMilvusServiceClient_RestoreExternalSnapshot_Call{Call: _e.mock.On("RestoreExternalSnapshot",
+		append([]any{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_RestoreExternalSnapshot_Call) Run(run func(ctx context.Context, in *milvuspb.RestoreExternalSnapshotRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_RestoreExternalSnapshot_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.RestoreExternalSnapshotRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.RestoreExternalSnapshotRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_RestoreExternalSnapshot_Call) Return(restoreExternalSnapshotResponse *milvuspb.RestoreExternalSnapshotResponse, err error) *MockMilvusServiceClient_RestoreExternalSnapshot_Call {
+	_c.Call.Return(restoreExternalSnapshotResponse, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_RestoreExternalSnapshot_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.RestoreExternalSnapshotRequest, opts ...grpc.CallOption) (*milvuspb.RestoreExternalSnapshotResponse, error)) *MockMilvusServiceClient_RestoreExternalSnapshot_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // RestoreRBAC provides a mock function for the type MockMilvusServiceClient
 func (_mock *MockMilvusServiceClient) RestoreRBAC(ctx context.Context, in *milvuspb.RestoreRBACMetaRequest, opts ...grpc.CallOption) (*commonpb.Status, error) {
 	var tmpRet mock.Arguments
@@ -10074,6 +11402,89 @@ func (_c *MockMilvusServiceClient_SelectUser_Call) Return(selectUserResponse *mi
 }
 
 func (_c *MockMilvusServiceClient_SelectUser_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.SelectUserRequest, opts ...grpc.CallOption) (*milvuspb.SelectUserResponse, error)) *MockMilvusServiceClient_SelectUser_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// SetRLSPrincipalTags provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) SetRLSPrincipalTags(ctx context.Context, in *milvuspb.SetRLSPrincipalTagsRequest, opts ...grpc.CallOption) (*commonpb.Status, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for SetRLSPrincipalTags")
+	}
+
+	var r0 *commonpb.Status
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.SetRLSPrincipalTagsRequest, ...grpc.CallOption) (*commonpb.Status, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.SetRLSPrincipalTagsRequest, ...grpc.CallOption) *commonpb.Status); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*commonpb.Status)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.SetRLSPrincipalTagsRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_SetRLSPrincipalTags_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'SetRLSPrincipalTags'
+type MockMilvusServiceClient_SetRLSPrincipalTags_Call struct {
+	*mock.Call
+}
+
+// SetRLSPrincipalTags is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.SetRLSPrincipalTagsRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) SetRLSPrincipalTags(ctx any, in any, opts ...any) *MockMilvusServiceClient_SetRLSPrincipalTags_Call {
+	return &MockMilvusServiceClient_SetRLSPrincipalTags_Call{Call: _e.mock.On("SetRLSPrincipalTags",
+		append([]any{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_SetRLSPrincipalTags_Call) Run(run func(ctx context.Context, in *milvuspb.SetRLSPrincipalTagsRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_SetRLSPrincipalTags_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.SetRLSPrincipalTagsRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.SetRLSPrincipalTagsRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_SetRLSPrincipalTags_Call) Return(status *commonpb.Status, err error) *MockMilvusServiceClient_SetRLSPrincipalTags_Call {
+	_c.Call.Return(status, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_SetRLSPrincipalTags_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.SetRLSPrincipalTagsRequest, opts ...grpc.CallOption) (*commonpb.Status, error)) *MockMilvusServiceClient_SetRLSPrincipalTags_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -10821,6 +12232,89 @@ func (_c *MockMilvusServiceClient_UpdateResourceGroups_Call) Return(status *comm
 }
 
 func (_c *MockMilvusServiceClient_UpdateResourceGroups_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.UpdateResourceGroupsRequest, opts ...grpc.CallOption) (*commonpb.Status, error)) *MockMilvusServiceClient_UpdateResourceGroups_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// UpdateRowPolicy provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) UpdateRowPolicy(ctx context.Context, in *milvuspb.UpdateRowPolicyRequest, opts ...grpc.CallOption) (*commonpb.Status, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for UpdateRowPolicy")
+	}
+
+	var r0 *commonpb.Status
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.UpdateRowPolicyRequest, ...grpc.CallOption) (*commonpb.Status, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.UpdateRowPolicyRequest, ...grpc.CallOption) *commonpb.Status); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*commonpb.Status)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.UpdateRowPolicyRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_UpdateRowPolicy_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'UpdateRowPolicy'
+type MockMilvusServiceClient_UpdateRowPolicy_Call struct {
+	*mock.Call
+}
+
+// UpdateRowPolicy is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.UpdateRowPolicyRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) UpdateRowPolicy(ctx any, in any, opts ...any) *MockMilvusServiceClient_UpdateRowPolicy_Call {
+	return &MockMilvusServiceClient_UpdateRowPolicy_Call{Call: _e.mock.On("UpdateRowPolicy",
+		append([]any{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_UpdateRowPolicy_Call) Run(run func(ctx context.Context, in *milvuspb.UpdateRowPolicyRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_UpdateRowPolicy_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.UpdateRowPolicyRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.UpdateRowPolicyRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_UpdateRowPolicy_Call) Return(status *commonpb.Status, err error) *MockMilvusServiceClient_UpdateRowPolicy_Call {
+	_c.Call.Return(status, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_UpdateRowPolicy_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.UpdateRowPolicyRequest, opts ...grpc.CallOption) (*commonpb.Status, error)) *MockMilvusServiceClient_UpdateRowPolicy_Call {
 	_c.Call.Return(run)
 	return _c
 }

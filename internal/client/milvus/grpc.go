@@ -17,9 +17,9 @@ import (
 
 	"github.com/Masterminds/semver/v3"
 	grpcretry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
-	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
-	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
-	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
+	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
+	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
+	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 	"google.golang.org/grpc"
@@ -157,8 +157,10 @@ type Grpc interface {
 	CreateSnapshot(ctx context.Context, db, collName, snapshotName string, compactionProtection time.Duration) error
 	DropSnapshot(ctx context.Context, db, collName, snapshotName string) error
 	DescribeSnapshot(ctx context.Context, db, collName, snapshotName string) (*milvuspb.DescribeSnapshotResponse, error)
-	PinSnapshotData(ctx context.Context, db, collName, snapshotName string, ttl time.Duration) (int64, error)
-	UnpinSnapshotData(ctx context.Context, pinID int64) error
+	ExportSnapshot(ctx context.Context, input ExportSnapshotInput) (int64, error)
+	GetExportSnapshotState(ctx context.Context, jobID int64) (*milvuspb.ExportSnapshotInfo, error)
+	RestoreExternalSnapshot(ctx context.Context, input RestoreExternalSnapshotInput) (int64, error)
+	GetRestoreSnapshotState(ctx context.Context, jobID int64) (*milvuspb.RestoreSnapshotInfo, error)
 }
 
 const (
@@ -1159,7 +1161,8 @@ func (g *GrpcClient) CreateSnapshot(ctx context.Context, db, collName, snapshotN
 }
 
 // DropSnapshot deletes a snapshot. The server rejects the call while the snapshot has active
-// pins, so unpin before dropping.
+// pins, and an export job holds one until it reaches a terminal state, so drop only once the
+// export is done with the snapshot.
 func (g *GrpcClient) DropSnapshot(ctx context.Context, db, collName, snapshotName string) error {
 	if !g.HasFeature(Snapshot) {
 		return errSnapshotUnsupported
@@ -1193,50 +1196,122 @@ func (g *GrpcClient) DescribeSnapshot(ctx context.Context, db, collName, snapsho
 	return resp, nil
 }
 
-// PinSnapshotData takes a lease on a snapshot and returns the pin id to release it with. While a
-// pin is active the snapshot cannot be dropped — not by DropSnapshot, and not by the cascade that
-// runs when the collection itself is dropped — which keeps the referenced binlogs safe from GC
-// for the whole copy window.
+// ExportSnapshotInput describes one snapshot export.
 //
-// ttl must be at least one second. The wire field is in seconds and treats 0 as "never expires",
-// which would leave a snapshot that no API can release if the caller dies before unpinning, so a
-// zero or sub-second duration is rejected here rather than silently sent.
-func (g *GrpcClient) PinSnapshotData(ctx context.Context, db, collName, snapshotName string, ttl time.Duration) (int64, error) {
+// TargetPath is the root prefix the bundle is written under, either an object key in the
+// instance bucket or a complete storage URI.
+//
+// ExternalSpec is an optional storage-config JSON for the target, of which only the extfs
+// section is read. Leave it empty to have Milvus write with its own object-storage credential
+// and rely on bucket policy to authorize the target. Either way the server rejects a copy that
+// crosses providers or endpoints, since it is executed as a provider-side copy.
+type ExportSnapshotInput struct {
+	DB             string
+	CollectionName string
+	SnapshotName   string
+	TargetPath     string
+	ExternalSpec   string
+}
+
+// ExportSnapshot copies a snapshot into a self-contained bundle — metadata, segment manifests and
+// the data files they reference — and returns the id of the job doing the copying. Nothing has
+// been copied when this returns: the call durably accepts the job and nothing more. Poll
+// GetExportSnapshotState for progress and for the metadata uri that restore needs.
+//
+// The server keeps the source snapshot pinned until the job is terminal, so the referenced files
+// stay safe from GC for the whole copy window without the caller holding a pin of its own.
+func (g *GrpcClient) ExportSnapshot(ctx context.Context, input ExportSnapshotInput) (int64, error) {
 	if !g.HasFeature(Snapshot) {
 		return 0, errSnapshotUnsupported
 	}
 
-	ttlSeconds := int64(ttl.Seconds())
-	if ttlSeconds <= 0 {
-		return 0, fmt.Errorf("client: snapshot pin ttl must be at least one second, got %s", ttl)
+	ctx = g.newCtxWithDB(ctx, input.DB)
+	in := &milvuspb.ExportSnapshotRequest{
+		Name:           input.SnapshotName,
+		CollectionName: input.CollectionName,
+		TargetS3Path:   input.TargetPath,
+		ExternalSpec:   input.ExternalSpec,
 	}
-
-	ctx = g.newCtxWithDB(ctx, db)
-	in := &milvuspb.PinSnapshotDataRequest{
-		CollectionName: collName,
-		Name:           snapshotName,
-		TtlSeconds:     ttlSeconds,
-	}
-	resp, err := g.srv.PinSnapshotData(ctx, in)
+	resp, err := g.srv.ExportSnapshot(ctx, in)
 	if err := checkResponse(resp, err); err != nil {
-		return 0, fmt.Errorf("client: pin snapshot data failed: %w", err)
+		return 0, fmt.Errorf("client: export snapshot failed: %w", err)
 	}
 
-	return resp.GetPinId(), nil
+	return resp.GetJobId(), nil
 }
 
-// UnpinSnapshotData releases a pin. It is idempotent: unpinning an id that was already released
-// or has expired succeeds.
-func (g *GrpcClient) UnpinSnapshotData(ctx context.Context, pinID int64) error {
+// GetExportSnapshotState reports how an export job is doing. A job that failed comes back through
+// the returned info — its state and reason — not as an error; the error return covers the state
+// query itself. SnapshotMetadataUri is populated only once the job reaches the completed state,
+// and TotalBytes only then accounts for the whole bundle.
+func (g *GrpcClient) GetExportSnapshotState(ctx context.Context, jobID int64) (*milvuspb.ExportSnapshotInfo, error) {
 	if !g.HasFeature(Snapshot) {
-		return errSnapshotUnsupported
+		return nil, errSnapshotUnsupported
 	}
 
 	ctx = g.newCtx(ctx)
-	resp, err := g.srv.UnpinSnapshotData(ctx, &milvuspb.UnpinSnapshotDataRequest{PinId: pinID})
+	in := &milvuspb.GetExportSnapshotStateRequest{JobId: jobID}
+	resp, err := g.srv.GetExportSnapshotState(ctx, in)
 	if err := checkResponse(resp, err); err != nil {
-		return fmt.Errorf("client: unpin snapshot data failed: %w", err)
+		return nil, fmt.Errorf("client: get export snapshot state failed: %w", err)
 	}
 
-	return nil
+	return resp.GetInfo(), nil
+}
+
+// RestoreExternalSnapshotInput describes one restore from an exported bundle.
+//
+// TargetCollectionName must not already exist in the target db — the restore creates it.
+//
+// SnapshotMetadataURI must be a complete URI with a scheme and a host; an object key is rejected
+// before the server reads anything. Query parameters and fragments are rejected too, so presigned
+// and SAS URLs cannot stand in for credentials — use ExternalSpec for those. The path has to keep
+// the snapshots/{collectionID}/metadata/{snapshotID}.json shape the bundle was written with,
+// because the server derives the bundle root from that anchor.
+//
+// ExternalSpec carries the source credentials under the same rules as the export side.
+type RestoreExternalSnapshotInput struct {
+	DB                   string
+	TargetCollectionName string
+	SnapshotMetadataURI  string
+	ExternalSpec         string
+}
+
+// RestoreExternalSnapshot restores a collection from a bundle in object storage instead of from
+// the target cluster's own snapshot registry, and returns the id of the job doing the work. Like
+// the export side it only accepts the job; poll GetRestoreSnapshotState for the outcome.
+func (g *GrpcClient) RestoreExternalSnapshot(ctx context.Context, input RestoreExternalSnapshotInput) (int64, error) {
+	if !g.HasFeature(Snapshot) {
+		return 0, errSnapshotUnsupported
+	}
+
+	ctx = g.newCtxWithDB(ctx, input.DB)
+	in := &milvuspb.RestoreExternalSnapshotRequest{
+		TargetCollectionName: input.TargetCollectionName,
+		SnapshotMetadataUri:  input.SnapshotMetadataURI,
+		ExternalSpec:         input.ExternalSpec,
+	}
+	resp, err := g.srv.RestoreExternalSnapshot(ctx, in)
+	if err := checkResponse(resp, err); err != nil {
+		return 0, fmt.Errorf("client: restore external snapshot failed: %w", err)
+	}
+
+	return resp.GetJobId(), nil
+}
+
+// GetRestoreSnapshotState reports how a restore job is doing. As on the export side, a failed job
+// is reported through the returned info rather than as an error.
+func (g *GrpcClient) GetRestoreSnapshotState(ctx context.Context, jobID int64) (*milvuspb.RestoreSnapshotInfo, error) {
+	if !g.HasFeature(Snapshot) {
+		return nil, errSnapshotUnsupported
+	}
+
+	ctx = g.newCtx(ctx)
+	in := &milvuspb.GetRestoreSnapshotStateRequest{JobId: jobID}
+	resp, err := g.srv.GetRestoreSnapshotState(ctx, in)
+	if err := checkResponse(resp, err); err != nil {
+		return nil, fmt.Errorf("client: get restore snapshot state failed: %w", err)
+	}
+
+	return resp.GetInfo(), nil
 }

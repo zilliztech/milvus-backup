@@ -8,13 +8,16 @@ import (
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/filter"
+	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
+	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
@@ -27,6 +30,90 @@ func newTestTask() *Task {
 			Params: &v2.Config{},
 		},
 	}
+}
+
+// A format this version does not know has to be refused up front. Restoring it as binlogs
+// would find no segments and report a successful restore of an empty collection.
+func TestNewTask_RefusesUnknownFormat(t *testing.T) {
+	args := TaskArgs{
+		TaskID: "task-1",
+		Backup: &backuppb.BackupInfo{Name: "mybackup", Format: "parquet"},
+	}
+
+	task, err := NewTask(args)
+	assert.ErrorContains(t, err, "parquet")
+	assert.Nil(t, task)
+}
+
+// A snapshot format backup resolves its bundles against the backup storage it is being read
+// from, so that a backup moved to another bucket or prefix stays restorable.
+func TestNewTask_SnapshotSource(t *testing.T) {
+	milvusStorage := storage.NewMockClient(t)
+	milvusStorage.EXPECT().Config().Return(storage.Config{
+		Provider: v2.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket",
+	})
+	backupStorage := storage.NewMockClient(t)
+	backupStorage.EXPECT().Config().Return(storage.Config{
+		Provider: v2.ProviderMinio, Endpoint: "minio:9000", Bucket: "backup-bucket",
+	})
+
+	args := TaskArgs{
+		TaskID:        "task-1",
+		Backup:        &backuppb.BackupInfo{Name: "mybackup", Format: meta.FormatSnapshot},
+		Plan:          &Plan{},
+		Option:        &Option{},
+		Params:        &v2.Config{},
+		BackupDir:     "backup/mybackup/",
+		BackupStorage: backupStorage,
+		MilvusStorage: milvusStorage,
+		TaskMgr:       taskmgr.NewMgr(),
+	}
+
+	task, err := NewTask(args)
+	require.NoError(t, err)
+	assert.Equal(t, meta.FormatSnapshot, task.format)
+	assert.Equal(t, "minio://minio:9000/backup-bucket/backup/mybackup", task.snapshotSource.dirURI)
+	// Both sides are the same backend, so Milvus reads with its own credential.
+	assert.Empty(t, task.snapshotSource.externalSpec)
+}
+
+// Milvus restores a snapshot bundle on its own terms, so an option asking for anything else
+// is refused rather than silently dropped.
+func TestCheckSnapshotSupport(t *testing.T) {
+	tests := []struct {
+		name string
+		plan *Plan
+		opt  *Option
+	}{
+		{"SkipCreateCollection", &Plan{}, &Option{SkipCreateCollection: true}},
+		{"MetaOnly", &Plan{}, &Option{MetaOnly: true}},
+		{"MaxShardNum", &Plan{}, &Option{MaxShardNum: 4}},
+		{"TruncateBinlogByTs", &Plan{}, &Option{TruncateBinlogByTs: true}},
+		{"EZKMapping", &Plan{}, &Option{EZKMapping: map[string]string{"old": "new"}}},
+		{"SkipParams", &Plan{}, &Option{SkipParams: SkipParams{IndexParams: []string{"nlist"}}}},
+		{"CollOverrides", &Plan{CollOverrides: map[string]CollOverride{"db1.coll1": {ShardNum: 2}}}, &Option{}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Error(t, checkSnapshotSupport(tt.plan, tt.opt))
+		})
+	}
+
+	// Renaming, filtering and dropping the target are all done before Milvus is asked to
+	// restore, so they stay available.
+	t.Run("SupportedOptions", func(t *testing.T) {
+		opt := &Option{DropExistCollection: true, RestoreRBAC: true}
+		assert.NoError(t, checkSnapshotSupport(&Plan{}, opt))
+	})
+}
+
+// The index options are not refused: Milvus restores the bundle's own indexes either way,
+// so there is nothing lost by ignoring them.
+func TestSnapshotIgnoredOptions(t *testing.T) {
+	opt := &Option{RebuildIndex: true, UseAutoIndex: true, DropExistCollection: true}
+	assert.ElementsMatch(t, []string{"restore_index", "use_auto_index"}, snapshotIgnoredOptions(opt))
+	assert.Empty(t, snapshotIgnoredOptions(&Option{}))
 }
 
 func TestTask_CheckCollExist(t *testing.T) {
@@ -51,15 +138,11 @@ func TestTask_CheckCollExist(t *testing.T) {
 		t.Run(fmt.Sprintf("has:%v, skipCreate:%v, dropExist:%v", tc.has, tc.skipCreate, tc.dropExist), func(t *testing.T) {
 			cli := milvus.NewMockGrpc(t)
 			opt := &Option{SkipCreateCollection: tc.skipCreate, DropExistCollection: tc.dropExist}
-			task := &collTask{
-				targetNS: namespace.New("db1", "coll1"),
-				option:   opt,
-			}
 
 			cli.EXPECT().HasCollection(mock.Anything, "db1", "coll1").Return(tc.has, nil).Once()
 
 			rt := &Task{args: TaskArgs{Option: opt}, grpc: cli, logger: zap.NewNop()}
-			err := rt.checkCollExist(context.Background(), task)
+			err := rt.checkCollExist(context.Background(), namespace.New("db1", "coll1"))
 			if tc.ok {
 				assert.NoError(t, err)
 			} else {
@@ -179,10 +262,10 @@ func TestTask_filterDBTask(t *testing.T) {
 func TestTask_filterCollTask(t *testing.T) {
 	t.Run("NoFilter", func(t *testing.T) {
 		task := newTestTask()
-		collTasks := []*collTask{
-			{targetNS: namespace.New("db1", "coll1")},
-			{targetNS: namespace.New("db1", "coll2")},
-			{targetNS: namespace.New("db2", "coll1")},
+		collTasks := []collectionTask{
+			&collTask{targetNS: namespace.New("db1", "coll1")},
+			&collTask{targetNS: namespace.New("db1", "coll2")},
+			&collTask{targetNS: namespace.New("db2", "coll1")},
 		}
 		assert.ElementsMatch(t, collTasks, task.filterCollTask(collTasks))
 	})
@@ -193,13 +276,13 @@ func TestTask_filterCollTask(t *testing.T) {
 		}}}
 		task := newTestTask()
 		task.args.Plan = p
-		collTasks := []*collTask{
-			{targetNS: namespace.New("db1", "coll1")},
-			{targetNS: namespace.New("db1", "coll2")},
-			{targetNS: namespace.New("db2", "coll1")},
+		collTasks := []collectionTask{
+			&collTask{targetNS: namespace.New("db1", "coll1")},
+			&collTask{targetNS: namespace.New("db1", "coll2")},
+			&collTask{targetNS: namespace.New("db2", "coll1")},
 		}
-		expect := []*collTask{
-			{targetNS: namespace.New("db1", "coll1")},
+		expect := []collectionTask{
+			&collTask{targetNS: namespace.New("db1", "coll1")},
 		}
 		assert.ElementsMatch(t, expect, task.filterCollTask(collTasks))
 	})
@@ -210,14 +293,14 @@ func TestTask_filterCollTask(t *testing.T) {
 		}}}
 		task := newTestTask()
 		task.args.Plan = p
-		collTasks := []*collTask{
-			{targetNS: namespace.New("db1", "coll1")},
-			{targetNS: namespace.New("db1", "coll2")},
-			{targetNS: namespace.New("db2", "coll1")},
+		collTasks := []collectionTask{
+			&collTask{targetNS: namespace.New("db1", "coll1")},
+			&collTask{targetNS: namespace.New("db1", "coll2")},
+			&collTask{targetNS: namespace.New("db2", "coll1")},
 		}
-		expect := []*collTask{
-			{targetNS: namespace.New("db1", "coll1")},
-			{targetNS: namespace.New("db1", "coll2")},
+		expect := []collectionTask{
+			&collTask{targetNS: namespace.New("db1", "coll1")},
+			&collTask{targetNS: namespace.New("db1", "coll2")},
 		}
 		assert.ElementsMatch(t, expect, task.filterCollTask(collTasks))
 	})
@@ -264,8 +347,33 @@ func TestTask_newCollTasks(t *testing.T) {
 	collBackup := &backuppb.CollectionBackupInfo{DbName: "db1", CollectionName: "coll1"}
 	tasks := task.newCollTask(dbBackup, collBackup)
 	assert.Len(t, tasks, 2)
-	nss := lo.Map(tasks, func(task *collTask, _ int) string { return task.targetNS.String() })
+	nss := lo.Map(tasks, func(task collectionTask, _ int) string { return task.TargetNS().String() })
 	assert.ElementsMatch(t, []string{"db2.coll2", "db3.coll3"}, nss)
+}
+
+// The same mapping, with a snapshot format backup, has to produce tasks that go down the
+// snapshot path instead.
+func TestTask_newCollTasks_Snapshot(t *testing.T) {
+	mapper := NewMockCollMapper(t)
+
+	ns := namespace.New("db1", "coll1")
+	mapper.EXPECT().TagetNS(ns).Return([]namespace.NS{namespace.New("db2", "coll2")}).Once()
+
+	task := newTestTask()
+	task.format = meta.FormatSnapshot
+	task.args.Plan = &Plan{CollMapper: mapper}
+	task.args.Option = &Option{}
+	mgr := taskmgr.NewMgr()
+	mgr.AddRestoreTask("task1")
+	task.args.TaskID = "task1"
+	task.args.TaskMgr = mgr
+
+	dbBackup := &backuppb.DatabaseBackupInfo{DbName: "db1"}
+	collBackup := &backuppb.CollectionBackupInfo{DbName: "db1", CollectionName: "coll1"}
+	tasks := task.newCollTask(dbBackup, collBackup)
+	assert.Len(t, tasks, 1)
+	assert.IsType(t, &collSnapshotTask{}, tasks[0])
+	assert.Equal(t, "db2.coll2", tasks[0].TargetNS().String())
 }
 
 func TestDefaultRenamer(t *testing.T) {

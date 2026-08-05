@@ -5,12 +5,14 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
-	"github.com/milvus-io/milvus/pkg/v2/proto/indexpb"
+	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
+	"github.com/milvus-io/milvus/pkg/v3/proto/indexpb"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 )
 
@@ -359,4 +361,41 @@ func TestBackupCollectionIDs(t *testing.T) {
 	builder.addCollection(namespace.New("db1", "coll2"), &backuppb.CollectionBackupInfo{CollectionId: 2})
 
 	assert.ElementsMatch(t, []int64{1, 2}, builder.backupCollectionIDs())
+}
+
+func TestAddSnapshot(t *testing.T) {
+	builder := newTestMetaBuilder(t)
+	ns := namespace.New("db1", "coll1")
+
+	snapshot := &backuppb.SnapshotBackupInfo{
+		MetadataPath: "snapshots/1/metadata/2.json",
+		TotalFiles:   3,
+		TotalBytes:   4096,
+	}
+	require.NoError(t, builder.addSnapshot(ns, snapshot, 456))
+
+	coll := builder.data.GetCollectionBackups()[0]
+	assert.Equal(t, "snapshots/1/metadata/2.json", coll.GetSnapshotBackup().GetMetadataPath())
+	// In this format the size is what the export job reported, and backup_timestamp is
+	// the snapshot's own boundary.
+	assert.EqualValues(t, 4096, coll.GetSize())
+	assert.EqualValues(t, 456, coll.GetBackupTimestamp())
+
+	t.Run("UnknownNamespace", func(t *testing.T) {
+		assert.Error(t, builder.addSnapshot(namespace.New("db1", "nope"), snapshot, 456))
+	})
+}
+
+// backup_meta.json is the top-level view, and a reader that fetches only it still has
+// to be able to tell which format the backup is in.
+func TestBuildBackupMetaCarriesFormat(t *testing.T) {
+	builder := newTestMetaBuilder(t)
+	builder.setFormat(meta.FormatSnapshot)
+
+	byts, err := builder.buildBackupMeta()
+	require.NoError(t, err)
+
+	var got backuppb.BackupInfo
+	require.NoError(t, json.Unmarshal(byts, &got))
+	assert.Equal(t, meta.FormatSnapshot, got.GetFormat())
 }

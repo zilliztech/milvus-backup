@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/milvus-io/milvus-proto/go-api/v2/schemapb"
-	"github.com/milvus-io/milvus/pkg/v2/proto/indexpb"
+	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
+	"github.com/milvus-io/milvus/pkg/v3/proto/indexpb"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 
@@ -79,6 +79,35 @@ func (builder *metaBuilder) addCollection(ns namespace.NS, collectionBackup *bac
 		key := partitionKey{collectionID: collectionBackup.GetCollectionId(), partitionID: partition.GetPartitionId()}
 		builder.partitionBackups[key] = partition
 	}
+}
+
+// setFormat records which format the backup is being written in. Empty, the default,
+// is the binlog format.
+func (builder *metaBuilder) setFormat(format string) {
+	builder.mu.Lock()
+	defer builder.mu.Unlock()
+
+	builder.data.Format = format
+}
+
+// addSnapshot attaches a collection's exported bundle. snapshotTs is the snapshot's
+// own boundary as Milvus reports it, which is what backup_timestamp means for this
+// format — the flush response the binlog path reads it from has no counterpart here.
+func (builder *metaBuilder) addSnapshot(ns namespace.NS, snapshot *backuppb.SnapshotBackupInfo, snapshotTs uint64) error {
+	builder.mu.Lock()
+	defer builder.mu.Unlock()
+
+	collID := builder.nsToCollID[ns]
+	collBackup, ok := builder.collectionBackups[collID]
+	if !ok {
+		return fmt.Errorf("backup: collection backup not found for namespace %s, collection_id: %d", ns, collID)
+	}
+
+	collBackup.SnapshotBackup = snapshot
+	collBackup.BackupTimestamp = snapshotTs
+	collBackup.Size = snapshot.GetTotalBytes()
+
+	return nil
 }
 
 func (builder *metaBuilder) addPOS(ns namespace.NS, channelCP map[string]string, maxChannelTS uint64, sealTime uint64) error {
@@ -281,6 +310,7 @@ func (builder *metaBuilder) buildBackupMeta() ([]byte, error) {
 	info := &backuppb.BackupInfo{
 		Id:              builder.data.GetId(),
 		Name:            builder.data.GetName(),
+		Format:          builder.data.GetFormat(),
 		BackupTimestamp: builder.data.GetBackupTimestamp(),
 		Size:            builder.data.GetSize(),
 		MilvusVersion:   builder.data.GetMilvusVersion(),

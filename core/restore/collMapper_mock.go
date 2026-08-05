@@ -62,7 +62,7 @@ type MockCollMapper_TagetNS_Call struct {
 
 // TagetNS is a helper method to define mock.On call
 //   - ns namespace.NS
-func (_e *MockCollMapper_Expecter) TagetNS(ns interface{}) *MockCollMapper_TagetNS_Call {
+func (_e *MockCollMapper_Expecter) TagetNS(ns any) *MockCollMapper_TagetNS_Call {
 	return &MockCollMapper_TagetNS_Call{Call: _e.mock.On("TagetNS", ns)}
 }
 

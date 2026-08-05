@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
+	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 )
 
 // msgQueue is an in-memory replay buffer for replicate messages.

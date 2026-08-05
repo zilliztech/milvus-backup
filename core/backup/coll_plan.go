@@ -11,6 +11,7 @@ import (
 	"golang.org/x/sync/semaphore"
 	"google.golang.org/protobuf/proto"
 
+	"github.com/zilliztech/milvus-backup/core/tasklet"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
@@ -19,6 +20,10 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
+// Strategy decides when the backup's point-in-time boundary is established: when,
+// if at all, data is flushed before it is captured. What carries the captured
+// data is the format, a separate axis the task resolves at start.
+//
 //go:generate stringer -type=Strategy
 type Strategy int
 
@@ -28,6 +33,19 @@ const (
 	StrategySkipFlush
 	StrategyBulkFlush
 	StrategySerialFlush
+)
+
+// Format is what artifact carries the backup's data: binlog files copied by
+// milvus-backup, or a bundle Milvus exports from a snapshot. Both default to auto
+// and resolve against the server at task start.
+//
+//go:generate stringer -type=Format
+type Format int
+
+const (
+	FormatAuto Format = iota
+	FormatBinlog
+	FormatSnapshot
 )
 
 // concurrencyThrottling:
@@ -62,6 +80,11 @@ type collTaskArgs struct {
 
 	gcCtrl gcCtrl
 }
+
+// dataTaskFactory builds the per-collection data task for the resolved format.
+// The plans call it instead of constructing a DML task themselves, so one flush
+// orchestration runs whichever artifact the format calls for.
+type dataTaskFactory func(ns namespace.NS, args collTaskArgs) tasklet.Tasklet
 
 type collTask func(ctx context.Context) error
 
@@ -107,13 +130,13 @@ func newDDLTasks(nss []namespace.NS, args collTaskArgs) []collTask {
 	return ddlTasks
 }
 
-func newDMLTasks(nss []namespace.NS, args collTaskArgs) []collTask {
+func newDMLTasks(nss []namespace.NS, args collTaskArgs, newData dataTaskFactory) []collTask {
 	dmlTasks := make([]collTask, 0, len(nss))
 	for _, ns := range nss {
 		task := func(ctx context.Context) error {
-			if err := newCollDMLTask(ns, args).Execute(ctx); err != nil {
+			if err := newData(ns, args).Execute(ctx); err != nil {
 				args.TaskMgr.UpdateBackupTask(args.TaskID, taskmgr.SetBackupCollFail(ns, err))
-				return fmt.Errorf("backup: execute dml task %w", err)
+				return fmt.Errorf("backup: execute data task %w", err)
 			}
 
 			args.TaskMgr.UpdateBackupTask(args.TaskID, taskmgr.SetBackupCollSuccess(ns))
@@ -126,17 +149,17 @@ func newDMLTasks(nss []namespace.NS, args collTaskArgs) []collTask {
 	return dmlTasks
 }
 
-type metaOnlyStrategy struct {
+type metaOnlyPlan struct {
 	nss []namespace.NS
 
 	args collTaskArgs
 }
 
-func newMetaOnlyStrategy(nss []namespace.NS, args collTaskArgs) *metaOnlyStrategy {
-	return &metaOnlyStrategy{nss: nss, args: args}
+func newMetaOnlyPlan(nss []namespace.NS, args collTaskArgs) *metaOnlyPlan {
+	return &metaOnlyPlan{nss: nss, args: args}
 }
 
-func (m *metaOnlyStrategy) Execute(ctx context.Context) error {
+func (m *metaOnlyPlan) Execute(ctx context.Context) error {
 	ddlTasks := newDDLTasks(m.nss, m.args)
 	if err := concurrentExecCollTask(ctx, m.args.Throttling.CollSem, ddlTasks); err != nil {
 		return fmt.Errorf("backup: concurrent execute ddl task %w", err)
@@ -145,24 +168,27 @@ func (m *metaOnlyStrategy) Execute(ctx context.Context) error {
 	return nil
 }
 
-type skipFlushStrategy struct {
+type skipFlushPlan struct {
 	nss []namespace.NS
 
 	args collTaskArgs
 
+	newData dataTaskFactory
+
 	logger *zap.Logger
 }
 
-func newSkipFlushStrategy(nss []namespace.NS, args collTaskArgs) *skipFlushStrategy {
-	return &skipFlushStrategy{
-		nss:    nss,
-		args:   args,
-		logger: log.With(zap.String("task_id", args.TaskID)),
+func newSkipFlushPlan(nss []namespace.NS, args collTaskArgs, newData dataTaskFactory) *skipFlushPlan {
+	return &skipFlushPlan{
+		nss:     nss,
+		args:    args,
+		newData: newData,
+		logger:  log.With(zap.String("task_id", args.TaskID)),
 	}
 }
 
-func (sf *skipFlushStrategy) Execute(ctx context.Context) error {
-	sf.logger.Info("use skip flush strategy")
+func (sf *skipFlushPlan) Execute(ctx context.Context) error {
+	sf.logger.Info("use skip flush plan")
 
 	// backup DDL
 	ddlTasks := newDDLTasks(sf.nss, sf.args)
@@ -171,7 +197,7 @@ func (sf *skipFlushStrategy) Execute(ctx context.Context) error {
 	}
 
 	// backup DML
-	dmlTasks := newDMLTasks(sf.nss, sf.args)
+	dmlTasks := newDMLTasks(sf.nss, sf.args, sf.newData)
 	if err := concurrentExecCollTask(ctx, sf.args.Throttling.CollSem, dmlTasks); err != nil {
 		return fmt.Errorf("backup: execute dml task %w", err)
 	}
@@ -179,23 +205,26 @@ func (sf *skipFlushStrategy) Execute(ctx context.Context) error {
 	return nil
 }
 
-type serialFlushStrategy struct {
+type serialFlushPlan struct {
 	nss []namespace.NS
 
 	args collTaskArgs
 
+	newData dataTaskFactory
+
 	logger *zap.Logger
 }
 
-func newSerialFlushStrategy(nss []namespace.NS, args collTaskArgs) *serialFlushStrategy {
-	return &serialFlushStrategy{
-		nss:    nss,
-		args:   args,
-		logger: log.With(zap.String("task_id", args.TaskID)),
+func newSerialFlushPlan(nss []namespace.NS, args collTaskArgs, newData dataTaskFactory) *serialFlushPlan {
+	return &serialFlushPlan{
+		nss:     nss,
+		args:    args,
+		newData: newData,
+		logger:  log.With(zap.String("task_id", args.TaskID)),
 	}
 }
 
-func (sf *serialFlushStrategy) flushAndBackupPOS(ctx context.Context, ns namespace.NS) error {
+func (sf *serialFlushPlan) flushAndBackupPOS(ctx context.Context, ns namespace.NS) error {
 	sf.logger.Info("start flush collection")
 	start := time.Now()
 	resp, err := sf.args.Grpc.Flush(ctx, ns.DBName(), ns.CollName())
@@ -222,7 +251,7 @@ func (sf *serialFlushStrategy) flushAndBackupPOS(ctx context.Context, ns namespa
 	return nil
 }
 
-func (sf *serialFlushStrategy) executeDDLTask(ctx context.Context) error {
+func (sf *serialFlushPlan) executeDDLTask(ctx context.Context) error {
 	ddlTasks := newDDLTasks(sf.nss, sf.args)
 
 	if err := concurrentExecCollTask(ctx, sf.args.Throttling.CollSem, ddlTasks); err != nil {
@@ -232,7 +261,7 @@ func (sf *serialFlushStrategy) executeDDLTask(ctx context.Context) error {
 	return nil
 }
 
-func (sf *serialFlushStrategy) executeDMLTask(ctx context.Context) error {
+func (sf *serialFlushPlan) executeDMLTask(ctx context.Context) error {
 	dmlTasks := make([]collTask, 0, len(sf.nss))
 	for _, ns := range sf.nss {
 		task := func(ctx context.Context) error {
@@ -241,9 +270,9 @@ func (sf *serialFlushStrategy) executeDMLTask(ctx context.Context) error {
 				return fmt.Errorf("backup: flush and backup pos %w", err)
 			}
 
-			if err := newCollDMLTask(ns, sf.args).Execute(ctx); err != nil {
+			if err := sf.newData(ns, sf.args).Execute(ctx); err != nil {
 				sf.args.TaskMgr.UpdateBackupTask(sf.args.TaskID, taskmgr.SetBackupCollFail(ns, err))
-				return fmt.Errorf("backup: execute dml task %w", err)
+				return fmt.Errorf("backup: execute data task %w", err)
 			}
 
 			sf.args.TaskMgr.UpdateBackupTask(sf.args.TaskID, taskmgr.SetBackupCollSuccess(ns))
@@ -260,7 +289,7 @@ func (sf *serialFlushStrategy) executeDMLTask(ctx context.Context) error {
 	return nil
 }
 
-func (sf *serialFlushStrategy) Execute(ctx context.Context) error {
+func (sf *serialFlushPlan) Execute(ctx context.Context) error {
 	if err := sf.executeDDLTask(ctx); err != nil {
 		return fmt.Errorf("backup: execute ddl task %w", err)
 	}
@@ -272,19 +301,21 @@ func (sf *serialFlushStrategy) Execute(ctx context.Context) error {
 	return nil
 }
 
-type bulkFlushStrategy struct {
+type bulkFlushPlan struct {
 	nss []namespace.NS
 
 	args collTaskArgs
 
+	newData dataTaskFactory
+
 	logger *zap.Logger
 }
 
-func newBulkFlushStrategy(nss []namespace.NS, args collTaskArgs) *bulkFlushStrategy {
-	return &bulkFlushStrategy{nss: nss, args: args, logger: log.With(zap.String("task_id", args.TaskID))}
+func newBulkFlushPlan(nss []namespace.NS, args collTaskArgs, newData dataTaskFactory) *bulkFlushPlan {
+	return &bulkFlushPlan{nss: nss, args: args, newData: newData, logger: log.With(zap.String("task_id", args.TaskID))}
 }
 
-func (bf *bulkFlushStrategy) Execute(ctx context.Context) error {
+func (bf *bulkFlushPlan) Execute(ctx context.Context) error {
 	ddlTasks := newDDLTasks(bf.nss, bf.args)
 	if err := concurrentExecCollTask(ctx, bf.args.Throttling.CollSem, ddlTasks); err != nil {
 		return fmt.Errorf("backup: execute ddl task %w", err)
@@ -294,7 +325,7 @@ func (bf *bulkFlushStrategy) Execute(ctx context.Context) error {
 		return fmt.Errorf("backup: flush all and backup ts %w", err)
 	}
 
-	dmlTasks := newDMLTasks(bf.nss, bf.args)
+	dmlTasks := newDMLTasks(bf.nss, bf.args, bf.newData)
 	if err := concurrentExecCollTask(ctx, bf.args.Throttling.CollSem, dmlTasks); err != nil {
 		return fmt.Errorf("backup: execute dml task %w", err)
 	}
@@ -302,15 +333,21 @@ func (bf *bulkFlushStrategy) Execute(ctx context.Context) error {
 	return nil
 }
 
-func (bf *bulkFlushStrategy) flushAllAndBackupTS(ctx context.Context) error {
-	bf.logger.Info("start flush all")
+func (bf *bulkFlushPlan) flushAllAndBackupTS(ctx context.Context) error {
+	return flushAllAndRecord(ctx, bf.args, bf.logger)
+}
+
+// flushAllAndRecord seals every collection in the cluster and records what the response
+// says about it: the control and physical channels, and the flush messages per channel.
+func flushAllAndRecord(ctx context.Context, args collTaskArgs, logger *zap.Logger) error {
+	logger.Info("start flush all")
 
 	start := time.Now()
-	resp, err := bf.args.Grpc.FlushAll(ctx)
+	resp, err := args.Grpc.FlushAll(ctx)
 	if err != nil {
 		return fmt.Errorf("backup: flush all %w", err)
 	}
-	bf.logger.Info("flush all done", zap.Any("resp", resp), zap.Duration("cost", time.Since(start)))
+	logger.Info("flush all done", zap.Any("resp", resp), zap.Duration("cost", time.Since(start)))
 
 	pchs := resp.GetClusterInfo().GetPchannels()
 	cch := resp.GetClusterInfo().GetCchannel()
@@ -325,6 +362,6 @@ func (bf *bulkFlushStrategy) flushAllAndBackupTS(ctx context.Context) error {
 		flushAllMsg[pch] = base64.StdEncoding.EncodeToString(byts)
 	}
 
-	bf.args.MetaBuilder.setClusterInfoAndTSS(cch, pchs, flushAllMsg)
+	args.MetaBuilder.setClusterInfoAndTSS(cch, pchs, flushAllMsg)
 	return nil
 }

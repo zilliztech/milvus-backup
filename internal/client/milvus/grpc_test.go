@@ -7,8 +7,8 @@ import (
 	"time"
 
 	semver "github.com/Masterminds/semver/v3"
-	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
-	"github.com/milvus-io/milvus-proto/go-api/v2/milvuspb"
+	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
+	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -457,16 +457,32 @@ func TestGrpcClient_SnapshotUnsupported(t *testing.T) {
 		assert.Nil(t, resp)
 	})
 
-	t.Run("PinSnapshotData", func(t *testing.T) {
+	t.Run("ExportSnapshot", func(t *testing.T) {
 		cli := &GrpcClient{srv: NewMockMilvusServiceClient(t), flags: 0}
-		pinID, err := cli.PinSnapshotData(ctx, "db", "coll", "snap", time.Hour)
+		jobID, err := cli.ExportSnapshot(ctx, ExportSnapshotInput{DB: "db", CollectionName: "coll", SnapshotName: "snap"})
 		assert.ErrorIs(t, err, errSnapshotUnsupported)
-		assert.Zero(t, pinID)
+		assert.Zero(t, jobID)
 	})
 
-	t.Run("UnpinSnapshotData", func(t *testing.T) {
+	t.Run("GetExportSnapshotState", func(t *testing.T) {
 		cli := &GrpcClient{srv: NewMockMilvusServiceClient(t), flags: 0}
-		assert.ErrorIs(t, cli.UnpinSnapshotData(ctx, 42), errSnapshotUnsupported)
+		info, err := cli.GetExportSnapshotState(ctx, 42)
+		assert.ErrorIs(t, err, errSnapshotUnsupported)
+		assert.Nil(t, info)
+	})
+
+	t.Run("RestoreExternalSnapshot", func(t *testing.T) {
+		cli := &GrpcClient{srv: NewMockMilvusServiceClient(t), flags: 0}
+		jobID, err := cli.RestoreExternalSnapshot(ctx, RestoreExternalSnapshotInput{DB: "db", TargetCollectionName: "coll"})
+		assert.ErrorIs(t, err, errSnapshotUnsupported)
+		assert.Zero(t, jobID)
+	})
+
+	t.Run("GetRestoreSnapshotState", func(t *testing.T) {
+		cli := &GrpcClient{srv: NewMockMilvusServiceClient(t), flags: 0}
+		info, err := cli.GetRestoreSnapshotState(ctx, 42)
+		assert.ErrorIs(t, err, errSnapshotUnsupported)
+		assert.Nil(t, info)
 	})
 }
 
@@ -538,67 +554,6 @@ func TestGrpcClient_DescribeSnapshot(t *testing.T) {
 	})
 }
 
-func TestGrpcClient_PinSnapshotData(t *testing.T) {
-	t.Run("Success", func(t *testing.T) {
-		mockSrv := NewMockMilvusServiceClient(t)
-		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
-
-		var got *milvuspb.PinSnapshotDataRequest
-		mockSrv.EXPECT().PinSnapshotData(mock.Anything, mock.Anything).
-			Run(func(_ context.Context, in *milvuspb.PinSnapshotDataRequest, _ ...grpc.CallOption) { got = in }).
-			Return(&milvuspb.PinSnapshotDataResponse{Status: &commonpb.Status{Code: 0}, PinId: 7}, nil)
-
-		pinID, err := cli.PinSnapshotData(context.Background(), "db", "coll", "snap", 2*time.Hour)
-		require.NoError(t, err)
-		assert.EqualValues(t, 7, pinID)
-		assert.EqualValues(t, 7200, got.GetTtlSeconds())
-	})
-
-	// A zero ttl means "never expires" on the wire, and no API can release such a pin if the
-	// caller dies. Both cases below would round down to zero, so neither may reach the server —
-	// the mock has no expectations, so an RPC would fail the test.
-	t.Run("RejectsZeroTTL", func(t *testing.T) {
-		cli := &GrpcClient{srv: NewMockMilvusServiceClient(t), flags: Snapshot}
-
-		pinID, err := cli.PinSnapshotData(context.Background(), "db", "coll", "snap", 0)
-		assert.Error(t, err)
-		assert.Zero(t, pinID)
-	})
-
-	t.Run("RejectsSubSecondTTL", func(t *testing.T) {
-		cli := &GrpcClient{srv: NewMockMilvusServiceClient(t), flags: Snapshot}
-
-		pinID, err := cli.PinSnapshotData(context.Background(), "db", "coll", "snap", 500*time.Millisecond)
-		assert.Error(t, err)
-		assert.Zero(t, pinID)
-	})
-}
-
-func TestGrpcClient_UnpinSnapshotData(t *testing.T) {
-	t.Run("Success", func(t *testing.T) {
-		mockSrv := NewMockMilvusServiceClient(t)
-		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
-
-		var got *milvuspb.UnpinSnapshotDataRequest
-		mockSrv.EXPECT().UnpinSnapshotData(mock.Anything, mock.Anything).
-			Run(func(_ context.Context, in *milvuspb.UnpinSnapshotDataRequest, _ ...grpc.CallOption) { got = in }).
-			Return(&commonpb.Status{Code: 0}, nil)
-
-		require.NoError(t, cli.UnpinSnapshotData(context.Background(), 7))
-		assert.EqualValues(t, 7, got.GetPinId())
-	})
-
-	t.Run("StatusError", func(t *testing.T) {
-		mockSrv := NewMockMilvusServiceClient(t)
-		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
-
-		mockSrv.EXPECT().UnpinSnapshotData(mock.Anything, mock.Anything).
-			Return(&commonpb.Status{Code: 1, Reason: "some error"}, nil)
-
-		assert.Error(t, cli.UnpinSnapshotData(context.Background(), 7))
-	})
-}
-
 func TestGrpcClient_DropSnapshot(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		mockSrv := NewMockMilvusServiceClient(t)
@@ -622,5 +577,212 @@ func TestGrpcClient_DropSnapshot(t *testing.T) {
 			Return(&commonpb.Status{Code: 1, Reason: "snapshot is pinned"}, nil)
 
 		assert.Error(t, cli.DropSnapshot(context.Background(), "db", "coll", "snap"))
+	})
+}
+
+func TestGrpcClient_ExportSnapshot(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
+
+		var got *milvuspb.ExportSnapshotRequest
+		mockSrv.EXPECT().ExportSnapshot(mock.Anything, mock.Anything).
+			Run(func(_ context.Context, in *milvuspb.ExportSnapshotRequest, _ ...grpc.CallOption) { got = in }).
+			Return(&milvuspb.ExportSnapshotResponse{Status: &commonpb.Status{Code: 0}, JobId: 9001}, nil)
+
+		jobID, err := cli.ExportSnapshot(context.Background(), ExportSnapshotInput{
+			DB:             "db",
+			CollectionName: "coll",
+			SnapshotName:   "snap",
+			TargetPath:     "s3://backup-bucket/backup_1",
+			ExternalSpec:   `{"extfs":{"use_iam":true}}`,
+		})
+		require.NoError(t, err)
+		assert.EqualValues(t, 9001, jobID)
+		assert.Equal(t, "coll", got.GetCollectionName())
+		assert.Equal(t, "snap", got.GetName())
+		assert.Equal(t, "s3://backup-bucket/backup_1", got.GetTargetS3Path())
+		assert.Equal(t, `{"extfs":{"use_iam":true}}`, got.GetExternalSpec())
+	})
+
+	// An empty spec is what tells the server to write with its own credential, so it must go out
+	// as an empty field rather than being filled in with anything here.
+	t.Run("NoExternalSpec", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
+
+		var got *milvuspb.ExportSnapshotRequest
+		mockSrv.EXPECT().ExportSnapshot(mock.Anything, mock.Anything).
+			Run(func(_ context.Context, in *milvuspb.ExportSnapshotRequest, _ ...grpc.CallOption) { got = in }).
+			Return(&milvuspb.ExportSnapshotResponse{Status: &commonpb.Status{Code: 0}, JobId: 9001}, nil)
+
+		_, err := cli.ExportSnapshot(context.Background(), ExportSnapshotInput{
+			DB:             "db",
+			CollectionName: "coll",
+			SnapshotName:   "snap",
+			TargetPath:     "backup_1",
+		})
+		require.NoError(t, err)
+		assert.Empty(t, got.GetExternalSpec())
+	})
+
+	t.Run("StatusError", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
+
+		mockSrv.EXPECT().ExportSnapshot(mock.Anything, mock.Anything).
+			Return(&milvuspb.ExportSnapshotResponse{
+				Status: &commonpb.Status{Code: 1, Reason: "target overlaps the source snapshot"},
+			}, nil)
+
+		jobID, err := cli.ExportSnapshot(context.Background(), ExportSnapshotInput{
+			DB:             "db",
+			CollectionName: "coll",
+			SnapshotName:   "snap",
+			TargetPath:     "backup_1",
+		})
+		assert.Error(t, err)
+		assert.Zero(t, jobID)
+	})
+}
+
+func TestGrpcClient_GetExportSnapshotState(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
+
+		var got *milvuspb.GetExportSnapshotStateRequest
+		mockSrv.EXPECT().GetExportSnapshotState(mock.Anything, mock.Anything).
+			Run(func(_ context.Context, in *milvuspb.GetExportSnapshotStateRequest, _ ...grpc.CallOption) { got = in }).
+			Return(&milvuspb.GetExportSnapshotStateResponse{
+				Status: &commonpb.Status{Code: 0},
+				Info: &milvuspb.ExportSnapshotInfo{
+					JobId:               9001,
+					State:               milvuspb.ExportSnapshotState_ExportSnapshotCompleted,
+					Progress:            100,
+					TotalBytes:          4096,
+					SnapshotMetadataUri: "s3://backup-bucket/backup_1/snapshots/100/metadata/200.json",
+				},
+			}, nil)
+
+		info, err := cli.GetExportSnapshotState(context.Background(), 9001)
+		require.NoError(t, err)
+		assert.EqualValues(t, 9001, got.GetJobId())
+		assert.Equal(t, milvuspb.ExportSnapshotState_ExportSnapshotCompleted, info.GetState())
+		assert.Equal(t, "s3://backup-bucket/backup_1/snapshots/100/metadata/200.json", info.GetSnapshotMetadataUri())
+		assert.EqualValues(t, 4096, info.GetTotalBytes())
+	})
+
+	// A job that failed is a successful state query — the caller has to read the state to see it,
+	// so it must not be flattened into an error here.
+	t.Run("FailedJobIsNotAnError", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
+
+		mockSrv.EXPECT().GetExportSnapshotState(mock.Anything, mock.Anything).
+			Return(&milvuspb.GetExportSnapshotStateResponse{
+				Status: &commonpb.Status{Code: 0},
+				Info: &milvuspb.ExportSnapshotInfo{
+					JobId:  9001,
+					State:  milvuspb.ExportSnapshotState_ExportSnapshotFailed,
+					Reason: "copy failed",
+				},
+			}, nil)
+
+		info, err := cli.GetExportSnapshotState(context.Background(), 9001)
+		require.NoError(t, err)
+		assert.Equal(t, milvuspb.ExportSnapshotState_ExportSnapshotFailed, info.GetState())
+		assert.Equal(t, "copy failed", info.GetReason())
+	})
+
+	t.Run("StatusError", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
+
+		mockSrv.EXPECT().GetExportSnapshotState(mock.Anything, mock.Anything).
+			Return(&milvuspb.GetExportSnapshotStateResponse{
+				Status: &commonpb.Status{Code: 1, Reason: "job not found"},
+			}, nil)
+
+		info, err := cli.GetExportSnapshotState(context.Background(), 9001)
+		assert.Error(t, err)
+		assert.Nil(t, info)
+	})
+}
+
+func TestGrpcClient_RestoreExternalSnapshot(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
+
+		var got *milvuspb.RestoreExternalSnapshotRequest
+		mockSrv.EXPECT().RestoreExternalSnapshot(mock.Anything, mock.Anything).
+			Run(func(_ context.Context, in *milvuspb.RestoreExternalSnapshotRequest, _ ...grpc.CallOption) { got = in }).
+			Return(&milvuspb.RestoreExternalSnapshotResponse{Status: &commonpb.Status{Code: 0}, JobId: 9002}, nil)
+
+		jobID, err := cli.RestoreExternalSnapshot(context.Background(), RestoreExternalSnapshotInput{
+			DB:                   "db",
+			TargetCollectionName: "coll_restored",
+			SnapshotMetadataURI:  "s3://backup-bucket/backup_1/snapshots/100/metadata/200.json",
+		})
+		require.NoError(t, err)
+		assert.EqualValues(t, 9002, jobID)
+		assert.Equal(t, "coll_restored", got.GetTargetCollectionName())
+		assert.Equal(t, "s3://backup-bucket/backup_1/snapshots/100/metadata/200.json", got.GetSnapshotMetadataUri())
+	})
+
+	t.Run("StatusError", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
+
+		mockSrv.EXPECT().RestoreExternalSnapshot(mock.Anything, mock.Anything).
+			Return(&milvuspb.RestoreExternalSnapshotResponse{
+				Status: &commonpb.Status{Code: 1, Reason: "collection already exists"},
+			}, nil)
+
+		jobID, err := cli.RestoreExternalSnapshot(context.Background(), RestoreExternalSnapshotInput{
+			DB:                   "db",
+			TargetCollectionName: "coll_restored",
+			SnapshotMetadataURI:  "s3://backup-bucket/backup_1/snapshots/100/metadata/200.json",
+		})
+		assert.Error(t, err)
+		assert.Zero(t, jobID)
+	})
+}
+
+func TestGrpcClient_GetRestoreSnapshotState(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
+
+		var got *milvuspb.GetRestoreSnapshotStateRequest
+		mockSrv.EXPECT().GetRestoreSnapshotState(mock.Anything, mock.Anything).
+			Run(func(_ context.Context, in *milvuspb.GetRestoreSnapshotStateRequest, _ ...grpc.CallOption) { got = in }).
+			Return(&milvuspb.GetRestoreSnapshotStateResponse{
+				Status: &commonpb.Status{Code: 0},
+				Info: &milvuspb.RestoreSnapshotInfo{
+					JobId:    9002,
+					State:    milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted,
+					Progress: 100,
+				},
+			}, nil)
+
+		info, err := cli.GetRestoreSnapshotState(context.Background(), 9002)
+		require.NoError(t, err)
+		assert.EqualValues(t, 9002, got.GetJobId())
+		assert.Equal(t, milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted, info.GetState())
+		assert.EqualValues(t, 100, info.GetProgress())
+	})
+
+	t.Run("GrpcError", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
+
+		mockSrv.EXPECT().GetRestoreSnapshotState(mock.Anything, mock.Anything).
+			Return(nil, errors.New("grpc error"))
+
+		info, err := cli.GetRestoreSnapshotState(context.Background(), 9002)
+		assert.Error(t, err)
+		assert.Nil(t, info)
 	})
 }

@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/milvus-io/milvus-proto/go-api/v2/commonpb"
+	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
@@ -157,6 +157,8 @@ func newCollTask(args collTaskArgs) *collTask {
 		logger: logger,
 	}
 }
+
+func (ct *collTask) TargetNS() namespace.NS { return ct.targetNS }
 
 func (ct *collTask) Execute(ctx context.Context) error {
 	ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.SetRestoreCollExecuting(ct.targetNS))

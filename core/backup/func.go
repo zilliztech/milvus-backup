@@ -53,9 +53,33 @@ func ParseStrategy(strategy string) (Strategy, error) {
 		return StrategyAuto, nil
 	}
 
+	if strategy == "snapshot" {
+		return StrategyAuto, errors.New(`backup: "snapshot" is a format, not a strategy; use --format=snapshot instead`)
+	}
+
 	if s, ok := _strategyMap[strategy]; ok {
 		return s, nil
 	}
 
 	return StrategyAuto, fmt.Errorf("backup: invalid strategy %s", strategy)
+}
+
+var _formatMap = map[string]Format{
+	"auto":     FormatAuto,
+	"binlog":   FormatBinlog,
+	"snapshot": FormatSnapshot,
+}
+
+func SupportFormat() []string { return lo.Keys(_formatMap) }
+
+func ParseFormat(format string) (Format, error) {
+	if format == "" {
+		return FormatAuto, nil
+	}
+
+	if f, ok := _formatMap[format]; ok {
+		return f, nil
+	}
+
+	return FormatAuto, fmt.Errorf("backup: invalid format %s", format)
 }
