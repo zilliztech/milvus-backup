@@ -31,6 +31,16 @@ func SnapshotURI(cfg Config, key string) (string, error) {
 		return "", err
 	}
 
+	// Azure names its service endpoint in the host and carries the account name in the
+	// extfs access_key_id, so the host is the blob. service endpoint, not the account one.
+	if cfg.Provider == v2.ProviderAzure {
+		host := endpointHost(cfg.Endpoint)
+		if host == "" {
+			return "", fmt.Errorf("storage: snapshot uri for azure needs an endpoint")
+		}
+		return fmt.Sprintf("azure://blob.%s/%s/%s", host, cfg.Bucket, key), nil
+	}
+
 	// Native GCS is reached through its own client, not an S3-compatible endpoint, so the
 	// scheme names it and neither endpoint nor region is needed. The bucket is global.
 	if cfg.Provider == v2.ProviderGCPNative {
@@ -115,6 +125,8 @@ func snapshotCloudProvider(provider string) (string, error) {
 		return "aliyun", nil
 	case v2.ProviderHwc:
 		return "huawei", nil
+	case v2.ProviderAzure:
+		return "azure", nil
 	case v2.ProviderGCP:
 		return "gcp", nil
 	case v2.ProviderGCPNative:
