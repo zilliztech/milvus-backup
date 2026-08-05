@@ -87,7 +87,6 @@ func TestCheckSnapshotSupport(t *testing.T) {
 	}{
 		{"SkipCreateCollection", &Plan{}, &Option{SkipCreateCollection: true}},
 		{"MetaOnly", &Plan{}, &Option{MetaOnly: true}},
-		{"MaxShardNum", &Plan{}, &Option{MaxShardNum: 4}},
 		{"TruncateBinlogByTs", &Plan{}, &Option{TruncateBinlogByTs: true}},
 		{"EZKMapping", &Plan{}, &Option{EZKMapping: map[string]string{"old": "new"}}},
 		{"SkipParams", &Plan{}, &Option{SkipParams: SkipParams{IndexParams: []string{"nlist"}}}},

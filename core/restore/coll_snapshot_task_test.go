@@ -128,4 +128,30 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 		task.collBackup.SnapshotBackup = nil
 		assert.Error(t, task.Execute(context.Background()))
 	})
+
+	// max_shard_num is a bound, not an exact value: a cap no smaller than the bundle's
+	// shard count changes nothing, so it is accepted and the restore proceeds.
+	t.Run("MaxShardNumSatisfied", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().RestoreExternalSnapshot(mock.Anything, mock.Anything).Return(9001, nil)
+		cli.EXPECT().GetRestoreSnapshotState(mock.Anything, int64(9001)).
+			Return(&milvuspb.RestoreSnapshotInfo{State: milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted}, nil)
+
+		task := newTestCollSnapshotTask(t, cli, false)
+		task.collBackup.ShardsNum = 2
+		task.maxShardNum = 4
+		require.NoError(t, task.Execute(context.Background()))
+	})
+
+	// Milvus creates the collection from the bundle, so a cap that would actually bind
+	// cannot be honored: nothing is submitted and the collection is reported failed.
+	t.Run("MaxShardNumBinds", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+
+		task := newTestCollSnapshotTask(t, cli, false)
+		task.collBackup.ShardsNum = 8
+		task.maxShardNum = 4
+		err := task.Execute(context.Background())
+		assert.ErrorContains(t, err, "exceeding max_shard_num")
+	})
 }
