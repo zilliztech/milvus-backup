@@ -24,8 +24,9 @@ type collSnapshotTask struct {
 	collBackup *backuppb.CollectionBackupInfo
 	targetNS   namespace.NS
 
-	source    snapshotSource
-	dropExist bool
+	source      snapshotSource
+	dropExist   bool
+	maxShardNum int32
 
 	pollInterval time.Duration
 
@@ -41,8 +42,9 @@ type collSnapshotTaskArgs struct {
 	collBackup *backuppb.CollectionBackupInfo
 	targetNS   namespace.NS
 
-	source    snapshotSource
-	dropExist bool
+	source      snapshotSource
+	dropExist   bool
+	maxShardNum int32
 
 	grpcCli milvus.Grpc
 	taskMgr *taskmgr.Mgr
@@ -66,8 +68,9 @@ func newCollSnapshotTask(args collSnapshotTaskArgs) *collSnapshotTask {
 		collBackup: args.collBackup,
 		targetNS:   args.targetNS,
 
-		source:    args.source,
-		dropExist: args.dropExist,
+		source:      args.source,
+		dropExist:   args.dropExist,
+		maxShardNum: args.maxShardNum,
 
 		pollInterval: _snapshotPollInterval,
 
@@ -100,6 +103,20 @@ func (ct *collSnapshotTask) Execute(ctx context.Context) error {
 
 func (ct *collSnapshotTask) privateExecute(ctx context.Context) error {
 	ct.logger.Info("start restore collection from snapshot")
+
+	// Milvus creates the collection from the schema in the bundle, so the shard count
+	// cannot be capped here. max_shard_num is only a bound: it changes nothing while it
+	// is not smaller than the bundle's shard count, so only a request that would actually
+	// cap shards is refused.
+	if ct.maxShardNum > 0 {
+		if shardNum := ct.collBackup.GetShardsNum(); shardNum > ct.maxShardNum {
+			return fmt.Errorf("restore: collection has %d shards, exceeding max_shard_num=%d; the snapshot path cannot cap the shard count",
+				shardNum, ct.maxShardNum)
+		}
+		ct.logger.Info("max_shard_num does not bind, keeping the bundle's shard count",
+			zap.Int32("shard_num", ct.collBackup.GetShardsNum()),
+			zap.Int32("max_shard_num", ct.maxShardNum))
+	}
 
 	metadataURI, err := ct.source.metadataURI(ct.collBackup.GetSnapshotBackup().GetMetadataPath())
 	if err != nil {

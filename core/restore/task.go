@@ -234,9 +234,6 @@ func checkSnapshotSupport(plan *Plan, opt *Option) error {
 	if opt.MetaOnly {
 		unsupported = append(unsupported, "meta_only")
 	}
-	if opt.MaxShardNum != 0 {
-		unsupported = append(unsupported, "max_shard_num")
-	}
 	if opt.TruncateBinlogByTs {
 		unsupported = append(unsupported, "truncate_binlog_by_ts")
 	}
@@ -373,13 +370,14 @@ func (t *Task) newCollTask(dbBackup *backuppb.DatabaseBackupInfo, collBackup *ba
 
 		if t.format == meta.FormatSnapshot {
 			tasks = append(tasks, newCollSnapshotTask(collSnapshotTaskArgs{
-				taskID:     t.args.TaskID,
-				collBackup: collBackup,
-				targetNS:   targetNS,
-				source:     t.snapshotSource,
-				dropExist:  t.args.Option.DropExistCollection,
-				grpcCli:    t.grpc,
-				taskMgr:    t.args.TaskMgr,
+				taskID:      t.args.TaskID,
+				collBackup:  collBackup,
+				targetNS:    targetNS,
+				source:      t.snapshotSource,
+				dropExist:   t.args.Option.DropExistCollection,
+				maxShardNum: t.args.Option.MaxShardNum,
+				grpcCli:     t.grpc,
+				taskMgr:     t.args.TaskMgr,
 			}))
 			continue
 		}
