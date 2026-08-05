@@ -1,0 +1,15 @@
+# Overrides the standalone service to use local filesystem storage instead of
+# MinIO, matching the official docker standalone deployment:
+#   https://milvus.io/docs/install_standalone-docker.md
+#
+# Milvus keeps its data at localStorage.path (default /var/lib/milvus/data),
+# which the base compose maps to ./volumes/milvus on the host. MinIO still runs:
+# the source Milvus ignores it, and milvus-backup uses it as the backup
+# destination.
+#
+# Deploy with:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yaml up -d --wait
+services:
+  standalone:
+    environment:
+      COMMON_STORAGETYPE: local

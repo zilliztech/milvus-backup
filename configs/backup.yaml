@@ -60,6 +60,10 @@ milvus:
   storage:
     # Supported providers: local, minio, s3, aws, gcp, gcpnative, azure,
     # aliyun, tencent, hwc.
+    # local is Milvus standalone with COMMON_STORAGETYPE=local: there is no
+    # bucket or endpoint, and rootPath is the directory backing Milvus
+    # localStorage.path as milvus-backup sees it on disk. See
+    # configs/backup-local-milvus.yaml for a complete example.
     provider: "minio"
     address: localhost
     port: 9000
