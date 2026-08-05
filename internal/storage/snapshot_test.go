@@ -74,10 +74,26 @@ func TestSnapshotURI(t *testing.T) {
 		assert.ErrorContains(t, err, "region")
 	})
 
-	t.Run("UnsupportedProvider", func(t *testing.T) {
-		cfg := Config{Provider: v2.ProviderAzure, Bucket: "backup-bucket", Endpoint: "acct.blob.core.windows.net"}
+	// Azure reaches its containers through the blob. service endpoint, which the tool
+	// config holds without the blob. prefix (its own client prepends it), so the snapshot
+	// uri restores the full service host and leaves the account name to the extfs.
+	t.Run("AzureUsesAzureScheme", func(t *testing.T) {
+		cfg := Config{Provider: v2.ProviderAzure, Bucket: "backup-bucket", Endpoint: "core.windows.net:443"}
+		got, err := SnapshotURI(cfg, "backup/mybackup")
+		require.NoError(t, err)
+		assert.Equal(t, "azure://blob.core.windows.net:443/backup-bucket/backup/mybackup", got)
+	})
+
+	t.Run("AzureNeedsAnEndpoint", func(t *testing.T) {
+		cfg := Config{Provider: v2.ProviderAzure, Bucket: "backup-bucket"}
 		_, err := SnapshotURI(cfg, "backup/mybackup")
-		assert.ErrorContains(t, err, v2.ProviderAzure)
+		assert.ErrorContains(t, err, "endpoint")
+	})
+
+	t.Run("UnsupportedProvider", func(t *testing.T) {
+		cfg := Config{Provider: "madeup", Bucket: "backup-bucket", Endpoint: "acct.blob.core.windows.net"}
+		_, err := SnapshotURI(cfg, "backup/mybackup")
+		assert.ErrorContains(t, err, "madeup")
 	})
 }
 
@@ -104,6 +120,19 @@ func TestSnapshotExternalSpec(t *testing.T) {
 		spec, err := SnapshotExternalSpec(cfg)
 		require.NoError(t, err)
 		assert.JSONEq(t, `{"extfs":{"cloud_provider":"aws","iam_endpoint":"http://169.254.169.254","use_iam":"true","use_ssl":"false"}}`, spec)
+	})
+
+	// For azure the static key pair is the account name and the account key: Milvus
+	// reads access_key_id as the storage account, matching what the tool signs with.
+	t.Run("AzureAccountKey", func(t *testing.T) {
+		cfg := Config{
+			Provider:   v2.ProviderAzure,
+			Credential: Credential{Type: Static, AK: "azure-account", SK: "azure-key"},
+		}
+
+		spec, err := SnapshotExternalSpec(cfg)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"extfs":{"cloud_provider":"azure","access_key_id":"azure-account","access_key_value":"azure-key","use_ssl":"false"}}`, spec)
 	})
 
 	// The GCP backup pod reaches GCS through workload identity, so the spec asks Milvus
