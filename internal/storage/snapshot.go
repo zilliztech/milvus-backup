@@ -3,6 +3,7 @@ package storage
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
@@ -13,9 +14,10 @@ import (
 // do it: a uri naming the object, and an extfs spec authorizing access to it. Export and
 // restore describe the same store in opposite directions, so both build them from here.
 
-// SnapshotURI names key in cfg's bucket, in one of the two shapes Milvus parses:
+// SnapshotURI names key in cfg's bucket, in one of the shapes Milvus parses:
 // minio://<endpoint>/<bucket>/<key> puts the endpoint in the host, s3://<bucket>/<key> leaves
-// Milvus to derive it from cloud_provider and region.
+// Milvus to derive it from cloud_provider and region, and gcs://<bucket>/<key> names a native
+// GCS store, whose provider the scheme alone decides.
 //
 // The configured endpoint wins whenever there is one, because derivation only ever produces
 // the canonical public endpoint — wrong for a deployment reached over an internal or
@@ -27,6 +29,12 @@ func SnapshotURI(cfg Config, key string) (string, error) {
 	}
 	if _, err := snapshotCloudProvider(cfg.Provider); err != nil {
 		return "", err
+	}
+
+	// Native GCS is reached through its own client, not an S3-compatible endpoint, so the
+	// scheme names it and neither endpoint nor region is needed. The bucket is global.
+	if cfg.Provider == v2.ProviderGCPNative {
+		return fmt.Sprintf("gcs://%s/%s", cfg.Bucket, key), nil
 	}
 
 	if host := endpointHost(cfg.Endpoint); host != "" {
@@ -72,6 +80,12 @@ func SnapshotExternalSpec(cfg Config) (string, error) {
 		if cfg.Credential.IAMEndpoint != "" {
 			extfs["iam_endpoint"] = cfg.Credential.IAMEndpoint
 		}
+	case GCPCredJSON:
+		data, err := os.ReadFile(cfg.Credential.GCPCredJSON)
+		if err != nil {
+			return "", fmt.Errorf("storage: read gcp credential file: %w", err)
+		}
+		extfs["credential_json"] = string(data)
 	default:
 		return "", fmt.Errorf("storage: snapshot external spec cannot carry %s credentials", cfg.Credential.Type)
 	}
@@ -101,6 +115,10 @@ func snapshotCloudProvider(provider string) (string, error) {
 		return "aliyun", nil
 	case v2.ProviderHwc:
 		return "huawei", nil
+	case v2.ProviderGCP:
+		return "gcp", nil
+	case v2.ProviderGCPNative:
+		return "gcpnative", nil
 	default:
 		return "", fmt.Errorf("storage: milvus snapshots do not support %s storage", provider)
 	}
