@@ -268,13 +268,16 @@ jobs:
     # Milvus standalone with COMMON_STORAGETYPE=local keeps its data on the
     # local filesystem (localStorage.path, default /var/lib/milvus/data). This
     # job proves milvus-backup can read that directory directly and back it up
-    # to MinIO, then restores into a fresh MinIO-backed Milvus (issue #964).
+    # to MinIO, then restores it into a fresh Milvus backed by MinIO or by local
+    # storage, resolving the restore temp files at the directory the process
+    # sees in the local case (issue #964).
     name: Backup and restore local storage Milvus
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         image_tag: [v2.5.20, 2.6-latest]
+        restore_target: [minio, local]
     steps:
       - uses: actions/checkout@v7
 
@@ -393,16 +396,25 @@ jobs:
           sudo docker compose -f docker-compose.yml -f docker-compose.local.yaml down
           sudo rm -rf volumes
 
-      - name: Configure backup.yaml for MinIO target
+      - name: Configure backup.yaml for ${{ matrix.restore_target }} storage target
         timeout-minutes: 1
         shell: bash
         run: |
-          yq -i '.milvus.storage.provider = "minio"' configs/backup.yaml
-          yq -i '.milvus.storage.rootPath = "files"' configs/backup.yaml
-          yq -i '.milvus.storage.bucketName = "a-bucket"' configs/backup.yaml
+          if [ "${{ matrix.restore_target }}" = "local" ]; then
+            yq -i '.milvus.storage.provider = "local"' configs/backup.yaml
+            # Host directory backing the target Milvus localStorage.path, and the
+            # path the container process resolves it at.
+            yq -i '.milvus.storage.rootPath = "deployment/standalone/volumes/milvus/data"' configs/backup.yaml
+            yq -i '.milvus.storage.localPath = "/var/lib/milvus/data"' configs/backup.yaml
+            yq -i '.milvus.storage.bucketName = ""' configs/backup.yaml
+          else
+            yq -i '.milvus.storage.provider = "minio"' configs/backup.yaml
+            yq -i '.milvus.storage.rootPath = "files"' configs/backup.yaml
+            yq -i '.milvus.storage.bucketName = "a-bucket"' configs/backup.yaml
+          fi
           cat configs/backup.yaml
 
-      - name: Deploy target Milvus with MinIO storage
+      - name: Deploy target Milvus with ${{ matrix.restore_target }} storage
         timeout-minutes: 15
         shell: bash
         working-directory: deployment/standalone
@@ -411,8 +423,23 @@ jobs:
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
           mkdir -p volumes/etcd volumes/minio volumes/milvus
           sudo chmod -R 777 volumes
-          sudo docker compose -f docker-compose.yml up -d --wait
-          sudo docker compose -f docker-compose.yml ps -a
+          if [ "${{ matrix.restore_target }}" = "local" ]; then
+            sudo docker compose -f docker-compose.yml -f docker-compose.local.yaml up -d --wait
+            sudo docker compose -f docker-compose.yml -f docker-compose.local.yaml ps -a
+          else
+            sudo docker compose -f docker-compose.yml up -d --wait
+            sudo docker compose -f docker-compose.yml ps -a
+          fi
+
+      - name: Fix permissions for restore
+        if: matrix.restore_target == 'local'
+        shell: bash
+        working-directory: deployment/standalone
+        run: |
+          # The container initializes its storage directory as root; the restore
+          # binary runs as the runner user and must write restore temp files
+          # into the same directory for the container to import.
+          sudo chmod -R 777 volumes
 
       - name: Copy Backup to target MinIO
         timeout-minutes: 5

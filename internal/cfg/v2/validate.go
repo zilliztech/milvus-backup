@@ -125,6 +125,13 @@ func (c *StorageConfig) validate() error {
 			keyOf(&c.AccountName), keyOf(&c.Provider), provider))
 	}
 
+	// localPath names the directory Milvus resolves against, which only exists
+	// for local storage; anywhere else it is a mistake, not a hint.
+	if !c.LocalPath.IsDefault() {
+		errs = append(errs, fmt.Errorf("cfg: %s only applies to the local provider, but %s is %q",
+			keyOf(&c.LocalPath), keyOf(&c.Provider), provider))
+	}
+
 	errs = append(errs, c.Auth.validate(provider))
 
 	return errors.Join(errs...)

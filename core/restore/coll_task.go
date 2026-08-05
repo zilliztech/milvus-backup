@@ -18,6 +18,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
@@ -61,6 +62,13 @@ type collTask struct {
 
 	milvusStorage storage.Client
 
+	// milvusRootPath is where milvus-backup reaches the target's local storage
+	// directory (milvus.storage.rootPath), and milvusLocalPath is what the Milvus
+	// process itself resolves (milvus.storage.localPath, falling back to rootPath).
+	// Both empty unless the target storage provider is local.
+	milvusRootPath  string
+	milvusLocalPath string
+
 	grpcCli    milvus.Grpc
 	restfulCli milvus.Restful
 
@@ -98,6 +106,9 @@ type collTaskArgs struct {
 
 	backupStorage storage.Client
 	milvusStorage storage.Client
+
+	milvusRootPath  string
+	milvusLocalPath string
 
 	copySem       *semaphore.Weighted
 	bulkInsertSem *semaphore.Weighted
@@ -144,6 +155,9 @@ func newCollTask(args collTaskArgs) *collTask {
 		backupStorage: args.backupStorage,
 		milvusStorage: args.milvusStorage,
 
+		milvusRootPath:  args.milvusRootPath,
+		milvusLocalPath: args.milvusLocalPath,
+
 		grpcCli:    args.grpcCli,
 		restfulCli: args.restfulCli,
 
@@ -159,6 +173,51 @@ func newCollTask(args collTaskArgs) *collTask {
 }
 
 func (ct *collTask) TargetNS() namespace.NS { return ct.targetNS }
+
+// isLocal reports whether the restore target keeps its data on the local
+// filesystem, where LocalClient keys are absolute paths and bulk insert paths
+// must be what the Milvus LocalChunkManager resolves directly.
+func (ct *collTask) isLocal() bool {
+	return ct.milvusStorage.Config().Provider == v2.ProviderLocal
+}
+
+// destKey maps a bucket-relative restore key onto the key LocalClient reads and
+// writes. A local target resolves keys against the directory milvus-backup
+// reaches the target's storage at (milvus.storage.rootPath); any other provider
+// keeps the bucket-relative key as-is. A trailing slash is preserved: the copy
+// task maps each object by replacing the source prefix with this key.
+func (ct *collTask) destKey(key string) string {
+	if !ct.isLocal() || key == "" {
+		return key
+	}
+	return joinLocal(ct.milvusRootPath, key)
+}
+
+// importPath maps a bucket-relative restore key onto the path handed to the
+// bulk insert API. A local target needs the path the Milvus process resolves
+// (milvus.storage.localPath, falling back to rootPath), with a trailing slash
+// kept because the LocalChunkManager lists a prefix by globbing it directly;
+// paths already absolute are left alone so a same-directory local backup can be
+// imported without a copy. Any other provider keeps the bucket-relative path
+// as-is.
+func (ct *collTask) importPath(p string) string {
+	if !ct.isLocal() || p == "" {
+		return p
+	}
+	if path.IsAbs(p) {
+		return p
+	}
+	return joinLocal(ct.milvusLocalPath, p)
+}
+
+// joinLocal prefixes p with base, keeping p's trailing slash and avoiding a
+// doubled separator. base is empty only when a config omitted the directory.
+func joinLocal(base, p string) string {
+	if base == "" {
+		return p
+	}
+	return strings.TrimSuffix(base, "/") + "/" + p
+}
 
 func (ct *collTask) Execute(ctx context.Context) error {
 	ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.SetRestoreCollExecuting(ct.targetNS))
@@ -312,7 +371,7 @@ func (ct *collTask) cleanTempFiles(dir string) tearDownFn {
 		}
 
 		ct.logger.Info("delete temporary file", zap.String("dir", dir))
-		if err := storage.DeletePrefix(ctx, ct.milvusStorage, dir); err != nil {
+		if err := storage.DeletePrefix(ctx, ct.milvusStorage, ct.destKey(dir)); err != nil {
 			return fmt.Errorf("restore_collection: failed to delete temporary file: %w", err)
 		}
 
@@ -323,30 +382,31 @@ func (ct *collTask) cleanTempFiles(dir string) tearDownFn {
 func (ct *collTask) copyToMilvusBucket(ctx context.Context, tempDir, srcPrefix string) (string, error) {
 	ct.logger.Info("milvus and backup store in different bucket, copy the data first", zap.String("temp_dir", tempDir))
 	dest := path.Join(tempDir, strings.Replace(srcPrefix, ct.backupDir, "", 1)) + "/"
+	destKey := ct.destKey(dest)
 	opt := storage.CopyPrefixOpt{
 		Sem:        ct.copySem,
 		Src:        ct.backupStorage,
 		Dest:       ct.milvusStorage,
 		SrcPrefix:  srcPrefix,
-		DestPrefix: dest,
+		DestPrefix: destKey,
 		Streaming:  true,
 	}
 
-	ct.logger.Info("copy temporary restore file", zap.String("src", srcPrefix), zap.String("dest", dest))
+	ct.logger.Info("copy temporary restore file", zap.String("src", srcPrefix), zap.String("dest", destKey))
 	task := storage.NewCopyPrefixTask(opt)
 	if err := task.Execute(ctx); err != nil {
 		return "", fmt.Errorf("restore_collection: copy temporary restore file: %w", err)
 	}
 
-	expected, err := storage.ExpectedDestObjects(ctx, ct.backupStorage, srcPrefix, dest)
+	expected, err := storage.ExpectedDestObjects(ctx, ct.backupStorage, srcPrefix, destKey)
 	if err != nil {
 		return "", fmt.Errorf("restore_collection: build expected for copy verify: %w", err)
 	}
-	verifyTask := storage.NewVerifyPrefixTask(storage.VerifyPrefixOpt{Cli: ct.milvusStorage, Prefix: dest, Expected: expected})
+	verifyTask := storage.NewVerifyPrefixTask(storage.VerifyPrefixOpt{Cli: ct.milvusStorage, Prefix: destKey, Expected: expected})
 	if err := verifyTask.Execute(ctx); err != nil {
 		return "", fmt.Errorf("restore_collection: verify temporary restore file: %w", err)
 	}
-	ct.logger.Info("copy temporary restore file success", zap.String("src", srcPrefix), zap.String("dest", dest))
+	ct.logger.Info("copy temporary restore file success", zap.String("src", srcPrefix), zap.String("dest", destKey))
 
 	return dest, nil
 }
@@ -408,22 +468,28 @@ func (ct *collTask) restoreNotL0SegV1(ctx context.Context, part *backuppb.Partit
 	return nil
 }
 
-func toPaths(dir partitionDir) []string {
+// toPaths builds the [insertLogDir, deltaLogDir] argument for the restful bulk
+// insert API, mapping each directory through the target storage's path
+// convention (absolute paths under localPath for a local target).
+func (ct *collTask) toPaths(dir partitionDir) []string {
 	paths := make([]string, 0, 2)
 	if dir.insertLogDir != "" {
-		paths = append(paths, dir.insertLogDir)
+		paths = append(paths, ct.importPath(dir.insertLogDir))
 	}
 	if dir.deltaLogDir != "" {
-		paths = append(paths, dir.deltaLogDir)
+		paths = append(paths, ct.importPath(dir.deltaLogDir))
 	}
 	return paths
 }
 
-func toGrpcPaths(dir partitionDir) []string {
+// toGrpcPaths builds the [insertLogDir, deltaLogDir] argument for the grpc bulk
+// insert API, mapping each directory through the target storage's path
+// convention (absolute paths under localPath for a local target).
+func (ct *collTask) toGrpcPaths(dir partitionDir) []string {
 	if len(dir.insertLogDir) == 0 {
-		return []string{dir.deltaLogDir}
+		return []string{ct.importPath(dir.deltaLogDir)}
 	}
-	return []string{dir.insertLogDir, dir.deltaLogDir}
+	return []string{ct.importPath(dir.insertLogDir), ct.importPath(dir.deltaLogDir)}
 }
 
 func (ct *collTask) restoreNotL0SegV2(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
@@ -770,7 +836,7 @@ func (ct *collTask) bulkInsertViaGrpc(ctx context.Context, partitionName string,
 		g.Go(func() error {
 			defer ct.bulkInsertSem.Release(1)
 
-			paths := toGrpcPaths(dir)
+			paths := ct.toGrpcPaths(dir)
 			ct.logger.Info("start bulk insert via grpc", zap.Strings("paths", paths), zap.String("partition", partitionName))
 			in := milvus.GrpcBulkInsertInput{
 				DB:             ct.targetNS.DBName(),
@@ -842,7 +908,7 @@ func (ct *collTask) checkBulkInsertViaRestful(ctx context.Context, jobID string)
 
 func (ct *collTask) bulkInsertViaRestful(ctx context.Context, partition string, b batch) error {
 	ct.logger.Info("start bulk insert via restful", zap.Int("batch_num", len(b.partitionDirs)), zap.String("partition", partition))
-	paths := lo.Map(b.partitionDirs, func(dir partitionDir, _ int) []string { return toPaths(dir) })
+	paths := lo.Map(b.partitionDirs, func(dir partitionDir, _ int) []string { return ct.toPaths(dir) })
 	in := milvus.BulkInsertV2Input{
 		DB:             ct.targetNS.DBName(),
 		CollectionName: ct.targetNS.CollName(),
