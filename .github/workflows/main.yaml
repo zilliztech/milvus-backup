@@ -263,6 +263,176 @@ jobs:
         run: |
           python example/verify_data.py
 
+  test-backup-restore-local-storage:
+    needs: unit-test-go
+    # Milvus standalone with COMMON_STORAGETYPE=local keeps its data on the
+    # local filesystem (localStorage.path, default /var/lib/milvus/data). This
+    # job proves milvus-backup can read that directory directly and back it up
+    # to MinIO, then restores into a fresh MinIO-backed Milvus (issue #964).
+    name: Backup and restore local storage Milvus
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        image_tag: [v2.5.20, 2.6-latest]
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.10'
+          cache: pip
+
+      - uses: actions/setup-go@v7
+        name: Set up Go ${{ env.go-version }}
+        with:
+          go-version: ${{ env.go-version }}
+          cache: true
+
+      - name: Build
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          go get
+          go build
+
+      - name: Install dependency
+        timeout-minutes: 5
+        working-directory: tests
+        shell: bash
+        run: |
+          pip install -r requirements.txt --trusted-host https://test.pypi.org
+
+      - name: Milvus deploy with local storage
+        timeout-minutes: 15
+        shell: bash
+        working-directory: deployment/standalone
+        run: |
+          tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
+          yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          mkdir -p volumes/etcd volumes/minio volumes/milvus
+          sudo chmod -R 777 volumes
+          sudo docker compose -f docker-compose.yml -f docker-compose.local.yaml up -d --wait
+          sudo docker compose -f docker-compose.yml -f docker-compose.local.yaml ps -a
+
+      - name: Export docker-compose status after deploy
+        if: ${{ always() }}
+        shell: bash
+        working-directory: deployment/standalone
+        run: |
+          echo "=== Docker Compose Status ==="
+          sudo docker compose -f docker-compose.yml -f docker-compose.local.yaml ps -a || true
+          echo "=== Standalone Container Full Logs ==="
+          sudo docker compose -f docker-compose.yml -f docker-compose.local.yaml logs standalone || true
+          echo "=== All Containers Status ==="
+          sudo docker ps -a || true
+
+      - name: Prepare data
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python example/prepare_data.py
+
+      - name: Fix permissions after data preparation
+        shell: bash
+        working-directory: deployment/standalone
+        run: |
+          # The container writes binlogs as root; the backup binary runs as the
+          # runner user and reads the local directory directly.
+          sudo chmod -R 777 volumes
+
+      - name: List milvus local data before backup
+        shell: bash
+        working-directory: deployment/standalone
+        run: |
+          sudo apt-get install -y tree > /dev/null 2>&1 || true
+          echo "=== milvus local data tree (before backup) ==="
+          sudo tree volumes/milvus/data | head -500
+
+      - name: Configure backup.yaml for local storage
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          yq -i '.log.level = "debug"' configs/backup.yaml
+          yq -i '.milvus.storage.provider = "local"' configs/backup.yaml
+          # Host directory backing Milvus localStorage.path (mounted at
+          # /var/lib/milvus in the container).
+          yq -i '.milvus.storage.rootPath = "deployment/standalone/volumes/milvus/data"' configs/backup.yaml
+          yq -i '.milvus.storage.bucketName = ""' configs/backup.yaml
+          cat configs/backup.yaml
+
+      - name: Backup
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          ./milvus-backup check
+          ./milvus-backup list
+          ./milvus-backup create -n my_backup
+          ./milvus-backup list
+
+      - name: List MinIO files after backup
+        if: ${{ always() }}
+        shell: bash
+        working-directory: deployment/standalone
+        run: |
+          echo "=== MinIO volume tree (after backup) ==="
+          sudo tree volumes/minio/ -I '.minio.sys' | head -500
+
+      - name: Save Backup
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          sudo cp -r deployment/standalone/volumes/minio/a-bucket/backup local-backup
+
+      - name: Uninstall Milvus
+        timeout-minutes: 5
+        shell: bash
+        working-directory: deployment/standalone
+        run: |
+          sudo docker compose -f docker-compose.yml -f docker-compose.local.yaml down
+          sudo rm -rf volumes
+
+      - name: Configure backup.yaml for MinIO target
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          yq -i '.milvus.storage.provider = "minio"' configs/backup.yaml
+          yq -i '.milvus.storage.rootPath = "files"' configs/backup.yaml
+          yq -i '.milvus.storage.bucketName = "a-bucket"' configs/backup.yaml
+          cat configs/backup.yaml
+
+      - name: Deploy target Milvus with MinIO storage
+        timeout-minutes: 15
+        shell: bash
+        working-directory: deployment/standalone
+        run: |
+          tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag 2.6-latest) && echo $tag
+          yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          mkdir -p volumes/etcd volumes/minio volumes/milvus
+          sudo chmod -R 777 volumes
+          sudo docker compose -f docker-compose.yml up -d --wait
+          sudo docker compose -f docker-compose.yml ps -a
+
+      - name: Copy Backup to target MinIO
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          sudo mkdir -p deployment/standalone/volumes/minio/a-bucket/backup
+          sudo cp -r local-backup/my_backup deployment/standalone/volumes/minio/a-bucket/backup
+
+      - name: Restore backup
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          ./milvus-backup restore -n my_backup -s _recover
+
+      - name: Verify data
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python example/verify_data.py
+
   test-backup-restore-after-upgrade:
     needs: unit-test-go
     name: Backup and restore after upgrade

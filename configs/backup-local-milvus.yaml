@@ -1,0 +1,46 @@
+# Milvus standalone with local filesystem storage, backed up to MinIO.
+#
+# The Milvus deployment runs with COMMON_STORAGETYPE=local and keeps its data
+# on the local filesystem at localStorage.path (default /var/lib/milvus/data).
+# A local provider has no endpoint and no credentials, so the milvus side names
+# only where the data lives on disk: rootPath is the directory milvus-backup
+# reads directly. When Milvus runs in a container, that is the bind-mounted
+# host directory, not the path Milvus itself uses.
+#
+# The backup storage is independent and can be any remote backend; MinIO is
+# shown here, mirroring a local-to-remote migration (zilliztech/milvus-backup#964).
+configVersion: v2
+
+log:
+  level: info
+  console: true
+
+milvus:
+  user: "root"
+  password: "Milvus"
+
+  grpc:
+    address: localhost
+    port: 19530
+
+  storage:
+    # Supported providers: local, minio, s3, aws, gcp, gcpnative, azure,
+    # aliyun, tencent, hwc.
+    provider: local
+    # The directory that backs Milvus localStorage.path, as milvus-backup sees
+    # it on disk. There is no bucket and no endpoint for local storage.
+    rootPath: "/var/lib/milvus/data"
+    bucketName: ""
+
+backup:
+  storage:
+    provider: minio
+    address: localhost
+    port: 9000
+    bucketName: "a-bucket"
+    rootPath: "backup"
+
+    auth:
+      type: static
+      accessKeyID: minioadmin
+      secretAccessKey: minioadmin

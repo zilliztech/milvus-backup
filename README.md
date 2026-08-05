@@ -59,6 +59,7 @@ Both storage sections describe a backend the same way, and `backup.storage` inhe
 | [backup-azure.yaml](configs/backup-azure.yaml) | Azure Blob Storage with an account key |
 | [backup-iam.yaml](configs/backup-iam.yaml) | AWS S3 with an instance role, no keys in the file |
 | [backup-local.yaml](configs/backup-local.yaml) | Milvus on MinIO, backups on a local disk |
+| [backup-local-milvus.yaml](configs/backup-local-milvus.yaml) | Milvus standalone with local storage (`COMMON_STORAGETYPE=local`), backups on MinIO |
 
 Use values that match the Milvus deployment. In common installations, the storage defaults differ:
 
