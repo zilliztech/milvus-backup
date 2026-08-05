@@ -28,7 +28,7 @@ jobs:
   stale:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/stale@v10
+      - uses: actions/stale@v11
         with:
           only-labels: 'triage/needs-information'
           days-before-issue-stale: 30
