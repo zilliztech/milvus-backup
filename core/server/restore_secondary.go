@@ -44,7 +44,7 @@ func (s *Server) handleRestoreSecondary(c *gin.Context) {
 	h := newRestoreSecondaryHandler(&request, s.params)
 	resp := h.run(c.Request.Context())
 
-	c.JSON(http.StatusOK, resp)
+	writeResponse(c, "restore secondary fail", resp)
 }
 
 func newRestoreSecondaryHandler(request *backuppb.RestoreSecondaryRequest, params *v2.Config) *restoreSecondaryHandler {

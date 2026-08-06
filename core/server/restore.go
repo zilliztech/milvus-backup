@@ -47,7 +47,7 @@ func (s *Server) handleRestoreBackup(c *gin.Context) {
 	h := newRestoreHandler(&request, s.params)
 	resp := h.run(context.Background())
 
-	c.JSON(http.StatusOK, resp)
+	writeResponse(c, "restore backup fail", resp)
 }
 
 type restoreHandler struct {
