@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -34,7 +33,7 @@ func (s *Server) handleDeleteBackup(c *gin.Context) {
 	h := newDelHandler(req, s.params)
 	resp := h.run(c.Request.Context())
 
-	c.JSON(http.StatusOK, resp)
+	writeResponse(c, "delete backup fail", resp)
 }
 
 type delHandler struct {

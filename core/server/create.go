@@ -46,8 +46,7 @@ func (s *Server) handleCreateBackup(c *gin.Context) {
 	h := newCreateBackupHandler(&requestBody, s.params)
 	resp := h.run(c.Request.Context())
 	log.Info("response create backup response", zap.Any("resp", resp))
-
-	c.JSON(http.StatusOK, resp)
+	writeResponse(c, "create backup fail", resp)
 }
 
 type createBackupHandler struct {

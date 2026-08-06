@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/http"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -44,7 +43,7 @@ func (s *Server) handleGetBackup(c *gin.Context) {
 	resp := h.get(c.Request.Context())
 
 	log.Info("response get backup response", zap.Any("resp", resp))
-	c.JSON(http.StatusOK, resp)
+	writeResponse(c, "get backup fail", resp)
 }
 
 type getBackupHandler struct {
