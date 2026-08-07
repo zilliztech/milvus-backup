@@ -29,6 +29,11 @@ func TestValidate_Storage(t *testing.T) {
 			wantErr: "milvus.storage.accountName only applies to the azure provider",
 		},
 		{
+			name:    "LocalPathOnlyAppliesToLocal",
+			yaml:    "milvus:\n  storage:\n    provider: s3\n    localPath: /data\n",
+			wantErr: "milvus.storage.localPath only applies to the local provider",
+		},
+		{
 			name:    "AzureRejectsStaticAuth",
 			yaml:    "milvus:\n  storage:\n    provider: azure\n    accountName: account\n    auth:\n      type: static\n",
 			wantErr: `milvus.storage.auth.type: invalid value "static", want one of: sharedKey, default`,
@@ -86,6 +91,8 @@ func TestValidate_StorageAcceptsProviderShapes(t *testing.T) {
 		{name: "IAMWithEndpoint", yaml: "milvus:\n  storage:\n    provider: minio\n    auth:\n      type: iam\n      endpoint: http://iam:8080\n"},
 		// Local storage is a directory: no endpoint, no credentials.
 		{name: "Local", yaml: "backup:\n  storage:\n    provider: local\n    rootPath: /data/backup\n"},
+		// localPath is the optional Milvus-view of the same directory.
+		{name: "LocalWithLocalPath", yaml: "milvus:\n  storage:\n    provider: local\n    rootPath: /data\n    localPath: /var/lib/milvus/data\n"},
 	}
 
 	for _, tt := range tests {

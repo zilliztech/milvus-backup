@@ -1,6 +1,7 @@
 package restore
 
 import (
+	"context"
 	"fmt"
 	"testing"
 
@@ -10,11 +11,25 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
+	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
 func newTestCollTask() *collTask {
 	return &collTask{logger: zap.NewNop(), option: &Option{}, maxSegsPerImportJob: 256}
+}
+
+// newTestStorageClient builds a storage client of the given provider without
+// touching any backend: constructing a client never connects.
+func newTestStorageClient(t *testing.T, provider string) storage.Client {
+	cli, err := storage.NewClient(context.Background(), storage.Config{
+		Provider:   provider,
+		Endpoint:   "localhost:9000",
+		Credential: storage.Credential{Type: storage.Static, AK: "a", SK: "b"},
+	})
+	require.NoError(t, err)
+	return cli
 }
 
 func TestGetFailedReason(t *testing.T) {
@@ -75,42 +90,73 @@ func TestCollTask_ezk(t *testing.T) {
 }
 
 func TestToPaths(t *testing.T) {
+	// a non-local target keeps the bucket-relative paths as-is
+	ct := &collTask{milvusStorage: newTestStorageClient(t, v2.ProviderMinio)}
+
 	// normal
 	dir := partitionDir{insertLogDir: "insert", deltaLogDir: "delta"}
-	paths := toPaths(dir)
-	assert.Equal(t, []string{"insert", "delta"}, paths)
+	assert.Equal(t, []string{"insert", "delta"}, ct.toPaths(dir))
 
 	// without delta
 	dir = partitionDir{insertLogDir: "insert"}
-	paths = toPaths(dir)
-	assert.Equal(t, []string{"insert"}, paths)
+	assert.Equal(t, []string{"insert"}, ct.toPaths(dir))
 
 	// without insert
 	dir = partitionDir{deltaLogDir: "delta"}
-	paths = toPaths(dir)
-	assert.Equal(t, []string{"delta"}, paths)
+	assert.Equal(t, []string{"delta"}, ct.toPaths(dir))
 
 	// empty
 	dir = partitionDir{}
-	paths = toPaths(dir)
-	assert.Empty(t, paths)
+	assert.Empty(t, ct.toPaths(dir))
+
+	// a local target resolves import paths against the path Milvus sees
+	ct = &collTask{milvusStorage: newTestStorageClient(t, v2.ProviderLocal), milvusLocalPath: "/var/lib/milvus/data"}
+	dir = partitionDir{insertLogDir: "insert", deltaLogDir: "delta"}
+	assert.Equal(t, []string{"/var/lib/milvus/data/insert", "/var/lib/milvus/data/delta"}, ct.toPaths(dir))
+
+	// paths already absolute are left alone (a same-directory local backup)
+	dir = partitionDir{insertLogDir: "/data/insert"}
+	assert.Equal(t, []string{"/data/insert"}, ct.toPaths(dir))
+
+	// a trailing slash is kept: the LocalChunkManager globs the prefix
+	dir = partitionDir{insertLogDir: "insert/"}
+	assert.Equal(t, []string{"/var/lib/milvus/data/insert/"}, ct.toPaths(dir))
 }
 
 func TestToGrpcPaths(t *testing.T) {
+	// a non-local target keeps the bucket-relative paths as-is
+	ct := &collTask{milvusStorage: newTestStorageClient(t, v2.ProviderMinio)}
+
 	// normal
 	dir := partitionDir{insertLogDir: "insert", deltaLogDir: "delta"}
-	paths := toGrpcPaths(dir)
-	assert.Equal(t, []string{"insert", "delta"}, paths)
+	assert.Equal(t, []string{"insert", "delta"}, ct.toGrpcPaths(dir))
 
 	// without delta
 	dir = partitionDir{insertLogDir: "insert"}
-	paths = toGrpcPaths(dir)
-	assert.Equal(t, []string{"insert", ""}, paths)
+	assert.Equal(t, []string{"insert", ""}, ct.toGrpcPaths(dir))
 
 	// without insert
 	dir = partitionDir{deltaLogDir: "delta"}
-	paths = toGrpcPaths(dir)
-	assert.Equal(t, []string{"delta"}, paths)
+	assert.Equal(t, []string{"delta"}, ct.toGrpcPaths(dir))
+
+	// a local target resolves import paths against the path Milvus sees
+	ct = &collTask{milvusStorage: newTestStorageClient(t, v2.ProviderLocal), milvusLocalPath: "/var/lib/milvus/data"}
+	dir = partitionDir{insertLogDir: "insert", deltaLogDir: "delta"}
+	assert.Equal(t, []string{"/var/lib/milvus/data/insert", "/var/lib/milvus/data/delta"}, ct.toGrpcPaths(dir))
+}
+
+func TestCollTask_destKey(t *testing.T) {
+	// a non-local target keeps the key as-is
+	ct := &collTask{milvusStorage: newTestStorageClient(t, v2.ProviderMinio)}
+	assert.Equal(t, "restore-temp-1/", ct.destKey("restore-temp-1/"))
+
+	// a local target resolves against the directory milvus-backup writes to,
+	// keeping the key's trailing slash for the prefix replacement on copy
+	ct = &collTask{milvusStorage: newTestStorageClient(t, v2.ProviderLocal), milvusRootPath: "/data"}
+	assert.Equal(t, "/data/restore-temp-1/", ct.destKey("restore-temp-1/"))
+	assert.Equal(t, "/data/insert", ct.destKey("insert"))
+
+	assert.Equal(t, "", ct.destKey(""))
 }
 
 func TestL0SegmentBatches(t *testing.T) {

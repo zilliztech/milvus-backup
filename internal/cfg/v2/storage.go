@@ -44,6 +44,13 @@ type StorageConfig struct {
 	BucketName param.Value[string]
 	RootPath   param.Value[string]
 
+	// LocalPath is the path the Milvus process itself sees as its
+	// localStorage.path, for the local provider. milvus-backup writes to
+	// rootPath (the host view of the same directory); when the two differ, such
+	// as a container bind-mount, the import paths handed to Milvus must use the
+	// path Milvus resolves. Empty means the same as rootPath.
+	LocalPath param.Value[string]
+
 	Auth StorageAuthConfig
 }
 
@@ -68,6 +75,7 @@ func newStorageConfig(keyPrefix, envPrefix string) StorageConfig {
 
 		BucketName: param.Value[string]{Default: "a-bucket", Keys: key("bucketName")},
 		RootPath:   param.Value[string]{Default: "files", Keys: key("rootPath")},
+		LocalPath:  param.Value[string]{Default: "", Keys: key("localPath")},
 
 		Auth: StorageAuthConfig{
 			Type: param.Value[string]{Default: AuthStatic, Keys: key("auth.type")},
@@ -113,7 +121,7 @@ func (c *StorageConfig) Resolve(s *param.Source) error {
 	return param.Resolve(s,
 		&c.Provider,
 		&c.Address, &c.Port, &c.Region, &c.UseSSL,
-		&c.AccountName, &c.BucketName, &c.RootPath,
+		&c.AccountName, &c.BucketName, &c.RootPath, &c.LocalPath,
 		&c.Auth.Type,
 		&c.Auth.AccessKeyID, &c.Auth.SecretAccessKey, &c.Auth.SessionToken,
 		&c.Auth.AccountKey,

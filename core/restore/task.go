@@ -364,6 +364,14 @@ func (t *Task) newCollTask(dbBackup *backuppb.DatabaseBackupInfo, collBackup *ba
 	sourceNS := namespace.New(collBackup.GetDbName(), collBackup.GetCollectionName())
 	targetNSes := t.args.Plan.CollMapper.TagetNS(sourceNS)
 
+	// A local target resolves its storage directory two ways: the path
+	// milvus-backup reaches it at (rootPath) and the path the Milvus process
+	// itself resolves (localPath, falling back to rootPath).
+	milvusLocalPath := t.args.Params.Milvus.Storage.LocalPath.Val
+	if milvusLocalPath == "" {
+		milvusLocalPath = t.args.Params.Milvus.Storage.RootPath.Val
+	}
+
 	tasks := make([]collectionTask, 0, len(targetNSes))
 	for _, targetNS := range targetNSes {
 		t.logger.Debug("generate restore collection task", zap.String("source", sourceNS.String()), zap.String("target", targetNS.String()))
@@ -395,6 +403,10 @@ func (t *Task) newCollTask(dbBackup *backuppb.DatabaseBackupInfo, collBackup *ba
 			backupDir:     t.args.BackupDir,
 			backupStorage: t.args.BackupStorage,
 			milvusStorage: t.args.MilvusStorage,
+
+			milvusRootPath:  t.args.Params.Milvus.Storage.RootPath.Val,
+			milvusLocalPath: milvusLocalPath,
+
 			copySem:       t.copySem,
 			bulkInsertSem: t.bulkInsertSem,
 			grpcCli:       t.grpc,

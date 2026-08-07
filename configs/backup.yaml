@@ -62,8 +62,10 @@ milvus:
     # aliyun, tencent, hwc.
     # local is Milvus standalone with COMMON_STORAGETYPE=local: there is no
     # bucket or endpoint, and rootPath is the directory backing Milvus
-    # localStorage.path as milvus-backup sees it on disk. See
-    # configs/backup-local-milvus.yaml for a complete example.
+    # localStorage.path as milvus-backup sees it on disk. Optional localPath is
+    # the path the Milvus process itself resolves (for a container bind-mount);
+    # restore import paths use it. See configs/backup-local-milvus.yaml for a
+    # complete example.
     provider: "minio"
     address: localhost
     port: 9000

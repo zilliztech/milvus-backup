@@ -32,6 +32,11 @@ milvus:
     rootPath: "/var/lib/milvus/data"
     bucketName: ""
 
+    # Optional: the path the Milvus process itself sees as localStorage.path,
+    # for when it differs from rootPath — e.g. a container bind-mount. Restore
+    # resolves its import paths against it. Empty means the same as rootPath.
+    # localPath: "/var/lib/milvus/data"
+
 backup:
   storage:
     provider: minio
