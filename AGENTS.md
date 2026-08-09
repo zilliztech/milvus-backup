@@ -90,3 +90,17 @@ When you do link an issue, match the verb to how much of it the PR resolves:
 Why the two paths: mergify recognizes a linked issue by a `#1234` reference or an issues URL in
 the body, and the improvement path by the `kind/improvement` label that `/kind improvement`
 adds. Exactly one of the two must be present, or the merge is blocked.
+
+## Issue replies
+
+When you reply to an issue asking the reporter for information that only they can
+supply — logs, the `backup.yaml` in use, the Milvus and milvus-backup versions, or
+the steps to reproduce — apply the `triage/needs-information` label to the issue in
+the same pass. This is the one manual step of the
+[issue lifecycle](docs/issue_lifecycle.md): the label starts the automated close
+countdown (30 days to `stale`, then 14 more to close) and is removed automatically
+as soon as the reporter answers, so an unanswered request cannot linger forever.
+
+Do not apply it when the issue is waiting on our own work. The label means the
+reporter owes us something; using it as a general "not now" marker will close issues
+that were never theirs to answer.
