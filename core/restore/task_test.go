@@ -90,7 +90,7 @@ func TestCheckSnapshotSupport(t *testing.T) {
 		{"TruncateBinlogByTs", &Plan{}, &Option{TruncateBinlogByTs: true}},
 		{"EZKMapping", &Plan{}, &Option{EZKMapping: map[string]string{"old": "new"}}},
 		{"SkipParams", &Plan{}, &Option{SkipParams: SkipParams{IndexParams: []string{"nlist"}}}},
-		{"CollOverrides", &Plan{CollOverrides: map[string]CollOverride{"db1.coll1": {ShardNum: 2}}}, &Option{}},
+		{"ShardNumOverride", &Plan{CollOverrides: map[string]CollOverride{"db1.coll1": {ShardNum: 2}}}, &Option{}},
 	}
 
 	for _, tt := range tests {
@@ -104,6 +104,13 @@ func TestCheckSnapshotSupport(t *testing.T) {
 	t.Run("SupportedOptions", func(t *testing.T) {
 		opt := &Option{DropExistCollection: true, RestoreRBAC: true}
 		assert.NoError(t, checkSnapshotSupport(&Plan{}, opt))
+	})
+
+	// A description override is applied with an AlterCollection after the restore, so it
+	// stays available even though the collection is created by Milvus.
+	t.Run("DescriptionOverride", func(t *testing.T) {
+		plan := &Plan{CollOverrides: map[string]CollOverride{"db1.coll1": {Description: "new desc"}}}
+		assert.NoError(t, checkSnapshotSupport(plan, &Option{}))
 	})
 }
 
