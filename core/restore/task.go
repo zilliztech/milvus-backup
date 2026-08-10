@@ -244,8 +244,14 @@ func checkSnapshotSupport(plan *Plan, opt *Option) error {
 		len(opt.SkipParams.FieldTypeParams) != 0 || len(opt.SkipParams.IndexParams) != 0 {
 		unsupported = append(unsupported, "skip_params")
 	}
-	if len(plan.CollOverrides) != 0 {
-		unsupported = append(unsupported, "collection overrides")
+	// A description override is applied with an AlterCollection after the restore
+	// completes, so it stays available. The shard count cannot: Milvus creates the
+	// collection from the bundle, and shards are not alterable afterwards.
+	for _, override := range plan.CollOverrides {
+		if override.ShardNum != 0 {
+			unsupported = append(unsupported, "shard_num collection overrides")
+			break
+		}
 	}
 
 	if len(unsupported) != 0 {
@@ -378,14 +384,15 @@ func (t *Task) newCollTask(dbBackup *backuppb.DatabaseBackupInfo, collBackup *ba
 
 		if t.format == meta.FormatSnapshot {
 			tasks = append(tasks, newCollSnapshotTask(collSnapshotTaskArgs{
-				taskID:      t.args.TaskID,
-				collBackup:  collBackup,
-				targetNS:    targetNS,
-				source:      t.snapshotSource,
-				dropExist:   t.args.Option.DropExistCollection,
-				maxShardNum: t.args.Option.MaxShardNum,
-				grpcCli:     t.grpc,
-				taskMgr:     t.args.TaskMgr,
+				taskID:       t.args.TaskID,
+				collBackup:   collBackup,
+				targetNS:     targetNS,
+				source:       t.snapshotSource,
+				dropExist:    t.args.Option.DropExistCollection,
+				maxShardNum:  t.args.Option.MaxShardNum,
+				descOverride: t.args.Plan.CollOverrides[targetNS.String()].Description,
+				grpcCli:      t.grpc,
+				taskMgr:      t.args.TaskMgr,
 			}))
 			continue
 		}

@@ -2,10 +2,13 @@ package restore
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
+	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
+	"github.com/milvus-io/milvus/pkg/v3/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -153,5 +156,52 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 		task.maxShardNum = 4
 		err := task.Execute(context.Background())
 		assert.ErrorContains(t, err, "exceeding max_shard_num")
+	})
+
+	// The description cannot be written into the bundle's schema, so an override is applied
+	// with an AlterCollection once the restore job completes.
+	t.Run("DescOverride", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().RestoreExternalSnapshot(mock.Anything, mock.Anything).Return(9001, nil)
+		cli.EXPECT().GetRestoreSnapshotState(mock.Anything, int64(9001)).
+			Return(&milvuspb.RestoreSnapshotInfo{State: milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted}, nil)
+		cli.EXPECT().AlterCollection(mock.Anything, "db2", "coll2", mock.Anything).
+			RunAndReturn(func(_ context.Context, db, collName string, props []*commonpb.KeyValuePair) error {
+				assert.Len(t, props, 1)
+				assert.Equal(t, common.CollectionDescription, props[0].GetKey())
+				assert.Equal(t, "new desc", props[0].GetValue())
+				return nil
+			})
+
+		task := newTestCollSnapshotTask(t, cli, false)
+		task.descOverride = "new desc"
+		require.NoError(t, task.Execute(context.Background()))
+	})
+
+	// Without an override, the collection keeps the description from the bundle and nothing
+	// is altered after the restore.
+	t.Run("DescOverrideEmpty", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().RestoreExternalSnapshot(mock.Anything, mock.Anything).Return(9001, nil)
+		cli.EXPECT().GetRestoreSnapshotState(mock.Anything, int64(9001)).
+			Return(&milvuspb.RestoreSnapshotInfo{State: milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted}, nil)
+
+		task := newTestCollSnapshotTask(t, cli, false)
+		require.NoError(t, task.Execute(context.Background()))
+	})
+
+	// A failed alter surfaces through the task like any other restore failure.
+	t.Run("DescOverrideAlterFails", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().RestoreExternalSnapshot(mock.Anything, mock.Anything).Return(9001, nil)
+		cli.EXPECT().GetRestoreSnapshotState(mock.Anything, int64(9001)).
+			Return(&milvuspb.RestoreSnapshotInfo{State: milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted}, nil)
+		cli.EXPECT().AlterCollection(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return(errors.New("alter failed"))
+
+		task := newTestCollSnapshotTask(t, cli, false)
+		task.descOverride = "new desc"
+		err := task.Execute(context.Background())
+		assert.ErrorContains(t, err, "alter collection description")
 	})
 }

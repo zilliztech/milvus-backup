@@ -6,7 +6,9 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
+	"github.com/milvus-io/milvus/pkg/v3/common"
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
@@ -24,9 +26,10 @@ type collSnapshotTask struct {
 	collBackup *backuppb.CollectionBackupInfo
 	targetNS   namespace.NS
 
-	source      snapshotSource
-	dropExist   bool
-	maxShardNum int32
+	source       snapshotSource
+	dropExist    bool
+	maxShardNum  int32
+	descOverride string
 
 	pollInterval time.Duration
 
@@ -42,9 +45,10 @@ type collSnapshotTaskArgs struct {
 	collBackup *backuppb.CollectionBackupInfo
 	targetNS   namespace.NS
 
-	source      snapshotSource
-	dropExist   bool
-	maxShardNum int32
+	source       snapshotSource
+	dropExist    bool
+	maxShardNum  int32
+	descOverride string
 
 	grpcCli milvus.Grpc
 	taskMgr *taskmgr.Mgr
@@ -68,9 +72,10 @@ func newCollSnapshotTask(args collSnapshotTaskArgs) *collSnapshotTask {
 		collBackup: args.collBackup,
 		targetNS:   args.targetNS,
 
-		source:      args.source,
-		dropExist:   args.dropExist,
-		maxShardNum: args.maxShardNum,
+		source:       args.source,
+		dropExist:    args.dropExist,
+		maxShardNum:  args.maxShardNum,
+		descOverride: args.descOverride,
 
 		pollInterval: _snapshotPollInterval,
 
@@ -140,7 +145,30 @@ func (ct *collSnapshotTask) privateExecute(ctx context.Context) error {
 		zap.Int64("job_id", jobID),
 		zap.String("metadata_uri", metadataURI))
 
-	return ct.waitRestore(ctx, jobID)
+	if err := ct.waitRestore(ctx, jobID); err != nil {
+		return err
+	}
+
+	return ct.applyDescOverride(ctx)
+}
+
+// applyDescOverride rewrites the collection description after the restore completes. Milvus
+// creates the collection from the bundle's schema, so the only way to change the description
+// is an AlterCollection once the collection exists.
+func (ct *collSnapshotTask) applyDescOverride(ctx context.Context) error {
+	if ct.descOverride == "" {
+		return nil
+	}
+
+	props := []*commonpb.KeyValuePair{{Key: common.CollectionDescription, Value: ct.descOverride}}
+	if err := ct.grpcCli.AlterCollection(ctx, ct.targetNS.DBName(), ct.targetNS.CollName(), props); err != nil {
+		return fmt.Errorf("restore: alter collection description: %w", err)
+	}
+
+	ct.logger.Info("collection description overridden",
+		zap.String("target_ns", ct.targetNS.String()),
+		zap.String("description", ct.descOverride))
+	return nil
 }
 
 // dropExistedColl removes the target ahead of the restore. Milvus refuses to restore into a
