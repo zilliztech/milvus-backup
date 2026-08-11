@@ -88,31 +88,19 @@ func (gcm *GCPNativeClient) DeleteObject(ctx context.Context, key string) error 
 }
 
 type GcpNativeObjectIterator struct {
-	cli *GCPNativeClient
-
 	iter *storage.ObjectIterator
-
-	hasNext bool
-	nextObj *storage.ObjectAttrs
 }
 
-func (g *GcpNativeObjectIterator) HasNext() bool { return g.hasNext }
-
-func (g *GcpNativeObjectIterator) Next() (ObjectAttr, error) {
-	currObj := g.nextObj
+func (g *GcpNativeObjectIterator) Next(_ context.Context) (ObjectAttr, bool, error) {
 	next, err := g.iter.Next()
 	if err != nil {
 		if errors.Is(err, iterator.Done) {
-			g.hasNext = false
-			return ObjectAttr{Key: currObj.Name, Length: currObj.Size}, nil
+			return ObjectAttr{}, false, nil
 		}
-		return ObjectAttr{}, fmt.Errorf("storage: gcp native list prefix %w", err)
+		return ObjectAttr{}, false, fmt.Errorf("storage: gcp native list prefix %w", err)
 	}
 
-	g.nextObj = next
-	g.hasNext = true
-
-	return ObjectAttr{Key: currObj.Name, Length: currObj.Size}, nil
+	return ObjectAttr{Key: next.Name, Length: next.Size}, true, nil
 }
 
 func (gcm *GCPNativeClient) ListPrefix(ctx context.Context, prefix string, recursive bool) (ObjectIterator, error) {
@@ -126,15 +114,7 @@ func (gcm *GCPNativeClient) ListPrefix(ctx context.Context, prefix string, recur
 		Delimiter: delimiter,
 	})
 
-	next, err := iter.Next()
-	if err != nil {
-		if errors.Is(err, iterator.Done) {
-			return &GcpNativeObjectIterator{cli: gcm, iter: iter, hasNext: false}, nil
-		}
-		return nil, fmt.Errorf("storage: gcp native list prefix %w", err)
-	}
-
-	return &GcpNativeObjectIterator{cli: gcm, iter: iter, nextObj: next, hasNext: true}, nil
+	return &GcpNativeObjectIterator{iter: iter}, nil
 }
 
 func (gcm *GCPNativeClient) BucketExist(ctx context.Context, _ string) (bool, error) {

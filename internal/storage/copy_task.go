@@ -64,10 +64,13 @@ func (c *CopyPrefixTask) Execute(ctx context.Context) error {
 	}
 
 	g, subCtx := errgroup.WithContext(ctx)
-	for iter.HasNext() {
-		attr, err := iter.Next()
+	for {
+		attr, ok, err := iter.Next(ctx)
 		if err != nil {
 			return fmt.Errorf("storage: copy prefix iter object %w", err)
+		}
+		if !ok {
+			break
 		}
 		if attr.IsEmpty() && strings.HasSuffix(attr.Key, "/") {
 			continue

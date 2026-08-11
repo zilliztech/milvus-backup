@@ -311,40 +311,25 @@ func (m *MinioClient) DeleteObject(ctx context.Context, key string) error {
 type MinioObjectIterator struct {
 	cli *MinioClient
 
-	objCh   <-chan minio.ObjectInfo
-	nextObj minio.ObjectInfo
-	hasNext bool
+	objCh <-chan minio.ObjectInfo
 }
 
-func newMinioObjectIterator(cli *MinioClient, objCh <-chan minio.ObjectInfo) (*MinioObjectIterator, error) {
-	nextObj, ok := <-objCh
+func (m *MinioObjectIterator) Next(_ context.Context) (ObjectAttr, bool, error) {
+	item, ok := <-m.objCh
 	if !ok {
-		return &MinioObjectIterator{cli: cli, objCh: objCh, hasNext: false}, nil
+		return ObjectAttr{}, false, nil
 	}
 
-	if nextObj.Err != nil {
-		return &MinioObjectIterator{cli: cli, objCh: objCh, hasNext: false}, fmt.Errorf("storage: %s list prefix %w", cli.cfg.Provider, nextObj.Err)
+	if item.Err != nil {
+		return ObjectAttr{}, false, fmt.Errorf("storage: %s list prefix %w", m.cli.cfg.Provider, item.Err)
 	}
-
-	return &MinioObjectIterator{cli: cli, objCh: objCh, nextObj: nextObj, hasNext: true}, nil
-}
-
-func (m *MinioObjectIterator) HasNext() bool { return m.hasNext }
-
-func (m *MinioObjectIterator) Next() (ObjectAttr, error) {
-	curr := m.nextObj
-	m.nextObj, m.hasNext = <-m.objCh
-
-	if curr.Err != nil {
-		return ObjectAttr{}, fmt.Errorf("storage: %s list prefix %w", m.cli.cfg.Provider, curr.Err)
-	}
-	return ObjectAttr{Key: curr.Key, Length: curr.Size}, nil
+	return ObjectAttr{Key: item.Key, Length: item.Size}, true, nil
 }
 
 func (m *MinioClient) ListPrefix(ctx context.Context, prefix string, recursive bool) (ObjectIterator, error) {
 	opt := minio.ListObjectsOptions{Prefix: prefix, Recursive: recursive}
 	objCh := m.cli.ListObjects(ctx, m.cfg.Bucket, opt)
-	return newMinioObjectIterator(m, objCh)
+	return &MinioObjectIterator{cli: m, objCh: objCh}, nil
 }
 
 // BucketExist checks if the bucket exists by listing a single object.

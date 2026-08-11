@@ -1,5 +1,7 @@
 package storage
 
+import "context"
+
 var _ ObjectIterator = (*MockObjectIterator)(nil)
 
 type MockObjectIterator struct {
@@ -7,17 +9,13 @@ type MockObjectIterator struct {
 	idx  int
 }
 
-func (m *MockObjectIterator) HasNext() bool {
-	return m.idx < len(m.objs)
-}
-
-func (m *MockObjectIterator) Next() (ObjectAttr, error) {
-	if !m.HasNext() {
-		return ObjectAttr{}, nil
+func (m *MockObjectIterator) Next(_ context.Context) (ObjectAttr, bool, error) {
+	if m.idx >= len(m.objs) {
+		return ObjectAttr{}, false, nil
 	}
 	obj := m.objs[m.idx]
 	m.idx++
-	return obj, nil
+	return obj, true, nil
 }
 
 func NewMockObjectIterator(objs []ObjectAttr) *MockObjectIterator {

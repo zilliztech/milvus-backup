@@ -13,11 +13,12 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/retry"
 )
 
-// errorIterator reports a next item but always fails when read.
+// errorIterator always fails the next read.
 type errorIterator struct{}
 
-func (errorIterator) HasNext() bool             { return true }
-func (errorIterator) Next() (ObjectAttr, error) { return ObjectAttr{}, assert.AnError }
+func (errorIterator) Next(context.Context) (ObjectAttr, bool, error) {
+	return ObjectAttr{}, false, assert.AnError
+}
 
 func TestCopyPrefixTask_Execute(t *testing.T) {
 	t.Run("CopiesAllAndRemapsKeys", func(t *testing.T) {

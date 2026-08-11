@@ -33,10 +33,13 @@ func ListPrefixFlat(ctx context.Context, cli Client, prefix string, recursive bo
 
 	var keys []string
 	var sizes []int64
-	for iter.HasNext() {
-		attr, err := iter.Next()
+	for {
+		attr, ok, err := iter.Next(ctx)
 		if err != nil {
 			return nil, nil, fmt.Errorf("storage: list prefix flat %w", err)
+		}
+		if !ok {
+			break
 		}
 		keys = append(keys, attr.Key)
 		sizes = append(sizes, attr.Length)
@@ -80,10 +83,13 @@ func DeletePrefix(ctx context.Context, cli Client, prefix string) error {
 
 	g, subCtx := errgroup.WithContext(ctx)
 	g.SetLimit(_deleteConcurrent)
-	for iter.HasNext() {
-		attr, err := iter.Next()
+	for {
+		attr, ok, err := iter.Next(ctx)
 		if err != nil {
 			return fmt.Errorf("storage: delete prefix iter object %w", err)
+		}
+		if !ok {
+			break
 		}
 		if !strings.HasPrefix(attr.Key, prefix) {
 			return fmt.Errorf("storage: delete prefix key %s not in prefix %s", attr.Key, prefix)
@@ -108,11 +114,12 @@ func Exist(ctx context.Context, cli Client, prefix string) (bool, error) {
 		return false, fmt.Errorf("storage: exist list prefix %w", err)
 	}
 
-	if !iter.HasNext() {
-		return false, nil
+	_, ok, err := iter.Next(ctx)
+	if err != nil {
+		return false, fmt.Errorf("storage: exist list prefix %w", err)
 	}
 
-	return true, nil
+	return ok, nil
 }
 
 func CreateBucketIfNotExist(ctx context.Context, cli Client, prefix string) error {

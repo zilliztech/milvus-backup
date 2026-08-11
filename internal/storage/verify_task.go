@@ -58,10 +58,13 @@ func (t *VerifyPrefixTask) Execute(ctx context.Context) error {
 		missing[key] = size
 	}
 
-	for iter.HasNext() {
-		attr, err := iter.Next()
+	for {
+		attr, ok, err := iter.Next(ctx)
 		if err != nil {
 			return fmt.Errorf("storage: verify prefix iter object %w", err)
+		}
+		if !ok {
+			break
 		}
 
 		want, ok := t.opt.Expected[attr.Key]

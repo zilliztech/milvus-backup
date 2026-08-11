@@ -113,17 +113,13 @@ type localIterator struct {
 	index   int
 }
 
-func (l *localIterator) HasNext() bool {
-	return l.index < len(l.entries)
-}
-
-func (l *localIterator) Next() (ObjectAttr, error) {
-	if !l.HasNext() {
-		return ObjectAttr{}, fmt.Errorf("storage: local list prefix no more entries")
+func (l *localIterator) Next(_ context.Context) (ObjectAttr, bool, error) {
+	if l.index >= len(l.entries) {
+		return ObjectAttr{}, false, nil
 	}
 	entry := l.entries[l.index]
 	l.index++
-	return entry, nil
+	return entry, true, nil
 }
 
 func (l *LocalClient) ListPrefix(_ context.Context, prefix string, recursive bool) (ObjectIterator, error) {
