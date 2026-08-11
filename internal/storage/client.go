@@ -115,7 +115,13 @@ func (c CredentialType) String() string {
 // ObjectIterator yields objects under a prefix. Each Next call returns the
 // next object, or ok=false once the listing is exhausted. err is non-nil only
 // on a real failure; exhaustion is not an error.
+//
+// The caller must Close the iterator when done, even after exhaustion or an
+// early return. Implementations may start a background listing goroutine that
+// Close is responsible for stopping; without it, a provider-backed iterator
+// can keep listing until its creation context is canceled.
 type ObjectIterator interface {
+	io.Closer
 	Next(ctx context.Context) (ObjectAttr, bool, error)
 }
 

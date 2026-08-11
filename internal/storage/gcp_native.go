@@ -103,6 +103,10 @@ func (g *GcpNativeObjectIterator) Next(_ context.Context) (ObjectAttr, bool, err
 	return ObjectAttr{Key: next.Name, Length: next.Size}, true, nil
 }
 
+// Close is a no-op: the GCP iterator fetches pages synchronously on Next and
+// keeps no background goroutine.
+func (g *GcpNativeObjectIterator) Close() error { return nil }
+
 func (gcm *GCPNativeClient) ListPrefix(ctx context.Context, prefix string, recursive bool) (ObjectIterator, error) {
 	delimiter := ""
 	if !recursive {

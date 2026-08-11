@@ -311,7 +311,8 @@ func (m *MinioClient) DeleteObject(ctx context.Context, key string) error {
 type MinioObjectIterator struct {
 	cli *MinioClient
 
-	objCh <-chan minio.ObjectInfo
+	cancel context.CancelFunc
+	objCh  <-chan minio.ObjectInfo
 }
 
 func (m *MinioObjectIterator) Next(_ context.Context) (ObjectAttr, bool, error) {
@@ -326,10 +327,23 @@ func (m *MinioObjectIterator) Next(_ context.Context) (ObjectAttr, bool, error) 
 	return ObjectAttr{Key: item.Key, Length: item.Size}, true, nil
 }
 
+// Close stops the background listing goroutine feeding objCh. minio-go's
+// ListObjects only returns once its context is canceled and the channel is
+// drained, so Close both cancels and drains to guarantee the goroutine exits
+// even when the caller stops iterating early. A fully-exhausted iterator is
+// already closed, in which case the drain returns immediately.
+func (m *MinioObjectIterator) Close() error {
+	m.cancel()
+	for range m.objCh {
+	}
+	return nil
+}
+
 func (m *MinioClient) ListPrefix(ctx context.Context, prefix string, recursive bool) (ObjectIterator, error) {
 	opt := minio.ListObjectsOptions{Prefix: prefix, Recursive: recursive}
-	objCh := m.cli.ListObjects(ctx, m.cfg.Bucket, opt)
-	return &MinioObjectIterator{cli: m, objCh: objCh}, nil
+	subCtx, cancel := context.WithCancel(ctx)
+	objCh := m.cli.ListObjects(subCtx, m.cfg.Bucket, opt)
+	return &MinioObjectIterator{cli: m, cancel: cancel, objCh: objCh}, nil
 }
 
 // BucketExist checks if the bucket exists by listing a single object.

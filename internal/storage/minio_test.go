@@ -206,6 +206,85 @@ func TestBucketExistReturnsFalseForNoSuchBucket(t *testing.T) {
 	assert.False(t, exists)
 }
 
+// TestMinioObjectIteratorCloseStopsGoroutine verifies that closing an iterator
+// before the listing is exhausted actually stops minio-go's background listing
+// goroutine. The fake transport returns a truncated first page with a
+// continuation token, so the goroutine is still alive fetching the next page
+// when Close is called; Close must cancel it and drain until it exits.
+func TestMinioObjectIteratorCloseStopsGoroutine(t *testing.T) {
+	cli, err := newInternalMinio(Config{
+		Provider: "s3",
+		Endpoint: "example.com",
+		UseSSL:   true,
+		Bucket:   "test-bucket",
+		Credential: Credential{
+			Type: Static,
+			AK:   "ak",
+			SK:   "sk",
+		},
+	}, &minio.Options{
+		Secure: true,
+		Creds:  credentials.NewStaticV4("ak", "sk", ""),
+		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			if _, ok := r.URL.Query()["location"]; ok {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/xml"}},
+					Body:       io.NopCloser(strings.NewReader(`<LocationConstraint xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></LocationConstraint>`)),
+					Request:    r,
+				}, nil
+			}
+
+			if r.URL.Query().Get("list-type") != "2" {
+				return nil, errors.New("unexpected request")
+			}
+
+			// A follow-up page blocks until its request context is canceled,
+			// so the test would hang if the goroutine is not stopped.
+			if token := r.URL.Query().Get("continuation-token"); token != "" {
+				<-r.Context().Done()
+				return nil, r.Context().Err()
+			}
+
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/xml"}},
+				Body: io.NopCloser(strings.NewReader(`<?xml version="1.0" encoding="UTF-8"?>
+<ListBucketResult>
+  <Name>test-bucket</Name>
+  <Prefix></Prefix>
+  <IsTruncated>true</IsTruncated>
+  <Contents>
+    <Key>first-object</Key>
+    <Size>1</Size>
+  </Contents>
+  <NextContinuationToken>next-page</NextContinuationToken>
+</ListBucketResult>`)),
+				Request: r,
+			}, nil
+		}),
+	})
+	require.NoError(t, err)
+
+	iter, err := cli.ListPrefix(context.Background(), "prefix/", true)
+	require.NoError(t, err)
+
+	attr, ok, err := iter.Next(context.Background())
+	require.NoError(t, err)
+	assert.True(t, ok)
+	assert.Equal(t, "first-object", attr.Key)
+
+	// The listing is truncated, so the goroutine is alive fetching page two.
+	// Close must cancel it and drain the channel until it has exited.
+	require.NoError(t, iter.Close())
+
+	// After Close the channel is closed and drained: Next reports exhaustion
+	// rather than a cancellation error left in the channel.
+	_, ok, err = iter.Next(context.Background())
+	assert.False(t, ok)
+	assert.NoError(t, err)
+}
+
 func TestBucketExistPropagatesContextCancellation(t *testing.T) {
 	cli, err := newInternalMinio(Config{
 		Provider: "s3",
