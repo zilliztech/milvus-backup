@@ -130,16 +130,16 @@ func TestLocalClient_ListPrefix(t *testing.T) {
 		iter, err := cli.ListPrefix(context.Background(), path.Join(dir, "backup", "meta", "test.txt"), false)
 		assert.NoError(t, err)
 
-		assert.True(t, iter.HasNext())
-		entry, err := iter.Next()
+		entry, ok, err := iter.Next(context.Background())
+		assert.True(t, ok)
 		assert.NoError(t, err)
 		assert.Equal(t, path.Join(dir, "backup", "meta", "test.txt"), entry.Key)
 		assert.Equal(t, int64(1), entry.Length)
 
 		iter, err = cli.ListPrefix(context.Background(), path.Join(dir, "backup", "meta", "test.txt"), true)
 		assert.NoError(t, err)
-		assert.True(t, iter.HasNext())
-		entry, err = iter.Next()
+		entry, ok, err = iter.Next(context.Background())
+		assert.True(t, ok)
 		assert.NoError(t, err)
 		assert.Equal(t, path.Join(dir, "backup", "meta", "test.txt"), entry.Key)
 		assert.Equal(t, int64(1), entry.Length)
@@ -149,11 +149,15 @@ func TestLocalClient_ListPrefix(t *testing.T) {
 		cli := &LocalClient{}
 		iter, err := cli.ListPrefix(context.Background(), path.Join(dir, "not_exist"), false)
 		assert.NoError(t, err)
-		assert.False(t, iter.HasNext())
+		_, ok, err := iter.Next(context.Background())
+		assert.NoError(t, err)
+		assert.False(t, ok)
 
 		iter, err = cli.ListPrefix(context.Background(), path.Join(dir, "not_exist"), true)
 		assert.NoError(t, err)
-		assert.False(t, iter.HasNext())
+		_, ok, err = iter.Next(context.Background())
+		assert.NoError(t, err)
+		assert.False(t, ok)
 	})
 
 	t.Run("Recursive", func(t *testing.T) {
@@ -162,9 +166,12 @@ func TestLocalClient_ListPrefix(t *testing.T) {
 		assert.NoError(t, err)
 
 		var entries []ObjectAttr
-		for iter.HasNext() {
-			entry, err := iter.Next()
+		for {
+			entry, ok, err := iter.Next(context.Background())
 			assert.NoError(t, err)
+			if !ok {
+				break
+			}
 			entries = append(entries, entry)
 		}
 
@@ -179,9 +186,12 @@ func TestLocalClient_ListPrefix(t *testing.T) {
 		assert.NoError(t, err)
 
 		var entries []ObjectAttr
-		for iter.HasNext() {
-			entry, err := iter.Next()
+		for {
+			entry, ok, err := iter.Next(context.Background())
 			assert.NoError(t, err)
+			if !ok {
+				break
+			}
 			entries = append(entries, entry)
 		}
 		assert.Len(t, entries, 2)

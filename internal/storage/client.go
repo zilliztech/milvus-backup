@@ -112,9 +112,11 @@ func (c CredentialType) String() string {
 	return "Can not find the credential type"
 }
 
+// ObjectIterator yields objects under a prefix. Each Next call returns the
+// next object, or ok=false once the listing is exhausted. err is non-nil only
+// on a real failure; exhaustion is not an error.
 type ObjectIterator interface {
-	HasNext() bool
-	Next() (ObjectAttr, error)
+	Next(ctx context.Context) (ObjectAttr, bool, error)
 }
 
 // Client is the interface for storage service.

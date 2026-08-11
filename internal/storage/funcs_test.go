@@ -15,15 +15,13 @@ type mockObjectIterator struct {
 	idx  int
 }
 
-func (m *mockObjectIterator) HasNext() bool { return m.idx < len(m.objs) }
-
-func (m *mockObjectIterator) Next() (ObjectAttr, error) {
-	if !m.HasNext() {
-		return ObjectAttr{}, nil
+func (m *mockObjectIterator) Next(_ context.Context) (ObjectAttr, bool, error) {
+	if m.idx >= len(m.objs) {
+		return ObjectAttr{}, false, nil
 	}
 	obj := m.objs[m.idx]
 	m.idx++
-	return obj, nil
+	return obj, true, nil
 }
 
 func TestSize(t *testing.T) {
