@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io"
 	"sort"
 	"strings"
 	"sync"
@@ -27,36 +26,6 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/retry"
 )
-
-var _ io.ReadCloser = (*AzureReader)(nil)
-
-type AzureReader struct {
-	cli    *blockblob.Client
-	length int64
-	pos    int64
-}
-
-func (a *AzureReader) Read(p []byte) (int, error) {
-	if a.pos >= a.length {
-		return 0, io.EOF
-	}
-	count := int64(len(p))
-	if a.pos+count >= a.length {
-		count = a.length - a.pos
-	}
-
-	opt := &azblob.DownloadBufferOptions{Range: azblob.HTTPRange{Offset: a.pos, Count: count}}
-	n, err := a.cli.DownloadBuffer(context.Background(), p, opt)
-	a.pos += n
-
-	if err != nil {
-		return int(n), fmt.Errorf("storage: read azure download buffer %w pos:%d count:%d file-len:%d buff-len:%d", err, a.pos, count, a.length, len(p))
-	}
-
-	return int(n), nil
-}
-
-func (a *AzureReader) Close() error { return nil }
 
 var _ Client = (*AzureClient)(nil)
 
@@ -331,12 +300,17 @@ func (a *AzureClient) HeadObject(ctx context.Context, key string) (ObjectAttr, e
 
 func (a *AzureClient) GetObject(ctx context.Context, key string) (*Object, error) {
 	blobCli := a.cli.ServiceClient().NewContainerClient(a.cfg.Bucket).NewBlockBlobClient(key)
-	props, err := blobCli.GetProperties(ctx, nil)
+	resp, err := blobCli.DownloadStream(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("storage: azure get properties %w", err)
+		return nil, fmt.Errorf("storage: azure download stream %w", err)
 	}
 
-	return &Object{Body: &AzureReader{cli: blobCli, length: *props.ContentLength}, Length: *props.ContentLength}, nil
+	return &Object{
+		Length: *resp.ContentLength,
+		// NewRetryReader re-issues a ranged request from the current offset if the
+		// stream breaks mid-read, instead of surfacing a partial-failure to callers.
+		Body: resp.NewRetryReader(ctx, nil),
+	}, nil
 }
 
 func (a *AzureClient) UploadObject(ctx context.Context, i UploadObjectInput) error {
