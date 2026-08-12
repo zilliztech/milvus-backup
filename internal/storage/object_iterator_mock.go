@@ -18,6 +18,8 @@ func (m *MockObjectIterator) Next(_ context.Context) (ObjectAttr, bool, error) {
 	return obj, true, nil
 }
 
+func (m *MockObjectIterator) Close() error { return nil }
+
 func NewMockObjectIterator(objs []ObjectAttr) *MockObjectIterator {
 	return &MockObjectIterator{objs: objs}
 }

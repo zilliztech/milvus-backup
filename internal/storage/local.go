@@ -122,6 +122,10 @@ func (l *localIterator) Next(_ context.Context) (ObjectAttr, bool, error) {
 	return entry, true, nil
 }
 
+// Close is a no-op: the local iterator walks the filesystem synchronously in
+// ListPrefix and keeps no background goroutine.
+func (l *localIterator) Close() error { return nil }
+
 func (l *LocalClient) ListPrefix(_ context.Context, prefix string, recursive bool) (ObjectIterator, error) {
 	// check if prefix is a file
 	info, err := os.Stat(prefix)

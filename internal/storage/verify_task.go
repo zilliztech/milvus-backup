@@ -51,6 +51,7 @@ func (t *VerifyPrefixTask) Execute(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("storage: verify prefix list prefix %w", err)
 	}
+	defer iter.Close()
 
 	// Track keys not yet seen in the listing; drop each as it is found.
 	missing := make(map[string]int64, len(t.opt.Expected))

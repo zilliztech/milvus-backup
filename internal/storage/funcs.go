@@ -30,6 +30,7 @@ func ListPrefixFlat(ctx context.Context, cli Client, prefix string, recursive bo
 	if err != nil {
 		return nil, nil, err
 	}
+	defer iter.Close()
 
 	var keys []string
 	var sizes []int64
@@ -80,19 +81,30 @@ func DeletePrefix(ctx context.Context, cli Client, prefix string) error {
 	if err != nil {
 		return fmt.Errorf("storage: delete prefix list prefix %w", err)
 	}
+	defer iter.Close()
 
+	// Derive a cancellable context so in-flight deletions can be stopped when
+	// the loop bails early, then join them through the single Wait below.
+	// defer cancel() satisfies vet's lostcancel check; it is a no-op on the
+	// happy path where Wait has already joined every deletion.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	g, subCtx := errgroup.WithContext(ctx)
 	g.SetLimit(_deleteConcurrent)
+
+	var loopErr error
 	for {
 		attr, ok, err := iter.Next(ctx)
 		if err != nil {
-			return fmt.Errorf("storage: delete prefix iter object %w", err)
+			loopErr = fmt.Errorf("storage: delete prefix iter object %w", err)
+			break
 		}
 		if !ok {
 			break
 		}
 		if !strings.HasPrefix(attr.Key, prefix) {
-			return fmt.Errorf("storage: delete prefix key %s not in prefix %s", attr.Key, prefix)
+			loopErr = fmt.Errorf("storage: delete prefix key %s not in prefix %s", attr.Key, prefix)
+			break
 		}
 
 		g.Go(func() error {
@@ -101,8 +113,18 @@ func DeletePrefix(ctx context.Context, cli Client, prefix string) error {
 		})
 	}
 
-	if err := g.Wait(); err != nil {
-		return fmt.Errorf("storage: delete prefix %w", err)
+	// If the loop bailed early, stop the in-flight deletions so Wait below
+	// returns promptly instead of running them to completion.
+	if loopErr != nil {
+		cancel()
+	}
+
+	waitErr := g.Wait()
+	if loopErr != nil {
+		return loopErr
+	}
+	if waitErr != nil {
+		return fmt.Errorf("storage: delete prefix %w", waitErr)
 	}
 
 	return nil
@@ -113,6 +135,7 @@ func Exist(ctx context.Context, cli Client, prefix string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("storage: exist list prefix %w", err)
 	}
+	defer iter.Close()
 
 	_, ok, err := iter.Next(ctx)
 	if err != nil {

@@ -62,12 +62,22 @@ func (c *CopyPrefixTask) Execute(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("storage: copy prefix walk prefix %w", err)
 	}
+	defer iter.Close()
 
+	// Derive a cancellable context so in-flight copies can be stopped when the
+	// loop bails early, then join them through the single Wait below.
+	// defer cancel() satisfies vet's lostcancel check; it is a no-op on the
+	// happy path where Wait has already joined every copy.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	g, subCtx := errgroup.WithContext(ctx)
+
+	var loopErr error
 	for {
 		attr, ok, err := iter.Next(ctx)
 		if err != nil {
-			return fmt.Errorf("storage: copy prefix iter object %w", err)
+			loopErr = fmt.Errorf("storage: copy prefix iter object %w", err)
+			break
 		}
 		if !ok {
 			break
@@ -77,7 +87,8 @@ func (c *CopyPrefixTask) Execute(ctx context.Context) error {
 		}
 
 		if err := c.opt.Sem.Acquire(ctx, 1); err != nil {
-			return fmt.Errorf("storage: copy prefix acquire semaphore %w", err)
+			loopErr = fmt.Errorf("storage: copy prefix acquire semaphore %w", err)
+			break
 		}
 		g.Go(func() error {
 			defer c.opt.Sem.Release(1)
@@ -90,8 +101,18 @@ func (c *CopyPrefixTask) Execute(ctx context.Context) error {
 		})
 	}
 
-	if err := g.Wait(); err != nil {
-		return fmt.Errorf("storage: copy prefix %w", err)
+	// If the loop bailed early, stop the in-flight copies so Wait below
+	// returns promptly instead of running them to completion.
+	if loopErr != nil {
+		cancel()
+	}
+
+	waitErr := g.Wait()
+	if loopErr != nil {
+		return loopErr
+	}
+	if waitErr != nil {
+		return fmt.Errorf("storage: copy prefix %w", waitErr)
 	}
 
 	return nil
@@ -128,10 +149,19 @@ func (c *CopyObjectsTask) Execute(ctx context.Context) error {
 	// shuffle to avoid hot region
 	mutable.Shuffle(c.opt.Attrs)
 
+	// Derive a cancellable context so in-flight copies can be stopped when the
+	// loop bails early, then join them through the single Wait below.
+	// defer cancel() satisfies vet's lostcancel check; it is a no-op on the
+	// happy path where Wait has already joined every copy.
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	g, subCtx := errgroup.WithContext(ctx)
+
+	var loopErr error
 	for _, attr := range c.opt.Attrs {
 		if err := c.opt.Sem.Acquire(ctx, 1); err != nil {
-			return fmt.Errorf("storage: copy objects acquire semaphore %w", err)
+			loopErr = fmt.Errorf("storage: copy objects acquire semaphore %w", err)
+			break
 		}
 		g.Go(func() error {
 			defer c.opt.Sem.Release(1)
@@ -144,8 +174,18 @@ func (c *CopyObjectsTask) Execute(ctx context.Context) error {
 		})
 	}
 
-	if err := g.Wait(); err != nil {
-		return fmt.Errorf("storage: copy objects %w", err)
+	// If the loop bailed early, stop the in-flight copies so Wait below
+	// returns promptly instead of running them to completion.
+	if loopErr != nil {
+		cancel()
+	}
+
+	waitErr := g.Wait()
+	if loopErr != nil {
+		return loopErr
+	}
+	if waitErr != nil {
+		return fmt.Errorf("storage: copy objects %w", waitErr)
 	}
 
 	return nil

@@ -16,9 +16,10 @@ func TestVerifyPrefixTask_Execute(t *testing.T) {
 			{Key: "dest/a", Length: 1},
 			{Key: "dest/b", Length: 2},
 		}
+		iter := &mockObjectIterator{objs: objs}
 		cli.EXPECT().
 			ListPrefix(mock.Anything, "dest/", true).
-			Return(&mockObjectIterator{objs: objs}, nil).Once()
+			Return(iter, nil).Once()
 
 		task := NewVerifyPrefixTask(VerifyPrefixOpt{
 			Cli:      cli,
@@ -26,6 +27,7 @@ func TestVerifyPrefixTask_Execute(t *testing.T) {
 			Expected: map[string]int64{"dest/a": 1, "dest/b": 2},
 		})
 		assert.NoError(t, task.Execute(context.Background()))
+		assert.True(t, iter.closed, "VerifyPrefixTask must close the iterator")
 	})
 
 	t.Run("ExtraObjectsIgnored", func(t *testing.T) {
@@ -49,9 +51,10 @@ func TestVerifyPrefixTask_Execute(t *testing.T) {
 	t.Run("SizeMismatch", func(t *testing.T) {
 		cli := NewMockClient(t)
 		objs := []ObjectAttr{{Key: "dest/a", Length: 3}}
+		iter := &mockObjectIterator{objs: objs}
 		cli.EXPECT().
 			ListPrefix(mock.Anything, "dest/", true).
-			Return(&mockObjectIterator{objs: objs}, nil).Once()
+			Return(iter, nil).Once()
 
 		task := NewVerifyPrefixTask(VerifyPrefixOpt{
 			Cli:      cli,
@@ -61,6 +64,7 @@ func TestVerifyPrefixTask_Execute(t *testing.T) {
 		err := task.Execute(context.Background())
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "size mismatch")
+		assert.True(t, iter.closed, "VerifyPrefixTask must close the iterator on error")
 	})
 
 	t.Run("Missing", func(t *testing.T) {
@@ -149,13 +153,15 @@ func TestExpectedDestObjects(t *testing.T) {
 			{Key: "src/sub/b", Length: 2},
 			{Key: "src/dir/", Length: 0}, // directory marker, must be skipped
 		}
+		iter := &mockObjectIterator{objs: objs}
 		cli.EXPECT().
 			ListPrefix(mock.Anything, "src/", true).
-			Return(&mockObjectIterator{objs: objs}, nil).Once()
+			Return(iter, nil).Once()
 
 		expected, err := ExpectedDestObjects(context.Background(), cli, "src/", "dest/")
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]int64{"dest/a": 1, "dest/sub/b": 2}, expected)
+		assert.True(t, iter.closed, "ExpectedDestObjects must close the iterator")
 	})
 
 	t.Run("ListError", func(t *testing.T) {

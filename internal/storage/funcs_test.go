@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,6 +14,8 @@ import (
 type mockObjectIterator struct {
 	objs []ObjectAttr
 	idx  int
+
+	closed bool
 }
 
 func (m *mockObjectIterator) Next(_ context.Context) (ObjectAttr, bool, error) {
@@ -22,6 +25,33 @@ func (m *mockObjectIterator) Next(_ context.Context) (ObjectAttr, bool, error) {
 	obj := m.objs[m.idx]
 	m.idx++
 	return obj, true, nil
+}
+
+func (m *mockObjectIterator) Close() error {
+	m.closed = true
+	return nil
+}
+
+// iterWithError yields objs, then fails the next read so the consumer returns
+// before the listing is drained.
+type iterWithError struct {
+	objs   []ObjectAttr
+	idx    int
+	closed bool
+}
+
+func (m *iterWithError) Next(_ context.Context) (ObjectAttr, bool, error) {
+	if m.idx < len(m.objs) {
+		obj := m.objs[m.idx]
+		m.idx++
+		return obj, true, nil
+	}
+	return ObjectAttr{}, false, assert.AnError
+}
+
+func (m *iterWithError) Close() error {
+	m.closed = true
+	return nil
 }
 
 func TestSize(t *testing.T) {
@@ -34,13 +64,15 @@ func TestSize(t *testing.T) {
 		{Key: "a/b/f", Length: 4},
 	}
 
+	iter := &mockObjectIterator{objs: objs}
 	cli.EXPECT().
 		ListPrefix(context.Background(), "a/b/", true).
-		Return(&mockObjectIterator{objs: objs}, nil)
+		Return(iter, nil)
 
 	size, err := Size(context.Background(), cli, "a/b/")
 	assert.NoError(t, err)
 	assert.Equal(t, int64(10), size)
+	assert.True(t, iter.closed, "Size must close the iterator")
 }
 
 func TestListPrefixFlat(t *testing.T) {
@@ -53,14 +85,16 @@ func TestListPrefixFlat(t *testing.T) {
 		{Key: "a/b/f", Length: 4},
 	}
 
+	iter := &mockObjectIterator{objs: objs}
 	cli.EXPECT().
 		ListPrefix(context.Background(), "a/b", true).
-		Return(&mockObjectIterator{objs: objs}, nil)
+		Return(iter, nil)
 
 	keys, sizes, err := ListPrefixFlat(context.Background(), cli, "a/b", true)
 	assert.NoError(t, err)
 	assert.Equal(t, []string{"a/b/c", "a/b/d", "a/b/e", "a/b/f"}, keys)
 	assert.Equal(t, []int64{1, 2, 3, 4}, sizes)
+	assert.True(t, iter.closed, "ListPrefixFlat must close the iterator")
 }
 
 func TestDeletePrefix(t *testing.T) {
@@ -74,9 +108,10 @@ func TestDeletePrefix(t *testing.T) {
 			{Key: "a/b/f", Length: 4},
 		}
 
+		iter := &mockObjectIterator{objs: objs}
 		cli.EXPECT().
 			ListPrefix(mock.Anything, "a/b", true).
-			Return(&mockObjectIterator{objs: objs}, nil)
+			Return(iter, nil)
 
 		for _, obj := range objs {
 			cli.EXPECT().
@@ -86,6 +121,45 @@ func TestDeletePrefix(t *testing.T) {
 
 		err := DeletePrefix(context.Background(), cli, "a/b")
 		assert.NoError(t, err)
+		assert.True(t, iter.closed, "DeletePrefix must close the iterator")
+	})
+
+	t.Run("StopsInflightDeletesOnIterError", func(t *testing.T) {
+		// A raw mock, not NewMockClient, so a leaked goroutine holding the mock
+		// lock on a never-released delete cannot deadlock the test cleanup;
+		// without the errgroup fix the assertion below fails instead.
+		cli := &MockClient{}
+
+		released := make(chan struct{})
+		var once sync.Once
+		// A delete that blocks until its context is canceled. If DeletePrefix
+		// fails to stop the errgroup on early return, the deferred Wait blocks
+		// forever and the test hangs.
+		cli.EXPECT().
+			DeleteObject(mock.MatchedBy(func(ctx context.Context) bool {
+				<-ctx.Done()
+				once.Do(func() { close(released) })
+				return true
+			}), "a/b/c").
+			Return(nil)
+
+		// The iterator yields one object, then errors so DeletePrefix returns
+		// before the listing is drained.
+		iter := &iterWithError{objs: []ObjectAttr{{Key: "a/b/c", Length: 1}}}
+		cli.EXPECT().
+			ListPrefix(mock.Anything, "a/b", true).
+			Return(iter, nil)
+
+		err := DeletePrefix(context.Background(), cli, "a/b")
+		assert.Error(t, err)
+		assert.True(t, iter.closed, "DeletePrefix must close the iterator on early return")
+
+		// The in-flight delete was canceled and joined before returning.
+		select {
+		case <-released:
+		default:
+			assert.Fail(t, "DeletePrefix returned without stopping the in-flight delete")
+		}
 	})
 
 	t.Run("EmptyPrefix", func(t *testing.T) {
@@ -106,25 +180,29 @@ func TestExist(t *testing.T) {
 			{Key: "a/b/f", Length: 4},
 		}
 
+		iter := &mockObjectIterator{objs: objs}
 		cli.EXPECT().
 			ListPrefix(mock.Anything, "a/b", false).
-			Return(&mockObjectIterator{objs: objs}, nil)
+			Return(iter, nil)
 
 		exist, err := Exist(context.Background(), cli, "a/b")
 		assert.NoError(t, err)
 		assert.True(t, exist)
+		assert.True(t, iter.closed, "Exist must close the iterator even after a single read")
 	})
 
 	t.Run("NotExist", func(t *testing.T) {
 		cli := NewMockClient(t)
 
+		iter := &mockObjectIterator{}
 		cli.EXPECT().
 			ListPrefix(mock.Anything, "a/b", false).
-			Return(&mockObjectIterator{}, nil)
+			Return(iter, nil)
 
 		exist, err := Exist(context.Background(), cli, "a/b")
 		assert.NoError(t, err)
 		assert.False(t, exist)
+		assert.True(t, iter.closed, "Exist must close the iterator")
 	})
 }
 

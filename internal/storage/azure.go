@@ -388,6 +388,10 @@ func (p *pageIterator[T]) Next(ctx context.Context) (ObjectAttr, bool, error) {
 	}
 }
 
+// Close is a no-op: the Azure pager fetches pages synchronously on Next and
+// keeps no background goroutine.
+func (p *pageIterator[T]) Close() error { return nil }
+
 type AzureObjectFlatIterator struct {
 	pageIterator[azblob.ListBlobsFlatResponse]
 }
