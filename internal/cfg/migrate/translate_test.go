@@ -96,6 +96,29 @@ func TestTranslate_CrossStorageStreams(t *testing.T) {
 	assert.Equal(t, v2.TransferStreaming, out.Transfer.Mode.Val)
 }
 
+// The loader path is what a v1 file hits at startup. Azure with useIAM used to
+// be forced to auth.type=sharedKey, and the empty account key then tripped the
+// v2 validator ("milvus.storage.auth.accountKey is required"), panicking the
+// process. It must translate to auth.type=default instead.
+func TestTranslate_AzureUseIAM(t *testing.T) {
+	out, err := Translate(loadV1(t, `
+minio:
+  storageType: azure
+  useIAM: true
+  accessKeyID: myaccount
+  backupAccessKeyID: backupaccount
+  backupBucketName: backups
+`))
+	require.NoError(t, err)
+
+	assert.Equal(t, v2.AuthDefault, out.Milvus.Storage.Auth.Type.Val)
+	assert.Equal(t, "myaccount", out.Milvus.Storage.AccountName.Val)
+	// The backup side inherits useIAM from the primary in v1, so it must land
+	// on default too rather than demand an account key.
+	assert.Equal(t, v2.AuthDefault, out.Backup.Storage.Auth.Type.Val)
+	assert.Equal(t, "backupaccount", out.Backup.Storage.AccountName.Val)
+}
+
 // v1 never validated the provider name and only failed when it came time to
 // build a client. Translating runs the v2 validator, so the mistake surfaces
 // while the config is being loaded.

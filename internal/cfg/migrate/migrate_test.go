@@ -157,6 +157,24 @@ minio:
 		assert.Equal(t, "mykey", s.Auth.AccountKey.Val)
 	})
 
+	// v1's useIAM for Azure meant DefaultAzureCredential (managed identity /
+	// workload identity): the account name is still carried to build the blob
+	// URL, but no account key exists to migrate.
+	t.Run("AzureUseIAM", func(t *testing.T) {
+		out, _ := Migrate(loadV1(t, `
+minio:
+  storageType: azure
+  useIAM: true
+  accessKeyID: myaccount
+  bucketName: mycontainer
+`))
+		s := out.Milvus.Storage
+		assert.Equal(t, v2.ProviderAzure, s.Provider.Val)
+		assert.Equal(t, "myaccount", s.AccountName.Val)
+		assert.Equal(t, v2.AuthDefault, s.Auth.Type.Val)
+		assert.Equal(t, "", s.Auth.AccountKey.Val)
+	})
+
 	t.Run("GCPNative", func(t *testing.T) {
 		out, _ := Migrate(loadV1(t, `
 minio:

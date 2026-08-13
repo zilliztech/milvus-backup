@@ -221,10 +221,18 @@ func migrateStorageSide(out *v2.StorageConfig, in storageV1, side string, r *Rep
 	case provider == v2.ProviderLocal:
 		// Local storage is a directory: no endpoint, no credentials.
 	case provider == v2.ProviderAzure:
-		// v1 overloaded the access key ID as the Azure account name.
+		// v1 overloaded the access key ID as the Azure account name. The name is
+		// needed whichever way the account authenticates, so it is always carried
+		// over; only the credential differs.
 		out.AccountName.Val = in.accessKeyID
-		out.Auth.Type.Val = v2.AuthSharedKey
-		mapSecret(&out.Auth.AccountKey, in.secretAccessKey, storageEnv(side, "AUTH_ACCOUNT_KEY"), r)
+		if in.useIAM {
+			// v1's useIAM for Azure meant DefaultAzureCredential (managed
+			// identity / workload identity): no account key is required.
+			out.Auth.Type.Val = v2.AuthDefault
+		} else {
+			out.Auth.Type.Val = v2.AuthSharedKey
+			mapSecret(&out.Auth.AccountKey, in.secretAccessKey, storageEnv(side, "AUTH_ACCOUNT_KEY"), r)
+		}
 	case provider == v2.ProviderGCPNative:
 		out.Auth.Type.Val = v2.AuthServiceAccount
 		mapSecret(&out.Auth.CredentialsFile, in.gcpCredentialJSON, storageEnv(side, "AUTH_CREDENTIALS_FILE"), r)
