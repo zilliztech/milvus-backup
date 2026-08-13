@@ -37,6 +37,7 @@ class TestRestoreSecondary(TestcaseBase):
             "async": False,
             "backup_name": back_up_name,
             "collection_names": names_need_backup,
+            "with_index_extra": True,
         }
         res = self.client.create_backup(payload)
         log.info(f"create backup response: {res}")
