@@ -793,7 +793,9 @@ func (ct *collTask) checkBulkInsertViaGrpc(ctx context.Context, jobID int64) err
 	// wait for bulk insert job done
 	var lastProgress int
 	lastUpdateTime := time.Now()
-	for range time.Tick(_bulkInsertCheckInterval) {
+	ticker := time.NewTicker(_bulkInsertCheckInterval)
+	defer ticker.Stop()
+	for {
 		state, err := ct.grpcCli.GetBulkInsertState(ctx, jobID)
 		if err != nil {
 			return fmt.Errorf("restore_collection: failed to get bulk insert state: %w", err)
@@ -819,11 +821,14 @@ func (ct *collTask) checkBulkInsertViaGrpc(ctx context.Context, jobID int64) err
 					zap.Duration("timeout", _bulkInsertTimeout))
 				lastUpdateTime = time.Now()
 			}
-			continue
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("restore_collection: wait bulk insert state %w", ctx.Err())
+		case <-ticker.C:
 		}
 	}
-
-	return errors.New("restore_collection: walk into unreachable code")
 }
 
 func (ct *collTask) bulkInsertViaGrpc(ctx context.Context, partitionName string, b batch) error {
@@ -871,7 +876,9 @@ func (ct *collTask) checkBulkInsertViaRestful(ctx context.Context, jobID string)
 	// wait for bulk insert job done
 	var lastProgress int
 	lastUpdateTime := time.Now()
-	for range time.Tick(_bulkInsertCheckInterval) {
+	ticker := time.NewTicker(_bulkInsertCheckInterval)
+	defer ticker.Stop()
+	for {
 		resp, err := ct.restfulCli.GetBulkInsertState(ctx, ct.targetNS.DBName(), jobID)
 		if err != nil {
 			return fmt.Errorf("restore_collection: failed to get bulk insert state: %w", err)
@@ -899,11 +906,14 @@ func (ct *collTask) checkBulkInsertViaRestful(ctx context.Context, jobID string)
 					zap.Duration("timeout", _bulkInsertTimeout))
 				lastUpdateTime = time.Now()
 			}
-			continue
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("restore_collection: wait bulk insert state %w", ctx.Err())
+		case <-ticker.C:
 		}
 	}
-
-	return errors.New("restore_collection: walk into unreachable code")
 }
 
 func (ct *collTask) bulkInsertViaRestful(ctx context.Context, partition string, b batch) error {
