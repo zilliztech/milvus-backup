@@ -27,12 +27,12 @@ func (c *HwcCredentialProvider) RetrieveWithCredContext(_ *minioCred.CredContext
 func (c *HwcCredentialProvider) Retrieve() (minioCred.Value, error) {
 	cred, err := retrieveTempCredential(c.iamClient)
 	if err != nil {
-		return minioCred.Value{}, fmt.Errorf("storage: hwc retrieve tempporary credential %w", err)
+		return minioCred.Value{}, fmt.Errorf("storage: hwc retrieve temporary credential %w", err)
 	}
 
 	ti, err := time.Parse(time.RFC3339Nano, cred.ExpiresAt)
 	if err != nil {
-		return minioCred.Value{}, fmt.Errorf("storage: hwc retrieve tempporary credential parse expireTime time %w", err)
+		return minioCred.Value{}, fmt.Errorf("storage: hwc retrieve temporary credential parse expireTime time %w", err)
 	}
 
 	c.expireTime = ti
@@ -68,12 +68,12 @@ func newHwcCredProvider(cfg Config) (minioCred.Provider, error) {
 
 	cred, err := retrieveTempCredential(iamClient)
 	if err != nil {
-		return nil, fmt.Errorf("storage: hwc create tempporary credential %w", err)
+		return nil, fmt.Errorf("storage: hwc create temporary credential %w", err)
 	}
 
 	t, err := time.Parse(time.RFC3339Nano, cred.ExpiresAt)
 	if err != nil {
-		return nil, fmt.Errorf("storage: hwc create tempporary parse expireTime time %w", err)
+		return nil, fmt.Errorf("storage: hwc create temporary parse expireTime time %w", err)
 	}
 
 	return &HwcCredentialProvider{iamClient: iamClient, expireTime: t}, nil

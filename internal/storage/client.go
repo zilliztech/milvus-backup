@@ -145,7 +145,7 @@ type Client interface {
 	// ListPrefix list all objects with same prefix, and call WalkFunc for each object.
 	ListPrefix(ctx context.Context, prefix string, recursive bool) (ObjectIterator, error)
 
-	// BucketExist use a prefix to chack if bucket exist.
+	// BucketExist use a prefix to check if bucket exist.
 	// Using a prefix to confirm whether a bucket exists can avoid requesting the head Bucket permission.
 	BucketExist(ctx context.Context, prefix string) (bool, error)
 	// CreateBucket create a bucket.
