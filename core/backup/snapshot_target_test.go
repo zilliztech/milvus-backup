@@ -53,10 +53,37 @@ func TestSnapshotTarget_MetadataPath(t *testing.T) {
 		assert.Equal(t, "bundle/snapshots/449577/metadata/449580.json", got)
 	})
 
+	// Milvus may report an endpoint-style URI using its transport scheme and omit
+	// the default port. That is the same storage location as the minio URI sent in
+	// the export request and must not make an otherwise successful backup fail.
+	t.Run("CanonicalizedEndpointURI", func(t *testing.T) {
+		target := snapshotTarget{
+			Path: "minio://s3.us-west-2.amazonaws.com:443/backup-bucket/backup/mybackup/bundle",
+			Dir:  "bundle",
+		}
+		got, err := target.metadataPath("https://s3.us-west-2.amazonaws.com/backup-bucket/backup/mybackup/bundle/snapshots/449577/metadata/449580.json")
+		require.NoError(t, err)
+		assert.Equal(t, "bundle/snapshots/449577/metadata/449580.json", got)
+	})
+
 	// Anything outside the target is not ours to record, and a path relative to the
 	// backup directory could not describe it anyway.
 	t.Run("OutsideTarget", func(t *testing.T) {
 		_, err := target.metadataPath("s3://other-bucket/snapshots/449577/metadata/449580.json")
+		assert.Error(t, err)
+	})
+
+	t.Run("SiblingPrefixIsOutsideTarget", func(t *testing.T) {
+		_, err := target.metadataPath("s3://backup-bucket/backup/mybackup/bundle-other/snapshots/449577/metadata/449580.json")
+		assert.Error(t, err)
+	})
+
+	t.Run("DifferentEndpointIsOutsideTarget", func(t *testing.T) {
+		target := snapshotTarget{
+			Path: "minio://s3.us-west-2.amazonaws.com:443/backup-bucket/backup/mybackup/bundle",
+			Dir:  "bundle",
+		}
+		_, err := target.metadataPath("https://s3.us-east-1.amazonaws.com/backup-bucket/backup/mybackup/bundle/snapshots/449577/metadata/449580.json")
 		assert.Error(t, err)
 	})
 }
