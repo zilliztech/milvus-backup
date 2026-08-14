@@ -197,7 +197,7 @@ func (l *LocalClient) listNonRecursive(prefix string) ([]ObjectAttr, error) {
 
 func (l *LocalClient) DeleteObject(_ context.Context, key string) error {
 	if err := os.Remove(key); err != nil {
-		return fmt.Errorf("storage: local delete prefix %w", err)
+		return fmt.Errorf("storage: local delete object %w", err)
 	}
 	return nil
 }
