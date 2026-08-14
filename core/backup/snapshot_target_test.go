@@ -55,15 +55,15 @@ func TestSnapshotTarget_MetadataPath(t *testing.T) {
 
 	// Milvus negotiates a per-export directory below the requested bundle root and
 	// may report the result using its transport scheme with the default port omitted.
-	// This mirrors the URI pair returned by an AWS snapshot export.
+	// This uses synthetic identifiers while preserving the shape of an AWS export.
 	t.Run("MilvusCanonicalizedExportURI", func(t *testing.T) {
 		target := snapshotTarget{
-			Path: "minio://s3.us-west-2.amazonaws.com:443/vdc-cloud-dev/in01-2761f30e04a8f5c/backup0_0c61a77c257d41f/bundle",
+			Path: "minio://s3.us-west-2.amazonaws.com:443/backup-bucket/instance-a/backup-a/bundle",
 			Dir:  "bundle",
 		}
-		got, err := target.metadataPath("https://s3.us-west-2.amazonaws.com/vdc-cloud-dev/in01-2761f30e04a8f5c/backup0_0c61a77c257d41f/bundle/exports/af822546-1560-4f6a-abd6-9abbe610ee7e/snapshots/468371012697984379/metadata/468371517407600562.json")
+		got, err := target.metadataPath("https://s3.us-west-2.amazonaws.com/backup-bucket/instance-a/backup-a/bundle/exports/11111111-2222-3333-4444-555555555555/snapshots/1001/metadata/2002.json")
 		require.NoError(t, err)
-		assert.Equal(t, "bundle/exports/af822546-1560-4f6a-abd6-9abbe610ee7e/snapshots/468371012697984379/metadata/468371517407600562.json", got)
+		assert.Equal(t, "bundle/exports/11111111-2222-3333-4444-555555555555/snapshots/1001/metadata/2002.json", got)
 	})
 
 	// Anything outside the target is not ours to record, and a path relative to the
