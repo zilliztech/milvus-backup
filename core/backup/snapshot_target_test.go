@@ -53,10 +53,37 @@ func TestSnapshotTarget_MetadataPath(t *testing.T) {
 		assert.Equal(t, "bundle/snapshots/449577/metadata/449580.json", got)
 	})
 
+	// Milvus negotiates a per-export directory below the requested bundle root and
+	// may report the result using its transport scheme with the default port omitted.
+	// This uses synthetic identifiers while preserving the shape of an AWS export.
+	t.Run("MilvusCanonicalizedExportURI", func(t *testing.T) {
+		target := snapshotTarget{
+			Path: "minio://s3.us-west-2.amazonaws.com:443/backup-bucket/instance-a/backup-a/bundle",
+			Dir:  "bundle",
+		}
+		got, err := target.metadataPath("https://s3.us-west-2.amazonaws.com/backup-bucket/instance-a/backup-a/bundle/exports/11111111-2222-3333-4444-555555555555/snapshots/1001/metadata/2002.json")
+		require.NoError(t, err)
+		assert.Equal(t, "bundle/exports/11111111-2222-3333-4444-555555555555/snapshots/1001/metadata/2002.json", got)
+	})
+
 	// Anything outside the target is not ours to record, and a path relative to the
 	// backup directory could not describe it anyway.
 	t.Run("OutsideTarget", func(t *testing.T) {
 		_, err := target.metadataPath("s3://other-bucket/snapshots/449577/metadata/449580.json")
+		assert.Error(t, err)
+	})
+
+	t.Run("SiblingPrefixIsOutsideTarget", func(t *testing.T) {
+		_, err := target.metadataPath("s3://backup-bucket/backup/mybackup/bundle-other/snapshots/449577/metadata/449580.json")
+		assert.Error(t, err)
+	})
+
+	t.Run("DifferentEndpointIsOutsideTarget", func(t *testing.T) {
+		target := snapshotTarget{
+			Path: "minio://s3.us-west-2.amazonaws.com:443/backup-bucket/backup/mybackup/bundle",
+			Dir:  "bundle",
+		}
+		_, err := target.metadataPath("https://s3.us-east-1.amazonaws.com/backup-bucket/backup/mybackup/bundle/snapshots/449577/metadata/449580.json")
 		assert.Error(t, err)
 	})
 }
