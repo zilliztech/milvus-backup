@@ -118,6 +118,15 @@ backup:
     bucketName: "a-bucket"
     rootPath: "backup"
 
+    # The endpoint the Milvus server itself uses to reach this storage, when
+    # it differs from address/port above: a container port mapping, a private
+    # link, or an internal DNS name gives one store two endpoints. Snapshot
+    # URIs handed to Milvus must name the endpoint Milvus resolves. Left
+    # empty, a backup kept in the same backend as Milvus omits the endpoint
+    # from those URIs entirely and lets Milvus use its own storage config.
+    # milvusAddress: ""
+    # milvusPort: 0
+
     auth:
       type: static
       accessKeyID: minioadmin

@@ -90,10 +90,90 @@ func TestSnapshotURI(t *testing.T) {
 		assert.ErrorContains(t, err, "endpoint")
 	})
 
+	// The Milvus-view endpoint override is what the URI names, since Milvus connects to it.
+	t.Run("MilvusEndpointOverridesTheEndpoint", func(t *testing.T) {
+		cfg := Config{
+			Provider: v2.ProviderMinio, Bucket: "backup-bucket",
+			Endpoint: "localhost:9000", MilvusEndpoint: "minio:9000",
+		}
+		got, err := SnapshotURI(cfg, "backup/mybackup")
+		require.NoError(t, err)
+		assert.Equal(t, "minio://minio:9000/backup-bucket/backup/mybackup", got)
+	})
+
 	t.Run("UnsupportedProvider", func(t *testing.T) {
 		cfg := Config{Provider: "madeup", Bucket: "backup-bucket", Endpoint: "acct.blob.core.windows.net"}
 		_, err := SnapshotURI(cfg, "backup/mybackup")
 		assert.ErrorContains(t, err, "madeup")
+	})
+}
+
+func TestSnapshotStoreURI(t *testing.T) {
+	minioCfg := func() Config {
+		return Config{
+			Provider: v2.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket",
+			Credential: Credential{Type: Static, AK: "ak", SK: "sk"},
+		}
+	}
+
+	// Same backend: the endpoint milvus-backup would write is only its own view of the
+	// store, which may be an alias Milvus cannot resolve — so the URI carries bucket and
+	// key only, and Milvus resolves them through its own storage config.
+	t.Run("SameBackendOmitsTheEndpoint", func(t *testing.T) {
+		milvusCfg := minioCfg()
+		backupCfg := milvusCfg
+		backupCfg.Bucket = "backup-bucket"
+
+		got, err := SnapshotStoreURI(milvusCfg, backupCfg, "backup/mybackup")
+		require.NoError(t, err)
+		assert.Equal(t, "s3://backup-bucket/backup/mybackup", got)
+	})
+
+	// A pinned Milvus-view endpoint wins over omission: the deployment said explicitly
+	// how Milvus reaches the store.
+	t.Run("MilvusEndpointWinsOverOmission", func(t *testing.T) {
+		milvusCfg := minioCfg()
+		backupCfg := milvusCfg
+		backupCfg.Bucket = "backup-bucket"
+		backupCfg.MilvusEndpoint = "milvus-minio:9000"
+
+		got, err := SnapshotStoreURI(milvusCfg, backupCfg, "backup/mybackup")
+		require.NoError(t, err)
+		assert.Equal(t, "minio://milvus-minio:9000/backup-bucket/backup/mybackup", got)
+	})
+
+	// A different backend has no instance config to inherit, so the URI names the
+	// backup storage's own endpoint as before.
+	t.Run("OtherBackendKeepsTheEndpoint", func(t *testing.T) {
+		milvusCfg := minioCfg()
+		backupCfg := Config{Provider: v2.ProviderMinio, Endpoint: "other:9000", Bucket: "backup-bucket"}
+
+		got, err := SnapshotStoreURI(milvusCfg, backupCfg, "backup/mybackup")
+		require.NoError(t, err)
+		assert.Equal(t, "minio://other:9000/backup-bucket/backup/mybackup", got)
+	})
+
+	// Azure has no endpoint-less form, so the URI keeps the service endpoint even on
+	// the same backend.
+	t.Run("AzureKeepsTheEndpoint", func(t *testing.T) {
+		milvusCfg := Config{Provider: v2.ProviderAzure, Endpoint: "core.windows.net", Bucket: "milvus-bucket"}
+		backupCfg := milvusCfg
+		backupCfg.Bucket = "backup-bucket"
+
+		got, err := SnapshotStoreURI(milvusCfg, backupCfg, "backup/mybackup")
+		require.NoError(t, err)
+		assert.Equal(t, "azure://blob.core.windows.net/backup-bucket/backup/mybackup", got)
+	})
+
+	// Native GCS never carries an endpoint, so same-backend changes nothing.
+	t.Run("GCPNativeUnchanged", func(t *testing.T) {
+		milvusCfg := Config{Provider: v2.ProviderGCPNative, Bucket: "milvus-bucket"}
+		backupCfg := milvusCfg
+		backupCfg.Bucket = "backup-bucket"
+
+		got, err := SnapshotStoreURI(milvusCfg, backupCfg, "backup/mybackup")
+		require.NoError(t, err)
+		assert.Equal(t, "gcs://backup-bucket/backup/mybackup", got)
 	})
 }
 

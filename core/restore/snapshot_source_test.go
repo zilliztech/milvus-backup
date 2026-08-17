@@ -12,7 +12,9 @@ import (
 
 func TestNewSnapshotSource(t *testing.T) {
 	// Milvus falls back to its own credential when no spec is given, which is what to rely
-	// on when both sides are the same backend — it keeps the key off the wire.
+	// on when both sides are the same backend — it keeps the key off the wire. The uri
+	// omits the endpoint for the same reason: it is Milvus's own store, which it resolves
+	// through its own storage config.
 	t.Run("SameBackendSendsNoSpec", func(t *testing.T) {
 		milvusCfg := storage.Config{
 			Provider: v2.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket",
@@ -23,7 +25,7 @@ func TestNewSnapshotSource(t *testing.T) {
 
 		source, err := newSnapshotSource(milvusCfg, backupCfg, "backup/mybackup/")
 		require.NoError(t, err)
-		assert.Equal(t, "minio://minio:9000/backup-bucket/backup/mybackup", source.dirURI)
+		assert.Equal(t, "s3://backup-bucket/backup/mybackup", source.dirURI)
 		assert.Empty(t, source.externalSpec)
 	})
 

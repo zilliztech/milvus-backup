@@ -12,7 +12,9 @@ import (
 
 func TestNewSnapshotTarget(t *testing.T) {
 	// Milvus falls back to its own credential when no spec is given, which is what to
-	// rely on when both sides are the same backend — it keeps the key off the wire.
+	// rely on when both sides are the same backend — it keeps the key off the wire. The
+	// uri omits the endpoint for the same reason: it is Milvus's own store, which it
+	// resolves through its own storage config.
 	t.Run("SameBackendSendsNoSpec", func(t *testing.T) {
 		milvusCfg := storage.Config{
 			Provider: v2.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket",
@@ -23,8 +25,24 @@ func TestNewSnapshotTarget(t *testing.T) {
 
 		target, err := newSnapshotTarget(milvusCfg, backupCfg, "backup/mybackup")
 		require.NoError(t, err)
-		assert.Equal(t, "minio://minio:9000/backup-bucket/backup/mybackup/bundle", target.Path)
+		assert.Equal(t, "s3://backup-bucket/backup/mybackup/bundle", target.Path)
 		assert.Equal(t, "bundle", target.Dir)
+		assert.Empty(t, target.ExternalSpec)
+	})
+
+	// A pinned Milvus-view endpoint is written into the uri instead of being omitted.
+	t.Run("SameBackendWithMilvusEndpointPinsTheURI", func(t *testing.T) {
+		milvusCfg := storage.Config{
+			Provider: v2.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket",
+			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
+		}
+		backupCfg := milvusCfg
+		backupCfg.Bucket = "backup-bucket"
+		backupCfg.MilvusEndpoint = "milvus-minio:9000"
+
+		target, err := newSnapshotTarget(milvusCfg, backupCfg, "backup/mybackup")
+		require.NoError(t, err)
+		assert.Equal(t, "minio://milvus-minio:9000/backup-bucket/backup/mybackup/bundle", target.Path)
 		assert.Empty(t, target.ExternalSpec)
 	})
 
@@ -64,6 +82,20 @@ func TestSnapshotTarget_MetadataPath(t *testing.T) {
 		got, err := target.metadataPath("https://s3.us-west-2.amazonaws.com/backup-bucket/instance-a/backup-a/bundle/exports/11111111-2222-3333-4444-555555555555/snapshots/1001/metadata/2002.json")
 		require.NoError(t, err)
 		assert.Equal(t, "bundle/exports/11111111-2222-3333-4444-555555555555/snapshots/1001/metadata/2002.json", got)
+	})
+
+	// The endpoint-less target names only a bucket; the export result spells the same
+	// bucket back with the endpoint the server resolved from its own storage config.
+	t.Run("EndpointlessTargetMatchesResolvedEndpoint", func(t *testing.T) {
+		got, err := target.metadataPath("minio://minio:9000/backup-bucket/backup/mybackup/bundle/snapshots/449577/metadata/449580.json")
+		require.NoError(t, err)
+		assert.Equal(t, "bundle/snapshots/449577/metadata/449580.json", got)
+	})
+
+	// A different bucket under the resolved endpoint is still not ours.
+	t.Run("EndpointlessTargetRejectsOtherBucket", func(t *testing.T) {
+		_, err := target.metadataPath("minio://minio:9000/other-bucket/backup/mybackup/bundle/snapshots/449577/metadata/449580.json")
+		assert.Error(t, err)
 	})
 
 	// Anything outside the target is not ours to record, and a path relative to the

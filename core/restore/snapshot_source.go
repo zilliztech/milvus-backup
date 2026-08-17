@@ -20,7 +20,7 @@ type snapshotSource struct {
 }
 
 func newSnapshotSource(milvusCfg, backupCfg storage.Config, backupDir string) (snapshotSource, error) {
-	uri, err := storage.SnapshotURI(backupCfg, backupDir)
+	uri, err := storage.SnapshotStoreURI(milvusCfg, backupCfg, backupDir)
 	if err != nil {
 		return snapshotSource{}, err
 	}

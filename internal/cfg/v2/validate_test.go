@@ -64,6 +64,21 @@ func TestValidate_Storage(t *testing.T) {
 			wantErr: "milvus.storage.port: invalid port 70000",
 		},
 		{
+			name:    "MilvusAddressIsABareHost",
+			yaml:    "milvus:\n  storage:\n    milvusAddress: http://minio:9000\n",
+			wantErr: "milvus.storage.milvusAddress must be a host, not a URL",
+		},
+		{
+			name:    "MilvusPortRequiresMilvusAddress",
+			yaml:    "milvus:\n  storage:\n    milvusPort: 9001\n",
+			wantErr: "milvus.storage.milvusPort requires milvus.storage.milvusAddress to be set",
+		},
+		{
+			name:    "MilvusAddressRejectedForLocal",
+			yaml:    "milvus:\n  storage:\n    provider: local\n    milvusAddress: minio\n",
+			wantErr: "milvus.storage.milvusAddress does not apply to the local provider",
+		},
+		{
 			name:    "BackupStorageIsValidatedToo",
 			yaml:    "backup:\n  storage:\n    provider: ceph\n",
 			wantErr: `backup.storage.provider: invalid value "ceph"`,

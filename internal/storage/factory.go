@@ -60,10 +60,24 @@ func storageConfig(s *v2.StorageConfig, multipartCopyThresholdMiB int64) Config 
 		Endpoint:                  net.JoinHostPort(s.Address.Val, strconv.Itoa(s.Port.Val)),
 		UseSSL:                    s.UseSSL.Val,
 		Region:                    s.Region.Val,
+		MilvusEndpoint:            milvusEndpoint(s),
 		Credential:                newCredential(s),
 		Bucket:                    s.BucketName.Val,
 		MultipartCopyThresholdMiB: multipartCopyThresholdMiB,
 	}
+}
+
+// milvusEndpoint renders the optional Milvus-view endpoint override. The port
+// falls back to the section's own port, so a host-only override stays short.
+func milvusEndpoint(s *v2.StorageConfig) string {
+	if s.MilvusAddress.Val == "" {
+		return ""
+	}
+	port := s.MilvusPort.Val
+	if port == 0 {
+		port = s.Port.Val
+	}
+	return net.JoinHostPort(s.MilvusAddress.Val, strconv.Itoa(port))
 }
 
 // MilvusStorageConfig describes the backend the Milvus deployment keeps its
