@@ -19,9 +19,10 @@ import (
 // Milvus to derive it from cloud_provider and region, and gcs://<bucket>/<key> names a native
 // GCS store, whose provider the scheme alone decides.
 //
-// The configured endpoint wins whenever there is one, because derivation only ever produces
-// the canonical public endpoint — wrong for a deployment reached over an internal or
-// private-link address, and wrong as a copy failure rather than a configuration error.
+// The endpoint written into the URI is the one Milvus connects to, so the Milvus-view
+// override wins when there is one, then the configured endpoint: derivation only ever
+// produces the canonical public endpoint — wrong for a deployment reached over an internal
+// or private-link address, and wrong as a copy failure rather than a configuration error.
 func SnapshotURI(cfg Config, key string) (string, error) {
 	key = strings.Trim(key, "/")
 	if key == "" {
@@ -35,6 +36,9 @@ func SnapshotURI(cfg Config, key string) (string, error) {
 	// extfs access_key_id, so the host is the blob. service endpoint, not the account one.
 	if cfg.Provider == v2.ProviderAzure {
 		host := endpointHost(cfg.Endpoint)
+		if cfg.MilvusEndpoint != "" {
+			host = endpointHost(cfg.MilvusEndpoint)
+		}
 		if host == "" {
 			return "", fmt.Errorf("storage: snapshot uri for azure needs an endpoint")
 		}
@@ -47,7 +51,11 @@ func SnapshotURI(cfg Config, key string) (string, error) {
 		return fmt.Sprintf("gcs://%s/%s", cfg.Bucket, key), nil
 	}
 
-	if host := endpointHost(cfg.Endpoint); host != "" {
+	endpoint := cfg.Endpoint
+	if cfg.MilvusEndpoint != "" {
+		endpoint = cfg.MilvusEndpoint
+	}
+	if host := endpointHost(endpoint); host != "" {
 		return fmt.Sprintf("minio://%s/%s/%s", host, cfg.Bucket, key), nil
 	}
 
@@ -55,6 +63,46 @@ func SnapshotURI(cfg Config, key string) (string, error) {
 	// needs the region to do it.
 	if cfg.Region == "" {
 		return "", fmt.Errorf("storage: snapshot uri for %s needs an endpoint or a region", cfg.Provider)
+	}
+
+	return fmt.Sprintf("s3://%s/%s", cfg.Bucket, key), nil
+}
+
+// SnapshotStoreURI names key in the backup bucket, in the form Milvus should resolve it
+// in. A snapshot export or restore is executed by Milvus, so the endpoint in the URI must
+// be one Milvus can reach — not the one milvus-backup reaches. When both configs describe
+// the same backend and no Milvus-view endpoint is pinned, the endpoint is omitted
+// entirely and Milvus resolves the bucket through its own storage config: the endpoint
+// milvus-backup would name is only its own view of that backend, and may be an alias — a
+// container port mapping, a private link — that Milvus cannot connect to, or rejects as a
+// foreign cross-bucket target.
+func SnapshotStoreURI(milvusCfg, backupCfg Config, key string) (string, error) {
+	// Azure has no endpoint-less URI form: its service endpoint is part of every URI.
+	if backupCfg.Provider != v2.ProviderAzure && backupCfg.MilvusEndpoint == "" &&
+		SameBackend(milvusCfg, backupCfg) {
+		return snapshotURIOnInstance(backupCfg, key)
+	}
+	return SnapshotURI(backupCfg, key)
+}
+
+// snapshotURIOnInstance builds the endpoint-less form of a snapshot URI: bucket and key
+// only, leaving the endpoint for Milvus to fill in from its own storage config. Only the
+// S3 family has such a form: Azure names its service endpoint in every URI, and native
+// GCS never carries one.
+func snapshotURIOnInstance(cfg Config, key string) (string, error) {
+	key = strings.Trim(key, "/")
+	if key == "" {
+		return "", fmt.Errorf("storage: snapshot uri needs a key")
+	}
+	if _, err := snapshotCloudProvider(cfg.Provider); err != nil {
+		return "", err
+	}
+
+	if cfg.Provider == v2.ProviderAzure {
+		return "", fmt.Errorf("storage: snapshot uri for azure cannot omit the endpoint")
+	}
+	if cfg.Provider == v2.ProviderGCPNative {
+		return fmt.Sprintf("gcs://%s/%s", cfg.Bucket, key), nil
 	}
 
 	return fmt.Sprintf("s3://%s/%s", cfg.Bucket, key), nil

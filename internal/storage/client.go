@@ -44,6 +44,13 @@ type Config struct {
 	UseSSL   bool
 	Region   string
 
+	// MilvusEndpoint is the endpoint the Milvus server itself uses to reach
+	// this storage, when it differs from Endpoint: a container port mapping, a
+	// private link, or an internal DNS name gives one store two endpoints.
+	// Snapshot URIs handed to Milvus name it, since Milvus connects to it.
+	// Empty means Endpoint serves both.
+	MilvusEndpoint string
+
 	Credential Credential
 
 	Bucket string

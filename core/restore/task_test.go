@@ -72,7 +72,9 @@ func TestNewTask_SnapshotSource(t *testing.T) {
 	task, err := NewTask(args)
 	require.NoError(t, err)
 	assert.Equal(t, meta.FormatSnapshot, task.format)
-	assert.Equal(t, "minio://minio:9000/backup-bucket/backup/mybackup", task.snapshotSource.dirURI)
+	// Both sides are the same backend, so the uri names only the bucket and Milvus
+	// resolves it through its own storage config.
+	assert.Equal(t, "s3://backup-bucket/backup/mybackup", task.snapshotSource.dirURI)
 	// Both sides are the same backend, so Milvus reads with its own credential.
 	assert.Empty(t, task.snapshotSource.externalSpec)
 }

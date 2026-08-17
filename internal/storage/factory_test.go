@@ -9,6 +9,30 @@ import (
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 )
 
+func TestMilvusEndpoint(t *testing.T) {
+	t.Run("Unset", func(t *testing.T) {
+		s := &v2.StorageConfig{}
+		assert.Empty(t, milvusEndpoint(s))
+	})
+
+	t.Run("PortFallsBackToTheSectionPort", func(t *testing.T) {
+		s := &v2.StorageConfig{
+			Port:          param.Value[int]{Val: 9000},
+			MilvusAddress: param.Value[string]{Val: "milvus-minio"},
+		}
+		assert.Equal(t, "milvus-minio:9000", milvusEndpoint(s))
+	})
+
+	t.Run("ExplicitPort", func(t *testing.T) {
+		s := &v2.StorageConfig{
+			Port:          param.Value[int]{Val: 9000},
+			MilvusAddress: param.Value[string]{Val: "milvus-minio"},
+			MilvusPort:    param.Value[int]{Val: 9001},
+		}
+		assert.Equal(t, "milvus-minio:9001", milvusEndpoint(s))
+	})
+}
+
 func TestNewCredential(t *testing.T) {
 	t.Run("Static", func(t *testing.T) {
 		cred := newCredential(&v2.StorageConfig{Auth: v2.StorageAuthConfig{

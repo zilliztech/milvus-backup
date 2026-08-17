@@ -51,6 +51,16 @@ type StorageConfig struct {
 	// path Milvus resolves. Empty means the same as rootPath.
 	LocalPath param.Value[string]
 
+	// MilvusAddress and MilvusPort name the endpoint the Milvus server itself
+	// uses to reach this storage, when it differs from the address and port
+	// milvus-backup connects to: a container port mapping, a private link, or
+	// an internal DNS name gives one store two endpoints. Snapshot URIs handed
+	// to Milvus must name the endpoint Milvus resolves, since Milvus connects
+	// to it. An empty milvusAddress means no override; a zero milvusPort means
+	// the same as port.
+	MilvusAddress param.Value[string]
+	MilvusPort    param.Value[int]
+
 	Auth StorageAuthConfig
 }
 
@@ -77,6 +87,9 @@ func newStorageConfig(keyPrefix, envPrefix string) StorageConfig {
 		RootPath:   param.Value[string]{Default: "files", Keys: key("rootPath")},
 		LocalPath:  param.Value[string]{Default: "", Keys: key("localPath")},
 
+		MilvusAddress: param.Value[string]{Default: "", Keys: key("milvusAddress")},
+		MilvusPort:    param.Value[int]{Default: 0, Keys: key("milvusPort")},
+
 		Auth: StorageAuthConfig{
 			Type: param.Value[string]{Default: AuthStatic, Keys: key("auth.type")},
 
@@ -96,7 +109,8 @@ func newStorageConfig(keyPrefix, envPrefix string) StorageConfig {
 // inherit makes the resolved values of other the defaults of c, so a config
 // that only names what differs still describes a complete backend. RootPath is
 // deliberately left alone: backup data does not belong under the Milvus root
-// path.
+// path. The Milvus-view endpoint override is left alone too: it describes how
+// one specific Milvus reaches the store, which says nothing about another.
 func (c *StorageConfig) inherit(other *StorageConfig) {
 	c.Provider.Default = other.Provider.Val
 
@@ -122,6 +136,7 @@ func (c *StorageConfig) Resolve(s *param.Source) error {
 		&c.Provider,
 		&c.Address, &c.Port, &c.Region, &c.UseSSL,
 		&c.AccountName, &c.BucketName, &c.RootPath, &c.LocalPath,
+		&c.MilvusAddress, &c.MilvusPort,
 		&c.Auth.Type,
 		&c.Auth.AccessKeyID, &c.Auth.SecretAccessKey, &c.Auth.SessionToken,
 		&c.Auth.AccountKey,

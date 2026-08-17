@@ -28,7 +28,7 @@ type snapshotTarget struct {
 }
 
 func newSnapshotTarget(milvusCfg, backupCfg storage.Config, backupDir string) (snapshotTarget, error) {
-	uri, err := storage.SnapshotURI(backupCfg, mpath.BackupBundleDir(backupDir))
+	uri, err := storage.SnapshotStoreURI(milvusCfg, backupCfg, mpath.BackupBundleDir(backupDir))
 	if err != nil {
 		return snapshotTarget{}, err
 	}
@@ -173,13 +173,31 @@ func snapshotEndpoint(u *url.URL, scheme string) (string, error) {
 }
 
 func (u snapshotURI) sameStorage(other snapshotURI) bool {
-	if u.endpointStyle != other.endpointStyle || u.bucket != other.bucket {
+	if u.bucket != other.bucket {
 		return false
 	}
-	if u.endpointStyle {
-		return u.endpoint == other.endpoint
+	if u.endpointStyle == other.endpointStyle {
+		if u.endpointStyle {
+			return u.endpoint == other.endpoint
+		}
+		return canonicalSnapshotScheme(u.scheme) == canonicalSnapshotScheme(other.scheme)
 	}
-	return canonicalSnapshotScheme(u.scheme) == canonicalSnapshotScheme(other.scheme)
+	// One side names only a bucket: the endpoint was deliberately omitted, and the
+	// server spelled the same bucket back with the endpoint it resolved from its own
+	// storage config. That endpoint is the server's to pick, so only the bucket
+	// (compared above) and the provider family can be matched.
+	provider, endpoint := u, other
+	if provider.endpointStyle {
+		provider, endpoint = other, u
+	}
+	switch provider.scheme {
+	case "s3":
+		return endpoint.scheme == "minio" || endpoint.scheme == "http" || endpoint.scheme == "https"
+	case "gs", "gcs":
+		return endpoint.scheme == "http" || endpoint.scheme == "https"
+	default:
+		return false
+	}
 }
 
 func canonicalSnapshotScheme(scheme string) string {

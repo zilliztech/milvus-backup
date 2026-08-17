@@ -111,11 +111,29 @@ func (c *StorageConfig) validate() error {
 
 	provider := c.Provider.Val
 	if provider == ProviderLocal {
-		// Local storage is a directory: it has no endpoint and no credentials.
+		// Local storage is a directory: it has no endpoint and no credentials,
+		// so there is no Milvus-view endpoint to override either.
+		if c.MilvusAddress.Val != "" {
+			return fmt.Errorf("cfg: %s does not apply to the local provider", keyOf(&c.MilvusAddress))
+		}
 		return nil
 	}
 
 	errs := []error{validatePort(&c.Port)}
+
+	// The Milvus-view endpoint override is a bare host: the snapshot URI it is
+	// written into already carries the scheme.
+	if strings.Contains(c.MilvusAddress.Val, "://") {
+		errs = append(errs, fmt.Errorf("cfg: %s must be a host, not a URL: %q",
+			keyOf(&c.MilvusAddress), c.MilvusAddress.Val))
+	}
+	if c.MilvusPort.Val != 0 {
+		if c.MilvusAddress.Val == "" {
+			errs = append(errs, fmt.Errorf("cfg: %s requires %s to be set",
+				keyOf(&c.MilvusPort), keyOf(&c.MilvusAddress)))
+		}
+		errs = append(errs, validatePort(&c.MilvusPort))
+	}
 
 	switch {
 	case provider == ProviderAzure && c.AccountName.Val == "":
