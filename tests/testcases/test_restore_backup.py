@@ -2281,7 +2281,19 @@ class TestRestoreBackup(TestcaseBase):
         collection_w = self.init_collection_wrap(
             name=name_origin, schema=default_schema, active_trace=True
         )
-        create_index_for_vector_fields(collection_w)
+        # The shared create_index_for_vector_fields helper builds binary
+        # fields with BIN_IVF_FLAT/JACCARD, which cannot serve the mandatory
+        # MHJACCARD search on a MinHash function output field. Build the
+        # indexes explicitly so the backup — and any snapshot-restored copy
+        # of it — carries a searchable index.
+        collection_w.create_index(
+            "float_vector",
+            {"index_type": "HNSW", "metric_type": "L2", "params": {"M": 48, "efConstruction": 500}},
+        )
+        collection_w.create_index(
+            "minhash_signature",
+            {"index_type": "MINHASH_LSH", "metric_type": "MHJACCARD", "params": {}},
+        )
         nb = 3000
         data = [
             {
@@ -2330,13 +2342,19 @@ class TestRestoreBackup(TestcaseBase):
         )
         # Verify MinHash search works on restored collection
         c = Collection(name=name_origin + suffix)
-        # Create float_vector index
-        c.create_index("float_vector", {"index_type": "FLAT", "metric_type": "L2", "params": {}})
-        # Create minhash_signature index with MHJACCARD metric
-        c.create_index(
-            "minhash_signature",
-            {"index_type": "BIN_FLAT", "metric_type": "MHJACCARD", "params": {}},
-        )
+        if backup["data"].get("format") == "snapshot":
+            # Snapshot restore brings the source's own indexes back, which
+            # are already MHJACCARD here and searchable directly. Master
+            # allows at most one distinct index per field, so recreating
+            # them would be rejected.
+            pass
+        else:
+            # Binlog restore carries no indexes, recreate them as on 2.6.
+            c.create_index("float_vector", {"index_type": "FLAT", "metric_type": "L2", "params": {}})
+            c.create_index(
+                "minhash_signature",
+                {"index_type": "MINHASH_LSH", "metric_type": "MHJACCARD", "params": {}},
+            )
         c.load()
         res = c.search(
             data=[data[0]["text"]],
@@ -2545,6 +2563,12 @@ class TestRestoreBackup(TestcaseBase):
             {"async": False, "backup_name": back_up_name, "collection_names": [name_origin]}
         )
         log.info(f"create backup response: {res}")
+        # shard_num override is rejected for snapshot format backups (the
+        # collection is restored by Milvus from the snapshot bundle, so its
+        # shard layout cannot change). Run this case on binlog backups only.
+        backup = self.client.get_backup(back_up_name)
+        if backup["data"].get("format") == "snapshot":
+            pytest.skip("shard_num override is not supported with snapshot format backups")
 
         # restore with restorePlan containing override
         target_shard_num = 1

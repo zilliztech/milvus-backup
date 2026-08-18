@@ -58,20 +58,38 @@ class TestRestoreBackupWithRbac(TestcaseBase):
         for role in client.list_roles():
             if role in build_in_role:
                 continue
-            privileges = client.describe_role(role_name=role)["privileges"]
-            for privilege in privileges:
-                client.revoke_privilege_v2(
-                    **privilege,
-                    collection_name='*',
-                )
-            client.drop_role(role)
+            try:
+                privileges = client.describe_role(role_name=role)["privileges"]
+                for privilege in privileges:
+                    client.revoke_privilege_v2(
+                        **privilege,
+                        collection_name='*',
+                    )
+                client.drop_role(role)
+            except MilvusException as e:
+                # A parallel xdist worker running another rbac test may drop
+                # the role between our list_roles and here; cleanup of an
+                # already-gone role is success, not failure.
+                if "not found" not in str(e):
+                    raise
+                log.info(f"role {role} already dropped by a parallel test")
 
         for pg in client.list_privilege_groups():
-            client.drop_privilege_group(group_name=pg["privilege_group"])
+            try:
+                client.drop_privilege_group(group_name=pg["privilege_group"])
+            except MilvusException as e:
+                if "not found" not in str(e):
+                    raise
+                log.info(f"privilege group {pg['privilege_group']} already dropped by a parallel test")
         for user in client.list_users():
             if user in build_in_user:
                 continue
-            client.drop_user(user_name=user)
+            try:
+                client.drop_user(user_name=user)
+            except MilvusException as e:
+                if "not found" not in str(e):
+                    raise
+                log.info(f"user {user} already dropped by a parallel test")
 
     @staticmethod
     def list_rbac(client: MilvusClient):

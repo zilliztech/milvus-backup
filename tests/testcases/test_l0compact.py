@@ -133,6 +133,12 @@ class TestL0Compact(TestcaseBase):
             {"async": False, "backup_name": bk, "collection_names": [name]}
         )
         log.info(f"create_backup {bk}: {res}")
+        # L0 segments are a binlog-format concept: a snapshot backup does not
+        # record them and the l0compact CLI only operates on binlog backups,
+        # so the whole suite only applies to binlog-format backups.
+        backup = self.client.get_backup(bk)
+        if backup["data"].get("format") == "snapshot":
+            pytest.skip("l0compact operates on binlog-format backups only")
         return bk
 
     def _restore(self, backup_name, src_name, suffix):
