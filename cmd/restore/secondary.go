@@ -62,6 +62,11 @@ func (o *secondaryOption) toArgs(params *v2.Config) (secondary.TaskArgs, error) 
 		return secondary.TaskArgs{}, fmt.Errorf("read backup meta: %w", err)
 	}
 
+	milvusStorage, err := storage.NewMilvusStorage(context.Background(), params)
+	if err != nil {
+		return secondary.TaskArgs{}, fmt.Errorf("create milvus storage: %w", err)
+	}
+
 	return secondary.TaskArgs{
 		TaskID: uuid.NewString(),
 
@@ -72,6 +77,7 @@ func (o *secondaryOption) toArgs(params *v2.Config) (secondary.TaskArgs, error) 
 		Params:        params,
 		BackupDir:     backupDir,
 		BackupStorage: backupStorage,
+		MilvusStorage: milvusStorage,
 
 		TaskMgr: taskmgr.DefaultMgr(),
 	}, nil

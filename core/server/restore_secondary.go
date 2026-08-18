@@ -143,6 +143,11 @@ func (h *restoreSecondaryHandler) newTask(ctx context.Context) (tasklet.Tasklet,
 		return nil, fmt.Errorf("server: read backup: %w", err)
 	}
 
+	milvusStorage, err := storage.NewMilvusStorage(ctx, h.params)
+	if err != nil {
+		return nil, fmt.Errorf("server: create milvus storage: %w", err)
+	}
+
 	args := secondary.TaskArgs{
 		TaskID: h.request.GetRequestId(),
 
@@ -153,6 +158,7 @@ func (h *restoreSecondaryHandler) newTask(ctx context.Context) (tasklet.Tasklet,
 		Params:        h.params,
 		BackupDir:     mpath.BackupDir(h.backupRootPath, h.request.GetBackupName()),
 		BackupStorage: h.backupStorage,
+		MilvusStorage: milvusStorage,
 
 		TaskMgr: taskmgr.DefaultMgr(),
 	}
