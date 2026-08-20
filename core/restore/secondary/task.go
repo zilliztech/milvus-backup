@@ -50,6 +50,10 @@ type TaskArgs struct {
 type Task struct {
 	args TaskArgs
 
+	// replayIndex reports whether the backup carries the index attributes that
+	// a verbatim create index replay needs. See replayIndex.
+	replayIndex bool
+
 	grpc    milvus.Grpc
 	restful milvus.Restful
 
@@ -103,6 +107,24 @@ func (t *Task) closeClients() {
 }
 
 func (t *Task) Execute(ctx context.Context) error {
+	// Decide before any client is created or any DDL is broadcast, so an
+	// inconsistent backup cannot leave a half-created collection behind and the
+	// user learns that indexes are not part of this restore before it starts.
+	replay, err := replayIndex(t.args.Backup)
+	if err != nil {
+		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
+		return err
+	}
+	t.replayIndex = replay
+	if !replay {
+		skipped := indexNames(t.args.Backup, func(*backuppb.IndexInfo) bool { return true })
+		if len(skipped) != 0 {
+			t.logger.Warn("backup was taken without --backup_index_extra, "+
+				"restoring the collections without their indexes",
+				zap.Strings("indexes", skipped))
+		}
+	}
+
 	defer t.closeClients()
 	if err := t.initClients(); err != nil {
 		return err
@@ -206,9 +228,10 @@ func (t *Task) dmlTaskArgs() (dmlTaskArgs, error) {
 
 func (t *Task) ddlTaskArgs() ddlTaskArgs {
 	return ddlTaskArgs{
-		TaskID:     t.args.TaskID,
-		BackupInfo: t.args.Backup,
-		StreamCli:  t.streamCli,
+		TaskID:      t.args.TaskID,
+		BackupInfo:  t.args.Backup,
+		ReplayIndex: t.replayIndex,
+		StreamCli:   t.streamCli,
 	}
 }
 
