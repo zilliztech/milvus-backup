@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/msgpb"
@@ -620,4 +621,88 @@ func TestExecute_Import2PCPreservesPhaseAndTimestampOrdering(t *testing.T) {
 				"timestamps on pch %s should be strictly increasing, got %v", pch, timestamps)
 		}
 	}
+}
+
+// stateSequenceRestful answers GetBulkInsertState from a fixed sequence,
+// repeating the last entry once the sequence is exhausted. Only that one method
+// is used by the wait loop, so the rest of the interface is left embedded.
+type stateSequenceRestful struct {
+	milvus.Restful
+
+	mu     sync.Mutex
+	states []string
+	calls  int
+}
+
+func (r *stateSequenceRestful) GetBulkInsertState(_ context.Context, _, _ string) (*milvus.GetProcessResp, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	i := r.calls
+	if i >= len(r.states) {
+		i = len(r.states) - 1
+	}
+	r.calls++
+	resp := &milvus.GetProcessResp{}
+	resp.Data.State = r.states[i]
+	return resp, nil
+}
+
+func (r *stateSequenceRestful) callCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.calls
+}
+
+func newWaitTask(cli milvus.Restful) *collDMLTask {
+	return &collDMLTask{
+		collBackup: &backuppb.CollectionBackupInfo{DbName: "default"},
+		restfulCli: cli,
+		logger:     zap.NewNop(),
+	}
+}
+
+// A job the target does not have reports an empty state, which is not a state
+// the job can be in and never becomes one. The wait must end rather than poll
+// for it forever.
+func TestWaitBulkInsertStateUnknownJob(t *testing.T) {
+	prevInterval, prevTimeout := _bulkInsertCheckInterval, _bulkInsertUnknownJobTimeout
+	_bulkInsertCheckInterval, _bulkInsertUnknownJobTimeout = time.Millisecond, 20*time.Millisecond
+	defer func() {
+		_bulkInsertCheckInterval, _bulkInsertUnknownJobTimeout = prevInterval, prevTimeout
+	}()
+
+	t.Run("an always unknown job gives up and says how to recover", func(t *testing.T) {
+		cli := &stateSequenceRestful{states: []string{""}}
+		_, err := newWaitTask(cli).waitBulkInsertReadyToCommit(context.Background(), 4242)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "does not know import job 4242")
+		assert.Contains(t, err.Error(), "force-promote")
+	})
+
+	t.Run("a job that is merely slow to appear is waited for", func(t *testing.T) {
+		// Empty for a few polls, well inside the window, then a real state.
+		cli := &stateSequenceRestful{states: []string{"", "", "", string(milvus.ImportStateCompleted)}}
+		state, err := newWaitTask(cli).waitBulkInsertReadyToCommit(context.Background(), 7)
+		assert.NoError(t, err)
+		assert.Equal(t, milvus.ImportStateCompleted, state)
+		assert.Equal(t, 4, cli.callCount())
+	})
+
+	t.Run("the window restarts once the job becomes known again", func(t *testing.T) {
+		// Empty, then known, then empty again: the second empty run is shorter
+		// than the window, so it must not trip the give-up path.
+		cli := &stateSequenceRestful{states: []string{
+			"", string(milvus.ImportStatePending), "", string(milvus.ImportStateCompleted),
+		}}
+		state, err := newWaitTask(cli).waitBulkInsertReadyToCommit(context.Background(), 9)
+		assert.NoError(t, err)
+		assert.Equal(t, milvus.ImportStateCompleted, state)
+	})
+
+	t.Run("a failed job still reports its own reason", func(t *testing.T) {
+		cli := &stateSequenceRestful{states: []string{string(milvus.ImportStateFailed)}}
+		_, err := newWaitTask(cli).waitBulkInsertReadyToCommit(context.Background(), 11)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "bulk insert failed")
+	})
 }
