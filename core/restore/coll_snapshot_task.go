@@ -3,12 +3,14 @@ package restore
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"time"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
 	"github.com/milvus-io/milvus/pkg/v3/common"
+	"github.com/samber/lo"
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
@@ -30,6 +32,7 @@ type collSnapshotTask struct {
 	dropExist    bool
 	maxShardNum  int32
 	descOverride string
+	skipParams   SkipParams
 
 	pollInterval time.Duration
 
@@ -49,6 +52,7 @@ type collSnapshotTaskArgs struct {
 	dropExist    bool
 	maxShardNum  int32
 	descOverride string
+	skipParams   SkipParams
 
 	grpcCli milvus.Grpc
 	taskMgr *taskmgr.Mgr
@@ -76,6 +80,7 @@ func newCollSnapshotTask(args collSnapshotTaskArgs) *collSnapshotTask {
 		dropExist:    args.dropExist,
 		maxShardNum:  args.maxShardNum,
 		descOverride: args.descOverride,
+		skipParams:   args.skipParams,
 
 		pollInterval: _snapshotPollInterval,
 
@@ -149,7 +154,73 @@ func (ct *collSnapshotTask) privateExecute(ctx context.Context) error {
 		return err
 	}
 
+	if err := ct.applySkipParams(ctx); err != nil {
+		return err
+	}
+
 	return ct.applyDescOverride(ctx)
+}
+
+// applySkipParams drops the params the caller asked to skip from the restored collection.
+// Milvus creates the collection from the bundle's schema, so the source cluster's overrides
+// (mmap.enabled, for example) come along with it; the binlog path would simply not write
+// them. Here they are removed after the restore with delete_keys, which drops the override
+// and lets each key fall back to the target cluster's own default.
+//
+// What gets deleted is filtered against the schema saved in the backup meta: a key the
+// backed-up object did not carry is not sent to the server at all. That also makes a skip
+// list naming absent keys — the common case — a quiet no-op rather than an error.
+func (ct *collSnapshotTask) applySkipParams(ctx context.Context) error {
+	props := append(ct.collBackup.GetSchema().GetProperties(), ct.collBackup.GetProperties()...)
+	if present := presentKeys(props, ct.skipParams.CollectionProperties); len(present) != 0 {
+		if err := ct.grpcCli.DropCollectionProperties(ctx, ct.targetNS.DBName(), ct.targetNS.CollName(), present); err != nil {
+			return fmt.Errorf("restore: drop skipped collection properties: %w", err)
+		}
+		ct.logger.Info("skipped collection properties dropped", zap.Strings("keys", present))
+	}
+
+	for _, field := range ct.collBackup.GetSchema().GetFields() {
+		present := presentKeys(field.GetTypeParams(), ct.skipParams.FieldTypeParams)
+		if len(present) == 0 {
+			continue
+		}
+		if err := ct.grpcCli.DropCollectionFieldProperties(ctx, ct.targetNS.DBName(), ct.targetNS.CollName(), field.GetName(), present); err != nil {
+			return fmt.Errorf("restore: drop skipped type params of field %s: %w", field.GetName(), err)
+		}
+		ct.logger.Info("skipped field type params dropped",
+			zap.String("field", field.GetName()), zap.Strings("keys", present))
+	}
+
+	// A param the caller wants off an index can be recorded either as an index param or as
+	// a field index param; both live on the index once Milvus restores the bundle, so the
+	// two skip lists are dropped together.
+	indexKeys := lo.Union(ct.skipParams.IndexParams, ct.skipParams.FieldIndexParams)
+	for _, index := range ct.collBackup.GetIndexInfos() {
+		present := lo.Intersect(indexKeys, lo.Keys(index.GetParams()))
+		if len(present) == 0 {
+			continue
+		}
+		sort.Strings(present)
+		if err := ct.grpcCli.DropIndexProperties(ctx, ct.targetNS.DBName(), ct.targetNS.CollName(), index.GetIndexName(), present); err != nil {
+			return fmt.Errorf("restore: drop skipped params of index %s: %w", index.GetIndexName(), err)
+		}
+		ct.logger.Info("skipped index params dropped",
+			zap.String("index", index.GetIndexName()), zap.Strings("keys", present))
+	}
+
+	return nil
+}
+
+// presentKeys returns the subset of keys that actually appear in kvs, so a delete_keys call
+// only names overrides the restored object really carries.
+func presentKeys[K interface{ GetKey() string }](kvs []K, keys []string) []string {
+	present := make([]string, 0, len(keys))
+	for _, kv := range kvs {
+		if lo.Contains(keys, kv.GetKey()) {
+			present = append(present, kv.GetKey())
+		}
+	}
+	return present
 }
 
 // applyDescOverride rewrites the collection description after the restore completes. Milvus

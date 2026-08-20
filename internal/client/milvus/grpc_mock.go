@@ -1019,6 +1019,150 @@ func (_c *MockGrpc_DropCollection_Call) RunAndReturn(run func(ctx context.Contex
 	return _c
 }
 
+// DropCollectionFieldProperties provides a mock function for the type MockGrpc
+func (_mock *MockGrpc) DropCollectionFieldProperties(ctx context.Context, db string, collName string, fieldName string, keys []string) error {
+	ret := _mock.Called(ctx, db, collName, fieldName, keys)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DropCollectionFieldProperties")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, []string) error); ok {
+		r0 = returnFunc(ctx, db, collName, fieldName, keys)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockGrpc_DropCollectionFieldProperties_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DropCollectionFieldProperties'
+type MockGrpc_DropCollectionFieldProperties_Call struct {
+	*mock.Call
+}
+
+// DropCollectionFieldProperties is a helper method to define mock.On call
+//   - ctx context.Context
+//   - db string
+//   - collName string
+//   - fieldName string
+//   - keys []string
+func (_e *MockGrpc_Expecter) DropCollectionFieldProperties(ctx any, db any, collName any, fieldName any, keys any) *MockGrpc_DropCollectionFieldProperties_Call {
+	return &MockGrpc_DropCollectionFieldProperties_Call{Call: _e.mock.On("DropCollectionFieldProperties", ctx, db, collName, fieldName, keys)}
+}
+
+func (_c *MockGrpc_DropCollectionFieldProperties_Call) Run(run func(ctx context.Context, db string, collName string, fieldName string, keys []string)) *MockGrpc_DropCollectionFieldProperties_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		var arg4 []string
+		if args[4] != nil {
+			arg4 = args[4].([]string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
+	})
+	return _c
+}
+
+func (_c *MockGrpc_DropCollectionFieldProperties_Call) Return(err error) *MockGrpc_DropCollectionFieldProperties_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockGrpc_DropCollectionFieldProperties_Call) RunAndReturn(run func(ctx context.Context, db string, collName string, fieldName string, keys []string) error) *MockGrpc_DropCollectionFieldProperties_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// DropCollectionProperties provides a mock function for the type MockGrpc
+func (_mock *MockGrpc) DropCollectionProperties(ctx context.Context, db string, collName string, keys []string) error {
+	ret := _mock.Called(ctx, db, collName, keys)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DropCollectionProperties")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, []string) error); ok {
+		r0 = returnFunc(ctx, db, collName, keys)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockGrpc_DropCollectionProperties_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DropCollectionProperties'
+type MockGrpc_DropCollectionProperties_Call struct {
+	*mock.Call
+}
+
+// DropCollectionProperties is a helper method to define mock.On call
+//   - ctx context.Context
+//   - db string
+//   - collName string
+//   - keys []string
+func (_e *MockGrpc_Expecter) DropCollectionProperties(ctx any, db any, collName any, keys any) *MockGrpc_DropCollectionProperties_Call {
+	return &MockGrpc_DropCollectionProperties_Call{Call: _e.mock.On("DropCollectionProperties", ctx, db, collName, keys)}
+}
+
+func (_c *MockGrpc_DropCollectionProperties_Call) Run(run func(ctx context.Context, db string, collName string, keys []string)) *MockGrpc_DropCollectionProperties_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 []string
+		if args[3] != nil {
+			arg3 = args[3].([]string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *MockGrpc_DropCollectionProperties_Call) Return(err error) *MockGrpc_DropCollectionProperties_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockGrpc_DropCollectionProperties_Call) RunAndReturn(run func(ctx context.Context, db string, collName string, keys []string) error) *MockGrpc_DropCollectionProperties_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // DropIndex provides a mock function for the type MockGrpc
 func (_mock *MockGrpc) DropIndex(ctx context.Context, db string, collName string, indexName string) error {
 	ret := _mock.Called(ctx, db, collName, indexName)
@@ -1084,6 +1228,81 @@ func (_c *MockGrpc_DropIndex_Call) Return(err error) *MockGrpc_DropIndex_Call {
 }
 
 func (_c *MockGrpc_DropIndex_Call) RunAndReturn(run func(ctx context.Context, db string, collName string, indexName string) error) *MockGrpc_DropIndex_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// DropIndexProperties provides a mock function for the type MockGrpc
+func (_mock *MockGrpc) DropIndexProperties(ctx context.Context, db string, collName string, indexName string, keys []string) error {
+	ret := _mock.Called(ctx, db, collName, indexName, keys)
+
+	if len(ret) == 0 {
+		panic("no return value specified for DropIndexProperties")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, string, []string) error); ok {
+		r0 = returnFunc(ctx, db, collName, indexName, keys)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockGrpc_DropIndexProperties_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'DropIndexProperties'
+type MockGrpc_DropIndexProperties_Call struct {
+	*mock.Call
+}
+
+// DropIndexProperties is a helper method to define mock.On call
+//   - ctx context.Context
+//   - db string
+//   - collName string
+//   - indexName string
+//   - keys []string
+func (_e *MockGrpc_Expecter) DropIndexProperties(ctx any, db any, collName any, indexName any, keys any) *MockGrpc_DropIndexProperties_Call {
+	return &MockGrpc_DropIndexProperties_Call{Call: _e.mock.On("DropIndexProperties", ctx, db, collName, indexName, keys)}
+}
+
+func (_c *MockGrpc_DropIndexProperties_Call) Run(run func(ctx context.Context, db string, collName string, indexName string, keys []string)) *MockGrpc_DropIndexProperties_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 string
+		if args[3] != nil {
+			arg3 = args[3].(string)
+		}
+		var arg4 []string
+		if args[4] != nil {
+			arg4 = args[4].([]string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+		)
+	})
+	return _c
+}
+
+func (_c *MockGrpc_DropIndexProperties_Call) Return(err error) *MockGrpc_DropIndexProperties_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockGrpc_DropIndexProperties_Call) RunAndReturn(run func(ctx context.Context, db string, collName string, indexName string, keys []string) error) *MockGrpc_DropIndexProperties_Call {
 	_c.Call.Return(run)
 	return _c
 }

@@ -226,6 +226,9 @@ func NewTask(args TaskArgs) (*Task, error) {
 // The snapshot path hands the whole restore to Milvus: it creates the collection from the
 // schema in the bundle, restores its indexes and partitions, and copies the data in. Options
 // that ask for something else would silently hand back a collection nobody asked for.
+// skip_params is not one of them: the skipped keys are dropped from the restored collection
+// with delete_keys once the job completes, which is what skipping them at creation time
+// achieves on the binlog path.
 func checkSnapshotSupport(plan *Plan, opt *Option) error {
 	var unsupported []string
 	if opt.SkipCreateCollection {
@@ -239,10 +242,6 @@ func checkSnapshotSupport(plan *Plan, opt *Option) error {
 	}
 	if len(opt.EZKMapping) != 0 {
 		unsupported = append(unsupported, "ezk_mapping")
-	}
-	if len(opt.SkipParams.CollectionProperties) != 0 || len(opt.SkipParams.FieldIndexParams) != 0 ||
-		len(opt.SkipParams.FieldTypeParams) != 0 || len(opt.SkipParams.IndexParams) != 0 {
-		unsupported = append(unsupported, "skip_params")
 	}
 	// A description override is applied with an AlterCollection after the restore
 	// completes, so it stays available. The shard count cannot: Milvus creates the
@@ -391,6 +390,7 @@ func (t *Task) newCollTask(dbBackup *backuppb.DatabaseBackupInfo, collBackup *ba
 				dropExist:    t.args.Option.DropExistCollection,
 				maxShardNum:  t.args.Option.MaxShardNum,
 				descOverride: t.args.Plan.CollOverrides[targetNS.String()].Description,
+				skipParams:   t.args.Option.SkipParams,
 				grpcCli:      t.grpc,
 				taskMgr:      t.args.TaskMgr,
 			}))

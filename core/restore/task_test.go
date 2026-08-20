@@ -91,7 +91,6 @@ func TestCheckSnapshotSupport(t *testing.T) {
 		{"MetaOnly", &Plan{}, &Option{MetaOnly: true}},
 		{"TruncateBinlogByTs", &Plan{}, &Option{TruncateBinlogByTs: true}},
 		{"EZKMapping", &Plan{}, &Option{EZKMapping: map[string]string{"old": "new"}}},
-		{"SkipParams", &Plan{}, &Option{SkipParams: SkipParams{IndexParams: []string{"nlist"}}}},
 		{"ShardNumOverride", &Plan{CollOverrides: map[string]CollOverride{"db1.coll1": {ShardNum: 2}}}, &Option{}},
 	}
 
@@ -105,6 +104,17 @@ func TestCheckSnapshotSupport(t *testing.T) {
 	// restore, so they stay available.
 	t.Run("SupportedOptions", func(t *testing.T) {
 		opt := &Option{DropExistCollection: true, RestoreRBAC: true}
+		assert.NoError(t, checkSnapshotSupport(&Plan{}, opt))
+	})
+
+	// Skipped params are dropped from the restored collection with delete_keys once the
+	// job completes, so they stay available even though Milvus creates the collection.
+	t.Run("SkipParams", func(t *testing.T) {
+		opt := &Option{SkipParams: SkipParams{
+			CollectionProperties: []string{"mmap.enabled"},
+			FieldTypeParams:      []string{"mmap.enabled"},
+			IndexParams:          []string{"mmap.enabled"},
+		}}
 		assert.NoError(t, checkSnapshotSupport(&Plan{}, opt))
 	})
 
