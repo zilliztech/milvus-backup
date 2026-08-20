@@ -145,11 +145,14 @@ type Grpc interface {
 	GetBulkInsertState(ctx context.Context, taskID int64) (*milvuspb.GetImportStateResponse, error)
 	CreateCollection(ctx context.Context, input CreateCollectionInput) error
 	AlterCollection(ctx context.Context, db, collName string, properties []*commonpb.KeyValuePair) error
+	DropCollectionProperties(ctx context.Context, db, collName string, keys []string) error
+	DropCollectionFieldProperties(ctx context.Context, db, collName, fieldName string, keys []string) error
 	CreatePartition(ctx context.Context, db, collName, partitionName string) error
 	HasPartition(ctx context.Context, db, collName, partitionName string) (bool, error)
 	AddField(ctx context.Context, db, collName string, field *schemapb.FieldSchema) error
 	CreateIndex(ctx context.Context, input CreateIndexInput) error
 	DropIndex(ctx context.Context, db, collName, indexName string) error
+	DropIndexProperties(ctx context.Context, db, collName, indexName string, keys []string) error
 	BackupRBAC(ctx context.Context) (*milvuspb.BackupRBACMetaResponse, error)
 	RestoreRBAC(ctx context.Context, rbacMeta *milvuspb.RBACMeta) error
 	ReplicateMessage(ctx context.Context, channelName string) (string, error)
@@ -975,6 +978,32 @@ func (g *GrpcClient) AlterCollection(ctx context.Context, db, collName string, p
 	return nil
 }
 
+// DropCollectionProperties removes collection-level property overrides, letting each key
+// fall back to the target cluster's own default.
+func (g *GrpcClient) DropCollectionProperties(ctx context.Context, db, collName string, keys []string) error {
+	ctx = g.newCtxWithDB(ctx, db)
+	in := &milvuspb.AlterCollectionRequest{CollectionName: collName, DeleteKeys: keys}
+	resp, err := g.srv.AlterCollection(ctx, in)
+	if err := checkResponse(resp, err); err != nil {
+		return fmt.Errorf("client: drop collection properties failed: %w", err)
+	}
+
+	return nil
+}
+
+// DropCollectionFieldProperties removes field-level property overrides, letting each key
+// fall back to the target cluster's own default.
+func (g *GrpcClient) DropCollectionFieldProperties(ctx context.Context, db, collName, fieldName string, keys []string) error {
+	ctx = g.newCtxWithDB(ctx, db)
+	in := &milvuspb.AlterCollectionFieldRequest{CollectionName: collName, FieldName: fieldName, DeleteKeys: keys}
+	resp, err := g.srv.AlterCollectionField(ctx, in)
+	if err := checkResponse(resp, err); err != nil {
+		return fmt.Errorf("client: drop collection field properties failed: %w", err)
+	}
+
+	return nil
+}
+
 func (g *GrpcClient) DropCollection(ctx context.Context, db, collectionName string) error {
 	ctx = g.newCtxWithDB(ctx, db)
 	resp, err := g.srv.DropCollection(ctx, &milvuspb.DropCollectionRequest{CollectionName: collectionName})
@@ -1087,6 +1116,18 @@ func (g *GrpcClient) DropIndex(ctx context.Context, db, collName, indexName stri
 	resp, err := g.srv.DropIndex(ctx, in)
 	if err := checkResponse(resp, err); err != nil {
 		return fmt.Errorf("client: drop index failed: %w", err)
+	}
+	return nil
+}
+
+// DropIndexProperties removes index-level param overrides, letting each key fall back to
+// the target cluster's own default.
+func (g *GrpcClient) DropIndexProperties(ctx context.Context, db, collName, indexName string, keys []string) error {
+	ctx = g.newCtxWithDB(ctx, db)
+	in := &milvuspb.AlterIndexRequest{CollectionName: collName, IndexName: indexName, DeleteKeys: keys}
+	resp, err := g.srv.AlterIndex(ctx, in)
+	if err := checkResponse(resp, err); err != nil {
+		return fmt.Errorf("client: drop index properties failed: %w", err)
 	}
 	return nil
 }

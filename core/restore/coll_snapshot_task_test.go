@@ -204,4 +204,79 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 		err := task.Execute(context.Background())
 		assert.ErrorContains(t, err, "alter collection description")
 	})
+
+	// Skipped params ride along in the bundle's schema, so they are dropped with
+	// delete_keys after the job completes, only from the objects the meta says carry them.
+	t.Run("SkipParams", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().RestoreExternalSnapshot(mock.Anything, mock.Anything).Return(9001, nil)
+		cli.EXPECT().GetRestoreSnapshotState(mock.Anything, int64(9001)).
+			Return(&milvuspb.RestoreSnapshotInfo{State: milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted}, nil)
+		cli.EXPECT().DropCollectionProperties(mock.Anything, "db2", "coll2", []string{"mmap.enabled"}).
+			Return(nil).Once()
+		// Only the vector field carries the skipped key, so only it is altered.
+		cli.EXPECT().DropCollectionFieldProperties(mock.Anything, "db2", "coll2", "vec", []string{"mmap.enabled"}).
+			Return(nil).Once()
+		cli.EXPECT().DropIndexProperties(mock.Anything, "db2", "coll2", "idx_vec", []string{"mmap.enabled"}).
+			Return(nil).Once()
+
+		task := newTestCollSnapshotTask(t, cli, false)
+		task.collBackup.Schema = &backuppb.CollectionSchema{
+			Properties: []*backuppb.KeyValuePair{{Key: "mmap.enabled", Value: "true"}},
+			Fields: []*backuppb.FieldSchema{
+				{Name: "pk", TypeParams: []*backuppb.KeyValuePair{{Key: "max_length", Value: "64"}}},
+				{Name: "vec", TypeParams: []*backuppb.KeyValuePair{{Key: "mmap.enabled", Value: "true"}}},
+			},
+		}
+		task.collBackup.IndexInfos = []*backuppb.IndexInfo{
+			{IndexName: "idx_vec", Params: map[string]string{"mmap.enabled": "true"}},
+			{IndexName: "idx_other", Params: map[string]string{"nlist": "128"}},
+		}
+		task.skipParams = SkipParams{
+			CollectionProperties: []string{"mmap.enabled"},
+			FieldTypeParams:      []string{"mmap.enabled"},
+			FieldIndexParams:     []string{"mmap.enabled"},
+		}
+		require.NoError(t, task.Execute(context.Background()))
+	})
+
+	// A key the backup never recorded is not deleted: dropping an absent override would be
+	// a no-op on the server, so no call is made at all.
+	t.Run("SkipParamsAbsentFromMeta", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().RestoreExternalSnapshot(mock.Anything, mock.Anything).Return(9001, nil)
+		cli.EXPECT().GetRestoreSnapshotState(mock.Anything, int64(9001)).
+			Return(&milvuspb.RestoreSnapshotInfo{State: milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted}, nil)
+
+		task := newTestCollSnapshotTask(t, cli, false)
+		task.collBackup.Schema = &backuppb.CollectionSchema{
+			Fields: []*backuppb.FieldSchema{
+				{Name: "vec", TypeParams: []*backuppb.KeyValuePair{{Key: "dim", Value: "128"}}},
+			},
+		}
+		task.skipParams = SkipParams{
+			CollectionProperties: []string{"mmap.enabled"},
+			FieldTypeParams:      []string{"mmap.enabled"},
+			IndexParams:          []string{"mmap.enabled"},
+		}
+		require.NoError(t, task.Execute(context.Background()))
+	})
+
+	// A failed drop surfaces through the task like any other restore failure.
+	t.Run("SkipParamsDropFails", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().RestoreExternalSnapshot(mock.Anything, mock.Anything).Return(9001, nil)
+		cli.EXPECT().GetRestoreSnapshotState(mock.Anything, int64(9001)).
+			Return(&milvuspb.RestoreSnapshotInfo{State: milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted}, nil)
+		cli.EXPECT().DropCollectionProperties(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
+			Return(errors.New("drop failed"))
+
+		task := newTestCollSnapshotTask(t, cli, false)
+		task.collBackup.Schema = &backuppb.CollectionSchema{
+			Properties: []*backuppb.KeyValuePair{{Key: "mmap.enabled", Value: "true"}},
+		}
+		task.skipParams = SkipParams{CollectionProperties: []string{"mmap.enabled"}}
+		err := task.Execute(context.Background())
+		assert.ErrorContains(t, err, "drop skipped collection properties")
+	})
 }
