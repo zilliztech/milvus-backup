@@ -5,7 +5,9 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math/rand/v2"
+	"path"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
@@ -17,12 +19,14 @@ import (
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 	"google.golang.org/protobuf/encoding/protowire"
 
 	"github.com/zilliztech/milvus-backup/internal/namespace"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore/conv"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/storage"
@@ -93,6 +97,11 @@ type dmlTaskArgs struct {
 	BackupStorage storage.Client
 	BackupDir     string
 
+	MilvusStorage  storage.Client
+	MilvusRootPath string
+	Streaming      bool
+	CopySem        *semaphore.Weighted
+
 	StreamCli  milvus.Stream
 	RestfulCli milvus.Restful
 }
@@ -102,6 +111,15 @@ type collDMLTask struct {
 
 	backupStorage storage.Client
 	backupDir     string
+
+	milvusStorage  storage.Client
+	milvusRootPath string
+	streaming      bool
+	copySem        *semaphore.Weighted
+
+	// tempDirs are the staging prefixes created in milvusStorage for this
+	// collection; they are removed when Execute returns.
+	tempDirs []string
 
 	pchTS      map[string]uint64
 	collBackup *backuppb.CollectionBackupInfo
@@ -124,6 +142,11 @@ func newCollDMLTask(args dmlTaskArgs, collBackup *backuppb.CollectionBackupInfo)
 		backupStorage: args.BackupStorage,
 		backupDir:     args.BackupDir,
 
+		milvusStorage:  args.MilvusStorage,
+		milvusRootPath: args.MilvusRootPath,
+		streaming:      args.Streaming,
+		copySem:        args.CopySem,
+
 		streamCli:  args.StreamCli,
 		restfulCli: args.RestfulCli,
 
@@ -131,8 +154,16 @@ func newCollDMLTask(args dmlTaskArgs, collBackup *backuppb.CollectionBackupInfo)
 	}
 }
 
-func (dmlt *collDMLTask) Execute(ctx context.Context) error {
+func (dmlt *collDMLTask) Execute(ctx context.Context) (err error) {
 	dmlt.logger.Info("start restore collection dml")
+	defer func() {
+		if cerr := dmlt.cleanTempDirs(context.WithoutCancel(ctx)); cerr != nil {
+			dmlt.logger.Warn("clean staged binlogs failed", zap.Error(cerr))
+			if err == nil {
+				err = cerr
+			}
+		}
+	}()
 
 	// Send and wait for non-L0 imports for all partitions.
 	if err := dmlt.restorePartitionNonL0(ctx); err != nil {
@@ -479,6 +510,10 @@ func (dmlt *collDMLTask) buildImportFiles(b batch) []*msgpb.ImportFile {
 
 func (dmlt *collDMLTask) sendImportMsg(ctx context.Context, partitionID int64, b batch) (int64, error) {
 	jobID := rand.Int64()
+	b, err := dmlt.stageBatch(ctx, b)
+	if err != nil {
+		return 0, fmt.Errorf("secondary: stage binlogs into milvus storage: %w", err)
+	}
 	schema, err := conv.Schema(dmlt.collBackup.GetSchema())
 	if err != nil {
 		return 0, fmt.Errorf("secondary: convert schema: %w", err)
@@ -534,4 +569,101 @@ func (dmlt *collDMLTask) buildBackupPartitionDir(ctx context.Context, size int64
 	}
 
 	return partitionDir{insertLogDir: insertLogDir, size: size}, nil
+}
+
+// needStaging reports whether binlogs must be copied into the target's own
+// storage before import. DataCoord resolves import paths only against its own
+// bucket, so a backup kept in a different bucket or backend is unreachable to
+// it. Mirrors the rule used by the plain restore path (copyAndRewriteDir).
+func (dmlt *collDMLTask) needStaging() bool {
+	if dmlt.milvusStorage == nil {
+		return false
+	}
+	isSameBucket := dmlt.milvusStorage.Config().Bucket == dmlt.backupStorage.Config().Bucket
+	isSameStorage := dmlt.milvusStorage.Config().Provider == dmlt.backupStorage.Config().Provider
+	return !isSameBucket || !isSameStorage || dmlt.streaming
+}
+
+func (dmlt *collDMLTask) isLocal() bool {
+	return dmlt.milvusStorage.Config().Provider == v2.ProviderLocal
+}
+
+// destKey maps a bucket-relative key onto the key the milvus storage client
+// reads and writes; only the local provider needs the root path prefixed.
+func (dmlt *collDMLTask) destKey(key string) string {
+	if !dmlt.isLocal() || key == "" {
+		return key
+	}
+	return strings.TrimSuffix(dmlt.milvusRootPath, "/") + "/" + key
+}
+
+// stageBatch copies every partition dir of b from the backup storage into a
+// temporary prefix in the milvus storage and rewrites the batch to point at the
+// copies. It is a no-op when the two storages are the same bucket.
+func (dmlt *collDMLTask) stageBatch(ctx context.Context, b batch) (batch, error) {
+	if !dmlt.needStaging() {
+		return b, nil
+	}
+
+	tempDir := fmt.Sprintf("restore-temp-%s-%s-%s/", dmlt.taskID,
+		dmlt.collBackup.GetDbName(), dmlt.collBackup.GetCollectionName())
+	for i, dir := range b.partitionDirs {
+		if dir.insertLogDir != "" {
+			staged, err := dmlt.copyToMilvusStorage(ctx, tempDir, dir.insertLogDir)
+			if err != nil {
+				return batch{}, fmt.Errorf("secondary: stage insert log dir: %w", err)
+			}
+			dir.insertLogDir = staged
+		}
+		if dir.deltaLogDir != "" {
+			staged, err := dmlt.copyToMilvusStorage(ctx, tempDir, dir.deltaLogDir)
+			if err != nil {
+				return batch{}, fmt.Errorf("secondary: stage delta log dir: %w", err)
+			}
+			dir.deltaLogDir = staged
+		}
+		b.partitionDirs[i] = dir
+	}
+	dmlt.tempDirs = append(dmlt.tempDirs, tempDir)
+	return b, nil
+}
+
+func (dmlt *collDMLTask) copyToMilvusStorage(ctx context.Context, tempDir, srcPrefix string) (string, error) {
+	dest := path.Join(tempDir, strings.Replace(srcPrefix, dmlt.backupDir, "", 1)) + "/"
+	destKey := dmlt.destKey(dest)
+	dmlt.logger.Info("milvus and backup store in different bucket, stage binlogs first",
+		zap.String("src", srcPrefix), zap.String("dest", destKey))
+
+	task := storage.NewCopyPrefixTask(storage.CopyPrefixOpt{
+		Sem:        dmlt.copySem,
+		Src:        dmlt.backupStorage,
+		Dest:       dmlt.milvusStorage,
+		SrcPrefix:  srcPrefix,
+		DestPrefix: destKey,
+		Streaming:  true,
+	})
+	if err := task.Execute(ctx); err != nil {
+		return "", fmt.Errorf("secondary: copy binlogs: %w", err)
+	}
+
+	expected, err := storage.ExpectedDestObjects(ctx, dmlt.backupStorage, srcPrefix, destKey)
+	if err != nil {
+		return "", fmt.Errorf("secondary: build expected for copy verify: %w", err)
+	}
+	verify := storage.NewVerifyPrefixTask(storage.VerifyPrefixOpt{Cli: dmlt.milvusStorage, Prefix: destKey, Expected: expected})
+	if err := verify.Execute(ctx); err != nil {
+		return "", fmt.Errorf("secondary: verify staged binlogs: %w", err)
+	}
+	return dest, nil
+}
+
+func (dmlt *collDMLTask) cleanTempDirs(ctx context.Context) error {
+	for _, dir := range dmlt.tempDirs {
+		dmlt.logger.Info("delete staged binlogs", zap.String("dir", dir))
+		if err := storage.DeletePrefix(ctx, dmlt.milvusStorage, dmlt.destKey(dir)); err != nil {
+			return fmt.Errorf("secondary: delete staged binlogs %s: %w", dir, err)
+		}
+	}
+	dmlt.tempDirs = nil
+	return nil
 }
