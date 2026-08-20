@@ -1115,6 +1115,126 @@ jobs:
             /tmp/schema_verify_*.json
             ./server.log
 
+  test-backup-restore-secondary-api:
+    needs: unit-test-go
+    name: Backup and restore secondary api
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.10'
+          cache: pip
+
+      - uses: actions/setup-go@v7
+        name: Set up Go ${{ env.go-version }}
+        with:
+          go-version: ${{ env.go-version }}
+          cache: true
+
+      - name: Build
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          go get
+          go build
+          go build -o inittarget ./cmd/inittarget
+
+      - name: Install dependency
+        timeout-minutes: 5
+        working-directory: tests
+        shell: bash
+        run: |
+          pip install -r requirements.txt --trusted-host https://test.pypi.org
+
+      - name: Deploy dual Milvus
+        timeout-minutes: 15
+        shell: bash
+        working-directory: deployment/secondary
+        run: |
+          tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag 2.6-latest) && echo $tag
+          yq -i ".services.upstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          yq -i ".services.downstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          mkdir -p volumes/etcd volumes/minio volumes/upstream volumes/downstream volumes/upstream-runtime volumes/downstream-runtime
+          sudo chmod -R 777 volumes
+          sudo docker compose -f docker-compose.yml up -d --wait
+          sudo docker compose -f docker-compose.yml ps -a
+
+      - name: Configure backup configs for upstream and downstream
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          # create (upstream) and restore secondary (downstream) reach different
+          # Milvus instances, so each gets its own backup server and config.
+          cp configs/backup.yaml configs/backup-secondary-upstream.yaml
+          cp configs/backup.yaml configs/backup-secondary-downstream.yaml
+          # upstream server config: reach the upstream Milvus and its etcd rootPath
+          yq -i '.milvus.grpc.port = 19530' configs/backup-secondary-upstream.yaml
+          yq -i '.milvus.storage.bucketName = "milvus-backup-test"' configs/backup-secondary-upstream.yaml
+          yq -i '.milvus.storage.rootPath = "backup-test-upstream"' configs/backup-secondary-upstream.yaml
+          yq -i '.backup.storage.bucketName = "milvus-backup-test"' configs/backup-secondary-upstream.yaml
+          yq -i '.milvus.replicate.rpcChannelName = "backup-test-upstream-replicate-msg"' configs/backup-secondary-upstream.yaml
+          yq -i '.milvus.etcd.rootPath = "backup-test-upstream"' configs/backup-secondary-upstream.yaml
+          # downstream server config: reach the downstream Milvus and share the
+          # same backup storage so it reads the backup the upstream server wrote
+          yq -i '.milvus.grpc.port = 19500' configs/backup-secondary-downstream.yaml
+          yq -i '.backup.storage.bucketName = "milvus-backup-test"' configs/backup-secondary-downstream.yaml
+          cat configs/backup-secondary-upstream.yaml
+
+      - name: Init downstream replicate configuration
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          ./inittarget --target downstream \
+            --upstream-uri upstream-standalone:19530 \
+            --downstream-uri downstream-standalone:19530
+
+      - name: Run secondary restore api test
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          set -e
+          # start both backup servers in the same step so they outlive the shell
+          nohup ./milvus-backup server --config configs/backup-secondary-upstream.yaml --port 8081 > /tmp/backup_server_upstream.log 2>&1 &
+          nohup ./milvus-backup server --config configs/backup-secondary-downstream.yaml --port 8082 > /tmp/backup_server_downstream.log 2>&1 &
+          trap 'kill $(jobs -p) || true' EXIT
+          sleep 5
+          curl -f http://localhost:8081/api/v1/hello
+          curl -f http://localhost:8082/api/v1/hello
+          cd tests
+          pytest -s -v --tags SECONDARY \
+            --backup_uri http://localhost:8081 \
+            --backup_uri_secondary http://localhost:8082 \
+            --secondary_milvus_uri http://localhost:19500
+
+      - name: Export backup server logs
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          mkdir -p /tmp/ci_logs
+          cat /tmp/backup_server_upstream.log > /tmp/ci_logs/backup_server_upstream.log || true
+          cat /tmp/backup_server_downstream.log > /tmp/ci_logs/backup_server_downstream.log || true
+
+      - name: Export Milvus logs
+        if: ${{ always() }}
+        shell: bash
+        working-directory: deployment/secondary
+        run: |
+          sudo docker compose -f docker-compose.yml logs upstream-standalone > /tmp/ci_logs/upstream.log 2>&1 || true
+          sudo docker compose -f docker-compose.yml logs downstream-standalone > /tmp/ci_logs/downstream.log 2>&1 || true
+          sudo docker compose -f docker-compose.yml logs etcd > /tmp/ci_logs/etcd.log 2>&1 || true
+          sudo docker compose -f docker-compose.yml logs minio > /tmp/ci_logs/minio.log 2>&1 || true
+
+      - name: Upload logs
+        if: ${{ ! success() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: secondary-restore-api-logs
+          path: |
+            /tmp/ci_logs
+
   test-backup-restore-with-rbac-config:
     needs: unit-test-go
     name: Backup and restore with rbac config
@@ -1424,6 +1544,7 @@ jobs:
       - test-backup-restore-cli
       - test-backup-restore-master-loonffi
       - test-backup-restore-secondary
+      - test-backup-restore-secondary-api
       - test-backup-restore-with-rbac-config
       - test-backup-restore-api
     runs-on: ubuntu-latest
