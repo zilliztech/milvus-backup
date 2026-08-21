@@ -676,7 +676,7 @@ func TestWaitBulkInsertStateUnknownJob(t *testing.T) {
 		_, err := newWaitTask(cli).waitBulkInsertReadyToCommit(context.Background(), 4242)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "does not know import job 4242")
-		assert.Contains(t, err.Error(), "force-promote")
+		assert.Contains(t, err.Error(), "deploy a new secondary")
 	})
 
 	t.Run("a job that is merely slow to appear is waited for", func(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math/rand/v2"
+	"time"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
@@ -110,6 +111,11 @@ func (t *Task) Execute(ctx context.Context) error {
 
 	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreExecuting())
 
+	if err := t.checkTargetIsUnused(ctx); err != nil {
+		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
+		return err
+	}
+
 	if err := t.runDBTasks(ctx); err != nil {
 		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
 		return fmt.Errorf("secondary: run database tasks: %w", err)
@@ -133,9 +139,104 @@ func (t *Task) Execute(ctx context.Context) error {
 	t.logger.Info("wait confirm")
 	t.streamCli.WaitConfirm()
 
+	if err := t.verifyRestored(ctx); err != nil {
+		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
+		return err
+	}
+
 	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreSuccess())
 	t.logger.Info("restore done")
 	return nil
+}
+
+// checkTargetIsUnused refuses to restore into a target that already holds one
+// of the collections in the backup.
+//
+// A secondary restore replays the source's DDL verbatim, collection ids
+// included, and it is meant to run once against a newly deployed secondary.
+// Restoring on top of a collection that is already there does not replace it:
+// the create is skipped and the data is imported into the existing collection,
+// which silently doubles its rows.
+func (t *Task) checkTargetIsUnused(ctx context.Context) error {
+	var present []string
+	for _, coll := range t.args.Backup.GetCollectionBackups() {
+		ns := fmt.Sprintf("%s.%s", coll.GetDbName(), coll.GetCollectionName())
+		has, err := t.grpc.HasCollection(ctx, coll.GetDbName(), coll.GetCollectionName())
+		if err != nil {
+			// A database the backup will create does not exist yet, which is
+			// the expected state; anything else is reported when it is used.
+			t.logger.Info("cannot check whether the target already holds a collection, continuing",
+				zap.String("ns", ns), zap.Error(err))
+			continue
+		}
+		if has {
+			present = append(present, ns)
+		}
+	}
+	if len(present) == 0 {
+		return nil
+	}
+	return fmt.Errorf("secondary: the target already holds %v, so it is not a newly "+
+		"deployed secondary. A secondary restore replays the source's DDL with the "+
+		"source's collection ids and is meant to run once: restoring on top of an "+
+		"existing collection does not replace it, it imports into it and doubles its "+
+		"rows. Dropping those collections does not make the target usable either, "+
+		"because their ids stay reserved while they are reclaimed and a restore of the "+
+		"same ids is then discarded without an error. To bootstrap again, deploy a new "+
+		"secondary and restore into that", present)
+}
+
+// verifyRestored confirms the collections actually exist on the target.
+//
+// Every step of this restore reports on whether the messages it sent were
+// accepted, not on what the target did with them. The target can accept them
+// and still create nothing -- a collection id left reserved by an earlier,
+// reclaimed collection makes the replayed create a silent no-op -- so without
+// this check the restore reports success against an empty target.
+func (t *Task) verifyRestored(ctx context.Context) error {
+	deadline := time.Now().Add(_restoreVerifyTimeout)
+	var missing []string
+	for {
+		missing = missing[:0]
+		for _, coll := range t.args.Backup.GetCollectionBackups() {
+			has, err := t.grpc.HasCollection(ctx, coll.GetDbName(), coll.GetCollectionName())
+			if err != nil {
+				return fmt.Errorf("secondary: verify restored collection %s.%s: %w",
+					coll.GetDbName(), coll.GetCollectionName(), err)
+			}
+			if !has {
+				missing = append(missing, fmt.Sprintf("%s.%s",
+					coll.GetDbName(), coll.GetCollectionName()))
+			}
+		}
+		if len(missing) == 0 {
+			t.logger.Info("all restored collections are present on the target")
+			return nil
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		// The DDL is applied asynchronously on the target, so give it a moment
+		// before concluding that it never arrived.
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(_restoreVerifyInterval):
+		}
+	}
+	return fmt.Errorf("secondary: the restore reported no errors, but %v %s not present on "+
+		"the target after %s. The messages were accepted and nothing was created, which "+
+		"happens when the target is not a newly deployed secondary: a collection id that "+
+		"an earlier collection still holds while it is being reclaimed makes the replayed "+
+		"create a silent no-op. Deploy a new secondary and restore into that",
+		missing, plural(len(missing)), _restoreVerifyTimeout)
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return "is"
+	}
+	return "are"
 }
 
 func (t *Task) runDBTasks(ctx context.Context) error {

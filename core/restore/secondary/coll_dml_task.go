@@ -49,6 +49,10 @@ var (
 	// target only knows the job once that message has been applied; the window
 	// covers the message still being in flight.
 	_bulkInsertUnknownJobTimeout = 1 * time.Minute
+	// How long to let the target apply the DDL before concluding that a
+	// collection the restore created is not there.
+	_restoreVerifyTimeout  = 30 * time.Second
+	_restoreVerifyInterval = 3 * time.Second
 )
 
 type partitionDir struct {
@@ -380,15 +384,16 @@ func (dmlt *collDMLTask) waitBulkInsertState(
 				unknownSince = time.Now()
 			} else if time.Since(unknownSince) >= _bulkInsertUnknownJobTimeout {
 				return "", fmt.Errorf("secondary: the target does not know import job %d after %s, "+
-					"so the import message this restore sent was never applied. The usual reason is "+
-					"that the target is not a freshly configured secondary: a secondary only moves "+
-					"its replicate checkpoint forward, and the messages a restore injects are "+
-					"time-ticked from 1, so everything this restore sends is discarded as too old "+
-					"once an earlier restore has advanced that checkpoint. Reset the target before "+
-					"restoring again: force-promote it to a standalone primary, which is the only "+
-					"transition that drops the checkpoint (re-applying the same replicate "+
-					"configuration does not, and neither does restarting it), drop whatever an "+
-					"earlier restore left behind, then configure it as a secondary again",
+					"so the import message this restore sent was never applied. A secondary restore "+
+					"targets a newly deployed secondary and runs once: the messages it injects are "+
+					"time-ticked from 1, while a secondary only ever moves its replicate checkpoint "+
+					"forward, so a target that has already been restored discards everything a "+
+					"second restore sends. There is no way to return a used target to that state -- "+
+					"re-applying the same replicate configuration does not clear the checkpoint, "+
+					"restarting the target does not, and dropping its collections makes matters "+
+					"worse, because their ids stay reserved while the collections are being "+
+					"reclaimed and a later restore of the same ids is then discarded without an "+
+					"error. To bootstrap again, deploy a new secondary and restore into that",
 					jobID, _bulkInsertUnknownJobTimeout)
 			}
 		} else {
