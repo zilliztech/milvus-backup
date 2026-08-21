@@ -22,6 +22,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
+	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"go.uber.org/zap"
@@ -107,6 +109,85 @@ func TestVerifyRestored(t *testing.T) {
 		cli.EXPECT().HasCollection(mock.Anything, "default", "orders").
 			Return(false, errors.New("connection refused"))
 		err := taskWithBackup(cli, coll("default", "orders")).verifyRestored(context.Background())
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "connection refused")
+	})
+}
+
+func cfgWith(clusterID string, pchannels ...string) *commonpb.ReplicateConfiguration {
+	return &commonpb.ReplicateConfiguration{
+		Clusters: []*commonpb.MilvusCluster{
+			{ClusterId: "other", Pchannels: []string{"other-rootcoord-dml_0"}},
+			{ClusterId: clusterID, Pchannels: pchannels},
+		},
+	}
+}
+
+func infoAt(tick uint64) *milvuspb.GetReplicateInfoResponse {
+	return &milvuspb.GetReplicateInfoResponse{
+		Checkpoint: &commonpb.ReplicateCheckpoint{TimeTick: tick},
+	}
+}
+
+func taskForTarget(cli milvus.Grpc) *Task {
+	return &Task{
+		args: TaskArgs{
+			SourceClusterID: "src",
+			TargetClusterID: "tgt",
+			Backup:          &backuppb.BackupInfo{},
+		},
+		grpc:   cli,
+		logger: zap.NewNop(),
+	}
+}
+
+func TestCheckTargetNotRestored(t *testing.T) {
+	t.Run("a newly deployed secondary reports zero on every pchannel", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().GetReplicateConfiguration(mock.Anything).
+			Return(cfgWith("tgt", "tgt-rootcoord-dml_0", "tgt-rootcoord-dml_1"), nil)
+		cli.EXPECT().GetReplicateInfo(mock.Anything, "src", "tgt-rootcoord-dml_0").Return(infoAt(0), nil)
+		cli.EXPECT().GetReplicateInfo(mock.Anything, "src", "tgt-rootcoord-dml_1").Return(infoAt(0), nil)
+		assert.NoError(t, taskForTarget(cli).checkTargetNotRestored(context.Background()))
+	})
+
+	// The case that is otherwise invisible: the collections were dropped, so
+	// nothing is listed, but the checkpoint of the restore that created them
+	// is still there.
+	t.Run("a target that was restored before is refused, naming the pchannel", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().GetReplicateConfiguration(mock.Anything).
+			Return(cfgWith("tgt", "tgt-rootcoord-dml_0", "tgt-rootcoord-dml_1"), nil)
+		cli.EXPECT().GetReplicateInfo(mock.Anything, "src", "tgt-rootcoord-dml_0").Return(infoAt(0), nil)
+		cli.EXPECT().GetReplicateInfo(mock.Anything, "src", "tgt-rootcoord-dml_1").
+			Return(infoAt(468522223459106838), nil)
+		err := taskForTarget(cli).checkTargetNotRestored(context.Background())
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "tgt-rootcoord-dml_1")
+		assert.Contains(t, err.Error(), "restored before")
+		assert.Contains(t, err.Error(), "new secondary")
+	})
+
+	t.Run("a cluster with no replication configuration is not refused", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().GetReplicateConfiguration(mock.Anything).
+			Return(nil, errors.New("deadline exceeded"))
+		assert.NoError(t, taskForTarget(cli).checkTargetNotRestored(context.Background()))
+	})
+
+	t.Run("a configuration that does not list the target is not refused", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().GetReplicateConfiguration(mock.Anything).Return(cfgWith("someone-else"), nil)
+		assert.NoError(t, taskForTarget(cli).checkTargetNotRestored(context.Background()))
+	})
+
+	t.Run("a checkpoint that cannot be read is reported", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().GetReplicateConfiguration(mock.Anything).
+			Return(cfgWith("tgt", "tgt-rootcoord-dml_0"), nil)
+		cli.EXPECT().GetReplicateInfo(mock.Anything, "src", "tgt-rootcoord-dml_0").
+			Return(nil, errors.New("connection refused"))
+		err := taskForTarget(cli).checkTargetNotRestored(context.Background())
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "connection refused")
 	})

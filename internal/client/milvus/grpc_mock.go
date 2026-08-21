@@ -1875,6 +1875,142 @@ func (_c *MockGrpc_GetPersistentSegmentInfo_Call) RunAndReturn(run func(ctx cont
 	return _c
 }
 
+// GetReplicateConfiguration provides a mock function for the type MockGrpc
+func (_mock *MockGrpc) GetReplicateConfiguration(ctx context.Context) (*commonpb.ReplicateConfiguration, error) {
+	ret := _mock.Called(ctx)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetReplicateConfiguration")
+	}
+
+	var r0 *commonpb.ReplicateConfiguration
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context) (*commonpb.ReplicateConfiguration, error)); ok {
+		return returnFunc(ctx)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context) *commonpb.ReplicateConfiguration); ok {
+		r0 = returnFunc(ctx)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*commonpb.ReplicateConfiguration)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context) error); ok {
+		r1 = returnFunc(ctx)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockGrpc_GetReplicateConfiguration_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetReplicateConfiguration'
+type MockGrpc_GetReplicateConfiguration_Call struct {
+	*mock.Call
+}
+
+// GetReplicateConfiguration is a helper method to define mock.On call
+//   - ctx context.Context
+func (_e *MockGrpc_Expecter) GetReplicateConfiguration(ctx any) *MockGrpc_GetReplicateConfiguration_Call {
+	return &MockGrpc_GetReplicateConfiguration_Call{Call: _e.mock.On("GetReplicateConfiguration", ctx)}
+}
+
+func (_c *MockGrpc_GetReplicateConfiguration_Call) Run(run func(ctx context.Context)) *MockGrpc_GetReplicateConfiguration_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		run(
+			arg0,
+		)
+	})
+	return _c
+}
+
+func (_c *MockGrpc_GetReplicateConfiguration_Call) Return(replicateConfiguration *commonpb.ReplicateConfiguration, err error) *MockGrpc_GetReplicateConfiguration_Call {
+	_c.Call.Return(replicateConfiguration, err)
+	return _c
+}
+
+func (_c *MockGrpc_GetReplicateConfiguration_Call) RunAndReturn(run func(ctx context.Context) (*commonpb.ReplicateConfiguration, error)) *MockGrpc_GetReplicateConfiguration_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// GetReplicateInfo provides a mock function for the type MockGrpc
+func (_mock *MockGrpc) GetReplicateInfo(ctx context.Context, sourceClusterID string, targetPchannel string) (*milvuspb.GetReplicateInfoResponse, error) {
+	ret := _mock.Called(ctx, sourceClusterID, targetPchannel)
+
+	if len(ret) == 0 {
+		panic("no return value specified for GetReplicateInfo")
+	}
+
+	var r0 *milvuspb.GetReplicateInfoResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) (*milvuspb.GetReplicateInfoResponse, error)); ok {
+		return returnFunc(ctx, sourceClusterID, targetPchannel)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string) *milvuspb.GetReplicateInfoResponse); ok {
+		r0 = returnFunc(ctx, sourceClusterID, targetPchannel)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.GetReplicateInfoResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, string, string) error); ok {
+		r1 = returnFunc(ctx, sourceClusterID, targetPchannel)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockGrpc_GetReplicateInfo_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'GetReplicateInfo'
+type MockGrpc_GetReplicateInfo_Call struct {
+	*mock.Call
+}
+
+// GetReplicateInfo is a helper method to define mock.On call
+//   - ctx context.Context
+//   - sourceClusterID string
+//   - targetPchannel string
+func (_e *MockGrpc_Expecter) GetReplicateInfo(ctx any, sourceClusterID any, targetPchannel any) *MockGrpc_GetReplicateInfo_Call {
+	return &MockGrpc_GetReplicateInfo_Call{Call: _e.mock.On("GetReplicateInfo", ctx, sourceClusterID, targetPchannel)}
+}
+
+func (_c *MockGrpc_GetReplicateInfo_Call) Run(run func(ctx context.Context, sourceClusterID string, targetPchannel string)) *MockGrpc_GetReplicateInfo_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+		)
+	})
+	return _c
+}
+
+func (_c *MockGrpc_GetReplicateInfo_Call) Return(getReplicateInfoResponse *milvuspb.GetReplicateInfoResponse, err error) *MockGrpc_GetReplicateInfo_Call {
+	_c.Call.Return(getReplicateInfoResponse, err)
+	return _c
+}
+
+func (_c *MockGrpc_GetReplicateInfo_Call) RunAndReturn(run func(ctx context.Context, sourceClusterID string, targetPchannel string) (*milvuspb.GetReplicateInfoResponse, error)) *MockGrpc_GetReplicateInfo_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // GetRestoreSnapshotState provides a mock function for the type MockGrpc
 func (_mock *MockGrpc) GetRestoreSnapshotState(ctx context.Context, jobID int64) (*milvuspb.RestoreSnapshotInfo, error) {
 	ret := _mock.Called(ctx, jobID)
