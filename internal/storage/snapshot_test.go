@@ -74,18 +74,42 @@ func TestSnapshotURI(t *testing.T) {
 		assert.ErrorContains(t, err, "region")
 	})
 
-	// Azure reaches its containers through the blob. service endpoint, which the tool
-	// config holds without the blob. prefix (its own client prepends it), so the snapshot
-	// uri restores the full service host and leaves the account name to the extfs.
-	t.Run("AzureUsesAzureScheme", func(t *testing.T) {
-		cfg := Config{Provider: v2.ProviderAzure, Bucket: "backup-bucket", Endpoint: "core.windows.net:443"}
+	// Milvus's snapshot validator only accepts an Azure URI host as the
+	// account-qualified endpoint or the bare service endpoint, so the URI names
+	// <account>.blob.<service-endpoint>, with the default https port dropped to
+	// match the metadata URI Milvus reports back.
+	t.Run("AzureNamesTheAccountEndpoint", func(t *testing.T) {
+		cfg := Config{
+			Provider: v2.ProviderAzure, Bucket: "backup-bucket", Endpoint: "core.windows.net:443",
+			Credential: Credential{AzureAccountName: "azure-account"},
+		}
 		got, err := SnapshotURI(cfg, "backup/mybackup")
 		require.NoError(t, err)
-		assert.Equal(t, "azure://blob.core.windows.net:443/backup-bucket/backup/mybackup", got)
+		assert.Equal(t, "azure://azure-account.blob.core.windows.net/backup-bucket/backup/mybackup", got)
+	})
+
+	t.Run("AzureNeedsAnAccountName", func(t *testing.T) {
+		cfg := Config{Provider: v2.ProviderAzure, Bucket: "backup-bucket", Endpoint: "core.windows.net:443"}
+		_, err := SnapshotURI(cfg, "backup/mybackup")
+		assert.ErrorContains(t, err, "account name")
+	})
+
+	// The Milvus-view override names the full host Milvus resolves, account
+	// prefix included, and is used verbatim.
+	t.Run("AzureMilvusEndpointOverridesTheEndpoint", func(t *testing.T) {
+		cfg := Config{
+			Provider: v2.ProviderAzure, Bucket: "backup-bucket", Endpoint: "core.windows.net:443",
+			Credential:     Credential{AzureAccountName: "azure-account"},
+			MilvusEndpoint: "other-account.blob.core.windows.net",
+		}
+		got, err := SnapshotURI(cfg, "backup/mybackup")
+		require.NoError(t, err)
+		assert.Equal(t, "azure://other-account.blob.core.windows.net/backup-bucket/backup/mybackup", got)
 	})
 
 	t.Run("AzureNeedsAnEndpoint", func(t *testing.T) {
-		cfg := Config{Provider: v2.ProviderAzure, Bucket: "backup-bucket"}
+		cfg := Config{Provider: v2.ProviderAzure, Bucket: "backup-bucket",
+			Credential: Credential{AzureAccountName: "azure-account"}}
 		_, err := SnapshotURI(cfg, "backup/mybackup")
 		assert.ErrorContains(t, err, "endpoint")
 	})
@@ -153,16 +177,19 @@ func TestSnapshotStoreURI(t *testing.T) {
 		assert.Equal(t, "minio://other:9000/backup-bucket/backup/mybackup", got)
 	})
 
-	// Azure has no endpoint-less form, so the URI keeps the service endpoint even on
-	// the same backend.
+	// Azure has no endpoint-less form, so the URI keeps the account-qualified
+	// endpoint even on the same backend.
 	t.Run("AzureKeepsTheEndpoint", func(t *testing.T) {
-		milvusCfg := Config{Provider: v2.ProviderAzure, Endpoint: "core.windows.net", Bucket: "milvus-bucket"}
+		milvusCfg := Config{
+			Provider: v2.ProviderAzure, Endpoint: "core.windows.net", Bucket: "milvus-bucket",
+			Credential: Credential{AzureAccountName: "azure-account"},
+		}
 		backupCfg := milvusCfg
 		backupCfg.Bucket = "backup-bucket"
 
 		got, err := SnapshotStoreURI(milvusCfg, backupCfg, "backup/mybackup")
 		require.NoError(t, err)
-		assert.Equal(t, "azure://blob.core.windows.net/backup-bucket/backup/mybackup", got)
+		assert.Equal(t, "azure://azure-account.blob.core.windows.net/backup-bucket/backup/mybackup", got)
 	})
 
 	// Native GCS never carries an endpoint, so same-backend changes nothing.
