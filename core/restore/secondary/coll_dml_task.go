@@ -36,9 +36,23 @@ import (
 const (
 	_bulkInsertTimeout             = 60 * time.Minute
 	_bulkInsertRestfulAPIChunkSize = 256
-	_bulkInsertCheckInterval       = 3 * time.Second
 	_commitImportMessageType       = 45
 	_commitImportMessageVersion    = 2
+)
+
+// Overridden in tests so the unknown-job path does not take a minute to
+// exercise.
+var (
+	_bulkInsertCheckInterval = 3 * time.Second
+	// How long an import job may stay unknown to the target before the restore
+	// gives up on it. The job id travels inside the import message, so the
+	// target only knows the job once that message has been applied; the window
+	// covers the message still being in flight.
+	_bulkInsertUnknownJobTimeout = 1 * time.Minute
+	// How long to let the target apply the DDL before concluding that a
+	// collection the restore created is not there.
+	_restoreVerifyTimeout  = 30 * time.Second
+	_restoreVerifyInterval = 3 * time.Second
 )
 
 type partitionDir struct {
@@ -342,6 +356,9 @@ func (dmlt *collDMLTask) waitBulkInsertState(
 	jobIDStr := strconv.FormatInt(jobID, 10)
 
 	var lastProgress int
+	// Stays zero until the target reports an empty state, so the window only
+	// starts once there is something to wait out.
+	var unknownSince time.Time
 	lastUpdateTime := time.Now()
 	ticker := time.NewTicker(_bulkInsertCheckInterval)
 	defer ticker.Stop()
@@ -358,6 +375,29 @@ func (dmlt *collDMLTask) waitBulkInsertState(
 			zap.Int("progress", resp.Data.Progress))
 		if state == milvus.ImportStateFailed {
 			return "", fmt.Errorf("secondary: bulk insert failed: %s", resp.Data.Reason)
+		}
+		// An empty state is not a state the job can be in: the target does not
+		// have this job at all. That never turns into anything else, so waiting
+		// for it is waiting forever.
+		if state == "" {
+			if unknownSince.IsZero() {
+				unknownSince = time.Now()
+			} else if time.Since(unknownSince) >= _bulkInsertUnknownJobTimeout {
+				return "", fmt.Errorf("secondary: the target does not know import job %d after %s, "+
+					"so the import message this restore sent was never applied. A secondary restore "+
+					"targets a newly deployed secondary and runs once: the messages it injects are "+
+					"time-ticked from 1, while a secondary only ever moves its replicate checkpoint "+
+					"forward, so a target that has already been restored discards everything a "+
+					"second restore sends. There is no way to return a used target to that state -- "+
+					"re-applying the same replicate configuration does not clear the checkpoint, "+
+					"restarting the target does not, and dropping its collections makes matters "+
+					"worse, because their ids stay reserved while the collections are being "+
+					"reclaimed and a later restore of the same ids is then discarded without an "+
+					"error. To bootstrap again, deploy a new secondary and restore into that",
+					jobID, _bulkInsertUnknownJobTimeout)
+			}
+		} else {
+			unknownSince = time.Time{}
 		}
 		if done(state) {
 			if state == milvus.ImportStateCompleted {

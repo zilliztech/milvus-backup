@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math/rand/v2"
+	"time"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
@@ -110,6 +111,16 @@ func (t *Task) Execute(ctx context.Context) error {
 
 	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreExecuting())
 
+	if err := t.checkTargetNotRestored(ctx); err != nil {
+		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
+		return err
+	}
+
+	if err := t.checkTargetIsUnused(ctx); err != nil {
+		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
+		return err
+	}
+
 	if err := t.runDBTasks(ctx); err != nil {
 		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
 		return fmt.Errorf("secondary: run database tasks: %w", err)
@@ -133,9 +144,169 @@ func (t *Task) Execute(ctx context.Context) error {
 	t.logger.Info("wait confirm")
 	t.streamCli.WaitConfirm()
 
+	if err := t.verifyRestored(ctx); err != nil {
+		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
+		return err
+	}
+
 	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreSuccess())
 	t.logger.Info("restore done")
 	return nil
+}
+
+// checkTargetNotRestored refuses to restore into a target that has already been
+// restored.
+//
+// The replicate checkpoint is what says so. A newly deployed secondary reports
+// zero on every pchannel; a restore ends by forwarding the backup's flush-all
+// messages, which carry the source's own time ticks and leave the checkpoint
+// there. Nothing an operator does brings it back to zero -- re-applying the
+// same replicate configuration does not, and neither does restarting the
+// target or dropping its collections.
+//
+// This matters most for the case that is otherwise invisible. Dropping the
+// target's collections hides them but keeps their ids reserved until the
+// collections are reclaimed, and a replayed create for a reserved id is
+// skipped without an error, so the restore would report success having created
+// nothing. That target still carries the checkpoint of the restore that put
+// the collections there, which is what this catches.
+func (t *Task) checkTargetNotRestored(ctx context.Context) error {
+	cfg, err := t.grpc.GetReplicateConfiguration(ctx)
+	if err != nil {
+		// A cluster with no replication cannot have been restored into as a
+		// secondary, and the restore fails on its own if it is not one.
+		t.logger.Info("cannot read the target's replicate configuration, skipping the check",
+			zap.Error(err))
+		return nil
+	}
+
+	var pchannels []string
+	for _, cluster := range cfg.GetClusters() {
+		if cluster.GetClusterId() == t.args.TargetClusterID {
+			pchannels = cluster.GetPchannels()
+			break
+		}
+	}
+	if len(pchannels) == 0 {
+		t.logger.Info("the target reports no pchannels of its own, skipping the check",
+			zap.String("targetClusterID", t.args.TargetClusterID))
+		return nil
+	}
+
+	for _, pchannel := range pchannels {
+		resp, err := t.grpc.GetReplicateInfo(ctx, t.args.SourceClusterID, pchannel)
+		if err != nil {
+			return fmt.Errorf("secondary: read the replicate checkpoint of %s: %w", pchannel, err)
+		}
+		tick := resp.GetCheckpoint().GetTimeTick()
+		if tick == 0 {
+			continue
+		}
+		return fmt.Errorf("secondary: %s already has a replicate checkpoint (%s is at time tick "+
+			"%d), so this target has been restored before. A secondary restore runs once, "+
+			"against a newly deployed secondary: the messages it injects are time-ticked from "+
+			"1, and a secondary only ever moves its checkpoint forward, so everything this "+
+			"restore sends would be discarded. Nothing returns a used target to that state -- "+
+			"re-applying the same replicate configuration does not clear the checkpoint, "+
+			"restarting the target does not, and dropping its collections only hides them "+
+			"while their ids stay reserved. To bootstrap again, deploy a new secondary and "+
+			"restore into that",
+			t.args.TargetClusterID, pchannel, tick)
+	}
+
+	t.logger.Info("the target has no replicate checkpoint, as a newly deployed secondary should",
+		zap.Int("pchannels", len(pchannels)))
+	return nil
+}
+
+// checkTargetIsUnused refuses to restore into a target that already holds one
+// of the collections in the backup.
+//
+// A secondary restore replays the source's DDL verbatim, collection ids
+// included, and it is meant to run once against a newly deployed secondary.
+// Restoring on top of a collection that is already there does not replace it:
+// the create is skipped and the data is imported into the existing collection,
+// which silently doubles its rows.
+func (t *Task) checkTargetIsUnused(ctx context.Context) error {
+	var present []string
+	for _, coll := range t.args.Backup.GetCollectionBackups() {
+		ns := fmt.Sprintf("%s.%s", coll.GetDbName(), coll.GetCollectionName())
+		has, err := t.grpc.HasCollection(ctx, coll.GetDbName(), coll.GetCollectionName())
+		if err != nil {
+			// A database the backup will create does not exist yet, which is
+			// the expected state; anything else is reported when it is used.
+			t.logger.Info("cannot check whether the target already holds a collection, continuing",
+				zap.String("ns", ns), zap.Error(err))
+			continue
+		}
+		if has {
+			present = append(present, ns)
+		}
+	}
+	if len(present) == 0 {
+		return nil
+	}
+	return fmt.Errorf("secondary: the target already holds %v, so it is not a newly "+
+		"deployed secondary. A secondary restore replays the source's DDL with the "+
+		"source's collection ids and is meant to run once: restoring on top of an "+
+		"existing collection does not replace it, it imports into it and doubles its "+
+		"rows. Dropping those collections does not make the target usable either, "+
+		"because their ids stay reserved while they are reclaimed and a restore of the "+
+		"same ids is then discarded without an error. To bootstrap again, deploy a new "+
+		"secondary and restore into that", present)
+}
+
+// verifyRestored confirms the collections actually exist on the target.
+//
+// Every step of this restore reports on whether the messages it sent were
+// accepted, not on what the target did with them. The target can accept them
+// and still create nothing -- a collection id left reserved by an earlier,
+// reclaimed collection makes the replayed create a silent no-op -- so without
+// this check the restore reports success against an empty target.
+func (t *Task) verifyRestored(ctx context.Context) error {
+	deadline := time.Now().Add(_restoreVerifyTimeout)
+	var missing []string
+	for {
+		missing = missing[:0]
+		for _, coll := range t.args.Backup.GetCollectionBackups() {
+			has, err := t.grpc.HasCollection(ctx, coll.GetDbName(), coll.GetCollectionName())
+			if err != nil {
+				return fmt.Errorf("secondary: verify restored collection %s.%s: %w",
+					coll.GetDbName(), coll.GetCollectionName(), err)
+			}
+			if !has {
+				missing = append(missing, fmt.Sprintf("%s.%s",
+					coll.GetDbName(), coll.GetCollectionName()))
+			}
+		}
+		if len(missing) == 0 {
+			t.logger.Info("all restored collections are present on the target")
+			return nil
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		// The DDL is applied asynchronously on the target, so give it a moment
+		// before concluding that it never arrived.
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(_restoreVerifyInterval):
+		}
+	}
+	return fmt.Errorf("secondary: the restore reported no errors, but %v %s not present on "+
+		"the target after %s. The messages were accepted and nothing was created, which "+
+		"happens when the target is not a newly deployed secondary: a collection id that "+
+		"an earlier collection still holds while it is being reclaimed makes the replayed "+
+		"create a silent no-op. Deploy a new secondary and restore into that",
+		missing, plural(len(missing)), _restoreVerifyTimeout)
+}
+
+func plural(n int) string {
+	if n == 1 {
+		return "is"
+	}
+	return "are"
 }
 
 func (t *Task) runDBTasks(ctx context.Context) error {

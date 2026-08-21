@@ -153,6 +153,8 @@ type Grpc interface {
 	CreateIndex(ctx context.Context, input CreateIndexInput) error
 	DropIndex(ctx context.Context, db, collName, indexName string) error
 	DropIndexProperties(ctx context.Context, db, collName, indexName string, keys []string) error
+	GetReplicateConfiguration(ctx context.Context) (*commonpb.ReplicateConfiguration, error)
+	GetReplicateInfo(ctx context.Context, sourceClusterID, targetPchannel string) (*milvuspb.GetReplicateInfoResponse, error)
 	BackupRBAC(ctx context.Context) (*milvuspb.BackupRBACMetaResponse, error)
 	RestoreRBAC(ctx context.Context, rbacMeta *milvuspb.RBACMeta) error
 	ReplicateMessage(ctx context.Context, channelName string) (string, error)
@@ -1130,6 +1132,35 @@ func (g *GrpcClient) DropIndexProperties(ctx context.Context, db, collName, inde
 		return fmt.Errorf("client: drop index properties failed: %w", err)
 	}
 	return nil
+}
+
+// GetReplicateConfiguration returns the cross-cluster replication configuration
+// the cluster currently holds. A cluster that has never been given one answers
+// with an empty configuration rather than an error.
+func (g *GrpcClient) GetReplicateConfiguration(ctx context.Context) (*commonpb.ReplicateConfiguration, error) {
+	ctx = g.newCtx(ctx)
+	resp, err := g.srv.GetReplicateConfiguration(ctx, &milvuspb.GetReplicateConfigurationRequest{})
+	if err := checkResponse(resp, err); err != nil {
+		return nil, fmt.Errorf("client: get replicate configuration: %w", err)
+	}
+
+	return resp.GetConfiguration(), nil
+}
+
+// GetReplicateInfo returns the replication checkpoint the cluster holds for one
+// of its OWN pchannels. Passing a pchannel that belongs to another cluster does
+// not fail: the lookup blocks until the caller's deadline.
+func (g *GrpcClient) GetReplicateInfo(ctx context.Context, sourceClusterID, targetPchannel string) (*milvuspb.GetReplicateInfoResponse, error) {
+	ctx = g.newCtx(ctx)
+	resp, err := g.srv.GetReplicateInfo(ctx, &milvuspb.GetReplicateInfoRequest{
+		SourceClusterId: sourceClusterID,
+		TargetPchannel:  targetPchannel,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("client: get replicate info of %s: %w", targetPchannel, err)
+	}
+
+	return resp, nil
 }
 
 func (g *GrpcClient) BackupRBAC(ctx context.Context) (*milvuspb.BackupRBACMetaResponse, error) {
