@@ -32,17 +32,33 @@ func SnapshotURI(cfg Config, key string) (string, error) {
 		return "", err
 	}
 
-	// Azure names its service endpoint in the host and carries the account name in the
-	// extfs access_key_id, so the host is the blob. service endpoint, not the account one.
+	// Milvus's snapshot validator recognizes an Azure URI host only as the
+	// account-qualified endpoint (<account>.blob.<service-endpoint>) or the bare
+	// service endpoint, and rejects anything else as not matching the configured
+	// endpoint — so the URI names the account-qualified host. The account name is
+	// always set, since the Azure client itself needs it to build the blob
+	// service URL.
 	if cfg.Provider == v2.ProviderAzure {
-		host := endpointHost(cfg.Endpoint)
 		if cfg.MilvusEndpoint != "" {
-			host = endpointHost(cfg.MilvusEndpoint)
+			// The override names the exact host Milvus resolves, account included.
+			host := endpointHost(cfg.MilvusEndpoint)
+			if host == "" {
+				return "", fmt.Errorf("storage: snapshot uri for azure needs an endpoint")
+			}
+			return fmt.Sprintf("azure://%s/%s/%s", host, cfg.Bucket, key), nil
 		}
+		if cfg.Credential.AzureAccountName == "" {
+			return "", fmt.Errorf("storage: snapshot uri for azure needs an account name")
+		}
+		host := endpointHost(cfg.Endpoint)
 		if host == "" {
 			return "", fmt.Errorf("storage: snapshot uri for azure needs an endpoint")
 		}
-		return fmt.Sprintf("azure://blob.%s/%s/%s", host, cfg.Bucket, key), nil
+		// Milvus reports the completed export's metadata URI with the default
+		// https port dropped; drop it here too, or the backup meta's cross-check
+		// of the two spellings fails on the port alone.
+		host = strings.TrimSuffix(host, ":443")
+		return fmt.Sprintf("azure://%s.blob.%s/%s/%s", cfg.Credential.AzureAccountName, host, cfg.Bucket, key), nil
 	}
 
 	// Native GCS is reached through its own client, not an S3-compatible endpoint, so the
