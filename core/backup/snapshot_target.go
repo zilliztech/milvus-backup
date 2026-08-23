@@ -1,6 +1,7 @@
 package backup
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/url"
@@ -25,14 +26,34 @@ type snapshotTarget struct {
 	// ExternalSpec carries the credentials for the target, and is empty when Milvus
 	// can reach it with its own.
 	ExternalSpec string
+
+	// SourceSASSet reports whether the spec carries a source SAS, for logging: the
+	// token itself is a secret and never appears there.
+	SourceSASSet bool
 }
 
-func newSnapshotTarget(milvusCfg, backupCfg storage.Config, backupDir string) (snapshotTarget, error) {
+func newSnapshotTarget(ctx context.Context, milvusCfg, backupCfg storage.Config, backupDir string) (snapshotTarget, error) {
 	uri, err := storage.SnapshotStoreURI(milvusCfg, backupCfg, mpath.BackupBundleDir(backupDir))
 	if err != nil {
 		return snapshotTarget{}, err
 	}
 	target := snapshotTarget{Path: uri, Dir: mpath.BundleDirName}
+
+	// The copy source is the Milvus instance bucket. On Azure it lives in the
+	// instance storage account, and no single principal can authorize reading a
+	// blob of another account, so a cross-account export needs a read-scoped SAS
+	// on the source — minted from (or provided with) the instance account.
+	if storage.CrossAccountAzure(milvusCfg, backupCfg) {
+		milvusCfg, err = storage.ResolveSourceSAS(ctx, milvusCfg)
+		if err != nil {
+			return snapshotTarget{}, fmt.Errorf("backup: source sas for the milvus storage: %w", err)
+		}
+		backupCfg.SourceSAS = milvusCfg.SourceSAS
+	} else if milvusCfg.SourceSAS != "" {
+		// A SAS anywhere else is a misconfiguration the server would reject, so
+		// fail here where the config key can be pointed at.
+		return snapshotTarget{}, fmt.Errorf("backup: a source sas token applies only to a snapshot copy that crosses azure storage accounts")
+	}
 
 	// With no spec Milvus writes with its own credential and lets bucket policy
 	// authorize the target, which is exactly the case when both sides are the same
@@ -46,6 +67,7 @@ func newSnapshotTarget(milvusCfg, backupCfg storage.Config, backupDir string) (s
 		return snapshotTarget{}, err
 	}
 	target.ExternalSpec = spec
+	target.SourceSASSet = backupCfg.SourceSAS != ""
 
 	return target, nil
 }

@@ -92,6 +92,10 @@ func (c *StorageConfig) inapplicableKeys() []string {
 	if c.Provider.Val != ProviderAzure {
 		skip = append(skip, c.AccountName.Keys...)
 	}
+	// sourceSASToken is the Azure-only cross-account copy grant.
+	if c.Provider.Val != ProviderAzure {
+		skip = append(skip, c.SourceSASToken.Keys...)
+	}
 	// localPath belongs to local storage and nothing else.
 	if c.Provider.Val != ProviderLocal {
 		skip = append(skip, c.LocalPath.Keys...)

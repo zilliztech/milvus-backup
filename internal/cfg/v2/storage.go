@@ -40,6 +40,16 @@ type StorageConfig struct {
 	// provider.
 	AccountName param.Value[string]
 
+	// SourceSASToken is a read-scoped SAS for this account's container, handed
+	// to Milvus as extfs.source_sas_token when a snapshot-format copy reads
+	// across Azure storage accounts: no single credential can authorize reading
+	// another account's blobs, so the source read needs one. It applies to the
+	// side the copy reads from — the milvus storage for a backup, the backup
+	// storage for a restore — and is independent of the auth type. Empty means
+	// milvus-backup mints one from this account's own credential for the
+	// duration of the task.
+	SourceSASToken param.Value[string]
+
 	// BucketName is the bucket data lives in, or the container for Azure.
 	BucketName param.Value[string]
 	RootPath   param.Value[string]
@@ -83,6 +93,8 @@ func newStorageConfig(keyPrefix, envPrefix string) StorageConfig {
 		// account key belongs to, and deployments hand out the two together.
 		AccountName: param.Value[string]{Default: "", Keys: key("accountName"), EnvKeys: env("ACCOUNT_NAME")},
 
+		SourceSASToken: param.Value[string]{Default: "", Keys: key("sourceSASToken"), EnvKeys: env("SOURCE_SAS_TOKEN"), Opts: param.SecretValue},
+
 		BucketName: param.Value[string]{Default: "a-bucket", Keys: key("bucketName")},
 		RootPath:   param.Value[string]{Default: "files", Keys: key("rootPath")},
 		LocalPath:  param.Value[string]{Default: "", Keys: key("localPath")},
@@ -111,6 +123,9 @@ func newStorageConfig(keyPrefix, envPrefix string) StorageConfig {
 // deliberately left alone: backup data does not belong under the Milvus root
 // path. The Milvus-view endpoint override is left alone too: it describes how
 // one specific Milvus reaches the store, which says nothing about another.
+// SourceSASToken is left alone as well: it grants reads of one account's
+// container, so inheriting it into a section that names another account would
+// hand Milvus a token for the wrong one.
 func (c *StorageConfig) inherit(other *StorageConfig) {
 	c.Provider.Default = other.Provider.Val
 
@@ -135,7 +150,7 @@ func (c *StorageConfig) Resolve(s *param.Source) error {
 	return param.Resolve(s,
 		&c.Provider,
 		&c.Address, &c.Port, &c.Region, &c.UseSSL,
-		&c.AccountName, &c.BucketName, &c.RootPath, &c.LocalPath,
+		&c.AccountName, &c.SourceSASToken, &c.BucketName, &c.RootPath, &c.LocalPath,
 		&c.MilvusAddress, &c.MilvusPort,
 		&c.Auth.Type,
 		&c.Auth.AccessKeyID, &c.Auth.SecretAccessKey, &c.Auth.SessionToken,

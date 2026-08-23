@@ -171,7 +171,7 @@ type Task struct {
 	logger *zap.Logger
 }
 
-func NewTask(args TaskArgs) (*Task, error) {
+func NewTask(ctx context.Context, args TaskArgs) (*Task, error) {
 	// Without this an unknown format would go down the binlog path, find no segments, and
 	// report a successful restore of an empty collection.
 	format := args.Backup.GetFormat()
@@ -202,14 +202,15 @@ func NewTask(args TaskArgs) (*Task, error) {
 				zap.Strings("options", ignored))
 		}
 
-		source, err := newSnapshotSource(args.MilvusStorage.Config(), args.BackupStorage.Config(), args.BackupDir)
+		source, err := newSnapshotSource(ctx, args.MilvusStorage.Config(), args.BackupStorage.Config(), args.BackupDir)
 		if err != nil {
 			return nil, err
 		}
 		task.snapshotSource = source
 		logger.Info("restore from snapshot bundles",
 			zap.String("source_uri", source.dirURI),
-			zap.Bool("external_spec_set", source.externalSpec != ""))
+			zap.Bool("external_spec_set", source.externalSpec != ""),
+			zap.Bool("source_sas_set", source.sourceSASSet))
 	} else {
 		task.streaming = storage.UseStreaming(args.Params.Transfer.Mode.Val,
 			args.BackupStorage.Config(), args.MilvusStorage.Config())

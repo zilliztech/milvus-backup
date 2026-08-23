@@ -40,7 +40,7 @@ func TestNewTask_RefusesUnknownFormat(t *testing.T) {
 		Backup: &backuppb.BackupInfo{Name: "mybackup", Format: "parquet"},
 	}
 
-	task, err := NewTask(args)
+	task, err := NewTask(t.Context(), args)
 	assert.ErrorContains(t, err, "parquet")
 	assert.Nil(t, task)
 }
@@ -69,7 +69,7 @@ func TestNewTask_SnapshotSource(t *testing.T) {
 		TaskMgr:       taskmgr.NewMgr(),
 	}
 
-	task, err := NewTask(args)
+	task, err := NewTask(t.Context(), args)
 	require.NoError(t, err)
 	assert.Equal(t, meta.FormatSnapshot, task.format)
 	// Both sides are the same backend, so the uri names only the bucket and Milvus

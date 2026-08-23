@@ -23,6 +23,12 @@ milvus:
     # The Azure storage account, required by the azure provider. Prefer
     # MILVUS_STORAGE_ACCOUNT_NAME over writing it here.
     accountName: "<your-storage-account>"
+    # A read-scoped SAS for this account's container, for snapshot-format
+    # backups kept in a DIFFERENT storage account: Azure lets no single
+    # credential read across accounts, so Milvus copies under this token.
+    # Leave it out to have milvus-backup mint one from the account key for
+    # the duration of each task.
+    # sourceSASToken: "<your-source-sas>"
     # For azure the bucket is the blob container.
     bucketName: "milvus-data"
     rootPath: "milvus/azure-instance"

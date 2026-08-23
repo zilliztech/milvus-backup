@@ -1,6 +1,7 @@
 package restore
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
@@ -17,14 +18,33 @@ type snapshotSource struct {
 	// externalSpec carries the credentials for the source, and is empty when Milvus can
 	// reach it with its own.
 	externalSpec string
+
+	// sourceSASSet reports whether the spec carries a source SAS, for logging: the
+	// token itself is a secret and never appears there.
+	sourceSASSet bool
 }
 
-func newSnapshotSource(milvusCfg, backupCfg storage.Config, backupDir string) (snapshotSource, error) {
+func newSnapshotSource(ctx context.Context, milvusCfg, backupCfg storage.Config, backupDir string) (snapshotSource, error) {
 	uri, err := storage.SnapshotStoreURI(milvusCfg, backupCfg, backupDir)
 	if err != nil {
 		return snapshotSource{}, err
 	}
 	source := snapshotSource{dirURI: uri}
+
+	// The copy source is the backup bucket. On Azure it lives in the backup
+	// storage account, and no single principal can authorize reading a blob of
+	// another account, so a cross-account restore needs a read-scoped SAS on the
+	// source — minted from (or provided with) the backup account.
+	if storage.CrossAccountAzure(backupCfg, milvusCfg) {
+		backupCfg, err = storage.ResolveSourceSAS(ctx, backupCfg)
+		if err != nil {
+			return snapshotSource{}, fmt.Errorf("restore: source sas for the backup storage: %w", err)
+		}
+	} else if backupCfg.SourceSAS != "" {
+		// A SAS anywhere else is a misconfiguration the server would reject, so
+		// fail here where the config key can be pointed at.
+		return snapshotSource{}, fmt.Errorf("restore: a source sas token applies only to a snapshot copy that crosses azure storage accounts")
+	}
 
 	// With no spec Milvus reads with its own credential, which is what to rely on when both
 	// sides are the same backend — it keeps the access key off the wire.
@@ -37,6 +57,7 @@ func newSnapshotSource(milvusCfg, backupCfg storage.Config, backupDir string) (s
 		return snapshotSource{}, err
 	}
 	source.externalSpec = spec
+	source.sourceSASSet = backupCfg.SourceSAS != ""
 
 	return source, nil
 }

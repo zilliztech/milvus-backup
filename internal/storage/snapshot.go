@@ -164,6 +164,17 @@ func SnapshotExternalSpec(cfg Config) (string, error) {
 		return "", fmt.Errorf("storage: snapshot external spec cannot carry %s credentials", cfg.Credential.Type)
 	}
 
+	// A cross-account Azure copy reads its source under this SAS: neither the
+	// destination credential above nor the destination account's own identity
+	// can authorize reading another account's blobs, so the source read rides
+	// on the token instead. Azure is the only provider with such a grant.
+	if cfg.SourceSAS != "" {
+		if cfg.Provider != v2.ProviderAzure {
+			return "", fmt.Errorf("storage: snapshot external spec cannot carry a source sas for %s storage", cfg.Provider)
+		}
+		extfs["source_sas_token"] = cfg.SourceSAS
+	}
+
 	byts, err := json.Marshal(map[string]any{"extfs": extfs})
 	if err != nil {
 		return "", fmt.Errorf("storage: marshal snapshot external spec: %w", err)

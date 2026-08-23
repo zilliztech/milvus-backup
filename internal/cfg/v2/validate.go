@@ -143,6 +143,11 @@ func (c *StorageConfig) validate() error {
 			keyOf(&c.AccountName), keyOf(&c.Provider), provider))
 	}
 
+	if provider != ProviderAzure && !c.SourceSASToken.IsDefault() {
+		errs = append(errs, fmt.Errorf("cfg: %s only applies to the azure provider, but %s is %q",
+			keyOf(&c.SourceSASToken), keyOf(&c.Provider), provider))
+	}
+
 	// localPath names the directory Milvus resolves against, which only exists
 	// for local storage; anywhere else it is a mistake, not a hint.
 	if !c.LocalPath.IsDefault() {

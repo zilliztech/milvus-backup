@@ -205,7 +205,7 @@ func (o *options) run(cmd *cobra.Command, params *v2.Config) error {
 		return err
 	}
 
-	task, err := restore.NewTask(args)
+	task, err := restore.NewTask(cmd.Context(), args)
 	if err != nil {
 		return err
 	}

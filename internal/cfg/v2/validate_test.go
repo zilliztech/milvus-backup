@@ -29,6 +29,11 @@ func TestValidate_Storage(t *testing.T) {
 			wantErr: "milvus.storage.accountName only applies to the azure provider",
 		},
 		{
+			name:    "SourceSASTokenOnlyAppliesToAzure",
+			yaml:    "milvus:\n  storage:\n    provider: s3\n    sourceSASToken: sv=2024-08-04\n",
+			wantErr: "milvus.storage.sourceSASToken only applies to the azure provider",
+		},
+		{
 			name:    "LocalPathOnlyAppliesToLocal",
 			yaml:    "milvus:\n  storage:\n    provider: s3\n    localPath: /data\n",
 			wantErr: "milvus.storage.localPath only applies to the local provider",

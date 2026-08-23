@@ -85,3 +85,17 @@ func TestRender_EtcdList(t *testing.T) {
 	assert.Contains(t, string(data), "- etcd-0:2379")
 	assert.Contains(t, string(data), "- etcd-1:2379")
 }
+
+// Azure-only identity keys stay out of a non-azure section: emitting them,
+// even empty, would fail validation on reload since a key present in a file
+// resolves as explicitly set.
+func TestRender_SkipsAzureOnlyKeys(t *testing.T) {
+	c, err := Load("", nil)
+	require.NoError(t, err)
+
+	data, err := Render(c, nil)
+	require.NoError(t, err)
+
+	assert.NotContains(t, string(data), "accountName")
+	assert.NotContains(t, string(data), "sourceSASToken")
+}
