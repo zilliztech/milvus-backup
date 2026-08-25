@@ -1,12 +1,21 @@
 package server
 
 import (
+	"context"
+
 	"github.com/gin-gonic/gin"
 	"github.com/samber/lo"
 
 	"github.com/zilliztech/milvus-backup/core/app"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 )
+
+// listBackupsUC is the slice of app.ListBackups the handler needs. The
+// consumer defines it: app returns concrete types, and this narrow interface
+// is what handler tests stub out.
+type listBackupsUC interface {
+	Execute(ctx context.Context) ([]app.BackupSummary, error)
+}
 
 // ListBackups List Backups interface
 // @Summary List Backups interface
@@ -31,7 +40,7 @@ func (s *Server) handleListBackups(c *gin.Context) {
 		return
 	}
 
-	uc, err := app.NewListBackups(c.Request.Context(), s.params)
+	uc, err := s.config.newListBackups(c.Request.Context(), s.params)
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
