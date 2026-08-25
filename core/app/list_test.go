@@ -52,9 +52,9 @@ func TestListBackupsExecute(t *testing.T) {
 		summaries, err := uc.Execute(context.Background())
 
 		require.NoError(t, err)
-		expected := []*backuppb.BackupSummary{
-			{Id: "a", Name: "backup1", Size: 100, MilvusVersion: "1.0.0"},
-			{Id: "b", Name: "backup2", Size: 200, MilvusVersion: "2.0.0"},
+		expected := []BackupSummary{
+			{ID: "a", Name: "backup1", Size: 100, MilvusVersion: "1.0.0"},
+			{ID: "b", Name: "backup2", Size: 200, MilvusVersion: "2.0.0"},
 		}
 		assert.ElementsMatch(t, expected, summaries)
 	})
@@ -80,8 +80,8 @@ func TestListBackupsExecute(t *testing.T) {
 		summaries, err := uc.Execute(context.Background())
 
 		require.NoError(t, err)
-		expected := []*backuppb.BackupSummary{
-			{Id: "a", Name: "backup1", Size: 100, MilvusVersion: "1.0.0"},
+		expected := []BackupSummary{
+			{ID: "a", Name: "backup1", Size: 100, MilvusVersion: "1.0.0"},
 		}
 		assert.Equal(t, expected, summaries)
 	})

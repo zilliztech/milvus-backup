@@ -10,6 +10,8 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/samber/lo"
+
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/meta"
@@ -38,8 +40,31 @@ func NewListBackups(ctx context.Context, params *v2.Config) (*ListBackups, error
 	}, nil
 }
 
+// BackupSummary is the artifact summary as list presents it. It is not
+// backuppb.BackupSummary on purpose: that type is the v1 wire shape, and wire
+// shapes belong to the transports, which render this view into whatever their
+// contract says.
+type BackupSummary struct {
+	ID            string
+	Name          string
+	Size          int64
+	MilvusVersion string
+}
+
 // Execute returns one summary per readable backup. A backup whose meta cannot
 // be read is skipped, so one corrupted backup does not hide the rest.
-func (uc *ListBackups) Execute(ctx context.Context) ([]*backuppb.BackupSummary, error) {
-	return meta.List(ctx, uc.cli, uc.rootPath)
+func (uc *ListBackups) Execute(ctx context.Context) ([]BackupSummary, error) {
+	summaries, err := meta.List(ctx, uc.cli, uc.rootPath)
+	if err != nil {
+		return nil, err
+	}
+
+	return lo.Map(summaries, func(s *backuppb.BackupSummary, _ int) BackupSummary {
+		return BackupSummary{
+			ID:            s.GetId(),
+			Name:          s.GetName(),
+			Size:          s.GetSize(),
+			MilvusVersion: s.GetMilvusVersion(),
+		}
+	}), nil
 }

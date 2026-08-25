@@ -10,7 +10,6 @@ import (
 	"github.com/zilliztech/milvus-backup/cmd/flags"
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/app"
-	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 )
 
@@ -31,8 +30,8 @@ func run(cmd *cobra.Command, params *v2.Config) error {
 	if err != nil {
 		return fmt.Errorf("cmd: list backups %w", err)
 	}
-	names := lo.Map(summaries, func(summary *backuppb.BackupSummary, _ int) string {
-		return summary.GetName()
+	names := lo.Map(summaries, func(summary app.BackupSummary, _ int) string {
+		return summary.Name
 	})
 
 	cmd.Println(">> Backups:")

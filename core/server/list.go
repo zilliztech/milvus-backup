@@ -2,6 +2,7 @@ package server
 
 import (
 	"github.com/gin-gonic/gin"
+	"github.com/samber/lo"
 
 	"github.com/zilliztech/milvus-backup/core/app"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
@@ -47,6 +48,13 @@ func (s *Server) handleListBackups(c *gin.Context) {
 	}
 
 	resp.Code = backuppb.ResponseCode_Success
-	resp.Data = summaries
+	resp.Data = lo.Map(summaries, func(s app.BackupSummary, _ int) *backuppb.BackupSummary {
+		return &backuppb.BackupSummary{
+			Id:            s.ID,
+			Name:          s.Name,
+			Size:          s.Size,
+			MilvusVersion: s.MilvusVersion,
+		}
+	})
 	c.JSON(200, resp)
 }
