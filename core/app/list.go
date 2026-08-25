@@ -10,12 +10,13 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/samber/lo"
+	"go.uber.org/zap"
 
-	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/storage"
+	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 )
 
 // ListBackups lists the backup artifacts kept in the backup storage.
@@ -54,17 +55,27 @@ type BackupSummary struct {
 // Execute returns one summary per readable backup. A backup whose meta cannot
 // be read is skipped, so one corrupted backup does not hide the rest.
 func (uc *ListBackups) Execute(ctx context.Context) ([]BackupSummary, error) {
-	summaries, err := meta.List(ctx, uc.cli, uc.rootPath)
+	backupDirs, _, err := storage.ListPrefixFlat(ctx, uc.cli, mpath.BackupRootDir(uc.rootPath), false)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("app: list backup root %s: %w", uc.rootPath, err)
+	}
+	log.Info("list backup dirs", zap.Strings("dirs", backupDirs))
+
+	summaries := make([]BackupSummary, 0, len(backupDirs))
+	for _, backupDir := range backupDirs {
+		info, err := meta.Read(ctx, uc.cli, backupDir)
+		if err != nil {
+			log.Warn("can not read backup info, skip it", zap.String("backup_dir", backupDir))
+			continue
+		}
+
+		summaries = append(summaries, BackupSummary{
+			ID:            info.GetId(),
+			Name:          info.GetName(),
+			Size:          info.GetSize(),
+			MilvusVersion: info.GetMilvusVersion(),
+		})
 	}
 
-	return lo.Map(summaries, func(s *backuppb.BackupSummary, _ int) BackupSummary {
-		return BackupSummary{
-			ID:            s.GetId(),
-			Name:          s.GetName(),
-			Size:          s.GetSize(),
-			MilvusVersion: s.GetMilvusVersion(),
-		}
-	}), nil
+	return summaries, nil
 }
