@@ -9,10 +9,9 @@ import (
 
 	"github.com/zilliztech/milvus-backup/cmd/flags"
 	"github.com/zilliztech/milvus-backup/cmd/root"
+	"github.com/zilliztech/milvus-backup/core/app"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
-	"github.com/zilliztech/milvus-backup/internal/meta"
-	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
 // removedFlags are the list flags dropped in 0.6.
@@ -23,14 +22,14 @@ var removedFlags = []flags.Removed{
 func run(cmd *cobra.Command, params *v2.Config) error {
 	ctx := context.Background()
 
-	backupStorage, err := storage.NewBackupStorage(ctx, params)
+	uc, err := app.NewListBackups(ctx, params)
 	if err != nil {
-		return fmt.Errorf("cmd: create backup storage %w", err)
+		return fmt.Errorf("cmd: create list backups usecase %w", err)
 	}
 
-	summaries, err := meta.List(ctx, backupStorage, params.Backup.Storage.RootPath.Val)
+	summaries, err := uc.Execute(ctx)
 	if err != nil {
-		return fmt.Errorf("cmd: list backup %w", err)
+		return fmt.Errorf("cmd: list backups %w", err)
 	}
 	names := lo.Map(summaries, func(summary *backuppb.BackupSummary, _ int) string {
 		return summary.GetName()

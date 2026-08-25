@@ -3,9 +3,8 @@ package server
 import (
 	"github.com/gin-gonic/gin"
 
+	"github.com/zilliztech/milvus-backup/core/app"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/internal/meta"
-	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
 // ListBackups List Backups interface
@@ -31,7 +30,7 @@ func (s *Server) handleListBackups(c *gin.Context) {
 		return
 	}
 
-	backupStorage, err := storage.NewBackupStorage(c.Request.Context(), s.params)
+	uc, err := app.NewListBackups(c.Request.Context(), s.params)
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
@@ -39,7 +38,7 @@ func (s *Server) handleListBackups(c *gin.Context) {
 		return
 	}
 
-	summaries, err := meta.List(c.Request.Context(), backupStorage, s.params.Backup.Storage.RootPath.Val)
+	summaries, err := uc.Execute(c.Request.Context())
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
