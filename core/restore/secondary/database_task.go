@@ -66,7 +66,7 @@ func (dbt *databaseTask) Execute(ctx context.Context) error {
 		return broadcast.SplitIntoMutableMessage()
 	})
 	if err != nil {
-		return fmt.Errorf("collection: broadcast create collection: %w", err)
+		return fmt.Errorf("database: broadcast create database %s: %w", dbt.dbBackup.GetDbName(), err)
 	}
 
 	return nil

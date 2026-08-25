@@ -135,6 +135,13 @@ func Read(ctx context.Context, cli storage.Client, backupDir string) (*backuppb.
 	if exist {
 		return readFromFull(ctx, backupDir, cli)
 	}
+	// The per-level files carry the collections, partitions and segments but not
+	// the cluster-level fields (control channel, pchannels, flush-all messages).
+	// A plain restore does not need those; a secondary restore cannot run without
+	// them and refuses up front, so make the fallback visible here.
+	log.Warn("full meta not found, reading per-level meta; control channel, pchannels and flush-all messages will be absent",
+		zap.String("backup_dir", backupDir),
+		zap.String("expected", mpath.MetaKey(backupDir, mpath.FullMeta)))
 	return readFromLevel(ctx, backupDir, cli)
 }
 

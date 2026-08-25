@@ -192,3 +192,62 @@ func TestCheckTargetNotRestored(t *testing.T) {
 		assert.Contains(t, err.Error(), "connection refused")
 	})
 }
+
+func TestCheckBackupHasFullMeta(t *testing.T) {
+	full := func() *backuppb.BackupInfo {
+		return &backuppb.BackupInfo{
+			Name:                 "bk",
+			ControlChannelName:   "by-dev-rootcoord-dml_0",
+			PhysicalChannelNames: []string{"by-dev-rootcoord-dml_0", "by-dev-rootcoord-dml_1"},
+			FlushAllMsgsBase64:   map[string]string{"by-dev-rootcoord-dml_0": "AA==", "by-dev-rootcoord-dml_1": "AA=="},
+		}
+	}
+	task := func(b *backuppb.BackupInfo) *Task {
+		return &Task{args: TaskArgs{Backup: b}, logger: zap.NewNop()}
+	}
+
+	t.Run("a backup read from full_meta.json is accepted", func(t *testing.T) {
+		assert.NoError(t, task(full()).checkBackupHasFullMeta())
+	})
+
+	t.Run("a backup without a control channel is refused and full_meta.json is named", func(t *testing.T) {
+		b := full()
+		b.ControlChannelName = ""
+		err := task(b).checkBackupHasFullMeta()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "control channel")
+		assert.Contains(t, err.Error(), "meta/full_meta.json")
+		assert.Contains(t, err.Error(), "skip_flush")
+		assert.Contains(t, err.Error(), `"bk"`)
+	})
+
+	t.Run("a backup read from the per-level files is refused, naming everything absent", func(t *testing.T) {
+		err := task(&backuppb.BackupInfo{Name: "bk"}).checkBackupHasFullMeta()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "control channel, pchannel list, flush-all messages")
+	})
+
+	t.Run("a backup without flush-all messages is refused", func(t *testing.T) {
+		b := full()
+		b.FlushAllMsgsBase64 = nil
+		err := task(b).checkBackupHasFullMeta()
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "flush-all messages")
+		assert.NotContains(t, err.Error(), "control channel,")
+	})
+}
+
+func TestCheckTargetIsUnusedOtherErrors(t *testing.T) {
+	t.Run("an error other than database-not-found is not a reason to refuse either", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().HasCollection(mock.Anything, "default", "orders").
+			Return(false, errors.New("rpc error: connection reset"))
+		assert.NoError(t, taskWithBackup(cli, coll("default", "orders")).checkTargetIsUnused(context.Background()))
+	})
+
+	t.Run("database-not-found is recognized in wrapped client errors", func(t *testing.T) {
+		assert.True(t, isDatabaseNotFound(errors.New(`client: has collection failed: client: operation failed: error_code:UnexpectedError reason:"database not found[database=aml_endor_db]" code:800`)))
+		assert.False(t, isDatabaseNotFound(errors.New("collection not found")))
+		assert.False(t, isDatabaseNotFound(nil))
+	})
+}

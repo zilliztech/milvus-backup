@@ -5,6 +5,8 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math/rand/v2"
+	"sort"
+	"strings"
 	"time"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
@@ -111,6 +113,11 @@ func (t *Task) Execute(ctx context.Context) error {
 
 	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreExecuting())
 
+	if err := t.checkBackupHasFullMeta(); err != nil {
+		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
+		return err
+	}
+
 	if err := t.checkTargetNotRestored(ctx); err != nil {
 		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
 		return err
@@ -152,6 +159,42 @@ func (t *Task) Execute(ctx context.Context) error {
 	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreSuccess())
 	t.logger.Info("restore done")
 	return nil
+}
+
+// checkBackupHasFullMeta refuses to run against a backup whose cluster-level
+// fields are missing.
+//
+// A secondary restore broadcasts DDL on the source's control channel and
+// replays the source's flush-all messages per pchannel. Those fields are
+// written only to meta/full_meta.json; the per-level meta files do not carry
+// them, and meta.Read silently falls back to the per-level files when
+// full_meta.json is absent. Without this check the restore reads the
+// collection list fine and then fails at its first broadcast with
+// "no pch in message", which points nowhere near the cause.
+func (t *Task) checkBackupHasFullMeta() error {
+	b := t.args.Backup
+	var missing []string
+	if b.GetControlChannelName() == "" {
+		missing = append(missing, "control channel")
+	}
+	if len(b.GetPhysicalChannelNames()) == 0 {
+		missing = append(missing, "pchannel list")
+	}
+	if len(b.GetFlushAllMsgsBase64()) == 0 {
+		missing = append(missing, "flush-all messages")
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	return fmt.Errorf("secondary: backup %q carries no %s. These are recorded only by a "+
+		"backup that flushed the source, and only in <backup_dir>/meta/full_meta.json. "+
+		"Either the backup was taken with --strategy=skip_flush or meta_only (the deprecated "+
+		"--force/-f flag means skip_flush), which by design records no flush point, or "+
+		"full_meta.json is missing where this restore reads the backup (check the copy if "+
+		"the backup was moved between buckets). A plain restore accepts such a backup; a "+
+		"secondary restore cannot, because it has no point in the source's stream to start "+
+		"replication from. Take the backup again with the default strategy",
+		b.GetName(), strings.Join(missing, ", "))
 }
 
 // checkTargetNotRestored refuses to restore into a target that has already been
@@ -229,19 +272,35 @@ func (t *Task) checkTargetNotRestored(ctx context.Context) error {
 // which silently doubles its rows.
 func (t *Task) checkTargetIsUnused(ctx context.Context) error {
 	var present []string
+	// Databases the backup will create do not exist on the target yet; that is
+	// the expected state for a newly deployed secondary, so it is reported once
+	// per database and without the error object, which otherwise reads as a
+	// failure. Any other error is a real inability to check and is warned.
+	skipped := make(map[string]int)
 	for _, coll := range t.args.Backup.GetCollectionBackups() {
 		ns := fmt.Sprintf("%s.%s", coll.GetDbName(), coll.GetCollectionName())
 		has, err := t.grpc.HasCollection(ctx, coll.GetDbName(), coll.GetCollectionName())
 		if err != nil {
-			// A database the backup will create does not exist yet, which is
-			// the expected state; anything else is reported when it is used.
-			t.logger.Info("cannot check whether the target already holds a collection, continuing",
+			if isDatabaseNotFound(err) {
+				skipped[coll.GetDbName()]++
+				continue
+			}
+			t.logger.Warn("cannot check whether the target already holds a collection, continuing",
 				zap.String("ns", ns), zap.Error(err))
 			continue
 		}
 		if has {
 			present = append(present, ns)
 		}
+	}
+	dbs := make([]string, 0, len(skipped))
+	for db := range skipped {
+		dbs = append(dbs, db)
+	}
+	sort.Strings(dbs)
+	for _, db := range dbs {
+		t.logger.Info("database does not exist on the target yet, as expected for a newly deployed secondary; skipping the duplicate-collection check for it",
+			zap.String("db", db), zap.Int("collections", skipped[db]))
 	}
 	if len(present) == 0 {
 		return nil
@@ -254,6 +313,12 @@ func (t *Task) checkTargetIsUnused(ctx context.Context) error {
 		"because their ids stay reserved while they are reclaimed and a restore of the "+
 		"same ids is then discarded without an error. To bootstrap again, deploy a new "+
 		"secondary and restore into that", present)
+}
+
+// isDatabaseNotFound reports whether err is Milvus saying the database does not
+// exist. The client surfaces it as a wrapped status error, so match the text.
+func isDatabaseNotFound(err error) bool {
+	return err != nil && strings.Contains(err.Error(), "database not found")
 }
 
 // verifyRestored confirms the collections actually exist on the target.
