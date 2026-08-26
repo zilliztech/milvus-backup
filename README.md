@@ -41,7 +41,7 @@ cp configs/backup.yaml backup.yaml
 
 The main sections are:
 
-- `milvus`: how to reach Milvus — credentials, the gRPC endpoint and its TLS settings — and under `milvus.storage`, the storage the deployment keeps its data in. The `milvus.etcd` settings are only required when using `--backup_index_extra`.
+- `milvus`: how to reach Milvus — credentials, the gRPC endpoint and its TLS settings — and under `milvus.storage`, the storage the deployment keeps its data in. The `milvus.etcd` settings are only required when using `--backup_index_extra`. When connecting as a user other than `root`, see [Required Milvus privileges](docs/user_guide/privileges.md).
 - `backup`: where backup data is written, under `backup.storage`, and how much of the backup runs in parallel.
 - `restore`: restore concurrency and temporary file handling.
 - `transfer`: how objects move between the two storage backends.
