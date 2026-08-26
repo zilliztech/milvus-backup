@@ -63,6 +63,7 @@ func storageConfig(s *v2.StorageConfig, multipartCopyThresholdMiB int64) Config 
 		MilvusEndpoint:            milvusEndpoint(s),
 		Credential:                newCredential(s),
 		Bucket:                    s.BucketName.Val,
+		SourceSAS:                 s.SourceSASToken.Val,
 		MultipartCopyThresholdMiB: multipartCopyThresholdMiB,
 	}
 }

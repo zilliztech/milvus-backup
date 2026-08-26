@@ -252,14 +252,15 @@ func (t *Task) privateExecute(ctx context.Context) error {
 	}
 
 	if t.resolvedFormat == meta.FormatSnapshot {
-		target, err := newSnapshotTarget(t.milvusStorage.Config(), t.backupStorage.Config(), t.backupDir)
+		target, err := newSnapshotTarget(ctx, t.milvusStorage.Config(), t.backupStorage.Config(), t.backupDir)
 		if err != nil {
 			return fmt.Errorf("backup: build snapshot target: %w", err)
 		}
 		t.snapshotTarget = target
 		t.logger.Info("use snapshot format",
 			zap.String("target_path", target.Path),
-			zap.Bool("external_spec_set", target.ExternalSpec != ""))
+			zap.Bool("external_spec_set", target.ExternalSpec != ""),
+			zap.Bool("source_sas_set", target.SourceSASSet))
 	}
 
 	dbNames, collections, err := t.listDBAndNSS(ctx)

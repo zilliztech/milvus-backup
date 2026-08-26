@@ -1,6 +1,8 @@
 package backup
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,6 +11,31 @@ import (
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 )
+
+// azureCfg builds an azure backend config for one storage account. The shared
+// key has to be a base64-decodable 256-bit value for the SDK to sign with it.
+func azureCfg(account, bucket string) storage.Config {
+	key := base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
+	return storage.Config{
+		Provider:   v2.ProviderAzure,
+		Endpoint:   "core.windows.net:443",
+		Bucket:     bucket,
+		Credential: storage.Credential{Type: storage.Static, AK: account, SK: key, AzureAccountName: account},
+	}
+}
+
+// extfs decodes the extfs object out of an external spec json, so assertions
+// name fields instead of matching escaped json substrings.
+func extfs(t *testing.T, spec string) map[string]string {
+	t.Helper()
+
+	var parsed struct {
+		Extfs map[string]string `json:"extfs"`
+	}
+	require.NoError(t, json.Unmarshal([]byte(spec), &parsed))
+
+	return parsed.Extfs
+}
 
 func TestNewSnapshotTarget(t *testing.T) {
 	// Milvus falls back to its own credential when no spec is given, which is what to
@@ -23,7 +50,7 @@ func TestNewSnapshotTarget(t *testing.T) {
 		backupCfg := milvusCfg
 		backupCfg.Bucket = "backup-bucket"
 
-		target, err := newSnapshotTarget(milvusCfg, backupCfg, "backup/mybackup")
+		target, err := newSnapshotTarget(t.Context(), milvusCfg, backupCfg, "backup/mybackup")
 		require.NoError(t, err)
 		assert.Equal(t, "s3://backup-bucket/backup/mybackup/bundle", target.Path)
 		assert.Equal(t, "bundle", target.Dir)
@@ -40,7 +67,7 @@ func TestNewSnapshotTarget(t *testing.T) {
 		backupCfg.Bucket = "backup-bucket"
 		backupCfg.MilvusEndpoint = "milvus-minio:9000"
 
-		target, err := newSnapshotTarget(milvusCfg, backupCfg, "backup/mybackup")
+		target, err := newSnapshotTarget(t.Context(), milvusCfg, backupCfg, "backup/mybackup")
 		require.NoError(t, err)
 		assert.Equal(t, "minio://milvus-minio:9000/backup-bucket/backup/mybackup/bundle", target.Path)
 		assert.Empty(t, target.ExternalSpec)
@@ -53,10 +80,62 @@ func TestNewSnapshotTarget(t *testing.T) {
 			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
 		}
 
-		target, err := newSnapshotTarget(milvusCfg, backupCfg, "backup/mybackup")
+		target, err := newSnapshotTarget(t.Context(), milvusCfg, backupCfg, "backup/mybackup")
 		require.NoError(t, err)
 		assert.Equal(t, "s3://backup-bucket/backup/mybackup/bundle", target.Path)
 		assert.Contains(t, target.ExternalSpec, `"access_key_id":"ak"`)
+	})
+
+	// An export whose backup container lives in another storage account reads
+	// the instance blobs under a SAS minted from the instance account's key —
+	// Milvus cannot read them with the backup credentials it is handed.
+	t.Run("CrossAccountAzureMintsASourceSAS", func(t *testing.T) {
+		milvusCfg := azureCfg("milvus-account", "milvus-bucket")
+		backupCfg := azureCfg("backup-account", "backup-bucket")
+
+		target, err := newSnapshotTarget(t.Context(), milvusCfg, backupCfg, "backup/mybackup")
+		require.NoError(t, err)
+		assert.Equal(t, "azure://backup-account.blob.core.windows.net/backup-bucket/backup/mybackup/bundle", target.Path)
+
+		spec := extfs(t, target.ExternalSpec)
+		assert.Equal(t, "backup-account", spec["access_key_id"])
+		assert.NotEmpty(t, spec["source_sas_token"])
+		assert.True(t, target.SourceSASSet)
+	})
+
+	// The explicit token stands in for a minted one, trimmed to the bare query
+	// the extfs field expects.
+	t.Run("CrossAccountAzureUsesTheExplicitSAS", func(t *testing.T) {
+		milvusCfg := azureCfg("milvus-account", "milvus-bucket")
+		milvusCfg.SourceSAS = "?sv=2024-08-04&sig=abc"
+		backupCfg := azureCfg("backup-account", "backup-bucket")
+
+		target, err := newSnapshotTarget(t.Context(), milvusCfg, backupCfg, "backup/mybackup")
+		require.NoError(t, err)
+		assert.Equal(t, "sv=2024-08-04&sig=abc", extfs(t, target.ExternalSpec)["source_sas_token"])
+	})
+
+	// A SAS on a copy that stays within one account is a misconfiguration the
+	// server rejects, so it fails here with the config named.
+	t.Run("SameAccountWithSASFails", func(t *testing.T) {
+		milvusCfg := azureCfg("account", "milvus-bucket")
+		milvusCfg.SourceSAS = "sv=2024-08-04&sig=abc"
+		backupCfg := azureCfg("account", "backup-bucket")
+
+		_, err := newSnapshotTarget(t.Context(), milvusCfg, backupCfg, "backup/mybackup")
+		assert.ErrorContains(t, err, "crosses azure storage accounts")
+	})
+
+	t.Run("NonAzureBackupWithSASFails", func(t *testing.T) {
+		milvusCfg := azureCfg("milvus-account", "milvus-bucket")
+		milvusCfg.SourceSAS = "sv=2024-08-04&sig=abc"
+		backupCfg := storage.Config{
+			Provider: v2.ProviderS3, Region: "us-west-2", Bucket: "backup-bucket",
+			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
+		}
+
+		_, err := newSnapshotTarget(t.Context(), milvusCfg, backupCfg, "backup/mybackup")
+		assert.ErrorContains(t, err, "crosses azure storage accounts")
 	})
 }
 

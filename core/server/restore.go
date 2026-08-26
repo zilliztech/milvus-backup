@@ -188,7 +188,7 @@ func (h *restoreHandler) newTask(ctx context.Context, backupDir string) (*restor
 
 		TaskMgr: taskmgr.DefaultMgr(),
 	}
-	task, err := restore.NewTask(args)
+	task, err := restore.NewTask(ctx, args)
 	if err != nil {
 		return nil, fmt.Errorf("backup: new restore task: %w", err)
 	}

@@ -287,4 +287,31 @@ func TestSnapshotExternalSpec(t *testing.T) {
 		_, err := SnapshotExternalSpec(cfg)
 		assert.Error(t, err)
 	})
+
+	// The SAS rides next to the destination credentials: it authorizes the
+	// source read of a cross-account Azure copy, which those credentials cannot.
+	t.Run("AzureCarriesTheSourceSAS", func(t *testing.T) {
+		cfg := Config{
+			Provider:   v2.ProviderAzure,
+			SourceSAS:  "sv=2024-08-04&sig=abc",
+			Credential: Credential{Type: Static, AK: "backup-account", SK: "backup-key"},
+		}
+
+		spec, err := SnapshotExternalSpec(cfg)
+		require.NoError(t, err)
+		assert.JSONEq(t, `{"extfs":{"cloud_provider":"azure","access_key_id":"backup-account","access_key_value":"backup-key","source_sas_token":"sv=2024-08-04&sig=abc","use_ssl":"false"}}`, spec)
+	})
+
+	// No other provider has a source-read grant, so a SAS anywhere else is a
+	// misconfiguration rather than an ignored field.
+	t.Run("RejectsSourceSASOutsideAzure", func(t *testing.T) {
+		cfg := Config{
+			Provider:   v2.ProviderAWS,
+			SourceSAS:  "sv=2024-08-04&sig=abc",
+			Credential: Credential{Type: Static, AK: "ak", SK: "sk"},
+		}
+
+		_, err := SnapshotExternalSpec(cfg)
+		assert.ErrorContains(t, err, "source sas")
+	})
 }

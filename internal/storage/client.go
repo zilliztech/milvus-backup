@@ -55,6 +55,15 @@ type Config struct {
 
 	Bucket string
 
+	// SourceSAS is a read-scoped SAS that authorizes reading the copy source
+	// when a snapshot-format copy crosses Azure storage accounts: no single
+	// credential can read another account's blobs, so the destination-side
+	// Credential never covers the source side. It is set from the source
+	// account's own config (its explicit token, or one minted from its
+	// credential) and rendered into the extfs handed to Milvus alongside the
+	// destination credentials.
+	SourceSAS string
+
 	// MultipartCopyThresholdMiB is the file size threshold above which multipart copy is used.
 	// Default is 500 MiB if not set. GCP does not support multipart copy.
 	MultipartCopyThresholdMiB int64
