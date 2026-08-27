@@ -6,10 +6,8 @@ import (
 	"fmt"
 
 	"github.com/samber/lo"
-	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 )
@@ -146,31 +144,4 @@ func Exist(ctx context.Context, cli storage.Client, backupDir string) (bool, err
 	}
 
 	return exist, nil
-}
-
-func List(ctx context.Context, cli storage.Client, backupRoot string) ([]*backuppb.BackupSummary, error) {
-	backupDirs, _, err := storage.ListPrefixFlat(ctx, cli, mpath.BackupRootDir(backupRoot), false)
-	if err != nil {
-		return nil, fmt.Errorf("meta: list backup root %s: %w", backupRoot, err)
-	}
-	log.Info("list backup dirs", zap.Strings("dirs", backupDirs))
-
-	summaries := make([]*backuppb.BackupSummary, 0, len(backupDirs))
-	for _, backupDir := range backupDirs {
-		backupInfo, err := Read(ctx, cli, backupDir)
-		if err != nil {
-			log.Warn("can not read backup info, skip it", zap.String("backup_dir", backupDir))
-			continue
-		}
-
-		summary := &backuppb.BackupSummary{
-			Id:            backupInfo.GetId(),
-			Name:          backupInfo.GetName(),
-			Size:          backupInfo.GetSize(),
-			MilvusVersion: backupInfo.GetMilvusVersion(),
-		}
-		summaries = append(summaries, summary)
-	}
-
-	return summaries, nil
 }

@@ -1,12 +1,21 @@
 package server
 
 import (
-	"github.com/gin-gonic/gin"
+	"context"
 
+	"github.com/gin-gonic/gin"
+	"github.com/samber/lo"
+
+	"github.com/zilliztech/milvus-backup/core/app"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/internal/meta"
-	"github.com/zilliztech/milvus-backup/internal/storage"
 )
+
+// listBackupsUC is the slice of app.ListBackups the handler needs. The
+// consumer defines it: app returns concrete types, and this narrow interface
+// is what handler tests stub out.
+type listBackupsUC interface {
+	Execute(ctx context.Context) ([]app.BackupSummary, error)
+}
 
 // ListBackups List Backups interface
 // @Summary List Backups interface
@@ -31,7 +40,7 @@ func (s *Server) handleListBackups(c *gin.Context) {
 		return
 	}
 
-	backupStorage, err := storage.NewBackupStorage(c.Request.Context(), s.params)
+	uc, err := s.config.newListBackups(c.Request.Context(), s.params)
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
@@ -39,7 +48,7 @@ func (s *Server) handleListBackups(c *gin.Context) {
 		return
 	}
 
-	summaries, err := meta.List(c.Request.Context(), backupStorage, s.params.Backup.Storage.RootPath.Val)
+	summaries, err := uc.Execute(c.Request.Context())
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
@@ -48,6 +57,13 @@ func (s *Server) handleListBackups(c *gin.Context) {
 	}
 
 	resp.Code = backuppb.ResponseCode_Success
-	resp.Data = summaries
+	resp.Data = lo.Map(summaries, func(s app.BackupSummary, _ int) *backuppb.BackupSummary {
+		return &backuppb.BackupSummary{
+			Id:            s.ID,
+			Name:          s.Name,
+			Size:          s.Size,
+			MilvusVersion: s.MilvusVersion,
+		}
+	})
 	c.JSON(200, resp)
 }
