@@ -12,11 +12,44 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
+	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/namespace"
+	"github.com/zilliztech/milvus-backup/internal/pbconv"
+	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
+
+func TestTask_ExecuteMarksInitClientFailure(t *testing.T) {
+	mgr := taskmgr.NewMgr()
+	require.NoError(t, mgr.AddBackupTask("task1", "backup1"))
+	params := v2.New()
+	params.Milvus.Grpc.TLSMode.Val = v2.TLSMutual
+
+	task := &Task{
+		taskID:  "task1",
+		logger:  zap.NewNop(),
+		params:  params,
+		taskMgr: mgr,
+	}
+
+	err := task.Execute(context.Background())
+	assert.ErrorContains(t, err, "client: load client cert")
+
+	view, getErr := mgr.GetBackupTask("task1")
+	require.NoError(t, getErr)
+	assert.Equal(t, backuppb.BackupTaskStateCode_BACKUP_FAIL, view.StateCode())
+	assert.Equal(t, int32(0), view.Progress())
+	assert.Contains(t, view.ErrorMessage(), "client: load client cert")
+	assert.False(t, view.EndTime().IsZero())
+
+	brief := pbconv.NewBackupInfoBrief(view, nil, 0)
+	assert.Equal(t, backuppb.BackupTaskStateCode_BACKUP_FAIL, brief.GetStateCode())
+	assert.Contains(t, brief.GetErrorMessage(), "client: load client cert")
+	assert.Greater(t, brief.GetEndTime(), int64(0))
+}
 
 func TestTask_runRBACTask(t *testing.T) {
 	t.Run("Normal", func(t *testing.T) {
