@@ -636,8 +636,21 @@ func (t *Task) backupIndexExtraInfo(ctx context.Context) error {
 //
 // Reuses the etcd client created for BackupIndexExtra; if etcd is not
 // configured (BackupIndexExtra disabled) the task is skipped.
+//
+// Skipping is not an error: a regular restore recreates $meta through
+// CreateCollection and never reads the stored copy. A secondary restore does
+// read it, and refuses a backup without it, so the skip is logged at warn level
+// naming the collections it leaves incomplete -- that message is the only place
+// the missing option is visible before a restore fails on it much later.
 func (t *Task) backupCollDynField(ctx context.Context) error {
 	if t.etcdCli == nil {
+		if affected := t.metaBuilder.dynamicSchemaCollections(); len(affected) > 0 {
+			t.logger.Warn("dynamic field not recorded, this backup cannot serve a secondary restore",
+				zap.Strings("collections_with_dynamic_schema", affected),
+				zap.String("reason", "index extra info is off, so there is no etcd client to read $meta with"),
+				zap.String("enable_with", "--backup_index_extra, or with_index_extra in the REST create request"))
+			return nil
+		}
 		t.logger.Info("skip backup collection dynamic field, etcd client is not initialized")
 		return nil
 	}

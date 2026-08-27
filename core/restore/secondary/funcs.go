@@ -19,7 +19,11 @@ func checkDynamicField(schema *schemapb.CollectionSchema) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("secondary: %q missing dynamic field in backup", schema.GetName())
+	return fmt.Errorf("secondary: %q has dynamic schema enabled but the backup carries no $meta "+
+		"field, so the collection cannot be recreated to match the source. Milvus does not return "+
+		"$meta from DescribeCollection, so a backup can only record it by reading etcd, which it "+
+		"does only when index extra info is enabled. Take the backup again with --backup_index_extra "+
+		"(with_index_extra in the REST create request) and milvus.etcd configured", schema.GetName())
 }
 
 func appendSysFields(schema *schemapb.CollectionSchema) {
