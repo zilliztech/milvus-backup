@@ -309,6 +309,7 @@ func (ddlt *collDDLTask) structArrayFields() ([]*schemapb.StructArrayFieldSchema
 			Name:        bakField.GetName(),
 			Description: bakField.GetDescription(),
 			Fields:      fields,
+			Nullable:    conv.ApplyStructNullable(bakField, fields),
 		}
 
 		structArrayFields = append(structArrayFields, structArrayField)

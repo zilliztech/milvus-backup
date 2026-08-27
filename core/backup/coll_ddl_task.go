@@ -112,6 +112,7 @@ func (ddlt *collDDLTask) convStructArrayFields(fieldSchemas []*schemapb.StructAr
 			Name:        fieldSchema.GetName(),
 			Description: fieldSchema.GetDescription(),
 			Fields:      fields,
+			Nullable:    fieldSchema.GetNullable(),
 		}
 
 		bakFields = append(bakFields, bakField)
