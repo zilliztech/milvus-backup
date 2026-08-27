@@ -47,7 +47,7 @@ func TestCheckDynamicField(t *testing.T) {
 	})
 }
 
-func TestReplayIndex(t *testing.T) {
+func TestCheckIndexExtra(t *testing.T) {
 	withExtra := func(name string) *backuppb.IndexInfo {
 		return &backuppb.IndexInfo{
 			FieldName:   "vec",
@@ -69,38 +69,35 @@ func TestReplayIndex(t *testing.T) {
 	}
 
 	t.Run("EveryIndexHasExtra", func(t *testing.T) {
-		replay, err := replayIndex(newBackup(withExtra("idx1"), withExtra("idx2")))
-		assert.NoError(t, err)
-		assert.True(t, replay)
+		assert.NoError(t, checkIndexExtra(newBackup(withExtra("idx1"), withExtra("idx2"))))
 	})
 
 	t.Run("NoIndexHasExtra", func(t *testing.T) {
-		replay, err := replayIndex(newBackup(withoutExtra("idx1"), withoutExtra("idx2")))
-		assert.NoError(t, err)
-		assert.False(t, replay)
+		err := checkIndexExtra(newBackup(withoutExtra("idx1"), withoutExtra("idx2")))
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), `"bak1"`)
+		assert.Contains(t, err.Error(), "default.coll1/idx1")
+		assert.Contains(t, err.Error(), "default.coll1/idx2")
+		assert.Contains(t, err.Error(), "--backup_index_extra")
 	})
 
 	t.Run("IndexParamsMissingCountsAsNoExtra", func(t *testing.T) {
 		index := withExtra("idx1")
 		index.IndexParams = nil
-		replay, err := replayIndex(newBackup(index))
-		assert.NoError(t, err)
-		assert.False(t, replay)
+		err := checkIndexExtra(newBackup(index))
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "default.coll1/idx1")
 	})
 
 	t.Run("NoIndexAtAll", func(t *testing.T) {
-		replay, err := replayIndex(newBackup())
-		assert.NoError(t, err)
-		assert.True(t, replay)
+		assert.NoError(t, checkIndexExtra(newBackup()))
 	})
 
 	t.Run("NoCollection", func(t *testing.T) {
-		replay, err := replayIndex(&backuppb.BackupInfo{Name: "bak1"})
-		assert.NoError(t, err)
-		assert.True(t, replay)
+		assert.NoError(t, checkIndexExtra(&backuppb.BackupInfo{Name: "bak1"}))
 	})
 
-	t.Run("PartiallyPopulatedIsAnError", func(t *testing.T) {
+	t.Run("PartiallyPopulatedNamesBothSides", func(t *testing.T) {
 		backup := &backuppb.BackupInfo{
 			Name: "bak1",
 			CollectionBackups: []*backuppb.CollectionBackupInfo{
@@ -108,12 +105,12 @@ func TestReplayIndex(t *testing.T) {
 				{DbName: "db2", CollectionName: "coll2", IndexInfos: []*backuppb.IndexInfo{withoutExtra("bad_idx")}},
 			},
 		}
-		replay, err := replayIndex(backup)
+		err := checkIndexExtra(backup)
 		assert.Error(t, err)
-		assert.False(t, replay)
 		assert.Contains(t, err.Error(), `"bak1"`)
 		assert.Contains(t, err.Error(), "default.coll1/good_idx")
 		assert.Contains(t, err.Error(), "db2.coll2/bad_idx")
+		assert.Contains(t, err.Error(), "inconsistent")
 		assert.Contains(t, err.Error(), "--backup_index_extra")
 	})
 }

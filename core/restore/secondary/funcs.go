@@ -54,37 +54,46 @@ func hasIndexExtra(index *backuppb.IndexInfo) bool {
 	return index.GetFieldId() != 0 && len(index.GetIndexParams()) != 0
 }
 
-// replayIndex decides whether the create index DDL of a backup can be replayed
-// on the secondary cluster, and is the only place that decision is made.
+// checkIndexExtra fails the restore if any index in the backup is missing the
+// attributes only --backup_index_extra collects. A secondary restore replays
+// the source cluster DDL verbatim, and those attributes are what makes the
+// replay match the source, so a backup without them cannot produce a secondary
+// that matches -- the same shape as checkDynamicField, and handled the same way.
 //
-// The backup answers it as a whole, because the extra attributes are collected
-// for every index at once or for none: a backup created with
-// --backup_index_extra carries the indexes to replay, one created without it
-// carries no index information that a verbatim DDL replay can use, and its
-// collections are restored without indexes.
+// Restoring without the indexes is not an alternative. A collection with no
+// index cannot be loaded: loadCollectionTask.PreExecute fails with
+// ErrIndexNotFound when DescribeIndex returns nothing, so a loaded source --
+// the ordinary DR case -- fails later at the load broadcast with a less
+// obvious error, and an unloaded one yields a secondary that can never be
+// loaded and cannot serve after a failover. Reporting success on a silently
+// diverged secondary is worse than failing: the failure is visible, the
+// divergence is not.
 //
-// The missing attributes cannot be reconstructed on the client side - they are
-// what makes the replay match the source cluster - so a partially populated
-// backup is a contradiction rather than a case to work around, and is
-// reported. The alternative, broadcasting create index with FieldID 0, leaves
-// the target with an index on a field that cannot be indexed: the import job
-// sits in IndexBuilding forever and DescribeIndex fails with "failed to get
-// collection field: 0". See zilliztech/milvus-backup#1167.
-func replayIndex(backup *backuppb.BackupInfo) (bool, error) {
-	with := indexNames(backup, hasIndexExtra)
+// Broadcasting the create index anyway is worse still. With no field id the
+// index lands on FieldID 0, which is RowIDField and cannot be indexed: the
+// import job sits in IndexBuilding forever and DescribeIndex then fails with
+// "failed to get collection field: 0". See zilliztech/milvus-backup#1167.
+func checkIndexExtra(backup *backuppb.BackupInfo) error {
 	without := indexNames(backup, func(index *backuppb.IndexInfo) bool { return !hasIndexExtra(index) })
-
-	switch {
-	case len(with) != 0 && len(without) != 0:
-		return false, fmt.Errorf("secondary: backup %q carries the index extra info of %s but not of %s, "+
-			"the index extra info is collected for every index or for none, so the backup meta is "+
-			"inconsistent; re-create the backup with --backup_index_extra",
-			backup.GetName(), strings.Join(with, ", "), strings.Join(without, ", "))
-	case len(without) != 0:
-		return false, nil
-	default:
-		return true, nil
+	if len(without) == 0 {
+		return nil
 	}
+
+	with := indexNames(backup, hasIndexExtra)
+	if len(with) == 0 {
+		return fmt.Errorf("secondary: backup %q carries no index extra info, so %s cannot be "+
+			"recreated to match the source; take the backup again with --backup_index_extra "+
+			"(with_index_extra in the REST create request)",
+			backup.GetName(), strings.Join(without, ", "))
+	}
+
+	// The etcd attributes are collected for every index at once or for none, so
+	// a backup holding some but not others is inconsistent rather than merely
+	// incomplete, and is reported as such.
+	return fmt.Errorf("secondary: backup %q carries the index extra info of %s but not of %s, "+
+		"the index extra info is collected for every index or for none, so the backup meta is "+
+		"inconsistent; take the backup again with --backup_index_extra",
+		backup.GetName(), strings.Join(with, ", "), strings.Join(without, ", "))
 }
 
 func appendSysFields(schema *schemapb.CollectionSchema) {

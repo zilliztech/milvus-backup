@@ -109,8 +109,9 @@ func newSecondaryCmd(opt *root.Options) *cobra.Command {
 		Long: "Restore a backup to a secondary cluster.\n\n" +
 			"Create the backup with --backup_index_extra to restore its indexes too: secondary\n" +
 			"restore replays the source cluster DDL verbatim and needs the index attributes that\n" +
-			"only that flag reads from etcd. A backup created without it restores the collections\n" +
-			"and the data, but without their indexes.",
+			"only that flag reads from etcd. A backup created without it is refused: a collection\n" +
+			"without its indexes cannot be loaded, so restoring one would produce a secondary\n" +
+			"that can never serve after a failover.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			params := opt.InitGlobalVars()
 

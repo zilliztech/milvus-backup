@@ -27,8 +27,6 @@ type collDDLTask struct {
 	dbBackup   *backuppb.DatabaseBackupInfo
 	collBackup *backuppb.CollectionBackupInfo
 
-	replayIndex bool
-
 	streamCli milvus.Stream
 	logger    *zap.Logger
 }
@@ -37,10 +35,6 @@ type ddlTaskArgs struct {
 	TaskID string
 
 	BackupInfo *backuppb.BackupInfo
-
-	// ReplayIndex reports whether the backup carries the index attributes that
-	// a verbatim create index replay needs. See replayIndex.
-	ReplayIndex bool
 
 	StreamCli milvus.Stream
 }
@@ -54,8 +48,6 @@ func newCollDDLTask(args ddlTaskArgs, dbBackup *backuppb.DatabaseBackupInfo, col
 		backupInfo: args.BackupInfo,
 		dbBackup:   dbBackup,
 		collBackup: collBackup,
-
-		replayIndex: args.ReplayIndex,
 
 		streamCli: args.StreamCli,
 		logger:    log.With(zap.String("task_id", args.TaskID), zap.String("ns", ns.String())),
@@ -75,12 +67,6 @@ func (ddlt *collDDLTask) Execute(ctx context.Context) error {
 }
 
 func (ddlt *collDDLTask) createIndexes(ctx context.Context) error {
-	// The backup carries no index attributes to replay; Task.Execute has already
-	// reported which indexes are left out.
-	if !ddlt.replayIndex {
-		return nil
-	}
-
 	for _, index := range ddlt.collBackup.GetIndexInfos() {
 		if err := ddlt.createIndex(ctx, index); err != nil {
 			return fmt.Errorf("collection: create index: %w", err)
