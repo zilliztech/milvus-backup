@@ -2,9 +2,12 @@ package secondary
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
 	"github.com/milvus-io/milvus/pkg/v3/common"
+
+	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 )
 
 // checkDynamicField fails the restore if the source collection had dynamic
@@ -20,6 +23,77 @@ func checkDynamicField(schema *schemapb.CollectionSchema) error {
 		}
 	}
 	return fmt.Errorf("secondary: %q missing dynamic field in backup", schema.GetName())
+}
+
+// indexNames formats the indexes as "<db>.<coll>/<index>" for error and log
+// messages.
+func indexNames(backup *backuppb.BackupInfo, has func(*backuppb.IndexInfo) bool) []string {
+	var names []string
+	for _, coll := range backup.GetCollectionBackups() {
+		for _, index := range coll.GetIndexInfos() {
+			if !has(index) {
+				continue
+			}
+			names = append(names, fmt.Sprintf("%s.%s/%s",
+				coll.GetDbName(), coll.GetCollectionName(), index.GetIndexName()))
+		}
+	}
+	return names
+}
+
+// hasIndexExtra reports whether an index info carries the attributes that only
+// the index-extra task collects. field_id, type_params, index_params,
+// create_time, is_auto_index and min/max_index_version are read from etcd when
+// the backup is created with --backup_index_extra; without it the index info
+// holds only what DescribeIndex returns (field_name, index_name, index_type,
+// params, index_id).
+//
+// FieldID 0 is RowIDField, and user fields start at 100, so a zero field id
+// means the etcd attributes were never merged in.
+func hasIndexExtra(index *backuppb.IndexInfo) bool {
+	return index.GetFieldId() != 0 && len(index.GetIndexParams()) != 0
+}
+
+// checkIndexExtra fails the restore if any index in the backup is missing the
+// attributes only --backup_index_extra collects. A secondary restore replays
+// the source cluster DDL verbatim, and those attributes are what makes the
+// replay match the source, so a backup without them cannot produce a secondary
+// that matches -- the same shape as checkDynamicField, and handled the same way.
+//
+// Restoring without the indexes is not an alternative. A collection with no
+// index cannot be loaded: loadCollectionTask.PreExecute fails with
+// ErrIndexNotFound when DescribeIndex returns nothing, so a loaded source --
+// the ordinary DR case -- fails later at the load broadcast with a less
+// obvious error, and an unloaded one yields a secondary that can never be
+// loaded and cannot serve after a failover. Reporting success on a silently
+// diverged secondary is worse than failing: the failure is visible, the
+// divergence is not.
+//
+// Broadcasting the create index anyway is worse still. With no field id the
+// index lands on FieldID 0, which is RowIDField and cannot be indexed: the
+// import job sits in IndexBuilding forever and DescribeIndex then fails with
+// "failed to get collection field: 0". See zilliztech/milvus-backup#1167.
+func checkIndexExtra(backup *backuppb.BackupInfo) error {
+	without := indexNames(backup, func(index *backuppb.IndexInfo) bool { return !hasIndexExtra(index) })
+	if len(without) == 0 {
+		return nil
+	}
+
+	with := indexNames(backup, hasIndexExtra)
+	if len(with) == 0 {
+		return fmt.Errorf("secondary: backup %q carries no index extra info, so %s cannot be "+
+			"recreated to match the source; take the backup again with --backup_index_extra "+
+			"(with_index_extra in the REST create request)",
+			backup.GetName(), strings.Join(without, ", "))
+	}
+
+	// The etcd attributes are collected for every index at once or for none, so
+	// a backup holding some but not others is inconsistent rather than merely
+	// incomplete, and is reported as such.
+	return fmt.Errorf("secondary: backup %q carries the index extra info of %s but not of %s, "+
+		"the index extra info is collected for every index or for none, so the backup meta is "+
+		"inconsistent; take the backup again with --backup_index_extra",
+		backup.GetName(), strings.Join(with, ", "), strings.Join(without, ", "))
 }
 
 func appendSysFields(schema *schemapb.CollectionSchema) {

@@ -104,6 +104,14 @@ func (t *Task) closeClients() {
 }
 
 func (t *Task) Execute(ctx context.Context) error {
+	// Check before any client is created or any DDL is broadcast, so a backup
+	// that cannot produce a matching secondary is rejected before it leaves a
+	// half-created collection behind.
+	if err := checkIndexExtra(t.args.Backup); err != nil {
+		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
+		return err
+	}
+
 	defer t.closeClients()
 	if err := t.initClients(); err != nil {
 		return err
