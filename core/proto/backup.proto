@@ -627,6 +627,9 @@ message StructArrayFieldSchema {
   string name = 2;
   string description = 3;
   repeated FieldSchema fields = 4;
+  // nullable is a struct-level flag: the server propagates it to every
+  // sub-field, and sub-fields must not be nullable unless it is set.
+  bool nullable = 5;
 
   // TODO: STRUCT type may also need to support Function in the future
 }

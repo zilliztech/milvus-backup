@@ -1307,6 +1307,9 @@ const docTemplate = `{
                 },
                 "name": {
                     "type": "string"
+                },
+                "nullable": {
+                    "type": "boolean"
                 }
             }
         },

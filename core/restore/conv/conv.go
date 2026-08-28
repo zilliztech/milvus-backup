@@ -106,12 +106,36 @@ func StructArrayFields(bakFields []*backuppb.StructArrayFieldSchema) ([]*schemap
 			Name:        bakField.GetName(),
 			Description: bakField.GetDescription(),
 			Fields:      fields,
+			Nullable:    ApplyStructNullable(bakField, fields),
 		}
 
 		structArrayFields = append(structArrayFields, structArrayField)
 	}
 
 	return structArrayFields, nil
+}
+
+// ApplyStructNullable rebuilds the struct-level nullable flag for a CreateCollection
+// request, mirroring the server's validation rule: nullable is set on the struct and
+// propagated to every sub-field there, while a non-nullable struct rejects any
+// individually-nullable sub-field. Backups written before this flag existed kept the
+// propagated sub-field bits but lost the struct-level one, so nullable sub-fields
+// repair it.
+func ApplyStructNullable(bak *backuppb.StructArrayFieldSchema, fields []*schemapb.FieldSchema) bool {
+	nullable := bak.GetNullable()
+	for _, f := range bak.GetFields() {
+		if f.GetNullable() {
+			nullable = true
+			break
+		}
+	}
+	if !nullable {
+		return false
+	}
+	for _, f := range fields {
+		f.Nullable = true
+	}
+	return true
 }
 
 func Schema(bakSchema *backuppb.CollectionSchema) (*schemapb.CollectionSchema, error) {
