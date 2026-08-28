@@ -210,18 +210,23 @@ func (t *Task) closeClients() {
 	}
 }
 
-func (t *Task) Execute(ctx context.Context) error {
+func (t *Task) Execute(ctx context.Context) (err error) {
 	defer t.closeClients()
-	if err := t.initClients(); err != nil {
+	defer func() {
+		if err != nil {
+			t.taskMgr.UpdateBackupTask(t.taskID, taskmgr.SetBackupFail(err))
+		}
+	}()
+
+	if err = t.initClients(); err != nil {
 		return err
 	}
 
-	if err := t.prepare(ctx); err != nil {
+	if err = t.prepare(ctx); err != nil {
 		return err
 	}
 
-	if err := t.privateExecute(ctx); err != nil {
-		t.taskMgr.UpdateBackupTask(t.taskID, taskmgr.SetBackupFail(err))
+	if err = t.privateExecute(ctx); err != nil {
 		return err
 	}
 
