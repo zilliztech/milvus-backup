@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
@@ -176,6 +177,25 @@ func (builder *metaBuilder) backupCollectionIDs() []int64 {
 	}
 
 	return ids
+}
+
+// dynamicSchemaCollections names the backed-up collections that have dynamic
+// schema enabled, in db.collection form. Their $meta field can only reach the
+// backup through the etcd-backed dynamic field task, so this is what a caller
+// needs in order to say which collections an absent task leaves incomplete.
+func (builder *metaBuilder) dynamicSchemaCollections() []string {
+	builder.mu.Lock()
+	defer builder.mu.Unlock()
+
+	var names []string
+	for _, coll := range builder.data.GetCollectionBackups() {
+		if coll.GetSchema().GetEnableDynamicField() {
+			names = append(names, coll.GetDbName()+"."+coll.GetCollectionName())
+		}
+	}
+	sort.Strings(names)
+
+	return names
 }
 
 // addIndexExtraInfo merges the extra index attributes read from etcd into the

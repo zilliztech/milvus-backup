@@ -399,3 +399,25 @@ func TestBuildBackupMetaCarriesFormat(t *testing.T) {
 	require.NoError(t, json.Unmarshal(byts, &got))
 	assert.Equal(t, meta.FormatSnapshot, got.GetFormat())
 }
+
+func TestMetaBuilder_DynamicSchemaCollections(t *testing.T) {
+	t.Run("names only the dynamic ones, sorted", func(t *testing.T) {
+		b := newMetaBuilder("task", "backup")
+		b.data.CollectionBackups = []*backuppb.CollectionBackupInfo{
+			{DbName: "db2", CollectionName: "z", Schema: &backuppb.CollectionSchema{EnableDynamicField: true}},
+			{DbName: "db1", CollectionName: "plain", Schema: &backuppb.CollectionSchema{}},
+			{DbName: "db1", CollectionName: "a", Schema: &backuppb.CollectionSchema{EnableDynamicField: true}},
+		}
+
+		assert.Equal(t, []string{"db1.a", "db2.z"}, b.dynamicSchemaCollections())
+	})
+
+	t.Run("empty when none has dynamic schema", func(t *testing.T) {
+		b := newMetaBuilder("task", "backup")
+		b.data.CollectionBackups = []*backuppb.CollectionBackupInfo{
+			{DbName: "db1", CollectionName: "plain", Schema: &backuppb.CollectionSchema{}},
+		}
+
+		assert.Empty(t, b.dynamicSchemaCollections())
+	})
+}
