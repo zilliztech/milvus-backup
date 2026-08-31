@@ -2211,6 +2211,72 @@ func (_c *MockGrpc_HasCollection_Call) RunAndReturn(run func(ctx context.Context
 	return _c
 }
 
+// HasCollectionByID provides a mock function for the type MockGrpc
+func (_mock *MockGrpc) HasCollectionByID(ctx context.Context, collectionID int64) (bool, error) {
+	ret := _mock.Called(ctx, collectionID)
+
+	if len(ret) == 0 {
+		panic("no return value specified for HasCollectionByID")
+	}
+
+	var r0 bool
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int64) (bool, error)); ok {
+		return returnFunc(ctx, collectionID)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, int64) bool); ok {
+		r0 = returnFunc(ctx, collectionID)
+	} else {
+		r0 = ret.Get(0).(bool)
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, int64) error); ok {
+		r1 = returnFunc(ctx, collectionID)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockGrpc_HasCollectionByID_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'HasCollectionByID'
+type MockGrpc_HasCollectionByID_Call struct {
+	*mock.Call
+}
+
+// HasCollectionByID is a helper method to define mock.On call
+//   - ctx context.Context
+//   - collectionID int64
+func (_e *MockGrpc_Expecter) HasCollectionByID(ctx any, collectionID any) *MockGrpc_HasCollectionByID_Call {
+	return &MockGrpc_HasCollectionByID_Call{Call: _e.mock.On("HasCollectionByID", ctx, collectionID)}
+}
+
+func (_c *MockGrpc_HasCollectionByID_Call) Run(run func(ctx context.Context, collectionID int64)) *MockGrpc_HasCollectionByID_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 int64
+		if args[1] != nil {
+			arg1 = args[1].(int64)
+		}
+		run(
+			arg0,
+			arg1,
+		)
+	})
+	return _c
+}
+
+func (_c *MockGrpc_HasCollectionByID_Call) Return(b bool, err error) *MockGrpc_HasCollectionByID_Call {
+	_c.Call.Return(b, err)
+	return _c
+}
+
+func (_c *MockGrpc_HasCollectionByID_Call) RunAndReturn(run func(ctx context.Context, collectionID int64) (bool, error)) *MockGrpc_HasCollectionByID_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // HasFeature provides a mock function for the type MockGrpc
 func (_mock *MockGrpc) HasFeature(flag FeatureFlag) bool {
 	ret := _mock.Called(flag)

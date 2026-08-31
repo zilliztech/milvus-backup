@@ -467,6 +467,11 @@ func (t *Task) runCollTask(ctx context.Context, dbBackup *backuppb.DatabaseBacku
 		return fmt.Errorf("secondary: execute collection ddl task: %w", err)
 	}
 
+	if err := t.waitCollCreated(ctx, ns, collBackup.GetCollectionId()); err != nil {
+		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollFail(ns, err))
+		return err
+	}
+
 	dmlTask := newCollDMLTask(dmlArgs, collBackup)
 	if err := dmlTask.Execute(ctx); err != nil {
 		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollFail(ns, err))
@@ -482,6 +487,47 @@ func (t *Task) runCollTask(ctx context.Context, dbBackup *backuppb.DatabaseBacku
 	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollSuccess(ns))
 
 	return nil
+}
+
+// waitCollCreated blocks until the collection this restore just created is
+// usable on the target, and fails the collection if it never becomes so.
+//
+// The DDL is not applied where it is sent. createColl returns once the create
+// message is queued for the target's replicate stream, which says nothing about
+// whether the target has accepted it, let alone applied it. Everything after it
+// -- the import above all -- depends on the collection actually being there, and
+// an import submitted against a collection the target does not have is accepted
+// and then killed partway through, reported as the collection having been
+// dropped. Waiting here turns that into a failure at the point of the cause.
+func (t *Task) waitCollCreated(ctx context.Context, ns namespace.NS, collectionID int64) error {
+	deadline := time.Now().Add(_collCreateTimeout)
+	for {
+		has, err := t.grpc.HasCollectionByID(ctx, collectionID)
+		if err != nil {
+			return fmt.Errorf("secondary: wait for collection %s (id %d): %w", ns, collectionID, err)
+		}
+		if has {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(_collCreateInterval):
+		}
+	}
+
+	return fmt.Errorf("secondary: collection %s (id %d) is still not on the target %s after "+
+		"its create was sent, so the create had no effect. A secondary restore replays the "+
+		"source's create with the source's collection id, and the target keeps that id "+
+		"reserved for as long as a collection that held it is being reclaimed -- dropping "+
+		"the collections on the target does not release their ids, and a create of a "+
+		"reserved id is discarded without an error. Restore into a newly deployed "+
+		"secondary, and check with birdwatcher that none of the backup's collection ids "+
+		"are present there in any state, dropped included",
+		ns, collectionID, _collCreateTimeout)
 }
 
 func (t *Task) loadTaskArgs() loadTaskArgs {

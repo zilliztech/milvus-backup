@@ -53,6 +53,10 @@ var (
 	// collection the restore created is not there.
 	_restoreVerifyTimeout  = 30 * time.Second
 	_restoreVerifyInterval = 3 * time.Second
+	// How long to wait, per collection, for a create the restore has just sent
+	// to become visible on the target before starting to import into it.
+	_collCreateTimeout  = 30 * time.Second
+	_collCreateInterval = 1 * time.Second
 )
 
 type partitionDir struct {
