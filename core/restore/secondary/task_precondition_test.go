@@ -30,6 +30,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
+	"github.com/zilliztech/milvus-backup/internal/namespace"
 )
 
 func taskWithBackup(cli milvus.Grpc, colls ...*backuppb.CollectionBackupInfo) *Task {
@@ -249,5 +250,55 @@ func TestCheckTargetIsUnusedOtherErrors(t *testing.T) {
 		assert.True(t, isDatabaseNotFound(errors.New(`client: has collection failed: client: operation failed: error_code:UnexpectedError reason:"database not found[database=aml_endor_db]" code:800`)))
 		assert.False(t, isDatabaseNotFound(errors.New("collection not found")))
 		assert.False(t, isDatabaseNotFound(nil))
+	})
+}
+
+func TestWaitCollCreated(t *testing.T) {
+	prevTimeout, prevInterval := _collCreateTimeout, _collCreateInterval
+	_collCreateTimeout, _collCreateInterval = 30*time.Millisecond, time.Millisecond
+	defer func() {
+		_collCreateTimeout, _collCreateInterval = prevTimeout, prevInterval
+	}()
+
+	ns := namespace.New("default", "orders")
+
+	t.Run("a collection that is already there returns at once", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().HasCollectionByID(mock.Anything, int64(7)).Return(true, nil).Once()
+		assert.NoError(t, taskWithBackup(cli).waitCollCreated(context.Background(), ns, 7))
+	})
+
+	t.Run("a collection that appears late is waited for", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		var calls int
+		cli.EXPECT().HasCollectionByID(mock.Anything, int64(7)).
+			RunAndReturn(func(context.Context, int64) (bool, error) {
+				calls++
+				return calls > 2, nil
+			})
+		assert.NoError(t, taskWithBackup(cli).waitCollCreated(context.Background(), ns, 7))
+		assert.Equal(t, 3, calls)
+	})
+
+	// The whole point: the create was sent, the target reported no error, and the
+	// collection is not there. Importing into it would be accepted and then killed
+	// partway through, blaming the collection for having been dropped.
+	t.Run("a collection that never appears fails before the import", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().HasCollectionByID(mock.Anything, int64(7)).Return(false, nil)
+		err := taskWithBackup(cli).waitCollCreated(context.Background(), ns, 7)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "default.orders")
+		assert.Contains(t, err.Error(), "7")
+		assert.Contains(t, err.Error(), "reserved")
+	})
+
+	t.Run("an error reaching the target is reported as such", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().HasCollectionByID(mock.Anything, int64(7)).
+			Return(false, errors.New("connection refused")).Once()
+		err := taskWithBackup(cli).waitCollCreated(context.Background(), ns, 7)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "connection refused")
 	})
 }

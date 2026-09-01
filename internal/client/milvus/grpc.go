@@ -141,6 +141,7 @@ type Grpc interface {
 	FlushAll(ctx context.Context) (*milvuspb.FlushAllResponse, error)
 	ListCollections(ctx context.Context, db string) (*milvuspb.ShowCollectionsResponse, error)
 	HasCollection(ctx context.Context, db, collName string) (bool, error)
+	HasCollectionByID(ctx context.Context, collectionID int64) (bool, error)
 	BulkInsert(ctx context.Context, input GrpcBulkInsertInput) (int64, error)
 	GetBulkInsertState(ctx context.Context, taskID int64) (*milvuspb.GetImportStateResponse, error)
 	CreateCollection(ctx context.Context, input CreateCollectionInput) error
@@ -167,6 +168,11 @@ type Grpc interface {
 	RestoreExternalSnapshot(ctx context.Context, input RestoreExternalSnapshotInput) (int64, error)
 	GetRestoreSnapshotState(ctx context.Context, jobID int64) (*milvuspb.RestoreSnapshotInfo, error)
 }
+
+// _collectionNotFoundCode is merr.ErrCollectionNotFound's code. Newer servers
+// report it in Status.Code while older ones set the legacy CollectionNotExists
+// error code, so both are treated as the collection being absent.
+const _collectionNotFoundCode = 100
 
 const (
 	_authorizationHeader = `authorization`
@@ -849,6 +855,29 @@ func (g *GrpcClient) HasCollection(ctx context.Context, db, collName string) (bo
 		return false, fmt.Errorf("client: has collection failed: %w", err)
 	}
 	return resp.GetValue(), nil
+}
+
+// HasCollectionByID reports whether the collection with this id is usable on the
+// server. DescribeCollection resolves by id when the name is left empty, and the
+// server answers from the same view a restore's own writes are checked against:
+// a collection that exists but is not in the created state -- one that is still
+// being reclaimed after a drop, say -- reads as absent here, which is what the
+// caller needs to know.
+func (g *GrpcClient) HasCollectionByID(ctx context.Context, collectionID int64) (bool, error) {
+	resp, err := g.srv.DescribeCollection(ctx, &milvuspb.DescribeCollectionRequest{CollectionID: collectionID})
+	if err != nil {
+		return false, fmt.Errorf("client: has collection by id failed: %w", err)
+	}
+	// Absent is an answer, not a failure: it is what the caller is asking about.
+	//nolint:staticcheck // SA1019: GetErrorCode is needed for backward compatibility with older Milvus versions
+	if resp.GetStatus().GetErrorCode() == commonpb.ErrorCode_CollectionNotExists ||
+		resp.GetStatus().GetCode() == _collectionNotFoundCode {
+		return false, nil
+	}
+	if err := checkResponse(resp, nil); err != nil {
+		return false, fmt.Errorf("client: has collection by id failed: %w", err)
+	}
+	return true, nil
 }
 
 type GrpcBulkInsertInput struct {
