@@ -199,34 +199,39 @@ func (dmlt *collDMLTask) Execute(ctx context.Context) (err error) {
 
 // restorePartitionNonL0 builds and sends non-L0 import messages for all partitions
 // sequentially to ensure messages arrive at each physical channel in ts order,
-// then waits for all import jobs concurrently.
+// waiting on each import job from the moment it is submitted.
 func (dmlt *collDMLTask) restorePartitionNonL0(ctx context.Context) error {
-	var jobIDs []int64
+	g, subCtx := errgroup.WithContext(ctx)
+	var count int
 	for _, partition := range dmlt.collBackup.GetPartitionBackups() {
 		nonL0Segs := lo.Filter(partition.GetSegmentBackups(), func(seg *backuppb.SegmentBackupInfo, _ int) bool {
 			return !seg.IsL0
 		})
 
-		batches, err := dmlt.nonL0SegBatches(ctx, nonL0Segs)
+		batches, err := dmlt.nonL0SegBatches(subCtx, nonL0Segs)
 		if err != nil {
 			return fmt.Errorf("secondary: build non-L0 batches for partition %s: %w", partition.GetPartitionName(), err)
 		}
 
-		ids, err := dmlt.sendBatches(ctx, partition.GetPartitionId(), batches)
+		n, err := dmlt.sendBatches(subCtx, g, partition.GetPartitionId(), batches)
+		count += n
 		if err != nil {
 			return fmt.Errorf("secondary: send non-L0 for partition %s: %w", partition.GetPartitionName(), err)
 		}
-		jobIDs = append(jobIDs, ids...)
 	}
 
-	dmlt.logger.Info("check non-l0 bulk insert jobs", zap.Int("job_count", len(jobIDs)))
-	return dmlt.checkBulkInsertJobs(ctx, jobIDs)
+	dmlt.logger.Info("check non-l0 bulk insert jobs", zap.Int("job_count", count))
+	if err := g.Wait(); err != nil {
+		return fmt.Errorf("secondary: check bulk insert jobs: %w", err)
+	}
+	return nil
 }
 
 // restorePartitionL0 builds and sends per-partition L0 import messages sequentially,
-// then waits for all import jobs concurrently.
+// waiting on each import job from the moment it is submitted.
 func (dmlt *collDMLTask) restorePartitionL0(ctx context.Context) error {
-	var jobIDs []int64
+	g, subCtx := errgroup.WithContext(ctx)
+	var count int
 	for _, partition := range dmlt.collBackup.GetPartitionBackups() {
 		l0Segs := lo.Filter(partition.GetSegmentBackups(), func(seg *backuppb.SegmentBackupInfo, _ int) bool {
 			return seg.IsL0
@@ -237,15 +242,18 @@ func (dmlt *collDMLTask) restorePartitionL0(ctx context.Context) error {
 			return fmt.Errorf("secondary: build L0 batches for partition %s: %w", partition.GetPartitionName(), err)
 		}
 
-		ids, err := dmlt.sendBatches(ctx, partition.GetPartitionId(), batches)
+		n, err := dmlt.sendBatches(subCtx, g, partition.GetPartitionId(), batches)
+		count += n
 		if err != nil {
 			return fmt.Errorf("secondary: send L0 for partition %s: %w", partition.GetPartitionName(), err)
 		}
-		jobIDs = append(jobIDs, ids...)
 	}
 
-	dmlt.logger.Info("check l0 bulk insert jobs", zap.Int("job_count", len(jobIDs)))
-	return dmlt.checkBulkInsertJobs(ctx, jobIDs)
+	dmlt.logger.Info("check l0 bulk insert jobs", zap.Int("job_count", count))
+	if err := g.Wait(); err != nil {
+		return fmt.Errorf("secondary: check bulk insert jobs: %w", err)
+	}
+	return nil
 }
 
 func (dmlt *collDMLTask) backupTS(vch string) (uint64, error) {
@@ -267,12 +275,12 @@ func (dmlt *collDMLTask) restoreAllPartitionL0(ctx context.Context) error {
 		return fmt.Errorf("secondary: build all partition l0 batches: %w", err)
 	}
 
-	jobIDs, err := dmlt.sendBatches(ctx, common.AllPartitionsID, batches)
-	if err != nil {
+	g, subCtx := errgroup.WithContext(ctx)
+	if _, err := dmlt.sendBatches(subCtx, g, common.AllPartitionsID, batches); err != nil {
 		return fmt.Errorf("secondary: send all partition l0: %w", err)
 	}
 
-	if err := dmlt.checkBulkInsertJobs(ctx, jobIDs); err != nil {
+	if err := g.Wait(); err != nil {
 		return fmt.Errorf("secondary: check all partition l0 jobs: %w", err)
 	}
 
@@ -281,34 +289,31 @@ func (dmlt *collDMLTask) restoreAllPartitionL0(ctx context.Context) error {
 	return nil
 }
 
-func (dmlt *collDMLTask) sendBatches(ctx context.Context, partitionID int64, batches []batch) ([]int64, error) {
-	jobIDs := make([]int64, 0, len(batches))
-	for _, b := range batches {
+// sendBatches submits every batch in order and starts waiting on each import job
+// as it is submitted, returning the number submitted.
+//
+// The waiting cannot be deferred until every batch has been sent. Submitting a
+// batch stages its binlogs first, so a collection of any size spends a long time
+// in this loop -- a 173 GB collection in 209 batches took thirty-seven minutes --
+// while the target keeps a finished job's record only for
+// dataCoord.import.taskRetention past its completion. A job submitted early
+// therefore finishes and is reclaimed long before a deferred wait would first
+// ask about it, and the restore then cannot tell a job that succeeded and was
+// forgotten from one that never ran.
+func (dmlt *collDMLTask) sendBatches(ctx context.Context, g *errgroup.Group, partitionID int64, batches []batch) (int, error) {
+	for i, b := range batches {
 		jobID, err := dmlt.sendImportMsg(ctx, partitionID, b)
 		if err != nil {
-			return nil, fmt.Errorf("secondary: send import msg: %w", err)
+			return i, fmt.Errorf("secondary: send import msg: %w", err)
 		}
-		jobIDs = append(jobIDs, jobID)
-	}
-	return jobIDs, nil
-}
-
-func (dmlt *collDMLTask) checkBulkInsertJobs(ctx context.Context, jobIDs []int64) error {
-	g, subCtx := errgroup.WithContext(ctx)
-	for _, jobID := range jobIDs {
 		g.Go(func() error {
-			if err := dmlt.checkBulkInsertJob(subCtx, jobID); err != nil {
+			if err := dmlt.checkBulkInsertJob(ctx, jobID); err != nil {
 				return fmt.Errorf("secondary: check bulk insert job %d: %w", jobID, err)
 			}
 			return nil
 		})
 	}
-
-	if err := g.Wait(); err != nil {
-		return fmt.Errorf("secondary: check bulk insert jobs: %w", err)
-	}
-
-	return nil
+	return len(batches), nil
 }
 
 func (dmlt *collDMLTask) checkBulkInsertJob(ctx context.Context, jobID int64) error {
@@ -384,17 +389,15 @@ func (dmlt *collDMLTask) waitBulkInsertState(
 				unknownSince = time.Now()
 			} else if time.Since(unknownSince) >= _bulkInsertUnknownJobTimeout {
 				return "", fmt.Errorf("secondary: the target does not know import job %d after %s, "+
-					"so the import message this restore sent was never applied. A secondary restore "+
-					"targets a newly deployed secondary and runs once: the messages it injects are "+
-					"time-ticked from 1, while a secondary only ever moves its replicate checkpoint "+
-					"forward, so a target that has already been restored discards everything a "+
-					"second restore sends. There is no way to return a used target to that state -- "+
-					"re-applying the same replicate configuration does not clear the checkpoint, "+
-					"restarting the target does not, and dropping its collections makes matters "+
-					"worse, because their ids stay reserved while the collections are being "+
-					"reclaimed and a later restore of the same ids is then discarded without an "+
-					"error. To bootstrap again, deploy a new secondary and restore into that",
-					jobID, _bulkInsertUnknownJobTimeout)
+					"so this batch cannot be confirmed either way. Two things produce this and "+
+					"they are not distinguishable from here: the import message was never "+
+					"applied, or the job ran and the target already dropped its record. A record "+
+					"is kept only for dataCoord.import.taskRetention past the job finishing, and "+
+					"success and failure are dropped alike, so a short retention loses the "+
+					"outcome rather than reporting it. Check the target's log for job %d before "+
+					"concluding anything about this batch, and raise "+
+					"dataCoord.import.taskRetention if it is below the default of 10800",
+					jobID, _bulkInsertUnknownJobTimeout, jobID)
 			}
 		} else {
 			unknownSince = time.Time{}
