@@ -16,10 +16,10 @@ import (
 	"github.com/zilliztech/milvus-backup/core/restore"
 	"github.com/zilliztech/milvus-backup/core/utils"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
@@ -302,7 +302,7 @@ func newPlanFromRequest(request *backuppb.RestoreBackupRequest) (*restore.Plan, 
 // rule 4. key: db1. value: db2.
 func newTableMapperFromCollRename(collRename map[string]string) (*restore.TableMapper, error) {
 	// add default db in collection_renames if not set
-	nsMapping := make(map[string][]namespace.NS)
+	nameMapping := make(map[string][]collref.Name)
 	dbWildcard := make(map[string]string)
 
 	for k, v := range collRename {
@@ -315,27 +315,27 @@ func newTableMapperFromCollRename(collRename map[string]string) (*restore.TableM
 		case 1:
 			dbWildcard[k[:len(k)-2]] = v[:len(v)-2]
 		case 2, 3:
-			oldNS, err := namespace.Parse(k)
+			oldName, err := collref.Parse(k)
 			if err != nil {
-				return nil, fmt.Errorf("restore: parse namespace %s %w", k, err)
+				return nil, fmt.Errorf("restore: parse collection name %s %w", k, err)
 			}
-			newNS, err := namespace.Parse(v)
+			newName, err := collref.Parse(v)
 			if err != nil {
-				return nil, fmt.Errorf("restore: parse namespace %s %w", v, err)
+				return nil, fmt.Errorf("restore: parse collection name %s %w", v, err)
 			}
 
-			nsMapping[oldNS.String()] = append(nsMapping[oldNS.String()], newNS)
+			nameMapping[oldName.String()] = append(nameMapping[oldName.String()], newName)
 		case 4:
 			// handle in db mapping
 			continue
 		}
 	}
 
-	return &restore.TableMapper{DBWildcard: dbWildcard, NSMapping: nsMapping}, nil
+	return &restore.TableMapper{DBWildcard: dbWildcard, NameMapping: nameMapping}, nil
 }
 
 func newCollMapperFromPlan(plan *backuppb.RestorePlan) (restore.CollMapper, error) {
-	nsMapping := make(map[string][]namespace.NS)
+	nameMapping := make(map[string][]collref.Name)
 	for _, mapping := range plan.Mapping {
 		if mapping.GetSource() == "" {
 			return nil, fmt.Errorf("restore: source database name is empty")
@@ -346,13 +346,13 @@ func newCollMapperFromPlan(plan *backuppb.RestorePlan) (restore.CollMapper, erro
 		}
 
 		for _, collMapping := range mapping.Colls {
-			oldNS := namespace.New(mapping.GetSource(), collMapping.GetSource())
-			newNS := namespace.New(mapping.GetTarget(), collMapping.GetTarget())
-			nsMapping[oldNS.String()] = append(nsMapping[oldNS.String()], newNS)
+			oldName := collref.New(mapping.GetSource(), collMapping.GetSource())
+			newName := collref.New(mapping.GetTarget(), collMapping.GetTarget())
+			nameMapping[oldName.String()] = append(nameMapping[oldName.String()], newName)
 		}
 	}
 
-	return &restore.TableMapper{NSMapping: nsMapping}, nil
+	return &restore.TableMapper{NameMapping: nameMapping}, nil
 }
 
 func newCollMapper(request *backuppb.RestoreBackupRequest) (restore.CollMapper, error) {
@@ -413,8 +413,8 @@ func newCollOverridesFromPlan(plan *backuppb.RestorePlan) map[string]restore.Col
 			if o.GetShardNum() == 0 && o.GetDescription() == "" {
 				continue
 			}
-			targetNS := namespace.New(mapping.GetTarget(), collMapping.GetTarget())
-			overrides[targetNS.String()] = restore.CollOverride{
+			target := collref.New(mapping.GetTarget(), collMapping.GetTarget())
+			overrides[target.String()] = restore.CollOverride{
 				ShardNum:    o.GetShardNum(),
 				Description: o.GetDescription(),
 			}
@@ -436,7 +436,7 @@ func newFilterFromDBCollections(dbCollections string) (filter.Filter, error) {
 	collFilter := make(map[string]filter.CollFilter, len(dbColls))
 	for dbName, colls := range dbColls {
 		if dbName == "" {
-			dbName = namespace.DefaultDBName
+			dbName = collref.DefaultDBName
 		}
 
 		if len(colls) == 0 {
@@ -455,10 +455,10 @@ func newFilterFromDBCollections(dbCollections string) (filter.Filter, error) {
 
 func newFilterFromCollectionNames(collectionNames []string) (filter.Filter, error) {
 	collFilter := make(map[string]filter.CollFilter)
-	for _, ns := range collectionNames {
-		dbName, err := namespace.Parse(ns)
+	for _, name := range collectionNames {
+		dbName, err := collref.Parse(name)
 		if err != nil {
-			return filter.Filter{}, fmt.Errorf("restore: parse namespace %s: %w", ns, err)
+			return filter.Filter{}, fmt.Errorf("restore: parse collection name %s: %w", name, err)
 		}
 		f, ok := collFilter[dbName.DBName()]
 		if !ok {

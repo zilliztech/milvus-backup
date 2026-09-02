@@ -34,8 +34,8 @@ import (
 
 	"github.com/zilliztech/milvus-backup/internal/aimd"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/retry"
 	"github.com/zilliztech/milvus-backup/version"
 )
@@ -704,7 +704,7 @@ func (g *GrpcClient) GetPersistentSegmentInfo(ctx context.Context, db, collName 
 
 func (g *GrpcClient) Flush(ctx context.Context, db, collName string) (*milvuspb.FlushResponse, error) {
 	ctx = g.newCtxWithDB(ctx, db)
-	ns := namespace.New(db, collName)
+	collRef := collref.New(db, collName)
 
 	var resp *milvuspb.FlushResponse
 	err := retry.Do(ctx, func() error {
@@ -713,9 +713,9 @@ func (g *GrpcClient) Flush(ctx context.Context, db, collName string) (*milvuspb.
 			return retry.Unrecoverable(fmt.Errorf("client: flush wait: %w", err))
 		}
 		cost := time.Since(start)
-		g.logger.Info("flush wait aimd", zap.Duration("cost", cost), zap.String("ns", ns.String()))
+		g.logger.Info("flush wait aimd", zap.Duration("cost", cost), zap.String("coll", collRef.String()))
 
-		innerResp, innerErr := g.srv.Flush(ctx, &milvuspb.FlushRequest{CollectionNames: []string{ns.CollName()}})
+		innerResp, innerErr := g.srv.Flush(ctx, &milvuspb.FlushRequest{CollectionNames: []string{collRef.CollName()}})
 		if err := checkResponse(innerResp, innerErr); err != nil {
 			if isRateLimitError(err) {
 				g.limiters.flush.Failure()
@@ -730,11 +730,11 @@ func (g *GrpcClient) Flush(ctx context.Context, db, collName string) (*milvuspb.
 		return nil, fmt.Errorf("client: flush : %w", err)
 	}
 
-	segmentIDs, has := resp.GetCollSegIDs()[ns.CollName()]
+	segmentIDs, has := resp.GetCollSegIDs()[collRef.CollName()]
 	ids := segmentIDs.GetData()
 	if has {
-		flushTS := resp.GetCollFlushTs()[ns.CollName()]
-		if err := g.checkFlush(ctx, ids, flushTS, ns); err != nil {
+		flushTS := resp.GetCollFlushTs()[collRef.CollName()]
+		if err := g.checkFlush(ctx, ids, flushTS, collRef); err != nil {
 			return nil, fmt.Errorf("client: check flush : %w", err)
 		}
 	}
@@ -742,7 +742,7 @@ func (g *GrpcClient) Flush(ctx context.Context, db, collName string) (*milvuspb.
 	return resp, nil
 }
 
-func (g *GrpcClient) checkFlush(ctx context.Context, segIDs []int64, flushTS uint64, ns namespace.NS) error {
+func (g *GrpcClient) checkFlush(ctx context.Context, segIDs []int64, flushTS uint64, collRef collref.Name) error {
 	start := time.Now()
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
@@ -755,7 +755,7 @@ func (g *GrpcClient) checkFlush(ctx context.Context, segIDs []int64, flushTS uin
 			resp, err := g.srv.GetFlushState(ctx, &milvuspb.GetFlushStateRequest{
 				SegmentIDs:     segIDs,
 				FlushTs:        flushTS,
-				CollectionName: ns.CollName(),
+				CollectionName: collRef.CollName(),
 			})
 			if err != nil {
 				g.logger.Warn("get flush state failed, will retry", zap.Error(err))
@@ -768,7 +768,7 @@ func (g *GrpcClient) checkFlush(ctx context.Context, segIDs []int64, flushTS uin
 			if cost > 30*time.Minute {
 				g.logger.Warn("waiting for the flush to complete took too much time! may milvus is not healthy",
 					zap.Duration("cost", cost),
-					zap.String("ns", ns.String()),
+					zap.String("coll", collRef.String()),
 					zap.Int64s("segment_ids", segIDs),
 					zap.Uint64("flush_ts", flushTS))
 			}

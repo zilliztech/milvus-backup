@@ -14,7 +14,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 )
 
 // fakeKV implements clientv3.KV but only supports prefix Get, which is all the
@@ -48,7 +48,7 @@ func TestCollIndexExtraTaskExecute(t *testing.T) {
 
 	newBuilder := func() *metaBuilder {
 		builder := newMetaBuilder("task1", "backup1")
-		builder.addCollection(namespace.New("db1", "coll1"), &backuppb.CollectionBackupInfo{
+		builder.addCollection(collref.New("db1", "coll1"), &backuppb.CollectionBackupInfo{
 			CollectionId:   1,
 			DbName:         "db1",
 			CollectionName: "coll1",

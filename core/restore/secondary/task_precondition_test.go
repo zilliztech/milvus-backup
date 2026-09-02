@@ -30,7 +30,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 )
 
 func taskWithBackup(cli milvus.Grpc, colls ...*backuppb.CollectionBackupInfo) *Task {
@@ -260,12 +260,12 @@ func TestWaitCollCreated(t *testing.T) {
 		_collCreateTimeout, _collCreateInterval = prevTimeout, prevInterval
 	}()
 
-	ns := namespace.New("default", "orders")
+	collRef := collref.New("default", "orders")
 
 	t.Run("a collection that is already there returns at once", func(t *testing.T) {
 		cli := milvus.NewMockGrpc(t)
 		cli.EXPECT().HasCollectionByID(mock.Anything, int64(7)).Return(true, nil).Once()
-		assert.NoError(t, taskWithBackup(cli).waitCollCreated(context.Background(), ns, 7))
+		assert.NoError(t, taskWithBackup(cli).waitCollCreated(context.Background(), collRef, 7))
 	})
 
 	t.Run("a collection that appears late is waited for", func(t *testing.T) {
@@ -276,7 +276,7 @@ func TestWaitCollCreated(t *testing.T) {
 				calls++
 				return calls > 2, nil
 			})
-		assert.NoError(t, taskWithBackup(cli).waitCollCreated(context.Background(), ns, 7))
+		assert.NoError(t, taskWithBackup(cli).waitCollCreated(context.Background(), collRef, 7))
 		assert.Equal(t, 3, calls)
 	})
 
@@ -286,7 +286,7 @@ func TestWaitCollCreated(t *testing.T) {
 	t.Run("a collection that never appears fails before the import", func(t *testing.T) {
 		cli := milvus.NewMockGrpc(t)
 		cli.EXPECT().HasCollectionByID(mock.Anything, int64(7)).Return(false, nil)
-		err := taskWithBackup(cli).waitCollCreated(context.Background(), ns, 7)
+		err := taskWithBackup(cli).waitCollCreated(context.Background(), collRef, 7)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "default.orders")
 		assert.Contains(t, err.Error(), "7")
@@ -297,7 +297,7 @@ func TestWaitCollCreated(t *testing.T) {
 		cli := milvus.NewMockGrpc(t)
 		cli.EXPECT().HasCollectionByID(mock.Anything, int64(7)).
 			Return(false, errors.New("connection refused")).Once()
-		err := taskWithBackup(cli).waitCollCreated(context.Background(), ns, 7)
+		err := taskWithBackup(cli).waitCollCreated(context.Background(), collRef, 7)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "connection refused")
 	})

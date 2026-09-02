@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 )
 
 func TestRestoreCollectionTask_Progress(t *testing.T) {
@@ -87,14 +87,14 @@ func TestRestoreCollectionTask_Getters(t *testing.T) {
 func TestRestoreTask_Progress(t *testing.T) {
 	t.Run("Normal", func(t *testing.T) {
 		task := &RestoreTask{
-			collTask: map[namespace.NS]*restoreCollectionTask{
-				namespace.New("db1", "coll1"): {totalSize: 10, importJob: map[string]*importJob{
+			collTask: map[collref.Name]*restoreCollectionTask{
+				collref.New("db1", "coll1"): {totalSize: 10, importJob: map[string]*importJob{
 					"job1": {totalSize: 10, progress: 100},
 				}},
-				namespace.New("db1", "coll2"): {totalSize: 20, importJob: map[string]*importJob{
+				collref.New("db1", "coll2"): {totalSize: 20, importJob: map[string]*importJob{
 					"job2": {totalSize: 20, progress: 50},
 				}},
-				namespace.New("db1", "coll3"): {totalSize: 30, importJob: map[string]*importJob{
+				collref.New("db1", "coll3"): {totalSize: 30, importJob: map[string]*importJob{
 					"job3": {totalSize: 30, progress: 0},
 				}},
 			},
@@ -116,8 +116,8 @@ func TestRestoreTask_Progress(t *testing.T) {
 
 	t.Run("ZeroRestoredSize", func(t *testing.T) {
 		task := &RestoreTask{
-			collTask: map[namespace.NS]*restoreCollectionTask{
-				namespace.New("db1", "coll1"): {totalSize: 10, importJob: map[string]*importJob{
+			collTask: map[collref.Name]*restoreCollectionTask{
+				collref.New("db1", "coll1"): {totalSize: 10, importJob: map[string]*importJob{
 					"job1": {totalSize: 10, progress: 0},
 				}},
 			}}
@@ -158,8 +158,8 @@ func TestRestoreTask_Getters(t *testing.T) {
 
 	t.Run("TotalSize", func(t *testing.T) {
 		task := &RestoreTask{
-			collTask: map[namespace.NS]*restoreCollectionTask{
-				namespace.New("db1", "coll1"): {totalSize: 100},
+			collTask: map[collref.Name]*restoreCollectionTask{
+				collref.New("db1", "coll1"): {totalSize: 100},
 			},
 		}
 
@@ -169,13 +169,13 @@ func TestRestoreTask_Getters(t *testing.T) {
 
 func TestAddRestoreCollTask(t *testing.T) {
 	task := &RestoreTask{
-		collTask: make(map[namespace.NS]*restoreCollectionTask),
+		collTask: make(map[collref.Name]*restoreCollectionTask),
 	}
 
-	AddRestoreCollTask(namespace.New("db1", "coll1"), 100)(task)
+	AddRestoreCollTask(collref.New("db1", "coll1"), 100)(task)
 
 	assert.Len(t, task.collTask, 1)
-	assert.Equal(t, int64(100), task.collTask[namespace.New("db1", "coll1")].totalSize)
+	assert.Equal(t, int64(100), task.collTask[collref.New("db1", "coll1")].totalSize)
 }
 
 func TestSetRestoreExecuting(t *testing.T) {
@@ -213,35 +213,35 @@ func TestSetRestoreFail(t *testing.T) {
 
 func TestSetRestoreCollExecuting(t *testing.T) {
 	task := &RestoreTask{
-		collTask: map[namespace.NS]*restoreCollectionTask{namespace.New("db1", "coll1"): {}},
+		collTask: map[collref.Name]*restoreCollectionTask{collref.New("db1", "coll1"): {}},
 	}
 
-	SetRestoreCollExecuting(namespace.New("db1", "coll1"))(task)
+	SetRestoreCollExecuting(collref.New("db1", "coll1"))(task)
 
-	collTask := task.collTask[namespace.New("db1", "coll1")]
+	collTask := task.collTask[collref.New("db1", "coll1")]
 	assert.Equal(t, backuppb.RestoreTaskStateCode_EXECUTING, collTask.stateCode)
 }
 
 func TestSetRestoreCollSuccess(t *testing.T) {
 	task := &RestoreTask{
-		collTask: map[namespace.NS]*restoreCollectionTask{namespace.New("db1", "coll1"): {}},
+		collTask: map[collref.Name]*restoreCollectionTask{collref.New("db1", "coll1"): {}},
 	}
 
-	SetRestoreCollSuccess(namespace.New("db1", "coll1"))(task)
+	SetRestoreCollSuccess(collref.New("db1", "coll1"))(task)
 
-	collTask := task.collTask[namespace.New("db1", "coll1")]
+	collTask := task.collTask[collref.New("db1", "coll1")]
 	assert.Equal(t, backuppb.RestoreTaskStateCode_SUCCESS, collTask.stateCode)
 	assert.False(t, collTask.endTime.IsZero())
 }
 
 func TestSetRestoreCollFail(t *testing.T) {
 	task := &RestoreTask{
-		collTask: map[namespace.NS]*restoreCollectionTask{namespace.New("db1", "coll1"): {}},
+		collTask: map[collref.Name]*restoreCollectionTask{collref.New("db1", "coll1"): {}},
 	}
 
-	SetRestoreCollFail(namespace.New("db1", "coll1"), assert.AnError)(task)
+	SetRestoreCollFail(collref.New("db1", "coll1"), assert.AnError)(task)
 
-	collTask := task.collTask[namespace.New("db1", "coll1")]
+	collTask := task.collTask[collref.New("db1", "coll1")]
 	assert.Equal(t, backuppb.RestoreTaskStateCode_FAIL, collTask.stateCode)
 	assert.False(t, collTask.endTime.IsZero())
 	assert.Equal(t, assert.AnError.Error(), collTask.errorMessage)
@@ -249,27 +249,27 @@ func TestSetRestoreCollFail(t *testing.T) {
 
 func TestAddRestoreImportJob(t *testing.T) {
 	task := &RestoreTask{
-		collTask: map[namespace.NS]*restoreCollectionTask{namespace.New("db1", "coll1"): {
+		collTask: map[collref.Name]*restoreCollectionTask{collref.New("db1", "coll1"): {
 			importJob: make(map[string]*importJob),
 		}},
 	}
 
-	AddRestoreImportJob(namespace.New("db1", "coll1"), "job1", 100)(task)
+	AddRestoreImportJob(collref.New("db1", "coll1"), "job1", 100)(task)
 
-	collTask := task.collTask[namespace.New("db1", "coll1")]
+	collTask := task.collTask[collref.New("db1", "coll1")]
 	assert.Len(t, collTask.importJob, 1)
 	assert.Equal(t, int64(100), collTask.importJob["job1"].totalSize)
 }
 
 func TestUpdateRestoreImportJob(t *testing.T) {
 	task := &RestoreTask{
-		collTask: map[namespace.NS]*restoreCollectionTask{namespace.New("db1", "coll1"): {
+		collTask: map[collref.Name]*restoreCollectionTask{collref.New("db1", "coll1"): {
 			importJob: map[string]*importJob{"job1": {totalSize: 100}}},
 		},
 	}
 
-	UpdateRestoreImportJob(namespace.New("db1", "coll1"), "job1", 50)(task)
+	UpdateRestoreImportJob(collref.New("db1", "coll1"), "job1", 50)(task)
 
-	collTask := task.collTask[namespace.New("db1", "coll1")]
+	collTask := task.collTask[collref.New("db1", "coll1")]
 	assert.Equal(t, 50, collTask.importJob["job1"].progress)
 }

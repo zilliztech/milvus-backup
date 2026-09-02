@@ -8,8 +8,8 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
 )
 
 func TestRestoreHandler_validate(t *testing.T) {
@@ -93,14 +93,14 @@ func TestNewTableMapperFromCollRename(t *testing.T) {
 	})
 	assert.NoError(t, err)
 	assert.Equal(t, map[string]string{"db1": "db2"}, r.DBWildcard)
-	assert.Equal(t, map[string][]namespace.NS{
+	assert.Equal(t, map[string][]collref.Name{
 		"db1.coll1": {
-			namespace.New("db2", "coll2"),
+			collref.New("db2", "coll2"),
 		},
 		"default.coll1": {
-			namespace.New("", "coll2"),
+			collref.New("", "coll2"),
 		},
-	}, r.NSMapping)
+	}, r.NameMapping)
 }
 
 func TestNewCollMapperFromPlan(t *testing.T) {
@@ -127,16 +127,16 @@ func TestNewCollMapperFromPlan(t *testing.T) {
 	assert.NoError(t, err)
 	tMapper, ok := mapper.(*restore.TableMapper)
 	assert.True(t, ok)
-	assert.Equal(t, map[string][]namespace.NS{
+	assert.Equal(t, map[string][]collref.Name{
 		"db1.coll1": {
-			namespace.New("db2", "coll2"),
-			namespace.New("db3", "coll2"),
+			collref.New("db2", "coll2"),
+			collref.New("db3", "coll2"),
 		},
 		"db1.coll2": {
-			namespace.New("db2", "coll3"),
-			namespace.New("db3", "coll3"),
+			collref.New("db2", "coll3"),
+			collref.New("db3", "coll3"),
 		},
-	}, tMapper.NSMapping)
+	}, tMapper.NameMapping)
 }
 
 func TestNewCollMapper(t *testing.T) {
@@ -154,8 +154,8 @@ func TestNewCollMapper(t *testing.T) {
 		}}
 		mapper, err := newCollMapper(request)
 		assert.NoError(t, err)
-		targetNS := mapper.TagetNS(namespace.New("db1", "coll1"))
-		assert.ElementsMatch(t, []namespace.NS{namespace.New("db2", "coll2")}, targetNS)
+		target := mapper.TargetNames(collref.New("db1", "coll1"))
+		assert.ElementsMatch(t, []collref.Name{collref.New("db2", "coll2")}, target)
 	})
 
 	t.Run("FromCollRename", func(t *testing.T) {
@@ -164,16 +164,16 @@ func TestNewCollMapper(t *testing.T) {
 		}}
 		mapper, err := newCollMapper(request)
 		assert.NoError(t, err)
-		targetNS := mapper.TagetNS(namespace.New("db1", "coll1"))
-		assert.ElementsMatch(t, []namespace.NS{namespace.New("db2", "coll2")}, targetNS)
+		target := mapper.TargetNames(collref.New("db1", "coll1"))
+		assert.ElementsMatch(t, []collref.Name{collref.New("db2", "coll2")}, target)
 	})
 
 	t.Run("FromCollSuffix", func(t *testing.T) {
 		request := &backuppb.RestoreBackupRequest{CollectionSuffix: "_suffix"}
 		mapper, err := newCollMapper(request)
 		assert.NoError(t, err)
-		targetNS := mapper.TagetNS(namespace.New("db1", "coll1"))
-		assert.ElementsMatch(t, []namespace.NS{namespace.New("db1", "coll1_suffix")}, targetNS)
+		target := mapper.TargetNames(collref.New("db1", "coll1"))
+		assert.ElementsMatch(t, []collref.Name{collref.New("db1", "coll1_suffix")}, target)
 	})
 }
 

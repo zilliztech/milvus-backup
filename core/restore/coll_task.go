@@ -20,8 +20,8 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
@@ -46,7 +46,7 @@ type collTask struct {
 
 	taskMgr *taskmgr.Mgr
 
-	targetNS namespace.NS
+	target collref.Name
 
 	streaming     bool
 	keepTempFiles bool
@@ -91,7 +91,7 @@ type collTaskArgs struct {
 	dbBackup   *backuppb.DatabaseBackupInfo
 	collBackup *backuppb.CollectionBackupInfo
 
-	targetNS namespace.NS
+	target collref.Name
 
 	option       *Option
 	collOverride CollOverride
@@ -118,17 +118,17 @@ type collTaskArgs struct {
 }
 
 func newCollTask(args collTaskArgs) *collTask {
-	srcNS := namespace.New(args.collBackup.GetDbName(), args.collBackup.GetCollectionName())
+	src := collref.New(args.collBackup.GetDbName(), args.collBackup.GetCollectionName())
 
 	logger := log.With(
 		zap.String("restore_task_id", args.taskID),
-		zap.String("backup_ns", srcNS.String()),
-		zap.String("target_ns", args.targetNS.String()))
+		zap.String("backup_coll", src.String()),
+		zap.String("target_coll", args.target.String()))
 
 	size := lo.SumBy(args.collBackup.GetPartitionBackups(), func(partition *backuppb.PartitionBackupInfo) int64 {
 		return partition.GetSize()
 	})
-	args.taskMgr.UpdateRestoreTask(args.taskID, taskmgr.AddRestoreCollTask(args.targetNS, size))
+	args.taskMgr.UpdateRestoreTask(args.taskID, taskmgr.AddRestoreCollTask(args.target, size))
 
 	return &collTask{
 		taskID: args.taskID,
@@ -139,7 +139,7 @@ func newCollTask(args collTaskArgs) *collTask {
 		option:       args.option,
 		collOverride: args.collOverride,
 
-		targetNS: args.targetNS,
+		target: args.target,
 
 		taskMgr: args.taskMgr,
 
@@ -172,7 +172,7 @@ func newCollTask(args collTaskArgs) *collTask {
 	}
 }
 
-func (ct *collTask) TargetNS() namespace.NS { return ct.targetNS }
+func (ct *collTask) Target() collref.Name { return ct.target }
 
 // isLocal reports whether the restore target keeps its data on the local
 // filesystem, where LocalClient keys are absolute paths and bulk insert paths
@@ -220,7 +220,7 @@ func joinLocal(base, p string) string {
 }
 
 func (ct *collTask) Execute(ctx context.Context) error {
-	ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.SetRestoreCollExecuting(ct.targetNS))
+	ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.SetRestoreCollExecuting(ct.target))
 
 	// tear down restore task
 	defer func() {
@@ -231,12 +231,12 @@ func (ct *collTask) Execute(ctx context.Context) error {
 
 	if err := ct.privateExecute(ctx); err != nil {
 		ct.logger.Error("restore collection failed", zap.Error(err))
-		ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.SetRestoreCollFail(ct.targetNS, err))
+		ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.SetRestoreCollFail(ct.target, err))
 		return err
 	}
 
 	ct.logger.Info("restore collection success")
-	ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.SetRestoreCollSuccess(ct.targetNS))
+	ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.SetRestoreCollSuccess(ct.target))
 
 	return nil
 }
@@ -244,7 +244,7 @@ func (ct *collTask) Execute(ctx context.Context) error {
 func (ct *collTask) privateExecute(ctx context.Context) error {
 	ct.logger.Info("start restore collection")
 
-	ddlt := newCollDDLTask(ct.taskID, ct.option, ct.collOverride, ct.collBackup, ct.targetNS, ct.grpcCli)
+	ddlt := newCollDDLTask(ct.taskID, ct.option, ct.collOverride, ct.collBackup, ct.target, ct.grpcCli)
 	if err := ddlt.Execute(ctx); err != nil {
 		return fmt.Errorf("restore_collection: restore collection ddl: %w", err)
 	}
@@ -420,7 +420,7 @@ func (ct *collTask) copyAndRewriteDir(ctx context.Context, b batch) (batch, erro
 		return b, nil
 	}
 
-	tempDir := fmt.Sprintf("restore-temp-%s-%s-%s/", ct.taskID, ct.targetNS.DBName(), ct.targetNS.CollName())
+	tempDir := fmt.Sprintf("restore-temp-%s-%s-%s/", ct.taskID, ct.target.DBName(), ct.target.CollName())
 	for i, dir := range b.partitionDirs {
 		// insert log
 		if len(dir.insertLogDir) != 0 {
@@ -809,7 +809,7 @@ func (ct *collTask) checkBulkInsertViaGrpc(ctx context.Context, jobID int64) err
 			return nil
 		default:
 			currentProgress := getProcess(state.Infos)
-			ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.UpdateRestoreImportJob(ct.targetNS, strconv.FormatInt(jobID, 10), currentProgress))
+			ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.UpdateRestoreImportJob(ct.target, strconv.FormatInt(jobID, 10), currentProgress))
 			if currentProgress > lastProgress {
 				lastProgress = currentProgress
 				lastUpdateTime = time.Now()
@@ -839,8 +839,8 @@ func (ct *collTask) bulkInsertViaGrpc(ctx context.Context, partitionName string,
 			paths := ct.toGrpcPaths(dir)
 			ct.logger.Info("start bulk insert via grpc", zap.Strings("paths", paths), zap.String("partition", partitionName))
 			in := milvus.GrpcBulkInsertInput{
-				DB:             ct.targetNS.DBName(),
-				CollectionName: ct.targetNS.CollName(),
+				DB:             ct.target.DBName(),
+				CollectionName: ct.target.CollName(),
 				PartitionName:  partitionName,
 				Paths:          paths,
 				BackupTS:       b.timestamp,
@@ -854,7 +854,7 @@ func (ct *collTask) bulkInsertViaGrpc(ctx context.Context, partitionName string,
 				return fmt.Errorf("restore_collection: failed to bulk insert via grpc: %w", err)
 			}
 			ct.taskMgr.UpdateRestoreTask(ct.taskID,
-				taskmgr.AddRestoreImportJob(ct.targetNS, strconv.FormatInt(jobID, 10), dir.size))
+				taskmgr.AddRestoreImportJob(ct.target, strconv.FormatInt(jobID, 10), dir.size))
 			ct.logger.Info("create bulk insert via grpc success", zap.Int64("job_id", jobID))
 			return ct.checkBulkInsertViaGrpc(subCtx, jobID)
 		})
@@ -872,7 +872,7 @@ func (ct *collTask) checkBulkInsertViaRestful(ctx context.Context, jobID string)
 	var lastProgress int
 	lastUpdateTime := time.Now()
 	for range time.Tick(_bulkInsertCheckInterval) {
-		resp, err := ct.restfulCli.GetBulkInsertState(ctx, ct.targetNS.DBName(), jobID)
+		resp, err := ct.restfulCli.GetBulkInsertState(ctx, ct.target.DBName(), jobID)
 		if err != nil {
 			return fmt.Errorf("restore_collection: failed to get bulk insert state: %w", err)
 		}
@@ -885,11 +885,11 @@ func (ct *collTask) checkBulkInsertViaRestful(ctx context.Context, jobID string)
 			return fmt.Errorf("restore_collection: bulk insert failed: %s", resp.Data.Reason)
 		case string(milvus.ImportStateCompleted):
 			ct.logger.Info("bulk insert task success", zap.String("job_id", jobID))
-			ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.UpdateRestoreImportJob(ct.targetNS, jobID, 100))
+			ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.UpdateRestoreImportJob(ct.target, jobID, 100))
 			return nil
 		default:
 			currentProgress := resp.Data.Progress
-			ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.UpdateRestoreImportJob(ct.targetNS, jobID, currentProgress))
+			ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.UpdateRestoreImportJob(ct.target, jobID, currentProgress))
 			if currentProgress > lastProgress {
 				lastProgress = currentProgress
 				lastUpdateTime = time.Now()
@@ -910,8 +910,8 @@ func (ct *collTask) bulkInsertViaRestful(ctx context.Context, partition string, 
 	ct.logger.Info("start bulk insert via restful", zap.Int("batch_num", len(b.partitionDirs)), zap.String("partition", partition))
 	paths := lo.Map(b.partitionDirs, func(dir partitionDir, _ int) []string { return ct.toPaths(dir) })
 	in := milvus.BulkInsertV2Input{
-		DB:             ct.targetNS.DBName(),
-		CollectionName: ct.targetNS.CollName(),
+		DB:             ct.target.DBName(),
+		CollectionName: ct.target.CollName(),
 		PartitionName:  partition,
 		Paths:          paths,
 		BackupTS:       b.timestamp,
@@ -927,7 +927,7 @@ func (ct *collTask) bulkInsertViaRestful(ctx context.Context, partition string, 
 	ct.logger.Info("create bulk insert via restful success", zap.String("job_id", jobID))
 
 	size := lo.SumBy(b.partitionDirs, func(dir partitionDir) int64 { return dir.size })
-	ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.AddRestoreImportJob(ct.targetNS, jobID, size))
+	ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.AddRestoreImportJob(ct.target, jobID, size))
 	if err := ct.checkBulkInsertViaRestful(ctx, jobID); err != nil {
 		return fmt.Errorf("restore_collection: check bulk insert via restful: %w", err)
 	}

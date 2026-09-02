@@ -6,7 +6,7 @@ import (
 	"strings"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 )
 
 // filter format
@@ -84,15 +84,15 @@ func Parse(s string) (Filter, error) {
 			db := ruleStr[:len(ruleStr)-2]
 			dbCollFilter[db] = CollFilter{AllowAll: true}
 		case 2, 3:
-			ns, err := namespace.Parse(ruleStr)
+			collRef, err := collref.Parse(ruleStr)
 			if err != nil {
 				return Filter{}, fmt.Errorf("filter: invalid collection name %s", ruleStr)
 			}
 
-			if _, ok := dbCollFilter[ns.DBName()]; !ok {
-				dbCollFilter[ns.DBName()] = CollFilter{CollName: make(map[string]struct{})}
+			if _, ok := dbCollFilter[collRef.DBName()]; !ok {
+				dbCollFilter[collRef.DBName()] = CollFilter{CollName: make(map[string]struct{})}
 			}
-			dbCollFilter[ns.DBName()].CollName[ns.CollName()] = struct{}{}
+			dbCollFilter[collRef.DBName()].CollName[collRef.CollName()] = struct{}{}
 		case 4:
 			db := ruleStr[:len(ruleStr)-1]
 			dbCollFilter[db] = CollFilter{}
@@ -132,12 +132,12 @@ func (f Filter) AllowDBs(dbNames []string) []string {
 	return filtered
 }
 
-func (f Filter) AllowNS(ns namespace.NS) bool {
+func (f Filter) AllowName(collRef collref.Name) bool {
 	if f.DBCollFilter == nil {
 		return true
 	}
 
-	collFilter, ok := f.DBCollFilter[ns.DBName()]
+	collFilter, ok := f.DBCollFilter[collRef.DBName()]
 	if !ok {
 		return false
 	}
@@ -146,15 +146,15 @@ func (f Filter) AllowNS(ns namespace.NS) bool {
 		return true
 	}
 
-	_, ok = collFilter.CollName[ns.CollName()]
+	_, ok = collFilter.CollName[collRef.CollName()]
 	return ok
 }
 
-func (f Filter) AllowNSS(nss []namespace.NS) []namespace.NS {
-	var filtered []namespace.NS
-	for _, ns := range nss {
-		if f.AllowNS(ns) {
-			filtered = append(filtered, ns)
+func (f Filter) AllowNames(collRefs []collref.Name) []collref.Name {
+	var filtered []collref.Name
+	for _, collRef := range collRefs {
+		if f.AllowName(collRef) {
+			filtered = append(filtered, collRef)
 		}
 	}
 	return filtered

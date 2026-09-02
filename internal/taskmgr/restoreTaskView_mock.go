@@ -8,8 +8,9 @@ import (
 	"time"
 
 	mock "github.com/stretchr/testify/mock"
+
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 )
 
 // NewMockRestoreTaskView creates a new instance of MockRestoreTaskView. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -40,19 +41,19 @@ func (_m *MockRestoreTaskView) EXPECT() *MockRestoreTaskView_Expecter {
 }
 
 // CollTasks provides a mock function for the type MockRestoreTaskView
-func (_mock *MockRestoreTaskView) CollTasks() map[namespace.NS]RestoreCollTaskView {
+func (_mock *MockRestoreTaskView) CollTasks() map[collref.Name]RestoreCollTaskView {
 	ret := _mock.Called()
 
 	if len(ret) == 0 {
 		panic("no return value specified for CollTasks")
 	}
 
-	var r0 map[namespace.NS]RestoreCollTaskView
-	if returnFunc, ok := ret.Get(0).(func() map[namespace.NS]RestoreCollTaskView); ok {
+	var r0 map[collref.Name]RestoreCollTaskView
+	if returnFunc, ok := ret.Get(0).(func() map[collref.Name]RestoreCollTaskView); ok {
 		r0 = returnFunc()
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(map[namespace.NS]RestoreCollTaskView)
+			r0 = ret.Get(0).(map[collref.Name]RestoreCollTaskView)
 		}
 	}
 	return r0
@@ -75,12 +76,12 @@ func (_c *MockRestoreTaskView_CollTasks_Call) Run(run func()) *MockRestoreTaskVi
 	return _c
 }
 
-func (_c *MockRestoreTaskView_CollTasks_Call) Return(nSToRestoreCollTaskView map[namespace.NS]RestoreCollTaskView) *MockRestoreTaskView_CollTasks_Call {
+func (_c *MockRestoreTaskView_CollTasks_Call) Return(nSToRestoreCollTaskView map[collref.Name]RestoreCollTaskView) *MockRestoreTaskView_CollTasks_Call {
 	_c.Call.Return(nSToRestoreCollTaskView)
 	return _c
 }
 
-func (_c *MockRestoreTaskView_CollTasks_Call) RunAndReturn(run func() map[namespace.NS]RestoreCollTaskView) *MockRestoreTaskView_CollTasks_Call {
+func (_c *MockRestoreTaskView_CollTasks_Call) RunAndReturn(run func() map[collref.Name]RestoreCollTaskView) *MockRestoreTaskView_CollTasks_Call {
 	_c.Call.Return(run)
 	return _c
 }

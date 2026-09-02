@@ -14,10 +14,10 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/utils"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
@@ -126,16 +126,16 @@ func (h *createBackupHandler) dbCollectionsToFilter(dbCollectionsStr string) (fi
 
 func (h *createBackupHandler) collectionNamesToFilter() (filter.Filter, error) {
 	dbCollFilter := make(map[string]filter.CollFilter)
-	for _, nsStr := range h.request.GetCollectionNames() { //nolint:staticcheck // SA1019: deprecated field for backward compatibility
-		ns, err := namespace.Parse(nsStr)
+	for _, nameStr := range h.request.GetCollectionNames() { //nolint:staticcheck // SA1019: deprecated field for backward compatibility
+		collRef, err := collref.Parse(nameStr)
 		if err != nil {
-			return filter.Filter{}, fmt.Errorf("server: invalid collection name %s", nsStr)
+			return filter.Filter{}, fmt.Errorf("server: invalid collection name %s", nameStr)
 		}
 
-		if _, ok := dbCollFilter[ns.DBName()]; !ok {
-			dbCollFilter[ns.DBName()] = filter.CollFilter{CollName: make(map[string]struct{})}
+		if _, ok := dbCollFilter[collRef.DBName()]; !ok {
+			dbCollFilter[collRef.DBName()] = filter.CollFilter{CollName: make(map[string]struct{})}
 		}
-		dbCollFilter[ns.DBName()].CollName[ns.CollName()] = struct{}{}
+		dbCollFilter[collRef.DBName()].CollName[collRef.CollName()] = struct{}{}
 	}
 
 	return filter.Filter{DBCollFilter: dbCollFilter}, nil

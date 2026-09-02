@@ -10,7 +10,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
@@ -45,7 +45,7 @@ func MilvusKVToMap(kvs []*commonpb.KeyValuePair) map[string]string {
 	return res
 }
 
-func RestoreCollTaskViewToResp(ns namespace.NS, taskView taskmgr.RestoreCollTaskView) *backuppb.RestoreCollectionTaskResponse {
+func RestoreCollTaskViewToResp(collRef collref.Name, taskView taskmgr.RestoreCollTaskView) *backuppb.RestoreCollectionTaskResponse {
 	return &backuppb.RestoreCollectionTaskResponse{
 		Id:                   taskView.ID(),
 		StateCode:            taskView.StateCode(),
@@ -53,16 +53,16 @@ func RestoreCollTaskViewToResp(ns namespace.NS, taskView taskmgr.RestoreCollTask
 		StartTime:            taskView.StartTime().Unix(),
 		EndTime:              taskView.EndTime().Unix(),
 		Progress:             taskView.Progress(),
-		TargetDbName:         ns.DBName(),
-		TargetCollectionName: ns.CollName(),
+		TargetDbName:         collRef.DBName(),
+		TargetCollectionName: collRef.CollName(),
 	}
 }
 
 func RestoreTaskViewToResp(view taskmgr.RestoreTaskView) *backuppb.RestoreBackupTaskResponse {
 	collTasks := view.CollTasks()
 	collTaskResps := make([]*backuppb.RestoreCollectionTaskResponse, 0, len(collTasks))
-	for ns, taskView := range collTasks {
-		collTaskResps = append(collTaskResps, RestoreCollTaskViewToResp(ns, taskView))
+	for collRef, taskView := range collTasks {
+		collTaskResps = append(collTaskResps, RestoreCollTaskViewToResp(collRef, taskView))
 	}
 
 	return &backuppb.RestoreBackupTaskResponse{

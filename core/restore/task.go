@@ -15,10 +15,10 @@ import (
 	"github.com/zilliztech/milvus-backup/core/restore/conv"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
@@ -53,7 +53,7 @@ type Plan struct {
 	DBMapper   map[string][]DBMapping
 	CollMapper CollMapper
 
-	// CollOverrides contains per-collection overrides keyed by target namespace string.
+	// CollOverrides contains per-collection overrides keyed by target "db.coll" string.
 	CollOverrides map[string]CollOverride
 
 	// TaskFilter filters databases and collections after mapping.
@@ -62,17 +62,19 @@ type Plan struct {
 
 // CollMapper is the interface for renaming collection.
 type CollMapper interface {
-	// TagetNS renames the given namespace (database and collection) according to the renaming rules.
-	TagetNS(ns namespace.NS) []namespace.NS
+	// TargetNames renames the given collection name (database and collection) according to the renaming rules.
+	TargetNames(collRef collref.Name) []collref.Name
 }
 
 var _ CollMapper = (*DefaultCollMapper)(nil)
 
-// DefaultCollMapper is the default collMapper that returns the original namespace.
+// DefaultCollMapper is the default collMapper that returns the original name.
 type DefaultCollMapper struct{}
 
-func NewDefaultCollMapper() *DefaultCollMapper                      { return &DefaultCollMapper{} }
-func (r *DefaultCollMapper) TagetNS(ns namespace.NS) []namespace.NS { return []namespace.NS{ns} }
+func NewDefaultCollMapper() *DefaultCollMapper { return &DefaultCollMapper{} }
+func (r *DefaultCollMapper) TargetNames(collRef collref.Name) []collref.Name {
+	return []collref.Name{collRef}
+}
 
 var _ CollMapper = (*SuffixMapper)(nil)
 
@@ -83,28 +85,28 @@ type SuffixMapper struct {
 
 func NewSuffixMapper(suffix string) *SuffixMapper { return &SuffixMapper{suffix: suffix} }
 
-func (s *SuffixMapper) TagetNS(ns namespace.NS) []namespace.NS {
-	return []namespace.NS{namespace.New(ns.DBName(), ns.CollName()+s.suffix)}
+func (s *SuffixMapper) TargetNames(collRef collref.Name) []collref.Name {
+	return []collref.Name{collref.New(collRef.DBName(), collRef.CollName()+s.suffix)}
 }
 
 var _ CollMapper = (*TableMapper)(nil)
 
-// TableMapper generates target namespace from source namespace by lookup a mapping table.
+// TableMapper generates target collection names from source collection names by looking up a mapping table.
 type TableMapper struct {
-	DBWildcard map[string]string         // dbName -> newDbName, from db1.*:db2.*
-	NSMapping  map[string][]namespace.NS // dbName.collName -> newCollName, from db1.coll1:db2.coll2 and coll1:coll2
+	DBWildcard  map[string]string         // dbName -> newDbName, from db1.*:db2.*
+	NameMapping map[string][]collref.Name // dbName.collName -> newCollName, from db1.coll1:db2.coll2 and coll1:coll2
 }
 
-func (r *TableMapper) TagetNS(ns namespace.NS) []namespace.NS {
-	if newNSes, ok := r.NSMapping[ns.String()]; ok {
-		return newNSes
+func (r *TableMapper) TargetNames(collRef collref.Name) []collref.Name {
+	if newNames, ok := r.NameMapping[collRef.String()]; ok {
+		return newNames
 	}
 
-	if newDBName, ok := r.DBWildcard[ns.DBName()]; ok {
-		return []namespace.NS{namespace.New(newDBName, ns.CollName())}
+	if newDBName, ok := r.DBWildcard[collRef.DBName()]; ok {
+		return []collref.Name{collref.New(newDBName, collRef.CollName())}
 	}
 
-	return []namespace.NS{ns}
+	return []collref.Name{collRef}
 }
 
 type Option struct {
@@ -284,43 +286,43 @@ func snapshotIgnoredOptions(opt *Option) []string {
 
 // collectionTask restores one collection, in whichever format the backup was taken.
 type collectionTask interface {
-	TargetNS() namespace.NS
+	Target() collref.Name
 	Execute(ctx context.Context) error
 }
 
 func (t *Task) newDBAndCollTasks(backup *backuppb.BackupInfo) ([]*databaseTask, []collectionTask) {
 	dbNames := lo.Map(backup.GetDatabaseBackups(), func(db *backuppb.DatabaseBackupInfo, _ int) string { return db.GetDbName() })
 	t.logger.Info("databases in backup", zap.Strings("db_names", dbNames))
-	collNSs := lo.Map(backup.GetCollectionBackups(), func(coll *backuppb.CollectionBackupInfo, _ int) string {
-		return namespace.New(coll.GetDbName(), coll.GetCollectionName()).String()
+	collNames := lo.Map(backup.GetCollectionBackups(), func(coll *backuppb.CollectionBackupInfo, _ int) string {
+		return collref.New(coll.GetDbName(), coll.GetCollectionName()).String()
 	})
-	t.logger.Info("collections in backup", zap.Strings("coll_names", collNSs))
+	t.logger.Info("collections in backup", zap.Strings("coll_names", collNames))
 
 	// filter backup
 	dbBackups := t.filterDBBackup(backup.GetDatabaseBackups())
 	collBackups := t.filterCollBackup(backup.GetCollectionBackups())
 	dbNames = lo.Map(dbBackups, func(db *backuppb.DatabaseBackupInfo, _ int) string { return db.GetDbName() })
 	t.logger.Info("databases backup after filtering", zap.Strings("db_names", dbNames))
-	collNSs = lo.Map(collBackups, func(coll *backuppb.CollectionBackupInfo, _ int) string {
-		return namespace.New(coll.GetDbName(), coll.GetCollectionName()).String()
+	collNames = lo.Map(collBackups, func(coll *backuppb.CollectionBackupInfo, _ int) string {
+		return collref.New(coll.GetDbName(), coll.GetCollectionName()).String()
 	})
-	t.logger.Info("collections backup after filtering", zap.Strings("coll_names", collNSs))
+	t.logger.Info("collections backup after filtering", zap.Strings("coll_names", collNames))
 
 	// generate restore tasks
 	dbTasks := t.newDBTasks(dbBackups)
 	collTasks := t.newCollTasks(dbBackups, collBackups)
 	dbNames = lo.Map(dbTasks, func(db *databaseTask, _ int) string { return db.targetName })
 	t.logger.Info("databases task after mapping", zap.Strings("db_names", dbNames))
-	collNSs = lo.Map(collTasks, func(coll collectionTask, _ int) string { return coll.TargetNS().String() })
-	t.logger.Info("collections task after mapping", zap.Strings("ns", collNSs))
+	collNames = lo.Map(collTasks, func(coll collectionTask, _ int) string { return coll.Target().String() })
+	t.logger.Info("collections task after mapping", zap.Strings("colls", collNames))
 
 	// filter task
 	dbTasks = t.filterDBTask(dbTasks)
 	collTasks = t.filterCollTask(collTasks)
 	dbNames = lo.Map(dbTasks, func(db *databaseTask, _ int) string { return db.targetName })
 	t.logger.Info("databases task after filtering", zap.Strings("db_names", dbNames))
-	collNSs = lo.Map(collTasks, func(coll collectionTask, _ int) string { return coll.TargetNS().String() })
-	t.logger.Info("collections task after filtering", zap.Strings("coll_names", collNSs))
+	collNames = lo.Map(collTasks, func(coll collectionTask, _ int) string { return coll.Target().String() })
+	t.logger.Info("collections task after filtering", zap.Strings("coll_names", collNames))
 
 	return dbTasks, collTasks
 }
@@ -333,8 +335,8 @@ func (t *Task) filterDBBackup(dbBackups []*backuppb.DatabaseBackupInfo) []*backu
 
 func (t *Task) filterCollBackup(collBackups []*backuppb.CollectionBackupInfo) []*backuppb.CollectionBackupInfo {
 	return lo.Filter(collBackups, func(collBackup *backuppb.CollectionBackupInfo, _ int) bool {
-		ns := namespace.New(collBackup.GetDbName(), collBackup.GetCollectionName())
-		return t.args.Plan.BackupFilter.AllowNS(ns)
+		collRef := collref.New(collBackup.GetDbName(), collBackup.GetCollectionName())
+		return t.args.Plan.BackupFilter.AllowName(collRef)
 	})
 }
 
@@ -367,8 +369,8 @@ func (t *Task) newDBTasks(dbBackups []*backuppb.DatabaseBackupInfo) []*databaseT
 }
 
 func (t *Task) newCollTask(dbBackup *backuppb.DatabaseBackupInfo, collBackup *backuppb.CollectionBackupInfo) []collectionTask {
-	sourceNS := namespace.New(collBackup.GetDbName(), collBackup.GetCollectionName())
-	targetNSes := t.args.Plan.CollMapper.TagetNS(sourceNS)
+	source := collref.New(collBackup.GetDbName(), collBackup.GetCollectionName())
+	targets := t.args.Plan.CollMapper.TargetNames(source)
 
 	// A local target resolves its storage directory two ways: the path
 	// milvus-backup reaches it at (rootPath) and the path the Milvus process
@@ -378,19 +380,19 @@ func (t *Task) newCollTask(dbBackup *backuppb.DatabaseBackupInfo, collBackup *ba
 		milvusLocalPath = t.args.Params.Milvus.Storage.RootPath.Val
 	}
 
-	tasks := make([]collectionTask, 0, len(targetNSes))
-	for _, targetNS := range targetNSes {
-		t.logger.Debug("generate restore collection task", zap.String("source", sourceNS.String()), zap.String("target", targetNS.String()))
+	tasks := make([]collectionTask, 0, len(targets))
+	for _, target := range targets {
+		t.logger.Debug("generate restore collection task", zap.String("source", source.String()), zap.String("target", target.String()))
 
 		if t.format == meta.FormatSnapshot {
 			tasks = append(tasks, newCollSnapshotTask(collSnapshotTaskArgs{
 				taskID:       t.args.TaskID,
 				collBackup:   collBackup,
-				targetNS:     targetNS,
+				target:       target,
 				source:       t.snapshotSource,
 				dropExist:    t.args.Option.DropExistCollection,
 				maxShardNum:  t.args.Option.MaxShardNum,
-				descOverride: t.args.Plan.CollOverrides[targetNS.String()].Description,
+				descOverride: t.args.Plan.CollOverrides[target.String()].Description,
 				skipParams:   t.args.Option.SkipParams,
 				grpcCli:      t.grpc,
 				taskMgr:      t.args.TaskMgr,
@@ -401,11 +403,11 @@ func (t *Task) newCollTask(dbBackup *backuppb.DatabaseBackupInfo, collBackup *ba
 		args := collTaskArgs{
 			taskID:        t.args.TaskID,
 			taskMgr:       t.args.TaskMgr,
-			targetNS:      targetNS,
+			target:        target,
 			dbBackup:      dbBackup,
 			collBackup:    collBackup,
 			option:        t.args.Option,
-			collOverride:  t.args.Plan.CollOverrides[targetNS.String()],
+			collOverride:  t.args.Plan.CollOverrides[target.String()],
 			streaming:     t.streaming,
 			keepTempFiles: t.args.Params.Restore.KeepTempFiles.Val,
 			backupDir:     t.args.BackupDir,
@@ -452,14 +454,14 @@ func (t *Task) filterDBTask(dbTask []*databaseTask) []*databaseTask {
 
 func (t *Task) filterCollTask(collTasks []collectionTask) []collectionTask {
 	return lo.Filter(collTasks, func(task collectionTask, _ int) bool {
-		return t.args.Plan.TaskFilter.AllowNS(task.TargetNS())
+		return t.args.Plan.TaskFilter.AllowName(task.Target())
 	})
 }
 
 // checkCollsExist check if the collection exist in target milvus, if collection exist, return error.
 func (t *Task) checkCollsExist(ctx context.Context, collTasks []collectionTask) error {
 	for _, collTask := range collTasks {
-		if err := t.checkCollExist(ctx, collTask.TargetNS()); err != nil {
+		if err := t.checkCollExist(ctx, collTask.Target()); err != nil {
 			return err
 		}
 	}
@@ -467,24 +469,24 @@ func (t *Task) checkCollsExist(ctx context.Context, collTasks []collectionTask) 
 	return nil
 }
 
-func (t *Task) checkCollExist(ctx context.Context, targetNS namespace.NS) error {
-	has, err := t.grpc.HasCollection(ctx, targetNS.DBName(), targetNS.CollName())
+func (t *Task) checkCollExist(ctx context.Context, target collref.Name) error {
+	has, err := t.grpc.HasCollection(ctx, target.DBName(), target.CollName())
 	if err != nil {
 		return fmt.Errorf("restore: check collection %w", err)
 	}
 
 	if t.args.Option.SkipCreateCollection && t.args.Option.DropExistCollection {
-		return fmt.Errorf("restore: skip create and drop exist collection can not be true at the same time collection %s", targetNS.String())
+		return fmt.Errorf("restore: skip create and drop exist collection can not be true at the same time collection %s", target.String())
 	}
 
 	// collection not exist and not create collection
 	if !has && t.args.Option.SkipCreateCollection {
-		return fmt.Errorf("restore: collection not exist, database %s collection %s", targetNS.DBName(), targetNS.CollName())
+		return fmt.Errorf("restore: collection not exist, database %s collection %s", target.DBName(), target.CollName())
 	}
 
 	// collection existed and not drop collection
 	if has && !t.args.Option.SkipCreateCollection && !t.args.Option.DropExistCollection {
-		return fmt.Errorf("restore: collection already exist, database %s collection %s", targetNS.DBName(), targetNS.CollName())
+		return fmt.Errorf("restore: collection already exist, database %s collection %s", target.DBName(), target.CollName())
 	}
 
 	return nil
@@ -641,7 +643,7 @@ func (t *Task) prepareDB(ctx context.Context, collTasks []collectionTask) error 
 
 	dbs := make(map[string]struct{})
 	for _, collTask := range collTasks {
-		dbs[collTask.TargetNS().DBName()] = struct{}{}
+		dbs[collTask.Target().DBName()] = struct{}{}
 	}
 	dbsNeedToRestores := lo.Keys(dbs)
 

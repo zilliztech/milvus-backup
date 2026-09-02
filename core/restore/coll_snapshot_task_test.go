@@ -16,12 +16,12 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 func newTestCollSnapshotTask(t *testing.T, grpcCli milvus.Grpc, dropExist bool) *collSnapshotTask {
-	targetNS := namespace.New("db2", "coll2")
+	target := collref.New("db2", "coll2")
 
 	mgr := taskmgr.NewMgr()
 	mgr.AddRestoreTask("task-1")
@@ -38,7 +38,7 @@ func newTestCollSnapshotTask(t *testing.T, grpcCli milvus.Grpc, dropExist bool) 
 	task := newCollSnapshotTask(collSnapshotTaskArgs{
 		taskID:     "task-1",
 		collBackup: collBackup,
-		targetNS:   targetNS,
+		target:     target,
 		source:     snapshotSource{dirURI: "s3://backup-bucket/backup/mybackup", externalSpec: `{"extfs":{}}`},
 		dropExist:  dropExist,
 		grpcCli:    grpcCli,
@@ -80,7 +80,7 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 
 		view, err := task.taskMgr.GetRestoreTask("task-1")
 		require.NoError(t, err)
-		assert.Equal(t, backuppb.RestoreTaskStateCode_SUCCESS, view.CollTasks()[task.targetNS].StateCode())
+		assert.Equal(t, backuppb.RestoreTaskStateCode_SUCCESS, view.CollTasks()[task.target].StateCode())
 	})
 
 	// A failed job is reported through the info rather than as an error from the query.

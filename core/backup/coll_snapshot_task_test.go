@@ -14,21 +14,21 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
-func newTestCollSnapshotTask(t *testing.T, ns namespace.NS, grpc milvus.Grpc) (*collSnapshotTask, *metaBuilder) {
+func newTestCollSnapshotTask(t *testing.T, collRef collref.Name, grpc milvus.Grpc) (*collSnapshotTask, *metaBuilder) {
 	mgr := taskmgr.NewMgr()
 	require.NoError(t, mgr.AddBackupTask("task-1", "mybackup"))
-	mgr.UpdateBackupTask("task-1", taskmgr.AddBackupCollTasks([]namespace.NS{ns}))
+	mgr.UpdateBackupTask("task-1", taskmgr.AddBackupCollTasks([]collref.Name{collRef}))
 
 	builder := newMetaBuilder("task-1", "mybackup")
-	builder.addCollection(ns, &backuppb.CollectionBackupInfo{CollectionId: 1, CollectionName: ns.CollName()})
+	builder.addCollection(collRef, &backuppb.CollectionBackupInfo{CollectionId: 1, CollectionName: collRef.CollName()})
 
 	task := &collSnapshotTask{
 		taskID:       "task-1",
-		ns:           ns,
+		collRef:      collRef,
 		snapshotName: "mbk_mybackup",
 		target:       snapshotTarget{Path: "s3://backup-bucket/backup/mybackup/bundle", Dir: "bundle"},
 		pollInterval: time.Millisecond,
@@ -42,7 +42,7 @@ func newTestCollSnapshotTask(t *testing.T, ns namespace.NS, grpc milvus.Grpc) (*
 }
 
 func TestCollSnapshotTask_Execute(t *testing.T) {
-	ns := namespace.New("db1", "coll1")
+	collRef := collref.New("db1", "coll1")
 
 	t.Run("Success", func(t *testing.T) {
 		cli := milvus.NewMockGrpc(t)
@@ -72,7 +72,7 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 			}, nil).Once()
 		cli.EXPECT().DropSnapshot(mock.Anything, "db1", "coll1", "mbk_mybackup").Return(nil).Once()
 
-		task, builder := newTestCollSnapshotTask(t, ns, cli)
+		task, builder := newTestCollSnapshotTask(t, collRef, cli)
 		require.NoError(t, task.Execute(context.Background()))
 
 		coll := builder.data.GetCollectionBackups()[0]
@@ -99,7 +99,7 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 			}, nil)
 		cli.EXPECT().DropSnapshot(mock.Anything, "db1", "coll1", "mbk_mybackup").Return(nil).Once()
 
-		task, builder := newTestCollSnapshotTask(t, ns, cli)
+		task, builder := newTestCollSnapshotTask(t, collRef, cli)
 		err := task.Execute(context.Background())
 		assert.ErrorContains(t, err, "copy failed")
 		assert.Nil(t, builder.data.GetCollectionBackups()[0].GetSnapshotBackup())
@@ -120,7 +120,7 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 			}, nil)
 		cli.EXPECT().DropSnapshot(mock.Anything, "db1", "coll1", "mbk_mybackup").Return(nil).Once()
 
-		task, _ := newTestCollSnapshotTask(t, ns, cli)
+		task, _ := newTestCollSnapshotTask(t, collRef, cli)
 		assert.Error(t, task.Execute(context.Background()))
 	})
 }
@@ -128,13 +128,13 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 // DataCoord releases the export's pin on its own reconcile tick, so the first drop
 // after a job completes can still be refused.
 func TestCollSnapshotTask_DropSnapshotRetries(t *testing.T) {
-	ns := namespace.New("db1", "coll1")
+	collRef := collref.New("db1", "coll1")
 
 	cli := milvus.NewMockGrpc(t)
 	cli.EXPECT().DropSnapshot(mock.Anything, "db1", "coll1", "mbk_mybackup").
 		Return(errors.New("snapshot is pinned")).Once()
 	cli.EXPECT().DropSnapshot(mock.Anything, "db1", "coll1", "mbk_mybackup").Return(nil).Once()
 
-	task, _ := newTestCollSnapshotTask(t, ns, cli)
+	task, _ := newTestCollSnapshotTask(t, collRef, cli)
 	task.dropSnapshot(context.Background())
 }

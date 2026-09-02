@@ -13,8 +13,8 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 )
 
@@ -24,7 +24,7 @@ type metaBuilder struct {
 	data *backuppb.BackupInfo
 
 	// index
-	nsToCollID        map[namespace.NS]int64
+	nameToCollID      map[collref.Name]int64
 	collectionBackups map[int64]*backuppb.CollectionBackupInfo       // coll id - > collection backup info
 	partitionBackups  map[partitionKey]*backuppb.PartitionBackupInfo // coll id -> part id - > partition backup info
 }
@@ -39,7 +39,7 @@ func newMetaBuilder(taskID, backupName string) *metaBuilder {
 	return &metaBuilder{
 		data: info,
 
-		nsToCollID:        make(map[namespace.NS]int64),
+		nameToCollID:      make(map[collref.Name]int64),
 		collectionBackups: make(map[int64]*backuppb.CollectionBackupInfo),
 		partitionBackups:  make(map[partitionKey]*backuppb.PartitionBackupInfo),
 	}
@@ -68,13 +68,13 @@ func (builder *metaBuilder) addDatabase(databaseBackup *backuppb.DatabaseBackupI
 	builder.data.DatabaseBackups = append(builder.data.DatabaseBackups, databaseBackup)
 }
 
-func (builder *metaBuilder) addCollection(ns namespace.NS, collectionBackup *backuppb.CollectionBackupInfo) {
+func (builder *metaBuilder) addCollection(collRef collref.Name, collectionBackup *backuppb.CollectionBackupInfo) {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
 
 	builder.data.CollectionBackups = append(builder.data.CollectionBackups, collectionBackup)
 	// add to index
-	builder.nsToCollID[ns] = collectionBackup.GetCollectionId()
+	builder.nameToCollID[collRef] = collectionBackup.GetCollectionId()
 	builder.collectionBackups[collectionBackup.GetCollectionId()] = collectionBackup
 	for _, partition := range collectionBackup.GetPartitionBackups() {
 		key := partitionKey{collectionID: collectionBackup.GetCollectionId(), partitionID: partition.GetPartitionId()}
@@ -94,14 +94,14 @@ func (builder *metaBuilder) setFormat(format string) {
 // addSnapshot attaches a collection's exported bundle. snapshotTs is the snapshot's
 // own boundary as Milvus reports it, which is what backup_timestamp means for this
 // format — the flush response the binlog path reads it from has no counterpart here.
-func (builder *metaBuilder) addSnapshot(ns namespace.NS, snapshot *backuppb.SnapshotBackupInfo, snapshotTs uint64) error {
+func (builder *metaBuilder) addSnapshot(collRef collref.Name, snapshot *backuppb.SnapshotBackupInfo, snapshotTs uint64) error {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
 
-	collID := builder.nsToCollID[ns]
+	collID := builder.nameToCollID[collRef]
 	collBackup, ok := builder.collectionBackups[collID]
 	if !ok {
-		return fmt.Errorf("backup: collection backup not found for namespace %s, collection_id: %d", ns, collID)
+		return fmt.Errorf("backup: collection backup not found for %s, collection_id: %d", collRef, collID)
 	}
 
 	collBackup.SnapshotBackup = snapshot
@@ -111,14 +111,14 @@ func (builder *metaBuilder) addSnapshot(ns namespace.NS, snapshot *backuppb.Snap
 	return nil
 }
 
-func (builder *metaBuilder) addPOS(ns namespace.NS, channelCP map[string]string, maxChannelTS uint64, sealTime uint64) error {
+func (builder *metaBuilder) addPOS(collRef collref.Name, channelCP map[string]string, maxChannelTS uint64, sealTime uint64) error {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
 
-	collID := builder.nsToCollID[ns]
+	collID := builder.nameToCollID[collRef]
 	collBackup, ok := builder.collectionBackups[collID]
 	if !ok {
-		return fmt.Errorf("backup: collection backup not found for namespace %s, collection_id: %d", ns, collID)
+		return fmt.Errorf("backup: collection backup not found for %s, collection_id: %d", collRef, collID)
 	}
 
 	collBackup.ChannelCheckpoints = channelCP

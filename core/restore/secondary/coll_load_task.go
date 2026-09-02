@@ -10,9 +10,9 @@ import (
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 
+	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
@@ -38,7 +38,7 @@ type collLoadTask struct {
 }
 
 func newCollLoadTask(args loadTaskArgs, dbBackup *backuppb.DatabaseBackupInfo, collBackup *backuppb.CollectionBackupInfo) *collLoadTask {
-	ns := namespace.New(collBackup.GetDbName(), collBackup.GetCollectionName())
+	collRef := collref.New(collBackup.GetDbName(), collBackup.GetCollectionName())
 
 	return &collLoadTask{
 		taskID: args.TaskID,
@@ -48,7 +48,7 @@ func newCollLoadTask(args loadTaskArgs, dbBackup *backuppb.DatabaseBackupInfo, c
 		collBackup: collBackup,
 
 		streamCli: args.StreamCli,
-		logger:    log.With(zap.String("task_id", args.TaskID), zap.String("ns", ns.String())),
+		logger:    log.With(zap.String("task_id", args.TaskID), zap.String("coll", collRef.String())),
 	}
 }
 

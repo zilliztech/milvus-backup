@@ -8,8 +8,9 @@ import (
 	"time"
 
 	mock "github.com/stretchr/testify/mock"
+
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 )
 
 // NewMockBackupTaskView creates a new instance of MockBackupTaskView. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -40,19 +41,19 @@ func (_m *MockBackupTaskView) EXPECT() *MockBackupTaskView_Expecter {
 }
 
 // CollTasks provides a mock function for the type MockBackupTaskView
-func (_mock *MockBackupTaskView) CollTasks() map[namespace.NS]BackupCollTaskView {
+func (_mock *MockBackupTaskView) CollTasks() map[collref.Name]BackupCollTaskView {
 	ret := _mock.Called()
 
 	if len(ret) == 0 {
 		panic("no return value specified for CollTasks")
 	}
 
-	var r0 map[namespace.NS]BackupCollTaskView
-	if returnFunc, ok := ret.Get(0).(func() map[namespace.NS]BackupCollTaskView); ok {
+	var r0 map[collref.Name]BackupCollTaskView
+	if returnFunc, ok := ret.Get(0).(func() map[collref.Name]BackupCollTaskView); ok {
 		r0 = returnFunc()
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(map[namespace.NS]BackupCollTaskView)
+			r0 = ret.Get(0).(map[collref.Name]BackupCollTaskView)
 		}
 	}
 	return r0
@@ -75,12 +76,12 @@ func (_c *MockBackupTaskView_CollTasks_Call) Run(run func()) *MockBackupTaskView
 	return _c
 }
 
-func (_c *MockBackupTaskView_CollTasks_Call) Return(nSToBackupCollTaskView map[namespace.NS]BackupCollTaskView) *MockBackupTaskView_CollTasks_Call {
+func (_c *MockBackupTaskView_CollTasks_Call) Return(nSToBackupCollTaskView map[collref.Name]BackupCollTaskView) *MockBackupTaskView_CollTasks_Call {
 	_c.Call.Return(nSToBackupCollTaskView)
 	return _c
 }
 
-func (_c *MockBackupTaskView_CollTasks_Call) RunAndReturn(run func() map[namespace.NS]BackupCollTaskView) *MockBackupTaskView_CollTasks_Call {
+func (_c *MockBackupTaskView_CollTasks_Call) RunAndReturn(run func() map[collref.Name]BackupCollTaskView) *MockBackupTaskView_CollTasks_Call {
 	_c.Call.Return(run)
 	return _c
 }
