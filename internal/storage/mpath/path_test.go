@@ -245,6 +245,27 @@ func TestParseInsertLogPath(t *testing.T) {
 		_, err = ParseDeltaLogPath(path)
 		assert.Error(t, err)
 	})
+
+	t.Run("IDOverflow", func(t *testing.T) {
+		// Not a scenario real milvus paths produce: the regex already restricts
+		// ids to digits, so a range overflow is the only input that can reach
+		// the ParseInt error branch at all — and thus the only way to test that
+		// it reports the offending field instead of panicking.
+		path := "base/insert_log/99999999999999999999/2/3/4/5"
+		_, err := ParseInsertLogPath(path)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "collectionID 99999999999999999999")
+
+		path = "base/insert_log/1/2/3/99999999999999999999/5"
+		_, err = ParseInsertLogPath(path)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "fieldID 99999999999999999999")
+
+		path = "base/insert_log/1/2/3/4/99999999999999999999"
+		_, err = ParseInsertLogPath(path)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "logID 99999999999999999999")
+	})
 }
 
 func TestParseDeltaLogPath(t *testing.T) {
@@ -305,6 +326,13 @@ func TestParseDeltaLogPath(t *testing.T) {
 		path = "base/insert_log/1/2/3/4"
 		_, err = ParseDeltaLogPath(path)
 		assert.Error(t, err)
+	})
+
+	t.Run("IDOverflow", func(t *testing.T) {
+		path := "base/delta_log/1/2/3/99999999999999999999"
+		_, err := ParseDeltaLogPath(path)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "logID 99999999999999999999")
 	})
 }
 
