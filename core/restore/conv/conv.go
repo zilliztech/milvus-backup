@@ -3,6 +3,7 @@ package conv
 import (
 	"encoding/base64"
 	"fmt"
+	"strings"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
@@ -93,12 +94,31 @@ func Fields(bakFields []*backuppb.FieldSchema) ([]*schemapb.FieldSchema, error) 
 	return fields, nil
 }
 
+// qualifySubFieldName returns the name Milvus stores a struct array's sub-field
+// under. Milvus keeps them as struct[sub] so that the same sub-field name may
+// appear in more than one struct, and hands back the bare name in
+// DescribeCollection, which is where a backup's schema comes from. Restoring
+// that schema has to put the qualification back.
+func qualifySubFieldName(structName, fieldName string) string {
+	if strings.HasPrefix(fieldName, structName+"[") && strings.HasSuffix(fieldName, "]") {
+		return fieldName
+	}
+	return fmt.Sprintf("%s[%s]", structName, fieldName)
+}
+
 func StructArrayFields(bakFields []*backuppb.StructArrayFieldSchema) ([]*schemapb.StructArrayFieldSchema, error) {
 	structArrayFields := make([]*schemapb.StructArrayFieldSchema, 0, len(bakFields))
 	for _, bakField := range bakFields {
 		fields, err := Fields(bakField.GetFields())
 		if err != nil {
 			return nil, fmt.Errorf("conv: convert struct array fields: %w", err)
+		}
+		// The proxy qualifies these on the create path, and a secondary restore
+		// does not go through the proxy, so do it here. Left bare, two structs
+		// that share a sub-field name would collide, and a search naming the
+		// field as struct[sub] would not resolve it.
+		for _, field := range fields {
+			field.Name = qualifySubFieldName(bakField.GetName(), field.GetName())
 		}
 
 		structArrayField := &schemapb.StructArrayFieldSchema{

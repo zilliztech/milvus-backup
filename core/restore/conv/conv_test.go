@@ -303,3 +303,69 @@ func TestPrivilegeGroups(t *testing.T) {
 	assert.Equal(t, "privilege3", restorePG[0].Privileges[0].Name)
 	assert.Equal(t, "privilege4", restorePG[0].Privileges[1].Name)
 }
+
+// Milvus stores a struct array's sub-fields as struct[sub] so the same sub-field
+// name can appear in more than one struct. DescribeCollection hands back the bare
+// name, which is what a backup carries, and a secondary restore writes the schema
+// without going through the proxy that would qualify it again.
+func TestStructArrayFieldsQualifiesSubFieldNames(t *testing.T) {
+	bak := []*backuppb.StructArrayFieldSchema{
+		{
+			FieldID: 138,
+			Name:    "duplicate_radar_struct",
+			Fields: []*backuppb.FieldSchema{
+				{FieldID: 139, Name: "chunk_number", DataType: backuppb.DataType_Int64},
+				{FieldID: 141, Name: "chunk_vector", DataType: backuppb.DataType_FloatVector},
+			},
+		},
+		{
+			FieldID: 142,
+			Name:    "title_struct",
+			Fields: []*backuppb.FieldSchema{
+				// Same sub-field names as the struct above: this is exactly what
+				// the qualification exists to keep apart.
+				{FieldID: 143, Name: "chunk_number", DataType: backuppb.DataType_Int64},
+				{FieldID: 145, Name: "chunk_vector", DataType: backuppb.DataType_FloatVector},
+			},
+		},
+	}
+
+	got, err := StructArrayFields(bak)
+	assert.NoError(t, err)
+	assert.Len(t, got, 2)
+
+	names := make([]string, 0, 4)
+	for _, s := range got {
+		for _, f := range s.GetFields() {
+			names = append(names, f.GetName())
+		}
+	}
+	assert.Equal(t, []string{
+		"duplicate_radar_struct[chunk_number]",
+		"duplicate_radar_struct[chunk_vector]",
+		"title_struct[chunk_number]",
+		"title_struct[chunk_vector]",
+	}, names)
+
+	// The struct's own name is not qualified, and field ids are untouched.
+	assert.Equal(t, "duplicate_radar_struct", got[0].GetName())
+	assert.EqualValues(t, 141, got[0].GetFields()[1].GetFieldID())
+}
+
+// A backup taken from a source that already carries qualified names must not be
+// qualified twice.
+func TestStructArrayFieldsQualificationIsIdempotent(t *testing.T) {
+	bak := []*backuppb.StructArrayFieldSchema{
+		{
+			FieldID: 138,
+			Name:    "duplicate_radar_struct",
+			Fields: []*backuppb.FieldSchema{
+				{FieldID: 141, Name: "duplicate_radar_struct[chunk_vector]"},
+			},
+		},
+	}
+
+	got, err := StructArrayFields(bak)
+	assert.NoError(t, err)
+	assert.Equal(t, "duplicate_radar_struct[chunk_vector]", got[0].GetFields()[0].GetName())
+}
