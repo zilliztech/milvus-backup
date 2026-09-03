@@ -1,18 +1,11 @@
 package server
 
 import (
-	"context"
-	"errors"
-	"fmt"
-
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"github.com/zilliztech/milvus-backup/core/del"
+	"github.com/zilliztech/milvus-backup/core/app"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
-	"github.com/zilliztech/milvus-backup/internal/storage"
-	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 )
 
 // DeleteBackup Delete backup interface
@@ -29,78 +22,35 @@ func (s *Server) handleDeleteBackup(c *gin.Context) {
 		RequestId:  c.GetHeader("request_id"),
 		BackupName: c.Query("backup_name"),
 	}
-
-	h := newDelHandler(req, s.params)
-	resp := h.run(c.Request.Context())
-
-	writeResponse(c, "delete backup fail", resp)
-}
-
-type delHandler struct {
-	params *v2.Config
-
-	req *backuppb.DeleteBackupRequest
-
-	backupStorage storage.Client
-}
-
-func newDelHandler(req *backuppb.DeleteBackupRequest, params *v2.Config) *delHandler {
-	return &delHandler{
-		req:    req,
-		params: params,
-	}
-}
-
-func (h *delHandler) complete() {
-	if len(h.req.GetRequestId()) == 0 {
-		h.req.RequestId = uuid.NewString()
-	}
-}
-
-func (h *delHandler) validate() error {
-	if len(h.req.GetBackupName()) == 0 {
-		return errors.New("backup name is required")
+	if len(req.GetRequestId()) == 0 {
+		req.RequestId = uuid.NewString()
 	}
 
-	return nil
-}
-
-func (h *delHandler) initClient(ctx context.Context) error {
-	backupStorage, err := storage.NewBackupStorage(ctx, h.params)
-	if err != nil {
-		return fmt.Errorf("server: create backup storage: %w", err)
-	}
-
-	h.backupStorage = backupStorage
-
-	return nil
-}
-
-func (h *delHandler) run(ctx context.Context) *backuppb.DeleteBackupResponse {
-	h.complete()
-
-	resp := &backuppb.DeleteBackupResponse{RequestId: h.req.GetRequestId()}
-	if err := h.validate(); err != nil {
+	resp := &backuppb.DeleteBackupResponse{RequestId: req.GetRequestId()}
+	if len(req.GetBackupName()) == 0 {
 		resp.Code = backuppb.ResponseCode_Parameter_Error
-		resp.Msg = err.Error()
-		return resp
+		resp.Msg = "backup name is required"
+		writeResponse(c, "delete backup fail", resp)
+		return
 	}
 
-	if err := h.initClient(ctx); err != nil {
+	uc, err := app.NewDeleteBackup(c.Request.Context(), s.params)
+	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
-		return resp
+		writeResponse(c, "delete backup fail", resp)
+		return
 	}
 
-	task := del.NewTask(h.backupStorage, mpath.BackupDir(h.params.Backup.Storage.RootPath.Val, h.req.GetBackupName()))
-	if err := task.Execute(ctx); err != nil {
+	if err := uc.Execute(c.Request.Context(), req.GetBackupName()); err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
-		return resp
+		writeResponse(c, "delete backup fail", resp)
+		return
 	}
 
 	resp.Code = backuppb.ResponseCode_Success
 	resp.Msg = "success"
 
-	return resp
+	writeResponse(c, "delete backup fail", resp)
 }
