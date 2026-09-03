@@ -1,12 +1,20 @@
 package server
 
 import (
+	"context"
+
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 
-	"github.com/zilliztech/milvus-backup/core/app"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 )
+
+// deleteBackupUC is the slice of app.DeleteBackup the handler needs. The
+// consumer defines it: app returns concrete types, and this narrow interface
+// is what handler tests stub out.
+type deleteBackupUC interface {
+	Execute(ctx context.Context, name string) error
+}
 
 // DeleteBackup Delete backup interface
 // @Summary Delete backup interface
@@ -34,7 +42,7 @@ func (s *Server) handleDeleteBackup(c *gin.Context) {
 		return
 	}
 
-	uc, err := app.NewDeleteBackup(c.Request.Context(), s.params)
+	uc, err := s.config.newDeleteBackup(c.Request.Context(), s.params)
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()

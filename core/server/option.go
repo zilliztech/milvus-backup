@@ -16,6 +16,9 @@ type config struct {
 	// default wires the real one; tests replace it with a stub so handler
 	// tests never touch storage.
 	newListBackups func(ctx context.Context, params *v2.Config) (listBackupsUC, error)
+
+	// newDeleteBackup is the delete counterpart of newListBackups.
+	newDeleteBackup func(ctx context.Context, params *v2.Config) (deleteBackupUC, error)
 }
 
 func newDefaultConfig() *config {
@@ -25,6 +28,9 @@ func newDefaultConfig() *config {
 		// *app.ListBackups needs this thin wrapper to become the interface.
 		newListBackups: func(ctx context.Context, params *v2.Config) (listBackupsUC, error) {
 			return app.NewListBackups(ctx, params)
+		},
+		newDeleteBackup: func(ctx context.Context, params *v2.Config) (deleteBackupUC, error) {
+			return app.NewDeleteBackup(ctx, params)
 		},
 	}
 }
