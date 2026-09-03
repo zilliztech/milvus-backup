@@ -8,25 +8,47 @@ import (
 	"strings"
 )
 
-// milvus bin log path
+// milvus bin log path (${root} is the milvus storage root)
 // insert log
-// ${root}/insert_log/${collection_id}/${partition_id}/${segment_id}/${field_id}/${log_idx}
+// ${root}/insert_log/${collection_id}/${partition_id}/${segment_id}/${field_id}/${log_id}
 // delta log
-// ${root}/delta_log/${collection_id}/${partition_id}/${segment_id}/${log_idx}
+// ${root}/delta_log/${collection_id}/${partition_id}/${segment_id}/${log_id}
+// An L0 delta log applies to every partition, so its partition_id is -1.
 
-// backup bin log path
+// backup bin log path (${root} is the backup directory)
 // insert log
-// ${root}/binglogs/insert_log/${collection_id}/${partition_id}/${groupId}(optional)/${segment_id}/${field_id}/${log_idx}
+// ${root}/binlogs/insert_log/${collection_id}/${partition_id}/${group_id}(optional)/${segment_id}/${field_id}/${log_id}
 // level 1 delta log
-// ${root}/binglogs/delta_log/${collection_id}/${partition_id}/${groupId}(optional)/${segment_id}/${log_idx}
+// ${root}/binlogs/delta_log/${collection_id}/${partition_id}/${group_id}(optional)/${segment_id}/${log_id}
 // level 0 delta log
-// ${root}/binglogs/delta_log/${collection_id}/${partition_id}/${segment_id}/${log_idx}
+// ${root}/binlogs/delta_log/${collection_id}/${partition_id}/${segment_id}/${log_id}
 // The group ID is a virtual partition ID. The Milvus BulkInsert interface requires a partition prefix,
 // but passing multiple segments is a more suitable option.
 // Therefore, a virtual partition ID is used here to enable the functionality of importing multiple segments.
+// It is the segment's own ID, is absent on L0 delta logs, and is missing entirely
+// in backups written before it was introduced — restore falls back to the layout
+// without it.
 
 // backup meta path
 // ${root}/meta/${file_type}.json
+
+// snapshot bundle path (snapshot-format backup; written and read by Milvus
+// ExportSnapshot/RestoreExternalSnapshot, this package only anchors its root at
+// ${root}/bundle, see BundleDirName)
+// Milvus namespaces every export under an exports/${export_uuid} layer of its
+// own, so exports sharing a target never collide, and a retried or recovered
+// export reuses the namespace it first persisted.
+// snapshot metadata: protojson SnapshotMetadata, the bundle's publication marker.
+// The backup meta records this path relative to the backup directory.
+// ${root}/bundle/exports/${export_uuid}/snapshots/${collection_id}/metadata/${snapshot_id}.json
+// segment manifests: one avro file per segment
+// ${root}/bundle/exports/${export_uuid}/snapshots/${collection_id}/manifests/${snapshot_id}/${segment_id}.avro
+// data files: each copied under its path relative to the milvus storage root
+// (files/insert_log/..., files/delta_log/..., files/stats_log/..., index files, ...)
+// ${root}/bundle/exports/${export_uuid}/files/${source_relative_path}
+// An export interrupted mid-copy can also leave
+// ${root}/bundle/exports/${export_uuid}/_staging/metadata.json,
+// the pre-publication metadata copy the exporter removes once the bundle is committed.
 
 const _separator = "/"
 
@@ -250,22 +272,22 @@ func parseBinlogPath(reg *regexp.Regexp, p string) (binlogPath, []string, error)
 
 	matches := reg.FindStringSubmatch(p)
 	if len(matches) == 0 {
-		return binlogPath{}, nil, fmt.Errorf("mpath: log path %s is not match the pattern", p)
+		return binlogPath{}, nil, fmt.Errorf("mpath: log path %s does not match the pattern", p)
 	}
 
 	root := matches[1]
 
 	collectionID, err := strconv.ParseInt(matches[2], 10, 64)
 	if err != nil {
-		return binlogPath{}, nil, fmt.Errorf("mpath: log path %s collectionID %s is not a number", p, matches[3])
+		return binlogPath{}, nil, fmt.Errorf("mpath: log path %s collectionID %s is not a number", p, matches[2])
 	}
 	partitionID, err := strconv.ParseInt(matches[3], 10, 64)
 	if err != nil {
-		return binlogPath{}, nil, fmt.Errorf("mpath: log path %s partitionID %s is not a number", p, matches[4])
+		return binlogPath{}, nil, fmt.Errorf("mpath: log path %s partitionID %s is not a number", p, matches[3])
 	}
 	segmentID, err := strconv.ParseInt(matches[4], 10, 64)
 	if err != nil {
-		return binlogPath{}, nil, fmt.Errorf("mpath: log path %s segmentID %s is not a number", p, matches[5])
+		return binlogPath{}, nil, fmt.Errorf("mpath: log path %s segmentID %s is not a number", p, matches[4])
 	}
 
 	return binlogPath{
@@ -283,16 +305,16 @@ func ParseInsertLogPath(p string) (InsertLogPath, error) {
 	}
 
 	if len(matches) != 2 {
-		return InsertLogPath{}, fmt.Errorf("mpath: log path %s is not match the pattern", p)
+		return InsertLogPath{}, fmt.Errorf("mpath: log path %s does not match the pattern", p)
 	}
 
 	fieldID, err := strconv.ParseInt(matches[0], 10, 64)
 	if err != nil {
-		return InsertLogPath{}, fmt.Errorf("mpath: log path %s fieldID %s is not a number", p, matches[6])
+		return InsertLogPath{}, fmt.Errorf("mpath: log path %s fieldID %s is not a number", p, matches[0])
 	}
 	logID, err := strconv.ParseInt(matches[1], 10, 64)
 	if err != nil {
-		return InsertLogPath{}, fmt.Errorf("mpath: log path %s logIdx %s is not a number", p, matches[7])
+		return InsertLogPath{}, fmt.Errorf("mpath: log path %s logID %s is not a number", p, matches[1])
 	}
 
 	return InsertLogPath{
@@ -313,11 +335,11 @@ func ParseDeltaLogPath(p string) (DeltaLogPath, error) {
 	}
 
 	if len(matches) != 1 {
-		return DeltaLogPath{}, fmt.Errorf("mpath: log path %s is not match the pattern", p)
+		return DeltaLogPath{}, fmt.Errorf("mpath: log path %s does not match the pattern", p)
 	}
 	logID, err := strconv.ParseInt(matches[0], 10, 64)
 	if err != nil {
-		return DeltaLogPath{}, fmt.Errorf("mpath: log path %s logIdx %s is not a number", p, matches[6])
+		return DeltaLogPath{}, fmt.Errorf("mpath: log path %s logID %s is not a number", p, matches[0])
 	}
 
 	return DeltaLogPath{
