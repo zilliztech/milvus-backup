@@ -7,13 +7,11 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/cmd/flags"
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
-	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
-	"github.com/zilliztech/milvus-backup/internal/storage"
-	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 )
 
 // removedFlags are the get flags dropped in 0.6.
@@ -41,23 +39,17 @@ func (o *options) validate() error {
 func (o *options) run(cmd *cobra.Command, params *v2.Config) error {
 	ctx := context.Background()
 
-	backupStorage, err := storage.NewBackupStorage(ctx, params)
+	uc, err := app.NewGetBackup(ctx, params)
 	if err != nil {
-		return fmt.Errorf("create backup storage: %w", err)
+		return fmt.Errorf("cmd: create get backup usecase %w", err)
 	}
 
-	backupDir := mpath.BackupDir(params.Backup.Storage.RootPath.Val, o.backupName)
-	backupInfo, err := meta.Read(ctx, backupStorage, backupDir)
+	view, err := uc.Execute(ctx, app.GetBackupRequest{Name: o.backupName})
 	if err != nil {
-		return fmt.Errorf("read backup meta: %w", err)
+		return fmt.Errorf("cmd: get backup %w", err)
 	}
 
-	metaSize, err := storage.Size(ctx, backupStorage, mpath.MetaDir(backupDir))
-	if err != nil {
-		return fmt.Errorf("get meta size: %w", err)
-	}
-
-	brief := pbconv.NewBackupInfoBrief(nil, backupInfo, metaSize)
+	brief := pbconv.NewBackupInfoBrief(view.Task, view.Meta, view.MetaSize)
 	output, err := json.MarshalIndent(brief, "", "    ")
 	if err != nil {
 		return fmt.Errorf("fail to marshal backup info: %w", err)
