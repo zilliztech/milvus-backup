@@ -416,8 +416,8 @@ func (a *AzureClient) listPrefixNonRecursive(prefix string) (*AzureObjectHierarc
 	}}, nil
 }
 
-func (a *AzureClient) DeleteObject(ctx context.Context, prefix string) error {
-	if _, err := a.cli.DeleteBlob(ctx, a.cfg.Bucket, prefix, nil); err != nil {
+func (a *AzureClient) DeleteObject(ctx context.Context, key string) error {
+	if _, err := a.cli.DeleteBlob(ctx, a.cfg.Bucket, key, nil); err != nil {
 		return fmt.Errorf("storage: azure delete blob %w", err)
 	}
 
