@@ -1,4 +1,8 @@
 .git
+.venv
 logs
 tests
+system_tests
+**/__pycache__
+**/.pytest_cache
 deployment
