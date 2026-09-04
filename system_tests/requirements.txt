@@ -1,5 +1,6 @@
 --extra-index-url https://test.pypi.org/simple/
 
 pytest==9.0.3
+allure-pytest==2.16.0
 pymilvus==2.7.0rc147
 requests==2.33.0
