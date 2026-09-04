@@ -39,6 +39,7 @@ class BackupRestoreEnvironment:
     backup_storage: str
     target_storage: str
     credential_mode: str
+    backup_format: str
     backup_timeout_seconds: float
     restore_timeout_seconds: float
     poll_interval_seconds: float
@@ -68,6 +69,7 @@ class BackupRestoreEnvironment:
             backup_storage=values["BACKUP_TEST_BACKUP_STORAGE"],
             target_storage=values["BACKUP_TEST_TARGET_STORAGE"],
             credential_mode=values["BACKUP_TEST_CREDENTIAL_MODE"],
+            backup_format=values.get("BACKUP_TEST_BACKUP_FORMAT", "binlog"),
             backup_timeout_seconds=float(
                 values.get("BACKUP_TEST_BACKUP_TIMEOUT_SECONDS", "900")
             ),
@@ -90,6 +92,7 @@ class BackupRestoreEnvironment:
             "backup_storage": self.backup_storage,
             "target_storage": self.target_storage,
             "credential_mode": self.credential_mode,
+            "backup_format": self.backup_format,
             "source_milvus_uri": self.source.uri,
             "target_milvus_uri": self.target.uri,
             "backup_api_uri": self.backup_api_uri,

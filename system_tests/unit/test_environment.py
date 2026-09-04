@@ -19,6 +19,7 @@ def test_environment_loads_endpoints_and_safe_route_metadata():
             "BACKUP_TEST_BACKUP_STORAGE": "minio",
             "BACKUP_TEST_TARGET_STORAGE": "minio",
             "BACKUP_TEST_CREDENTIAL_MODE": "static",
+            "BACKUP_TEST_BACKUP_FORMAT": "snapshot",
             "BACKUP_TEST_BACKUP_TIMEOUT_SECONDS": "120",
             "BACKUP_TEST_RESTORE_TIMEOUT_SECONDS": "240",
             "BACKUP_TEST_POLL_INTERVAL_SECONDS": "2.5",
@@ -36,12 +37,14 @@ def test_environment_loads_endpoints_and_safe_route_metadata():
     assert environment.restore_timeout_seconds == 240
     assert environment.poll_interval_seconds == 2.5
     assert environment.keep_artifacts_on_failure is True
+    assert environment.backup_format == "snapshot"
     assert environment.safe_metadata() == {
         "environment": "minio-to-minio",
         "source_storage": "minio",
         "backup_storage": "minio",
         "target_storage": "minio",
         "credential_mode": "static",
+        "backup_format": "snapshot",
         "source_milvus_uri": "http://source-milvus:19530",
         "target_milvus_uri": "http://target-milvus:19530",
         "backup_api_uri": "http://backup-server:8080/api/v1",

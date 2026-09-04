@@ -44,6 +44,7 @@ def test_collection_can_be_restored_to_another_milvus(
         backup = backup_api.create_backup_and_wait(
             backup_name=backup_name,
             collection_names=[source_collection],
+            backup_format=backup_restore_environment.backup_format,
             request_id=f"backup-{run_id}",
             timeout_seconds=backup_restore_environment.backup_timeout_seconds,
             poll_interval_seconds=backup_restore_environment.poll_interval_seconds,

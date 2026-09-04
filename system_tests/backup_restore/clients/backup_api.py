@@ -27,6 +27,7 @@ class BackupApi:
         *,
         backup_name: str,
         collection_names: list[str],
+        backup_format: str,
         request_id: str,
         timeout_seconds: float,
         poll_interval_seconds: float,
@@ -40,6 +41,7 @@ class BackupApi:
                 "async": True,
                 "backup_name": backup_name,
                 "collection_names": collection_names,
+                "format": backup_format,
             },
         )
 

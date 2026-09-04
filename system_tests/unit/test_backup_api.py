@@ -47,6 +47,7 @@ def test_create_backup_waits_until_the_backup_is_available():
     ).create_backup_and_wait(
         backup_name="backup-1",
         collection_names=["source_collection"],
+        backup_format="binlog",
         request_id="backup-request-1",
         timeout_seconds=10,
         poll_interval_seconds=0,
@@ -65,6 +66,7 @@ def test_create_backup_waits_until_the_backup_is_available():
                     "async": True,
                     "backup_name": "backup-1",
                     "collection_names": ["source_collection"],
+                    "format": "binlog",
                 },
                 "timeout": 30,
                 "headers": {"request_id": "backup-request-1"},
