@@ -39,6 +39,10 @@ class BackupRestoreEnvironment:
     backup_storage: str
     target_storage: str
     credential_mode: str
+    backup_timeout_seconds: float
+    restore_timeout_seconds: float
+    poll_interval_seconds: float
+    keep_artifacts_on_failure: bool
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, str]) -> BackupRestoreEnvironment:
@@ -64,6 +68,19 @@ class BackupRestoreEnvironment:
             backup_storage=values["BACKUP_TEST_BACKUP_STORAGE"],
             target_storage=values["BACKUP_TEST_TARGET_STORAGE"],
             credential_mode=values["BACKUP_TEST_CREDENTIAL_MODE"],
+            backup_timeout_seconds=float(
+                values.get("BACKUP_TEST_BACKUP_TIMEOUT_SECONDS", "900")
+            ),
+            restore_timeout_seconds=float(
+                values.get("BACKUP_TEST_RESTORE_TIMEOUT_SECONDS", "1800")
+            ),
+            poll_interval_seconds=float(
+                values.get("BACKUP_TEST_POLL_INTERVAL_SECONDS", "5")
+            ),
+            keep_artifacts_on_failure=values.get(
+                "BACKUP_TEST_KEEP_ARTIFACTS_ON_FAILURE", "false"
+            ).lower()
+            == "true",
         )
 
     def safe_metadata(self) -> dict[str, str]:
