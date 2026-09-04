@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 )
 
 func Test_inferFilterRuleType(t *testing.T) {
@@ -90,10 +90,10 @@ func TestFilter_AllowDB(t *testing.T) {
 	})
 }
 
-func TestFilter_AllowNS(t *testing.T) {
+func TestFilter_AllowName(t *testing.T) {
 	t.Run("NoFilter", func(t *testing.T) {
 		f := Filter{}
-		assert.True(t, f.AllowNS(namespace.New("db1", "coll1")))
+		assert.True(t, f.AllowName(collref.New("db1", "coll1")))
 	})
 
 	t.Run("Filter", func(t *testing.T) {
@@ -101,10 +101,10 @@ func TestFilter_AllowNS(t *testing.T) {
 			"db1": {AllowAll: true},
 			"db2": {CollName: map[string]struct{}{"coll1": {}}},
 		}}
-		assert.True(t, f.AllowNS(namespace.New("db1", "coll1")))
-		assert.True(t, f.AllowNS(namespace.New("db2", "coll1")))
-		assert.False(t, f.AllowNS(namespace.New("db2", "coll2")))
-		assert.False(t, f.AllowNS(namespace.New("db3", "coll1")))
+		assert.True(t, f.AllowName(collref.New("db1", "coll1")))
+		assert.True(t, f.AllowName(collref.New("db2", "coll1")))
+		assert.False(t, f.AllowName(collref.New("db2", "coll2")))
+		assert.False(t, f.AllowName(collref.New("db3", "coll1")))
 	})
 }
 
@@ -123,15 +123,15 @@ func TestFilter_AllowDBs(t *testing.T) {
 	})
 }
 
-func TestFilter_AllowNSS(t *testing.T) {
+func TestFilter_AllowNames(t *testing.T) {
 	t.Run("NoFilter", func(t *testing.T) {
 		f := Filter{}
-		ns := []namespace.NS{
-			namespace.New("db1", "coll1"),
-			namespace.New("db2", "coll2"),
-			namespace.New("db3", "coll3"),
+		collRefs := []collref.Name{
+			collref.New("db1", "coll1"),
+			collref.New("db2", "coll2"),
+			collref.New("db3", "coll3"),
 		}
-		assert.ElementsMatch(t, ns, f.AllowNSS(ns))
+		assert.ElementsMatch(t, collRefs, f.AllowNames(collRefs))
 	})
 
 	t.Run("Filter", func(t *testing.T) {
@@ -139,18 +139,18 @@ func TestFilter_AllowNSS(t *testing.T) {
 			"db1": {AllowAll: true},
 			"db2": {CollName: map[string]struct{}{"coll1": {}}},
 		}}
-		ns := []namespace.NS{
-			namespace.New("db1", "coll1"),
-			namespace.New("db2", "coll1"),
-			namespace.New("db2", "coll2"),
-			namespace.New("db3", "coll1"),
+		collRefs := []collref.Name{
+			collref.New("db1", "coll1"),
+			collref.New("db2", "coll1"),
+			collref.New("db2", "coll2"),
+			collref.New("db3", "coll1"),
 		}
 
-		expect := []namespace.NS{
-			namespace.New("db1", "coll1"),
-			namespace.New("db2", "coll1"),
+		expect := []collref.Name{
+			collref.New("db1", "coll1"),
+			collref.New("db2", "coll1"),
 		}
-		assert.ElementsMatch(t, expect, f.AllowNSS(ns))
+		assert.ElementsMatch(t, expect, f.AllowNames(collRefs))
 	})
 }
 

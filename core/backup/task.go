@@ -14,10 +14,10 @@ import (
 	"github.com/zilliztech/milvus-backup/core/tasklet"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
@@ -268,7 +268,7 @@ func (t *Task) privateExecute(ctx context.Context) error {
 			zap.Bool("source_sas_set", target.SourceSASSet))
 	}
 
-	dbNames, collections, err := t.listDBAndNSS(ctx)
+	dbNames, collections, err := t.listDBAndNames(ctx)
 	if err != nil {
 		return fmt.Errorf("backup: list db and collection: %w", err)
 	}
@@ -336,7 +336,7 @@ func (t *Task) resolveFormat() (string, error) {
 // plans go through this factory, so one flush orchestration runs whichever
 // artifact the format asks for.
 func (t *Task) newDataTask(format string) dataTaskFactory {
-	return func(ns namespace.NS, args collTaskArgs) tasklet.Tasklet {
+	return func(collRef collref.Name, args collTaskArgs) tasklet.Tasklet {
 		if format == meta.FormatSnapshot {
 			// The plan's flush is what makes the boundary fresh: a snapshot admits only
 			// the segments below its channel seek positions, so without one it would
@@ -347,10 +347,10 @@ func (t *Task) newDataTask(format string) dataTaskFactory {
 			// semaphore bounds how many exports are in flight: a job starts its timeout
 			// when DataCoord accepts it, so anything queued beyond what
 			// dataCoord.snapshot.exportMaxConcurrentJobs can run burns that budget.
-			return newCollSnapshotTask(ns, t.snapshotName(), t.snapshotTarget, args)
+			return newCollSnapshotTask(collRef, t.snapshotName(), t.snapshotTarget, args)
 		}
 
-		return newCollDMLTask(ns, args)
+		return newCollDMLTask(collRef, args)
 	}
 }
 
@@ -371,17 +371,17 @@ func (t *Task) prepare(ctx context.Context) error {
 	return nil
 }
 
-func (t *Task) listDBAndNSS(ctx context.Context) ([]string, []namespace.NS, error) {
+func (t *Task) listDBAndNames(ctx context.Context) ([]string, []collref.Name, error) {
 	f := t.option.Filter
 
 	if f.DBCollFilter == nil {
-		return t.listAllDBAndNSS(ctx)
+		return t.listAllDBAndNames(ctx)
 	}
 
-	return t.listFilteredDBAndNSS(ctx, f)
+	return t.listFilteredDBAndNames(ctx, f)
 }
 
-func (t *Task) listAllDBAndNSS(ctx context.Context) ([]string, []namespace.NS, error) {
+func (t *Task) listAllDBAndNames(ctx context.Context) ([]string, []collref.Name, error) {
 	var dbNames []string
 	var err error
 
@@ -391,34 +391,34 @@ func (t *Task) listAllDBAndNSS(ctx context.Context) ([]string, []namespace.NS, e
 			return nil, nil, fmt.Errorf("backup: list databases: %w", err)
 		}
 	} else {
-		dbNames = []string{namespace.DefaultDBName}
+		dbNames = []string{collref.DefaultDBName}
 	}
 
-	var nss []namespace.NS
+	var collRefs []collref.Name
 	for _, dbName := range dbNames {
 		resp, err := t.grpc.ListCollections(ctx, dbName)
 		if err != nil {
 			return nil, nil, fmt.Errorf("backup: list collections for db %s: %w", dbName, err)
 		}
 		for _, coll := range resp.CollectionNames {
-			nss = append(nss, namespace.New(dbName, coll))
+			collRefs = append(collRefs, collref.New(dbName, coll))
 		}
 	}
 
 	t.logger.Info("listed all collections",
 		zap.Strings("db", dbNames),
-		zap.Strings("ns", nsStrings(nss)))
+		zap.Strings("colls", nameStrings(collRefs)))
 
-	return dbNames, nss, nil
+	return dbNames, collRefs, nil
 }
 
-func (t *Task) listFilteredDBAndNSS(ctx context.Context, f filter.Filter) ([]string, []namespace.NS, error) {
+func (t *Task) listFilteredDBAndNames(ctx context.Context, f filter.Filter) ([]string, []collref.Name, error) {
 	// With filter: process each filter entry:
 	// - db.*: list all collections in the db
 	// - db.coll1,db.coll2: list collections with existence check
 	// - db.: database only (no collections)
 	dbNameSet := make(map[string]struct{}, len(f.DBCollFilter))
-	var nss []namespace.NS
+	var collRefs []collref.Name
 
 	for dbName, collFilter := range f.DBCollFilter {
 		dbNameSet[dbName] = struct{}{}
@@ -429,7 +429,7 @@ func (t *Task) listFilteredDBAndNSS(ctx context.Context, f filter.Filter) ([]str
 				return nil, nil, fmt.Errorf("backup: list collections for db %s: %w", dbName, err)
 			}
 			for _, coll := range resp.CollectionNames {
-				nss = append(nss, namespace.New(dbName, coll))
+				collRefs = append(collRefs, collref.New(dbName, coll))
 			}
 			continue
 		}
@@ -442,7 +442,7 @@ func (t *Task) listFilteredDBAndNSS(ctx context.Context, f filter.Filter) ([]str
 			if !exists {
 				return nil, nil, fmt.Errorf("backup: filter collection %s.%s not found in milvus", dbName, collName)
 			}
-			nss = append(nss, namespace.New(dbName, collName))
+			collRefs = append(collRefs, collref.New(dbName, collName))
 		}
 	}
 
@@ -453,44 +453,44 @@ func (t *Task) listFilteredDBAndNSS(ctx context.Context, f filter.Filter) ([]str
 
 	t.logger.Info("listed collections (filtered)",
 		zap.Strings("db", dbNames),
-		zap.Strings("ns", nsStrings(nss)))
+		zap.Strings("colls", nameStrings(collRefs)))
 
-	return dbNames, nss, nil
+	return dbNames, collRefs, nil
 }
 
-// excludeExternalColl drops the external collections from nss. An external collection
+// excludeExternalColl drops the external collections from the given list. An external collection
 // only holds a mapping to data owned by an external source, so Milvus has no binlog to
 // copy and a restore has nothing to rebuild it from. Backing one up would produce an
 // entry that can never be restored, so skip it and keep going with the rest.
-func (t *Task) excludeExternalColl(ctx context.Context, nss []namespace.NS) ([]namespace.NS, error) {
-	remain := make([]namespace.NS, 0, len(nss))
-	var external []namespace.NS
+func (t *Task) excludeExternalColl(ctx context.Context, collRefs []collref.Name) ([]collref.Name, error) {
+	remain := make([]collref.Name, 0, len(collRefs))
+	var external []collref.Name
 
-	for _, ns := range nss {
-		resp, err := t.grpc.DescribeCollection(ctx, ns.DBName(), ns.CollName())
+	for _, collRef := range collRefs {
+		resp, err := t.grpc.DescribeCollection(ctx, collRef.DBName(), collRef.CollName())
 		if err != nil {
-			return nil, fmt.Errorf("backup: describe collection %s: %w", ns, err)
+			return nil, fmt.Errorf("backup: describe collection %s: %w", collRef, err)
 		}
 
 		if typeutil.IsExternalCollection(resp.GetSchema()) {
-			external = append(external, ns)
+			external = append(external, collRef)
 			continue
 		}
-		remain = append(remain, ns)
+		remain = append(remain, collRef)
 	}
 
 	if len(external) != 0 {
 		t.logger.Info("skip external collections, their data is not stored in milvus",
-			zap.Strings("ns", nsStrings(external)))
+			zap.Strings("colls", nameStrings(external)))
 	}
 
 	return remain, nil
 }
 
-func nsStrings(nss []namespace.NS) []string {
-	out := make([]string, 0, len(nss))
-	for _, ns := range nss {
-		out = append(out, ns.String())
+func nameStrings(collRefs []collref.Name) []string {
+	out := make([]string, 0, len(collRefs))
+	for _, collRef := range collRefs {
+		out = append(out, collRef.String())
 	}
 	return out
 }
@@ -528,13 +528,13 @@ func (t *Task) newCollTaskArgs() collTaskArgs {
 	}
 }
 
-func (t *Task) backupCollection(ctx context.Context, nss []namespace.NS) error {
-	t.logger.Info("start backup collections", zap.Int("count", len(nss)))
+func (t *Task) backupCollection(ctx context.Context, collRefs []collref.Name) error {
+	t.logger.Info("start backup collections", zap.Int("count", len(collRefs)))
 
-	t.taskMgr.UpdateBackupTask(t.taskID, taskmgr.AddBackupCollTasks(nss))
+	t.taskMgr.UpdateBackupTask(t.taskID, taskmgr.AddBackupCollTasks(collRefs))
 	t.taskMgr.UpdateBackupTask(t.taskID, taskmgr.SetBackupCollectionExecuting())
 
-	plan, err := t.selectPlan(nss, t.option.Strategy, t.resolvedFormat)
+	plan, err := t.selectPlan(collRefs, t.option.Strategy, t.resolvedFormat)
 	if err != nil {
 		return fmt.Errorf("backup: select plan: %w", err)
 	}
@@ -551,7 +551,7 @@ func (t *Task) backupCollection(ctx context.Context, nss []namespace.NS) error {
 // picks the flush orchestration, the format picks what artifact its data step
 // produces. The plans themselves know nothing about the format — they receive
 // the factory that does.
-func (t *Task) selectPlan(nss []namespace.NS, strategy Strategy, format string) (tasklet.Tasklet, error) {
+func (t *Task) selectPlan(collRefs []collref.Name, strategy Strategy, format string) (tasklet.Tasklet, error) {
 	args := t.newCollTaskArgs()
 	newData := t.newDataTask(format)
 
@@ -559,22 +559,22 @@ func (t *Task) selectPlan(nss []namespace.NS, strategy Strategy, format string) 
 	case StrategyAuto:
 		if t.grpc.HasFeature(milvus.FlushAll) {
 			t.logger.Info("use bulk flush plan")
-			return newBulkFlushPlan(nss, args, newData), nil
+			return newBulkFlushPlan(collRefs, args, newData), nil
 		}
 		t.logger.Info("use serial flush plan")
-		return newSerialFlushPlan(nss, args, newData), nil
+		return newSerialFlushPlan(collRefs, args, newData), nil
 	case StrategyMetaOnly:
 		t.logger.Info("use meta only plan")
-		return newMetaOnlyPlan(nss, args), nil
+		return newMetaOnlyPlan(collRefs, args), nil
 	case StrategySkipFlush:
 		t.logger.Info("use skip flush plan")
-		return newSkipFlushPlan(nss, args, newData), nil
+		return newSkipFlushPlan(collRefs, args, newData), nil
 	case StrategyBulkFlush:
 		t.logger.Info("use bulk flush plan")
-		return newBulkFlushPlan(nss, args, newData), nil
+		return newBulkFlushPlan(collRefs, args, newData), nil
 	case StrategySerialFlush:
 		t.logger.Info("use serial flush plan")
-		return newSerialFlushPlan(nss, args, newData), nil
+		return newSerialFlushPlan(collRefs, args, newData), nil
 	default:
 		return nil, fmt.Errorf("backup: unsupported strategy: %s", strategy)
 	}

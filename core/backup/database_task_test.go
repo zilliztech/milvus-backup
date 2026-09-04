@@ -11,7 +11,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 )
 
 func TestDatabaseTask_Execute(t *testing.T) {
@@ -47,12 +47,12 @@ func TestDatabaseTask_Execute(t *testing.T) {
 
 		builder := newMetaBuilder("task1", "backup1")
 
-		task := newDatabaseTask("backup1", namespace.DefaultDBName, cli, manage, builder)
+		task := newDatabaseTask("backup1", collref.DefaultDBName, cli, manage, builder)
 		err := task.Execute(context.Background())
 		assert.NoError(t, err)
 
 		assert.Equal(t, int64(0), builder.data.DatabaseBackups[0].GetDbId())
-		assert.Equal(t, namespace.DefaultDBName, builder.data.DatabaseBackups[0].GetDbName())
+		assert.Equal(t, collref.DefaultDBName, builder.data.DatabaseBackups[0].GetDbName())
 		assert.Empty(t, builder.data.DatabaseBackups[0].GetProperties())
 	})
 }

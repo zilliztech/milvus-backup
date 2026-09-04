@@ -13,7 +13,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 )
 
 func newTestCollDDLTask() *collDDLTask {
@@ -220,7 +220,7 @@ func TestCollDDLTask_restoreFuncRuntimeCheck(t *testing.T) {
 				Functions:  []*backuppb.FunctionSchema{{Name: "func", InputFieldNames: []string{"hello"}}},
 			},
 		}
-		ddlt.targetNS = namespace.New("db1", "coll1")
+		ddlt.target = collref.New("db1", "coll1")
 		err := ddlt.restoreFuncRuntimeCheck(context.Background())
 		assert.NoError(t, err)
 	})
@@ -249,7 +249,7 @@ func TestCollDDLTask_restoreFuncRuntimeCheck(t *testing.T) {
 				Functions:  []*backuppb.FunctionSchema{{Name: "func", InputFieldNames: []string{"hello"}}},
 			},
 		}
-		ddlt.targetNS = namespace.New("db1", "coll1")
+		ddlt.target = collref.New("db1", "coll1")
 		err := ddlt.restoreFuncRuntimeCheck(context.Background())
 		assert.NoError(t, err)
 	})
@@ -265,7 +265,7 @@ func TestCollDDLTask_createColl(t *testing.T) {
 
 	t.Run("Normal", func(t *testing.T) {
 		ct := newTestCollDDLTask()
-		ct.targetNS = namespace.New("db1", "coll1")
+		ct.target = collref.New("db1", "coll1")
 		ct.collBackup = &backuppb.CollectionBackupInfo{
 			Schema: &backuppb.CollectionSchema{
 				Fields: []*backuppb.FieldSchema{{
@@ -318,7 +318,7 @@ func TestCollDDLTask_createColl(t *testing.T) {
 
 	t.Run("WithCollOverride", func(t *testing.T) {
 		ct := newTestCollDDLTask()
-		ct.targetNS = namespace.New("db1", "coll1")
+		ct.target = collref.New("db1", "coll1")
 		ct.collOverride = CollOverride{ShardNum: 2, Description: "overridden desc"}
 		ct.collBackup = &backuppb.CollectionBackupInfo{
 			Schema: &backuppb.CollectionSchema{

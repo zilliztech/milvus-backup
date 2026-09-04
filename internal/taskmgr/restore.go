@@ -5,17 +5,17 @@ import (
 	"time"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 )
 
 type RestoreTaskOpt func(task *RestoreTask)
 
-func AddRestoreCollTask(ns namespace.NS, totalSize int64) RestoreTaskOpt {
+func AddRestoreCollTask(collRef collref.Name, totalSize int64) RestoreTaskOpt {
 	return func(task *RestoreTask) {
 		task.mu.Lock()
 		defer task.mu.Unlock()
 
-		task.collTask[ns] = newRestoreCollectionTask(ns, totalSize)
+		task.collTask[collRef] = newRestoreCollectionTask(collRef, totalSize)
 	}
 }
 
@@ -49,11 +49,11 @@ func SetRestoreFail(err error) RestoreTaskOpt {
 	}
 }
 
-func SetRestoreCollExecuting(ns namespace.NS) RestoreTaskOpt {
+func SetRestoreCollExecuting(collRef collref.Name) RestoreTaskOpt {
 	return func(task *RestoreTask) {
 		task.mu.RLock()
 		defer task.mu.RUnlock()
-		collTask := task.collTask[ns]
+		collTask := task.collTask[collRef]
 
 		collTask.mu.Lock()
 		defer collTask.mu.Unlock()
@@ -62,11 +62,11 @@ func SetRestoreCollExecuting(ns namespace.NS) RestoreTaskOpt {
 	}
 }
 
-func SetRestoreCollSuccess(ns namespace.NS) RestoreTaskOpt {
+func SetRestoreCollSuccess(collRef collref.Name) RestoreTaskOpt {
 	return func(task *RestoreTask) {
 		task.mu.RLock()
 		defer task.mu.RUnlock()
-		collTask := task.collTask[ns]
+		collTask := task.collTask[collRef]
 
 		collTask.mu.Lock()
 		defer collTask.mu.Unlock()
@@ -76,11 +76,11 @@ func SetRestoreCollSuccess(ns namespace.NS) RestoreTaskOpt {
 	}
 }
 
-func SetRestoreCollFail(ns namespace.NS, err error) RestoreTaskOpt {
+func SetRestoreCollFail(collRef collref.Name, err error) RestoreTaskOpt {
 	return func(task *RestoreTask) {
 		task.mu.RLock()
 		defer task.mu.RUnlock()
-		collTask := task.collTask[ns]
+		collTask := task.collTask[collRef]
 
 		collTask.mu.Lock()
 		defer collTask.mu.Unlock()
@@ -91,11 +91,11 @@ func SetRestoreCollFail(ns namespace.NS, err error) RestoreTaskOpt {
 	}
 }
 
-func AddRestoreImportJob(ns namespace.NS, jobID string, totalSize int64) RestoreTaskOpt {
+func AddRestoreImportJob(collRef collref.Name, jobID string, totalSize int64) RestoreTaskOpt {
 	return func(task *RestoreTask) {
 		task.mu.RLock()
 		defer task.mu.RUnlock()
-		collTask := task.collTask[ns]
+		collTask := task.collTask[collRef]
 
 		collTask.mu.Lock()
 		defer collTask.mu.Unlock()
@@ -104,11 +104,11 @@ func AddRestoreImportJob(ns namespace.NS, jobID string, totalSize int64) Restore
 	}
 }
 
-func UpdateRestoreImportJob(ns namespace.NS, jobID string, progress int) RestoreTaskOpt {
+func UpdateRestoreImportJob(collRef collref.Name, jobID string, progress int) RestoreTaskOpt {
 	return func(task *RestoreTask) {
 		task.mu.RLock()
 		defer task.mu.RUnlock()
-		collTask := task.collTask[ns]
+		collTask := task.collTask[collRef]
 
 		collTask.mu.RLock()
 		defer collTask.mu.RUnlock()
@@ -131,7 +131,7 @@ type RestoreTaskView interface {
 	Progress() int32
 	TotalSize() int64
 
-	CollTasks() map[namespace.NS]RestoreCollTaskView
+	CollTasks() map[collref.Name]RestoreCollTaskView
 }
 
 var _ RestoreTaskView = (*RestoreTask)(nil)
@@ -147,7 +147,7 @@ type RestoreTask struct {
 	startTime time.Time
 	endTime   time.Time
 
-	collTask map[namespace.NS]*restoreCollectionTask
+	collTask map[collref.Name]*restoreCollectionTask
 }
 
 func newRestoreTask(id string) *RestoreTask {
@@ -155,7 +155,7 @@ func newRestoreTask(id string) *RestoreTask {
 		id:        id,
 		stateCode: backuppb.RestoreTaskStateCode_INITIAL,
 		startTime: time.Now(),
-		collTask:  make(map[namespace.NS]*restoreCollectionTask),
+		collTask:  make(map[collref.Name]*restoreCollectionTask),
 	}
 }
 
@@ -236,14 +236,14 @@ func (t *RestoreTask) TotalSize() int64 {
 	return t.totalSize()
 }
 
-func (t *RestoreTask) CollTasks() map[namespace.NS]RestoreCollTaskView {
+func (t *RestoreTask) CollTasks() map[collref.Name]RestoreCollTaskView {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
 	// copy and return a new map, to avoid concurrent modification
-	tasks := make(map[namespace.NS]RestoreCollTaskView, len(t.collTask))
-	for ns, task := range t.collTask {
-		tasks[ns] = task
+	tasks := make(map[collref.Name]RestoreCollTaskView, len(t.collTask))
+	for collRef, task := range t.collTask {
+		tasks[collRef] = task
 	}
 
 	return tasks
@@ -270,7 +270,7 @@ type restoreCollectionTask struct {
 
 	id string
 
-	targetNS namespace.NS
+	target collref.Name
 
 	stateCode    backuppb.RestoreTaskStateCode
 	errorMessage string
@@ -352,10 +352,10 @@ func (t *restoreCollectionTask) TotalSize() int64 {
 	return t.totalSize
 }
 
-func newRestoreCollectionTask(ns namespace.NS, totalSize int64) *restoreCollectionTask {
+func newRestoreCollectionTask(collRef collref.Name, totalSize int64) *restoreCollectionTask {
 	return &restoreCollectionTask{
 		stateCode: backuppb.RestoreTaskStateCode_INITIAL,
-		targetNS:  ns,
+		target:    collRef,
 		startTime: time.Now(),
 		totalSize: totalSize,
 		importJob: make(map[string]*importJob),

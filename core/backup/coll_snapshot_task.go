@@ -10,8 +10,8 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
@@ -28,7 +28,7 @@ const (
 type collSnapshotTask struct {
 	taskID string
 
-	ns           namespace.NS
+	collRef      collref.Name
 	snapshotName string
 	target       snapshotTarget
 
@@ -42,15 +42,15 @@ type collSnapshotTask struct {
 	logger *zap.Logger
 }
 
-func newCollSnapshotTask(ns namespace.NS, snapshotName string, target snapshotTarget, args collTaskArgs) *collSnapshotTask {
+func newCollSnapshotTask(collRef collref.Name, snapshotName string, target snapshotTarget, args collTaskArgs) *collSnapshotTask {
 	logger := log.L().With(
 		zap.String("task_id", args.TaskID),
-		zap.String("ns", ns.String()),
+		zap.String("coll", collRef.String()),
 		zap.String("snapshot_name", snapshotName))
 
 	return &collSnapshotTask{
 		taskID:       args.TaskID,
-		ns:           ns,
+		collRef:      collRef,
 		snapshotName: snapshotName,
 		target:       target,
 		pollInterval: _snapshotPollInterval,
@@ -65,25 +65,25 @@ func newCollSnapshotTask(ns namespace.NS, snapshotName string, target snapshotTa
 // directory, and records where the bundle landed. No bytes move through this process.
 func (st *collSnapshotTask) Execute(ctx context.Context) error {
 	st.logger.Info("start to backup collection with snapshot")
-	st.taskMgr.UpdateBackupTask(st.taskID, taskmgr.SetBackupCollDMLPrepare(st.ns))
+	st.taskMgr.UpdateBackupTask(st.taskID, taskmgr.SetBackupCollDMLPrepare(st.collRef))
 
 	// Compaction protection is left off: the snapshot holds its files against GC for
 	// as long as it exists, and it exists only for this export.
-	if err := st.grpc.CreateSnapshot(ctx, st.ns.DBName(), st.ns.CollName(), st.snapshotName, 0); err != nil {
+	if err := st.grpc.CreateSnapshot(ctx, st.collRef.DBName(), st.collRef.CollName(), st.snapshotName, 0); err != nil {
 		return fmt.Errorf("backup: create snapshot: %w", err)
 	}
 	defer st.dropSnapshot(ctx)
 
 	// The snapshot's own boundary, read before the export so a failed export still
 	// leaves nothing behind to interpret.
-	desc, err := st.grpc.DescribeSnapshot(ctx, st.ns.DBName(), st.ns.CollName(), st.snapshotName)
+	desc, err := st.grpc.DescribeSnapshot(ctx, st.collRef.DBName(), st.collRef.CollName(), st.snapshotName)
 	if err != nil {
 		return fmt.Errorf("backup: describe snapshot: %w", err)
 	}
 
 	jobID, err := st.grpc.ExportSnapshot(ctx, milvus.ExportSnapshotInput{
-		DB:             st.ns.DBName(),
-		CollectionName: st.ns.CollName(),
+		DB:             st.collRef.DBName(),
+		CollectionName: st.collRef.CollName(),
 		SnapshotName:   st.snapshotName,
 		TargetPath:     st.target.Path,
 		ExternalSpec:   st.target.ExternalSpec,
@@ -108,11 +108,11 @@ func (st *collSnapshotTask) Execute(ctx context.Context) error {
 		TotalFiles:   info.GetTotalFiles(),
 		TotalBytes:   info.GetTotalBytes(),
 	}
-	if err := st.metaBuilder.addSnapshot(st.ns, snapshotBackup, uint64(desc.GetCreateTs())); err != nil {
+	if err := st.metaBuilder.addSnapshot(st.collRef, snapshotBackup, uint64(desc.GetCreateTs())); err != nil {
 		return fmt.Errorf("backup: add snapshot meta: %w", err)
 	}
 
-	st.taskMgr.UpdateBackupTask(st.taskID, taskmgr.SetBackupCollDMLDone(st.ns))
+	st.taskMgr.UpdateBackupTask(st.taskID, taskmgr.SetBackupCollDMLDone(st.collRef))
 	st.logger.Info("backup collection with snapshot done",
 		zap.String("metadata_path", metadataPath),
 		zap.Int64("total_files", info.GetTotalFiles()),
@@ -139,10 +139,10 @@ func (st *collSnapshotTask) waitExport(ctx context.Context, jobID int64) (*milvu
 
 		if total := info.GetTotalFiles(); total != reportedTotal {
 			reportedTotal = total
-			st.taskMgr.UpdateBackupTask(st.taskID, taskmgr.SetBackupCollDMLExecuting(st.ns, total))
+			st.taskMgr.UpdateBackupTask(st.taskID, taskmgr.SetBackupCollDMLExecuting(st.collRef, total))
 		}
 		if done := info.GetCopiedFiles(); done > copied {
-			st.taskMgr.UpdateBackupTask(st.taskID, taskmgr.IncBackupCollCopiedSize(st.ns, done-copied, 0))
+			st.taskMgr.UpdateBackupTask(st.taskID, taskmgr.IncBackupCollCopiedSize(st.collRef, done-copied, 0))
 			copied = done
 		}
 
@@ -176,7 +176,7 @@ func (st *collSnapshotTask) dropSnapshot(ctx context.Context) {
 	ctx = context.WithoutCancel(ctx)
 
 	for attempt := range _snapshotDropRetry {
-		err := st.grpc.DropSnapshot(ctx, st.ns.DBName(), st.ns.CollName(), st.snapshotName)
+		err := st.grpc.DropSnapshot(ctx, st.collRef.DBName(), st.collRef.CollName(), st.snapshotName)
 		if err == nil {
 			return
 		}

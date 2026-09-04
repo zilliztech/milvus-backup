@@ -5,7 +5,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/zilliztech/milvus-backup/internal/namespace"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 )
 
 func TestBackupCollTask_Progress(t *testing.T) {
@@ -60,13 +60,13 @@ func TestBackupTask_Progress(t *testing.T) {
 	})
 
 	t.Run("CollectionExecuting", func(t *testing.T) {
-		task := &BackupTask{stateCode: _backupTaskStateCollectionExecuting, collTask: map[namespace.NS]*backupCollTask{
-			namespace.New("db1", "coll1"): {
+		task := &BackupTask{stateCode: _backupTaskStateCollectionExecuting, collTask: map[collref.Name]*backupCollTask{
+			collref.New("db1", "coll1"): {
 				stateCode:  _backupCollStatusDMLExecuting,
 				totalSize:  100,
 				backupSize: 50,
 			},
-			namespace.New("db1", "coll2"): {stateCode: _backupCollStatusSuccess},
+			collref.New("db1", "coll2"): {stateCode: _backupCollStatusSuccess},
 		}}
 
 		progress := task.Progress()

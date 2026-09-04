@@ -15,9 +15,9 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/meta"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
@@ -74,7 +74,7 @@ func TestTask_runRBACTask(t *testing.T) {
 	})
 }
 
-func TestTask_listDBAndNSS(t *testing.T) {
+func TestTask_listDBAndNames(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("NoFilterSupportMultiDB", func(t *testing.T) {
@@ -94,14 +94,14 @@ func TestTask_listDBAndNSS(t *testing.T) {
 			option: Option{Filter: filter.Filter{}},
 		}
 
-		dbNames, nss, err := task.listDBAndNSS(ctx)
+		dbNames, collRefs, err := task.listDBAndNames(ctx)
 		assert.NoError(t, err)
 		assert.ElementsMatch(t, []string{"db1", "db2"}, dbNames)
-		assert.ElementsMatch(t, []namespace.NS{
-			namespace.New("db1", "coll1"),
-			namespace.New("db1", "coll2"),
-			namespace.New("db2", "coll3"),
-		}, nss)
+		assert.ElementsMatch(t, []collref.Name{
+			collref.New("db1", "coll1"),
+			collref.New("db1", "coll2"),
+			collref.New("db2", "coll3"),
+		}, collRefs)
 	})
 
 	t.Run("NoFilterNotSupportMultiDB", func(t *testing.T) {
@@ -117,13 +117,13 @@ func TestTask_listDBAndNSS(t *testing.T) {
 			option: Option{Filter: filter.Filter{}},
 		}
 
-		dbNames, nss, err := task.listDBAndNSS(ctx)
+		dbNames, collRefs, err := task.listDBAndNames(ctx)
 		assert.NoError(t, err)
 		assert.ElementsMatch(t, []string{"default"}, dbNames)
-		assert.ElementsMatch(t, []namespace.NS{
-			namespace.New("default", "coll1"),
-			namespace.New("default", "coll2"),
-		}, nss)
+		assert.ElementsMatch(t, []collref.Name{
+			collref.New("default", "coll1"),
+			collref.New("default", "coll2"),
+		}, collRefs)
 	})
 
 	t.Run("DBPattern", func(t *testing.T) {
@@ -142,13 +142,13 @@ func TestTask_listDBAndNSS(t *testing.T) {
 			}},
 		}
 
-		dbNames, nss, err := task.listDBAndNSS(ctx)
+		dbNames, collRefs, err := task.listDBAndNames(ctx)
 		assert.NoError(t, err)
 		assert.ElementsMatch(t, []string{"db1"}, dbNames)
-		assert.ElementsMatch(t, []namespace.NS{
-			namespace.New("db1", "coll1"),
-			namespace.New("db1", "coll2"),
-		}, nss)
+		assert.ElementsMatch(t, []collref.Name{
+			collref.New("db1", "coll1"),
+			collref.New("db1", "coll2"),
+		}, collRefs)
 	})
 
 	t.Run("TargetedPattern", func(t *testing.T) {
@@ -165,12 +165,12 @@ func TestTask_listDBAndNSS(t *testing.T) {
 			}},
 		}
 
-		dbNames, nss, err := task.listDBAndNSS(ctx)
+		dbNames, collRefs, err := task.listDBAndNames(ctx)
 		assert.NoError(t, err)
 		assert.ElementsMatch(t, []string{"db1"}, dbNames)
-		assert.ElementsMatch(t, []namespace.NS{
-			namespace.New("db1", "coll1"),
-		}, nss)
+		assert.ElementsMatch(t, []collref.Name{
+			collref.New("db1", "coll1"),
+		}, collRefs)
 	})
 
 	t.Run("CollectionNotFound", func(t *testing.T) {
@@ -187,7 +187,7 @@ func TestTask_listDBAndNSS(t *testing.T) {
 			}},
 		}
 
-		_, _, err := task.listDBAndNSS(ctx)
+		_, _, err := task.listDBAndNames(ctx)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "filter collection db1.not_exist not found")
 	})
@@ -217,16 +217,16 @@ func TestTask_excludeExternalColl(t *testing.T) {
 
 		task := &Task{logger: zap.NewNop(), grpc: mockGrpc}
 
-		nss, err := task.excludeExternalColl(ctx, []namespace.NS{
-			namespace.New("db1", "coll1"),
-			namespace.New("db1", "coll2"),
-			namespace.New("db2", "coll3"),
+		collRefs, err := task.excludeExternalColl(ctx, []collref.Name{
+			collref.New("db1", "coll1"),
+			collref.New("db1", "coll2"),
+			collref.New("db2", "coll3"),
 		})
 		assert.NoError(t, err)
-		assert.Equal(t, []namespace.NS{
-			namespace.New("db1", "coll1"),
-			namespace.New("db2", "coll3"),
-		}, nss)
+		assert.Equal(t, []collref.Name{
+			collref.New("db1", "coll1"),
+			collref.New("db2", "coll3"),
+		}, collRefs)
 	})
 
 	t.Run("DescribeCollectionFailed", func(t *testing.T) {
@@ -236,7 +236,7 @@ func TestTask_excludeExternalColl(t *testing.T) {
 
 		task := &Task{logger: zap.NewNop(), grpc: mockGrpc}
 
-		_, err := task.excludeExternalColl(ctx, []namespace.NS{namespace.New("db1", "coll1")})
+		_, err := task.excludeExternalColl(ctx, []collref.Name{collref.New("db1", "coll1")})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "describe collection db1.coll1")
 	})

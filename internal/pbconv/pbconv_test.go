@@ -11,7 +11,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
@@ -49,7 +49,7 @@ func TestMilvusKVToMap(t *testing.T) {
 
 func TestRestoreCollTaskViewToResp(t *testing.T) {
 	now := time.Now()
-	ns := namespace.New("db1", "coll1")
+	collRef := collref.New("db1", "coll1")
 	taskView := taskmgr.NewMockRestoreCollTaskView(t)
 	taskView.EXPECT().ID().Return("id1")
 	taskView.EXPECT().StateCode().Return(backuppb.RestoreTaskStateCode_INITIAL)
@@ -58,7 +58,7 @@ func TestRestoreCollTaskViewToResp(t *testing.T) {
 	taskView.EXPECT().EndTime().Return(now)
 	taskView.EXPECT().Progress().Return(int32(100))
 
-	res := RestoreCollTaskViewToResp(ns, taskView)
+	res := RestoreCollTaskViewToResp(collRef, taskView)
 	assert.Equal(t, res.Id, "id1")
 	assert.Equal(t, res.StateCode, backuppb.RestoreTaskStateCode_INITIAL)
 	assert.Equal(t, res.ErrorMessage, "error message")
@@ -85,8 +85,8 @@ func TestRestoreTaskViewToResp(t *testing.T) {
 	taskView.EXPECT().StartTime().Return(now)
 	taskView.EXPECT().EndTime().Return(now)
 	taskView.EXPECT().Progress().Return(int32(100))
-	taskView.EXPECT().CollTasks().Return(map[namespace.NS]taskmgr.RestoreCollTaskView{
-		namespace.New("db1", "coll1"): collTaskView,
+	taskView.EXPECT().CollTasks().Return(map[collref.Name]taskmgr.RestoreCollTaskView{
+		collref.New("db1", "coll1"): collTaskView,
 	})
 
 	res := RestoreTaskViewToResp(taskView)

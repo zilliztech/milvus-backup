@@ -12,14 +12,14 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/meta"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
 )
 
 func newTestMetaBuilder(t *testing.T) *metaBuilder {
 	builder := newMetaBuilder("task1", "backup1")
 
-	ns := namespace.New("db1", "coll1")
+	collRef := collref.New("db1", "coll1")
 	coll := &backuppb.CollectionBackupInfo{
 		CollectionId:   1,
 		DbName:         "db1",
@@ -29,7 +29,7 @@ func newTestMetaBuilder(t *testing.T) *metaBuilder {
 			{PartitionId: 11, PartitionName: "part2", CollectionId: 1},
 		},
 	}
-	builder.addCollection(ns, coll)
+	builder.addCollection(collRef, coll)
 
 	segments := []*backuppb.SegmentBackupInfo{
 		{
@@ -95,8 +95,8 @@ func TestAddPOS(t *testing.T) {
 	t.Run("UnknownNamespace", func(t *testing.T) {
 		builder := newMetaBuilder("task1", "backup1")
 
-		ns := namespace.New("db_unknown", "coll_unknown")
-		err := builder.addPOS(ns, map[string]string{"ch1": "cp1"}, 100, 200)
+		collRef := collref.New("db_unknown", "coll_unknown")
+		err := builder.addPOS(collRef, map[string]string{"ch1": "cp1"}, 100, 200)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "backup: collection backup not found")
 	})
@@ -186,7 +186,7 @@ func TestAddDynamicFields(t *testing.T) {
 	t.Run("InjectsDynamicFieldFromEtcd", func(t *testing.T) {
 		builder := newMetaBuilder("task1", "backup1")
 
-		ns := namespace.New("db1", "coll1")
+		collRef := collref.New("db1", "coll1")
 		coll := &backuppb.CollectionBackupInfo{
 			CollectionId:   1,
 			DbName:         "db1",
@@ -200,7 +200,7 @@ func TestAddDynamicFields(t *testing.T) {
 				},
 			},
 		}
-		builder.addCollection(ns, coll)
+		builder.addCollection(collRef, coll)
 
 		defaultValue := &schemapb.ValueField{Data: &schemapb.ValueField_BytesData{BytesData: []byte("{}")}}
 		dynField := &schemapb.FieldSchema{
@@ -233,7 +233,7 @@ func TestAddDynamicFields(t *testing.T) {
 
 	t.Run("SkipsCollectionWithoutDynamicField", func(t *testing.T) {
 		builder := newMetaBuilder("task1", "backup1")
-		ns := namespace.New("db1", "coll1")
+		collRef := collref.New("db1", "coll1")
 		coll := &backuppb.CollectionBackupInfo{
 			CollectionId: 1,
 			Schema: &backuppb.CollectionSchema{
@@ -241,7 +241,7 @@ func TestAddDynamicFields(t *testing.T) {
 				Fields:             []*backuppb.FieldSchema{{FieldID: 100, Name: "pk"}},
 			},
 		}
-		builder.addCollection(ns, coll)
+		builder.addCollection(collRef, coll)
 
 		dynField := &schemapb.FieldSchema{FieldID: 101, Name: "$meta", IsDynamic: true}
 		assert.NoError(t, builder.addDynamicFields(map[int64]*schemapb.FieldSchema{1: dynField}))
@@ -252,7 +252,7 @@ func TestAddDynamicFields(t *testing.T) {
 
 	t.Run("ErrorsOnMissingEntryForCollection", func(t *testing.T) {
 		builder := newMetaBuilder("task1", "backup1")
-		ns := namespace.New("db1", "coll1")
+		collRef := collref.New("db1", "coll1")
 		coll := &backuppb.CollectionBackupInfo{
 			CollectionId:   1,
 			CollectionName: "coll1",
@@ -261,7 +261,7 @@ func TestAddDynamicFields(t *testing.T) {
 				Fields:             []*backuppb.FieldSchema{{FieldID: 100, Name: "pk"}},
 			},
 		}
-		builder.addCollection(ns, coll)
+		builder.addCollection(collRef, coll)
 
 		// etcd has no record for collection 1.
 		err := builder.addDynamicFields(map[int64]*schemapb.FieldSchema{2: {FieldID: 101, IsDynamic: true}})
@@ -302,8 +302,8 @@ func TestSequentialBuildDoesNotCorruptData(t *testing.T) {
 
 func newIndexExtraTestBuilder() *metaBuilder {
 	builder := newMetaBuilder("task1", "backup1")
-	ns := namespace.New("db1", "coll1")
-	builder.addCollection(ns, &backuppb.CollectionBackupInfo{
+	collRef := collref.New("db1", "coll1")
+	builder.addCollection(collRef, &backuppb.CollectionBackupInfo{
 		CollectionId:   1,
 		DbName:         "db1",
 		CollectionName: "coll1",
@@ -358,21 +358,21 @@ func TestAddIndexExtraInfo(t *testing.T) {
 
 func TestBackupCollectionIDs(t *testing.T) {
 	builder := newIndexExtraTestBuilder()
-	builder.addCollection(namespace.New("db1", "coll2"), &backuppb.CollectionBackupInfo{CollectionId: 2})
+	builder.addCollection(collref.New("db1", "coll2"), &backuppb.CollectionBackupInfo{CollectionId: 2})
 
 	assert.ElementsMatch(t, []int64{1, 2}, builder.backupCollectionIDs())
 }
 
 func TestAddSnapshot(t *testing.T) {
 	builder := newTestMetaBuilder(t)
-	ns := namespace.New("db1", "coll1")
+	collRef := collref.New("db1", "coll1")
 
 	snapshot := &backuppb.SnapshotBackupInfo{
 		MetadataPath: "snapshots/1/metadata/2.json",
 		TotalFiles:   3,
 		TotalBytes:   4096,
 	}
-	require.NoError(t, builder.addSnapshot(ns, snapshot, 456))
+	require.NoError(t, builder.addSnapshot(collRef, snapshot, 456))
 
 	coll := builder.data.GetCollectionBackups()[0]
 	assert.Equal(t, "snapshots/1/metadata/2.json", coll.GetSnapshotBackup().GetMetadataPath())
@@ -382,7 +382,7 @@ func TestAddSnapshot(t *testing.T) {
 	assert.EqualValues(t, 456, coll.GetBackupTimestamp())
 
 	t.Run("UnknownNamespace", func(t *testing.T) {
-		assert.Error(t, builder.addSnapshot(namespace.New("db1", "nope"), snapshot, 456))
+		assert.Error(t, builder.addSnapshot(collref.New("db1", "nope"), snapshot, 456))
 	})
 }
 

@@ -15,8 +15,8 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
@@ -26,7 +26,7 @@ type collSnapshotTask struct {
 	taskID string
 
 	collBackup *backuppb.CollectionBackupInfo
-	targetNS   namespace.NS
+	target     collref.Name
 
 	source       snapshotSource
 	dropExist    bool
@@ -46,7 +46,7 @@ type collSnapshotTaskArgs struct {
 	taskID string
 
 	collBackup *backuppb.CollectionBackupInfo
-	targetNS   namespace.NS
+	target     collref.Name
 
 	source       snapshotSource
 	dropExist    bool
@@ -59,22 +59,22 @@ type collSnapshotTaskArgs struct {
 }
 
 func newCollSnapshotTask(args collSnapshotTaskArgs) *collSnapshotTask {
-	srcNS := namespace.New(args.collBackup.GetDbName(), args.collBackup.GetCollectionName())
+	src := collref.New(args.collBackup.GetDbName(), args.collBackup.GetCollectionName())
 
 	logger := log.With(
 		zap.String("restore_task_id", args.taskID),
-		zap.String("backup_ns", srcNS.String()),
-		zap.String("target_ns", args.targetNS.String()))
+		zap.String("backup_coll", src.String()),
+		zap.String("target_coll", args.target.String()))
 
 	// The export job reported this as the size of the whole bundle, index files included,
 	// so it is what the restore job's progress is a fraction of.
-	args.taskMgr.UpdateRestoreTask(args.taskID, taskmgr.AddRestoreCollTask(args.targetNS, args.collBackup.GetSize()))
+	args.taskMgr.UpdateRestoreTask(args.taskID, taskmgr.AddRestoreCollTask(args.target, args.collBackup.GetSize()))
 
 	return &collSnapshotTask{
 		taskID: args.taskID,
 
 		collBackup: args.collBackup,
-		targetNS:   args.targetNS,
+		target:     args.target,
 
 		source:       args.source,
 		dropExist:    args.dropExist,
@@ -91,22 +91,22 @@ func newCollSnapshotTask(args collSnapshotTaskArgs) *collSnapshotTask {
 	}
 }
 
-func (ct *collSnapshotTask) TargetNS() namespace.NS { return ct.targetNS }
+func (ct *collSnapshotTask) Target() collref.Name { return ct.target }
 
 // Execute hands the collection to Milvus, which creates it from the schema in the bundle,
 // restores its indexes and partitions, and copies the data. No bytes move through this
 // process, and nothing here creates anything in the target cluster.
 func (ct *collSnapshotTask) Execute(ctx context.Context) error {
-	ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.SetRestoreCollExecuting(ct.targetNS))
+	ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.SetRestoreCollExecuting(ct.target))
 
 	if err := ct.privateExecute(ctx); err != nil {
 		ct.logger.Error("restore collection from snapshot failed", zap.Error(err))
-		ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.SetRestoreCollFail(ct.targetNS, err))
+		ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.SetRestoreCollFail(ct.target, err))
 		return err
 	}
 
 	ct.logger.Info("restore collection from snapshot success")
-	ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.SetRestoreCollSuccess(ct.targetNS))
+	ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.SetRestoreCollSuccess(ct.target))
 
 	return nil
 }
@@ -138,8 +138,8 @@ func (ct *collSnapshotTask) privateExecute(ctx context.Context) error {
 	}
 
 	jobID, err := ct.grpcCli.RestoreExternalSnapshot(ctx, milvus.RestoreExternalSnapshotInput{
-		DB:                   ct.targetNS.DBName(),
-		TargetCollectionName: ct.targetNS.CollName(),
+		DB:                   ct.target.DBName(),
+		TargetCollectionName: ct.target.CollName(),
 		SnapshotMetadataURI:  metadataURI,
 		ExternalSpec:         ct.source.externalSpec,
 	})
@@ -173,7 +173,7 @@ func (ct *collSnapshotTask) privateExecute(ctx context.Context) error {
 func (ct *collSnapshotTask) applySkipParams(ctx context.Context) error {
 	props := append(ct.collBackup.GetSchema().GetProperties(), ct.collBackup.GetProperties()...)
 	if present := presentKeys(props, ct.skipParams.CollectionProperties); len(present) != 0 {
-		if err := ct.grpcCli.DropCollectionProperties(ctx, ct.targetNS.DBName(), ct.targetNS.CollName(), present); err != nil {
+		if err := ct.grpcCli.DropCollectionProperties(ctx, ct.target.DBName(), ct.target.CollName(), present); err != nil {
 			return fmt.Errorf("restore: drop skipped collection properties: %w", err)
 		}
 		ct.logger.Info("skipped collection properties dropped", zap.Strings("keys", present))
@@ -184,7 +184,7 @@ func (ct *collSnapshotTask) applySkipParams(ctx context.Context) error {
 		if len(present) == 0 {
 			continue
 		}
-		if err := ct.grpcCli.DropCollectionFieldProperties(ctx, ct.targetNS.DBName(), ct.targetNS.CollName(), field.GetName(), present); err != nil {
+		if err := ct.grpcCli.DropCollectionFieldProperties(ctx, ct.target.DBName(), ct.target.CollName(), field.GetName(), present); err != nil {
 			return fmt.Errorf("restore: drop skipped type params of field %s: %w", field.GetName(), err)
 		}
 		ct.logger.Info("skipped field type params dropped",
@@ -201,7 +201,7 @@ func (ct *collSnapshotTask) applySkipParams(ctx context.Context) error {
 			continue
 		}
 		sort.Strings(present)
-		if err := ct.grpcCli.DropIndexProperties(ctx, ct.targetNS.DBName(), ct.targetNS.CollName(), index.GetIndexName(), present); err != nil {
+		if err := ct.grpcCli.DropIndexProperties(ctx, ct.target.DBName(), ct.target.CollName(), index.GetIndexName(), present); err != nil {
 			return fmt.Errorf("restore: drop skipped params of index %s: %w", index.GetIndexName(), err)
 		}
 		ct.logger.Info("skipped index params dropped",
@@ -232,12 +232,12 @@ func (ct *collSnapshotTask) applyDescOverride(ctx context.Context) error {
 	}
 
 	props := []*commonpb.KeyValuePair{{Key: common.CollectionDescription, Value: ct.descOverride}}
-	if err := ct.grpcCli.AlterCollection(ctx, ct.targetNS.DBName(), ct.targetNS.CollName(), props); err != nil {
+	if err := ct.grpcCli.AlterCollection(ctx, ct.target.DBName(), ct.target.CollName(), props); err != nil {
 		return fmt.Errorf("restore: alter collection description: %w", err)
 	}
 
 	ct.logger.Info("collection description overridden",
-		zap.String("target_ns", ct.targetNS.String()),
+		zap.String("target_coll", ct.target.String()),
 		zap.String("description", ct.descOverride))
 	return nil
 }
@@ -249,7 +249,7 @@ func (ct *collSnapshotTask) dropExistedColl(ctx context.Context) error {
 		return nil
 	}
 
-	exist, err := ct.grpcCli.HasCollection(ctx, ct.targetNS.DBName(), ct.targetNS.CollName())
+	exist, err := ct.grpcCli.HasCollection(ctx, ct.target.DBName(), ct.target.CollName())
 	if err != nil {
 		return fmt.Errorf("restore: check collection exist: %w", err)
 	}
@@ -258,7 +258,7 @@ func (ct *collSnapshotTask) dropExistedColl(ctx context.Context) error {
 	}
 
 	ct.logger.Info("drop existed collection")
-	if err := ct.grpcCli.DropCollection(ctx, ct.targetNS.DBName(), ct.targetNS.CollName()); err != nil {
+	if err := ct.grpcCli.DropCollection(ctx, ct.target.DBName(), ct.target.CollName()); err != nil {
 		return fmt.Errorf("restore: drop existed collection: %w", err)
 	}
 
@@ -272,7 +272,7 @@ func (ct *collSnapshotTask) waitRestore(ctx context.Context, jobID int64) error 
 	defer ticker.Stop()
 
 	job := strconv.FormatInt(jobID, 10)
-	ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.AddRestoreImportJob(ct.targetNS, job, ct.collBackup.GetSize()))
+	ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.AddRestoreImportJob(ct.target, job, ct.collBackup.GetSize()))
 
 	for {
 		info, err := ct.grpcCli.GetRestoreSnapshotState(ctx, jobID)
@@ -280,7 +280,7 @@ func (ct *collSnapshotTask) waitRestore(ctx context.Context, jobID int64) error 
 			return fmt.Errorf("restore: get restore snapshot state: %w", err)
 		}
 
-		ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.UpdateRestoreImportJob(ct.targetNS, job, int(info.GetProgress())))
+		ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.UpdateRestoreImportJob(ct.target, job, int(info.GetProgress())))
 
 		switch info.GetState() {
 		case milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted:

@@ -12,9 +12,9 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
@@ -22,7 +22,7 @@ import (
 type collDDLTask struct {
 	taskID string
 
-	ns namespace.NS
+	collRef collref.Name
 
 	grpc milvus.Grpc
 
@@ -32,12 +32,12 @@ type collDDLTask struct {
 	logger *zap.Logger
 }
 
-func newCollDDLTask(ns namespace.NS, args collTaskArgs) *collDDLTask {
-	logger := log.L().With(zap.String("task_id", args.TaskID), zap.String("ns", ns.String()))
+func newCollDDLTask(collRef collref.Name, args collTaskArgs) *collDDLTask {
+	logger := log.L().With(zap.String("task_id", args.TaskID), zap.String("coll", collRef.String()))
 
 	return &collDDLTask{
 		taskID:      args.TaskID,
-		ns:          ns,
+		collRef:     collRef,
 		grpc:        args.Grpc,
 		taskMgr:     args.TaskMgr,
 		metaBuilder: args.MetaBuilder,
@@ -150,7 +150,7 @@ func (ddlt *collDDLTask) convSchema(schema *schemapb.CollectionSchema) (*backupp
 
 func (ddlt *collDDLTask) backupIndexes(ctx context.Context) ([]*backuppb.IndexInfo, error) {
 	ddlt.logger.Info("start backup indexes of collection")
-	indexes, err := ddlt.grpc.ListIndex(ctx, ddlt.ns.DBName(), ddlt.ns.CollName())
+	indexes, err := ddlt.grpc.ListIndex(ctx, ddlt.collRef.DBName(), ddlt.collRef.CollName())
 	if err != nil && !strings.Contains(err.Error(), "index not found") {
 		return nil, fmt.Errorf("backup: list index %w", err)
 	}
@@ -184,7 +184,7 @@ func (ddlt *collDDLTask) getPartLoadState(ctx context.Context, collLoadState str
 	}
 
 	for _, partName := range partitionNames {
-		progress, err := ddlt.grpc.GetLoadingProgress(ctx, ddlt.ns.DBName(), partName)
+		progress, err := ddlt.grpc.GetLoadingProgress(ctx, ddlt.collRef.DBName(), partName)
 		if err != nil {
 			return nil, fmt.Errorf("backup: get loading progress %w", err)
 		}
@@ -203,7 +203,7 @@ func (ddlt *collDDLTask) getPartLoadState(ctx context.Context, collLoadState str
 }
 
 func (ddlt *collDDLTask) getCollLoadState(ctx context.Context) (string, error) {
-	progress, err := ddlt.grpc.GetLoadingProgress(ctx, ddlt.ns.DBName(), ddlt.ns.CollName())
+	progress, err := ddlt.grpc.GetLoadingProgress(ctx, ddlt.collRef.DBName(), ddlt.collRef.CollName())
 	if err != nil {
 		return "", fmt.Errorf("backup: get loading progress %w", err)
 	}
@@ -221,7 +221,7 @@ func (ddlt *collDDLTask) getCollLoadState(ctx context.Context) (string, error) {
 func (ddlt *collDDLTask) backupPartitionDDL(ctx context.Context, collID int64, collLoadState string) ([]*backuppb.PartitionBackupInfo, error) {
 	ddlt.logger.Info("start backup partition ddl of collection")
 
-	resp, err := ddlt.grpc.ShowPartitions(ctx, ddlt.ns.DBName(), ddlt.ns.CollName())
+	resp, err := ddlt.grpc.ShowPartitions(ctx, ddlt.collRef.DBName(), ddlt.collRef.CollName())
 	if err != nil {
 		return nil, fmt.Errorf("backup: show partitions %w", err)
 	}
@@ -256,9 +256,9 @@ func (ddlt *collDDLTask) backupPartitionDDL(ctx context.Context, collID int64, c
 func (ddlt *collDDLTask) Execute(ctx context.Context) error {
 	ddlt.logger.Info("start to backup ddl of collection")
 
-	ddlt.taskMgr.UpdateBackupTask(ddlt.taskID, taskmgr.SetBackupCollDDLExecuting(ddlt.ns))
+	ddlt.taskMgr.UpdateBackupTask(ddlt.taskID, taskmgr.SetBackupCollDDLExecuting(ddlt.collRef))
 
-	descResp, err := ddlt.grpc.DescribeCollection(ctx, ddlt.ns.DBName(), ddlt.ns.CollName())
+	descResp, err := ddlt.grpc.DescribeCollection(ctx, ddlt.collRef.DBName(), ddlt.collRef.CollName())
 	if err != nil {
 		return fmt.Errorf("backup: describe collection %w", err)
 	}
@@ -300,8 +300,8 @@ func (ddlt *collDDLTask) Execute(ctx context.Context) error {
 		Aliases:              descResp.GetAliases(),
 	}
 
-	ddlt.metaBuilder.addCollection(ddlt.ns, collBackup)
-	ddlt.taskMgr.UpdateBackupTask(ddlt.taskID, taskmgr.SetBackupCollDDLDone(ddlt.ns))
+	ddlt.metaBuilder.addCollection(ddlt.collRef, collBackup)
+	ddlt.taskMgr.UpdateBackupTask(ddlt.taskID, taskmgr.SetBackupCollDDLDone(ddlt.collRef))
 
 	ddlt.logger.Info("backup ddl of collection done")
 

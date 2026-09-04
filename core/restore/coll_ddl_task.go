@@ -15,8 +15,8 @@ import (
 	"github.com/zilliztech/milvus-backup/core/restore/conv"
 	"github.com/zilliztech/milvus-backup/core/restore/funcs"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 	"github.com/zilliztech/milvus-backup/internal/validate"
 )
@@ -27,20 +27,20 @@ type collDDLTask struct {
 
 	collBackup *backuppb.CollectionBackupInfo
 
-	targetNS namespace.NS
-	grpcCli  milvus.Grpc
+	target  collref.Name
+	grpcCli milvus.Grpc
 
 	logger *zap.Logger
 }
 
-func newCollDDLTask(taskID string, opt *Option, override CollOverride, collBackup *backuppb.CollectionBackupInfo, targetNS namespace.NS, grpcCli milvus.Grpc) *collDDLTask {
+func newCollDDLTask(taskID string, opt *Option, override CollOverride, collBackup *backuppb.CollectionBackupInfo, target collref.Name, grpcCli milvus.Grpc) *collDDLTask {
 	return &collDDLTask{
 		option:       opt,
 		collOverride: override,
 		collBackup:   collBackup,
-		targetNS:     targetNS,
+		target:       target,
 		grpcCli:      grpcCli,
-		logger:       log.With(zap.String("task_id", taskID), zap.String("target_ns", targetNS.String())),
+		logger:       log.With(zap.String("task_id", taskID), zap.String("target_coll", target.String())),
 	}
 }
 
@@ -81,7 +81,7 @@ func (ddlt *collDDLTask) dropExistedColl(ctx context.Context) error {
 	}
 
 	ddlt.logger.Info("start drop existed collection")
-	exist, err := ddlt.grpcCli.HasCollection(ctx, ddlt.targetNS.DBName(), ddlt.targetNS.CollName())
+	exist, err := ddlt.grpcCli.HasCollection(ctx, ddlt.target.DBName(), ddlt.target.CollName())
 	if err != nil {
 		return fmt.Errorf("collection: check collection exist: %w", err)
 	}
@@ -90,7 +90,7 @@ func (ddlt *collDDLTask) dropExistedColl(ctx context.Context) error {
 		return nil
 	}
 
-	if err := ddlt.grpcCli.DropCollection(ctx, ddlt.targetNS.DBName(), ddlt.targetNS.CollName()); err != nil {
+	if err := ddlt.grpcCli.DropCollection(ctx, ddlt.target.DBName(), ddlt.target.CollName()); err != nil {
 		return fmt.Errorf("collection: drop collection: %w", err)
 	}
 
@@ -149,7 +149,7 @@ func (ddlt *collDDLTask) fields() ([]*schemapb.FieldSchema, []*schemapb.FieldSch
 func (ddlt *collDDLTask) addFields(ctx context.Context, fields []*schemapb.FieldSchema) error {
 	// add fields
 	for _, field := range fields {
-		if err := ddlt.grpcCli.AddField(ctx, ddlt.targetNS.DBName(), ddlt.targetNS.CollName(), field); err != nil {
+		if err := ddlt.grpcCli.AddField(ctx, ddlt.target.DBName(), ddlt.target.CollName(), field); err != nil {
 			return fmt.Errorf("restore: add field %s id %d: %w", field.GetName(), field.GetFieldID(), err)
 		}
 	}
@@ -210,7 +210,7 @@ func (ddlt *collDDLTask) restoreFuncRuntimeCheck(ctx context.Context) error {
 
 	ddlt.logger.Info("restore disable_func_runtime_check to false")
 	props := []*commonpb.KeyValuePair{{Key: common.DisableFuncRuntimeCheck, Value: "false"}}
-	if err := ddlt.grpcCli.AlterCollection(ctx, ddlt.targetNS.DBName(), ddlt.targetNS.CollName(), props); err != nil {
+	if err := ddlt.grpcCli.AlterCollection(ctx, ddlt.target.DBName(), ddlt.target.CollName(), props); err != nil {
 		return fmt.Errorf("restore: alter collection: %w", err)
 	}
 
@@ -233,7 +233,7 @@ func (ddlt *collDDLTask) createColl(ctx context.Context) error {
 		return fmt.Errorf("restore: conv struct array fields: %w", err)
 	}
 	schema := &schemapb.CollectionSchema{
-		Name:               ddlt.targetNS.CollName(),
+		Name:               ddlt.target.CollName(),
 		Description:        ddlt.description(),
 		AutoID:             ddlt.collBackup.GetSchema().GetAutoID(),
 		Functions:          functions,
@@ -245,7 +245,7 @@ func (ddlt *collDDLTask) createColl(ctx context.Context) error {
 	ddlt.logger.Info("create collection", zap.Any("schema", schema))
 
 	opt := milvus.CreateCollectionInput{
-		DB:           ddlt.targetNS.DBName(),
+		DB:           ddlt.target.DBName(),
 		Schema:       schema,
 		ConsLevel:    commonpb.ConsistencyLevel(ddlt.collBackup.GetConsistencyLevel()),
 		ShardNum:     ddlt.shardNum(),
@@ -374,14 +374,14 @@ func (ddlt *collDDLTask) dropExistedIndex(ctx context.Context) error {
 	}
 
 	ddlt.logger.Info("start drop existed index")
-	indexes, err := ddlt.grpcCli.ListIndex(ctx, ddlt.targetNS.DBName(), ddlt.targetNS.CollName())
+	indexes, err := ddlt.grpcCli.ListIndex(ctx, ddlt.target.DBName(), ddlt.target.CollName())
 	if err != nil {
 		ddlt.logger.Warn("fail in list index", zap.Error(err))
 		return nil
 	}
 
 	for _, index := range indexes {
-		err = ddlt.grpcCli.DropIndex(ctx, ddlt.targetNS.DBName(), ddlt.targetNS.CollName(), index.GetIndexName())
+		err = ddlt.grpcCli.DropIndex(ctx, ddlt.target.DBName(), ddlt.target.CollName(), index.GetIndexName())
 		if err != nil {
 			return fmt.Errorf("restore: drop index %s: %w", index.IndexName, err)
 		}
@@ -464,8 +464,8 @@ func (ddlt *collDDLTask) restoreScalarFieldIdx(ctx context.Context, indexes []*b
 		}
 
 		opt := milvus.CreateIndexInput{
-			DB:             ddlt.targetNS.DBName(),
-			CollectionName: ddlt.targetNS.CollName(),
+			DB:             ddlt.target.DBName(),
+			CollectionName: ddlt.target.CollName(),
 			FieldName:      index.GetFieldName(),
 			IndexName:      indexName,
 			Params:         index.GetParams(),
@@ -497,8 +497,8 @@ func (ddlt *collDDLTask) restoreVectorFieldIdx(ctx context.Context, indexes []*b
 		}
 
 		opt := milvus.CreateIndexInput{
-			DB:             ddlt.targetNS.DBName(),
-			CollectionName: ddlt.targetNS.CollName(),
+			DB:             ddlt.target.DBName(),
+			CollectionName: ddlt.target.CollName(),
 			FieldName:      index.GetFieldName(),
 			IndexName:      index.GetIndexName(),
 			Params:         params,
@@ -524,7 +524,7 @@ func (ddlt *collDDLTask) createPartitions(ctx context.Context) error {
 func (ddlt *collDDLTask) createPartition(ctx context.Context, partitionName string) error {
 	// pre-check whether partition exist, if not create it
 	ddlt.logger.Debug("check partition exist", zap.String("partition_name", partitionName))
-	exist, err := ddlt.grpcCli.HasPartition(ctx, ddlt.targetNS.DBName(), ddlt.targetNS.CollName(), partitionName)
+	exist, err := ddlt.grpcCli.HasPartition(ctx, ddlt.target.DBName(), ddlt.target.CollName(), partitionName)
 	if err != nil {
 		return fmt.Errorf("restore: failed to check partition exist: %w", err)
 	}
@@ -533,7 +533,7 @@ func (ddlt *collDDLTask) createPartition(ctx context.Context, partitionName stri
 		return nil
 	}
 
-	err = ddlt.grpcCli.CreatePartition(ctx, ddlt.targetNS.DBName(), ddlt.targetNS.CollName(), partitionName)
+	err = ddlt.grpcCli.CreatePartition(ctx, ddlt.target.DBName(), ddlt.target.CollName(), partitionName)
 	if err != nil {
 		return fmt.Errorf("restore: create partition %s: %w", partitionName, err)
 	}

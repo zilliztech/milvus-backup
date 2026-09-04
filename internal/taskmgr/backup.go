@@ -6,7 +6,7 @@ import (
 	"time"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 )
 
 type BackupTaskOpt func(task *BackupTask)
@@ -49,22 +49,22 @@ func SetBackupSuccess() BackupTaskOpt {
 	}
 }
 
-func AddBackupCollTasks(nss []namespace.NS) BackupTaskOpt {
+func AddBackupCollTasks(collRefs []collref.Name) BackupTaskOpt {
 	return func(task *BackupTask) {
 		task.mu.Lock()
 		defer task.mu.Unlock()
 
-		for _, ns := range nss {
-			task.collTask[ns] = newBackupCollTask(ns)
+		for _, collRef := range collRefs {
+			task.collTask[collRef] = newBackupCollTask(collRef)
 		}
 	}
 }
 
-func setBackupCollState(ns namespace.NS, state backupCollStatus) BackupTaskOpt {
+func setBackupCollState(collRef collref.Name, state backupCollStatus) BackupTaskOpt {
 	return func(task *BackupTask) {
 		task.mu.RLock()
 		defer task.mu.RUnlock()
-		collTask := task.collTask[ns]
+		collTask := task.collTask[collRef]
 
 		collTask.mu.Lock()
 		defer collTask.mu.Unlock()
@@ -73,23 +73,23 @@ func setBackupCollState(ns namespace.NS, state backupCollStatus) BackupTaskOpt {
 	}
 }
 
-func SetBackupCollDDLExecuting(ns namespace.NS) BackupTaskOpt {
-	return setBackupCollState(ns, _backupCollStatusDDLExecuting)
+func SetBackupCollDDLExecuting(collRef collref.Name) BackupTaskOpt {
+	return setBackupCollState(collRef, _backupCollStatusDDLExecuting)
 }
 
-func SetBackupCollDDLDone(ns namespace.NS) BackupTaskOpt {
-	return setBackupCollState(ns, _backupCollStatusDDLDone)
+func SetBackupCollDDLDone(collRef collref.Name) BackupTaskOpt {
+	return setBackupCollState(collRef, _backupCollStatusDDLDone)
 }
 
-func SetBackupCollDMLPrepare(ns namespace.NS) BackupTaskOpt {
-	return setBackupCollState(ns, _backupCollStatusDMLPrepare)
+func SetBackupCollDMLPrepare(collRef collref.Name) BackupTaskOpt {
+	return setBackupCollState(collRef, _backupCollStatusDMLPrepare)
 }
 
-func SetBackupCollDMLExecuting(ns namespace.NS, totalSize int64) BackupTaskOpt {
+func SetBackupCollDMLExecuting(collRef collref.Name, totalSize int64) BackupTaskOpt {
 	return func(task *BackupTask) {
 		task.mu.RLock()
 		defer task.mu.RUnlock()
-		collTask := task.collTask[ns]
+		collTask := task.collTask[collRef]
 
 		collTask.mu.Lock()
 		defer collTask.mu.Unlock()
@@ -99,15 +99,15 @@ func SetBackupCollDMLExecuting(ns namespace.NS, totalSize int64) BackupTaskOpt {
 	}
 }
 
-func SetBackupCollDMLDone(ns namespace.NS) BackupTaskOpt {
-	return setBackupCollState(ns, _backupCollStatusDMLDone)
+func SetBackupCollDMLDone(collRef collref.Name) BackupTaskOpt {
+	return setBackupCollState(collRef, _backupCollStatusDMLDone)
 }
 
-func SetBackupCollFail(ns namespace.NS, err error) BackupTaskOpt {
+func SetBackupCollFail(collRef collref.Name, err error) BackupTaskOpt {
 	return func(task *BackupTask) {
 		task.mu.RLock()
 		defer task.mu.RUnlock()
-		collTask := task.collTask[ns]
+		collTask := task.collTask[collRef]
 
 		collTask.mu.Lock()
 		defer collTask.mu.Unlock()
@@ -118,11 +118,11 @@ func SetBackupCollFail(ns namespace.NS, err error) BackupTaskOpt {
 	}
 }
 
-func SetBackupCollSuccess(ns namespace.NS) BackupTaskOpt {
+func SetBackupCollSuccess(collRef collref.Name) BackupTaskOpt {
 	return func(task *BackupTask) {
 		task.mu.RLock()
 		defer task.mu.RUnlock()
-		collTask := task.collTask[ns]
+		collTask := task.collTask[collRef]
 
 		collTask.mu.Lock()
 		defer collTask.mu.Unlock()
@@ -132,11 +132,11 @@ func SetBackupCollSuccess(ns namespace.NS) BackupTaskOpt {
 	}
 }
 
-func IncBackupCollCopiedSize(ns namespace.NS, size int64, _ time.Duration) BackupTaskOpt {
+func IncBackupCollCopiedSize(collRef collref.Name, size int64, _ time.Duration) BackupTaskOpt {
 	return func(task *BackupTask) {
 		task.mu.RLock()
 		defer task.mu.RUnlock()
-		collTask := task.collTask[ns]
+		collTask := task.collTask[collRef]
 
 		collTask.mu.Lock()
 		defer collTask.mu.Unlock()
@@ -159,7 +159,7 @@ type BackupTaskView interface {
 	Progress() int32
 	TotalSize() int64
 
-	CollTasks() map[namespace.NS]BackupCollTaskView
+	CollTasks() map[collref.Name]BackupCollTaskView
 }
 
 var _ BackupTaskView = (*BackupTask)(nil)
@@ -186,7 +186,7 @@ type BackupTask struct {
 	startTime time.Time
 	endTime   time.Time
 
-	collTask map[namespace.NS]*backupCollTask
+	collTask map[collref.Name]*backupCollTask
 }
 
 func newBackupTask(id, name string) *BackupTask {
@@ -195,7 +195,7 @@ func newBackupTask(id, name string) *BackupTask {
 		name:      name,
 		stateCode: _backupTaskStateInitial,
 		startTime: time.Now(),
-		collTask:  make(map[namespace.NS]*backupCollTask),
+		collTask:  make(map[collref.Name]*backupCollTask),
 	}
 }
 
@@ -295,14 +295,14 @@ func (b *BackupTask) TotalSize() int64 {
 	return b.totalSize()
 }
 
-func (b *BackupTask) CollTasks() map[namespace.NS]BackupCollTaskView {
+func (b *BackupTask) CollTasks() map[collref.Name]BackupCollTaskView {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 
 	// copy and return a new map, to avoid concurrent modification
-	tasks := make(map[namespace.NS]BackupCollTaskView, len(b.collTask))
-	for ns, task := range b.collTask {
-		tasks[ns] = task
+	tasks := make(map[collref.Name]BackupCollTaskView, len(b.collTask))
+	for collRef, task := range b.collTask {
+		tasks[collRef] = task
 	}
 
 	return tasks
@@ -329,7 +329,7 @@ type backupCollTask struct {
 
 	id string
 
-	ns namespace.NS
+	collRef collref.Name
 
 	stateCode    backupCollStatus
 	errorMessage string
@@ -341,8 +341,8 @@ type backupCollTask struct {
 	endTime   time.Time
 }
 
-func newBackupCollTask(ns namespace.NS) *backupCollTask {
-	return &backupCollTask{ns: ns, stateCode: _backupCollStatusPending}
+func newBackupCollTask(collRef collref.Name) *backupCollTask {
+	return &backupCollTask{collRef: collRef, stateCode: _backupCollStatusPending}
 }
 
 func (b *backupCollTask) ID() string {
@@ -370,7 +370,7 @@ func (b *backupCollTask) StateCode() backuppb.BackupTaskStateCode {
 	case _backupCollStatusFailed:
 		return backuppb.BackupTaskStateCode_BACKUP_FAIL
 	default:
-		panic(fmt.Sprintf("unknown backup coll %s task state: %d", b.ns.String(), b.stateCode))
+		panic(fmt.Sprintf("unknown backup coll %s task state: %d", b.collRef.String(), b.stateCode))
 	}
 }
 
@@ -422,7 +422,7 @@ func (b *backupCollTask) Progress() int32 {
 	case _backupCollStatusFailed:
 		return 0
 	default:
-		panic(fmt.Sprintf("unknown backup coll %s task state: %d", b.ns.String(), b.stateCode))
+		panic(fmt.Sprintf("unknown backup coll %s task state: %d", b.collRef.String(), b.stateCode))
 	}
 }
 

@@ -14,9 +14,9 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/meta"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
@@ -160,7 +160,7 @@ func TestTask_CheckCollExist(t *testing.T) {
 			cli.EXPECT().HasCollection(mock.Anything, "db1", "coll1").Return(tc.has, nil).Once()
 
 			rt := &Task{args: TaskArgs{Option: opt}, grpc: cli, logger: zap.NewNop()}
-			err := rt.checkCollExist(context.Background(), namespace.New("db1", "coll1"))
+			err := rt.checkCollExist(context.Background(), collref.New("db1", "coll1"))
 			if tc.ok {
 				assert.NoError(t, err)
 			} else {
@@ -281,9 +281,9 @@ func TestTask_filterCollTask(t *testing.T) {
 	t.Run("NoFilter", func(t *testing.T) {
 		task := newTestTask()
 		collTasks := []collectionTask{
-			&collTask{targetNS: namespace.New("db1", "coll1")},
-			&collTask{targetNS: namespace.New("db1", "coll2")},
-			&collTask{targetNS: namespace.New("db2", "coll1")},
+			&collTask{target: collref.New("db1", "coll1")},
+			&collTask{target: collref.New("db1", "coll2")},
+			&collTask{target: collref.New("db2", "coll1")},
 		}
 		assert.ElementsMatch(t, collTasks, task.filterCollTask(collTasks))
 	})
@@ -295,12 +295,12 @@ func TestTask_filterCollTask(t *testing.T) {
 		task := newTestTask()
 		task.args.Plan = p
 		collTasks := []collectionTask{
-			&collTask{targetNS: namespace.New("db1", "coll1")},
-			&collTask{targetNS: namespace.New("db1", "coll2")},
-			&collTask{targetNS: namespace.New("db2", "coll1")},
+			&collTask{target: collref.New("db1", "coll1")},
+			&collTask{target: collref.New("db1", "coll2")},
+			&collTask{target: collref.New("db2", "coll1")},
 		}
 		expect := []collectionTask{
-			&collTask{targetNS: namespace.New("db1", "coll1")},
+			&collTask{target: collref.New("db1", "coll1")},
 		}
 		assert.ElementsMatch(t, expect, task.filterCollTask(collTasks))
 	})
@@ -312,13 +312,13 @@ func TestTask_filterCollTask(t *testing.T) {
 		task := newTestTask()
 		task.args.Plan = p
 		collTasks := []collectionTask{
-			&collTask{targetNS: namespace.New("db1", "coll1")},
-			&collTask{targetNS: namespace.New("db1", "coll2")},
-			&collTask{targetNS: namespace.New("db2", "coll1")},
+			&collTask{target: collref.New("db1", "coll1")},
+			&collTask{target: collref.New("db1", "coll2")},
+			&collTask{target: collref.New("db2", "coll1")},
 		}
 		expect := []collectionTask{
-			&collTask{targetNS: namespace.New("db1", "coll1")},
-			&collTask{targetNS: namespace.New("db1", "coll2")},
+			&collTask{target: collref.New("db1", "coll1")},
+			&collTask{target: collref.New("db1", "coll2")},
 		}
 		assert.ElementsMatch(t, expect, task.filterCollTask(collTasks))
 	})
@@ -348,10 +348,10 @@ func TestTask_newDBTask(t *testing.T) {
 func TestTask_newCollTasks(t *testing.T) {
 	mapper := NewMockCollMapper(t)
 
-	ns := namespace.New("db1", "coll1")
-	mapper.EXPECT().TagetNS(ns).Return([]namespace.NS{
-		namespace.New("db2", "coll2"),
-		namespace.New("db3", "coll3"),
+	collRef := collref.New("db1", "coll1")
+	mapper.EXPECT().TargetNames(collRef).Return([]collref.Name{
+		collref.New("db2", "coll2"),
+		collref.New("db3", "coll3"),
 	}).Once()
 
 	task := newTestTask()
@@ -365,8 +365,8 @@ func TestTask_newCollTasks(t *testing.T) {
 	collBackup := &backuppb.CollectionBackupInfo{DbName: "db1", CollectionName: "coll1"}
 	tasks := task.newCollTask(dbBackup, collBackup)
 	assert.Len(t, tasks, 2)
-	nss := lo.Map(tasks, func(task collectionTask, _ int) string { return task.TargetNS().String() })
-	assert.ElementsMatch(t, []string{"db2.coll2", "db3.coll3"}, nss)
+	names := lo.Map(tasks, func(task collectionTask, _ int) string { return task.Target().String() })
+	assert.ElementsMatch(t, []string{"db2.coll2", "db3.coll3"}, names)
 }
 
 // The same mapping, with a snapshot format backup, has to produce tasks that go down the
@@ -374,8 +374,8 @@ func TestTask_newCollTasks(t *testing.T) {
 func TestTask_newCollTasks_Snapshot(t *testing.T) {
 	mapper := NewMockCollMapper(t)
 
-	ns := namespace.New("db1", "coll1")
-	mapper.EXPECT().TagetNS(ns).Return([]namespace.NS{namespace.New("db2", "coll2")}).Once()
+	collRef := collref.New("db1", "coll1")
+	mapper.EXPECT().TargetNames(collRef).Return([]collref.Name{collref.New("db2", "coll2")}).Once()
 
 	task := newTestTask()
 	task.format = meta.FormatSnapshot
@@ -391,57 +391,57 @@ func TestTask_newCollTasks_Snapshot(t *testing.T) {
 	tasks := task.newCollTask(dbBackup, collBackup)
 	assert.Len(t, tasks, 1)
 	assert.IsType(t, &collSnapshotTask{}, tasks[0])
-	assert.Equal(t, "db2.coll2", tasks[0].TargetNS().String())
+	assert.Equal(t, "db2.coll2", tasks[0].Target().String())
 }
 
 func TestDefaultRenamer(t *testing.T) {
 	r := NewDefaultCollMapper()
 
-	ns := namespace.New("db1", "coll1")
-	assert.ElementsMatch(t, []namespace.NS{ns}, r.TagetNS(ns))
+	collRef := collref.New("db1", "coll1")
+	assert.ElementsMatch(t, []collref.Name{collRef}, r.TargetNames(collRef))
 }
 
 func TestSuffixRenamer(t *testing.T) {
 	r := NewSuffixMapper("_bak")
-	ns := namespace.New("db1", "coll1")
-	expect := []namespace.NS{namespace.New("db1", "coll1_bak")}
-	assert.ElementsMatch(t, expect, r.TagetNS(ns))
+	collRef := collref.New("db1", "coll1")
+	expect := []collref.Name{collref.New("db1", "coll1_bak")}
+	assert.ElementsMatch(t, expect, r.TargetNames(collRef))
 }
 
 func TestMapRenamer(t *testing.T) {
 	t.Run("DBWildcard", func(t *testing.T) {
 		r := &TableMapper{DBWildcard: map[string]string{"db1": "db2"}}
 
-		expect := []namespace.NS{namespace.New("db2", "coll1")}
-		in := namespace.New("db1", "coll1")
-		assert.ElementsMatch(t, expect, r.TagetNS(in))
+		expect := []collref.Name{collref.New("db2", "coll1")}
+		in := collref.New("db1", "coll1")
+		assert.ElementsMatch(t, expect, r.TargetNames(in))
 
-		expect = []namespace.NS{namespace.New("db2", "coll2")}
-		in = namespace.New("db1", "coll2")
-		assert.ElementsMatch(t, expect, r.TagetNS(in))
+		expect = []collref.Name{collref.New("db2", "coll2")}
+		in = collref.New("db1", "coll2")
+		assert.ElementsMatch(t, expect, r.TargetNames(in))
 
-		expect = []namespace.NS{namespace.New("db3", "coll1")}
-		in = namespace.New("db3", "coll1")
-		assert.Equal(t, expect, r.TagetNS(in))
+		expect = []collref.Name{collref.New("db3", "coll1")}
+		in = collref.New("db3", "coll1")
+		assert.Equal(t, expect, r.TargetNames(in))
 	})
 
 	t.Run("CollMapper", func(t *testing.T) {
-		r := &TableMapper{NSMapping: map[string][]namespace.NS{
+		r := &TableMapper{NameMapping: map[string][]collref.Name{
 			"db1.coll1": {
-				namespace.New("db2", "coll2"),
-				namespace.New("db3", "coll3"),
+				collref.New("db2", "coll2"),
+				collref.New("db3", "coll3"),
 			},
 		}}
 
-		expect := []namespace.NS{
-			namespace.New("db2", "coll2"),
-			namespace.New("db3", "coll3"),
+		expect := []collref.Name{
+			collref.New("db2", "coll2"),
+			collref.New("db3", "coll3"),
 		}
-		in := namespace.New("db1", "coll1")
-		assert.ElementsMatch(t, expect, r.TagetNS(in))
+		in := collref.New("db1", "coll1")
+		assert.ElementsMatch(t, expect, r.TargetNames(in))
 
-		expect = []namespace.NS{namespace.New("db1", "coll2")}
-		in = namespace.New("db1", "coll2")
-		assert.ElementsMatch(t, expect, r.TagetNS(in))
+		expect = []collref.Name{collref.New("db1", "coll2")}
+		in = collref.New("db1", "coll2")
+		assert.ElementsMatch(t, expect, r.TargetNames(in))
 	})
 }

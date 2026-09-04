@@ -14,9 +14,9 @@ import (
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/restore"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/meta"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
@@ -223,7 +223,7 @@ func (o *options) run(cmd *cobra.Command, params *v2.Config) error {
 // newTableMapperFromCollRename creates a new TableMapper with the given rename map.
 func newTableMapperFromCollRename(collRename map[string]string) (*restore.TableMapper, error) {
 	// add default db in collection_renames if not set
-	nsMapping := make(map[string][]namespace.NS)
+	nameMapping := make(map[string][]collref.Name)
 	dbWildcard := make(map[string]string)
 
 	for k, v := range collRename {
@@ -236,23 +236,23 @@ func newTableMapperFromCollRename(collRename map[string]string) (*restore.TableM
 		case 1:
 			dbWildcard[k[:len(k)-2]] = v[:len(v)-2]
 		case 2, 3:
-			oldNS, err := namespace.Parse(k)
+			oldName, err := collref.Parse(k)
 			if err != nil {
-				return nil, fmt.Errorf("restore: parse namespace %s %w", k, err)
+				return nil, fmt.Errorf("restore: parse collection name %s %w", k, err)
 			}
-			newNS, err := namespace.Parse(v)
+			newName, err := collref.Parse(v)
 			if err != nil {
-				return nil, fmt.Errorf("restore: parse namespace %s %w", v, err)
+				return nil, fmt.Errorf("restore: parse collection name %s %w", v, err)
 			}
 
-			nsMapping[oldNS.String()] = append(nsMapping[oldNS.String()], newNS)
+			nameMapping[oldName.String()] = append(nameMapping[oldName.String()], newName)
 		case 4:
 			// handle in db mapping
 			continue
 		}
 	}
 
-	return &restore.TableMapper{DBWildcard: dbWildcard, NSMapping: nsMapping}, nil
+	return &restore.TableMapper{DBWildcard: dbWildcard, NameMapping: nameMapping}, nil
 }
 
 func NewCmd(opt *root.Options) *cobra.Command {

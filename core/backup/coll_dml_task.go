@@ -13,8 +13,8 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
@@ -25,7 +25,7 @@ const _allPartitionID = -1
 type collDMLTask struct {
 	taskID string
 
-	ns namespace.NS
+	collRef collref.Name
 
 	milvusStorage  storage.Client
 	milvusRootPath string
@@ -48,12 +48,12 @@ type collDMLTask struct {
 	logger *zap.Logger
 }
 
-func newCollDMLTask(ns namespace.NS, args collTaskArgs) *collDMLTask {
-	logger := log.L().With(zap.String("task_id", args.TaskID), zap.String("ns", ns.String()))
+func newCollDMLTask(collRef collref.Name, args collTaskArgs) *collDMLTask {
+	logger := log.L().With(zap.String("task_id", args.TaskID), zap.String("coll", collRef.String()))
 	return &collDMLTask{
 		taskID: args.TaskID,
 
-		ns: ns,
+		collRef: collRef,
 
 		milvusStorage:  args.MilvusStorage,
 		milvusRootPath: args.MilvusRootPath,
@@ -140,7 +140,7 @@ func (dmlt *collDMLTask) listInsertLogByAPI(ctx context.Context, binlogDir strin
 
 func (dmlt *collDMLTask) getSegments(ctx context.Context) ([]*backuppb.SegmentBackupInfo, error) {
 	dmlt.logger.Info("start get segments of collection")
-	segments, err := dmlt.grpc.GetPersistentSegmentInfo(ctx, dmlt.ns.DBName(), dmlt.ns.CollName())
+	segments, err := dmlt.grpc.GetPersistentSegmentInfo(ctx, dmlt.collRef.DBName(), dmlt.collRef.CollName())
 	if err != nil {
 		return nil, fmt.Errorf("backup: get persistent segment info %w", err)
 	}
@@ -300,7 +300,7 @@ func (dmlt *collDMLTask) groupID(seg *milvuspb.PersistentSegmentInfo) int64 {
 // see: https://github.com/milvus-io/milvus/pull/40464
 func (dmlt *collDMLTask) getSegmentInfoByAPI(ctx context.Context, seg *milvuspb.PersistentSegmentInfo) (*backuppb.SegmentBackupInfo, error) {
 	dmlt.logger.Info("try get segment info via proxy node", zap.Int64("segment_id", seg.SegmentID))
-	segInfo, err := dmlt.restful.GetSegmentInfo(ctx, dmlt.ns.DBName(), seg.CollectionID, seg.SegmentID)
+	segInfo, err := dmlt.restful.GetSegmentInfo(ctx, dmlt.collRef.DBName(), seg.CollectionID, seg.SegmentID)
 	if err != nil {
 		return nil, fmt.Errorf("backup: get segment info %w", err)
 	}
@@ -342,9 +342,9 @@ func (dmlt *collDMLTask) getSegmentInfoByAPI(ctx context.Context, seg *milvuspb.
 func (dmlt *collDMLTask) Execute(ctx context.Context) error {
 	dmlt.logger.Info("start to backup dml of collection")
 
-	dmlt.taskMgr.UpdateBackupTask(dmlt.taskID, taskmgr.SetBackupCollDMLPrepare(dmlt.ns))
+	dmlt.taskMgr.UpdateBackupTask(dmlt.taskID, taskmgr.SetBackupCollDMLPrepare(dmlt.collRef))
 
-	describe, err := dmlt.grpc.DescribeCollection(ctx, dmlt.ns.DBName(), dmlt.ns.CollName())
+	describe, err := dmlt.grpc.DescribeCollection(ctx, dmlt.collRef.DBName(), dmlt.collRef.CollName())
 	if err != nil {
 		return fmt.Errorf("backup: describe collection %w", err)
 	}
@@ -361,7 +361,7 @@ func (dmlt *collDMLTask) Execute(ctx context.Context) error {
 	}
 
 	size := lo.SumBy(segments, func(seg *backuppb.SegmentBackupInfo) int64 { return seg.GetSize() })
-	dmlt.taskMgr.UpdateBackupTask(dmlt.taskID, taskmgr.SetBackupCollDMLExecuting(dmlt.ns, size))
+	dmlt.taskMgr.UpdateBackupTask(dmlt.taskID, taskmgr.SetBackupCollDMLExecuting(dmlt.collRef, size))
 
 	if err := dmlt.backupSegmentsData(ctx, segments); err != nil {
 		return fmt.Errorf("backup: backup segments %w", err)
@@ -371,7 +371,7 @@ func (dmlt *collDMLTask) Execute(ctx context.Context) error {
 		return fmt.Errorf("backup: verify segments %w", err)
 	}
 
-	dmlt.taskMgr.UpdateBackupTask(dmlt.taskID, taskmgr.SetBackupCollDMLDone(dmlt.ns))
+	dmlt.taskMgr.UpdateBackupTask(dmlt.taskID, taskmgr.SetBackupCollDMLDone(dmlt.collRef))
 
 	return nil
 }
@@ -532,7 +532,7 @@ func (dmlt *collDMLTask) backupSegmentData(ctx context.Context, seg *backuppb.Se
 		Streaming: dmlt.streaming,
 		Sem:       dmlt.throttling.CopySem,
 		TraceFn: func(size int64, cost time.Duration) {
-			dmlt.taskMgr.UpdateBackupTask(dmlt.taskID, taskmgr.IncBackupCollCopiedSize(dmlt.ns, size, cost))
+			dmlt.taskMgr.UpdateBackupTask(dmlt.taskID, taskmgr.IncBackupCollCopiedSize(dmlt.collRef, size, cost))
 		},
 	}
 	cpTask := storage.NewCopyObjectsTask(opt)

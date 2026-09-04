@@ -22,7 +22,7 @@ import (
 	"golang.org/x/sync/semaphore"
 	"google.golang.org/protobuf/encoding/protowire"
 
-	"github.com/zilliztech/milvus-backup/internal/namespace"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore/conv"
@@ -149,7 +149,7 @@ type collDMLTask struct {
 }
 
 func newCollDMLTask(args dmlTaskArgs, collBackup *backuppb.CollectionBackupInfo) *collDMLTask {
-	ns := namespace.New(collBackup.GetDbName(), collBackup.GetCollectionName())
+	collRef := collref.New(collBackup.GetDbName(), collBackup.GetCollectionName())
 
 	return &collDMLTask{
 		taskID: args.TaskID,
@@ -168,7 +168,7 @@ func newCollDMLTask(args dmlTaskArgs, collBackup *backuppb.CollectionBackupInfo)
 		streamCli:  args.StreamCli,
 		restfulCli: args.RestfulCli,
 
-		logger: log.With(zap.String("task_id", args.TaskID), zap.String("ns", ns.String())),
+		logger: log.With(zap.String("task_id", args.TaskID), zap.String("coll", collRef.String())),
 	}
 }
 

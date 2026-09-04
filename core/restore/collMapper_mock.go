@@ -6,7 +6,8 @@ package restore
 
 import (
 	mock "github.com/stretchr/testify/mock"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
+
+	"github.com/zilliztech/milvus-backup/internal/collref"
 )
 
 // NewMockCollMapper creates a new instance of MockCollMapper. It also registers a testing interface on the mock and a cleanup function to assert the mocks expectations.
@@ -36,41 +37,41 @@ func (_m *MockCollMapper) EXPECT() *MockCollMapper_Expecter {
 	return &MockCollMapper_Expecter{mock: &_m.Mock}
 }
 
-// TagetNS provides a mock function for the type MockCollMapper
-func (_mock *MockCollMapper) TagetNS(ns namespace.NS) []namespace.NS {
-	ret := _mock.Called(ns)
+// TargetNames provides a mock function for the type MockCollMapper
+func (_mock *MockCollMapper) TargetNames(collRef collref.Name) []collref.Name {
+	ret := _mock.Called(collRef)
 
 	if len(ret) == 0 {
-		panic("no return value specified for TagetNS")
+		panic("no return value specified for TargetNames")
 	}
 
-	var r0 []namespace.NS
-	if returnFunc, ok := ret.Get(0).(func(namespace.NS) []namespace.NS); ok {
-		r0 = returnFunc(ns)
+	var r0 []collref.Name
+	if returnFunc, ok := ret.Get(0).(func(collref.Name) []collref.Name); ok {
+		r0 = returnFunc(collRef)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).([]namespace.NS)
+			r0 = ret.Get(0).([]collref.Name)
 		}
 	}
 	return r0
 }
 
-// MockCollMapper_TagetNS_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'TagetNS'
-type MockCollMapper_TagetNS_Call struct {
+// MockCollMapper_TargetNames_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'TargetNames'
+type MockCollMapper_TargetNames_Call struct {
 	*mock.Call
 }
 
-// TagetNS is a helper method to define mock.On call
-//   - ns namespace.NS
-func (_e *MockCollMapper_Expecter) TagetNS(ns any) *MockCollMapper_TagetNS_Call {
-	return &MockCollMapper_TagetNS_Call{Call: _e.mock.On("TagetNS", ns)}
+// TargetNames is a helper method to define mock.On call
+//   - collRef collref.Name
+func (_e *MockCollMapper_Expecter) TargetNames(collRef any) *MockCollMapper_TargetNames_Call {
+	return &MockCollMapper_TargetNames_Call{Call: _e.mock.On("TargetNames", collRef)}
 }
 
-func (_c *MockCollMapper_TagetNS_Call) Run(run func(ns namespace.NS)) *MockCollMapper_TagetNS_Call {
+func (_c *MockCollMapper_TargetNames_Call) Run(run func(collRef collref.Name)) *MockCollMapper_TargetNames_Call {
 	_c.Call.Run(func(args mock.Arguments) {
-		var arg0 namespace.NS
+		var arg0 collref.Name
 		if args[0] != nil {
-			arg0 = args[0].(namespace.NS)
+			arg0 = args[0].(collref.Name)
 		}
 		run(
 			arg0,
@@ -79,12 +80,12 @@ func (_c *MockCollMapper_TagetNS_Call) Run(run func(ns namespace.NS)) *MockCollM
 	return _c
 }
 
-func (_c *MockCollMapper_TagetNS_Call) Return(nSs []namespace.NS) *MockCollMapper_TagetNS_Call {
-	_c.Call.Return(nSs)
+func (_c *MockCollMapper_TargetNames_Call) Return(collRefs []collref.Name) *MockCollMapper_TargetNames_Call {
+	_c.Call.Return(collRefs)
 	return _c
 }
 
-func (_c *MockCollMapper_TagetNS_Call) RunAndReturn(run func(ns namespace.NS) []namespace.NS) *MockCollMapper_TagetNS_Call {
+func (_c *MockCollMapper_TargetNames_Call) RunAndReturn(run func(collRef collref.Name) []collref.Name) *MockCollMapper_TargetNames_Call {
 	_c.Call.Return(run)
 	return _c
 }

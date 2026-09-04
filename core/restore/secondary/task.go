@@ -22,8 +22,8 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/namespace"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
@@ -286,7 +286,7 @@ func (t *Task) checkTargetIsUnused(ctx context.Context) error {
 	// failure. Any other error is a real inability to check and is warned.
 	skipped := make(map[string]int)
 	for _, coll := range t.args.Backup.GetCollectionBackups() {
-		ns := fmt.Sprintf("%s.%s", coll.GetDbName(), coll.GetCollectionName())
+		name := fmt.Sprintf("%s.%s", coll.GetDbName(), coll.GetCollectionName())
 		has, err := t.grpc.HasCollection(ctx, coll.GetDbName(), coll.GetCollectionName())
 		if err != nil {
 			if isDatabaseNotFound(err) {
@@ -294,11 +294,11 @@ func (t *Task) checkTargetIsUnused(ctx context.Context) error {
 				continue
 			}
 			t.logger.Warn("cannot check whether the target already holds a collection, continuing",
-				zap.String("ns", ns), zap.Error(err))
+				zap.String("coll", name), zap.Error(err))
 			continue
 		}
 		if has {
-			present = append(present, ns)
+			present = append(present, name)
 		}
 	}
 	dbs := make([]string, 0, len(skipped))
@@ -457,34 +457,34 @@ func (t *Task) ddlTaskArgs() ddlTaskArgs {
 }
 
 func (t *Task) runCollTask(ctx context.Context, dbBackup *backuppb.DatabaseBackupInfo, collBackup *backuppb.CollectionBackupInfo, ddlArgs ddlTaskArgs, dmlArgs dmlTaskArgs, loadArgs loadTaskArgs) error {
-	ns := namespace.New(dbBackup.GetDbName(), collBackup.GetCollectionName())
-	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.AddRestoreCollTask(ns, collBackup.GetSize()))
-	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollExecuting(ns))
+	collRef := collref.New(dbBackup.GetDbName(), collBackup.GetCollectionName())
+	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.AddRestoreCollTask(collRef, collBackup.GetSize()))
+	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollExecuting(collRef))
 
 	ddlTask := newCollDDLTask(ddlArgs, dbBackup, collBackup)
 	if err := ddlTask.Execute(ctx); err != nil {
-		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollFail(ns, err))
+		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollFail(collRef, err))
 		return fmt.Errorf("secondary: execute collection ddl task: %w", err)
 	}
 
-	if err := t.waitCollCreated(ctx, ns, collBackup.GetCollectionId()); err != nil {
-		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollFail(ns, err))
+	if err := t.waitCollCreated(ctx, collRef, collBackup.GetCollectionId()); err != nil {
+		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollFail(collRef, err))
 		return err
 	}
 
 	dmlTask := newCollDMLTask(dmlArgs, collBackup)
 	if err := dmlTask.Execute(ctx); err != nil {
-		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollFail(ns, err))
+		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollFail(collRef, err))
 		return fmt.Errorf("secondary: execute collection dml task: %w", err)
 	}
 
 	loadTask := newCollLoadTask(loadArgs, dbBackup, collBackup)
 	if err := loadTask.Execute(ctx); err != nil {
-		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollFail(ns, err))
+		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollFail(collRef, err))
 		return fmt.Errorf("secondary: execute collection load task: %w", err)
 	}
 
-	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollSuccess(ns))
+	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollSuccess(collRef))
 
 	return nil
 }
@@ -499,12 +499,12 @@ func (t *Task) runCollTask(ctx context.Context, dbBackup *backuppb.DatabaseBacku
 // an import submitted against a collection the target does not have is accepted
 // and then killed partway through, reported as the collection having been
 // dropped. Waiting here turns that into a failure at the point of the cause.
-func (t *Task) waitCollCreated(ctx context.Context, ns namespace.NS, collectionID int64) error {
+func (t *Task) waitCollCreated(ctx context.Context, collRef collref.Name, collectionID int64) error {
 	deadline := time.Now().Add(_collCreateTimeout)
 	for {
 		has, err := t.grpc.HasCollectionByID(ctx, collectionID)
 		if err != nil {
-			return fmt.Errorf("secondary: wait for collection %s (id %d): %w", ns, collectionID, err)
+			return fmt.Errorf("secondary: wait for collection %s (id %d): %w", collRef, collectionID, err)
 		}
 		if has {
 			return nil
@@ -527,7 +527,7 @@ func (t *Task) waitCollCreated(ctx context.Context, ns namespace.NS, collectionI
 		"reserved id is discarded without an error. Restore into a newly deployed "+
 		"secondary, and check with birdwatcher that none of the backup's collection ids "+
 		"are present there in any state, dropped included",
-		ns, collectionID, _collCreateTimeout)
+		collRef, collectionID, _collCreateTimeout)
 }
 
 func (t *Task) loadTaskArgs() loadTaskArgs {
