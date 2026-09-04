@@ -8,10 +8,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
-	"github.com/zilliztech/milvus-backup/core/del"
+	"github.com/zilliztech/milvus-backup/core/app"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
-	"github.com/zilliztech/milvus-backup/internal/storage"
-	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 )
 
 type options struct {
@@ -31,14 +29,15 @@ func (o *options) addFlags(cmd *cobra.Command) {
 }
 
 func (o *options) run(cmd *cobra.Command, params *v2.Config) error {
-	backupStorage, err := storage.NewBackupStorage(context.Background(), params)
+	ctx := context.Background()
+
+	uc, err := app.NewDeleteBackup(ctx, params)
 	if err != nil {
-		return fmt.Errorf("delete: create backup storage: %w", err)
+		return fmt.Errorf("cmd: create delete backup usecase: %w", err)
 	}
 
-	task := del.NewTask(backupStorage, mpath.BackupDir(params.Backup.Storage.RootPath.Val, o.name))
-	if err := task.Execute(context.Background()); err != nil {
-		return fmt.Errorf("delete: execute task: %w", err)
+	if err := uc.Execute(ctx, o.name); err != nil {
+		return fmt.Errorf("cmd: delete backup: %w", err)
 	}
 
 	cmd.Println("delete backup done")
