@@ -3,6 +3,24 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass
 
+_REQUIRED_VALUES = (
+    "BACKUP_TEST_SOURCE_MILVUS_URI",
+    "BACKUP_TEST_TARGET_MILVUS_URI",
+    "BACKUP_TEST_BACKUP_API_URI",
+    "BACKUP_TEST_RESTORE_API_URI",
+    "BACKUP_TEST_SOURCE_TOKEN",
+    "BACKUP_TEST_TARGET_TOKEN",
+    "BACKUP_TEST_ENVIRONMENT",
+    "BACKUP_TEST_SOURCE_STORAGE",
+    "BACKUP_TEST_BACKUP_STORAGE",
+    "BACKUP_TEST_TARGET_STORAGE",
+    "BACKUP_TEST_CREDENTIAL_MODE",
+)
+
+
+class EnvironmentConfigurationError(ValueError):
+    pass
+
 
 @dataclass(frozen=True)
 class MilvusEndpoint:
@@ -24,6 +42,12 @@ class BackupRestoreEnvironment:
 
     @classmethod
     def from_mapping(cls, values: Mapping[str, str]) -> BackupRestoreEnvironment:
+        missing = [name for name in _REQUIRED_VALUES if not values.get(name)]
+        if missing:
+            raise EnvironmentConfigurationError(
+                f"missing backup restore test environment values: {', '.join(missing)}"
+            )
+
         return cls(
             source=MilvusEndpoint(
                 uri=values["BACKUP_TEST_SOURCE_MILVUS_URI"],

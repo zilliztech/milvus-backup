@@ -1,4 +1,8 @@
-from backup_restore.environment import BackupRestoreEnvironment
+import pytest
+from backup_restore.environment import (
+    BackupRestoreEnvironment,
+    EnvironmentConfigurationError,
+)
 
 
 def test_environment_loads_endpoints_and_safe_route_metadata():
@@ -35,3 +39,19 @@ def test_environment_loads_endpoints_and_safe_route_metadata():
         "backup_api_uri": "http://backup-server:8080/api/v1",
         "restore_api_uri": "http://restore-server:8080/api/v1",
     }
+
+
+def test_environment_reports_all_missing_values_without_exposing_tokens():
+    with pytest.raises(EnvironmentConfigurationError) as error:
+        BackupRestoreEnvironment.from_mapping(
+            {
+                "BACKUP_TEST_SOURCE_MILVUS_URI": "http://source-milvus:19530",
+                "BACKUP_TEST_SOURCE_TOKEN": "must-not-appear",
+            }
+        )
+
+    message = str(error.value)
+    assert "BACKUP_TEST_TARGET_MILVUS_URI" in message
+    assert "BACKUP_TEST_TARGET_TOKEN" in message
+    assert "BACKUP_TEST_RESTORE_API_URI" in message
+    assert "must-not-appear" not in message
