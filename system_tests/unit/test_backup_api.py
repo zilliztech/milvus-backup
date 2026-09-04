@@ -24,7 +24,11 @@ class ScriptedSession:
 def test_create_backup_waits_until_the_backup_is_available():
     session = ScriptedSession(
         [
-            {"code": 0, "requestId": "backup-request-1"},
+            {
+                "data": None,
+                "msg": "create backup is executing asynchronously",
+                "requestId": "backup-request-1",
+            },
             {"code": 0, "data": {"state_code": 1, "progress": 50}},
             {
                 "code": 0,

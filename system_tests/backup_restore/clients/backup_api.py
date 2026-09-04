@@ -132,7 +132,7 @@ class BackupApi:
             )
 
         body = response.json()
-        if body.get("code") != 0:
+        if "code" in body and body["code"] != 0:
             raise BackupApiError(
                 f"{method} {path} failed with code {body.get('code')}: "
                 f"{body.get('msg', response.text)}"
