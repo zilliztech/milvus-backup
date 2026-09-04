@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	"github.com/zilliztech/milvus-backup/core/app"
+	"github.com/zilliztech/milvus-backup/app"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 )
 
