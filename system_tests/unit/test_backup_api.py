@@ -85,3 +85,71 @@ def test_create_backup_waits_until_the_backup_is_available():
             },
         ),
     ]
+
+
+def test_restore_backup_waits_until_the_target_collection_is_available():
+    session = ScriptedSession(
+        [
+            {
+                "code": 0,
+                "requestId": "restore-request-1",
+                "data": {"id": "restore-1", "state_code": 0},
+            },
+            {
+                "code": 0,
+                "data": {"id": "restore-1", "state_code": 1, "progress": 70},
+            },
+            {
+                "code": 0,
+                "data": {"id": "restore-1", "state_code": 2, "progress": 100},
+            },
+        ]
+    )
+
+    result = BackupApi(
+        "http://restore-server:8080/api/v1",
+        session=session,
+    ).restore_backup_and_wait(
+        backup_name="backup-1",
+        collection_renames={"source_collection": "restored_collection"},
+        request_id="restore-request-1",
+        timeout_seconds=10,
+        poll_interval_seconds=0,
+    )
+
+    assert result["data"]["state_code"] == 2
+    assert session.requests == [
+        (
+            "POST",
+            "http://restore-server:8080/api/v1/restore",
+            {
+                "json": {
+                    "async": True,
+                    "backup_name": "backup-1",
+                    "collection_names": ["source_collection"],
+                    "collection_renames": {"source_collection": "restored_collection"},
+                    "restoreIndex": True,
+                },
+                "timeout": 30,
+                "headers": {"request_id": "restore-request-1"},
+            },
+        ),
+        (
+            "GET",
+            "http://restore-server:8080/api/v1/get_restore",
+            {
+                "params": {"id": "restore-1"},
+                "timeout": 30,
+                "headers": {"request_id": "restore-request-1"},
+            },
+        ),
+        (
+            "GET",
+            "http://restore-server:8080/api/v1/get_restore",
+            {
+                "params": {"id": "restore-1"},
+                "timeout": 30,
+                "headers": {"request_id": "restore-request-1"},
+            },
+        ),
+    ]

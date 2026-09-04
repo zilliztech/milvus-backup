@@ -65,6 +65,52 @@ class BackupApi:
                 )
             time.sleep(poll_interval_seconds)
 
+    def restore_backup_and_wait(
+        self,
+        *,
+        backup_name: str,
+        collection_renames: dict[str, str],
+        request_id: str,
+        timeout_seconds: float,
+        poll_interval_seconds: float,
+    ) -> dict[str, Any]:
+        headers = {"request_id": request_id}
+        submitted = self._request(
+            "POST",
+            "/restore",
+            headers=headers,
+            json={
+                "async": True,
+                "backup_name": backup_name,
+                "collection_names": list(collection_renames),
+                "collection_renames": collection_renames,
+                "restoreIndex": True,
+            },
+        )
+        restore_id = submitted["data"]["id"]
+
+        deadline = time.monotonic() + timeout_seconds
+        while True:
+            response = self._request(
+                "GET",
+                "/get_restore",
+                headers=headers,
+                params={"id": restore_id},
+            )
+            state_code = response.get("data", {}).get("state_code")
+            if state_code == 2:
+                return response
+            if state_code in (3, 4):
+                detail = response.get("data", {}).get("errorMessage") or response.get(
+                    "msg", "restore failed"
+                )
+                raise BackupApiError(f"restore {restore_id} failed: {detail}")
+            if time.monotonic() >= deadline:
+                raise BackupApiError(
+                    f"restore {restore_id} timed out after {timeout_seconds:g} seconds"
+                )
+            time.sleep(poll_interval_seconds)
+
     def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         response = self._session.request(
             method,
