@@ -1,3 +1,4 @@
+from contextlib import ExitStack
 from uuid import uuid4
 
 import allure
@@ -6,6 +7,11 @@ import pytest
 from backup_restore.allure_evidence import attach_json, record_environment
 from backup_restore.datasets.default_collection import prepare_default_collection
 from backup_restore.verification.collection import assert_collection_restored
+
+
+def _drop_collection_if_present(client, collection_name: str) -> None:
+    if client.has_collection(collection_name):
+        client.drop_collection(collection_name)
 
 
 @allure.epic("Milvus Backup")
@@ -24,49 +30,78 @@ def test_collection_can_be_restored_to_another_milvus(
     backup_name = f"backup_e2e_{run_id}"
     record_environment(backup_restore_environment)
 
-    with allure.step("Record source and target Milvus versions"):
-        source_version = source_milvus.get_server_version(detail=True)
-        target_version = target_milvus.get_server_version(detail=True)
-        attach_json("source Milvus version", source_version)
-        attach_json("target Milvus version", target_version)
-        allure.dynamic.parameter("source_milvus_commit", source_version["git_commit"])
-        allure.dynamic.parameter("target_milvus_commit", target_version["git_commit"])
+    with ExitStack() as cleanup:
+        try:
+            with allure.step("Record source and target Milvus versions"):
+                source_version = source_milvus.get_server_version(detail=True)
+                target_version = target_milvus.get_server_version(detail=True)
+                attach_json("source Milvus version", source_version)
+                attach_json("target Milvus version", target_version)
+                allure.dynamic.parameter(
+                    "source_milvus_commit", source_version["git_commit"]
+                )
+                allure.dynamic.parameter(
+                    "target_milvus_commit", target_version["git_commit"]
+                )
 
-    with allure.step("Prepare source collection"):
-        dataset = prepare_default_collection(
-            source_milvus,
-            collection_name=source_collection,
-            row_count=1000,
-            dimension=8,
-        )
+            with allure.step("Prepare source collection"):
+                dataset = prepare_default_collection(
+                    source_milvus,
+                    collection_name=source_collection,
+                    row_count=1000,
+                    dimension=8,
+                )
+                cleanup.callback(
+                    _drop_collection_if_present, source_milvus, source_collection
+                )
 
-    with allure.step("Create backup and wait for completion"):
-        backup = backup_api.create_backup_and_wait(
-            backup_name=backup_name,
-            collection_names=[source_collection],
-            backup_format=backup_restore_environment.backup_format,
-            request_id=f"backup-{run_id}",
-            timeout_seconds=backup_restore_environment.backup_timeout_seconds,
-            poll_interval_seconds=backup_restore_environment.poll_interval_seconds,
-        )
-        attach_json("completed backup", backup)
+            with allure.step("Create backup and wait for completion"):
+                backup = backup_api.create_backup_and_wait(
+                    backup_name=backup_name,
+                    collection_names=[source_collection],
+                    backup_format=backup_restore_environment.backup_format,
+                    request_id=f"backup-{run_id}",
+                    timeout_seconds=backup_restore_environment.backup_timeout_seconds,
+                    poll_interval_seconds=backup_restore_environment.poll_interval_seconds,
+                )
+                cleanup.callback(
+                    backup_api.delete_backup,
+                    backup_name=backup_name,
+                    request_id=f"delete-{run_id}",
+                )
+                attach_json("completed backup", backup)
 
-    with allure.step("Restore backup to target Milvus"):
-        restore = restore_api.restore_backup_and_wait(
-            backup_name=backup_name,
-            collection_renames={source_collection: target_collection},
-            request_id=f"restore-{run_id}",
-            timeout_seconds=backup_restore_environment.restore_timeout_seconds,
-            poll_interval_seconds=backup_restore_environment.poll_interval_seconds,
-        )
-        attach_json("completed restore", restore)
+            with allure.step("Restore backup to target Milvus"):
+                cleanup.callback(
+                    _drop_collection_if_present, target_milvus, target_collection
+                )
+                restore = restore_api.restore_backup_and_wait(
+                    backup_name=backup_name,
+                    collection_renames={source_collection: target_collection},
+                    request_id=f"restore-{run_id}",
+                    timeout_seconds=backup_restore_environment.restore_timeout_seconds,
+                    poll_interval_seconds=backup_restore_environment.poll_interval_seconds,
+                )
+                attach_json("completed restore", restore)
 
-    with allure.step("Verify restored collection"):
-        assert_collection_restored(
-            source=source_milvus,
-            target=target_milvus,
-            source_collection=source_collection,
-            target_collection=target_collection,
-            query_vector=dataset.rows[0]["vector"],
-            expected_row_count=len(dataset.rows),
-        )
+            with allure.step("Verify restored collection"):
+                assert_collection_restored(
+                    source=source_milvus,
+                    target=target_milvus,
+                    source_collection=source_collection,
+                    target_collection=target_collection,
+                    query_vector=dataset.rows[0]["vector"],
+                    expected_row_count=len(dataset.rows),
+                )
+        except BaseException:
+            if backup_restore_environment.keep_artifacts_on_failure:
+                cleanup.pop_all()
+                attach_json(
+                    "retained test resources",
+                    {
+                        "source_collection": source_collection,
+                        "target_collection": target_collection,
+                        "backup_name": backup_name,
+                    },
+                )
+            raise
