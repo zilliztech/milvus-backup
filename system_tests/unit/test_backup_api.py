@@ -153,3 +153,27 @@ def test_restore_backup_waits_until_the_target_collection_is_available():
             },
         ),
     ]
+
+
+def test_delete_backup_removes_only_the_named_backup():
+    session = ScriptedSession([{"code": 0, "msg": "success"}])
+
+    BackupApi(
+        "http://backup-server:8080/api/v1",
+        session=session,
+    ).delete_backup(
+        backup_name="backup-1",
+        request_id="delete-request-1",
+    )
+
+    assert session.requests == [
+        (
+            "DELETE",
+            "http://backup-server:8080/api/v1/delete",
+            {
+                "params": {"backup_name": "backup-1"},
+                "timeout": 30,
+                "headers": {"request_id": "delete-request-1"},
+            },
+        )
+    ]

@@ -111,6 +111,14 @@ class BackupApi:
                 )
             time.sleep(poll_interval_seconds)
 
+    def delete_backup(self, *, backup_name: str, request_id: str) -> None:
+        self._request(
+            "DELETE",
+            "/delete",
+            headers={"request_id": request_id},
+            params={"backup_name": backup_name},
+        )
+
     def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         response = self._session.request(
             method,
