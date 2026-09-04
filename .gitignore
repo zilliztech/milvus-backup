@@ -1,5 +1,6 @@
 .idea/
 .vscode/
+.venv/
 milvus-backup
 **/volumes/*
 **/__pycache__/*
