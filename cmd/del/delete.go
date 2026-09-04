@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/app"
+	"github.com/zilliztech/milvus-backup/cmd/root"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 )
 
