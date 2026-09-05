@@ -38,6 +38,9 @@ type config struct {
 	// construction cannot fail. The error stays so the seam matches the
 	// other constructors.
 	newGetBackupTask func() (getBackupTaskUC, error)
+
+	// newCreateBackup is the create counterpart of newListBackups.
+	newCreateBackup func(ctx context.Context, params *v2.Config) (createBackupUC, error)
 }
 
 func newDefaultConfig() *config {
@@ -62,6 +65,9 @@ func newDefaultConfig() *config {
 		},
 		newGetBackupTask: func() (getBackupTaskUC, error) {
 			return app.NewGetBackupTask(taskmgr.DefaultMgr()), nil
+		},
+		newCreateBackup: func(ctx context.Context, params *v2.Config) (createBackupUC, error) {
+			return app.NewCreateBackup(ctx, params)
 		},
 	}
 }
