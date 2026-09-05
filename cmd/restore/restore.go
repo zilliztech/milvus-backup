@@ -10,16 +10,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
+	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/cmd/flags"
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/restore"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
-	"github.com/zilliztech/milvus-backup/internal/meta"
-	"github.com/zilliztech/milvus-backup/internal/storage"
-	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 // removedFlags are the restore flags dropped in 0.6, after 0.5 accepted them
@@ -154,63 +151,36 @@ func (o *options) renameCollectionNamesToMapper() (*restore.TableMapper, error) 
 	return newTableMapperFromCollRename(renameMap)
 }
 
-func (o *options) toArgs(params *v2.Config) (restore.TaskArgs, error) {
+// toRequest translates the flag grammar into the usecase request: the plan is
+// a parse product of flag-only inputs, so it is built here.
+func (o *options) toRequest() (app.RestoreRequest, error) {
 	plan, err := o.toPlan()
 	if err != nil {
-		return restore.TaskArgs{}, err
+		return app.RestoreRequest{}, err
 	}
 
-	backupStorage, err := storage.NewBackupStorage(context.Background(), params)
-	if err != nil {
-		return restore.TaskArgs{}, fmt.Errorf("create backup storage: %w", err)
-	}
-	milvusStorage, err := storage.NewMilvusStorage(context.Background(), params)
-	if err != nil {
-		return restore.TaskArgs{}, fmt.Errorf("create milvus storage: %w", err)
-	}
-
-	backupDir := mpath.BackupDir(params.Backup.Storage.RootPath.Val, o.backupName)
-	exist, err := meta.Exist(context.Background(), backupStorage, backupDir)
-	if err != nil {
-		return restore.TaskArgs{}, fmt.Errorf("check backup exist: %w", err)
-	}
-	if !exist {
-		return restore.TaskArgs{}, fmt.Errorf("backup %s not found", o.backupName)
-	}
-
-	backup, err := meta.Read(context.Background(), backupStorage, backupDir)
-	if err != nil {
-		return restore.TaskArgs{}, fmt.Errorf("read backup meta: %w", err)
-	}
-
-	return restore.TaskArgs{
-		TaskID:        uuid.NewString(),
-		Backup:        backup,
-		Plan:          plan,
-		Option:        o.toOption(),
-		Params:        params,
-		BackupDir:     mpath.BackupDir(params.Backup.Storage.RootPath.Val, o.backupName),
-		BackupStorage: backupStorage,
-		MilvusStorage: milvusStorage,
-
-		TaskMgr: taskmgr.DefaultMgr(),
+	return app.RestoreRequest{
+		TaskID:     uuid.NewString(),
+		BackupName: o.backupName,
+		Plan:       plan,
+		Option:     o.toOption(),
 	}, nil
 }
 
 func (o *options) run(cmd *cobra.Command, params *v2.Config) error {
 	start := time.Now()
 
-	args, err := o.toArgs(params)
+	req, err := o.toRequest()
 	if err != nil {
 		return err
 	}
 
-	task, err := restore.NewTask(cmd.Context(), args)
+	job, err := app.NewRestore(params).Start(cmd.Context(), req)
 	if err != nil {
 		return err
 	}
 
-	if err := task.Execute(context.Background()); err != nil {
+	if err := job.Execute(context.Background()); err != nil {
 		return err
 	}
 

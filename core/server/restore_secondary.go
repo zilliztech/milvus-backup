@@ -10,17 +10,19 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/core/restore/secondary"
-	"github.com/zilliztech/milvus-backup/core/tasklet"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
-	"github.com/zilliztech/milvus-backup/internal/storage"
-	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
+
+// restoreSecondaryUC is the slice of app.RestoreSecondary the handler needs.
+// The consumer defines it: this narrow interface is what handler tests stub
+// out.
+type restoreSecondaryUC interface {
+	Start(ctx context.Context, req app.RestoreSecondaryRequest) (app.RestoreJob, error)
+	TaskView(taskID string) (app.RestoreTaskView, error)
+}
 
 // RestoreBackup Restore interface
 // @Summary Restore interface
@@ -41,168 +43,50 @@ func (s *Server) handleRestoreSecondary(c *gin.Context) {
 
 	log.Info("receive restore secondary request", zap.Any("request", &request))
 
-	h := newRestoreSecondaryHandler(&request, s.params)
-	resp := h.run(c.Request.Context())
+	resp := s.restoreSecondary(c.Request.Context(), &request)
 
 	writeResponse(c, "restore secondary fail", resp)
 }
 
-func newRestoreSecondaryHandler(request *backuppb.RestoreSecondaryRequest, params *v2.Config) *restoreSecondaryHandler {
-	return &restoreSecondaryHandler{request: request, params: params}
-}
+// restoreSecondary keeps the v1 contract of this endpoint: the request id is
+// defaulted and echoed by every response, doubles as the restore task id, and
+// the async flag makes the server run the job in its own goroutine.
+func (s *Server) restoreSecondary(ctx context.Context, request *backuppb.RestoreSecondaryRequest) *backuppb.RestoreBackupResponse {
+	completeRestoreSecondaryRequest(request)
 
-type restoreSecondaryHandler struct {
-	params  *v2.Config
-	request *backuppb.RestoreSecondaryRequest
-
-	backupStorage  storage.Client
-	backupRootPath string
-}
-
-func (h *restoreSecondaryHandler) validate() error {
-	if len(h.request.GetBackupName()) == 0 {
-		return errors.New("backup name is required")
-	}
-
-	if len(h.request.GetSourceClusterID()) == 0 {
-		return errors.New("source cluster id is required")
-	}
-
-	if len(h.request.GetTargetClusterID()) == 0 {
-		return errors.New("target cluster id is required")
-	}
-
-	return nil
-}
-
-func (h *restoreSecondaryHandler) complete() {
-	if len(h.request.GetRequestId()) == 0 {
-		h.request.RequestId = uuid.NewString()
-	}
-}
-
-func (h *restoreSecondaryHandler) run(ctx context.Context) *backuppb.RestoreBackupResponse {
-	h.complete()
-
-	resp := &backuppb.RestoreBackupResponse{RequestId: h.request.GetRequestId()}
-	if err := h.validate(); err != nil {
+	resp := &backuppb.RestoreBackupResponse{RequestId: request.GetRequestId()}
+	if err := validateRestoreSecondaryRequest(request); err != nil {
 		resp.Code = backuppb.ResponseCode_Parameter_Error
 		resp.Msg = err.Error()
 		return resp
 	}
 
-	if err := h.initClient(ctx); err != nil {
+	uc := s.config.newRestoreSecondary(s.params)
+
+	job, err := uc.Start(ctx, newRestoreSecondaryRequest(request))
+	if err != nil {
+		// A backup that is not there is the caller's mistake; everything
+		// else is the server's.
 		resp.Code = backuppb.ResponseCode_Fail
-		resp.Msg = err.Error()
-		return resp
-	}
-
-	backupDir := mpath.BackupDir(h.backupRootPath, h.request.GetBackupName())
-	exist, err := meta.Exist(ctx, h.backupStorage, backupDir)
-	if err != nil {
-		return &backuppb.RestoreBackupResponse{Code: backuppb.ResponseCode_Fail, Msg: err.Error()}
-	}
-	if !exist {
-		msg := fmt.Sprintf("backup %s not found", h.request.GetBackupName())
-		return &backuppb.RestoreBackupResponse{Code: backuppb.ResponseCode_Parameter_Error, Msg: msg}
-	}
-
-	task, err := h.newTask(ctx)
-	if err != nil {
-		resp.Code = backuppb.ResponseCode_Fail
-		resp.Msg = err.Error()
-		return resp
-	}
-
-	if h.request.GetAsync() {
-		return h.runAsync(task)
-	}
-
-	return h.runSync(ctx, task)
-}
-
-func (h *restoreSecondaryHandler) initClient(ctx context.Context) error {
-	backupStorage, err := storage.NewBackupStorage(ctx, h.params)
-	if err != nil {
-		return fmt.Errorf("server: create backup storage: %w", err)
-	}
-
-	backupRootPath := h.params.Backup.Storage.RootPath.Val
-	if len(h.request.GetPath()) != 0 {
-		backupRootPath = h.request.GetPath()
-	}
-
-	h.backupStorage = backupStorage
-	h.backupRootPath = backupRootPath
-	return nil
-}
-
-func (h *restoreSecondaryHandler) newTask(ctx context.Context) (tasklet.Tasklet, error) {
-	backup, err := meta.Read(ctx, h.backupStorage, mpath.BackupDir(h.backupRootPath, h.request.GetBackupName()))
-	if err != nil {
-		return nil, fmt.Errorf("server: read backup: %w", err)
-	}
-
-	milvusStorage, err := storage.NewMilvusStorage(ctx, h.params)
-	if err != nil {
-		return nil, fmt.Errorf("server: create milvus storage: %w", err)
-	}
-
-	args := secondary.TaskArgs{
-		TaskID: h.request.GetRequestId(),
-
-		SourceClusterID: h.request.GetSourceClusterID(),
-		TargetClusterID: h.request.GetTargetClusterID(),
-
-		Backup:        backup,
-		Params:        h.params,
-		BackupDir:     mpath.BackupDir(h.backupRootPath, h.request.GetBackupName()),
-		BackupStorage: h.backupStorage,
-		MilvusStorage: milvusStorage,
-
-		TaskMgr: taskmgr.DefaultMgr(),
-	}
-
-	task, err := secondary.NewTask(args)
-	if err != nil {
-		return nil, fmt.Errorf("backup: new restore task: %w", err)
-	}
-
-	return task, nil
-}
-
-func (h *restoreSecondaryHandler) runAsync(task tasklet.Tasklet) *backuppb.RestoreBackupResponse {
-	resp := &backuppb.RestoreBackupResponse{RequestId: h.request.GetRequestId()}
-
-	go func() {
-		if err := task.Execute(context.Background()); err != nil {
-			log.Error("restore backup task execute fail", zap.String("request_id", h.request.GetRequestId()), zap.Error(err))
+		var notFound *app.BackupNotFoundError
+		if errors.As(err, &notFound) {
+			resp.Code = backuppb.ResponseCode_Parameter_Error
 		}
-	}()
+		resp.Msg = err.Error()
+		return resp
+	}
 
-	taskView, err := taskmgr.DefaultMgr().GetRestoreTask(h.request.GetRequestId())
-	if err != nil {
+	if request.GetAsync() {
+		return s.restoreSecondaryAsync(uc, job, request.GetRequestId(), resp)
+	}
+
+	if err := job.Execute(ctx); err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
 		return resp
 	}
 
-	resp.Code = backuppb.ResponseCode_Success
-	resp.Msg = "restore backup is executing asynchronously"
-	resp.Data = pbconv.RestoreTaskViewToResp(taskView)
-	return resp
-}
-
-func (h *restoreSecondaryHandler) runSync(ctx context.Context, task tasklet.Tasklet) *backuppb.RestoreBackupResponse {
-	resp := &backuppb.RestoreBackupResponse{RequestId: h.request.GetRequestId()}
-
-	if err := task.Execute(ctx); err != nil {
-		resp.Code = backuppb.ResponseCode_Fail
-		resp.Msg = err.Error()
-		return resp
-	}
-
-	taskView, err := taskmgr.DefaultMgr().GetRestoreTask(h.request.GetRequestId())
+	view, err := uc.TaskView(job.TaskID())
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
@@ -211,6 +95,63 @@ func (h *restoreSecondaryHandler) runSync(ctx context.Context, task tasklet.Task
 
 	resp.Code = backuppb.ResponseCode_Success
 	resp.Msg = "success"
-	resp.Data = pbconv.RestoreTaskViewToResp(taskView)
+	resp.Data = pbconv.RestoreTaskViewToResp(view)
 	return resp
+}
+
+// restoreSecondaryAsync launches the job in the server's own goroutine —
+// async is a deployment concern of the HTTP server, not of the usecase — then
+// reports the freshly registered job's view.
+func (s *Server) restoreSecondaryAsync(uc restoreSecondaryUC, job app.RestoreJob, requestID string, resp *backuppb.RestoreBackupResponse) *backuppb.RestoreBackupResponse {
+	go func() {
+		if err := job.Execute(context.Background()); err != nil {
+			log.Error("restore backup task execute fail", zap.String("request_id", requestID), zap.Error(err))
+		}
+	}()
+
+	view, err := uc.TaskView(job.TaskID())
+	if err != nil {
+		resp.Code = backuppb.ResponseCode_Fail
+		resp.Msg = err.Error()
+		return resp
+	}
+
+	resp.Code = backuppb.ResponseCode_Success
+	resp.Msg = "restore backup is executing asynchronously"
+	resp.Data = pbconv.RestoreTaskViewToResp(view)
+	return resp
+}
+
+// completeRestoreSecondaryRequest defaults the request id. It doubles as the
+// restore task id, which is why the secondary endpoints have no separate one.
+func completeRestoreSecondaryRequest(request *backuppb.RestoreSecondaryRequest) {
+	if len(request.GetRequestId()) == 0 {
+		request.RequestId = uuid.NewString()
+	}
+}
+
+func validateRestoreSecondaryRequest(request *backuppb.RestoreSecondaryRequest) error {
+	if len(request.GetBackupName()) == 0 {
+		return errors.New("backup name is required")
+	}
+
+	if len(request.GetSourceClusterID()) == 0 {
+		return errors.New("source cluster id is required")
+	}
+
+	if len(request.GetTargetClusterID()) == 0 {
+		return errors.New("target cluster id is required")
+	}
+
+	return nil
+}
+
+func newRestoreSecondaryRequest(request *backuppb.RestoreSecondaryRequest) app.RestoreSecondaryRequest {
+	return app.RestoreSecondaryRequest{
+		TaskID:          request.GetRequestId(),
+		BackupName:      request.GetBackupName(),
+		SourceClusterID: request.GetSourceClusterID(),
+		TargetClusterID: request.GetTargetClusterID(),
+		Path:            request.GetPath(),
+	}
 }
