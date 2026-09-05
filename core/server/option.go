@@ -19,6 +19,9 @@ type config struct {
 
 	// newDeleteBackup is the delete counterpart of newListBackups.
 	newDeleteBackup func(ctx context.Context, params *v2.Config) (deleteBackupUC, error)
+
+	// newCheck is the check counterpart of newListBackups.
+	newCheck func(ctx context.Context, params *v2.Config) (checkUC, error)
 }
 
 func newDefaultConfig() *config {
@@ -31,6 +34,9 @@ func newDefaultConfig() *config {
 		},
 		newDeleteBackup: func(ctx context.Context, params *v2.Config) (deleteBackupUC, error) {
 			return app.NewDeleteBackup(ctx, params)
+		},
+		newCheck: func(ctx context.Context, params *v2.Config) (checkUC, error) {
+			return app.NewCheck(ctx, params)
 		},
 	}
 }
