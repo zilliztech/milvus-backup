@@ -19,6 +19,16 @@ type config struct {
 
 	// newDeleteBackup is the delete counterpart of newListBackups.
 	newDeleteBackup func(ctx context.Context, params *v2.Config) (deleteBackupUC, error)
+
+	// newRestoreBackup builds the usecase a restore request runs through.
+	// Unlike list and delete its constructor cannot fail: the storage clients
+	// are created per Start call, once the request's own bucket override is
+	// known.
+	newRestoreBackup func(params *v2.Config) restoreBackupUC
+
+	// newRestoreSecondary is the secondary-restore counterpart of
+	// newRestoreBackup.
+	newRestoreSecondary func(params *v2.Config) restoreSecondaryUC
 }
 
 func newDefaultConfig() *config {
@@ -31,6 +41,12 @@ func newDefaultConfig() *config {
 		},
 		newDeleteBackup: func(ctx context.Context, params *v2.Config) (deleteBackupUC, error) {
 			return app.NewDeleteBackup(ctx, params)
+		},
+		newRestoreBackup: func(params *v2.Config) restoreBackupUC {
+			return app.NewRestore(params)
+		},
+		newRestoreSecondary: func(params *v2.Config) restoreSecondaryUC {
+			return app.NewRestoreSecondary(params)
 		},
 	}
 }

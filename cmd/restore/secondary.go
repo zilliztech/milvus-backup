@@ -3,18 +3,13 @@ package restore
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
+	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/cmd/root"
-	"github.com/zilliztech/milvus-backup/core/restore/secondary"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
-	"github.com/zilliztech/milvus-backup/internal/meta"
-	"github.com/zilliztech/milvus-backup/internal/storage"
-	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 type secondaryOption struct {
@@ -42,59 +37,24 @@ func (o *secondaryOption) validate() error {
 	return nil
 }
 
-func (o *secondaryOption) toArgs(params *v2.Config) (secondary.TaskArgs, error) {
-	backupStorage, err := storage.NewBackupStorage(context.Background(), params)
-	if err != nil {
-		return secondary.TaskArgs{}, fmt.Errorf("create backup storage: %w", err)
-	}
-
-	backupDir := mpath.BackupDir(params.Backup.Storage.RootPath.Val, o.backupName)
-	exist, err := meta.Exist(context.Background(), backupStorage, backupDir)
-	if err != nil {
-		return secondary.TaskArgs{}, fmt.Errorf("check backup exist: %w", err)
-	}
-	if !exist {
-		return secondary.TaskArgs{}, fmt.Errorf("backup %s not found", o.backupName)
-	}
-
-	backup, err := meta.Read(context.Background(), backupStorage, backupDir)
-	if err != nil {
-		return secondary.TaskArgs{}, fmt.Errorf("read backup meta: %w", err)
-	}
-
-	milvusStorage, err := storage.NewMilvusStorage(context.Background(), params)
-	if err != nil {
-		return secondary.TaskArgs{}, fmt.Errorf("create milvus storage: %w", err)
-	}
-
-	return secondary.TaskArgs{
+func (o *secondaryOption) toRequest() app.RestoreSecondaryRequest {
+	return app.RestoreSecondaryRequest{
 		TaskID: uuid.NewString(),
+
+		BackupName: o.backupName,
 
 		SourceClusterID: o.sourceClusterID,
 		TargetClusterID: o.targetClusterID,
-
-		Backup:        backup,
-		Params:        params,
-		BackupDir:     backupDir,
-		BackupStorage: backupStorage,
-		MilvusStorage: milvusStorage,
-
-		TaskMgr: taskmgr.DefaultMgr(),
-	}, nil
+	}
 }
 
 func (o *secondaryOption) run(cmd *cobra.Command, params *v2.Config) error {
-	args, err := o.toArgs(params)
+	job, err := app.NewRestoreSecondary(params).Start(context.Background(), o.toRequest())
 	if err != nil {
 		return err
 	}
 
-	task, err := secondary.NewTask(args)
-	if err != nil {
-		return err
-	}
-
-	if err := task.Execute(context.Background()); err != nil {
+	if err := job.Execute(context.Background()); err != nil {
 		return err
 	}
 
