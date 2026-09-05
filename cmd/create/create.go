@@ -9,14 +9,12 @@ import (
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
 
+	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/cmd/flags"
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/backup"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/filter"
-	"github.com/zilliztech/milvus-backup/internal/storage"
-	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 // removedFlags are the create flags dropped in 0.6, after 0.5 accepted them with
@@ -96,19 +94,19 @@ func (o *options) toFilter() (filter.Filter, error) {
 	return f, nil
 }
 
+// toOption parses the flags into the transport-neutral request option. The
+// strategy and format are already validated in validate().
 func (o *options) toOption(params *v2.Config) (backup.Option, error) {
 	f, err := o.toFilter()
 	if err != nil {
 		return backup.Option{}, err
 	}
 
-	// already validated in validate()
 	strategy, err := backup.ParseStrategy(o.strategy)
 	if err != nil {
 		return backup.Option{}, err
 	}
 
-	// already validated in validate()
 	format, err := backup.ParseFormat(o.format)
 	if err != nil {
 		return backup.Option{}, err
@@ -130,48 +128,26 @@ func (o *options) toOption(params *v2.Config) (backup.Option, error) {
 	}, nil
 }
 
-func (o *options) toArgs(params *v2.Config) (backup.TaskArgs, error) {
-	backupStorage, err := storage.NewBackupStorage(context.Background(), params)
-	if err != nil {
-		return backup.TaskArgs{}, fmt.Errorf("create backup storage: %w", err)
-	}
-	milvusStorage, err := storage.NewMilvusStorage(context.Background(), params)
-	if err != nil {
-		return backup.TaskArgs{}, fmt.Errorf("create milvus storage: %w", err)
-	}
-
-	backupDir := mpath.BackupDir(params.Backup.Storage.RootPath.Val, o.backupName)
-	option, err := o.toOption(params)
-	if err != nil {
-		return backup.TaskArgs{}, err
-	}
-
-	return backup.TaskArgs{
-		TaskID:        uuid.NewString(),
-		MilvusStorage: milvusStorage,
-		Option:        option,
-		BackupStorage: backupStorage,
-		BackupDir:     backupDir,
-		Params:        params,
-		TaskMgr:       taskmgr.DefaultMgr(),
-	}, nil
-}
-
 func (o *options) run(cmd *cobra.Command, params *v2.Config) error {
 	start := time.Now()
 
-	args, err := o.toArgs(params)
+	ctx := context.Background()
+	uc, err := app.NewCreateBackup(ctx, params)
 	if err != nil {
-		return fmt.Errorf("create: convert to args: %w", err)
+		return fmt.Errorf("create: new create backup usecase: %w", err)
 	}
 
-	task, err := backup.NewTask(args)
+	opt, err := o.toOption(params)
 	if err != nil {
-		return fmt.Errorf("create: new backup task error: %w", err)
+		return fmt.Errorf("create: build option: %w", err)
 	}
 
-	if err := task.Execute(context.Background()); err != nil {
-		return fmt.Errorf("create: execute task: %w", err)
+	// The CLI reports the outcome itself and prints nothing from the view.
+	if _, err := uc.Execute(ctx, app.CreateBackupRequest{
+		TaskID: uuid.NewString(),
+		Option: opt,
+	}); err != nil {
+		return fmt.Errorf("create: execute backup: %w", err)
 	}
 
 	cmd.Println("create backup success")
