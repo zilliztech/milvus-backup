@@ -7,11 +7,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/cmd/root"
-	"github.com/zilliztech/milvus-backup/core/check"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
-	"github.com/zilliztech/milvus-backup/internal/client/milvus"
-	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
 // writeConfig prints a labeled table of the effective configuration to w.
@@ -39,26 +37,10 @@ func NewCmd(opt *root.Options) *cobra.Command {
 			// connecting to Milvus or the object storage fails.
 			cobra.CheckErr(writeConfig(cmd.OutOrStdout(), params))
 
-			grpc, err := milvus.NewGrpc(&params.Milvus)
+			uc, err := app.NewCheck(ctx, params)
 			cobra.CheckErr(err)
 
-			milvusStorage, err := storage.NewMilvusStorage(ctx, params)
-			cobra.CheckErr(err)
-
-			backupStorage, err := storage.NewBackupStorage(ctx, params)
-			cobra.CheckErr(err)
-
-			taskArgs := check.TaskArgs{
-				Params:        params,
-				Grpc:          grpc,
-				MilvusStorage: milvusStorage,
-				BackupStorage: backupStorage,
-				Output:        cmd.OutOrStdout(),
-			}
-
-			task := check.NewTask(taskArgs)
-			err = task.Execute(ctx)
-			cobra.CheckErr(err)
+			cobra.CheckErr(uc.Execute(ctx, cmd.OutOrStdout()))
 
 			return nil
 		},

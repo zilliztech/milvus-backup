@@ -26,6 +26,9 @@ type config struct {
 	// to build and construction cannot fail. The error stays so the seam
 	// matches the other constructors.
 	newGetRestore func() (getRestoreUC, error)
+
+	// newCheck is the check counterpart of newListBackups.
+	newCheck func(ctx context.Context, params *v2.Config) (checkUC, error)
 }
 
 func newDefaultConfig() *config {
@@ -41,6 +44,9 @@ func newDefaultConfig() *config {
 		},
 		newGetRestore: func() (getRestoreUC, error) {
 			return app.NewGetRestore(taskmgr.DefaultMgr()), nil
+		},
+		newCheck: func(ctx context.Context, params *v2.Config) (checkUC, error) {
+			return app.NewCheck(ctx, params)
 		},
 	}
 }
