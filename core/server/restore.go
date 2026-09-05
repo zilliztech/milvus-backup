@@ -12,20 +12,23 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore"
 	"github.com/zilliztech/milvus-backup/core/utils"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
-	"github.com/zilliztech/milvus-backup/internal/storage"
-	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 	"github.com/zilliztech/milvus-backup/internal/validate"
 )
+
+// restoreBackupUC is the slice of app.Restore the handler needs. The consumer
+// defines it: this narrow interface is what handler tests stub out.
+type restoreBackupUC interface {
+	Start(ctx context.Context, req app.RestoreRequest) (app.RestoreJob, error)
+	TaskView(taskID string) (app.RestoreTaskView, error)
+}
 
 // RestoreBackup Restore interface
 // @Summary Restore interface
@@ -44,199 +47,149 @@ func (s *Server) handleRestoreBackup(c *gin.Context) {
 		return
 	}
 
-	h := newRestoreHandler(&request, s.params)
-	resp := h.run(context.Background())
+	// The restore outlives the HTTP request, so the usecase runs detached
+	// from it, exactly as this endpoint always has.
+	resp := s.restore(context.Background(), &request)
 
 	writeResponse(c, "restore backup fail", resp)
 }
 
-type restoreHandler struct {
-	params  *v2.Config
-	request *backuppb.RestoreBackupRequest
-
-	backupStorage  storage.Client
-	backupRootPath string
-
-	milvusStorage storage.Client
-}
-
-func newRestoreHandler(request *backuppb.RestoreBackupRequest, params *v2.Config) *restoreHandler {
-	return &restoreHandler{request: request, params: params}
-}
-
-func (h *restoreHandler) run(ctx context.Context) *backuppb.RestoreBackupResponse {
-	h.complete()
-	if err := h.validate(); err != nil {
+// restore keeps the v1 contract of this endpoint: request id and task id are
+// defaulted on the request, every failure before the task exists responds
+// without a request id, and the async flag makes the server run the job in
+// its own goroutine.
+func (s *Server) restore(ctx context.Context, request *backuppb.RestoreBackupRequest) *backuppb.RestoreBackupResponse {
+	completeRestoreRequest(request)
+	if err := validateRestoreRequest(request); err != nil {
 		return &backuppb.RestoreBackupResponse{Code: backuppb.ResponseCode_Parameter_Error, Msg: err.Error()}
 	}
 
-	if err := h.initClient(ctx); err != nil {
-		return &backuppb.RestoreBackupResponse{Code: backuppb.ResponseCode_Fail, Msg: err.Error()}
-	}
-
-	backupDir := mpath.BackupDir(h.backupRootPath, h.request.GetBackupName())
-	exist, err := meta.Exist(ctx, h.backupStorage, backupDir)
-	if err != nil {
-		return &backuppb.RestoreBackupResponse{Code: backuppb.ResponseCode_Fail, Msg: err.Error()}
-	}
-	if !exist {
-		msg := fmt.Sprintf("backup %s not found", h.request.GetBackupName())
-		return &backuppb.RestoreBackupResponse{Code: backuppb.ResponseCode_Parameter_Error, Msg: msg}
-	}
-
-	task, err := h.newTask(ctx, backupDir)
+	req, err := newRestoreRequest(request)
 	if err != nil {
 		return &backuppb.RestoreBackupResponse{Code: backuppb.ResponseCode_Fail, Msg: err.Error()}
 	}
 
-	if h.request.GetAsync() {
-		return h.runAsync(task)
+	uc := s.config.newRestoreBackup(s.params)
+
+	job, err := uc.Start(ctx, *req)
+	if err != nil {
+		// A backup that is not there is the caller's mistake; everything
+		// else is the server's.
+		code := backuppb.ResponseCode_Fail
+		var notFound *app.BackupNotFoundError
+		if errors.As(err, &notFound) {
+			code = backuppb.ResponseCode_Parameter_Error
+		}
+		return &backuppb.RestoreBackupResponse{Code: code, Msg: err.Error()}
 	}
-	return h.runSync(ctx, task)
+
+	if request.GetAsync() {
+		return s.restoreAsync(uc, job, request.GetRequestId())
+	}
+
+	if err := job.Execute(ctx); err != nil {
+		return &backuppb.RestoreBackupResponse{Code: backuppb.ResponseCode_Fail, Msg: err.Error()}
+	}
+
+	view, err := uc.TaskView(job.TaskID())
+	if err != nil {
+		resp := &backuppb.RestoreBackupResponse{RequestId: request.GetRequestId()}
+		resp.Code = backuppb.ResponseCode_Fail
+		log.Error("get restore task fail", zap.String("taskId", job.TaskID()), zap.Error(err))
+		resp.Msg = err.Error()
+		return resp
+	}
+
+	return &backuppb.RestoreBackupResponse{
+		RequestId: request.GetRequestId(),
+		Code:      backuppb.ResponseCode_Success,
+		Msg:       "success",
+		Data:      pbconv.RestoreTaskViewToResp(view),
+	}
 }
 
-func (h *restoreHandler) validate() error {
-	if len(h.request.GetBackupName()) == 0 {
+// restoreAsync launches the job in the server's own goroutine — async is a
+// deployment concern of the HTTP server, not of the usecase — then reports
+// the freshly registered job's view.
+func (s *Server) restoreAsync(uc restoreBackupUC, job app.RestoreJob, requestID string) *backuppb.RestoreBackupResponse {
+	go func() {
+		if err := job.Execute(context.Background()); err != nil {
+			log.Error("restore backup task execute fail", zap.String("backupId", job.TaskID()), zap.Error(err))
+		}
+	}()
+
+	view, err := uc.TaskView(job.TaskID())
+	if err != nil {
+		resp := &backuppb.RestoreBackupResponse{RequestId: requestID}
+		resp.Code = backuppb.ResponseCode_Fail
+		log.Error("get restore task fail", zap.String("taskId", job.TaskID()), zap.Error(err))
+		resp.Msg = err.Error()
+		return resp
+	}
+
+	return &backuppb.RestoreBackupResponse{
+		RequestId: requestID,
+		Code:      backuppb.ResponseCode_Success,
+		Msg:       "restore backup is executing asynchronously",
+		Data:      pbconv.RestoreTaskViewToResp(view),
+	}
+}
+
+// completeRestoreRequest defaults the request id and the restore task id.
+func completeRestoreRequest(request *backuppb.RestoreBackupRequest) {
+	if len(request.GetRequestId()) == 0 {
+		request.RequestId = uuid.NewString()
+	}
+
+	if len(request.GetId()) == 0 {
+		taskID := "restore_" + fmt.Sprint(time.Now().UTC().Format("2006_01_02_15_04_05_")) + fmt.Sprint(time.Now().Nanosecond())
+		request.Id = taskID
+	}
+}
+
+func validateRestoreRequest(request *backuppb.RestoreBackupRequest) error {
+	if len(request.GetBackupName()) == 0 {
 		return errors.New("backup name is required")
 	}
 
-	if h.request.GetRestorePlan() != nil && len(h.request.GetCollectionSuffix()) != 0 {
+	if request.GetRestorePlan() != nil && len(request.GetCollectionSuffix()) != 0 {
 		return errors.New("restore plan and collection suffix cannot be set at the same time")
 	}
 
-	if h.request.GetRestorePlan() != nil && len(h.request.GetCollectionRenames()) != 0 {
+	if request.GetRestorePlan() != nil && len(request.GetCollectionRenames()) != 0 {
 		return errors.New("restore plan and collection renames cannot be set at the same time")
 	}
 
-	if len(h.request.GetCollectionSuffix()) != 0 {
-		if has := validate.HasSpecialChar(h.request.GetCollectionSuffix()); has {
+	if len(request.GetCollectionSuffix()) != 0 {
+		if has := validate.HasSpecialChar(request.GetCollectionSuffix()); has {
 			return errors.New("only alphanumeric characters and underscores are allowed in collection suffix")
 		}
 	}
 
-	if h.request.GetDropExistCollection() && h.request.GetSkipCreateCollection() {
+	if request.GetDropExistCollection() && request.GetSkipCreateCollection() {
 		return errors.New("drop_exist_collection and skip_create_collection cannot be true at the same time")
 	}
 
 	return nil
 }
 
-func (h *restoreHandler) complete() {
-	if len(h.request.GetRequestId()) == 0 {
-		h.request.RequestId = uuid.NewString()
-	}
-
-	if len(h.request.GetId()) == 0 {
-		taskID := "restore_" + fmt.Sprint(time.Now().UTC().Format("2006_01_02_15_04_05_")) + fmt.Sprint(time.Now().Nanosecond())
-		h.request.Id = taskID
-	}
-}
-
-func (h *restoreHandler) initClient(ctx context.Context) error {
-	backupCfg := storage.BackupStorageConfig(h.params)
-	if h.request.GetBucketName() != "" {
-		log.Info("use bucket name from request", zap.String("bucketName", h.request.GetBucketName()))
-		backupCfg.Bucket = h.request.GetBucketName()
-	}
-	backupStorage, err := storage.NewClient(ctx, backupCfg)
-	if err != nil {
-		return fmt.Errorf("server: create backup storage: %w", err)
-	}
-	if err := storage.CreateBucketIfNotExist(ctx, backupStorage, ""); err != nil {
-		return fmt.Errorf("server: create backup bucket: %w", err)
-	}
-
-	backupRootPath := h.params.Backup.Storage.RootPath.Val
-	if h.request.GetPath() != "" {
-		log.Info("use path from request", zap.String("path", h.request.GetPath()))
-		backupRootPath = h.request.GetPath()
-	}
-
-	milvusStorage, err := storage.NewMilvusStorage(ctx, h.params)
-	if err != nil {
-		return fmt.Errorf("server: create milvus storage: %w", err)
-	}
-
-	h.backupStorage = backupStorage
-	h.milvusStorage = milvusStorage
-
-	h.backupRootPath = backupRootPath
-
-	return nil
-}
-
-func (h *restoreHandler) newTask(ctx context.Context, backupDir string) (*restore.Task, error) {
-	backup, err := meta.Read(ctx, h.backupStorage, backupDir)
-	if err != nil {
-		return nil, fmt.Errorf("server: read backup: %w", err)
-	}
-
-	plan, err := newPlanFromRequest(h.request)
+// newRestoreRequest translates the v1 pb grammar into the usecase request:
+// the plan and the option are built here because they are parse products of
+// pb-only fields, including the deprecated db_collections.
+func newRestoreRequest(request *backuppb.RestoreBackupRequest) (*app.RestoreRequest, error) {
+	plan, err := newPlanFromRequest(request)
 	if err != nil {
 		return nil, fmt.Errorf("server: create restore plan: %w", err)
 	}
 
-	args := restore.TaskArgs{
-		TaskID:        h.request.GetId(),
-		Backup:        backup,
-		Plan:          plan,
-		Option:        newOptionFromRequest(h.request),
-		Params:        h.params,
-		BackupDir:     backupDir,
-		BackupStorage: h.backupStorage,
-		MilvusStorage: h.milvusStorage,
-
-		TaskMgr: taskmgr.DefaultMgr(),
-	}
-	task, err := restore.NewTask(ctx, args)
-	if err != nil {
-		return nil, fmt.Errorf("backup: new restore task: %w", err)
-	}
-
-	return task, nil
-}
-
-func (h *restoreHandler) runSync(ctx context.Context, task *restore.Task) *backuppb.RestoreBackupResponse {
-	if err := task.Execute(ctx); err != nil {
-		return &backuppb.RestoreBackupResponse{Code: backuppb.ResponseCode_Fail, Msg: err.Error()}
-	}
-
-	resp := backuppb.RestoreBackupResponse{RequestId: h.request.GetRequestId()}
-	taskView, err := taskmgr.DefaultMgr().GetRestoreTask(h.request.GetId())
-	if err != nil {
-		resp.Code = backuppb.ResponseCode_Fail
-		log.Error("get restore task fail", zap.String("taskId", h.request.GetId()), zap.Error(err))
-		resp.Msg = err.Error()
-		return &resp
-	}
-
-	resp.Code = backuppb.ResponseCode_Success
-	resp.Msg = "success"
-	resp.Data = pbconv.RestoreTaskViewToResp(taskView)
-
-	return &resp
-}
-
-func (h *restoreHandler) runAsync(task *restore.Task) *backuppb.RestoreBackupResponse {
-	go func() {
-		if err := task.Execute(context.Background()); err != nil {
-			log.Error("restore backup task execute fail", zap.String("backupId", h.request.GetId()), zap.Error(err))
-		}
-	}()
-
-	resp := backuppb.RestoreBackupResponse{RequestId: h.request.GetRequestId()}
-	taskView, err := taskmgr.DefaultMgr().GetRestoreTask(h.request.GetId())
-	if err != nil {
-		resp.Code = backuppb.ResponseCode_Fail
-		log.Error("get restore task fail", zap.String("taskId", h.request.GetId()), zap.Error(err))
-		resp.Msg = err.Error()
-		return &resp
-	}
-
-	resp.Code = backuppb.ResponseCode_Success
-	resp.Msg = "restore backup is executing asynchronously"
-	resp.Data = pbconv.RestoreTaskViewToResp(taskView)
-	return &resp
+	return &app.RestoreRequest{
+		TaskID:     request.GetId(),
+		BackupName: request.GetBackupName(),
+		BucketName: request.GetBucketName(),
+		Path:       request.GetPath(),
+		Plan:       plan,
+		Option:     newOptionFromRequest(request),
+	}, nil
 }
 
 func newSkipParamsFromRequest(request *backuppb.RestoreBackupRequest) restore.SkipParams {
