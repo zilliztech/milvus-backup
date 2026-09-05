@@ -10,19 +10,25 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
+	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/core/backup"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/utils"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/meta"
-	"github.com/zilliztech/milvus-backup/internal/pbconv"
-	"github.com/zilliztech/milvus-backup/internal/storage"
-	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
+
+// createBackupUC is the slice of app.CreateBackup the handler needs. The
+// consumer defines it: app returns concrete types, and this narrow interface
+// is what handler tests stub out.
+type createBackupUC interface {
+	// Execute runs the backup job synchronously and returns the finished view.
+	Execute(ctx context.Context, req app.CreateBackupRequest) (*app.BackupView, error)
+	// Start registers the job and returns it ready to run; the async flag's
+	// goroutine placement is this server's deployment decision.
+	Start(req app.CreateBackupRequest) (app.BackupJob, error)
+}
 
 // CreateBackup Create backup interface
 // @Summary Create backup interface
@@ -43,66 +49,152 @@ func (s *Server) handleCreateBackup(c *gin.Context) {
 	requestBody.RequestId = c.GetHeader("request_id")
 
 	log.Info("receive create backup request", zap.Any("request", &requestBody))
-	h := newCreateBackupHandler(&requestBody, s.params)
-	resp := h.run(c.Request.Context())
+	resp := s.createBackup(c.Request.Context(), &requestBody)
 	log.Info("response create backup response", zap.Any("resp", resp))
 	writeResponse(c, "create backup fail", resp)
 }
 
-type createBackupHandler struct {
-	params *v2.Config
-
-	request *backuppb.CreateBackupRequest
-
-	backupStorage storage.Client
-
-	milvusStorage storage.Client
-}
-
-func newCreateBackupHandler(request *backuppb.CreateBackupRequest, params *v2.Config) *createBackupHandler {
-	return &createBackupHandler{request: request, params: params}
-}
-
-func (h *createBackupHandler) complete() {
-	if h.request.GetRequestId() == "" {
-		h.request.RequestId = uuid.NewString()
+// createBackup maps the v1 request onto the create usecase and the usecase's
+// outcome onto the v1 wire shape. Binding, request_id defaulting, the
+// deprecated pb fields, name validation and the error-to-code mapping stay
+// here; the action itself lives in app.CreateBackup.
+func (s *Server) createBackup(ctx context.Context, request *backuppb.CreateBackupRequest) *backuppb.BackupInfoResponse {
+	if request.GetRequestId() == "" {
+		request.RequestId = uuid.NewString()
 	}
-}
 
-func (h *createBackupHandler) initClient(ctx context.Context) error {
-	backupStorage, err := storage.NewBackupStorage(ctx, h.params)
+	resp := &backuppb.BackupInfoResponse{RequestId: request.GetRequestId()}
+
+	if err := backup.ValidateName(request.GetBackupName()); err != nil {
+		resp.Code = backuppb.ResponseCode_Parameter_Error
+		resp.Msg = err.Error()
+		return resp
+	}
+
+	uc, err := s.config.newCreateBackup(ctx, s.params)
 	if err != nil {
-		return err
+		resp.Code = backuppb.ResponseCode_Fail
+		resp.Msg = err.Error()
+		return resp
 	}
-	h.backupStorage = backupStorage
 
-	milvusStorage, err := storage.NewMilvusStorage(ctx, h.params)
+	req, err := s.toCreateBackupRequest(request)
 	if err != nil {
-		return err
+		resp.Code = backuppb.ResponseCode_Fail
+		resp.Msg = err.Error()
+		return resp
 	}
-	h.milvusStorage = milvusStorage
 
-	return nil
+	if request.GetAsync() {
+		return runCreateBackupAsync(uc, request.GetRequestId(), req)
+	}
+	return runCreateBackupSync(ctx, uc, request.GetRequestId(), req)
 }
 
-func (h *createBackupHandler) toFilter() (filter.Filter, error) {
-	if h.request.GetFilter() != nil {
-		return h.filterToFilter()
+// runCreateBackupSync runs the job on the request path. The v1 success
+// response carries only code and msg: the view the usecase returns is
+// deliberately not rendered, because the historical handler computed the
+// payload and then dropped it on the floor, and the wire behavior is kept.
+func runCreateBackupSync(ctx context.Context, uc createBackupUC, requestID string, req app.CreateBackupRequest) *backuppb.BackupInfoResponse {
+	if _, err := uc.Execute(ctx, req); err != nil {
+		return &backuppb.BackupInfoResponse{
+			RequestId: requestID,
+			Code:      backuppb.ResponseCode_Fail,
+			Msg:       err.Error(),
+		}
 	}
 
-	dbCollectionsStr := utils.GetDBCollections(h.request.GetDbCollections()) //nolint:staticcheck // SA1019: deprecated field for backward compatibility
+	return &backuppb.BackupInfoResponse{Code: backuppb.ResponseCode_Success, Msg: "success"}
+}
+
+// runCreateBackupAsync starts the job and returns immediately; running it in
+// the background is this server's deployment concern, the flag only selects it.
+func runCreateBackupAsync(uc createBackupUC, requestID string, req app.CreateBackupRequest) *backuppb.BackupInfoResponse {
+	resp := &backuppb.BackupInfoResponse{RequestId: requestID}
+
+	job, err := uc.Start(req)
+	if err != nil {
+		resp.Code = backuppb.ResponseCode_Fail
+		resp.Msg = err.Error()
+		return resp
+	}
+
+	go func() {
+		if err := job.Run(context.Background()); err != nil {
+			log.Error("create backup task execute fail", zap.String("backupId", requestID), zap.Error(err))
+		}
+	}()
+
+	resp.Code = backuppb.ResponseCode_Success
+	resp.Msg = "create backup is executing asynchronously"
+	return resp
+}
+
+// toCreateBackupRequest renders the v1 pb request into the usecase request.
+// The deprecated pb fields (db_collections, collection_names, force,
+// meta_only) keep their old meaning here: accepting or rejecting them is a
+// transport decision.
+func (s *Server) toCreateBackupRequest(request *backuppb.CreateBackupRequest) (app.CreateBackupRequest, error) {
+	f, err := toFilter(request)
+	if err != nil {
+		return app.CreateBackupRequest{}, fmt.Errorf("server: build filter: %w", err)
+	}
+
+	strategy, err := toStrategy(request)
+	if err != nil {
+		return app.CreateBackupRequest{}, fmt.Errorf("server: build strategy: %w", err)
+	}
+
+	format, err := toFormat(request)
+	if err != nil {
+		return app.CreateBackupRequest{}, fmt.Errorf("server: build format: %w", err)
+	}
+
+	manageAddr := ""
+	if request.GetGcPauseAddress() != "" {
+		manageAddr = request.GetGcPauseAddress()
+	}
+
+	rootPath := ""
+	if request.GetBackupRootPath() != "" {
+		rootPath = request.GetBackupRootPath()
+		log.Info("use backup root from request", zap.String("backup_root", rootPath))
+	}
+
+	return app.CreateBackupRequest{
+		TaskID:   request.GetRequestId(),
+		RootPath: rootPath,
+		Option: backup.Option{
+			BackupName:       request.GetBackupName(),
+			PauseGC:          request.GetGcPauseEnable() || s.params.Backup.PauseGC.Val,
+			ManageAddr:       manageAddr,
+			Strategy:         strategy,
+			Format:           format,
+			BackupRBAC:       request.GetRbac(),
+			BackupIndexExtra: request.GetWithIndexExtra(),
+			Filter:           f,
+		},
+	}, nil
+}
+
+func toFilter(request *backuppb.CreateBackupRequest) (filter.Filter, error) {
+	if request.GetFilter() != nil {
+		return pbFilterToFilter(request.GetFilter())
+	}
+
+	dbCollectionsStr := utils.GetDBCollections(request.GetDbCollections()) //nolint:staticcheck // SA1019: deprecated field for backward compatibility
 	if len(dbCollectionsStr) > 0 {
-		return h.dbCollectionsToFilter(dbCollectionsStr)
+		return dbCollectionsToFilter(dbCollectionsStr)
 	}
 
-	if len(h.request.GetCollectionNames()) > 0 { //nolint:staticcheck // SA1019: deprecated field for backward compatibility
-		return h.collectionNamesToFilter()
+	if len(request.GetCollectionNames()) > 0 { //nolint:staticcheck // SA1019: deprecated field for backward compatibility
+		return collectionNamesToFilter(request.GetCollectionNames()) //nolint:staticcheck // SA1019: deprecated field for backward compatibility
 	}
 
 	return filter.Filter{}, nil
 }
 
-func (h *createBackupHandler) dbCollectionsToFilter(dbCollectionsStr string) (filter.Filter, error) {
+func dbCollectionsToFilter(dbCollectionsStr string) (filter.Filter, error) {
 	var dbCollections map[string][]string
 	if err := json.Unmarshal([]byte(dbCollectionsStr), &dbCollections); err != nil {
 		return filter.Filter{}, fmt.Errorf("server: unmarshal dbCollections: %w", err)
@@ -124,9 +216,9 @@ func (h *createBackupHandler) dbCollectionsToFilter(dbCollectionsStr string) (fi
 	return filter.Filter{DBCollFilter: dbCollFilter}, nil
 }
 
-func (h *createBackupHandler) collectionNamesToFilter() (filter.Filter, error) {
+func collectionNamesToFilter(collectionNames []string) (filter.Filter, error) {
 	dbCollFilter := make(map[string]filter.CollFilter)
-	for _, nameStr := range h.request.GetCollectionNames() { //nolint:staticcheck // SA1019: deprecated field for backward compatibility
+	for _, nameStr := range collectionNames {
 		collRef, err := collref.Parse(nameStr)
 		if err != nil {
 			return filter.Filter{}, fmt.Errorf("server: invalid collection name %s", nameStr)
@@ -141,8 +233,8 @@ func (h *createBackupHandler) collectionNamesToFilter() (filter.Filter, error) {
 	return filter.Filter{DBCollFilter: dbCollFilter}, nil
 }
 
-func (h *createBackupHandler) filterToFilter() (filter.Filter, error) {
-	f, err := filter.FromPB(h.request.GetFilter())
+func pbFilterToFilter(pbFilter map[string]*backuppb.CollFilter) (filter.Filter, error) {
+	f, err := filter.FromPB(pbFilter)
 	if err != nil {
 		return filter.Filter{}, fmt.Errorf("server: build filter from pb: %w", err)
 	}
@@ -150,17 +242,17 @@ func (h *createBackupHandler) filterToFilter() (filter.Filter, error) {
 	return f, nil
 }
 
-func (h *createBackupHandler) toStrategy() (backup.Strategy, error) {
-	if h.request.GetStrategy() != "" {
-		return backup.ParseStrategy(h.request.GetStrategy())
+func toStrategy(request *backuppb.CreateBackupRequest) (backup.Strategy, error) {
+	if request.GetStrategy() != "" {
+		return backup.ParseStrategy(request.GetStrategy())
 	}
 
-	if h.request.GetForce() { //nolint:staticcheck // SA1019: deprecated field for backward compatibility
+	if request.GetForce() { //nolint:staticcheck // SA1019: deprecated field for backward compatibility
 		log.Warn("force option is deprecated, pls use strategy=skip_flush instead")
 		return backup.StrategySkipFlush, nil
 	}
 
-	if h.request.GetMetaOnly() { //nolint:staticcheck // SA1019: deprecated field for backward compatibility
+	if request.GetMetaOnly() { //nolint:staticcheck // SA1019: deprecated field for backward compatibility
 		log.Warn("meta_only option is deprecated, pls use strategy=meta_only instead")
 		return backup.StrategyMetaOnly, nil
 	}
@@ -168,166 +260,10 @@ func (h *createBackupHandler) toStrategy() (backup.Strategy, error) {
 	return backup.StrategyAuto, nil
 }
 
-func (h *createBackupHandler) toFormat() (backup.Format, error) {
-	if h.request.GetFormat() != "" {
-		return backup.ParseFormat(h.request.GetFormat())
+func toFormat(request *backuppb.CreateBackupRequest) (backup.Format, error) {
+	if request.GetFormat() != "" {
+		return backup.ParseFormat(request.GetFormat())
 	}
 
 	return backup.FormatAuto, nil
-}
-
-func (h *createBackupHandler) toOption(params *v2.Config) (backup.Option, error) {
-	f, err := h.toFilter()
-	if err != nil {
-		return backup.Option{}, fmt.Errorf("server: build filter: %w", err)
-	}
-
-	strategy, err := h.toStrategy()
-	if err != nil {
-		return backup.Option{}, fmt.Errorf("server: build strategy: %w", err)
-	}
-
-	format, err := h.toFormat()
-	if err != nil {
-		return backup.Option{}, fmt.Errorf("server: build format: %w", err)
-	}
-
-	manageAddr := ""
-	if h.request.GetGcPauseAddress() != "" {
-		manageAddr = h.request.GetGcPauseAddress()
-	}
-
-	return backup.Option{
-		BackupName:       h.request.GetBackupName(),
-		PauseGC:          h.request.GetGcPauseEnable() || params.Backup.PauseGC.Val,
-		ManageAddr:       manageAddr,
-		Strategy:         strategy,
-		Format:           format,
-		BackupRBAC:       h.request.GetRbac(),
-		BackupIndexExtra: h.request.GetWithIndexExtra(),
-		Filter:           f,
-	}, nil
-}
-
-func (h *createBackupHandler) toArgs() (backup.TaskArgs, error) {
-	option, err := h.toOption(h.params)
-	if err != nil {
-		return backup.TaskArgs{}, fmt.Errorf("server: build option: %w", err)
-	}
-
-	backupRoot := h.params.Backup.Storage.RootPath.Val
-	if h.request.GetBackupRootPath() != "" {
-		backupRoot = h.request.GetBackupRootPath()
-		log.Info("use backup root from request", zap.String("backup_root", backupRoot))
-	}
-	backupDir := mpath.BackupDir(backupRoot, h.request.GetBackupName())
-
-	return backup.TaskArgs{
-		TaskID:        h.request.GetRequestId(),
-		Option:        option,
-		MilvusStorage: h.milvusStorage,
-		BackupStorage: h.backupStorage,
-		BackupDir:     backupDir,
-		Params:        h.params,
-		TaskMgr:       taskmgr.DefaultMgr(),
-	}, nil
-}
-
-func (h *createBackupHandler) validate() error {
-	if err := backup.ValidateName(h.request.GetBackupName()); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (h *createBackupHandler) runSync(ctx context.Context, args backup.TaskArgs) *backuppb.BackupInfoResponse {
-	resp := &backuppb.BackupInfoResponse{RequestId: h.request.GetRequestId()}
-
-	task, err := backup.NewTask(args)
-	if err != nil {
-		resp.Code = backuppb.ResponseCode_Fail
-		resp.Msg = err.Error()
-	}
-	if err := task.Execute(ctx); err != nil {
-		resp.Code = backuppb.ResponseCode_Fail
-		resp.Msg = err.Error()
-		return resp
-	}
-
-	taskView, err := taskmgr.DefaultMgr().GetBackupTask(h.request.GetRequestId())
-	if err != nil {
-		resp.Code = backuppb.ResponseCode_Fail
-		resp.Msg = err.Error()
-		return resp
-	}
-
-	backupInfo, err := meta.Read(ctx, h.backupStorage, args.BackupDir)
-	if err != nil {
-		resp.Code = backuppb.ResponseCode_Fail
-		resp.Msg = err.Error()
-		return resp
-	}
-
-	metaSize, err := storage.Size(ctx, h.backupStorage, mpath.MetaDir(args.BackupDir))
-	if err != nil {
-		resp.Code = backuppb.ResponseCode_Fail
-		resp.Msg = err.Error()
-		return resp
-	}
-
-	resp.Code = backuppb.ResponseCode_Success
-	resp.Msg = "success"
-	resp.Data = pbconv.NewBackupInfoBrief(taskView, backupInfo, metaSize)
-
-	return &backuppb.BackupInfoResponse{Code: backuppb.ResponseCode_Success, Msg: "success"}
-}
-
-func (h *createBackupHandler) runAsync(args backup.TaskArgs) *backuppb.BackupInfoResponse {
-	resp := &backuppb.BackupInfoResponse{RequestId: h.request.GetRequestId()}
-	task, err := backup.NewTask(args)
-	if err != nil {
-		resp.Code = backuppb.ResponseCode_Fail
-		resp.Msg = err.Error()
-		return resp
-	}
-
-	go func() {
-		if err := task.Execute(context.Background()); err != nil {
-			log.Error("create backup task execute fail", zap.String("backupId", h.request.GetRequestId()), zap.Error(err))
-		}
-	}()
-
-	resp.Code = backuppb.ResponseCode_Success
-	resp.Msg = "create backup is executing asynchronously"
-	return resp
-}
-
-func (h *createBackupHandler) run(ctx context.Context) *backuppb.BackupInfoResponse {
-	h.complete()
-
-	resp := &backuppb.BackupInfoResponse{RequestId: h.request.GetRequestId()}
-	if err := h.validate(); err != nil {
-		resp.Code = backuppb.ResponseCode_Parameter_Error
-		resp.Msg = err.Error()
-		return resp
-	}
-
-	if err := h.initClient(ctx); err != nil {
-		resp.Code = backuppb.ResponseCode_Fail
-		resp.Msg = err.Error()
-		return resp
-	}
-
-	args, err := h.toArgs()
-	if err != nil {
-		resp.Code = backuppb.ResponseCode_Fail
-		resp.Msg = err.Error()
-		return resp
-	}
-
-	if h.request.GetAsync() {
-		return h.runAsync(args)
-	}
-	return h.runSync(ctx, args)
 }
