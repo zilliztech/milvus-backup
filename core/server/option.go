@@ -19,6 +19,12 @@ type config struct {
 
 	// newDeleteBackup is the delete counterpart of newListBackups.
 	newDeleteBackup func(ctx context.Context, params *v2.Config) (deleteBackupUC, error)
+
+	// newGetRestore is the get-restore counterpart of newListBackups. It
+	// takes no config: restore state is process-local, so there is no client
+	// to build and construction cannot fail. The error stays so the seam
+	// matches the other constructors.
+	newGetRestore func() (getRestoreUC, error)
 }
 
 func newDefaultConfig() *config {
@@ -31,6 +37,9 @@ func newDefaultConfig() *config {
 		},
 		newDeleteBackup: func(ctx context.Context, params *v2.Config) (deleteBackupUC, error) {
 			return app.NewDeleteBackup(ctx, params)
+		},
+		newGetRestore: func() (getRestoreUC, error) {
+			return app.NewGetRestore(), nil
 		},
 	}
 }
