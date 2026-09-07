@@ -1,8 +1,7 @@
 package server
 
 import (
-	"errors"
-	"net/http"
+	"context"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -14,6 +13,13 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
+// getRestoreUC is the slice of app.GetRestore the handler needs. The consumer
+// defines it: app returns concrete types, and this narrow interface is what
+// handler tests stub out.
+type getRestoreUC interface {
+	Execute(ctx context.Context, id string) (taskmgr.RestoreTaskView, error)
+}
+
 // GetRestore Get restore interface
 // @Summary Get restore interface
 // @Description Get restore task state with the given id
@@ -24,38 +30,41 @@ import (
 // @Success 200 {object} backuppb.RestoreBackupResponse
 // @Router /get_restore [get]
 func (s *Server) handleGetRestore(c *gin.Context) {
-	req := &backuppb.GetRestoreStateRequest{RequestId: uuid.NewString()}
+	requestID := c.GetHeader("request_id")
+	if requestID == "" {
+		requestID = uuid.NewString()
+	}
+	id := c.Query("id")
+	log.Info("receive GetRestoreStateRequest", zap.String("id", id))
 
-	req.RequestId = c.GetHeader("request_id")
-	req.Id = c.Query("id")
-	log.Info("receive GetRestoreStateRequest", zap.Any("request", req))
+	resp := &backuppb.RestoreBackupResponse{RequestId: requestID}
 
-	resp := &backuppb.RestoreBackupResponse{RequestId: req.GetRequestId()}
-
-	if req.GetId() == "" {
+	if id == "" {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = "empty restore id"
-		c.JSON(http.StatusOK, resp)
+		writeResponse(c, "get restore fail", resp)
 		return
 	}
 
-	taskView, err := taskmgr.DefaultMgr().GetRestoreTask(req.GetId())
-	if err != nil && !errors.Is(err, taskmgr.ErrTaskNotFound) {
-		resp.Code = backuppb.ResponseCode_Fail
-		resp.Msg = "restore id not exist in task manager"
-		c.JSON(http.StatusOK, resp)
-		return
-	}
+	uc, err := s.config.newGetRestore()
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
-		c.JSON(http.StatusOK, resp)
+		writeResponse(c, "get restore fail", resp)
+		return
+	}
+
+	view, err := uc.Execute(c.Request.Context(), id)
+	if err != nil {
+		resp.Code = backuppb.ResponseCode_Fail
+		resp.Msg = err.Error()
+		writeResponse(c, "get restore fail", resp)
 		return
 	}
 
 	resp.Code = backuppb.ResponseCode_Success
 	resp.Msg = "success"
-	resp.Data = pbconv.RestoreTaskViewToResp(taskView)
+	resp.Data = pbconv.RestoreTaskViewToResp(view)
 	log.Info("End to GetRestoreStateRequest", zap.Any("resp", resp))
-	c.JSON(http.StatusOK, resp)
+	writeResponse(c, "get restore fail", resp)
 }
