@@ -1,15 +1,20 @@
 package server
 
 import (
+	"context"
+	"io"
 	"net/http"
 	"strings"
 
 	"github.com/gin-gonic/gin"
-
-	"github.com/zilliztech/milvus-backup/core/check"
-	"github.com/zilliztech/milvus-backup/internal/client/milvus"
-	"github.com/zilliztech/milvus-backup/internal/storage"
 )
+
+// checkUC is the slice of app.Check the handler needs. The consumer defines
+// it: app returns concrete types, and this narrow interface is what handler
+// tests stub out.
+type checkUC interface {
+	Execute(ctx context.Context, output io.Writer) error
+}
 
 func (s *Server) handleCheck(c *gin.Context) {
 	ctx := c.Request.Context()
@@ -23,33 +28,13 @@ func (s *Server) handleCheck(c *gin.Context) {
 		return
 	}
 
-	grpc, err := milvus.NewGrpc(&s.params.Milvus)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	milvusStorage, err := storage.NewMilvusStorage(ctx, s.params)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	backupStorage, err := storage.NewBackupStorage(ctx, s.params)
+	uc, err := s.config.newCheck(ctx, s.params)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	taskArgs := check.TaskArgs{
-		Params:        s.params,
-		Grpc:          grpc,
-		MilvusStorage: milvusStorage,
-		BackupStorage: backupStorage,
-		Output:        &buff,
-	}
-
-	task := check.NewTask(taskArgs)
-	err = task.Execute(ctx)
-	if err != nil {
+	if err := uc.Execute(ctx, &buff); err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
