@@ -15,11 +15,12 @@ type GetRestore struct {
 	taskMgr *taskmgr.Mgr
 }
 
-// NewGetRestore builds the usecase on the process-local task manager. The
-// manager's state dies with the process — the existing get_restore contract:
-// after a restart every task ID answers not-found.
-func NewGetRestore() *GetRestore {
-	return &GetRestore{taskMgr: taskmgr.DefaultMgr()}
+// NewGetRestore builds the usecase on the given task manager; the server
+// wiring passes the process-local one. That manager's state dies with the
+// process — the existing get_restore contract: after a restart every task
+// ID answers not-found.
+func NewGetRestore(taskMgr *taskmgr.Mgr) *GetRestore {
+	return &GetRestore{taskMgr: taskMgr}
 }
 
 // RestoreView is the job half alone. A restore has no artifact half of its

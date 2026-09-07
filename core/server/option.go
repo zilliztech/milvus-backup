@@ -6,6 +6,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/app"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 // Config for setting params used by server.
@@ -39,7 +40,7 @@ func newDefaultConfig() *config {
 			return app.NewDeleteBackup(ctx, params)
 		},
 		newGetRestore: func() (getRestoreUC, error) {
-			return app.NewGetRestore(), nil
+			return app.NewGetRestore(taskmgr.DefaultMgr()), nil
 		},
 	}
 }

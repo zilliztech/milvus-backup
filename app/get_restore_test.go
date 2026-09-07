@@ -17,7 +17,7 @@ func TestGetRestoreExecute(t *testing.T) {
 		mgr.AddRestoreTask("task-1")
 		mgr.UpdateRestoreTask("task-1", taskmgr.SetRestoreExecuting())
 
-		uc := &GetRestore{taskMgr: mgr}
+		uc := NewGetRestore(mgr)
 		view, err := uc.Execute(context.Background(), "task-1")
 
 		require.NoError(t, err)
@@ -27,7 +27,7 @@ func TestGetRestoreExecute(t *testing.T) {
 
 	t.Run("ErrorsForUnknownID", func(t *testing.T) {
 		// An empty manager: the process has restarted, every task is gone.
-		uc := &GetRestore{taskMgr: taskmgr.NewMgr()}
+		uc := NewGetRestore(taskmgr.NewMgr())
 		view, err := uc.Execute(context.Background(), "task-1")
 
 		require.Error(t, err)
