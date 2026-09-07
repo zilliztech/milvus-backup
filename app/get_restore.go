@@ -23,21 +23,16 @@ func NewGetRestore(taskMgr *taskmgr.Mgr) *GetRestore {
 	return &GetRestore{taskMgr: taskMgr}
 }
 
-// RestoreView is the job half alone. A restore has no artifact half of its
-// own — the backup a job produces is read through GetBackup — but it still
-// travels as an app-defined struct so transports never name the task
-// manager's types.
-type RestoreView struct {
-	Task taskmgr.RestoreTaskView
-}
-
 // Execute returns the task manager's view of the restore job with the given
-// ID. An unknown ID is an error, not a silent success.
-func (uc *GetRestore) Execute(ctx context.Context, id string) (RestoreView, error) {
+// ID. An unknown ID is an error, not a silent success. A restore has no
+// artifact half to merge — the backup a job produces is read through
+// GetBackup — so unlike GetBackup the task manager's own view type travels
+// unchanged; an app-defined struct would only rename it.
+func (uc *GetRestore) Execute(ctx context.Context, id string) (taskmgr.RestoreTaskView, error) {
 	taskView, err := uc.taskMgr.GetRestoreTask(id)
 	if err != nil {
-		return RestoreView{}, fmt.Errorf("app: get restore task %s: %w", id, err)
+		return nil, fmt.Errorf("app: get restore task %s: %w", id, err)
 	}
 
-	return RestoreView{Task: taskView}, nil
+	return taskView, nil
 }

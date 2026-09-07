@@ -21,8 +21,8 @@ func TestGetRestoreExecute(t *testing.T) {
 		view, err := uc.Execute(context.Background(), "task-1")
 
 		require.NoError(t, err)
-		assert.Equal(t, "task-1", view.Task.ID())
-		assert.Equal(t, backuppb.RestoreTaskStateCode_EXECUTING, view.Task.StateCode())
+		assert.Equal(t, "task-1", view.ID())
+		assert.Equal(t, backuppb.RestoreTaskStateCode_EXECUTING, view.StateCode())
 	})
 
 	t.Run("ErrorsForUnknownID", func(t *testing.T) {
@@ -33,6 +33,6 @@ func TestGetRestoreExecute(t *testing.T) {
 		require.Error(t, err)
 		assert.ErrorIs(t, err, taskmgr.ErrTaskNotFound)
 		assert.Contains(t, err.Error(), "task-1")
-		assert.Nil(t, view.Task)
+		assert.Nil(t, view)
 	})
 }

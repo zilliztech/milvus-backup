@@ -7,17 +7,17 @@ import (
 	"github.com/google/uuid"
 	"go.uber.org/zap"
 
-	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
+	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 // getRestoreUC is the slice of app.GetRestore the handler needs. The consumer
 // defines it: app returns concrete types, and this narrow interface is what
 // handler tests stub out.
 type getRestoreUC interface {
-	Execute(ctx context.Context, id string) (app.RestoreView, error)
+	Execute(ctx context.Context, id string) (taskmgr.RestoreTaskView, error)
 }
 
 // GetRestore Get restore interface
@@ -64,7 +64,7 @@ func (s *Server) handleGetRestore(c *gin.Context) {
 
 	resp.Code = backuppb.ResponseCode_Success
 	resp.Msg = "success"
-	resp.Data = pbconv.RestoreTaskViewToResp(view.Task)
+	resp.Data = pbconv.RestoreTaskViewToResp(view)
 	log.Info("End to GetRestoreStateRequest", zap.Any("resp", resp))
 	writeResponse(c, "get restore fail", resp)
 }

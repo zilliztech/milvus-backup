@@ -13,7 +13,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
@@ -23,12 +22,12 @@ import (
 // reached the action at all.
 type stubGetRestore struct {
 	id         string
-	view       app.RestoreView
+	view       taskmgr.RestoreTaskView
 	executeErr error
 	calls      int
 }
 
-func (s *stubGetRestore) Execute(_ context.Context, id string) (app.RestoreView, error) {
+func (s *stubGetRestore) Execute(_ context.Context, id string) (taskmgr.RestoreTaskView, error) {
 	s.id = id
 	s.calls++
 	return s.view, s.executeErr
@@ -80,7 +79,7 @@ func newRestoreTaskView(t *testing.T) *taskmgr.MockRestoreTaskView {
 
 func TestHandleGetRestore(t *testing.T) {
 	t.Run("RendersTheTaskView", func(t *testing.T) {
-		stub := &stubGetRestore{view: app.RestoreView{Task: newRestoreTaskView(t)}}
+		stub := &stubGetRestore{view: newRestoreTaskView(t)}
 		s := newListTestServer(t, withGetRestore(stub, nil))
 
 		resp := getRestore(t, s, "?id=task-1", "")
@@ -110,7 +109,7 @@ func TestHandleGetRestore(t *testing.T) {
 	})
 
 	t.Run("GeneratesRequestIdWhenMissing", func(t *testing.T) {
-		stub := &stubGetRestore{view: app.RestoreView{Task: newRestoreTaskView(t)}}
+		stub := &stubGetRestore{view: newRestoreTaskView(t)}
 		s := newListTestServer(t, withGetRestore(stub, nil))
 
 		resp := getRestore(t, s, "?id=task-1", "")
@@ -119,7 +118,7 @@ func TestHandleGetRestore(t *testing.T) {
 	})
 
 	t.Run("ForwardsRequestId", func(t *testing.T) {
-		stub := &stubGetRestore{view: app.RestoreView{Task: newRestoreTaskView(t)}}
+		stub := &stubGetRestore{view: newRestoreTaskView(t)}
 		s := newListTestServer(t, withGetRestore(stub, nil))
 
 		resp := getRestore(t, s, "?id=task-1", "rid-1")
