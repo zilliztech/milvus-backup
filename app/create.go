@@ -34,11 +34,11 @@ type CreateBackup struct {
 	rootPath string
 }
 
-// NewCreateBackup builds the usecase from config, creating both storage
-// clients itself so the transports never import internal/storage. The clients
-// are created per call; sharing them across calls is a lifecycle decision
-// this layer deliberately does not make.
-func NewCreateBackup(ctx context.Context, params *v2.Config) (*CreateBackup, error) {
+// NewCreateBackup builds the usecase from config and the given task manager,
+// creating both storage clients itself so the transports never import
+// internal/storage. The clients are created per call; sharing them across
+// calls is a lifecycle decision this layer deliberately does not make.
+func NewCreateBackup(ctx context.Context, params *v2.Config, taskMgr *taskmgr.Mgr) (*CreateBackup, error) {
 	backupStorage, err := storage.NewBackupStorage(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("app: %w", err)
@@ -53,7 +53,7 @@ func NewCreateBackup(ctx context.Context, params *v2.Config) (*CreateBackup, err
 		params:        params,
 		milvusStorage: milvusStorage,
 		backupStorage: backupStorage,
-		taskMgr:       taskmgr.DefaultMgr(),
+		taskMgr:       taskMgr,
 		rootPath:      params.Backup.Storage.RootPath.Val,
 	}, nil
 }

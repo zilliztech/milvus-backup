@@ -15,6 +15,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/backup"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/filter"
+	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 // removedFlags are the create flags dropped in 0.6, after 0.5 accepted them with
@@ -132,7 +133,7 @@ func (o *options) run(cmd *cobra.Command, params *v2.Config) error {
 	start := time.Now()
 
 	ctx := context.Background()
-	uc, err := app.NewCreateBackup(ctx, params)
+	uc, err := app.NewCreateBackup(ctx, params, taskmgr.DefaultMgr())
 	if err != nil {
 		return fmt.Errorf("create: new create backup usecase: %w", err)
 	}

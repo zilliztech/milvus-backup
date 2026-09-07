@@ -67,7 +67,7 @@ func newDefaultConfig() *config {
 			return app.NewGetBackupTask(taskmgr.DefaultMgr()), nil
 		},
 		newCreateBackup: func(ctx context.Context, params *v2.Config) (createBackupUC, error) {
-			return app.NewCreateBackup(ctx, params)
+			return app.NewCreateBackup(ctx, params, taskmgr.DefaultMgr())
 		},
 	}
 }
