@@ -8,7 +8,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
-	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/cfg/migrate"
 	"github.com/zilliztech/milvus-backup/internal/cfg/param"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
@@ -25,16 +24,19 @@ func (o *migrateOptions) run(cmd *cobra.Command, opt *root.Options) error {
 		return err
 	}
 
-	// Load the v1 config directly rather than through root.InitGlobalVars,
+	// Read the v1 source directly rather than through root.InitGlobalVars,
 	// which also initializes logging and panics on error. Overrides are not
 	// applied: --set paths are v1-scoped runtime overrides, not part of the
 	// file being migrated.
-	src, err := cfg.Load(opt.Config, nil)
+	src, err := param.NewSource(opt.Config, nil)
 	if err != nil {
-		return fmt.Errorf("load v1 config %s: %w", opt.Config, err)
+		return fmt.Errorf("read v1 config %s: %w", opt.Config, err)
 	}
 
-	out, report := migrate.Migrate(src)
+	out, report, err := migrate.Migrate(src)
+	if err != nil {
+		return fmt.Errorf("migrate v1 config %s: %w", opt.Config, err)
+	}
 
 	data, err := v2.Render(out, report.Comments)
 	if err != nil {

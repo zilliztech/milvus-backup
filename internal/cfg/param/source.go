@@ -12,9 +12,21 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Input is one value a source holds: the raw value, the kind of source it
+// came from, and the key or variable name it was spelled with there. Sources
+// the process reads directly stamp the current schema's spelling; a source a
+// schema translation builds stamps the spelling of the schema the value came
+// from, so provenance survives the rename.
+type Input struct {
+	Value     any
+	Kind      SourceKind
+	SourceKey string
+}
+
 // Source holds the raw, schema-independent inputs a configuration is resolved
-// from: the --set overrides and the flattened config file. Environment
-// variables are read from the process environment on lookup.
+// from: the --set overrides, a snapshot of the process environment, and the
+// flattened config file. Nothing is read after construction, so a source
+// resolves the same way every time it is consulted.
 type Source struct {
 	path string
 
@@ -23,13 +35,24 @@ type Source struct {
 	override     map[string]string
 	overrideKeys []string
 
-	configFile map[string]any
+	// env is the environment snapshot, keyed by variable name.
+	env map[string]string
+
+	// configFile holds the flattened file keyed by lower-cased dotted key.
+	// Values keep the Input they were read as, so a translated source can
+	// name the schema version each value actually came from.
+	configFile map[string]Input
 }
 
-// NewSource reads configPath and flattens it into dotted lower-case keys.
-// An empty configPath yields a source backed by overrides and env only.
+// NewSource reads configPath and flattens it into dotted lower-case keys, and
+// snapshots the process environment. An empty configPath yields a source
+// backed by overrides and env only.
 func NewSource(configPath string, overrides map[string]string) (*Source, error) {
-	s := &Source{override: make(map[string]string, len(overrides)), configFile: map[string]any{}}
+	s := &Source{
+		override:   make(map[string]string, len(overrides)),
+		env:        snapshotEnv(),
+		configFile: map[string]Input{},
+	}
 
 	for k, v := range overrides {
 		s.override[strings.ToLower(k)] = v
@@ -55,14 +78,53 @@ func NewSource(configPath string, overrides map[string]string) (*Source, error) 
 		return nil, fmt.Errorf("cfg: parse yaml %s: %w", resolved, err)
 	}
 
-	out := map[string]any{}
-	if err := flattenAny("", decoded, out); err != nil {
+	flat := map[string]any{}
+	if err := flattenAny("", decoded, flat); err != nil {
 		return nil, fmt.Errorf("cfg: flatten yaml %s: %w", resolved, err)
 	}
+	for k, v := range flat {
+		s.configFile[k] = Input{Value: v, Kind: SourceConfigFile, SourceKey: k}
+	}
 	s.path = resolved
-	s.configFile = out
 
 	return s, nil
+}
+
+// NewTranslatedSource builds a source from the product of a schema
+// translation rather than from a file read off disk. file holds the
+// translated entries keyed by lower-cased target config key, each carrying
+// the source schema's spelling it came from; override holds the --set values
+// the translation does not rename, keyed by the spelling the operator gave.
+// The environment is left empty: the translation already carried over every
+// value worth resolving, under the target schema's names.
+func NewTranslatedSource(path string, file map[string]Input, override map[string]string) *Source {
+	s := &Source{
+		path:         path,
+		override:     make(map[string]string, len(override)),
+		overrideKeys: make([]string, 0, len(override)),
+		env:          map[string]string{},
+		configFile:   file,
+	}
+
+	for k, v := range override {
+		s.override[strings.ToLower(k)] = v
+		s.overrideKeys = append(s.overrideKeys, k)
+	}
+	slices.Sort(s.overrideKeys)
+
+	return s
+}
+
+func snapshotEnv() map[string]string {
+	env := make(map[string]string)
+	for _, kv := range os.Environ() {
+		name, value, ok := strings.Cut(kv, "=")
+		if ok {
+			env[name] = value
+		}
+	}
+
+	return env
 }
 
 func (s *Source) lookupOverride(key string) (string, bool) {
@@ -71,14 +133,23 @@ func (s *Source) lookupOverride(key string) (string, bool) {
 }
 
 func (s *Source) lookupEnv(key string) (string, bool) {
-	val, ok := os.LookupEnv(key)
+	val, ok := s.env[key]
 	return val, ok
 }
 
-func (s *Source) lookupConfigFile(key string) (any, bool) {
+func (s *Source) lookupConfigFile(key string) (Input, bool) {
 	val, ok := s.configFile[strings.ToLower(key)]
 	return val, ok
 }
+
+// OverrideValue returns the raw --set value held for key, matched
+// case-insensitively. Schema translation reads overrides through it to carry
+// them into the target schema's spelling.
+func (s *Source) OverrideValue(key string) (string, bool) { return s.lookupOverride(key) }
+
+// EnvValue returns the value the environment snapshot holds for the variable
+// name. Variable names are matched exactly, as os.LookupEnv does.
+func (s *Source) EnvValue(name string) (string, bool) { return s.lookupEnv(name) }
 
 // ConfigFileKeys returns the flattened config file keys, sorted. Schema
 // versions that reject unknown keys compare it against the keys they declare.
@@ -101,7 +172,14 @@ func (s *Source) OverrideKeys() []string { return s.overrideKeys }
 func (s *Source) ConfigFilePath() string { return s.path }
 
 // ConfigFileValue returns the raw flattened value the config file holds for key.
-func (s *Source) ConfigFileValue(key string) (any, bool) { return s.lookupConfigFile(key) }
+func (s *Source) ConfigFileValue(key string) (any, bool) {
+	in, ok := s.lookupConfigFile(key)
+	if !ok {
+		return nil, false
+	}
+
+	return in.Value, true
+}
 
 func ResolveConfigFilePath(configPath string) (string, error) {
 	// If user passes an explicit existing path, use it directly.

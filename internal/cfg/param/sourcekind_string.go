@@ -13,11 +13,13 @@ func _() {
 	_ = x[SourceEnv-2]
 	_ = x[SourceConfigFile-3]
 	_ = x[SourceDefault-4]
+	_ = x[SourceV1Env-5]
+	_ = x[SourceV1ConfigFile-6]
 }
 
-const _SourceKind_name = "unknownoverrideenvconfigdefault"
+const _SourceKind_name = "unknownoverrideenvconfigdefaultv1 envv1 config"
 
-var _SourceKind_index = [...]uint8{0, 7, 15, 18, 24, 31}
+var _SourceKind_index = [...]uint8{0, 7, 15, 18, 24, 31, 37, 46}
 
 func (i SourceKind) String() string {
 	idx := int(i) - 0

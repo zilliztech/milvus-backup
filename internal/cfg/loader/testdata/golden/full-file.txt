@@ -1,0 +1,72 @@
+Log.Level	warn
+Log.Console	false
+Log.File.Path	/var/log/backup.log
+Log.File.MaxSizeMiB	100
+Log.File.MaxDays	3
+Log.File.MaxBackups	2
+Server.DebugMode	true
+Server.SwaggerBasePath	/backup
+Milvus.User	root
+Milvus.Password	mi****ss
+Milvus.Grpc.Address	milvus-proxy
+Milvus.Grpc.Port	19531
+Milvus.Grpc.TLSMode	server
+Milvus.Grpc.CACertPath	/ca.pem
+Milvus.Grpc.ServerName	milvus.local
+Milvus.Grpc.MTLSCertPath	
+Milvus.Grpc.MTLSKeyPath	
+Milvus.Rest.Endpoint	
+Milvus.Management.Endpoint	http://datacoord:9091
+Milvus.Replicate.RPCChannelName	my-replicate
+Milvus.Etcd.Endpoints	etcd-0:2379,etcd-1:2379
+Milvus.Etcd.RootPath	my-root
+Milvus.Storage.Provider	s3
+Milvus.Storage.Address	minio.local
+Milvus.Storage.Port	9001
+Milvus.Storage.Region	us-west-2
+Milvus.Storage.UseSSL	true
+Milvus.Storage.AccountName	
+Milvus.Storage.SourceSASToken	
+Milvus.Storage.BucketName	milvus-bucket
+Milvus.Storage.RootPath	milvus-root
+Milvus.Storage.LocalPath	
+Milvus.Storage.MilvusAddress	
+Milvus.Storage.MilvusPort	0
+Milvus.Storage.Auth.Type	static
+Milvus.Storage.Auth.AccessKeyID	ak
+Milvus.Storage.Auth.SecretAccessKey	****
+Milvus.Storage.Auth.SessionToken	****
+Milvus.Storage.Auth.AccountKey	
+Milvus.Storage.Auth.CredentialsFile	
+Milvus.Storage.Auth.Endpoint	
+Backup.Storage.Provider	s3
+Backup.Storage.Address	minio.local
+Backup.Storage.Port	9001
+Backup.Storage.Region	us-west-2
+Backup.Storage.UseSSL	true
+Backup.Storage.AccountName	
+Backup.Storage.SourceSASToken	
+Backup.Storage.BucketName	milvus-bucket
+Backup.Storage.RootPath	milvus-root
+Backup.Storage.LocalPath	
+Backup.Storage.MilvusAddress	
+Backup.Storage.MilvusPort	0
+Backup.Storage.Auth.Type	static
+Backup.Storage.Auth.AccessKeyID	ak
+Backup.Storage.Auth.SecretAccessKey	****
+Backup.Storage.Auth.SessionToken	****
+Backup.Storage.Auth.AccountKey	
+Backup.Storage.Auth.CredentialsFile	
+Backup.Storage.Auth.Endpoint	
+Backup.Concurrency.Collections	8
+Backup.Concurrency.Segments	512
+Backup.PauseGC	false
+Restore.Concurrency.Collections	3
+Restore.Concurrency.ImportJobs	64
+Restore.MaxSegmentsPerImportJob	256
+Restore.KeepTempFiles	true
+Transfer.Mode	auto
+Transfer.Concurrency	32
+Transfer.MultipartCopyThresholdMiB	500
+Cloud.Endpoint	https://api.example.com
+Cloud.APIKey	cl****ey

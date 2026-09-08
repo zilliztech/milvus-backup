@@ -6,6 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zilliztech/milvus-backup/internal/cfg/param"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 )
 
@@ -15,7 +16,7 @@ import (
 func TestTranslate_KeepsEnvSecret(t *testing.T) {
 	t.Setenv("MINIO_SECRET_KEY", "supersecret")
 
-	out, err := Translate(loadV1(t, `
+	out, err := Translate(v1Source(t, `
 minio:
   storageType: s3
   accessKeyID: ak
@@ -29,8 +30,48 @@ minio:
 	assert.Equal(t, "supersecret", out.Backup.Storage.Auth.SecretAccessKey.Val)
 }
 
+// The env stamp records the v1 variable the value actually came from, under
+// the v1 source kind the translation stamps.
+func TestTranslate_EnvStampKeepsV1Name(t *testing.T) {
+	t.Setenv("MINIO_SECRET_KEY", "supersecret")
+
+	out, err := Translate(v1Source(t, "minio:\n  storageType: s3\n  accessKeyID: ak\n"))
+	require.NoError(t, err)
+
+	assert.Equal(t, param.SourceV1Env, out.Milvus.Storage.Auth.SecretAccessKey.Used.Kind)
+	assert.Equal(t, "minio_secret_key", out.Milvus.Storage.Auth.SecretAccessKey.Used.Key)
+}
+
+// v1 environment variables keep resolving through the translation even for
+// fields v2 declares no env name for, such as connection parameters.
+func TestTranslate_V1EnvNamesStillResolve(t *testing.T) {
+	t.Setenv("MILVUS_ADDRESS", "from-v1-env")
+	t.Setenv("MINIO_BUCKET_NAME", "v1-bucket")
+
+	out, err := Translate(v1Source(t, "milvus:\n  port: 19531\n"))
+	require.NoError(t, err)
+
+	assert.Equal(t, "from-v1-env", out.Milvus.Grpc.Address.Val)
+	assert.Equal(t, param.SourceV1Env, out.Milvus.Grpc.Address.Used.Kind)
+	assert.Equal(t, "v1-bucket", out.Milvus.Storage.BucketName.Val)
+}
+
+// A v2 environment variable does not apply to a v1 load: the v1 schema never
+// read the v2 names, so the translation leaves the environment out of the
+// translated source and only v1 names resolve.
+func TestTranslate_V2EnvNameInertOnV1Load(t *testing.T) {
+	t.Setenv("MINIO_SECRET_KEY", "from-v1-env")
+	t.Setenv("MILVUS_STORAGE_AUTH_SECRET_ACCESS_KEY", "from-v2-env")
+
+	out, err := Translate(v1Source(t, "minio:\n  storageType: s3\n  accessKeyID: ak\n"))
+	require.NoError(t, err)
+
+	assert.Equal(t, "from-v1-env", out.Milvus.Storage.Auth.SecretAccessKey.Val)
+	assert.Equal(t, "minio_secret_key", out.Milvus.Storage.Auth.SecretAccessKey.Used.Key)
+}
+
 func TestTranslate_MapsRenamedKeys(t *testing.T) {
-	out, err := Translate(loadV1(t, `
+	out, err := Translate(v1Source(t, `
 milvus:
   address: milvus-proxy
   port: 19531
@@ -65,7 +106,7 @@ backup:
 // the dropped http.enabled, the mutual TLS downgrade, the inherited backup root
 // path, and crossStorage against two different backends.
 func TestTranslate_SettlesValuesWithoutReport(t *testing.T) {
-	out, err := Translate(loadV1(t, `
+	out, err := Translate(v1Source(t, `
 http:
   enabled: false
 milvus:
@@ -89,11 +130,46 @@ minio:
 	assert.Equal(t, "custom-root", out.Backup.Storage.RootPath.Val)
 }
 
+// The backup root path inheritance follows the Milvus root path whichever
+// layer set it, here a --set override.
+func TestTranslate_BackupRootPathInheritsFromOverride(t *testing.T) {
+	src, err := param.NewSource(writeTempV1(t, "minio:\n  bucketName: b\n"),
+		map[string]string{"minio.rootPath": "override-root"})
+	require.NoError(t, err)
+
+	out, err := Translate(src)
+	require.NoError(t, err)
+
+	assert.Equal(t, "override-root", out.Backup.Storage.RootPath.Val)
+	assert.Equal(t, param.SourceOverride, out.Backup.Storage.RootPath.Used.Kind)
+	assert.Equal(t, "minio.rootpath", out.Backup.Storage.RootPath.Used.Key)
+}
+
 func TestTranslate_CrossStorageStreams(t *testing.T) {
-	out, err := Translate(loadV1(t, "minio:\n  crossStorage: true\n"))
+	out, err := Translate(v1Source(t, "minio:\n  crossStorage: true\n"))
 	require.NoError(t, err)
 
 	assert.Equal(t, v2.TransferStreaming, out.Transfer.Mode.Val)
+}
+
+// The root path inheritance is settled exactly as v1's cmp.Or settled it:
+// the Milvus root path value when non-empty, "backup" when it was explicitly
+// set empty, and the v1 default "files" when nothing set either.
+func TestTranslate_BackupRootPathInheritance(t *testing.T) {
+	t.Run("ExplicitEmptyMilvusRootFallsToBackup", func(t *testing.T) {
+		out, err := Translate(v1Source(t, "minio:\n  rootPath: \"\"\n"))
+		require.NoError(t, err)
+		assert.Empty(t, out.Milvus.Storage.RootPath.Val)
+		assert.Equal(t, "backup", out.Backup.Storage.RootPath.Val)
+		assert.True(t, out.Backup.Storage.RootPath.IsDefault(), "a settled v1 default reports as defaulted")
+	})
+
+	t.Run("NothingSetLandsOnV1DefaultFiles", func(t *testing.T) {
+		out, err := Translate(v1Source(t, "milvus:\n  user: root\n"))
+		require.NoError(t, err)
+		assert.Equal(t, "files", out.Backup.Storage.RootPath.Val)
+		assert.True(t, out.Backup.Storage.RootPath.IsDefault())
+	})
 }
 
 // The loader path is what a v1 file hits at startup. Azure with useIAM used to
@@ -101,7 +177,7 @@ func TestTranslate_CrossStorageStreams(t *testing.T) {
 // v2 validator ("milvus.storage.auth.accountKey is required"), panicking the
 // process. It must translate to auth.type=default instead.
 func TestTranslate_AzureUseIAM(t *testing.T) {
-	out, err := Translate(loadV1(t, `
+	out, err := Translate(v1Source(t, `
 minio:
   storageType: azure
   useIAM: true
@@ -123,7 +199,7 @@ minio:
 // build a client. Translating runs the v2 validator, so the mistake surfaces
 // while the config is being loaded.
 func TestTranslate_ReportsValidationError(t *testing.T) {
-	_, err := Translate(loadV1(t, "minio:\n  storageType: bogus\n"))
+	_, err := Translate(v1Source(t, "minio:\n  storageType: bogus\n"))
 
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "translate v1 config to v2")
@@ -144,10 +220,10 @@ minio:
   crossStorage: true
 `
 
-	translated, err := Translate(loadV1(t, content))
+	translated, err := Translate(v1Source(t, content))
 	require.NoError(t, err)
 
-	migrated, report := Migrate(loadV1(t, content))
+	migrated, report := migrateRun(t, v1Source(t, content))
 	require.NoError(t, report.Err())
 
 	assert.Equal(t, migrated, translated)

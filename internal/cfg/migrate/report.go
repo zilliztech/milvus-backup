@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 	"strings"
-
-	"github.com/zilliztech/milvus-backup/internal/cfg/param"
 )
 
 // Report collects everything about a migration a human should see: warnings
@@ -52,16 +50,6 @@ func (r *Report) warnf(format string, args ...any) {
 	r.Warnings = append(r.Warnings, fmt.Sprintf(format, args...))
 }
 
-// comment records a head comment for a v2 field, keyed by its config key.
-func (r *Report) comment(f param.Field, text string) {
-	if r == nil {
-		return
-	}
-	if keys := f.ConfigKeys(); len(keys) > 0 {
-		r.Comments[strings.ToLower(keys[0])] = text
-	}
-}
-
 // commentKey records a head comment for a v2 field named directly by its
 // config key, for callers that do not hold the field.
 func (r *Report) commentKey(key, text string) {
@@ -71,15 +59,13 @@ func (r *Report) commentKey(key, text string) {
 	r.Comments[strings.ToLower(key)] = text
 }
 
-// deferToEnv marks a field as supplied through an environment variable, so its
+// deferKey marks a field as supplied through an environment variable, so its
 // empty value in the file is expected rather than a validation error.
-func (r *Report) deferToEnv(f param.Field) {
+func (r *Report) deferKey(key string) {
 	if r == nil {
 		return
 	}
-	if keys := f.ConfigKeys(); len(keys) > 0 {
-		r.deferred[strings.ToLower(keys[0])] = true
-	}
+	r.deferred[strings.ToLower(key)] = true
 }
 
 // recordValidation runs the v2 validator over the migrated config and keeps

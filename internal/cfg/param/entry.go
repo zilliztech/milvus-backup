@@ -97,14 +97,6 @@ func Entries(cfg any) []Entry {
 	return entries
 }
 
-// Defaults sets every parameter of cfg to its declared default, without
-// consulting any external source. A caller that then populates only some fields
-// (such as a config migration) still starts from a fully resolved baseline, so
-// the fields it leaves alone report as defaulted rather than as unset.
-func Defaults(cfg any) {
-	Walk(cfg, func(_ string, field Field) { field.UseDefault() })
-}
-
 // DeclaredKeys returns every config file key and environment variable name the
 // schema of cfg declares, lower-cased for comparison against a Source.
 func DeclaredKeys(cfg any) (configKeys, envNames map[string]struct{}) {

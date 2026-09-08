@@ -9,26 +9,44 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zilliztech/milvus-backup/internal/cfg"
+	"github.com/zilliztech/milvus-backup/internal/cfg/param"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 )
 
-// loadV1 writes content to a temp file and resolves it with the v1 loader, so a
-// test starts from the same resolved config the application would.
-func loadV1(t *testing.T, content string) *cfg.Config {
+// writeTempV1 writes content to a temp file and returns its path.
+func writeTempV1(t *testing.T, content string) string {
 	t.Helper()
 
 	p := filepath.Join(t.TempDir(), "backup.yaml")
 	require.NoError(t, os.WriteFile(p, []byte(content), 0o600))
 
-	c, err := cfg.Load(p, nil)
+	return p
+}
+
+// v1Source writes content to a temp file and reads it as a source, so a test
+// starts from the same flattened key map the application would.
+func v1Source(t *testing.T, content string) *param.Source {
+	t.Helper()
+
+	src, err := param.NewSource(writeTempV1(t, content), nil)
 	require.NoError(t, err)
 
-	return c
+	return src
+}
+
+// migrateRun runs Migrate and requires the translation itself to succeed;
+// report.Err still carries the validation problems the output has.
+func migrateRun(t *testing.T, src *param.Source) (*v2.Config, *Report) {
+	t.Helper()
+
+	out, report, err := Migrate(src)
+	require.NoError(t, err)
+
+	return out, report
 }
 
 func TestMigrate_RenamedKeys(t *testing.T) {
-	src := loadV1(t, `
+	src := v1Source(t, `
 milvus:
   address: milvus-proxy
   port: 19531
@@ -58,7 +76,7 @@ backup:
     copydata: 32
 `)
 
-	out, _ := Migrate(src)
+	out, _ := migrateRun(t, src)
 
 	assert.Equal(t, "milvus-proxy", out.Milvus.Grpc.Address.Val)
 	assert.Equal(t, 19531, out.Milvus.Grpc.Port.Val)
@@ -84,26 +102,35 @@ backup:
 	assert.Equal(t, 32, out.Transfer.Concurrency.Val)
 }
 
+// The source a value came from survives translation: a file key reports the
+// v1 spelling it was read from, under the v1 config source kind.
+func TestMigrate_ProvenanceKeepsV1Spelling(t *testing.T) {
+	out, _ := migrateRun(t, v1Source(t, "milvus:\n  address: milvus-proxy\n"))
+
+	assert.Equal(t, param.SourceV1ConfigFile, out.Milvus.Grpc.Address.Used.Kind)
+	assert.Equal(t, "milvus.address", out.Milvus.Grpc.Address.Used.Key)
+}
+
 func TestMigrate_TLSMode(t *testing.T) {
 	t.Run("Disabled", func(t *testing.T) {
-		out, _ := Migrate(loadV1(t, "milvus:\n  tlsMode: 0\n"))
+		out, _ := migrateRun(t, v1Source(t, "milvus:\n  tlsMode: 0\n"))
 		assert.Equal(t, v2.TLSDisabled, out.Milvus.Grpc.TLSMode.Val)
 	})
 
 	t.Run("Server", func(t *testing.T) {
-		out, _ := Migrate(loadV1(t, "milvus:\n  tlsMode: 1\n"))
+		out, _ := migrateRun(t, v1Source(t, "milvus:\n  tlsMode: 1\n"))
 		assert.Equal(t, v2.TLSServer, out.Milvus.Grpc.TLSMode.Val)
 	})
 
 	t.Run("Mutual", func(t *testing.T) {
-		out, _ := Migrate(loadV1(t, "milvus:\n  tlsMode: 2\n  mtlsCertPath: /c.pem\n  mtlsKeyPath: /c.key\n"))
+		out, _ := migrateRun(t, v1Source(t, "milvus:\n  tlsMode: 2\n  mtlsCertPath: /c.pem\n  mtlsKeyPath: /c.key\n"))
 		assert.Equal(t, v2.TLSMutual, out.Milvus.Grpc.TLSMode.Val)
 	})
 
 	// v1 silently downgraded mutual TLS to server TLS without a key pair. v2
 	// rejects it, so the migrator settles the downgrade and warns.
 	t.Run("MutualWithoutKeyPairDowngrades", func(t *testing.T) {
-		out, report := Migrate(loadV1(t, "milvus:\n  tlsMode: 2\n"))
+		out, report := migrateRun(t, v1Source(t, "milvus:\n  tlsMode: 2\n"))
 		assert.Equal(t, v2.TLSServer, out.Milvus.Grpc.TLSMode.Val)
 		assert.NoError(t, report.Err())
 		require.Len(t, report.Warnings, 1)
@@ -113,19 +140,29 @@ func TestMigrate_TLSMode(t *testing.T) {
 
 func TestMigrate_StorageProviderAlias(t *testing.T) {
 	t.Run("Aliyun", func(t *testing.T) {
-		out, _ := Migrate(loadV1(t, "minio:\n  storageType: ali\n"))
+		out, _ := migrateRun(t, v1Source(t, "minio:\n  storageType: ali\n"))
 		assert.Equal(t, v2.ProviderAliyun, out.Milvus.Storage.Provider.Val)
 	})
 
 	t.Run("Tencent", func(t *testing.T) {
-		out, _ := Migrate(loadV1(t, "minio:\n  storageType: tc\n"))
+		out, _ := migrateRun(t, v1Source(t, "minio:\n  storageType: tc\n"))
 		assert.Equal(t, v2.ProviderTencent, out.Milvus.Storage.Provider.Val)
 	})
 }
 
+// v1 declared three keys for one provider setting; the first one present in
+// declaration order wins, not map iteration.
+func TestMigrate_StorageProviderPrecedence(t *testing.T) {
+	out, _ := migrateRun(t, v1Source(t, "storage:\n  storageType: s3\nminio:\n  storageType: azure\n  cloudProvider: aws\n"))
+	assert.Equal(t, v2.ProviderS3, out.Milvus.Storage.Provider.Val)
+
+	out, _ = migrateRun(t, v1Source(t, "minio:\n  storageType: azure\n  cloudProvider: aws\n"))
+	assert.Equal(t, v2.ProviderAzure, out.Milvus.Storage.Provider.Val)
+}
+
 func TestMigrate_StorageAuth(t *testing.T) {
 	t.Run("Static", func(t *testing.T) {
-		out, _ := Migrate(loadV1(t, `
+		out, _ := migrateRun(t, v1Source(t, `
 minio:
   storageType: s3
   accessKeyID: ak
@@ -142,7 +179,7 @@ minio:
 	// v1 overloaded accessKeyID as the Azure account name and secretAccessKey
 	// as the account key.
 	t.Run("Azure", func(t *testing.T) {
-		out, _ := Migrate(loadV1(t, `
+		out, _ := migrateRun(t, v1Source(t, `
 minio:
   storageType: azure
   accessKeyID: myaccount
@@ -161,7 +198,7 @@ minio:
 	// workload identity): the account name is still carried to build the blob
 	// URL, but no account key exists to migrate.
 	t.Run("AzureUseIAM", func(t *testing.T) {
-		out, _ := Migrate(loadV1(t, `
+		out, _ := migrateRun(t, v1Source(t, `
 minio:
   storageType: azure
   useIAM: true
@@ -176,7 +213,7 @@ minio:
 	})
 
 	t.Run("GCPNative", func(t *testing.T) {
-		out, _ := Migrate(loadV1(t, `
+		out, _ := migrateRun(t, v1Source(t, `
 minio:
   storageType: gcpnative
   gcpCredentialJSON: /creds.json
@@ -187,7 +224,7 @@ minio:
 	})
 
 	t.Run("IAM", func(t *testing.T) {
-		out, _ := Migrate(loadV1(t, `
+		out, _ := migrateRun(t, v1Source(t, `
 minio:
   storageType: aws
   useIAM: true
@@ -202,7 +239,7 @@ minio:
 // A backup destination that only names what differs still describes a complete
 // backend, since v1 inherited the rest from the Milvus storage.
 func TestMigrate_BackupStorageInheritance(t *testing.T) {
-	out, _ := Migrate(loadV1(t, `
+	out, _ := migrateRun(t, v1Source(t, `
 minio:
   storageType: s3
   address: s3.amazonaws.com
@@ -220,24 +257,48 @@ minio:
 	assert.Equal(t, "backup-bucket", out.Backup.Storage.BucketName.Val)
 }
 
+// A backup side that opts out of the Milvus side's IAM must get an explicit
+// auth.type=static: v2 would otherwise inherit iam from the Milvus side,
+// where v1 read the backup side as static.
+func TestMigrate_BackupAuthDoesNotInheritAcrossProviders(t *testing.T) {
+	out, _ := migrateRun(t, v1Source(t, `
+minio:
+  storageType: aws
+  useIAM: true
+  iamEndpoint: http://iam.local
+  backupStorageType: s3
+  backupUseIAM: false
+  backupAccessKeyID: ak
+  backupSecretAccessKey: sk
+`))
+
+	assert.Equal(t, v2.AuthIAM, out.Milvus.Storage.Auth.Type.Val)
+	assert.Equal(t, v2.AuthStatic, out.Backup.Storage.Auth.Type.Val)
+	assert.Equal(t, "ak", out.Backup.Storage.Auth.AccessKeyID.Val)
+	// The endpoint rides along through v2's standard backup-side inheritance,
+	// which the retired translate path bypassed; a static-auth client never
+	// reads it, so the inherited value is inert.
+	assert.Equal(t, "http://iam.local", out.Backup.Storage.Auth.Endpoint.Val)
+}
+
 func TestMigrate_CrossStorage(t *testing.T) {
 	t.Run("TrueStreams", func(t *testing.T) {
-		out, _ := Migrate(loadV1(t, "minio:\n  crossStorage: true\n"))
+		out, _ := migrateRun(t, v1Source(t, "minio:\n  crossStorage: true\n"))
 		assert.Equal(t, v2.TransferStreaming, out.Transfer.Mode.Val)
 	})
 
 	t.Run("FalseAuto", func(t *testing.T) {
-		out, _ := Migrate(loadV1(t, "minio:\n  crossStorage: false\n"))
+		out, _ := migrateRun(t, v1Source(t, "minio:\n  crossStorage: false\n"))
 		assert.Equal(t, v2.TransferAuto, out.Transfer.Mode.Val)
 	})
 
 	// The behavior change only matters when the two backends differ.
 	t.Run("WarnsOnlyWhenBackendsDiffer", func(t *testing.T) {
-		same, report := Migrate(loadV1(t, "minio:\n  crossStorage: false\n"))
+		same, report := migrateRun(t, v1Source(t, "minio:\n  crossStorage: false\n"))
 		assert.Empty(t, report.Warnings)
 		assert.Equal(t, v2.TransferAuto, same.Transfer.Mode.Val)
 
-		_, report = Migrate(loadV1(t, `
+		_, report = migrateRun(t, v1Source(t, `
 minio:
   crossStorage: false
   address: milvus-minio
@@ -249,7 +310,7 @@ minio:
 }
 
 func TestMigrate_DroppedHTTPEnabled(t *testing.T) {
-	_, report := Migrate(loadV1(t, "http:\n  enabled: false\n"))
+	_, report := migrateRun(t, v1Source(t, "http:\n  enabled: false\n"))
 	require.Len(t, report.Warnings, 1)
 	assert.Contains(t, report.Warnings[0], "http.enabled")
 }
@@ -259,7 +320,7 @@ func TestMigrate_DroppedHTTPEnabled(t *testing.T) {
 func TestMigrate_EnvSecretDeferred(t *testing.T) {
 	t.Setenv("MINIO_SECRET_KEY", "supersecret")
 
-	out, report := Migrate(loadV1(t, "minio:\n  storageType: s3\n  accessKeyID: ak\n"))
+	out, report := migrateRun(t, v1Source(t, "minio:\n  storageType: s3\n  accessKeyID: ak\n"))
 
 	assert.NotEqual(t, "supersecret", out.Milvus.Storage.Auth.SecretAccessKey.Val)
 	assert.Contains(t, report.Comments["milvus.storage.auth.secretaccesskey"], "MILVUS_STORAGE_AUTH_SECRET_ACCESS_KEY")
@@ -274,13 +335,23 @@ func TestMigrate_EnvSecretDeferred(t *testing.T) {
 	assert.True(t, warned, "expected a warning naming the v2 env var")
 }
 
+// A non-secret v1 environment variable is baked into the migrated file: the
+// file is what the operator keeps, and the v1 variable will not be read again.
+func TestMigrate_EnvValueBakedIntoFile(t *testing.T) {
+	t.Setenv("MINIO_ADDRESS", "env-minio")
+
+	out, _ := migrateRun(t, v1Source(t, "minio:\n  bucketName: b\n"))
+
+	assert.Equal(t, "env-minio", out.Milvus.Storage.Address.Val)
+}
+
 // The backup storage secret inherits the primary secret in v1. When the primary
 // came from an environment variable, the inherited backup secret must not be
 // written into the file either.
 func TestMigrate_InheritedEnvSecretNotLeaked(t *testing.T) {
 	t.Setenv("MINIO_SECRET_KEY", "supersecret")
 
-	out, report := Migrate(loadV1(t, `
+	out, report := migrateRun(t, v1Source(t, `
 minio:
   storageType: s3
   accessKeyID: ak
@@ -299,7 +370,7 @@ func TestMigrate_LegacyEnvReport(t *testing.T) {
 	t.Run("Credential", func(t *testing.T) {
 		t.Setenv("MINIO_SECRET_KEY", "sk")
 
-		_, report := Migrate(loadV1(t, "milvus:\n  user: root\n"))
+		_, report := migrateRun(t, v1Source(t, "milvus:\n  user: root\n"))
 
 		require.Len(t, report.EnvRenames, 1)
 		assert.Equal(t, "MINIO_SECRET_KEY", report.EnvRenames[0].From)
@@ -309,7 +380,7 @@ func TestMigrate_LegacyEnvReport(t *testing.T) {
 	t.Run("NotACredential", func(t *testing.T) {
 		t.Setenv("MILVUS_ADDRESS", "milvus-proxy")
 
-		_, report := Migrate(loadV1(t, "milvus:\n  user: root\n"))
+		_, report := migrateRun(t, v1Source(t, "milvus:\n  user: root\n"))
 
 		require.Len(t, report.EnvRenames, 1)
 		assert.Equal(t, "MILVUS_ADDRESS", report.EnvRenames[0].From)
@@ -317,9 +388,18 @@ func TestMigrate_LegacyEnvReport(t *testing.T) {
 	})
 }
 
+// v1 ignored keys it did not know; the translation says which ones it drops
+// instead of staying silent.
+func TestMigrate_UnknownKeyWarned(t *testing.T) {
+	_, report := migrateRun(t, v1Source(t, "minio:\n  address: m\n  notAKey: true\n"))
+
+	require.Len(t, report.Warnings, 1)
+	assert.Contains(t, report.Warnings[0], "notakey")
+}
+
 // Migrating then rendering must produce a file the v2 loader accepts.
 func TestMigrate_RendersLoadableV2(t *testing.T) {
-	out, report := Migrate(loadV1(t, `
+	out, report := migrateRun(t, v1Source(t, `
 minio:
   storageType: s3
   address: s3.amazonaws.com
