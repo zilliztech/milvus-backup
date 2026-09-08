@@ -23,20 +23,29 @@ type Source struct {
 	override     map[string]string
 	overrideKeys []string
 
+	// noEnv disables environment lookups. A source built from an
+	// already-resolved rendering (a config fork) must not pick up process
+	// variables on the second pass: its YAML layer is the resolved state.
+	noEnv bool
+
 	configFile map[string]any
 }
 
-// NewSource reads configPath and flattens it into dotted lower-case keys.
-// An empty configPath yields a source backed by overrides and env only.
-func NewSource(configPath string, overrides map[string]string) (*Source, error) {
+func newSource(overrides map[string]string) *Source {
 	s := &Source{override: make(map[string]string, len(overrides)), configFile: map[string]any{}}
-
 	for k, v := range overrides {
 		s.override[strings.ToLower(k)] = v
 		s.overrideKeys = append(s.overrideKeys, k)
 	}
 	slices.Sort(s.overrideKeys)
 
+	return s
+}
+
+// NewSource reads configPath and flattens it into dotted lower-case keys.
+// An empty configPath yields a source backed by overrides and env only.
+func NewSource(configPath string, overrides map[string]string) (*Source, error) {
+	s := newSource(overrides)
 	if configPath == "" {
 		return s, nil
 	}
@@ -49,20 +58,42 @@ func NewSource(configPath string, overrides map[string]string) (*Source, error) 
 	if err != nil {
 		return nil, fmt.Errorf("cfg: read config file %s: %w", resolved, err)
 	}
+	if err := s.setYAML(raw); err != nil {
+		return nil, fmt.Errorf("cfg: config file %s: %w", resolved, err)
+	}
+	s.path = resolved
 
+	return s, nil
+}
+
+// NewSourceYAML builds a source from YAML held in memory instead of a file on
+// disk, and disables environment lookups: the YAML is a rendering of an
+// already-resolved configuration, so a process variable must not leak into the
+// second resolution pass.
+func NewSourceYAML(raw []byte, overrides map[string]string) (*Source, error) {
+	s := newSource(overrides)
+	s.noEnv = true
+	if err := s.setYAML(raw); err != nil {
+		return nil, fmt.Errorf("cfg: in-memory yaml: %w", err)
+	}
+
+	return s, nil
+}
+
+// setYAML decodes raw and flattens it into dotted lower-case keys.
+func (s *Source) setYAML(raw []byte) error {
 	var decoded any
 	if err := yaml.Unmarshal(raw, &decoded); err != nil {
-		return nil, fmt.Errorf("cfg: parse yaml %s: %w", resolved, err)
+		return fmt.Errorf("parse yaml: %w", err)
 	}
 
 	out := map[string]any{}
 	if err := flattenAny("", decoded, out); err != nil {
-		return nil, fmt.Errorf("cfg: flatten yaml %s: %w", resolved, err)
+		return fmt.Errorf("flatten yaml: %w", err)
 	}
-	s.path = resolved
 	s.configFile = out
 
-	return s, nil
+	return nil
 }
 
 func (s *Source) lookupOverride(key string) (string, bool) {
@@ -71,6 +102,9 @@ func (s *Source) lookupOverride(key string) (string, bool) {
 }
 
 func (s *Source) lookupEnv(key string) (string, bool) {
+	if s.noEnv {
+		return "", false
+	}
 	val, ok := os.LookupEnv(key)
 	return val, ok
 }
