@@ -29,6 +29,15 @@ type config struct {
 
 	// newCheck is the check counterpart of newListBackups.
 	newCheck func(ctx context.Context, params *v2.Config) (checkUC, error)
+
+	// newGetBackup is the get counterpart of newListBackups.
+	newGetBackup func(ctx context.Context, params *v2.Config) (getBackupUC, error)
+
+	// newGetBackupTask is the get-backup-task counterpart of newGetRestore:
+	// job state is process-local, so there is no client to build and
+	// construction cannot fail. The error stays so the seam matches the
+	// other constructors.
+	newGetBackupTask func() (getBackupTaskUC, error)
 }
 
 func newDefaultConfig() *config {
@@ -47,6 +56,12 @@ func newDefaultConfig() *config {
 		},
 		newCheck: func(ctx context.Context, params *v2.Config) (checkUC, error) {
 			return app.NewCheck(ctx, params)
+		},
+		newGetBackup: func(ctx context.Context, params *v2.Config) (getBackupUC, error) {
+			return app.NewGetBackup(ctx, params)
+		},
+		newGetBackupTask: func() (getBackupTaskUC, error) {
+			return app.NewGetBackupTask(taskmgr.DefaultMgr()), nil
 		},
 	}
 }
