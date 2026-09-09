@@ -72,6 +72,9 @@ func (st *collSnapshotTask) Execute(ctx context.Context) error {
 	if err := st.grpc.CreateSnapshot(ctx, st.collRef.DBName(), st.collRef.CollName(), st.snapshotName, 0); err != nil {
 		return fmt.Errorf("backup: create snapshot: %w", err)
 	}
+	// A snapshot pins its collection's files in Milvus until dropped, so both ends of
+	// its lifetime are logged.
+	st.logger.Info("snapshot created")
 	defer st.dropSnapshot(ctx)
 
 	// The snapshot's own boundary, read before the export so a failed export still
@@ -178,6 +181,7 @@ func (st *collSnapshotTask) dropSnapshot(ctx context.Context) {
 	for attempt := range _snapshotDropRetry {
 		err := st.grpc.DropSnapshot(ctx, st.collRef.DBName(), st.collRef.CollName(), st.snapshotName)
 		if err == nil {
+			st.logger.Info("snapshot dropped")
 			return
 		}
 
