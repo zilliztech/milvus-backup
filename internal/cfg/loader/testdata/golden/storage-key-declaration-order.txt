@@ -1,0 +1,72 @@
+Log.Level	info
+Log.Console	true
+Log.File.Path	logs/backup.log
+Log.File.MaxSizeMiB	300
+Log.File.MaxDays	0
+Log.File.MaxBackups	0
+Server.DebugMode	false
+Server.SwaggerBasePath	
+Milvus.User	
+Milvus.Password	
+Milvus.Grpc.Address	localhost
+Milvus.Grpc.Port	19530
+Milvus.Grpc.TLSMode	disabled
+Milvus.Grpc.CACertPath	
+Milvus.Grpc.ServerName	
+Milvus.Grpc.MTLSCertPath	
+Milvus.Grpc.MTLSKeyPath	
+Milvus.Rest.Endpoint	
+Milvus.Management.Endpoint	http://localhost:9091
+Milvus.Replicate.RPCChannelName	by-dev-replicate-msg
+Milvus.Etcd.Endpoints	localhost:2379
+Milvus.Etcd.RootPath	by-dev
+Milvus.Storage.Provider	s3
+Milvus.Storage.Address	localhost
+Milvus.Storage.Port	9000
+Milvus.Storage.Region	
+Milvus.Storage.UseSSL	false
+Milvus.Storage.AccountName	
+Milvus.Storage.SourceSASToken	
+Milvus.Storage.BucketName	a-bucket
+Milvus.Storage.RootPath	files
+Milvus.Storage.LocalPath	
+Milvus.Storage.MilvusAddress	
+Milvus.Storage.MilvusPort	0
+Milvus.Storage.Auth.Type	static
+Milvus.Storage.Auth.AccessKeyID	minioadmin
+Milvus.Storage.Auth.SecretAccessKey	mi****in
+Milvus.Storage.Auth.SessionToken	
+Milvus.Storage.Auth.AccountKey	
+Milvus.Storage.Auth.CredentialsFile	
+Milvus.Storage.Auth.Endpoint	
+Backup.Storage.Provider	s3
+Backup.Storage.Address	localhost
+Backup.Storage.Port	9000
+Backup.Storage.Region	
+Backup.Storage.UseSSL	false
+Backup.Storage.AccountName	
+Backup.Storage.SourceSASToken	
+Backup.Storage.BucketName	a-bucket
+Backup.Storage.RootPath	files
+Backup.Storage.LocalPath	
+Backup.Storage.MilvusAddress	
+Backup.Storage.MilvusPort	0
+Backup.Storage.Auth.Type	static
+Backup.Storage.Auth.AccessKeyID	minioadmin
+Backup.Storage.Auth.SecretAccessKey	mi****in
+Backup.Storage.Auth.SessionToken	
+Backup.Storage.Auth.AccountKey	
+Backup.Storage.Auth.CredentialsFile	
+Backup.Storage.Auth.Endpoint	
+Backup.Concurrency.Collections	4
+Backup.Concurrency.Segments	1024
+Backup.PauseGC	true
+Restore.Concurrency.Collections	2
+Restore.Concurrency.ImportJobs	768
+Restore.MaxSegmentsPerImportJob	256
+Restore.KeepTempFiles	false
+Transfer.Mode	auto
+Transfer.Concurrency	128
+Transfer.MultipartCopyThresholdMiB	500
+Cloud.Endpoint	https://api.cloud.zilliz.com
+Cloud.APIKey	

@@ -105,12 +105,12 @@ func (l *List) Resolve(s *Source) error {
 	}
 
 	for _, key := range l.Keys {
-		if raw, ok := s.lookupConfigFile(key); ok {
-			items, err := l.parseAny(key, raw)
+		if in, ok := s.lookupConfigFile(key); ok {
+			items, err := l.parseAny(key, in.Value)
 			if err != nil {
 				return err
 			}
-			l.Val, l.Used = items, Used{Kind: SourceConfigFile, Key: strings.ToLower(key)}
+			l.Val, l.Used = items, Used{Kind: in.Kind, Key: in.SourceKey}
 			return nil
 		}
 	}

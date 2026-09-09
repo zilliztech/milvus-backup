@@ -22,11 +22,13 @@ const (
 type SourceKind uint8
 
 const (
-	SourceUnknown    SourceKind = iota // unknown
-	SourceOverride                     // override
-	SourceEnv                          // env
-	SourceConfigFile                   // config
-	SourceDefault                      // default
+	SourceUnknown      SourceKind = iota // unknown
+	SourceOverride                       // override
+	SourceEnv                            // env
+	SourceConfigFile                     // config
+	SourceDefault                        // default
+	SourceV1Env                          // v1 env
+	SourceV1ConfigFile                   // v1 config
 )
 
 type Used struct {
@@ -335,14 +337,14 @@ func (val *Value[T]) resolveEnv(s *Source) (bool, error) {
 
 func (val *Value[T]) resolveConfigFile(s *Source) (bool, error) {
 	for _, key := range val.Keys {
-		if raw, ok := s.lookupConfigFile(key); ok {
-			parsed, err := val.parseAny(raw)
+		if in, ok := s.lookupConfigFile(key); ok {
+			parsed, err := val.parseAny(in.Value)
 			if err != nil {
-				return false, fmt.Errorf("cfg: parse config file value %v for %s: %w", raw, key, err)
+				return false, fmt.Errorf("cfg: parse config file value %v for %s: %w", in.Value, key, err)
 			}
 
 			val.Val = parsed
-			val.Used = Used{Kind: SourceConfigFile, Key: strings.ToLower(key)}
+			val.Used = Used{Kind: in.Kind, Key: in.SourceKey}
 			return true, nil
 		}
 	}

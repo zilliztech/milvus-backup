@@ -55,8 +55,13 @@ func TestListResolve(t *testing.T) {
 	t.Run("EnvIsCommaSeparated", func(t *testing.T) {
 		t.Setenv("MILVUS_ETCD_ENDPOINTS", " a:2379 , b:2379 ,")
 
+		// The env snapshot is taken at construction, so the variable must be
+		// set before the source is built.
+		src, err := NewSource("", nil)
+		require.NoError(t, err)
+
 		l := newList()
-		require.NoError(t, l.Resolve(&Source{}))
+		require.NoError(t, l.Resolve(src))
 
 		assert.Equal(t, []string{"a:2379", "b:2379"}, l.Val)
 		assert.Equal(t, SourceEnv, l.Used.Kind)

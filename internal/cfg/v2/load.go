@@ -25,6 +25,22 @@ func Load(configPath string, overrides map[string]string) (*Config, error) {
 // LoadFrom resolves a v2 configuration from an already read source. It is the
 // entry point the version dispatcher uses, so the file is read only once.
 func LoadFrom(src *param.Source) (*Config, error) {
+	cfg, err := Resolve(src)
+	if err != nil {
+		return nil, err
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+
+	return cfg, nil
+}
+
+// Resolve resolves a v2 configuration from src without validating the result.
+// Callers that report validation problems instead of failing on them — the
+// config migration, which still renders a config that needs fixing — use it
+// and run Validate themselves.
+func Resolve(src *param.Source) (*Config, error) {
 	cfg := New()
 
 	if err := checkVersion(src); err != nil {
@@ -37,9 +53,6 @@ func LoadFrom(src *param.Source) (*Config, error) {
 		log.Warn(w)
 	}
 	if err := cfg.Resolve(src); err != nil {
-		return nil, err
-	}
-	if err := cfg.Validate(); err != nil {
 		return nil, err
 	}
 

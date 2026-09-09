@@ -1,10 +1,11 @@
 // Package loader resolves a milvus-backup configuration file of either schema
 // version into the v2 configuration the rest of the program runs on.
 //
-// A v1 file is decoded with the v1 schema and then translated, rather than
-// teaching the v2 schema to read v1 names: one file is decoded as one schema
-// version, and the mapping between them lives in one place, next to the
-// `config migrate` command that writes the same mapping out as a file.
+// A v1 file is translated at the source level rather than teaching the v2
+// schema to read v1 names: the flattened v1 key map is renamed into the v2
+// key space, and one v2 resolution serves both schema versions. The mapping
+// lives in one place, next to the `config migrate` command that writes the
+// same mapping out as a file.
 package loader
 
 import (
@@ -13,7 +14,6 @@ import (
 
 	"go.uber.org/zap"
 
-	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/cfg/migrate"
 	"github.com/zilliztech/milvus-backup/internal/cfg/param"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
@@ -59,21 +59,17 @@ func Load(configPath string, overrides map[string]string) (*v2.Config, error) {
 	}
 }
 
-// loadV1 resolves a v1 file and translates it into the v2 configuration the
-// program runs on, so a deployment that has not migrated yet keeps working.
+// loadV1 translates the v1 key space of a file into the v2 source the v2
+// loader resolves, so a deployment that has not migrated yet keeps working.
 func loadV1(src *param.Source) (*v2.Config, error) {
-	v1, err := cfg.LoadFrom(src)
+	out, err := migrate.Translate(src)
 	if err != nil {
 		return nil, err
 	}
 
-	out, err := migrate.Translate(v1)
-	if err != nil {
-		return nil, err
-	}
-
-	// Say so once per run: the v1 schema is still read, but the translation is a
-	// compatibility step, and `config migrate` turns it into a file to keep.
+	// Say so once per run: a v1 configuration is still read, but the
+	// translation is a compatibility step, and `config migrate` turns it into a
+	// file to keep.
 	log.Warn("cfg: loaded a v1 configuration and translated it to v2; "+
 		"run `milvus-backup config migrate` to convert the file itself",
 		zap.String("path", src.ConfigFilePath()))

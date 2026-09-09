@@ -2,7 +2,8 @@
 //
 // A configuration file is decoded entirely as one schema version: v2 accepts
 // only v2 keys, environment variables and --set paths, and rejects everything
-// else instead of carrying per-key aliases. See internal/cfg for the v1 schema.
+// else instead of carrying per-key aliases. See internal/cfg/migrate for the
+// translation that carries a v1 file across.
 //
 // Only credentials carry an environment variable. Everything else is named by
 // its config key alone, and --set overrides it for a single run. Two reasons:
