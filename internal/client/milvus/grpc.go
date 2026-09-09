@@ -1261,9 +1261,17 @@ func (g *GrpcClient) CreateSnapshot(ctx context.Context, db, collName, snapshotN
 	return nil
 }
 
-// DropSnapshot deletes a snapshot. The server rejects the call while the snapshot has active
-// pins, and an export job holds one until it reaches a terminal state, so drop only once the
-// export is done with the snapshot.
+// A drop is refused while the snapshot still has pins, and the pin an export took is
+// released by DataCoord on its own reconcile tick rather than inline with the job reaching
+// a terminal state, so a drop issued right after an export can be refused for a while.
+const (
+	_snapshotDropAttempts = 10
+	_snapshotDropBackoff  = time.Second
+)
+
+// DropSnapshot deletes a snapshot, retrying while the server refuses it. An export job
+// holds a pin on the snapshot until it reaches a terminal state, so a drop issued right
+// after an export waits for DataCoord to release that pin.
 func (g *GrpcClient) DropSnapshot(ctx context.Context, db, collName, snapshotName string) error {
 	if !g.HasFeature(Snapshot) {
 		return errSnapshotUnsupported
@@ -1271,9 +1279,12 @@ func (g *GrpcClient) DropSnapshot(ctx context.Context, db, collName, snapshotNam
 
 	ctx = g.newCtxWithDB(ctx, db)
 	in := &milvuspb.DropSnapshotRequest{CollectionName: collName, Name: snapshotName}
-	resp, err := g.srv.DropSnapshot(ctx, in)
-	if err := checkResponse(resp, err); err != nil {
-		return fmt.Errorf("client: drop snapshot failed: %w", err)
+	err := retry.Do(ctx, func() error {
+		resp, err := g.srv.DropSnapshot(ctx, in)
+		return checkResponse(resp, err)
+	}, retry.Attempts(_snapshotDropAttempts), retry.Sleep(_snapshotDropBackoff))
+	if err != nil {
+		return fmt.Errorf("client: drop snapshot failed after retry: %w", err)
 	}
 
 	return nil

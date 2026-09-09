@@ -17,12 +17,6 @@ import (
 
 const (
 	_snapshotPollInterval = 3 * time.Second
-
-	// A drop right after the export job goes terminal can still be rejected: DataCoord
-	// releases the pin it took for the copy on its own reconcile tick, not inline with
-	// the state change the poll observed.
-	_snapshotDropRetry    = 10
-	_snapshotDropInterval = time.Second
 )
 
 type collSnapshotTask struct {
@@ -178,28 +172,14 @@ func (st *collSnapshotTask) dropSnapshot(ctx context.Context) {
 	// here, and the snapshot still has to go.
 	ctx = context.WithoutCancel(ctx)
 
-	for attempt := range _snapshotDropRetry {
-		err := st.grpc.DropSnapshot(ctx, st.collRef.DBName(), st.collRef.CollName(), st.snapshotName)
-		if err == nil {
-			st.logger.Info("snapshot dropped")
-			return
-		}
-
-		st.logger.Warn("drop snapshot failed, will retry",
-			zap.Int("attempt", attempt+1),
+	if err := st.grpc.DropSnapshot(ctx, st.collRef.DBName(), st.collRef.CollName(), st.snapshotName); err != nil {
+		// Nothing else can clean this up: the export job that pinned it is gone, and the
+		// backup meta does not record snapshot names.
+		st.logger.Error("could not drop snapshot, it holds its collection's files against gc until removed by hand",
+			zap.String("snapshot_name", st.snapshotName),
 			zap.Error(err))
-
-		timer := time.NewTimer(_snapshotDropInterval)
-		select {
-		case <-ctx.Done():
-			timer.Stop()
-			return
-		case <-timer.C:
-		}
+		return
 	}
 
-	// Nothing else can clean this up: the export job that pinned it is gone, and the
-	// backup meta does not record snapshot names.
-	st.logger.Error("could not drop snapshot, it holds its collection's files against gc until removed by hand",
-		zap.String("snapshot_name", st.snapshotName))
+	st.logger.Info("snapshot dropped")
 }
