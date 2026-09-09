@@ -98,6 +98,12 @@ type Config struct {
 	Restore  RestoreConfig
 	Transfer TransferConfig
 	Cloud    CloudConfig
+
+	// src is the source the configuration was loaded from, kept so Fork can
+	// re-resolve it under extra overrides. It stays nil on a Config New built
+	// by hand. param.Walk skips pointer fields, so display, render and key
+	// declaration never see it.
+	src *param.Source
 }
 
 func New() *Config {

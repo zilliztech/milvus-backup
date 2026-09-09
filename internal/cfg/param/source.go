@@ -115,6 +115,43 @@ func NewTranslatedSource(path string, file map[string]Input, override map[string
 	return s
 }
 
+// WithOverrides returns a copy of the source with overrides merged into the
+// --set layer: a key already present takes the new value, and the spelling the
+// latest caller used is the one errors quote back. The receiver is never
+// mutated, so one loaded source forks into as many independent views as
+// needed.
+func (s *Source) WithOverrides(overrides map[string]string) *Source {
+	out := &Source{
+		path: s.path,
+		// The env and file layers are never written after construction, so the
+		// copy shares them; only the override layer being merged is rebuilt.
+		env:        s.env,
+		configFile: s.configFile,
+		override:   make(map[string]string, len(s.override)+len(overrides)),
+	}
+	for k, v := range s.override {
+		out.override[k] = v
+	}
+
+	spelling := make(map[string]string, len(s.overrideKeys)+len(overrides))
+	for _, k := range s.overrideKeys {
+		spelling[strings.ToLower(k)] = k
+	}
+	for k, v := range overrides {
+		lower := strings.ToLower(k)
+		out.override[lower] = v
+		spelling[lower] = k
+	}
+
+	out.overrideKeys = make([]string, 0, len(spelling))
+	for _, k := range spelling {
+		out.overrideKeys = append(out.overrideKeys, k)
+	}
+	slices.Sort(out.overrideKeys)
+
+	return out
+}
+
 func snapshotEnv() map[string]string {
 	env := make(map[string]string)
 	for _, kv := range os.Environ() {

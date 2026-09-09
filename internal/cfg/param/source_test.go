@@ -81,3 +81,67 @@ func TestNewTranslatedSource(t *testing.T) {
 		assert.False(t, ok, "a translated source carries no environment: the translation already carried its values over")
 	})
 }
+
+// WithOverrides is the merge Fork builds on, so it has to be exact: a repeated
+// key takes the new value under the new spelling, the receiver keeps its own
+// layer untouched, and the layers not being merged pass through.
+func TestWithOverrides(t *testing.T) {
+	t.Run("MergeLaterWins", func(t *testing.T) {
+		src, err := NewSource("", map[string]string{"milvus.grpc.port": "19531", "log.level": "info"})
+		require.NoError(t, err)
+
+		out := src.WithOverrides(map[string]string{"MILVUS.GRPC.PORT": "19532"})
+
+		v, ok := out.OverrideValue("milvus.grpc.port")
+		assert.True(t, ok)
+		assert.Equal(t, "19532", v)
+		// The latest spelling is the one errors quote back.
+		assert.Equal(t, []string{"MILVUS.GRPC.PORT", "log.level"}, out.OverrideKeys())
+	})
+
+	t.Run("ReceiverIsNeverMutated", func(t *testing.T) {
+		src, err := NewSource("", map[string]string{"milvus.grpc.port": "19531"})
+		require.NoError(t, err)
+
+		src.WithOverrides(map[string]string{"milvus.grpc.port": "19532", "log.level": "debug"})
+
+		v, ok := src.OverrideValue("milvus.grpc.port")
+		assert.True(t, ok)
+		assert.Equal(t, "19531", v)
+		_, ok = src.OverrideValue("log.level")
+		assert.False(t, ok)
+		assert.Equal(t, []string{"milvus.grpc.port"}, src.OverrideKeys())
+	})
+
+	t.Run("NilIsAPlainCopy", func(t *testing.T) {
+		src, err := NewSource("", map[string]string{"milvus.grpc.port": "19531"})
+		require.NoError(t, err)
+
+		out := src.WithOverrides(nil)
+
+		assert.Equal(t, src.OverrideKeys(), out.OverrideKeys())
+		v, ok := out.OverrideValue("milvus.grpc.port")
+		assert.True(t, ok)
+		assert.Equal(t, "19531", v)
+	})
+
+	t.Run("FileAndEnvLayersPassThrough", func(t *testing.T) {
+		t.Setenv("WITHOVERRIDES_ENV", "from-env")
+
+		p := filepath.Join(t.TempDir(), "backup.yaml")
+		require.NoError(t, os.WriteFile(p, []byte("log:\n  level: debug\n"), 0o600))
+
+		src, err := NewSource(p, nil)
+		require.NoError(t, err)
+
+		out := src.WithOverrides(map[string]string{"log.console": "false"})
+
+		assert.Equal(t, p, out.ConfigFilePath())
+		raw, ok := out.ConfigFileValue("log.level")
+		assert.True(t, ok)
+		assert.Equal(t, "debug", raw)
+		env, ok := out.EnvValue("WITHOVERRIDES_ENV")
+		assert.True(t, ok)
+		assert.Equal(t, "from-env", env)
+	})
+}

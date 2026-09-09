@@ -7,6 +7,8 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+
+	"github.com/zilliztech/milvus-backup/internal/cfg/param"
 )
 
 // write puts content in a temp file and returns its path, so a test starts from
@@ -113,6 +115,30 @@ func TestLoad_UnknownVersion(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "v3")
 	assert.ErrorContains(t, err, "not a schema version this build knows")
+}
+
+// A v1 file loads through source-level translation, and the translated source
+// is the one Fork re-resolves — the v1 values ride along, still stamped with
+// the v1 keys they came from.
+func TestLoad_V1FileForks(t *testing.T) {
+	out, err := Load(write(t, `
+milvus:
+  address: milvus-proxy
+minio:
+  bucketName: v1-bucket
+`), nil)
+	require.NoError(t, err)
+
+	forked, err := out.Fork(map[string]string{"backup.storage.rootPath": "forked-root"})
+	require.NoError(t, err)
+
+	assert.Equal(t, "forked-root", forked.Backup.Storage.RootPath.Val)
+	assert.Equal(t, param.SourceOverride, forked.Backup.Storage.RootPath.Used.Kind)
+
+	assert.Equal(t, "milvus-proxy", forked.Milvus.Grpc.Address.Val)
+	assert.Equal(t, param.SourceV1ConfigFile, forked.Milvus.Grpc.Address.Used.Kind)
+	assert.Equal(t, "milvus.address", forked.Milvus.Grpc.Address.Used.Key)
+	assert.Equal(t, "v1-bucket", forked.Milvus.Storage.BucketName.Val)
 }
 
 // The v1 path validates what it produced, so a provider v1 never checked fails
