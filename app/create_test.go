@@ -25,16 +25,6 @@ func expectClientConfigs(t *testing.T, milvusStorage, backupStorage *storage.Moc
 	backupStorage.EXPECT().Config().Return(storage.Config{})
 }
 
-// expectMetaSize teaches the mock client to answer the meta dir size probe.
-func expectMetaSize(t *testing.T, cli *storage.MockClient, backupDir string, size int64) {
-	t.Helper()
-
-	iter := storage.NewMockObjectIterator([]storage.ObjectAttr{
-		{Key: backupDir + "/meta/full_meta.json", Length: size},
-	})
-	cli.EXPECT().ListPrefix(mock.Anything, backupDir+"/meta/", true).Return(iter, nil)
-}
-
 func TestCreateBackupStart(t *testing.T) {
 	t.Run("RegistersJobInTheTaskManager", func(t *testing.T) {
 		milvusStorage := storage.NewMockClient(t)
@@ -156,13 +146,9 @@ func TestCreateBackupDir(t *testing.T) {
 	t.Run("UsesConfiguredRootPath", func(t *testing.T) {
 		uc := &CreateBackup{rootPath: "root"}
 
-		// mpath.BackupDir keeps a trailing separator, as the task expects.
-		assert.Equal(t, "root/backup1/", uc.backupDir(CreateBackupRequest{Option: backup.Option{BackupName: "backup1"}}))
-	})
-
-	t.Run("RequestRootPathWins", func(t *testing.T) {
-		uc := &CreateBackup{rootPath: "root"}
-
-		assert.Equal(t, "other/backup1/", uc.backupDir(CreateBackupRequest{Option: backup.Option{BackupName: "backup1"}, RootPath: "other"}))
+		// mpath.BackupDir keeps a trailing separator, as the task expects. A
+		// per-call root path is the transport forking the config, so there is
+		// no request-level override to test here.
+		assert.Equal(t, "root/backup1/", uc.backupDir("backup1"))
 	})
 }

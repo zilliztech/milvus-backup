@@ -22,11 +22,13 @@ import (
 )
 
 // stubCreateBackup stands in for app.CreateBackup: the request it was called
-// with, canned errors, and a call count so tests can assert whether the
-// handler reached the action at all. Start hands out a job that signals the
-// ran channel, so async tests can wait for the handler's goroutine.
+// with, the params its constructor received, canned errors, and a call count
+// so tests can assert whether the handler reached the action at all. Start
+// hands out a job that signals the ran channel, so async tests can wait for
+// the handler's goroutine.
 type stubCreateBackup struct {
 	req        app.CreateBackupRequest
+	params     *v2.Config
 	startErr   error
 	executeErr error
 	calls      int
@@ -66,7 +68,8 @@ func (j stubJob) Run(context.Context) error {
 // client-construction failure, which happens before any action call.
 func withCreateBackup(stub *stubCreateBackup, newErr error) Option {
 	return func(c *config) {
-		c.newCreateBackup = func(context.Context, *v2.Config) (createBackupUC, error) {
+		c.newCreateBackup = func(_ context.Context, params *v2.Config) (createBackupUC, error) {
+			stub.params = params
 			return stub, newErr
 		}
 	}
@@ -199,6 +202,34 @@ func TestHandleCreateBackup(t *testing.T) {
 		assert.Contains(t, resp.GetMsg(), "existing task")
 		assert.Equal(t, "rid-1", resp.GetRequestId())
 	})
+
+	t.Run("BackupRootPathForksConfig", func(t *testing.T) {
+		// The v1 backup_root_path field is applied as a config override, not
+		// sent through the request.
+		stub := &stubCreateBackup{}
+		s := newLoadedTestServer(t, withCreateBackup(stub, nil))
+
+		resp := postBackup(t, s, `{"backup_name":"backup1","backup_root_path":"other"}`, "rid-1")
+
+		assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
+		require.NotNil(t, stub.params)
+		assert.Equal(t, "other", stub.params.Backup.Storage.RootPath.Val)
+		// The fork, not the server's own config, reaches the usecase.
+		assert.NotSame(t, s.params, stub.params)
+		// The server's own config stays on the default root path.
+		assert.Equal(t, "backup", s.params.Backup.Storage.RootPath.Val)
+	})
+
+	t.Run("NoBackupRootPathKeepsServerConfig", func(t *testing.T) {
+		stub := &stubCreateBackup{}
+		s := newLoadedTestServer(t, withCreateBackup(stub, nil))
+
+		resp := postBackup(t, s, `{"backup_name":"backup1"}`, "rid-1")
+
+		assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
+		// No backup_root_path: the config travels to the usecase untouched.
+		assert.Same(t, s.params, stub.params)
+	})
 }
 
 func TestToCreateBackupRequest(t *testing.T) {
@@ -252,15 +283,6 @@ func TestToCreateBackupRequest(t *testing.T) {
 
 		require.NoError(t, err)
 		assert.Equal(t, backup.StrategyMetaOnly, req.Option.Strategy)
-	})
-
-	t.Run("BackupRootPathOverrides", func(t *testing.T) {
-		s := newListTestServer(t, withCreateBackup(&stubCreateBackup{}, nil))
-
-		req, err := s.toCreateBackupRequest(&backuppb.CreateBackupRequest{BackupRootPath: "other"})
-
-		require.NoError(t, err)
-		assert.Equal(t, "other", req.RootPath)
 	})
 }
 

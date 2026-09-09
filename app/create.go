@@ -66,10 +66,6 @@ type CreateBackupRequest struct {
 	// TaskID is the id the job registers under in the task manager.
 	TaskID string
 
-	// RootPath overrides the configured backup root path. Empty keeps the
-	// configured one.
-	RootPath string
-
 	// Option carries the parsed backup parameters: the artifact name the job
 	// registers under, strategy, format, collection filter, GC pause and the
 	// like. Option.BackupName is also the key the job is visible under to
@@ -114,7 +110,7 @@ func (uc *CreateBackup) Execute(ctx context.Context, req CreateBackupRequest) (*
 		return nil, err
 	}
 
-	return uc.readView(ctx, req.TaskID, uc.backupDir(req))
+	return uc.readView(ctx, req.TaskID, uc.backupDir(req.Option.BackupName))
 }
 
 // readView assembles the finished job's view: the task view from the manager,
@@ -138,15 +134,11 @@ func (uc *CreateBackup) readView(ctx context.Context, taskID, backupDir string) 
 	return &BackupView{Task: taskView, Meta: backupInfo, MetaSize: metaSize}, nil
 }
 
-// backupDir resolves the artifact directory: the request's root path wins
-// over the configured one, and the artifact name comes from the option.
-func (uc *CreateBackup) backupDir(req CreateBackupRequest) string {
-	rootPath := uc.rootPath
-	if req.RootPath != "" {
-		rootPath = req.RootPath
-	}
-
-	return mpath.BackupDir(rootPath, req.Option.BackupName)
+// backupDir resolves the artifact directory: the root path comes from the
+// config the usecase was built with, the artifact name from the option. A
+// per-call root path is the transport forking the config, not a field here.
+func (uc *CreateBackup) backupDir(name string) string {
+	return mpath.BackupDir(uc.rootPath, name)
 }
 
 func (uc *CreateBackup) toArgs(req CreateBackupRequest) backup.TaskArgs {
@@ -155,7 +147,7 @@ func (uc *CreateBackup) toArgs(req CreateBackupRequest) backup.TaskArgs {
 		Option:        req.Option,
 		MilvusStorage: uc.milvusStorage,
 		BackupStorage: uc.backupStorage,
-		BackupDir:     uc.backupDir(req),
+		BackupDir:     uc.backupDir(req.Option.BackupName),
 		Params:        uc.params,
 		TaskMgr:       uc.taskMgr,
 	}

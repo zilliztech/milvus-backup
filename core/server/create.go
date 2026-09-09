@@ -71,7 +71,24 @@ func (s *Server) createBackup(ctx context.Context, request *backuppb.CreateBacku
 		return resp
 	}
 
-	uc, err := s.config.newCreateBackup(ctx, s.params)
+	// The v1 backup_root_path field asks for a different backup location for
+	// this call. That is a config override, not a request option: fork the
+	// loaded config with it as one more override layer. The fork is
+	// reload-equivalent, so unset backup.storage leaves still cascade from
+	// milvus.storage, and the server's own config is never mutated.
+	params := s.params
+	if root := request.GetBackupRootPath(); root != "" {
+		log.Info("use backup root from request", zap.String("backup_root", root))
+		var err error
+		params, err = params.Fork(map[string]string{"backup.storage.rootPath": root})
+		if err != nil {
+			resp.Code = backuppb.ResponseCode_Fail
+			resp.Msg = err.Error()
+			return resp
+		}
+	}
+
+	uc, err := s.config.newCreateBackup(ctx, params)
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
@@ -155,15 +172,8 @@ func (s *Server) toCreateBackupRequest(request *backuppb.CreateBackupRequest) (a
 		manageAddr = request.GetGcPauseAddress()
 	}
 
-	rootPath := ""
-	if request.GetBackupRootPath() != "" {
-		rootPath = request.GetBackupRootPath()
-		log.Info("use backup root from request", zap.String("backup_root", rootPath))
-	}
-
 	return app.CreateBackupRequest{
-		TaskID:   request.GetRequestId(),
-		RootPath: rootPath,
+		TaskID: request.GetRequestId(),
 		Option: backup.Option{
 			BackupName:       request.GetBackupName(),
 			PauseGC:          request.GetGcPauseEnable() || s.params.Backup.PauseGC.Val,
