@@ -40,6 +40,9 @@ func LoadFrom(src *param.Source) (*Config, error) {
 // Callers that report validation problems instead of failing on them — the
 // config migration, which still renders a config that needs fixing — use it
 // and run Validate themselves.
+//
+// The source is retained on the returned configuration, which is what Fork
+// re-resolves under extra overrides.
 func Resolve(src *param.Source) (*Config, error) {
 	cfg := New()
 
@@ -55,6 +58,7 @@ func Resolve(src *param.Source) (*Config, error) {
 	if err := cfg.Resolve(src); err != nil {
 		return nil, err
 	}
+	cfg.src = src
 
 	return cfg, nil
 }

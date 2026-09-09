@@ -221,10 +221,15 @@ minio:
   crossStorage: true
 `
 
-	translated, err := Translate(v1Source(t, content))
+	// One source feeds both entry points: a resolved configuration retains the
+	// source it was resolved from, and two reads of the file would differ in
+	// the path alone.
+	src := v1Source(t, content)
+
+	translated, err := Translate(src)
 	require.NoError(t, err)
 
-	migrated, report := migrateRun(t, v1Source(t, content))
+	migrated, report := migrateRun(t, src)
 	require.NoError(t, report.Err())
 
 	assert.Equal(t, migrated, translated)
