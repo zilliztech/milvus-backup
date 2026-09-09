@@ -28,6 +28,18 @@ def pytest_addoption(parser):
         default="http://localhost:8080",
         help="backup server uri",
     )
+    parser.addoption(
+        "--backup_uri_secondary",
+        action="store",
+        default="http://localhost:8080",
+        help="secondary backup server uri (restore secondary targets the downstream)",
+    )
+    parser.addoption(
+        "--secondary_milvus_uri",
+        action="store",
+        default="http://localhost:19500",
+        help="downstream milvus uri (used to verify secondary restore result)",
+    )
     parser.addoption("--host", action="store", default="localhost", help="service's ip")
     parser.addoption("--service", action="store", default="", help="service address")
     parser.addoption("--port", action="store", default=19530, help="service's port")
@@ -126,6 +138,16 @@ def pytest_addoption(parser):
 @pytest.fixture
 def backup_uri(request):
     return request.config.getoption("--backup_uri")
+
+
+@pytest.fixture
+def backup_uri_secondary(request):
+    return request.config.getoption("--backup_uri_secondary")
+
+
+@pytest.fixture
+def secondary_milvus_uri(request):
+    return request.config.getoption("--secondary_milvus_uri")
 
 
 @pytest.fixture
