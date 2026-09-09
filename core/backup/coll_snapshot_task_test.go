@@ -2,7 +2,6 @@ package backup
 
 import (
 	"context"
-	"errors"
 	"testing"
 	"time"
 
@@ -123,18 +122,4 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 		task, _ := newTestCollSnapshotTask(t, collRef, cli)
 		assert.Error(t, task.Execute(context.Background()))
 	})
-}
-
-// DataCoord releases the export's pin on its own reconcile tick, so the first drop
-// after a job completes can still be refused.
-func TestCollSnapshotTask_DropSnapshotRetries(t *testing.T) {
-	collRef := collref.New("db1", "coll1")
-
-	cli := milvus.NewMockGrpc(t)
-	cli.EXPECT().DropSnapshot(mock.Anything, "db1", "coll1", "mbk_mybackup").
-		Return(errors.New("snapshot is pinned")).Once()
-	cli.EXPECT().DropSnapshot(mock.Anything, "db1", "coll1", "mbk_mybackup").Return(nil).Once()
-
-	task, _ := newTestCollSnapshotTask(t, collRef, cli)
-	task.dropSnapshot(context.Background())
 }

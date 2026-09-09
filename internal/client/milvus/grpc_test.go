@@ -569,14 +569,34 @@ func TestGrpcClient_DropSnapshot(t *testing.T) {
 		assert.Equal(t, "snap", got.GetName())
 	})
 
-	t.Run("StatusError", func(t *testing.T) {
+	// DataCoord releases the export's pin on its own reconcile tick, so the first drop
+	// after a job completes can still be refused.
+	t.Run("RetriesUntilPinReleased", func(t *testing.T) {
 		mockSrv := NewMockMilvusServiceClient(t)
 		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
 
 		mockSrv.EXPECT().DropSnapshot(mock.Anything, mock.Anything).
+			Return(&commonpb.Status{Code: 1, Reason: "snapshot is pinned"}, nil).Once()
+		mockSrv.EXPECT().DropSnapshot(mock.Anything, mock.Anything).
+			Return(&commonpb.Status{Code: 0}, nil).Once()
+
+		require.NoError(t, cli.DropSnapshot(context.Background(), "db", "coll", "snap"))
+	})
+
+	t.Run("GivesUpWhenContextEnds", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
+
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+
+		// End the context on the first refusal so the test does not wait out the backoff.
+		mockSrv.EXPECT().DropSnapshot(mock.Anything, mock.Anything).
+			Run(func(_ context.Context, _ *milvuspb.DropSnapshotRequest, _ ...grpc.CallOption) { cancel() }).
 			Return(&commonpb.Status{Code: 1, Reason: "snapshot is pinned"}, nil)
 
-		assert.Error(t, cli.DropSnapshot(context.Background(), "db", "coll", "snap"))
+		err := cli.DropSnapshot(ctx, "db", "coll", "snap")
+		assert.ErrorContains(t, err, "snapshot is pinned")
 	})
 }
 
