@@ -33,6 +33,11 @@ type translator struct {
 	// leftovers can be warned about (file) or passed through (overrides).
 	consumedFile     map[string]bool
 	consumedOverride map[string]bool
+
+	// crossStorageAuto records that the v1 crossStorage flag translated to
+	// transfer.mode=auto, so the backend-divergence warning is not raised when
+	// auto came from somewhere else, such as a v2-spelled --set.
+	crossStorageAuto bool
 }
 
 func newTranslator(src *param.Source, report *Report) *translator {
@@ -261,6 +266,7 @@ func (t *translator) translateCrossStorage() {
 	h := t.gather(fCrossStorage)
 	if h == nil {
 		// v1 defaulted to false, so an unmigrated file reads as auto too.
+		t.crossStorageAuto = true
 		if t.report != nil {
 			t.report.commentKey("transfer.mode", "v1 minio.crossStorage=false mapped to auto")
 		}
@@ -270,8 +276,11 @@ func (t *translator) translateCrossStorage() {
 	mode := v2.TransferAuto
 	if asBool(h.value) {
 		mode = v2.TransferStreaming
-	} else if t.report != nil {
-		t.report.commentKey("transfer.mode", "v1 minio.crossStorage=false mapped to auto")
+	} else {
+		t.crossStorageAuto = true
+		if t.report != nil {
+			t.report.commentKey("transfer.mode", "v1 minio.crossStorage=false mapped to auto")
+		}
 	}
 	t.emit("transfer.mode", &hit{value: mode, layer: h.layer, key: h.key}, false, "")
 }
@@ -430,27 +439,38 @@ func (t *translator) injectBackupRootPath() {
 	// A Milvus root path explicitly set empty fell through cmp.Or to
 	// "backup". Either way the value is a pure v1 default, not a hit.
 	if h := t.gather(milvusStorage.rootPath); h != nil {
-		t.file[backupStorage.rootPath.v2] = param.Input{Value: "backup", Kind: param.SourceDefault, SourceKey: ""}
+		t.settle(backupStorage.rootPath.v2, "backup")
 		return
 	}
 
-	t.file["backup.storage.rootpath"] = param.Input{Value: "files", Kind: param.SourceDefault, SourceKey: ""}
+	t.settle(backupStorage.rootPath.v2, "files")
 }
 
 // declareV2 stamps the discriminator v2.LoadFrom requires onto the translated
 // source. The translation vouches for the result being v2-shaped, so it
 // declares v2 on the translated file's behalf.
 func (t *translator) declareV2() {
-	t.file[strings.ToLower(v2.VersionKey)] = param.Input{Value: v2.Version, Kind: param.SourceDefault, SourceKey: ""}
+	t.settle(v2.VersionKey, v2.Version)
 }
 
-// finishLeftovers handles the v1 keys no pass consumed. Unknown file keys are
-// dropped with a warning, matching v1's silent ignore but saying so. Unknown
-// --set keys pass through untouched: a v2-spelled override is legal against a
-// v1 file, and a genuinely unknown one is warned about by the v2 loader.
+// settle writes a value the translation worked out itself rather than read
+// from a v1 source: a v1 default the translated source must carry explicitly.
+// The key is lower-cased the way emit writes its entries, which is the only
+// spelling the source looks keys up by.
+func (t *translator) settle(key, value string) {
+	t.file[strings.ToLower(key)] = param.Input{Value: value, Kind: param.SourceDefault}
+}
+
+// finishLeftovers handles the v1 keys no pass consumed. A key the v1 schema
+// never declared is dropped with a warning, matching v1's silent ignore but
+// saying so; a declared key that does not apply to the settled configuration —
+// a credential belonging to another auth type — is ignored silently, as v1
+// ignored it. Unknown --set keys pass through untouched: a v2-spelled override
+// is legal against a v1 file, and a genuinely unknown one is warned about by
+// the v2 loader.
 func (t *translator) finishLeftovers() {
 	for _, key := range t.src.ConfigFileKeys() {
-		if key == strings.ToLower(v2.VersionKey) || t.consumedFile[key] {
+		if key == strings.ToLower(v2.VersionKey) || t.consumedFile[key] || v1FileKeys[key] {
 			continue
 		}
 		t.warn("cfg: unknown v1 config file key %q, ignoring it", key)

@@ -67,8 +67,9 @@ func loadV1(src *param.Source) (*v2.Config, error) {
 		return nil, err
 	}
 
-	// Say so once per run: the v1 schema is still read, but the translation is a
-	// compatibility step, and `config migrate` turns it into a file to keep.
+	// Say so once per run: a v1 configuration is still read, but the
+	// translation is a compatibility step, and `config migrate` turns it into a
+	// file to keep.
 	log.Warn("cfg: loaded a v1 configuration and translated it to v2; "+
 		"run `milvus-backup config migrate` to convert the file itself",
 		zap.String("path", src.ConfigFilePath()))

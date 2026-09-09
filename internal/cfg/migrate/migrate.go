@@ -37,7 +37,8 @@ import (
 func Migrate(src *param.Source) (*v2.Config, *Report, error) {
 	r := newReport()
 
-	out, err := v2.Resolve(newTranslator(src, r).translate())
+	tr := newTranslator(src, r)
+	out, err := v2.Resolve(tr.translate())
 	if err != nil {
 		return nil, r, fmt.Errorf("cfg: resolve translated v1 config: %w", err)
 	}
@@ -46,8 +47,9 @@ func Migrate(src *param.Source) (*v2.Config, *Report, error) {
 	// v1 when the two backends differ: for the same backend both do a
 	// storage-side copy, so warning then would be noise. The judgement needs
 	// the resolved backends, so it is made here rather than in the
-	// translation.
-	if out.Transfer.Mode.Val == v2.TransferAuto && !sameBackend(&out.Milvus.Storage, &out.Backup.Storage) {
+	// translation, and it is keyed off the flag having come from crossStorage
+	// rather than off the resolved mode, which a v2-spelled override can set.
+	if tr.crossStorageAuto && out.Transfer.Mode.Val == v2.TransferAuto && !sameBackend(&out.Milvus.Storage, &out.Backup.Storage) {
 		r.warnf("minio.crossStorage=false mapped to transfer.mode=auto, but milvus and backup storage differ; auto streams between them where v1 could attempt direct copy — verify this is intended")
 	}
 

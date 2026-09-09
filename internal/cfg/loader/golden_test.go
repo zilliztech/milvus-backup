@@ -350,7 +350,7 @@ func TestLoadV1Golden(t *testing.T) {
 	require.NoError(t, yaml.Unmarshal([]byte(goldenCasesYAML), &cases))
 
 	for _, c := range cases.Cases {
-		t.Run(c.Name, func(t *testing.T) {
+		t.Run(subtestName(c.Name), func(t *testing.T) {
 			for k, v := range c.Env {
 				t.Setenv(k, v)
 			}
@@ -378,4 +378,20 @@ func TestLoadV1Golden(t *testing.T) {
 			assert.Equal(t, string(want), b.String())
 		})
 	}
+}
+
+// subtestName turns a case name into the PascalCase sub-test name the repo
+// asks for. The name doubles as the golden file stem, so it stays kebab-case
+// in the case list and on disk.
+func subtestName(name string) string {
+	var b strings.Builder
+	for _, part := range strings.Split(name, "-") {
+		if part == "" {
+			continue
+		}
+		b.WriteString(strings.ToUpper(part[:1]))
+		b.WriteString(part[1:])
+	}
+
+	return b.String()
 }

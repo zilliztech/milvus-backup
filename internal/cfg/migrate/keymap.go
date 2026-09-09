@@ -59,9 +59,9 @@ var (
 		rootPath: &v1Field{keys: []string{"minio.rootpath"}, env: []string{"MINIO_ROOT_PATH"}, v2: "milvus.storage.rootPath"},
 
 		accessKeyID:       &v1Field{keys: []string{"minio.accesskeyid"}, env: []string{"MINIO_ACCESS_KEY"}},
-		secretAccessKey:   &v1Field{keys: []string{"minio.secretaccesskey"}, env: []string{"MINIO_SECRET_KEY"}, secret: true, v2env: "MILVUS_STORAGE_AUTH_SECRET_ACCESS_KEY"},
-		token:             &v1Field{keys: []string{"minio.token"}, env: []string{"MINIO_TOKEN"}, secret: true, v2env: "MILVUS_STORAGE_AUTH_SESSION_TOKEN"},
-		gcpCredentialJSON: &v1Field{keys: []string{"minio.gcpcredentialjson"}, env: []string{"GCP_KEY_JSON"}, secret: true, v2env: "MILVUS_STORAGE_AUTH_CREDENTIALS_FILE"},
+		secretAccessKey:   &v1Field{keys: []string{"minio.secretaccesskey"}, env: []string{"MINIO_SECRET_KEY"}},
+		token:             &v1Field{keys: []string{"minio.token"}, env: []string{"MINIO_TOKEN"}},
+		gcpCredentialJSON: &v1Field{keys: []string{"minio.gcpcredentialjson"}, env: []string{"GCP_KEY_JSON"}},
 		useIAM:            &v1Field{keys: []string{"minio.useiam"}, env: []string{"MINIO_USE_IAM"}},
 		iamEndpoint:       &v1Field{keys: []string{"minio.iamendpoint"}, env: []string{"MINIO_IAM_ENDPOINT"}},
 	}
@@ -77,16 +77,19 @@ var (
 		rootPath: &v1Field{keys: []string{"minio.backuprootpath"}, env: []string{"MINIO_BACKUP_ROOT_PATH"}, v2: "backup.storage.rootPath"},
 
 		accessKeyID:       &v1Field{keys: []string{"minio.backupaccesskeyid"}, env: []string{"MINIO_BACKUP_ACCESS_KEY"}},
-		secretAccessKey:   &v1Field{keys: []string{"minio.backupsecretaccesskey"}, env: []string{"MINIO_BACKUP_SECRET_KEY"}, secret: true, v2env: "BACKUP_STORAGE_AUTH_SECRET_ACCESS_KEY"},
-		token:             &v1Field{keys: []string{"minio.backuptoken"}, env: []string{"MINIO_BACKUP_TOKEN"}, secret: true, v2env: "BACKUP_STORAGE_AUTH_SESSION_TOKEN"},
-		gcpCredentialJSON: &v1Field{keys: []string{"minio.backupgcpcredentialjson"}, env: []string{"BACKUP_GCP_KEY_JSON"}, secret: true, v2env: "BACKUP_STORAGE_AUTH_CREDENTIALS_FILE"},
+		secretAccessKey:   &v1Field{keys: []string{"minio.backupsecretaccesskey"}, env: []string{"MINIO_BACKUP_SECRET_KEY"}},
+		token:             &v1Field{keys: []string{"minio.backuptoken"}, env: []string{"MINIO_BACKUP_TOKEN"}},
+		gcpCredentialJSON: &v1Field{keys: []string{"minio.backupgcpcredentialjson"}, env: []string{"BACKUP_GCP_KEY_JSON"}},
 		useIAM:            &v1Field{keys: []string{"minio.backupuseiam"}, env: []string{"MINIO_BACKUP_USE_IAM"}},
 		iamEndpoint:       &v1Field{keys: []string{"minio.backupiamendpoint"}, env: []string{"MINIO_BACKUP_IAM_ENDPOINT"}},
 	}
 )
 
 // storageSide groups the v1 fields describing one storage backend. prefix is
-// the v2 config key prefix of the side.
+// the v2 config key prefix of the side. Its credential fields carry neither
+// secret nor v2env: which v2 key — and so which environment variable — a
+// credential lands in depends on the auth type the side settles on, so the
+// translator decides both at the emit site.
 type storageSide struct {
 	prefix   string
 	provider *v1Field
@@ -177,3 +180,18 @@ var v1Fields = []*v1Field{
 	{keys: []string{"backup.gcpause.enable"}, env: []string{"BACKUP_GC_PAUSE_ENABLE"}, v2: "backup.pauseGC"},
 	{keys: []string{"backup.gcpause.address"}, env: []string{"BACKUP_GC_PAUSE_ADDRESS"}, v2: "milvus.management.endpoint"},
 }
+
+// v1FileKeys holds every config file key the v1 schema declared, lower-cased.
+// A declared key that does not apply to the settled configuration is ignored
+// silently, the way v1 ignored it; only a key v1 never knew earns the
+// unknown-key warning.
+var v1FileKeys = func() map[string]bool {
+	keys := make(map[string]bool)
+	for _, f := range v1Fields {
+		for _, key := range f.keys {
+			keys[key] = true
+		}
+	}
+
+	return keys
+}()

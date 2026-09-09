@@ -1,6 +1,7 @@
 package migrate
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -227,4 +228,22 @@ minio:
 	require.NoError(t, report.Err())
 
 	assert.Equal(t, migrated, translated)
+}
+
+// Every key the translation writes must be lower-cased: the source looks
+// entries up case-insensitively, and the v2 unknown-key check compares the raw
+// key against lower-cased declared names, so a mixed-case entry would be
+// silently dropped and reported as unknown.
+func TestTranslate_KeysAreLowerCase(t *testing.T) {
+	for _, content := range []string{
+		"milvus:\n  address: m\n",
+		"minio:\n  rootPath: custom-root\n",
+		"minio:\n  rootPath: \"\"\n",
+	} {
+		src := newTranslator(v1Source(t, content), nil).translate()
+
+		for _, key := range src.ConfigFileKeys() {
+			assert.Equal(t, strings.ToLower(key), key)
+		}
+	}
 }

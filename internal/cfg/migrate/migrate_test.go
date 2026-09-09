@@ -309,6 +309,24 @@ minio:
 	})
 }
 
+// A v2-spelled override can set transfer.mode=auto on a v1 config whose
+// crossStorage said streaming: the divergence warning must not blame a
+// crossStorage=false mapping that never happened.
+func TestMigrate_CrossStorageOverrideDoesNotWarn(t *testing.T) {
+	src, err := param.NewSource(writeTempV1(t, `
+minio:
+  crossStorage: true
+  address: milvus-minio
+  backupAddress: backup-s3
+`), map[string]string{"transfer.mode": v2.TransferAuto})
+	require.NoError(t, err)
+
+	out, report := migrateRun(t, src)
+
+	assert.Equal(t, v2.TransferAuto, out.Transfer.Mode.Val)
+	assert.Empty(t, report.Warnings)
+}
+
 func TestMigrate_DroppedHTTPEnabled(t *testing.T) {
 	_, report := migrateRun(t, v1Source(t, "http:\n  enabled: false\n"))
 	require.Len(t, report.Warnings, 1)
@@ -395,6 +413,21 @@ func TestMigrate_UnknownKeyWarned(t *testing.T) {
 
 	require.Len(t, report.Warnings, 1)
 	assert.Contains(t, report.Warnings[0], "notakey")
+}
+
+// v1 declared the credential keys whichever auth type a deployment used. A key
+// that does not apply to the settled type is ignored silently, the way v1
+// ignored it, not reported as a key v1 never knew.
+func TestMigrate_InapplicableCredentialNotUnknown(t *testing.T) {
+	_, report := migrateRun(t, v1Source(t, `
+minio:
+  storageType: aws
+  useIAM: true
+  accessKeyID: ak
+  secretAccessKey: sk
+`))
+
+	assert.Empty(t, report.Warnings)
 }
 
 // Migrating then rendering must produce a file the v2 loader accepts.
