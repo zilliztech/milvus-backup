@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
-	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 
@@ -23,7 +22,7 @@ import (
 type collDynFieldTask struct {
 	taskID string
 
-	kv clientv3.KV
+	etcd *etcdMeta
 
 	etcdRootPath string
 
@@ -32,10 +31,10 @@ type collDynFieldTask struct {
 	logger *zap.Logger
 }
 
-func newCollDynFieldTask(taskID string, kv clientv3.KV, etcdRootPath string, metaBuilder *metaBuilder) *collDynFieldTask {
+func newCollDynFieldTask(taskID string, etcd *etcdMeta, etcdRootPath string, metaBuilder *metaBuilder) *collDynFieldTask {
 	return &collDynFieldTask{
 		taskID:       taskID,
-		kv:           kv,
+		etcd:         etcd,
 		etcdRootPath: etcdRootPath,
 		metaBuilder:  metaBuilder,
 		logger:       log.With(zap.String("task_id", taskID)),
@@ -48,9 +47,9 @@ func (cdft *collDynFieldTask) Execute(ctx context.Context) error {
 	// where MetaRootPath is "{etcdRootPath}/meta" in milvus-backup config terms.
 	prefix := fmt.Sprintf("%s/meta/root-coord/fields/", cdft.etcdRootPath)
 	cdft.logger.Info("start to get field schemas from etcd", zap.String("prefix", prefix))
-	resp, err := cdft.kv.Get(ctx, prefix, clientv3.WithPrefix())
+	resp, err := cdft.etcd.getPrefix(ctx, prefix)
 	if err != nil {
-		return fmt.Errorf("backup: get field schemas from etcd %w", err)
+		return fmt.Errorf("backup: get field schemas: %w", err)
 	}
 	cdft.logger.Info("get field schemas from etcd done", zap.Int("count", len(resp.Kvs)))
 
