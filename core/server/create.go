@@ -17,14 +17,15 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 // createBackupUC is the slice of app.CreateBackup the handler needs. The
 // consumer defines it: app returns concrete types, and this narrow interface
 // is what handler tests stub out.
 type createBackupUC interface {
-	// Execute runs the backup job synchronously and returns the finished view.
-	Execute(ctx context.Context, req app.CreateBackupRequest) (*app.BackupView, error)
+	// Execute runs the backup job synchronously and returns the job view.
+	Execute(ctx context.Context, req app.CreateBackupRequest) (taskmgr.BackupTaskView, error)
 	// Start registers the job and returns it ready to run; the async flag's
 	// goroutine placement is this server's deployment decision.
 	Start(req app.CreateBackupRequest) (app.BackupJob, error)
@@ -109,9 +110,12 @@ func (s *Server) createBackup(ctx context.Context, request *backuppb.CreateBacku
 }
 
 // runCreateBackupSync runs the job on the request path. The v1 success
-// response carries only code and msg: the view the usecase returns is
-// deliberately not rendered, because the historical handler computed the
-// payload and then dropped it on the floor, and the wire behavior is kept.
+// response carries only code and msg, so the job view the usecase returns is
+// discarded — whatever a v1 response needs, this handler assembles itself,
+// and this one needs nothing. The historical handler additionally read the
+// persisted meta after a successful run and answered Fail when that read
+// failed, but the read only fed a payload the response then discarded, so it
+// is gone together with the payload.
 func runCreateBackupSync(ctx context.Context, uc createBackupUC, requestID string, req app.CreateBackupRequest) *backuppb.BackupInfoResponse {
 	if _, err := uc.Execute(ctx, req); err != nil {
 		return &backuppb.BackupInfoResponse{

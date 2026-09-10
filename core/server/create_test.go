@@ -19,6 +19,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/filter"
+	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 // stubCreateBackup stands in for app.CreateBackup: the request it was called
@@ -35,13 +36,13 @@ type stubCreateBackup struct {
 	ran        chan struct{}
 }
 
-func (s *stubCreateBackup) Execute(_ context.Context, req app.CreateBackupRequest) (*app.BackupView, error) {
+func (s *stubCreateBackup) Execute(_ context.Context, req app.CreateBackupRequest) (taskmgr.BackupTaskView, error) {
 	s.req = req
 	s.calls++
 	if s.executeErr != nil {
 		return nil, s.executeErr
 	}
-	return &app.BackupView{}, nil
+	return nil, nil
 }
 
 func (s *stubCreateBackup) Start(req app.CreateBackupRequest) (app.BackupJob, error) {

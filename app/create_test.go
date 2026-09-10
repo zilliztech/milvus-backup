@@ -2,15 +2,12 @@ package app
 
 import (
 	"context"
-	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 
 	"github.com/zilliztech/milvus-backup/core/backup"
-	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
@@ -92,53 +89,6 @@ func TestCreateBackupExecute(t *testing.T) {
 
 		assert.Nil(t, view)
 		assert.ErrorContains(t, err, "existing task")
-	})
-}
-
-func TestCreateBackupReadView(t *testing.T) {
-	t.Run("AssemblesTaskAndMeta", func(t *testing.T) {
-		cli := storage.NewMockClient(t)
-		expectFullMeta(t, cli, "root/backup1", &backuppb.BackupInfo{Name: "backup1", Size: 100})
-		expectMetaSize(t, cli, "root/backup1", 100)
-
-		mgr := taskmgr.NewMgr()
-		require.NoError(t, mgr.AddBackupTask("task-1", "backup1"))
-
-		uc := &CreateBackup{backupStorage: cli, taskMgr: mgr, rootPath: "root"}
-		view, err := uc.readView(context.Background(), "task-1", "root/backup1")
-
-		require.NoError(t, err)
-		require.NotNil(t, view.Task)
-		assert.Equal(t, "task-1", view.Task.ID())
-		require.NotNil(t, view.Meta)
-		assert.Equal(t, "backup1", view.Meta.GetName())
-		assert.Equal(t, int64(100), view.MetaSize)
-	})
-
-	t.Run("FailsWhenTaskUnknown", func(t *testing.T) {
-		cli := storage.NewMockClient(t)
-
-		uc := &CreateBackup{backupStorage: cli, taskMgr: taskmgr.NewMgr(), rootPath: "root"}
-		view, err := uc.readView(context.Background(), "task-1", "root/backup1")
-
-		assert.Nil(t, view)
-		assert.ErrorIs(t, err, taskmgr.ErrTaskNotFound)
-	})
-
-	t.Run("FailsWhenMetaUnreadable", func(t *testing.T) {
-		cli := storage.NewMockClient(t)
-		cli.EXPECT().
-			ListPrefix(mock.Anything, "root/backup1/meta/full_meta.json", false).
-			Return(nil, errors.New("stat denied"))
-
-		mgr := taskmgr.NewMgr()
-		require.NoError(t, mgr.AddBackupTask("task-1", "backup1"))
-
-		uc := &CreateBackup{backupStorage: cli, taskMgr: mgr, rootPath: "root"}
-		view, err := uc.readView(context.Background(), "task-1", "root/backup1")
-
-		assert.Nil(t, view)
-		assert.ErrorContains(t, err, "stat denied")
 	})
 }
 

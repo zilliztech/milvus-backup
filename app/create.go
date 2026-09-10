@@ -5,9 +5,7 @@ import (
 	"fmt"
 
 	"github.com/zilliztech/milvus-backup/core/backup"
-	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
-	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
@@ -22,8 +20,12 @@ type BackupJob interface {
 	Run(ctx context.Context) error
 }
 
-// CreateBackup starts one backup job that writes an artifact into the backup
-// storage, copying from the milvus storage.
+// CreateBackup registers backup jobs. A job is what a create call makes: the
+// backup artifact is what a successful job leaves behind in storage, a
+// different resource with its own usecase (GetBackup). This usecase therefore
+// answers with the job and nothing of the artifact — the split the v2 API
+// draws between jobs/backup/create, which returns the job, and
+// backups/describe, which reads the artifact.
 type CreateBackup struct {
 	params *v2.Config
 
@@ -73,16 +75,6 @@ type CreateBackupRequest struct {
 	Option backup.Option
 }
 
-// BackupView keeps the two resource halves separate. Merging them is a
-// rendering decision of the transport, not a property of the action.
-type BackupView struct {
-	// Task is the job half; always known here, the job was just registered.
-	Task taskmgr.BackupTaskView
-	// Meta is the artifact half; non-nil once the job has written it.
-	Meta     *backuppb.BackupInfo
-	MetaSize int64
-}
-
 // Start registers the job in the task manager and returns it ready to run.
 // Registration is the synchronous part of starting: from here on the job is
 // visible to the task APIs under its task id and backup name. Running is a
@@ -98,9 +90,11 @@ func (uc *CreateBackup) Start(req CreateBackupRequest) (BackupJob, error) {
 }
 
 // Execute runs the job synchronously on the calling goroutine and returns the
-// view of what it produced: the task view of the job overlaid on the meta it
-// persisted, the same shape get_backup answers with.
-func (uc *CreateBackup) Execute(ctx context.Context, req CreateBackupRequest) (*BackupView, error) {
+// task manager's view of it: id, state, progress and the rest of the job half
+// — the whole answer of a create call, the shape v2's jobs/backup/create
+// responds with. Nothing of the produced artifact is read here; a transport
+// whose contract merges the two resources (v1) assembles what it needs itself.
+func (uc *CreateBackup) Execute(ctx context.Context, req CreateBackupRequest) (taskmgr.BackupTaskView, error) {
 	job, err := uc.Start(req)
 	if err != nil {
 		return nil, err
@@ -110,28 +104,12 @@ func (uc *CreateBackup) Execute(ctx context.Context, req CreateBackupRequest) (*
 		return nil, err
 	}
 
-	return uc.readView(ctx, req.TaskID, uc.backupDir(req.Option.BackupName))
-}
-
-// readView assembles the finished job's view: the task view from the manager,
-// the persisted meta and the size of the meta dir that produced it.
-func (uc *CreateBackup) readView(ctx context.Context, taskID, backupDir string) (*BackupView, error) {
-	taskView, err := uc.taskMgr.GetBackupTask(taskID)
+	view, err := uc.taskMgr.GetBackupTask(req.TaskID)
 	if err != nil {
 		return nil, fmt.Errorf("app: get backup task: %w", err)
 	}
 
-	backupInfo, err := meta.Read(ctx, uc.backupStorage, backupDir)
-	if err != nil {
-		return nil, fmt.Errorf("app: read backup meta: %w", err)
-	}
-
-	metaSize, err := storage.Size(ctx, uc.backupStorage, mpath.MetaDir(backupDir))
-	if err != nil {
-		return nil, fmt.Errorf("app: get meta size: %w", err)
-	}
-
-	return &BackupView{Task: taskView, Meta: backupInfo, MetaSize: metaSize}, nil
+	return view, nil
 }
 
 // backupDir resolves the artifact directory: the root path comes from the
