@@ -25,9 +25,15 @@ type fakeKV struct {
 	clientv3.KV
 
 	data map[string][]byte
+
+	// gotKeys records every prefix asked for, so a test can assert which
+	// collections were read rather than only what came back.
+	gotKeys []string
 }
 
 func (f *fakeKV) Get(_ context.Context, key string, _ ...clientv3.OpOption) (*clientv3.GetResponse, error) {
+	f.gotKeys = append(f.gotKeys, key)
+
 	resp := &clientv3.GetResponse{}
 	for k, v := range f.data {
 		if strings.HasPrefix(k, key) {
