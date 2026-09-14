@@ -16,6 +16,11 @@ dataNode:
   replicas: 4
 
 minio:
+  # Docker Hub deleted the minio/minio repository; MinIO's quay namespace
+  # still serves the same release tags, so pull from there instead.
+  image:
+    repository: quay.io/minio/minio
+    tag: RELEASE.2024-05-28T17-19-04Z
   resources:
     requests:
       memory: 256Mi
