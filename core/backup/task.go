@@ -83,6 +83,7 @@ type Task struct {
 	manage  milvus.Manage
 
 	etcdCli      *clientv3.Client
+	etcd         *etcdMeta
 	etcdRootPath string
 
 	metaBuilder *metaBuilder
@@ -162,7 +163,7 @@ func NewTask(args TaskArgs) (*Task, error) {
 	}, nil
 }
 
-func (t *Task) initClients() error {
+func (t *Task) initClients(ctx context.Context) error {
 	grpcCli, err := milvus.NewGrpc(&t.params.Milvus)
 	if err != nil {
 		return fmt.Errorf("backup: create grpc client: %w", err)
@@ -181,15 +182,25 @@ func (t *Task) initClients() error {
 	}
 	t.manage = milvus.NewManage(manageAddr)
 
+	// etcd is read only by the index extra and dynamic field steps, and both run
+	// after every collection has been copied. Probe it here instead, so a cluster
+	// whose etcd this tool cannot reach fails in the first seconds of the backup
+	// rather than at the end of it.
 	if t.option.BackupIndexExtra {
+		endpoints := t.params.Milvus.Etcd.Endpoints.Val
 		etcdCli, err := clientv3.New(clientv3.Config{
-			Endpoints:   t.params.Milvus.Etcd.Endpoints.Val,
+			Endpoints:   endpoints,
 			DialTimeout: 5 * time.Second,
 		})
 		if err != nil {
 			return fmt.Errorf("backup: create etcd client: %w", err)
 		}
 		t.etcdCli = etcdCli
+		t.etcd = newEtcdMeta(etcdCli, endpoints)
+
+		if err := t.etcd.probe(ctx); err != nil {
+			return err
+		}
 	}
 
 	t.gcCtrl = newGCCtrl(t.taskID, t.option.PauseGC, t.grpc, t.manage)
@@ -218,7 +229,7 @@ func (t *Task) Execute(ctx context.Context) (err error) {
 		}
 	}()
 
-	if err = t.initClients(); err != nil {
+	if err = t.initClients(ctx); err != nil {
 		return err
 	}
 
@@ -617,13 +628,13 @@ func (t *Task) backupIndexExtraInfo(ctx context.Context) error {
 		return nil
 	}
 
-	if t.etcdCli == nil {
+	if t.etcd == nil {
 		return errors.New("backup: need backup etcd info but etcd client is nil")
 	}
 
 	t.logger.Info("start backup index extra info")
 
-	indexExtraTask := newCollIndexExtraTask(t.taskID, t.etcdCli, t.etcdRootPath, t.metaBuilder)
+	indexExtraTask := newCollIndexExtraTask(t.taskID, t.etcd, t.etcdRootPath, t.metaBuilder)
 	if err := indexExtraTask.Execute(ctx); err != nil {
 		return fmt.Errorf("backup: execute index extra task: %w", err)
 	}
@@ -648,7 +659,7 @@ func (t *Task) backupIndexExtraInfo(ctx context.Context) error {
 // naming the collections it leaves incomplete -- that message is the only place
 // the missing option is visible before a restore fails on it much later.
 func (t *Task) backupCollDynField(ctx context.Context) error {
-	if t.etcdCli == nil {
+	if t.etcd == nil {
 		if affected := t.metaBuilder.dynamicSchemaCollections(); len(affected) > 0 {
 			t.logger.Warn("dynamic field not recorded, this backup cannot serve a secondary restore",
 				zap.Strings("collections_with_dynamic_schema", affected),
@@ -662,7 +673,7 @@ func (t *Task) backupCollDynField(ctx context.Context) error {
 
 	t.logger.Info("start backup collection dynamic field")
 
-	dynFieldTask := newCollDynFieldTask(t.taskID, t.etcdCli, t.etcdRootPath, t.metaBuilder)
+	dynFieldTask := newCollDynFieldTask(t.taskID, t.etcd, t.etcdRootPath, t.metaBuilder)
 	if err := dynFieldTask.Execute(ctx); err != nil {
 		return fmt.Errorf("backup: execute coll dyn field task: %w", err)
 	}

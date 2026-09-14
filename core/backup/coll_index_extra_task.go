@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/milvus-io/milvus/pkg/v3/proto/indexpb"
-	clientv3 "go.etcd.io/etcd/client/v3"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 
@@ -15,7 +14,7 @@ import (
 type collIndexExtraTask struct {
 	taskID string
 
-	kv clientv3.KV
+	etcd *etcdMeta
 
 	etcdRootPath string
 
@@ -24,10 +23,10 @@ type collIndexExtraTask struct {
 	logger *zap.Logger
 }
 
-func newCollIndexExtraTask(taskID string, kv clientv3.KV, etcdRootPath string, metaBuilder *metaBuilder) *collIndexExtraTask {
+func newCollIndexExtraTask(taskID string, etcd *etcdMeta, etcdRootPath string, metaBuilder *metaBuilder) *collIndexExtraTask {
 	return &collIndexExtraTask{
 		taskID:       taskID,
-		kv:           kv,
+		etcd:         etcd,
 		etcdRootPath: etcdRootPath,
 		metaBuilder:  metaBuilder,
 		logger:       log.With(zap.String("task_id", taskID)),
@@ -45,9 +44,9 @@ func (ciet *collIndexExtraTask) Execute(ctx context.Context) error {
 	for _, collID := range collIDs {
 		prefix := fmt.Sprintf("%s/meta/field-index/%d/", ciet.etcdRootPath, collID)
 		ciet.logger.Info("start to get index info from etcd", zap.String("prefix", prefix))
-		resp, err := ciet.kv.Get(ctx, prefix, clientv3.WithPrefix())
+		resp, err := ciet.etcd.getPrefix(ctx, prefix)
 		if err != nil {
-			return fmt.Errorf("backup: get indexes from etcd %w", err)
+			return fmt.Errorf("backup: get indexes: %w", err)
 		}
 		ciet.logger.Info("get indexes from etcd done", zap.Int64("coll_id", collID), zap.Int("count", len(resp.Kvs)))
 

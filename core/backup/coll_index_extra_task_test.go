@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/milvus-io/milvus/pkg/v3/proto/indexpb"
 	"github.com/stretchr/testify/assert"
@@ -17,16 +18,22 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/collref"
 )
 
-// fakeKV implements clientv3.KV but only supports prefix Get, which is all the
+// fakeKV implements etcdReader but only supports prefix Get, which is all the
 // index extra task needs. Any other method would panic via the embedded nil
 // interface, surfacing accidental use.
 type fakeKV struct {
 	clientv3.KV
 
 	data map[string][]byte
+
+	// gotKeys records every prefix asked for, so a test can assert which
+	// collections were read rather than only what came back.
+	gotKeys []string
 }
 
 func (f *fakeKV) Get(_ context.Context, key string, _ ...clientv3.OpOption) (*clientv3.GetResponse, error) {
+	f.gotKeys = append(f.gotKeys, key)
+
 	resp := &clientv3.GetResponse{}
 	for k, v := range f.data {
 		if strings.HasPrefix(k, key) {
@@ -35,6 +42,10 @@ func (f *fakeKV) Get(_ context.Context, key string, _ ...clientv3.OpOption) (*cl
 	}
 
 	return resp, nil
+}
+
+func (f *fakeKV) Status(context.Context, string) (*clientv3.StatusResponse, error) {
+	return &clientv3.StatusResponse{}, nil
 }
 
 func mustMarshalFieldIndex(t *testing.T, idx *indexpb.FieldIndex) []byte {
@@ -78,12 +89,22 @@ func TestCollIndexExtraTaskExecute(t *testing.T) {
 			}),
 		}}
 
-		task := newCollIndexExtraTask("task1", kv, rootPath, builder)
+		task := newCollIndexExtraTask("task1", newEtcdMeta(kv, []string{"localhost:2379"}), rootPath, builder)
 		assert.NoError(t, task.Execute(context.Background()))
 
 		got := builder.collectionBackups[1].GetIndexInfos()[0]
 		assert.Equal(t, int64(5), got.GetFieldId())
 		assert.Equal(t, uint64(123), got.GetCreateTime())
+	})
+
+	t.Run("UnreachableEtcdNamesEndpoint", func(t *testing.T) {
+		etcd := newEtcdMeta(&blockingEtcd{}, []string{"127.0.0.1:2379"})
+		etcd.timeout = 100 * time.Millisecond
+
+		task := newCollIndexExtraTask("task1", etcd, rootPath, newBuilder())
+		err := task.Execute(context.Background())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "127.0.0.1:2379")
 	})
 
 	t.Run("MissingIndexInBackupReturnsError", func(t *testing.T) {
@@ -95,7 +116,7 @@ func TestCollIndexExtraTaskExecute(t *testing.T) {
 			}),
 		}}
 
-		task := newCollIndexExtraTask("task1", kv, rootPath, builder)
+		task := newCollIndexExtraTask("task1", newEtcdMeta(kv, []string{"localhost:2379"}), rootPath, builder)
 		err := task.Execute(context.Background())
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "not in backup index infos")
