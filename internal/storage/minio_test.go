@@ -319,3 +319,113 @@ type roundTripperFunc func(*http.Request) (*http.Response, error)
 func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
+
+// TestCopyObjectEmbeddedError simulates the documented S3 behavior where a
+// failed CopyObject still answers 200 OK but embeds an <Error> document in the
+// body. minio-go's Client.CopyObject decodes that body into a field-less
+// copyObjectResult and reports success with an empty ETag, so the copy layer
+// must treat an empty ETag as a failure instead of trusting the status code.
+func TestCopyObjectEmbeddedError(t *testing.T) {
+	src := &MinioClient{cfg: Config{Bucket: "src-bucket"}}
+
+	var copyReqCount atomic.Int32
+	cli, err := newInternalMinio(Config{
+		Provider: "s3",
+		Endpoint: "example.com",
+		UseSSL:   true,
+		Bucket:   "dest-bucket",
+		Credential: Credential{
+			Type: Static,
+			AK:   "ak",
+			SK:   "sk",
+		},
+	}, &minio.Options{
+		Secure: true,
+		Creds:  credentials.NewStaticV4("ak", "sk", ""),
+		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			if _, ok := r.URL.Query()["location"]; ok {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/xml"}},
+					Body:       io.NopCloser(strings.NewReader(`<LocationConstraint xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></LocationConstraint>`)),
+					Request:    r,
+				}, nil
+			}
+
+			copyReqCount.Add(1)
+			// S3's documented "200 OK with an embedded error" response for a
+			// CopyObject that failed midway.
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/xml"}},
+				Body: io.NopCloser(strings.NewReader(`<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+  <Code>InternalError</Code>
+  <Message>We encountered an internal error. Please try again.</Message>
+</Error>`)),
+				Request: r,
+			}, nil
+		}),
+	})
+	require.NoError(t, err)
+
+	err = cli.copyObject(context.Background(), src, CopyObjectInput{
+		SrcCli:  src,
+		SrcAttr: ObjectAttr{Key: "src-key", Length: 1},
+		DestKey: "dest-key",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "empty etag")
+	assert.Positive(t, copyReqCount.Load())
+}
+
+// TestCopyObjectValidETag pins the happy path: a copy that returns a
+// well-formed CopyObjectResult with a real ETag must succeed, so the empty-ETag
+// guard does not misfire on genuine copies.
+func TestCopyObjectValidETag(t *testing.T) {
+	src := &MinioClient{cfg: Config{Bucket: "src-bucket"}}
+
+	cli, err := newInternalMinio(Config{
+		Provider: "s3",
+		Endpoint: "example.com",
+		UseSSL:   true,
+		Bucket:   "dest-bucket",
+		Credential: Credential{
+			Type: Static,
+			AK:   "ak",
+			SK:   "sk",
+		},
+	}, &minio.Options{
+		Secure: true,
+		Creds:  credentials.NewStaticV4("ak", "sk", ""),
+		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			if _, ok := r.URL.Query()["location"]; ok {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/xml"}},
+					Body:       io.NopCloser(strings.NewReader(`<LocationConstraint xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></LocationConstraint>`)),
+					Request:    r,
+				}, nil
+			}
+
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/xml"}},
+				Body: io.NopCloser(strings.NewReader(`<?xml version="1.0" encoding="UTF-8"?>
+<CopyObjectResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <LastModified>2026-09-14T01:00:00.000Z</LastModified>
+  <ETag>"9dd7d2e2f0a63a6e6f8e8c0a2b3c4d5e"</ETag>
+</CopyObjectResult>`)),
+				Request: r,
+			}, nil
+		}),
+	})
+	require.NoError(t, err)
+
+	err = cli.copyObject(context.Background(), src, CopyObjectInput{
+		SrcCli:  src,
+		SrcAttr: ObjectAttr{Key: "src-key", Length: 1},
+		DestKey: "dest-key",
+	})
+	require.NoError(t, err)
+}
