@@ -1313,7 +1313,10 @@ jobs:
           cache: true
 
       - name: Build
-        timeout-minutes: 5
+        # The docker image build redoes go mod download with a cold cache on
+        # every runner; it measured ~3.5 min best case and the 5 min cap was
+        # killed by ordinary network variance, so give it headroom.
+        timeout-minutes: 10
         shell: bash
         run: |
           yq -i '.log.level = "debug"' configs/backup.yaml
