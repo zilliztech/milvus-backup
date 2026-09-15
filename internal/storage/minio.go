@@ -113,9 +113,22 @@ func (m *MinioClient) copyObject(ctx context.Context, srcCli *MinioClient, i Cop
 	dst := minio.CopyDestOptions{Bucket: m.cfg.Bucket, Object: i.DestKey}
 	src := minio.CopySrcOptions{Bucket: srcCli.cfg.Bucket, Object: i.SrcAttr.Key}
 	return retry.Do(ctx, func() error {
-		if _, err := m.cli.CopyObject(ctx, dst, src); err != nil {
+		info, err := m.cli.CopyObject(ctx, dst, src)
+		if err != nil {
 			return fmt.Errorf("storage: %s copy from %s / %s  to %s / %s %w", m.cfg.Provider, srcCli.cfg.Bucket, i.SrcAttr.Key, m.cfg.Bucket, i.DestKey, err)
 		}
+
+		// S3 documents that a failed CopyObject can still answer 200 OK with an
+		// <Error> document embedded in the body. minio-go's CopyObject decodes that
+		// body into a field-less copyObjectResult and reports success, leaving an
+		// empty ETag for a copy that never happened. Treat the empty ETag as a
+		// failure so the retry kicks in instead of silently dropping the object.
+		if info.ETag == "" {
+			return fmt.Errorf("storage: %s copy from %s / %s to %s / %s got empty etag, "+
+				"the copy likely failed with an embedded error", m.cfg.Provider,
+				srcCli.cfg.Bucket, i.SrcAttr.Key, m.cfg.Bucket, i.DestKey)
+		}
+
 		return nil
 	})
 }
