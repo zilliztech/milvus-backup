@@ -41,6 +41,8 @@ type options struct {
 	backupIndexExtra bool
 
 	rbac bool
+
+	forPreset string
 }
 
 func (o *options) validate() error {
@@ -54,6 +56,13 @@ func (o *options) validate() error {
 
 	if _, err := backup.ParseFormat(o.format); err != nil {
 		return fmt.Errorf("invalid format %s, only support %s", o.format, strings.Join(backup.SupportFormat(), ","))
+	}
+
+	// Surface an unknown purpose here, before storage clients are built from the
+	// config: a flag-level mistake should not need a reachable cluster to be
+	// reported. toOption applies the same expansion for real.
+	if err := expandPreset(o.forPreset, &backup.Option{}); err != nil {
+		return err
 	}
 
 	return nil
@@ -79,6 +88,8 @@ func (o *options) addFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVarP(&o.backupIndexExtra, "backup_index_extra", "", false, "whether backup index extra info")
 
 	cmd.Flags().BoolVarP(&o.rbac, "rbac", "", false, "whether backup RBAC meta")
+
+	cmd.Flags().StringVarP(&o.forPreset, "for", "", "", "purpose preset, one of [archive, clone, secondary]: forces the option values the matching restore path requires, overriding conflicting flags")
 
 	flags.AddRemoved(cmd, removedFlags)
 }
@@ -114,7 +125,7 @@ func (o *options) toOption(params *v2.Config) (backup.Option, error) {
 		return backup.Option{}, err
 	}
 
-	return backup.Option{
+	option := backup.Option{
 		BackupName: o.backupName,
 		PauseGC:    params.Backup.PauseGC.Val,
 
@@ -127,7 +138,13 @@ func (o *options) toOption(params *v2.Config) (backup.Option, error) {
 		BackupIndexExtra: o.backupIndexExtra,
 
 		Filter: f,
-	}, nil
+	}
+
+	if err := expandPreset(o.forPreset, &option); err != nil {
+		return backup.Option{}, err
+	}
+
+	return option, nil
 }
 
 func (o *options) toArgs(params *v2.Config) (backup.TaskArgs, error) {
@@ -163,6 +180,10 @@ func (o *options) run(cmd *cobra.Command, params *v2.Config) error {
 	args, err := o.toArgs(params)
 	if err != nil {
 		return fmt.Errorf("create: convert to args: %w", err)
+	}
+
+	if summary := presetSummary(o.forPreset, args.Option); summary != "" {
+		cmd.Println(summary)
 	}
 
 	task, err := backup.NewTask(args)
