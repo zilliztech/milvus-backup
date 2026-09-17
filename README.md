@@ -13,15 +13,17 @@ Use the [latest release](https://github.com/zilliztech/milvus-backup/releases) w
 
 A backup can be restored only to the same or a newer Milvus version:
 
-| Backup version | Restore to 2.4 | Restore to 2.5 | Restore to 2.6 |
-|----------------|----------------|----------------|----------------|
-| 2.2            | Supported      | Supported      | Supported      |
-| 2.3            | Supported      | Supported      | Supported      |
-| 2.4            | Supported      | Supported      | Supported      |
-| 2.5            | —              | Supported      | Supported      |
-| 2.6            | —              | —              | Supported      |
+| Backup version | Restore to 2.4 | Restore to 2.5 | Restore to 2.6 | Restore to 3.0* |
+|----------------|----------------|----------------|----------------|-----------------|
+| 2.2            | Supported      | Supported      | Supported      | Supported       |
+| 2.3            | Supported      | Supported      | Supported      | Supported       |
+| 2.4            | Supported      | Supported      | Supported      | Supported       |
+| 2.5            | —              | Supported      | Supported      | Supported       |
+| 2.6            | —              | —              | Supported      | Supported       |
 
 For example, a backup created from Milvus 2.5 cannot be restored to Milvus 2.4.
+
+\* Supported from Milvus 3.0.1 and later; 3.0.0 is not supported.
 
 ## Installation
 
