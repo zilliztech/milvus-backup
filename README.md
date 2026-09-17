@@ -9,19 +9,20 @@ Milvus Backup is a command-line tool and API service for backing up and restorin
 
 ## Compatibility
 
-Use the [latest release](https://github.com/zilliztech/milvus-backup/releases) whenever possible. The latest version supports backups from Milvus 2.2 and later, and restores to Milvus 2.4 and later.
+Use the [latest release](https://github.com/zilliztech/milvus-backup/releases) whenever possible. The latest version supports backups from Milvus 2.2 and later, and restores to Milvus 2.5 and later.
 
 A backup can be restored only to the same or a newer Milvus version:
 
-| Backup version | Restore to 2.4 | Restore to 2.5 | Restore to 2.6 | Restore to 3.0* |
-|----------------|----------------|----------------|----------------|-----------------|
-| 2.2            | Supported      | Supported      | Supported      | Supported       |
-| 2.3            | Supported      | Supported      | Supported      | Supported       |
-| 2.4            | Supported      | Supported      | Supported      | Supported       |
-| 2.5            | —              | Supported      | Supported      | Supported       |
-| 2.6            | —              | —              | Supported      | Supported       |
+| Backup version | Restore to 2.5 | Restore to 2.6 | Restore to 3.0* |
+|----------------|----------------|----------------|-----------------|
+| 2.2            | Supported      | Supported      | Supported       |
+| 2.3            | Supported      | Supported      | Supported       |
+| 2.4            | Supported      | Supported      | Supported       |
+| 2.5            | Supported      | Supported      | Supported       |
+| 2.6            | —              | Supported      | Supported       |
+| 3.0*           | —              | —              | Supported       |
 
-For example, a backup created from Milvus 2.5 cannot be restored to Milvus 2.4.
+For example, a backup created from Milvus 2.6 cannot be restored to Milvus 2.5.
 
 \* Supported from Milvus 3.0.1 and later; 3.0.0 is not supported.
 
