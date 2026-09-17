@@ -33,23 +33,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  unit-test-go:
-    name: Unit test go
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Set up Go ${{ env.go-version }}
-        uses: actions/setup-go@v7
-        with:
-          go-version: ${{ env.go-version }}
-          cache: true
-      # A gate, not the coverage run: the main Test workflow already reports
-      # unit coverage to Codecov on the same commit.
-      - name: Unit test with race
-        run: go test --race ./...
-
   test-backup-restore-rustfs:
-    needs: unit-test-go
     name: Backup and restore rustfs (master)
     runs-on: ubuntu-latest
     steps:
