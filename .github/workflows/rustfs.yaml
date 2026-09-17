@@ -1,0 +1,161 @@
+name: RustFS Test
+
+# Backup and restore against RustFS standing in for MinIO as the object
+# store. One job, master Milvus only: the point is that the S3-compatible
+# backend swap is invisible to Milvus and to milvus-backup, which the main
+# Test workflow's MinIO jobs already cover for every other dimension.
+on:
+  push:
+    branches:
+      - main
+      - v0.5
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'scripts/**'
+      - '.github/mergify.yml'
+  pull_request:
+    branches:
+      - main
+      - v0.5
+    paths-ignore:
+      - '**/*.md'
+      - 'docs/**'
+      - 'scripts/**'
+      - '.github/mergify.yml'
+  workflow_dispatch:
+
+env:
+  go-version: 1.26
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test-backup-restore-rustfs:
+    name: Backup and restore rustfs (master)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.10'
+          cache: pip
+
+      - uses: actions/setup-go@v7
+        name: Set up Go ${{ env.go-version }}
+        with:
+          go-version: ${{ env.go-version }}
+          cache: true
+
+      - name: Build
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          go get
+          go build
+
+      - name: Install dependency
+        timeout-minutes: 5
+        working-directory: tests
+        shell: bash
+        run: |
+          pip install -r requirements.txt --trusted-host https://test.pypi.org
+
+      - name: Milvus deploy with RustFS storage
+        timeout-minutes: 15
+        shell: bash
+        working-directory: deployment/standalone
+        run: |
+          tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag master-latest) && echo $tag
+          mv docker-compose-rustfs.yml docker-compose.yml
+          yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          cat custom_config.yaml || true
+          mkdir -p volumes/etcd volumes/rustfs volumes/milvus
+          sudo chmod -R 777 volumes
+          sudo docker compose -f docker-compose.yml up -d --wait
+          sudo docker compose -f docker-compose.yml ps -a
+
+      - name: Export docker-compose status after deploy
+        if: ${{ always() }}
+        shell: bash
+        working-directory: deployment/standalone
+        run: |
+          echo "=== Docker Compose Status ==="
+          sudo docker compose -f docker-compose.yml ps -a || true
+          echo "=== Standalone Container Full Logs ==="
+          sudo docker compose -f docker-compose.yml logs standalone || true
+          echo "=== RustFS Container Logs ==="
+          sudo docker compose -f docker-compose.yml logs rustfs || true
+
+      - name: Prepare data
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python example/prepare_data.py
+
+      - name: List RustFS files before backup
+        shell: bash
+        working-directory: deployment/standalone
+        run: |
+          sudo apt-get install -y tree > /dev/null 2>&1 || true
+          echo "=== RustFS volume tree (before backup) ==="
+          sudo tree volumes/rustfs/ | head -500
+
+      - name: Backup
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          ./milvus-backup check
+          ./milvus-backup list
+          ./milvus-backup create -n my_backup
+          ./milvus-backup list
+
+      - name: Restore backup
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          ./milvus-backup restore -n my_backup -s _recover
+
+      - name: Verify data
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python example/verify_data.py
+
+      - name: List RustFS files after backup
+        if: ${{ always() }}
+        shell: bash
+        working-directory: deployment/standalone
+        run: |
+          echo "=== RustFS volume tree (after backup) ==="
+          sudo tree volumes/rustfs/ | head -500
+
+      - name: delete backup
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          ./milvus-backup delete -n my_backup
+          ./milvus-backup list
+
+      - name: Export logs
+        if: ${{ always() }}
+        shell: bash
+        working-directory: deployment/standalone
+        run: |
+          mkdir -p /tmp/ci_logs
+          sudo docker compose -f docker-compose.yml logs standalone > /tmp/ci_logs/standalone.log 2>&1 || true
+          sudo docker compose -f docker-compose.yml logs rustfs > /tmp/ci_logs/rustfs.log 2>&1 || true
+          sudo docker compose -f docker-compose.yml logs etcd > /tmp/ci_logs/etcd.log 2>&1 || true
+
+      - name: Upload logs
+        if: ${{ ! success() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: rustfs-storage-logs
+          path: |
+            /tmp/ci_logs
+            ./server.log
