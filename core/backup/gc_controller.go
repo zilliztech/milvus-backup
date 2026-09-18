@@ -183,6 +183,7 @@ func (c *collGCCtrl) renewalGCLease() {
 			c.logger.Info("renewal pause gc lease done", zap.String("resp", resp))
 			ticket.ticketID = resp
 			ticket.expire = time.Now().Add(_defaultPauseDuration)
+			c.collIDTicket[collID] = ticket
 		}
 	}
 }
