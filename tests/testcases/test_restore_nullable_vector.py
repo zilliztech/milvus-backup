@@ -95,6 +95,14 @@ def _index_and_load(client, collection_name, fields):
                 index_type="BIN_FLAT",
                 metric_type="JACCARD",
             )
+        elif data_type == DataType.INT8_VECTOR:
+            # Int8Vector rejects FLAT; HNSW is its supported index.
+            index_params.add_index(
+                field_name=field_name,
+                index_type="HNSW",
+                metric_type="L2",
+                params={"M": 48, "efConstruction": 500},
+            )
         else:
             index_params.add_index(
                 field_name=field_name,
