@@ -74,6 +74,37 @@ def _describe_field(client, collection_name, field_name):
     raise AssertionError(f"field {field_name} not found in {collection_name}")
 
 
+def _index_and_load(client, collection_name, fields):
+    """Index every restored vector field and load, so query/search can run.
+
+    restore recreates the collection unloaded; a load needs an index on
+    each vector field first. Index types are chosen so they need no
+    training data (BIN_FLAT instead of BIN_IVF_FLAT, no IVF nlist limit).
+    """
+    index_params = client.prepare_index_params()
+    for field_name, data_type in fields:
+        if data_type == DataType.SPARSE_FLOAT_VECTOR:
+            index_params.add_index(
+                field_name=field_name,
+                index_type="SPARSE_INVERTED_INDEX",
+                metric_type="IP",
+            )
+        elif data_type == DataType.BINARY_VECTOR:
+            index_params.add_index(
+                field_name=field_name,
+                index_type="BIN_FLAT",
+                metric_type="JACCARD",
+            )
+        else:
+            index_params.add_index(
+                field_name=field_name,
+                index_type="FLAT",
+                metric_type="L2",
+            )
+    client.create_index(collection_name=collection_name, index_params=index_params)
+    client.load_collection(collection_name)
+
+
 # Vector dtypes whose Milvus support for `nullable=True` is in scope per PRD.
 # BINARY_VECTOR dim must be multiple of 8; SPARSE has no dim param.
 _VECTOR_CASES = [
@@ -173,6 +204,7 @@ class TestRestoreNullableVector(TestcaseBase):
         )
 
         # (b) per-row NULL preserved.
+        _index_and_load(self.milvus_client, restored, [(vec_field, data_type)])
         dst_query = self.milvus_client.query(
             collection_name=restored,
             filter="id >= 0",
@@ -335,6 +367,14 @@ class TestRestoreNullableVector(TestcaseBase):
         )
 
         # Sample-check NULL semantics on the added field.
+        _index_and_load(
+            self.milvus_client,
+            restored,
+            [
+                ("base_vector", DataType.FLOAT_VECTOR),
+                (new_vec, DataType.FLOAT_VECTOR),
+            ],
+        )
         dst_query = self.milvus_client.query(
             collection_name=restored,
             filter="id >= 0",
