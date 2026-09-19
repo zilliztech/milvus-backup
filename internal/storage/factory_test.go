@@ -129,3 +129,60 @@ func TestUseStreaming(t *testing.T) {
 		assert.True(t, UseStreaming(v2.TransferAuto, minio, other))
 	})
 }
+
+// storageConfig is the single point where a v2 storage section becomes the
+// config the clients run on: every usecase's params funnel through it, so
+// this mapping is what makes a forked override actually reach a client.
+func TestStorageConfigMapsSection(t *testing.T) {
+	s := &v2.StorageConfig{
+		Provider:   param.Value[string]{Val: v2.ProviderMinio},
+		Address:    param.Value[string]{Val: "minio"},
+		Port:       param.Value[int]{Val: 9000},
+		UseSSL:     param.Value[bool]{Val: true},
+		Region:     param.Value[string]{Val: "us-east-1"},
+		BucketName: param.Value[string]{Val: "bucket"},
+		Auth: v2.StorageAuthConfig{
+			Type:            param.Value[string]{Val: v2.AuthStatic},
+			AccessKeyID:     param.Value[string]{Val: "ak"},
+			SecretAccessKey: param.Value[string]{Val: "sk"},
+		},
+	}
+
+	got := storageConfig(s, 64)
+
+	assert.Equal(t, v2.ProviderMinio, got.Provider)
+	assert.Equal(t, "minio:9000", got.Endpoint)
+	assert.True(t, got.UseSSL)
+	assert.Equal(t, "us-east-1", got.Region)
+	assert.Equal(t, "bucket", got.Bucket)
+	assert.Equal(t, "ak", got.Credential.AK)
+	assert.Equal(t, "sk", got.Credential.SK)
+	assert.Empty(t, got.MilvusEndpoint)
+	assert.Equal(t, int64(64), got.MultipartCopyThresholdMiB)
+}
+
+// The wrappers pick their section off the whole config. The restore, create
+// and get_backup handlers fork backup.storage.* keys, so the backup client
+// must read the backup section, not the milvus one.
+func TestBackupAndMilvusStorageConfigReadTheirSections(t *testing.T) {
+	c := &v2.Config{
+		Milvus: v2.MilvusConfig{Storage: v2.StorageConfig{
+			BucketName: param.Value[string]{Val: "milvus-bucket"},
+			Address:    param.Value[string]{Val: "milvus-minio"},
+			Port:       param.Value[int]{Val: 9000},
+		}},
+		Backup: v2.BackupConfig{Storage: v2.StorageConfig{
+			BucketName: param.Value[string]{Val: "backup-bucket"},
+			Address:    param.Value[string]{Val: "backup-minio"},
+			Port:       param.Value[int]{Val: 9001},
+		}},
+	}
+
+	backup := BackupStorageConfig(c)
+	assert.Equal(t, "backup-bucket", backup.Bucket)
+	assert.Equal(t, "backup-minio:9001", backup.Endpoint)
+
+	milvus := MilvusStorageConfig(c)
+	assert.Equal(t, "milvus-bucket", milvus.Bucket)
+	assert.Equal(t, "milvus-minio:9000", milvus.Endpoint)
+}
