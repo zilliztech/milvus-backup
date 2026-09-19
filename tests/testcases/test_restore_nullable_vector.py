@@ -137,6 +137,9 @@ class TestRestoreNullableVector(TestcaseBase):
         schema.add_field("id", DataType.INT64, is_primary=True)
         _add_vector_field(schema, data_type, vec_field, dim, nullable=True)
         self.milvus_client.create_collection(collection_name=collection_name, schema=schema)
+        # create_collection with an explicit schema skips index and load
+        # unless index_params is passed, so do both before querying.
+        _index_and_load(self.milvus_client, collection_name, [(vec_field, data_type)])
         log.info(f"created collection {collection_name} with nullable {data_type.name}")
 
         src_field = _describe_field(self.milvus_client, collection_name, vec_field)
