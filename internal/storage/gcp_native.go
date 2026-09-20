@@ -107,7 +107,7 @@ func (g *GcpNativeObjectIterator) Next(_ context.Context) (ObjectAttr, bool, err
 // keeps no background goroutine.
 func (g *GcpNativeObjectIterator) Close() error { return nil }
 
-func (gcm *GCPNativeClient) ListPrefix(ctx context.Context, prefix string, recursive bool) (ObjectIterator, error) {
+func (gcm *GCPNativeClient) NewObjectIter(ctx context.Context, prefix string, recursive bool) ObjectIterator {
 	delimiter := ""
 	if !recursive {
 		delimiter = "/"
@@ -118,7 +118,7 @@ func (gcm *GCPNativeClient) ListPrefix(ctx context.Context, prefix string, recur
 		Delimiter: delimiter,
 	})
 
-	return &GcpNativeObjectIterator{iter: iter}, nil
+	return &GcpNativeObjectIterator{iter: iter}
 }
 
 func (gcm *GCPNativeClient) BucketExist(ctx context.Context, _ string) (bool, error) {

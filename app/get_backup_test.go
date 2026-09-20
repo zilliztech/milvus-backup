@@ -26,7 +26,7 @@ func expectMetaExist(t *testing.T, cli *storage.MockClient, backupDir string, ex
 	} else {
 		iter = storage.NewMockObjectIterator(nil)
 	}
-	cli.EXPECT().ListPrefix(mock.Anything, backupDir+"/meta/backup_meta.json", false).Return(iter, nil)
+	cli.EXPECT().NewObjectIter(mock.Anything, backupDir+"/meta/backup_meta.json", false).Return(iter)
 }
 
 // expectMetaSize teaches the mock client to answer the meta dir size probe.
@@ -36,7 +36,7 @@ func expectMetaSize(t *testing.T, cli *storage.MockClient, backupDir string, siz
 	iter := storage.NewMockObjectIterator([]storage.ObjectAttr{
 		{Key: backupDir + "/meta/full_meta.json", Length: size},
 	})
-	cli.EXPECT().ListPrefix(mock.Anything, backupDir+"/meta/", true).Return(iter, nil)
+	cli.EXPECT().NewObjectIter(mock.Anything, backupDir+"/meta/", true).Return(iter)
 }
 
 // expectReadableBackup teaches the mock client the whole read of one backup:
@@ -88,8 +88,8 @@ func TestGetBackupExecute(t *testing.T) {
 	t.Run("FailsWhenExistCheckFails", func(t *testing.T) {
 		cli := storage.NewMockClient(t)
 		cli.EXPECT().
-			ListPrefix(mock.Anything, "root/backup1/meta/backup_meta.json", false).
-			Return(nil, errors.New("connection closed"))
+			NewObjectIter(mock.Anything, "root/backup1/meta/backup_meta.json", false).
+			Return(&errorIterator{err: errors.New("connection closed")})
 
 		uc := &GetBackup{cli: cli, rootPath: "root"}
 		info, _, err := uc.Execute(context.Background(), "backup1")
@@ -104,8 +104,8 @@ func TestGetBackupExecute(t *testing.T) {
 		expectMetaExist(t, cli, backupDir, true)
 		expectFullMeta(t, cli, backupDir, &backuppb.BackupInfo{Name: "backup1"})
 		cli.EXPECT().
-			ListPrefix(mock.Anything, backupDir+"/meta/", true).
-			Return(nil, errors.New("connection closed"))
+			NewObjectIter(mock.Anything, backupDir+"/meta/", true).
+			Return(&errorIterator{err: errors.New("connection closed")})
 
 		uc := &GetBackup{cli: cli, rootPath: "root"}
 		info, _, err := uc.Execute(context.Background(), "backup1")

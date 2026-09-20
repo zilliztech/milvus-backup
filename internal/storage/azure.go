@@ -374,14 +374,14 @@ type AzureObjectHierarchyIterator struct {
 	pageIterator[container.ListBlobsHierarchyResponse]
 }
 
-func (a *AzureClient) ListPrefix(_ context.Context, prefix string, recursive bool) (ObjectIterator, error) {
+func (a *AzureClient) NewObjectIter(_ context.Context, prefix string, recursive bool) ObjectIterator {
 	if recursive {
-		return a.listPrefixRecursive(prefix)
+		return a.newPrefixIterRecursive(prefix)
 	}
-	return a.listPrefixNonRecursive(prefix)
+	return a.newPrefixIterNonRecursive(prefix)
 }
 
-func (a *AzureClient) listPrefixRecursive(prefix string) (*AzureObjectFlatIterator, error) {
+func (a *AzureClient) newPrefixIterRecursive(prefix string) *AzureObjectFlatIterator {
 	pager := a.cli.NewListBlobsFlatPager(a.cfg.Bucket, &azblob.ListBlobsFlatOptions{Prefix: to.Ptr(prefix)})
 
 	return &AzureObjectFlatIterator{pageIterator: pageIterator[azblob.ListBlobsFlatResponse]{
@@ -393,10 +393,10 @@ func (a *AzureClient) listPrefixRecursive(prefix string) (*AzureObjectFlatIterat
 			}
 			return attrs
 		},
-	}}, nil
+	}}
 }
 
-func (a *AzureClient) listPrefixNonRecursive(prefix string) (*AzureObjectHierarchyIterator, error) {
+func (a *AzureClient) newPrefixIterNonRecursive(prefix string) *AzureObjectHierarchyIterator {
 	pager := a.cli.ServiceClient().
 		NewContainerClient(a.cfg.Bucket).
 		NewListBlobsHierarchyPager("/", &container.ListBlobsHierarchyOptions{Prefix: to.Ptr(prefix)})
@@ -413,7 +413,7 @@ func (a *AzureClient) listPrefixNonRecursive(prefix string) (*AzureObjectHierarc
 			}
 			return attrs
 		},
-	}}, nil
+	}}
 }
 
 func (a *AzureClient) DeleteObject(ctx context.Context, key string) error {

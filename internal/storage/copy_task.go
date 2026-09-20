@@ -58,10 +58,7 @@ func (c *CopyPrefixTask) copy(ctx context.Context, src ObjectAttr) error {
 
 func (c *CopyPrefixTask) Execute(ctx context.Context) error {
 	c.logger.Info("start copy prefix")
-	iter, err := c.opt.Src.ListPrefix(ctx, c.opt.SrcPrefix, true)
-	if err != nil {
-		return fmt.Errorf("storage: copy prefix walk prefix %w", err)
-	}
+	iter := c.opt.Src.NewObjectIter(ctx, c.opt.SrcPrefix, true)
 	defer iter.Close()
 
 	// Derive a cancellable context so in-flight copies can be stopped when the

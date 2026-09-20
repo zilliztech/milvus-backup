@@ -132,6 +132,8 @@ func (c CredentialType) String() string {
 // next object, or ok=false once the listing is exhausted. err is non-nil only
 // on a real failure; exhaustion is not an error.
 //
+// It is not safe for concurrent use by multiple goroutines.
+//
 // The caller must Close the iterator when done, even after exhaustion or an
 // early return. Implementations may start a background listing goroutine that
 // Close is responsible for stopping; without it, a provider-backed iterator
@@ -158,8 +160,11 @@ type Client interface {
 	// DeleteObject delete an object
 	DeleteObject(ctx context.Context, key string) error
 
-	// ListPrefix list all objects with same prefix, and call WalkFunc for each object.
-	ListPrefix(ctx context.Context, prefix string, recursive bool) (ObjectIterator, error)
+	// NewObjectIter returns an iterator over the objects sharing prefix. The
+	// constructor cannot fail: implementations start listing lazily and report
+	// errors through ObjectIterator.Next, so the iterator is never nil and
+	// Close is always callable.
+	NewObjectIter(ctx context.Context, prefix string, recursive bool) ObjectIterator
 
 	// BucketExist use a prefix to check if bucket exist.
 	// Using a prefix to confirm whether a bucket exists can avoid requesting the head Bucket permission.

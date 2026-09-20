@@ -36,8 +36,8 @@ func TestCopyPrefixTask_Execute(t *testing.T) {
 			{Key: "src/dir/", Length: 0}, // directory marker, must be skipped
 		}
 		iter := &mockObjectIterator{objs: objs}
-		src.EXPECT().ListPrefix(mock.Anything, "src/", true).
-			Return(iter, nil).Once()
+		src.EXPECT().NewObjectIter(mock.Anything, "src/", true).
+			Return(iter).Once()
 		dest.EXPECT().CopyObject(mock.Anything, CopyObjectInput{SrcCli: src, SrcAttr: ObjectAttr{Key: "src/a", Length: 1}, DestKey: "dest/a"}).Return(nil).Once()
 		dest.EXPECT().CopyObject(mock.Anything, CopyObjectInput{SrcCli: src, SrcAttr: ObjectAttr{Key: "src/b/c", Length: 2}, DestKey: "dest/b/c"}).Return(nil).Once()
 
@@ -46,17 +46,17 @@ func TestCopyPrefixTask_Execute(t *testing.T) {
 		assert.True(t, iter.closed, "CopyPrefixTask must close the iterator")
 	})
 
-	t.Run("ListError", func(t *testing.T) {
+	t.Run("IterError", func(t *testing.T) {
 		src := NewMockClient(t)
 		dest := NewMockClient(t)
 		src.EXPECT().Config().Return(Config{Bucket: "src"}).Maybe()
 		dest.EXPECT().Config().Return(Config{Bucket: "dest"}).Maybe()
-		src.EXPECT().ListPrefix(mock.Anything, "src/", true).Return(nil, assert.AnError).Once()
+		src.EXPECT().NewObjectIter(mock.Anything, "src/", true).Return(errorIterator{}).Once()
 
 		task := NewCopyPrefixTask(CopyPrefixOpt{Src: src, Dest: dest, SrcPrefix: "src/", DestPrefix: "dest/", Sem: semaphore.NewWeighted(2)})
 		err := task.Execute(context.Background())
 		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "walk prefix")
+		assert.Contains(t, err.Error(), "iter object")
 	})
 
 	t.Run("CopyError", func(t *testing.T) {
@@ -66,7 +66,7 @@ func TestCopyPrefixTask_Execute(t *testing.T) {
 		dest.EXPECT().Config().Return(Config{Bucket: "dest"}).Maybe()
 		objs := []ObjectAttr{{Key: "src/a", Length: 1}}
 		iter := &mockObjectIterator{objs: objs}
-		src.EXPECT().ListPrefix(mock.Anything, "src/", true).Return(iter, nil).Once()
+		src.EXPECT().NewObjectIter(mock.Anything, "src/", true).Return(iter).Once()
 		dest.EXPECT().CopyObject(mock.Anything, mock.Anything).Return(retry.Unrecoverable(assert.AnError)).Once()
 
 		task := NewCopyPrefixTask(CopyPrefixOpt{Src: src, Dest: dest, SrcPrefix: "src/", DestPrefix: "dest/", Sem: semaphore.NewWeighted(1)})
@@ -98,7 +98,7 @@ func TestCopyPrefixTask_Execute(t *testing.T) {
 		// The iterator yields one object, then errors so Execute returns
 		// before the listing is drained.
 		iter := &iterWithError{objs: []ObjectAttr{{Key: "src/a", Length: 1}}}
-		src.EXPECT().ListPrefix(mock.Anything, "src/", true).Return(iter, nil).Once()
+		src.EXPECT().NewObjectIter(mock.Anything, "src/", true).Return(iter).Once()
 
 		task := NewCopyPrefixTask(CopyPrefixOpt{Src: src, Dest: dest, SrcPrefix: "src/", DestPrefix: "dest/", Sem: semaphore.NewWeighted(2)})
 		err := task.Execute(context.Background())

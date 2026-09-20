@@ -280,8 +280,8 @@ func newTestDMLTask(t *testing.T, collBackup *backuppb.CollectionBackupInfo, str
 
 	storageMock := storage.NewMockClient(t)
 	storageMock.EXPECT().
-		ListPrefix(mock.Anything, mock.Anything, false).
-		Return(storage.NewMockObjectIterator(nil), nil).
+		NewObjectIter(mock.Anything, mock.Anything, false).
+		Return(storage.NewMockObjectIterator(nil)).
 		Maybe()
 
 	return &collDMLTask{
@@ -402,8 +402,8 @@ func TestConcurrentCollections_TimestampOrderingPerPch(t *testing.T) {
 
 	storageMock := storage.NewMockClient(t)
 	storageMock.EXPECT().
-		ListPrefix(mock.Anything, mock.Anything, false).
-		Return(storage.NewMockObjectIterator(nil), nil).
+		NewObjectIter(mock.Anything, mock.Anything, false).
+		Return(storage.NewMockObjectIterator(nil)).
 		Maybe()
 
 	// Create 4 collections with different vchannels mapping to the same 2 pchs.

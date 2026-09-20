@@ -41,11 +41,11 @@ func expectStoragesReadable(t *testing.T, milvusCli, backupCli *storage.MockClie
 	t.Helper()
 
 	milvusCli.EXPECT().
-		ListPrefix(mock.Anything, milvusRoot+"/", true).
-		Return(storage.NewMockObjectIterator(milvusFiles), nil)
+		NewObjectIter(mock.Anything, milvusRoot+"/", true).
+		Return(storage.NewMockObjectIterator(milvusFiles))
 	backupCli.EXPECT().
-		ListPrefix(mock.Anything, backupRoot+"/", false).
-		Return(storage.NewMockObjectIterator(nil), nil)
+		NewObjectIter(mock.Anything, backupRoot+"/", false).
+		Return(storage.NewMockObjectIterator(nil))
 }
 
 // expectWriteAndCopy teaches the mocks for the write-and-copy step: one byte
@@ -70,16 +70,16 @@ func expectWriteAndCopy(t *testing.T, milvusCli, backupCli *storage.MockClient) 
 		return storage.NewMockObjectIterator([]storage.ObjectAttr{{Key: "copied-object", Length: 1}})
 	}
 	milvusCli.EXPECT().
-		ListPrefix(mock.Anything, mock.Anything, true).
-		Return(oneObject(), nil).
+		NewObjectIter(mock.Anything, mock.Anything, true).
+		Return(oneObject()).
 		Once()
 	milvusCli.EXPECT().
-		ListPrefix(mock.Anything, mock.Anything, true).
-		Return(oneObject(), nil).
+		NewObjectIter(mock.Anything, mock.Anything, true).
+		Return(oneObject()).
 		Once()
 	backupCli.EXPECT().
-		ListPrefix(mock.Anything, mock.Anything, true).
-		Return(oneObject(), nil).
+		NewObjectIter(mock.Anything, mock.Anything, true).
+		Return(oneObject()).
 		Once()
 
 	backupCli.EXPECT().CopyObject(mock.Anything, mock.Anything).Return(nil)
@@ -148,8 +148,8 @@ func TestCheckExecute(t *testing.T) {
 
 		milvusCli := storage.NewMockClient(t)
 		milvusCli.EXPECT().
-			ListPrefix(mock.Anything, milvusRoot+"/", true).
-			Return(nil, errors.New("stat denied"))
+			NewObjectIter(mock.Anything, milvusRoot+"/", true).
+			Return(&errorIterator{err: errors.New("stat denied")})
 
 		uc := newCheckUnderTest(grpc, milvusCli, storage.NewMockClient(t))
 		err := uc.Execute(context.Background(), &bytes.Buffer{})
@@ -165,12 +165,12 @@ func TestCheckExecute(t *testing.T) {
 
 		milvusCli := storage.NewMockClient(t)
 		milvusCli.EXPECT().
-			ListPrefix(mock.Anything, milvusRoot+"/", true).
-			Return(storage.NewMockObjectIterator(nil), nil)
+			NewObjectIter(mock.Anything, milvusRoot+"/", true).
+			Return(storage.NewMockObjectIterator(nil))
 		backupCli := storage.NewMockClient(t)
 		backupCli.EXPECT().
-			ListPrefix(mock.Anything, backupRoot+"/", false).
-			Return(nil, errors.New("bucket denied")).
+			NewObjectIter(mock.Anything, backupRoot+"/", false).
+			Return(&errorIterator{err: errors.New("bucket denied")}).
 			Once()
 
 		uc := newCheckUnderTest(grpc, milvusCli, backupCli)
@@ -211,8 +211,8 @@ func TestCheckExecute(t *testing.T) {
 		milvusCli.EXPECT().Config().Return(storage.Config{}).Times(2)
 		backupCli.EXPECT().Config().Return(storage.Config{}).Times(2)
 		milvusCli.EXPECT().
-			ListPrefix(mock.Anything, mock.Anything, true).
-			Return(nil, errors.New("src list denied")).
+			NewObjectIter(mock.Anything, mock.Anything, true).
+			Return(&errorIterator{err: errors.New("src list denied")}).
 			Once()
 		// The written check object is still cleaned up when the copy fails.
 		milvusCli.EXPECT().DeleteObject(mock.Anything, mock.Anything).Return(nil).Once()
