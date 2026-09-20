@@ -27,7 +27,7 @@ func TestDeleteBackupExecute(t *testing.T) {
 			{Key: "root/backup1/data/1.parquet", Length: 100},
 			{Key: "root/backup1/data/2.parquet", Length: 200},
 		})
-		cli.EXPECT().ListPrefix(mock.Anything, "root/backup1/", true).Return(iter, nil)
+		cli.EXPECT().NewObjectIter(mock.Anything, "root/backup1/", true).Return(iter)
 		for _, key := range []string{
 			"root/backup1/meta/full_meta.json",
 			"root/backup1/data/1.parquet",
@@ -48,8 +48,8 @@ func TestDeleteBackupExecute(t *testing.T) {
 		// The meta exist check fails, so the delete never starts; an
 		// unexpected DeleteObject call would fail the mock.
 		cli.EXPECT().
-			ListPrefix(mock.Anything, "root/backup1/meta/full_meta.json", false).
-			Return(nil, errors.New("stat denied"))
+			NewObjectIter(mock.Anything, "root/backup1/meta/full_meta.json", false).
+			Return(&errorIterator{err: errors.New("stat denied")})
 
 		uc := &DeleteBackup{cli: cli, rootPath: "root"}
 		err := uc.Execute(context.Background(), "backup1")
@@ -63,8 +63,8 @@ func TestDeleteBackupExecute(t *testing.T) {
 		expectFullMeta(t, cli, "root/backup1",
 			&backuppb.BackupInfo{Id: "a", Name: "backup1"})
 		cli.EXPECT().
-			ListPrefix(mock.Anything, "root/backup1/", true).
-			Return(nil, errors.New("connection closed"))
+			NewObjectIter(mock.Anything, "root/backup1/", true).
+			Return(&errorIterator{err: errors.New("connection closed")})
 
 		uc := &DeleteBackup{cli: cli, rootPath: "root"}
 		err := uc.Execute(context.Background(), "backup1")

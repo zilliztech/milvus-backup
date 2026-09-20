@@ -116,8 +116,8 @@ func TestExist(t *testing.T) {
 		iter := storage.NewMockObjectIterator(objs)
 		cli := storage.NewMockClient(t)
 		cli.EXPECT().
-			ListPrefix(mock.Anything, "backup/backup1/meta/backup_meta.json", false).
-			Return(iter, nil)
+			NewObjectIter(mock.Anything, "backup/backup1/meta/backup_meta.json", false).
+			Return(iter)
 
 		exist, err := Exist(context.Background(), cli, "backup/backup1")
 		assert.NoError(t, err)
@@ -128,8 +128,8 @@ func TestExist(t *testing.T) {
 		iter := storage.NewMockObjectIterator([]storage.ObjectAttr{})
 		cli := storage.NewMockClient(t)
 		cli.EXPECT().
-			ListPrefix(mock.Anything, "backup/backup1/meta/backup_meta.json", false).
-			Return(iter, nil)
+			NewObjectIter(mock.Anything, "backup/backup1/meta/backup_meta.json", false).
+			Return(iter)
 
 		exist, err := Exist(context.Background(), cli, "backup/backup1")
 		assert.NoError(t, err)

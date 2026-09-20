@@ -37,8 +37,8 @@ func newMockStorage(t *testing.T, prefix string, objs []storage.ObjectAttr) stor
 
 	st := storage.NewMockClient(t)
 	st.EXPECT().
-		ListPrefix(mock.Anything, prefix, true).
-		Return(iter, nil)
+		NewObjectIter(mock.Anything, prefix, true).
+		Return(iter)
 	return st
 }
 
@@ -216,10 +216,12 @@ func TestCollDMLTask_verifySegmentsData(t *testing.T) {
 
 	t.Run("AllPresent", func(t *testing.T) {
 		st := storage.NewMockClient(t)
-		st.EXPECT().ListPrefix(mock.Anything, insertColl, true).
-			Return(storage.NewMockObjectIterator([]storage.ObjectAttr{{Key: insertKey, Length: 5}}), nil).Once()
-		st.EXPECT().ListPrefix(mock.Anything, deltaColl, true).
-			Return(storage.NewMockObjectIterator([]storage.ObjectAttr{{Key: deltaKey, Length: 7}}), nil).Once()
+		st.EXPECT().
+			NewObjectIter(mock.Anything, insertColl, true).
+			Return(storage.NewMockObjectIterator([]storage.ObjectAttr{{Key: insertKey, Length: 5}})).Once()
+		st.EXPECT().
+			NewObjectIter(mock.Anything, deltaColl, true).
+			Return(storage.NewMockObjectIterator([]storage.ObjectAttr{{Key: deltaKey, Length: 7}})).Once()
 
 		dmlt := newTestCollDMLTask()
 		dmlt.backupStorage = st
@@ -231,8 +233,9 @@ func TestCollDMLTask_verifySegmentsData(t *testing.T) {
 
 	t.Run("InsertMissing", func(t *testing.T) {
 		st := storage.NewMockClient(t)
-		st.EXPECT().ListPrefix(mock.Anything, insertColl, true).
-			Return(storage.NewMockObjectIterator(nil), nil).Once()
+		st.EXPECT().
+			NewObjectIter(mock.Anything, insertColl, true).
+			Return(storage.NewMockObjectIterator(nil)).Once()
 
 		dmlt := newTestCollDMLTask()
 		dmlt.backupStorage = st

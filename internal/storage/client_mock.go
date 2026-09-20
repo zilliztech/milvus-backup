@@ -446,19 +446,15 @@ func (_c *MockClient_HeadObject_Call) RunAndReturn(run func(ctx context.Context,
 	return _c
 }
 
-// ListPrefix provides a mock function for the type MockClient
-func (_mock *MockClient) ListPrefix(ctx context.Context, prefix string, recursive bool) (ObjectIterator, error) {
+// NewObjectIter provides a mock function for the type MockClient
+func (_mock *MockClient) NewObjectIter(ctx context.Context, prefix string, recursive bool) ObjectIterator {
 	ret := _mock.Called(ctx, prefix, recursive)
 
 	if len(ret) == 0 {
-		panic("no return value specified for ListPrefix")
+		panic("no return value specified for NewObjectIter")
 	}
 
 	var r0 ObjectIterator
-	var r1 error
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, bool) (ObjectIterator, error)); ok {
-		return returnFunc(ctx, prefix, recursive)
-	}
 	if returnFunc, ok := ret.Get(0).(func(context.Context, string, bool) ObjectIterator); ok {
 		r0 = returnFunc(ctx, prefix, recursive)
 	} else {
@@ -466,28 +462,23 @@ func (_mock *MockClient) ListPrefix(ctx context.Context, prefix string, recursiv
 			r0 = ret.Get(0).(ObjectIterator)
 		}
 	}
-	if returnFunc, ok := ret.Get(1).(func(context.Context, string, bool) error); ok {
-		r1 = returnFunc(ctx, prefix, recursive)
-	} else {
-		r1 = ret.Error(1)
-	}
-	return r0, r1
+	return r0
 }
 
-// MockClient_ListPrefix_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListPrefix'
-type MockClient_ListPrefix_Call struct {
+// MockClient_NewObjectIter_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'NewObjectIter'
+type MockClient_NewObjectIter_Call struct {
 	*mock.Call
 }
 
-// ListPrefix is a helper method to define mock.On call
+// NewObjectIter is a helper method to define mock.On call
 //   - ctx context.Context
 //   - prefix string
 //   - recursive bool
-func (_e *MockClient_Expecter) ListPrefix(ctx any, prefix any, recursive any) *MockClient_ListPrefix_Call {
-	return &MockClient_ListPrefix_Call{Call: _e.mock.On("ListPrefix", ctx, prefix, recursive)}
+func (_e *MockClient_Expecter) NewObjectIter(ctx any, prefix any, recursive any) *MockClient_NewObjectIter_Call {
+	return &MockClient_NewObjectIter_Call{Call: _e.mock.On("NewObjectIter", ctx, prefix, recursive)}
 }
 
-func (_c *MockClient_ListPrefix_Call) Run(run func(ctx context.Context, prefix string, recursive bool)) *MockClient_ListPrefix_Call {
+func (_c *MockClient_NewObjectIter_Call) Run(run func(ctx context.Context, prefix string, recursive bool)) *MockClient_NewObjectIter_Call {
 	_c.Call.Run(func(args mock.Arguments) {
 		var arg0 context.Context
 		if args[0] != nil {
@@ -510,12 +501,12 @@ func (_c *MockClient_ListPrefix_Call) Run(run func(ctx context.Context, prefix s
 	return _c
 }
 
-func (_c *MockClient_ListPrefix_Call) Return(objectIterator ObjectIterator, err error) *MockClient_ListPrefix_Call {
-	_c.Call.Return(objectIterator, err)
+func (_c *MockClient_NewObjectIter_Call) Return(objectIterator ObjectIterator) *MockClient_NewObjectIter_Call {
+	_c.Call.Return(objectIterator)
 	return _c
 }
 
-func (_c *MockClient_ListPrefix_Call) RunAndReturn(run func(ctx context.Context, prefix string, recursive bool) (ObjectIterator, error)) *MockClient_ListPrefix_Call {
+func (_c *MockClient_NewObjectIter_Call) RunAndReturn(run func(ctx context.Context, prefix string, recursive bool) ObjectIterator) *MockClient_NewObjectIter_Call {
 	_c.Call.Return(run)
 	return _c
 }

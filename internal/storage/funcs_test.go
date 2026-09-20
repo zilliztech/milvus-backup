@@ -66,8 +66,8 @@ func TestSize(t *testing.T) {
 
 	iter := &mockObjectIterator{objs: objs}
 	cli.EXPECT().
-		ListPrefix(context.Background(), "a/b/", true).
-		Return(iter, nil)
+		NewObjectIter(context.Background(), "a/b/", true).
+		Return(iter)
 
 	size, err := Size(context.Background(), cli, "a/b/")
 	assert.NoError(t, err)
@@ -87,8 +87,8 @@ func TestListPrefixFlat(t *testing.T) {
 
 	iter := &mockObjectIterator{objs: objs}
 	cli.EXPECT().
-		ListPrefix(context.Background(), "a/b", true).
-		Return(iter, nil)
+		NewObjectIter(context.Background(), "a/b", true).
+		Return(iter)
 
 	keys, sizes, err := ListPrefixFlat(context.Background(), cli, "a/b", true)
 	assert.NoError(t, err)
@@ -110,8 +110,8 @@ func TestDeletePrefix(t *testing.T) {
 
 		iter := &mockObjectIterator{objs: objs}
 		cli.EXPECT().
-			ListPrefix(mock.Anything, "a/b", true).
-			Return(iter, nil)
+			NewObjectIter(mock.Anything, "a/b", true).
+			Return(iter)
 
 		for _, obj := range objs {
 			cli.EXPECT().
@@ -147,8 +147,8 @@ func TestDeletePrefix(t *testing.T) {
 		// before the listing is drained.
 		iter := &iterWithError{objs: []ObjectAttr{{Key: "a/b/c", Length: 1}}}
 		cli.EXPECT().
-			ListPrefix(mock.Anything, "a/b", true).
-			Return(iter, nil)
+			NewObjectIter(mock.Anything, "a/b", true).
+			Return(iter)
 
 		err := DeletePrefix(context.Background(), cli, "a/b")
 		assert.Error(t, err)
@@ -182,8 +182,8 @@ func TestExist(t *testing.T) {
 
 		iter := &mockObjectIterator{objs: objs}
 		cli.EXPECT().
-			ListPrefix(mock.Anything, "a/b", false).
-			Return(iter, nil)
+			NewObjectIter(mock.Anything, "a/b", false).
+			Return(iter)
 
 		exist, err := Exist(context.Background(), cli, "a/b")
 		assert.NoError(t, err)
@@ -196,8 +196,8 @@ func TestExist(t *testing.T) {
 
 		iter := &mockObjectIterator{}
 		cli.EXPECT().
-			ListPrefix(mock.Anything, "a/b", false).
-			Return(iter, nil)
+			NewObjectIter(mock.Anything, "a/b", false).
+			Return(iter)
 
 		exist, err := Exist(context.Background(), cli, "a/b")
 		assert.NoError(t, err)

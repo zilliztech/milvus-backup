@@ -352,11 +352,11 @@ func (m *MinioObjectIterator) Close() error {
 	return nil
 }
 
-func (m *MinioClient) ListPrefix(ctx context.Context, prefix string, recursive bool) (ObjectIterator, error) {
+func (m *MinioClient) NewObjectIter(ctx context.Context, prefix string, recursive bool) ObjectIterator {
 	opt := minio.ListObjectsOptions{Prefix: prefix, Recursive: recursive}
 	subCtx, cancel := context.WithCancel(ctx)
 	objCh := m.cli.ListObjects(subCtx, m.cfg.Bucket, opt)
-	return &MinioObjectIterator{cli: m, cancel: cancel, objCh: objCh}, nil
+	return &MinioObjectIterator{cli: m, cancel: cancel, objCh: objCh}
 }
 
 // BucketExist checks if the bucket exists by listing a single object.

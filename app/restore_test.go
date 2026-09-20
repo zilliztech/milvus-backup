@@ -45,7 +45,7 @@ func expectBackupExists(t *testing.T, cli *storage.MockClient, backupDir string)
 
 	key := backupDir + "meta/backup_meta.json"
 	iter := storage.NewMockObjectIterator([]storage.ObjectAttr{{Key: key, Length: 10}})
-	cli.EXPECT().ListPrefix(mock.Anything, key, false).Return(iter, nil)
+	cli.EXPECT().NewObjectIter(mock.Anything, key, false).Return(iter)
 }
 
 // expectNoBackup teaches the mock client that the backup dir does not exist.
@@ -54,7 +54,7 @@ func expectNoBackup(t *testing.T, cli *storage.MockClient, backupDir string) {
 
 	key := backupDir + "meta/backup_meta.json"
 	iter := storage.NewMockObjectIterator(nil)
-	cli.EXPECT().ListPrefix(mock.Anything, key, false).Return(iter, nil)
+	cli.EXPECT().NewObjectIter(mock.Anything, key, false).Return(iter)
 }
 
 func TestRestoreStart(t *testing.T) {
@@ -104,8 +104,8 @@ func TestRestoreStart(t *testing.T) {
 		backupCli := storage.NewMockClient(t)
 
 		backupCli.EXPECT().
-			ListPrefix(mock.Anything, "backup1/meta/backup_meta.json", false).
-			Return(nil, errors.New("stat denied"))
+			NewObjectIter(mock.Anything, "backup1/meta/backup_meta.json", false).
+			Return(&errorIterator{err: errors.New("stat denied")})
 
 		uc := newTestRestore(backupCli, storage.NewMockClient(t))
 		_, err := uc.Start(context.Background(), RestoreRequest{TaskID: "restore_1", BackupName: "backup1"})
@@ -120,8 +120,8 @@ func TestRestoreStart(t *testing.T) {
 		// The full meta cannot even be checked for existence, so the read
 		// fails instead of falling back to the per-level meta.
 		backupCli.EXPECT().
-			ListPrefix(mock.Anything, "backup1/meta/full_meta.json", false).
-			Return(nil, errors.New("read denied"))
+			NewObjectIter(mock.Anything, "backup1/meta/full_meta.json", false).
+			Return(&errorIterator{err: errors.New("read denied")})
 
 		uc := newTestRestore(backupCli, storage.NewMockClient(t))
 		_, err := uc.Start(context.Background(), RestoreRequest{TaskID: "restore_1", BackupName: "backup1"})

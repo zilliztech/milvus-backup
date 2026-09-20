@@ -18,8 +18,8 @@ func TestVerifyPrefixTask_Execute(t *testing.T) {
 		}
 		iter := &mockObjectIterator{objs: objs}
 		cli.EXPECT().
-			ListPrefix(mock.Anything, "dest/", true).
-			Return(iter, nil).Once()
+			NewObjectIter(mock.Anything, "dest/", true).
+			Return(iter).Once()
 
 		task := NewVerifyPrefixTask(VerifyPrefixOpt{
 			Cli:      cli,
@@ -37,8 +37,8 @@ func TestVerifyPrefixTask_Execute(t *testing.T) {
 			{Key: "dest/extra", Length: 9},
 		}
 		cli.EXPECT().
-			ListPrefix(mock.Anything, "dest/", true).
-			Return(&mockObjectIterator{objs: objs}, nil).Once()
+			NewObjectIter(mock.Anything, "dest/", true).
+			Return(&mockObjectIterator{objs: objs}).Once()
 
 		task := NewVerifyPrefixTask(VerifyPrefixOpt{
 			Cli:      cli,
@@ -53,8 +53,8 @@ func TestVerifyPrefixTask_Execute(t *testing.T) {
 		objs := []ObjectAttr{{Key: "dest/a", Length: 3}}
 		iter := &mockObjectIterator{objs: objs}
 		cli.EXPECT().
-			ListPrefix(mock.Anything, "dest/", true).
-			Return(iter, nil).Once()
+			NewObjectIter(mock.Anything, "dest/", true).
+			Return(iter).Once()
 
 		task := NewVerifyPrefixTask(VerifyPrefixOpt{
 			Cli:      cli,
@@ -71,8 +71,8 @@ func TestVerifyPrefixTask_Execute(t *testing.T) {
 		cli := NewMockClient(t)
 		objs := []ObjectAttr{{Key: "dest/a", Length: 1}}
 		cli.EXPECT().
-			ListPrefix(mock.Anything, "dest/", true).
-			Return(&mockObjectIterator{objs: objs}, nil).Once()
+			NewObjectIter(mock.Anything, "dest/", true).
+			Return(&mockObjectIterator{objs: objs}).Once()
 
 		task := NewVerifyPrefixTask(VerifyPrefixOpt{
 			Cli:      cli,
@@ -88,8 +88,8 @@ func TestVerifyPrefixTask_Execute(t *testing.T) {
 	t.Run("ManyMissingSampleCapped", func(t *testing.T) {
 		cli := NewMockClient(t)
 		cli.EXPECT().
-			ListPrefix(mock.Anything, "dest/", true).
-			Return(&mockObjectIterator{}, nil).Once()
+			NewObjectIter(mock.Anything, "dest/", true).
+			Return(&mockObjectIterator{}).Once()
 
 		expected := make(map[string]int64, _missingSampleSize+3)
 		for i := 0; i < _missingSampleSize+3; i++ {
@@ -108,31 +108,15 @@ func TestVerifyPrefixTask_Execute(t *testing.T) {
 			Prefix:   "dest/",
 			Expected: map[string]int64{},
 		})
-		// No ListPrefix expectation: an empty expected set must not call the API.
+		// No NewObjectIter expectation: an empty expected set must not call the API.
 		assert.NoError(t, task.Execute(context.Background()))
-	})
-
-	t.Run("ListError", func(t *testing.T) {
-		cli := NewMockClient(t)
-		cli.EXPECT().
-			ListPrefix(mock.Anything, "dest/", true).
-			Return(nil, assert.AnError).Once()
-
-		task := NewVerifyPrefixTask(VerifyPrefixOpt{
-			Cli:      cli,
-			Prefix:   "dest/",
-			Expected: map[string]int64{"dest/a": 1},
-		})
-		err := task.Execute(context.Background())
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "list prefix")
 	})
 
 	t.Run("IterError", func(t *testing.T) {
 		cli := NewMockClient(t)
 		cli.EXPECT().
-			ListPrefix(mock.Anything, "dest/", true).
-			Return(errorIterator{}, nil).Once()
+			NewObjectIter(mock.Anything, "dest/", true).
+			Return(errorIterator{}).Once()
 
 		task := NewVerifyPrefixTask(VerifyPrefixOpt{
 			Cli:      cli,
@@ -155,8 +139,8 @@ func TestExpectedDestObjects(t *testing.T) {
 		}
 		iter := &mockObjectIterator{objs: objs}
 		cli.EXPECT().
-			ListPrefix(mock.Anything, "src/", true).
-			Return(iter, nil).Once()
+			NewObjectIter(mock.Anything, "src/", true).
+			Return(iter).Once()
 
 		expected, err := ExpectedDestObjects(context.Background(), cli, "src/", "dest/")
 		assert.NoError(t, err)
@@ -164,11 +148,12 @@ func TestExpectedDestObjects(t *testing.T) {
 		assert.True(t, iter.closed, "ExpectedDestObjects must close the iterator")
 	})
 
-	t.Run("ListError", func(t *testing.T) {
+	t.Run("IterError", func(t *testing.T) {
 		cli := NewMockClient(t)
+		iter := &iterWithError{objs: []ObjectAttr{{Key: "src/a", Length: 1}}}
 		cli.EXPECT().
-			ListPrefix(mock.Anything, "src/", true).
-			Return(nil, assert.AnError).Once()
+			NewObjectIter(mock.Anything, "src/", true).
+			Return(iter).Once()
 
 		_, err := ExpectedDestObjects(context.Background(), cli, "src/", "dest/")
 		assert.Error(t, err)

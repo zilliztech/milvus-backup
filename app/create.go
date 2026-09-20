@@ -107,13 +107,12 @@ func (uc *CreateBackup) checkSourceStorage(ctx context.Context, strategy backup.
 	ctx, cancel := context.WithTimeout(ctx, createStoragePreflightTimeout)
 	defer cancel()
 	prefix := mpath.MilvusInsertLogDir(uc.params.Milvus.Storage.RootPath.Val)
-	iter, err := uc.milvusStorage.ListPrefix(ctx, prefix, true)
-	if err == nil {
-		defer iter.Close()
-		// Cloud iterators fetch lazily: ListPrefix alone does not prove access.
-		// One Next is enough; an empty result also means the request succeeded.
-		_, _, err = iter.Next(ctx)
-	}
+	iter := uc.milvusStorage.NewObjectIter(ctx, prefix, true)
+	defer iter.Close()
+	// Cloud iterators fetch lazily: constructing one sends no request, so one
+	// Next is the least work that proves access; an empty result also means
+	// the request succeeded.
+	_, _, err := iter.Next(ctx)
 	if err == nil {
 		err = ctx.Err()
 	}

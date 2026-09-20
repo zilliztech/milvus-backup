@@ -28,7 +28,7 @@ func expectFullMeta(t *testing.T, cli *storage.MockClient, backupDir string, inf
 	iter := storage.NewMockObjectIterator([]storage.ObjectAttr{
 		{Key: key, Length: int64(len(byts))},
 	})
-	cli.EXPECT().ListPrefix(mock.Anything, key, false).Return(iter, nil)
+	cli.EXPECT().NewObjectIter(mock.Anything, key, false).Return(iter)
 	cli.EXPECT().GetObject(mock.Anything, key).
 		Return(&storage.Object{Length: int64(len(byts)), Body: io.NopCloser(bytes.NewReader(byts))}, nil)
 }
@@ -41,7 +41,7 @@ func TestListBackupsExecute(t *testing.T) {
 			{Key: "root/backup1"},
 			{Key: "root/backup2"},
 		})
-		cli.EXPECT().ListPrefix(mock.Anything, "root/", false).Return(backupRootIter, nil)
+		cli.EXPECT().NewObjectIter(mock.Anything, "root/", false).Return(backupRootIter)
 
 		expectFullMeta(t, cli, "root/backup1",
 			&backuppb.BackupInfo{Id: "a", Name: "backup1", Size: 100, MilvusVersion: "1.0.0"})
@@ -66,15 +66,16 @@ func TestListBackupsExecute(t *testing.T) {
 			{Key: "root/backup1"},
 			{Key: "root/backup2"},
 		})
-		cli.EXPECT().ListPrefix(mock.Anything, "root/", false).Return(backupRootIter, nil)
+		cli.EXPECT().NewObjectIter(mock.Anything, "root/", false).Return(backupRootIter)
 
 		expectFullMeta(t, cli, "root/backup1",
 			&backuppb.BackupInfo{Id: "a", Name: "backup1", Size: 100, MilvusVersion: "1.0.0"})
 
-		// The second backup's meta cannot even be checked for existence.
+		// The second backup's meta cannot even be checked for existence: the
+		// iterator's first read fails, which is where listing errors surface.
 		cli.EXPECT().
-			ListPrefix(mock.Anything, "root/backup2/meta/full_meta.json", false).
-			Return(nil, errors.New("stat denied"))
+			NewObjectIter(mock.Anything, "root/backup2/meta/full_meta.json", false).
+			Return(&errorIterator{err: errors.New("stat denied")})
 
 		uc := &ListBackups{cli: cli, rootPath: "root"}
 		summaries, err := uc.Execute(context.Background())
@@ -90,8 +91,8 @@ func TestListBackupsExecute(t *testing.T) {
 		cli := storage.NewMockClient(t)
 
 		cli.EXPECT().
-			ListPrefix(mock.Anything, "root/", false).
-			Return(nil, errors.New("connection closed"))
+			NewObjectIter(mock.Anything, "root/", false).
+			Return(&errorIterator{err: errors.New("connection closed")})
 
 		uc := &ListBackups{cli: cli, rootPath: "root"}
 		_, err := uc.Execute(context.Background())

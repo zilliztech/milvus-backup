@@ -26,10 +26,7 @@ func Size(ctx context.Context, cli Client, prefix string) (int64, error) {
 }
 
 func ListPrefixFlat(ctx context.Context, cli Client, prefix string, recursive bool) ([]string, []int64, error) {
-	iter, err := cli.ListPrefix(ctx, prefix, recursive)
-	if err != nil {
-		return nil, nil, err
-	}
+	iter := cli.NewObjectIter(ctx, prefix, recursive)
 	defer iter.Close()
 
 	var keys []string
@@ -77,10 +74,7 @@ func DeletePrefix(ctx context.Context, cli Client, prefix string) error {
 		return fmt.Errorf("storage: delete prefix empty prefix")
 	}
 
-	iter, err := cli.ListPrefix(ctx, prefix, true)
-	if err != nil {
-		return fmt.Errorf("storage: delete prefix list prefix %w", err)
-	}
+	iter := cli.NewObjectIter(ctx, prefix, true)
 	defer iter.Close()
 
 	// Derive a cancellable context so in-flight deletions can be stopped when
@@ -131,10 +125,7 @@ func DeletePrefix(ctx context.Context, cli Client, prefix string) error {
 }
 
 func Exist(ctx context.Context, cli Client, prefix string) (bool, error) {
-	iter, err := cli.ListPrefix(ctx, prefix, false)
-	if err != nil {
-		return false, fmt.Errorf("storage: exist list prefix %w", err)
-	}
+	iter := cli.NewObjectIter(ctx, prefix, false)
 	defer iter.Close()
 
 	_, ok, err := iter.Next(ctx)

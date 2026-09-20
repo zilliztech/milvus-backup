@@ -47,10 +47,7 @@ func (t *VerifyPrefixTask) Execute(ctx context.Context) error {
 	}
 	t.logger.Info("start verify prefix", zap.Int("expected_num", len(t.opt.Expected)))
 
-	iter, err := t.opt.Cli.ListPrefix(ctx, t.opt.Prefix, true)
-	if err != nil {
-		return fmt.Errorf("storage: verify prefix list prefix %w", err)
-	}
+	iter := t.opt.Cli.NewObjectIter(ctx, t.opt.Prefix, true)
 	defer iter.Close()
 
 	// Track keys not yet seen in the listing; drop each as it is found.

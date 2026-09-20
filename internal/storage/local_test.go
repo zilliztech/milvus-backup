@@ -106,7 +106,7 @@ func TestLocalClient_CopyObject(t *testing.T) {
 	assert.FileExists(t, destKey)
 }
 
-func TestLocalClient_ListPrefix(t *testing.T) {
+func TestLocalClient_NewObjectIter(t *testing.T) {
 	dir := t.TempDir()
 
 	keys := []string{
@@ -127,8 +127,7 @@ func TestLocalClient_ListPrefix(t *testing.T) {
 
 	t.Run("PrefixIsFile", func(t *testing.T) {
 		cli := &LocalClient{}
-		iter, err := cli.ListPrefix(context.Background(), path.Join(dir, "backup", "meta", "test.txt"), false)
-		assert.NoError(t, err)
+		iter := cli.NewObjectIter(context.Background(), path.Join(dir, "backup", "meta", "test.txt"), false)
 
 		entry, ok, err := iter.Next(context.Background())
 		assert.True(t, ok)
@@ -136,8 +135,7 @@ func TestLocalClient_ListPrefix(t *testing.T) {
 		assert.Equal(t, path.Join(dir, "backup", "meta", "test.txt"), entry.Key)
 		assert.Equal(t, int64(1), entry.Length)
 
-		iter, err = cli.ListPrefix(context.Background(), path.Join(dir, "backup", "meta", "test.txt"), true)
-		assert.NoError(t, err)
+		iter = cli.NewObjectIter(context.Background(), path.Join(dir, "backup", "meta", "test.txt"), true)
 		entry, ok, err = iter.Next(context.Background())
 		assert.True(t, ok)
 		assert.NoError(t, err)
@@ -147,23 +145,30 @@ func TestLocalClient_ListPrefix(t *testing.T) {
 
 	t.Run("Empty", func(t *testing.T) {
 		cli := &LocalClient{}
-		iter, err := cli.ListPrefix(context.Background(), path.Join(dir, "not_exist"), false)
-		assert.NoError(t, err)
+		iter := cli.NewObjectIter(context.Background(), path.Join(dir, "not_exist"), false)
 		_, ok, err := iter.Next(context.Background())
 		assert.NoError(t, err)
 		assert.False(t, ok)
 
-		iter, err = cli.ListPrefix(context.Background(), path.Join(dir, "not_exist"), true)
-		assert.NoError(t, err)
+		iter = cli.NewObjectIter(context.Background(), path.Join(dir, "not_exist"), true)
 		_, ok, err = iter.Next(context.Background())
 		assert.NoError(t, err)
 		assert.False(t, ok)
 	})
 
+	t.Run("StatErrorSurfacesThroughNext", func(t *testing.T) {
+		// The constructor is lazy and cannot fail: a prefix whose path crosses a
+		// regular file (ENOTDIR) must surface the stat error on the first Next.
+		cli := &LocalClient{}
+		iter := cli.NewObjectIter(context.Background(), path.Join(dir, "backup", "meta", "test.txt", "nested"), true)
+		_, ok, err := iter.Next(context.Background())
+		assert.Error(t, err)
+		assert.False(t, ok)
+	})
+
 	t.Run("Recursive", func(t *testing.T) {
 		cli := &LocalClient{}
-		iter, err := cli.ListPrefix(context.Background(), path.Join(dir, "backup"), true)
-		assert.NoError(t, err)
+		iter := cli.NewObjectIter(context.Background(), path.Join(dir, "backup"), true)
 
 		var entries []ObjectAttr
 		for {
@@ -182,8 +187,7 @@ func TestLocalClient_ListPrefix(t *testing.T) {
 
 	t.Run("NonRecursive", func(t *testing.T) {
 		cli := &LocalClient{}
-		iter, err := cli.ListPrefix(context.Background(), path.Join(dir, "backup"), false)
-		assert.NoError(t, err)
+		iter := cli.NewObjectIter(context.Background(), path.Join(dir, "backup"), false)
 
 		var entries []ObjectAttr
 		for {

@@ -266,8 +266,7 @@ func TestMinioObjectIteratorCloseStopsGoroutine(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	iter, err := cli.ListPrefix(context.Background(), "prefix/", true)
-	require.NoError(t, err)
+	iter := cli.NewObjectIter(context.Background(), "prefix/", true)
 
 	attr, ok, err := iter.Next(context.Background())
 	require.NoError(t, err)

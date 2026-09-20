@@ -22,7 +22,7 @@ func expectClientConfigs(t *testing.T, milvusStorage, backupStorage *storage.Moc
 	t.Helper()
 
 	milvusStorage.EXPECT().Config().Return(storage.Config{})
-	milvusStorage.EXPECT().ListPrefix(mock.Anything, mock.Anything, true).Return(storage.NewMockObjectIterator(nil), nil).Once()
+	milvusStorage.EXPECT().NewObjectIter(mock.Anything, mock.Anything, true).Return(storage.NewMockObjectIterator(nil)).Once()
 	backupStorage.EXPECT().Config().Return(storage.Config{})
 }
 
@@ -120,7 +120,7 @@ func TestCreateBackupPreflight(t *testing.T) {
 		iter.On("Next", mock.Anything).Return(storage.ObjectAttr{}, false, denied).Once()
 		iter.On("Close").Return(nil).Once()
 		t.Cleanup(func() { iter.AssertExpectations(t) })
-		source.EXPECT().ListPrefix(mock.Anything, "instance/insert_log/", true).Return(iter, nil).Once()
+		source.EXPECT().NewObjectIter(mock.Anything, "instance/insert_log/", true).Return(iter).Once()
 		source.EXPECT().Config().Return(storage.Config{Bucket: "source-bucket"})
 
 		job, err := uc.Start(context.Background(), req)
@@ -139,7 +139,7 @@ func TestCreateBackupPreflight(t *testing.T) {
 		successIter.On("Next", mock.Anything).Return(storage.ObjectAttr{Key: "first"}, true, nil).Once()
 		successIter.On("Close").Return(nil).Once()
 		t.Cleanup(func() { successIter.AssertExpectations(t) })
-		source.EXPECT().ListPrefix(mock.Anything, "instance/insert_log/", true).Return(successIter, nil).Once()
+		source.EXPECT().NewObjectIter(mock.Anything, "instance/insert_log/", true).Return(successIter).Once()
 		dest.EXPECT().Config().Return(storage.Config{})
 		job, err = uc.Start(context.Background(), req)
 		require.NoError(t, err)
@@ -173,11 +173,11 @@ func TestCreateBackupPreflight(t *testing.T) {
 		}).Return(storage.ObjectAttr{}, false, context.Canceled).Once()
 		iter.On("Close").Return(nil).Once()
 		t.Cleanup(func() { iter.AssertExpectations(t) })
-		source.EXPECT().ListPrefix(mock.Anything, mock.Anything, true).RunAndReturn(func(probeCtx context.Context, _ string, _ bool) (storage.ObjectIterator, error) {
+		source.EXPECT().NewObjectIter(mock.Anything, mock.Anything, true).RunAndReturn(func(probeCtx context.Context, _ string, _ bool) storage.ObjectIterator {
 			deadline, ok := probeCtx.Deadline()
 			assert.True(t, ok)
 			assert.WithinDuration(t, time.Now().Add(10*time.Second), deadline, time.Second)
-			return iter, nil
+			return iter
 		}).Once()
 		source.EXPECT().Config().Return(storage.Config{})
 		view, err := uc.Execute(ctx, CreateBackupRequest{TaskID: "cancel", Option: backup.Option{BackupName: "cancel_backup"}})
@@ -189,6 +189,16 @@ func TestCreateBackupPreflight(t *testing.T) {
 	})
 }
 
+// errorIterator fails every read. Since the iterator constructor cannot fail,
+// it stands in for listing errors that now surface through Next.
+type errorIterator struct{ err error }
+
+func (e *errorIterator) Next(context.Context) (storage.ObjectAttr, bool, error) {
+	return storage.ObjectAttr{}, false, e.err
+}
+
+func (e *errorIterator) Close() error { return nil }
+
 // preflightIterator detects extra reads and verifies cleanup on success or error.
 type preflightIterator struct{ mock.Mock }
 
@@ -198,18 +208,3 @@ func (i *preflightIterator) Next(ctx context.Context) (storage.ObjectAttr, bool,
 }
 
 func (i *preflightIterator) Close() error { return i.Called().Error(0) }
-
-func TestCreateBackupPreflightListPrefixError(t *testing.T) {
-	source := storage.NewMockClient(t)
-	dest := storage.NewMockClient(t)
-	uc := &CreateBackup{params: v2.New(), milvusStorage: source, backupStorage: dest, taskMgr: taskmgr.NewMgr()}
-	denied := errors.New("cannot start listing")
-	source.EXPECT().ListPrefix(mock.Anything, mock.Anything, true).Return(nil, denied).Once()
-	source.EXPECT().Config().Return(storage.Config{})
-	job, err := uc.Start(context.Background(), CreateBackupRequest{TaskID: "list-error", Option: backup.Option{BackupName: "list_error"}})
-	assert.Nil(t, job)
-	assert.ErrorIs(t, err, ErrStorageNotReady)
-	assert.ErrorIs(t, err, denied)
-	_, err = uc.taskMgr.GetBackupTask("list-error")
-	assert.ErrorIs(t, err, taskmgr.ErrTaskNotFound)
-}
