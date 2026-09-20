@@ -179,8 +179,18 @@ func TestInferMapperRuleType(t *testing.T) {
 		assert.Equal(t, 4, rule)
 	})
 
-	t.Run("MismatchedRules", func(t *testing.T) {
+	t.Run("MismatchedRule1AndRule2", func(t *testing.T) {
 		_, err := InferMapperRuleType("db1.*", "db2.coll1")
+		assert.Error(t, err)
+	})
+
+	t.Run("MismatchedRule1AndRule3", func(t *testing.T) {
+		_, err := InferMapperRuleType("db1.*", "db2")
+		assert.Error(t, err)
+	})
+
+	t.Run("MismatchedRule3AndRule1", func(t *testing.T) {
+		_, err := InferMapperRuleType("db1", "db2.*")
 		assert.Error(t, err)
 	})
 

@@ -57,34 +57,6 @@ func TestValidateRestoreRequest(t *testing.T) {
 	})
 }
 
-func TestInferRuleType(t *testing.T) {
-	// rule 1
-	rule, err := filter.InferMapperRuleType("db1.*", "db2.*")
-	assert.NoError(t, err)
-	assert.Equal(t, 1, rule)
-
-	// rule 2
-	rule, err = filter.InferMapperRuleType("db1.coll1", "db2.coll2")
-	assert.NoError(t, err)
-	assert.Equal(t, 2, rule)
-
-	// rule 3
-	rule, err = filter.InferMapperRuleType("coll1", "coll2")
-	assert.NoError(t, err)
-	assert.Equal(t, 3, rule)
-
-	// rule 4
-	rule, err = filter.InferMapperRuleType("db1.", "db2.")
-	assert.NoError(t, err)
-	assert.Equal(t, 4, rule)
-
-	// invalid
-	_, err = filter.InferMapperRuleType("db1.*", "db2")
-	assert.Error(t, err)
-	_, err = filter.InferMapperRuleType("db1", "db2.*")
-	assert.Error(t, err)
-}
-
 func TestNewTableMapperFromCollRename(t *testing.T) {
 	r, err := newTableMapperFromCollRename(map[string]string{
 		"db1.*":     "db2.*",
