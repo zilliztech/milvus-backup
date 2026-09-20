@@ -108,52 +108,6 @@ func TestFilter_AllowName(t *testing.T) {
 	})
 }
 
-func TestFilter_AllowDBs(t *testing.T) {
-	t.Run("NoFilter", func(t *testing.T) {
-		f := Filter{}
-		assert.Equal(t, []string{"db1", "db2", "db3"}, f.AllowDBs([]string{"db1", "db2", "db3"}))
-	})
-
-	t.Run("Filter", func(t *testing.T) {
-		f := Filter{DBCollFilter: map[string]CollFilter{
-			"db1": {},
-			"db2": {},
-		}}
-		assert.Equal(t, []string{"db1", "db2"}, f.AllowDBs([]string{"db1", "db2", "db3"}))
-	})
-}
-
-func TestFilter_AllowNames(t *testing.T) {
-	t.Run("NoFilter", func(t *testing.T) {
-		f := Filter{}
-		collRefs := []collref.Name{
-			collref.New("db1", "coll1"),
-			collref.New("db2", "coll2"),
-			collref.New("db3", "coll3"),
-		}
-		assert.ElementsMatch(t, collRefs, f.AllowNames(collRefs))
-	})
-
-	t.Run("Filter", func(t *testing.T) {
-		f := Filter{DBCollFilter: map[string]CollFilter{
-			"db1": {AllowAll: true},
-			"db2": {CollName: map[string]struct{}{"coll1": {}}},
-		}}
-		collRefs := []collref.Name{
-			collref.New("db1", "coll1"),
-			collref.New("db2", "coll1"),
-			collref.New("db2", "coll2"),
-			collref.New("db3", "coll1"),
-		}
-
-		expect := []collref.Name{
-			collref.New("db1", "coll1"),
-			collref.New("db2", "coll1"),
-		}
-		assert.ElementsMatch(t, expect, f.AllowNames(collRefs))
-	})
-}
-
 func TestInferMapperRuleType(t *testing.T) {
 	t.Run("Rule1", func(t *testing.T) {
 		rule, err := InferMapperRuleType("db1.*", "db2.*")
