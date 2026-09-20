@@ -24,7 +24,7 @@ const docTemplate = `{
     "paths": {
         "/create": {
             "post": {
-                "description": "Create a backup with the given name and collections",
+                "description": "Create a backup with the given name and collections\nStorage preflight failures return HTTP 200 with code 503 (Storage_Not_Ready), without registering a task. The caller may retry the same request.",
                 "consumes": [
                     "application/json"
                 ],
@@ -940,7 +940,8 @@ const docTemplate = `{
                 2,
                 3,
                 400,
-                404
+                404,
+                503
             ],
             "x-enum-varnames": [
                 "ResponseCode_Success",
@@ -948,7 +949,8 @@ const docTemplate = `{
                 "ResponseCode_No_Permission",
                 "ResponseCode_Fail",
                 "ResponseCode_Parameter_Error",
-                "ResponseCode_Request_Object_Not_Found"
+                "ResponseCode_Request_Object_Not_Found",
+                "ResponseCode_Storage_Not_Ready"
             ]
         },
         "backuppb.RestoreBackupRequest": {

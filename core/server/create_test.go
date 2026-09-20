@@ -45,7 +45,7 @@ func (s *stubCreateBackup) Execute(_ context.Context, req app.CreateBackupReques
 	return nil, nil
 }
 
-func (s *stubCreateBackup) Start(req app.CreateBackupRequest) (app.BackupJob, error) {
+func (s *stubCreateBackup) Start(_ context.Context, req app.CreateBackupRequest) (app.BackupJob, error) {
 	s.req = req
 	s.calls++
 	if s.startErr != nil {
