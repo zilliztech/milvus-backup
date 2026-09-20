@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -28,12 +29,13 @@ type createBackupUC interface {
 	Execute(ctx context.Context, req app.CreateBackupRequest) (taskmgr.BackupTaskView, error)
 	// Start registers the job and returns it ready to run; the async flag's
 	// goroutine placement is this server's deployment decision.
-	Start(req app.CreateBackupRequest) (app.BackupJob, error)
+	Start(ctx context.Context, req app.CreateBackupRequest) (app.BackupJob, error)
 }
 
 // CreateBackup Create backup interface
 // @Summary Create backup interface
 // @Description Create a backup with the given name and collections
+// @Description Storage preflight failures return HTTP 200 with code 503 (Storage_Not_Ready), without registering a task. The caller may retry the same request.
 // @Tags Backup
 // @Accept application/json
 // @Produce application/json
@@ -104,9 +106,16 @@ func (s *Server) createBackup(ctx context.Context, request *backuppb.CreateBacku
 	}
 
 	if request.GetAsync() {
-		return runCreateBackupAsync(uc, request.GetRequestId(), req)
+		return runCreateBackupAsync(ctx, uc, request.GetRequestId(), req)
 	}
 	return runCreateBackupSync(ctx, uc, request.GetRequestId(), req)
+}
+
+func createBackupErrorCode(err error) backuppb.ResponseCode {
+	if errors.Is(err, app.ErrStorageNotReady) {
+		return backuppb.ResponseCode_Storage_Not_Ready
+	}
+	return backuppb.ResponseCode_Fail
 }
 
 // runCreateBackupSync runs the job on the request path. The v1 success
@@ -120,7 +129,7 @@ func runCreateBackupSync(ctx context.Context, uc createBackupUC, requestID strin
 	if _, err := uc.Execute(ctx, req); err != nil {
 		return &backuppb.BackupInfoResponse{
 			RequestId: requestID,
-			Code:      backuppb.ResponseCode_Fail,
+			Code:      createBackupErrorCode(err),
 			Msg:       err.Error(),
 		}
 	}
@@ -130,12 +139,12 @@ func runCreateBackupSync(ctx context.Context, uc createBackupUC, requestID strin
 
 // runCreateBackupAsync starts the job and returns immediately; running it in
 // the background is this server's deployment concern, the flag only selects it.
-func runCreateBackupAsync(uc createBackupUC, requestID string, req app.CreateBackupRequest) *backuppb.BackupInfoResponse {
+func runCreateBackupAsync(ctx context.Context, uc createBackupUC, requestID string, req app.CreateBackupRequest) *backuppb.BackupInfoResponse {
 	resp := &backuppb.BackupInfoResponse{RequestId: requestID}
 
-	job, err := uc.Start(req)
+	job, err := uc.Start(ctx, req)
 	if err != nil {
-		resp.Code = backuppb.ResponseCode_Fail
+		resp.Code = createBackupErrorCode(err)
 		resp.Msg = err.Error()
 		return resp
 	}

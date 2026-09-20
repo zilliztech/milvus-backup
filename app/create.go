@@ -2,7 +2,9 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"time"
 
 	"github.com/zilliztech/milvus-backup/core/backup"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
@@ -10,6 +12,12 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
+
+// ErrStorageNotReady means storage admission failed before a job was registered.
+// Transports may ask the caller to retry the same create request.
+var ErrStorageNotReady = errors.New("storage not ready")
+
+const createStoragePreflightTimeout = 10 * time.Second
 
 // BackupJob is one registered create-backup run, ready to execute. Starting a
 // job and running it are separate steps so a transport that executes jobs
@@ -75,12 +83,15 @@ type CreateBackupRequest struct {
 	Option backup.Option
 }
 
-// Start registers the job in the task manager and returns it ready to run.
+// Start checks source List access before registering the job in the task manager.
 // Registration is the synchronous part of starting: from here on the job is
 // visible to the task APIs under its task id and backup name. Running is a
 // separate step — Execute for the synchronous case, the transport's own
 // goroutine for the asynchronous one.
-func (uc *CreateBackup) Start(req CreateBackupRequest) (BackupJob, error) {
+func (uc *CreateBackup) Start(ctx context.Context, req CreateBackupRequest) (BackupJob, error) {
+	if err := uc.checkSourceStorage(ctx, req.Option.Strategy); err != nil {
+		return nil, err
+	}
 	task, err := backup.NewTask(uc.toArgs(req))
 	if err != nil {
 		return nil, fmt.Errorf("app: new backup task: %w", err)
@@ -89,13 +100,38 @@ func (uc *CreateBackup) Start(req CreateBackupRequest) (BackupJob, error) {
 	return backupJob{task: task}, nil
 }
 
+func (uc *CreateBackup) checkSourceStorage(ctx context.Context, strategy backup.Strategy) error {
+	if strategy == backup.StrategyMetaOnly {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, createStoragePreflightTimeout)
+	defer cancel()
+	prefix := mpath.MilvusInsertLogDir(uc.params.Milvus.Storage.RootPath.Val)
+	iter, err := uc.milvusStorage.ListPrefix(ctx, prefix, true)
+	if err == nil {
+		defer iter.Close()
+		// Cloud iterators fetch lazily: ListPrefix alone does not prove access.
+		// One Next is enough; an empty result also means the request succeeded.
+		_, _, err = iter.Next(ctx)
+	}
+	if err == nil {
+		err = ctx.Err()
+	}
+	if err != nil {
+		conf := uc.milvusStorage.Config()
+		return fmt.Errorf("app: %w: source list preflight failed (provider=%s, endpoint=%s, bucket=%s, prefix=%s): %w",
+			ErrStorageNotReady, conf.Provider, conf.Endpoint, conf.Bucket, prefix, err)
+	}
+	return nil
+}
+
 // Execute runs the job synchronously on the calling goroutine and returns the
 // task manager's view of it: id, state, progress and the rest of the job half
 // — the whole answer of a create call, the shape v2's jobs/backup/create
 // responds with. Nothing of the produced artifact is read here; a transport
 // whose contract merges the two resources (v1) assembles what it needs itself.
 func (uc *CreateBackup) Execute(ctx context.Context, req CreateBackupRequest) (taskmgr.BackupTaskView, error) {
-	job, err := uc.Start(req)
+	job, err := uc.Start(ctx, req)
 	if err != nil {
 		return nil, err
 	}
