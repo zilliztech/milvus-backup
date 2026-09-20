@@ -122,16 +122,6 @@ func (f Filter) AllowDB(dbName string) bool {
 	return ok
 }
 
-func (f Filter) AllowDBs(dbNames []string) []string {
-	var filtered []string
-	for _, dbName := range dbNames {
-		if f.AllowDB(dbName) {
-			filtered = append(filtered, dbName)
-		}
-	}
-	return filtered
-}
-
 func (f Filter) AllowName(collRef collref.Name) bool {
 	if f.DBCollFilter == nil {
 		return true
@@ -148,16 +138,6 @@ func (f Filter) AllowName(collRef collref.Name) bool {
 
 	_, ok = collFilter.CollName[collRef.CollName()]
 	return ok
-}
-
-func (f Filter) AllowNames(collRefs []collref.Name) []collref.Name {
-	var filtered []collref.Name
-	for _, collRef := range collRefs {
-		if f.AllowName(collRef) {
-			filtered = append(filtered, collRef)
-		}
-	}
-	return filtered
 }
 
 // InferMapperRuleType determines if both key and value match the same rule type.
