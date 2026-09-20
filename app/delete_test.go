@@ -49,7 +49,7 @@ func TestDeleteBackupExecute(t *testing.T) {
 		// unexpected DeleteObject call would fail the mock.
 		cli.EXPECT().
 			NewObjectIter(mock.Anything, "root/backup1/meta/full_meta.json", false).
-			Return(&errorIterator{err: errors.New("stat denied")})
+			Return(errorSeq(errors.New("stat denied")))
 
 		uc := &DeleteBackup{cli: cli, rootPath: "root"}
 		err := uc.Execute(context.Background(), "backup1")
@@ -64,7 +64,7 @@ func TestDeleteBackupExecute(t *testing.T) {
 			&backuppb.BackupInfo{Id: "a", Name: "backup1"})
 		cli.EXPECT().
 			NewObjectIter(mock.Anything, "root/backup1/", true).
-			Return(&errorIterator{err: errors.New("connection closed")})
+			Return(errorSeq(errors.New("connection closed")))
 
 		uc := &DeleteBackup{cli: cli, rootPath: "root"}
 		err := uc.Execute(context.Background(), "backup1")

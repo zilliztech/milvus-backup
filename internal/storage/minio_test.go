@@ -206,12 +206,13 @@ func TestBucketExistReturnsFalseForNoSuchBucket(t *testing.T) {
 	assert.False(t, exists)
 }
 
-// TestMinioObjectIteratorCloseStopsGoroutine verifies that closing an iterator
-// before the listing is exhausted actually stops minio-go's background listing
-// goroutine. The fake transport returns a truncated first page with a
+// TestMinioObjectIterEarlyStopStopsGoroutine verifies that leaving the range
+// before the listing is exhausted actually stops minio-go's background
+// listing goroutine. The fake transport returns a truncated first page with a
 // continuation token, so the goroutine is still alive fetching the next page
-// when Close is called; Close must cancel it and drain until it exits.
-func TestMinioObjectIteratorCloseStopsGoroutine(t *testing.T) {
+// when the range ends; the sequence must cancel it and drain until it exits.
+func TestMinioObjectIterEarlyStopStopsGoroutine(t *testing.T) {
+	canceled := make(chan struct{})
 	cli, err := newInternalMinio(Config{
 		Provider: "s3",
 		Endpoint: "example.com",
@@ -239,10 +240,12 @@ func TestMinioObjectIteratorCloseStopsGoroutine(t *testing.T) {
 				return nil, errors.New("unexpected request")
 			}
 
-			// A follow-up page blocks until its request context is canceled,
-			// so the test would hang if the goroutine is not stopped.
+			// A follow-up page blocks until its request context is canceled;
+			// canceled records that the cancellation really reached the
+			// in-flight page request.
 			if token := r.URL.Query().Get("continuation-token"); token != "" {
 				<-r.Context().Done()
+				close(canceled)
 				return nil, r.Context().Err()
 			}
 
@@ -266,22 +269,24 @@ func TestMinioObjectIteratorCloseStopsGoroutine(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	iter := cli.NewObjectIter(context.Background(), "prefix/", true)
+	var yielded bool
+	for attr, err := range cli.NewObjectIter(context.Background(), "prefix/", true) {
+		require.NoError(t, err)
+		assert.Equal(t, "first-object", attr.Key)
+		yielded = true
+		// The listing is truncated, so the goroutine is alive fetching page
+		// two. Leaving the loop must cancel it and drain the channel until it
+		// has exited, or the goroutine leaks blocked on the transport.
+		break
+	}
+	assert.True(t, yielded)
 
-	attr, ok, err := iter.Next(context.Background())
-	require.NoError(t, err)
-	assert.True(t, ok)
-	assert.Equal(t, "first-object", attr.Key)
-
-	// The listing is truncated, so the goroutine is alive fetching page two.
-	// Close must cancel it and drain the channel until it has exited.
-	require.NoError(t, iter.Close())
-
-	// After Close the channel is closed and drained: Next reports exhaustion
-	// rather than a cancellation error left in the channel.
-	_, ok, err = iter.Next(context.Background())
-	assert.False(t, ok)
-	assert.NoError(t, err)
+	// Ending the range canceled the in-flight follow-up request.
+	select {
+	case <-canceled:
+	default:
+		assert.Fail(t, "ending the range did not stop the background listing goroutine")
+	}
 }
 
 func TestBucketExistPropagatesContextCancellation(t *testing.T) {

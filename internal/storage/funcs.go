@@ -26,18 +26,11 @@ func Size(ctx context.Context, cli Client, prefix string) (int64, error) {
 }
 
 func ListPrefixFlat(ctx context.Context, cli Client, prefix string, recursive bool) ([]string, []int64, error) {
-	iter := cli.NewObjectIter(ctx, prefix, recursive)
-	defer iter.Close()
-
 	var keys []string
 	var sizes []int64
-	for {
-		attr, ok, err := iter.Next(ctx)
+	for attr, err := range cli.NewObjectIter(ctx, prefix, recursive) {
 		if err != nil {
 			return nil, nil, fmt.Errorf("storage: list prefix flat %w", err)
-		}
-		if !ok {
-			break
 		}
 		keys = append(keys, attr.Key)
 		sizes = append(sizes, attr.Length)
@@ -74,9 +67,6 @@ func DeletePrefix(ctx context.Context, cli Client, prefix string) error {
 		return fmt.Errorf("storage: delete prefix empty prefix")
 	}
 
-	iter := cli.NewObjectIter(ctx, prefix, true)
-	defer iter.Close()
-
 	// Derive a cancellable context so in-flight deletions can be stopped when
 	// the loop bails early, then join them through the single Wait below.
 	// defer cancel() satisfies vet's lostcancel check; it is a no-op on the
@@ -87,13 +77,9 @@ func DeletePrefix(ctx context.Context, cli Client, prefix string) error {
 	g.SetLimit(_deleteConcurrent)
 
 	var loopErr error
-	for {
-		attr, ok, err := iter.Next(ctx)
+	for attr, err := range cli.NewObjectIter(ctx, prefix, true) {
 		if err != nil {
 			loopErr = fmt.Errorf("storage: delete prefix iter object %w", err)
-			break
-		}
-		if !ok {
 			break
 		}
 		if !strings.HasPrefix(attr.Key, prefix) {
@@ -125,15 +111,15 @@ func DeletePrefix(ctx context.Context, cli Client, prefix string) error {
 }
 
 func Exist(ctx context.Context, cli Client, prefix string) (bool, error) {
-	iter := cli.NewObjectIter(ctx, prefix, false)
-	defer iter.Close()
-
-	_, ok, err := iter.Next(ctx)
-	if err != nil {
-		return false, fmt.Errorf("storage: exist list prefix %w", err)
+	for _, err := range cli.NewObjectIter(ctx, prefix, false) {
+		if err != nil {
+			return false, fmt.Errorf("storage: exist list prefix %w", err)
+		}
+		// One yielded object is enough to prove existence; returning here
+		// stops the listing through the sequence itself.
+		return true, nil
 	}
-
-	return ok, nil
+	return false, nil
 }
 
 func CreateBucketIfNotExist(ctx context.Context, cli Client, prefix string) error {

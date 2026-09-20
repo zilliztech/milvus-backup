@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"iter"
 	"os"
 	"path/filepath"
 )
@@ -108,67 +109,47 @@ func (l *LocalClient) UploadObject(_ context.Context, i UploadObjectInput) error
 	return nil
 }
 
-// localIterator lists the filesystem lazily: the walk happens on the first
-// Next call, so the constructor cannot fail and a stat or walk error surfaces
-// through Next like a provider-backed iterator's error does.
-type localIterator struct {
-	prefix    string
-	recursive bool
-
-	listed  bool
-	entries []ObjectAttr
-	index   int
-}
-
-func (l *localIterator) Next(_ context.Context) (ObjectAttr, bool, error) {
-	if !l.listed {
-		if err := l.list(); err != nil {
-			return ObjectAttr{}, false, err
+// NewObjectIter lists the filesystem lazily: the walk happens inside the
+// range, so no request is made until the first iteration and a stat or walk
+// error surfaces through the sequence like a provider-backed iterator's
+// error does.
+func (l *LocalClient) NewObjectIter(_ context.Context, prefix string, recursive bool) iter.Seq2[ObjectAttr, error] {
+	return func(yield func(ObjectAttr, error) bool) {
+		entries, err := listLocalPrefix(prefix, recursive)
+		if err != nil {
+			yield(ObjectAttr{}, err)
+			return
 		}
-		l.listed = true
+		for _, entry := range entries {
+			if !yield(entry, nil) {
+				return
+			}
+		}
 	}
-
-	if l.index >= len(l.entries) {
-		return ObjectAttr{}, false, nil
-	}
-	entry := l.entries[l.index]
-	l.index++
-	return entry, true, nil
 }
 
-// Close is a no-op: the local iterator walks the filesystem synchronously on
-// the first Next call and keeps no background goroutine.
-func (l *localIterator) Close() error { return nil }
-
-func (l *LocalClient) NewObjectIter(_ context.Context, prefix string, recursive bool) ObjectIterator {
-	return &localIterator{prefix: prefix, recursive: recursive}
-}
-
-// list fills entries with the objects under prefix. A prefix that does not
+// listLocalPrefix lists the objects under prefix. A prefix that does not
 // exist lists as empty, matching the provider-backed behavior of listing an
 // absent key space.
-func (l *localIterator) list() error {
+func listLocalPrefix(prefix string, recursive bool) ([]ObjectAttr, error) {
 	// check if prefix is a file
-	info, err := os.Stat(l.prefix)
+	info, err := os.Stat(prefix)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil
+			return nil, nil
 		}
-		return fmt.Errorf("storage: local list prefix stat %w", err)
+		return nil, fmt.Errorf("storage: local list prefix stat %w", err)
 	}
 
 	// if prefix is a file, list it directly
 	if !info.IsDir() {
-		l.entries = []ObjectAttr{{Key: l.prefix, Length: info.Size()}}
-		return nil
+		return []ObjectAttr{{Key: prefix, Length: info.Size()}}, nil
 	}
 
-	if l.recursive {
-		l.entries, err = listRecursive(l.prefix)
-	} else {
-		l.entries, err = listNonRecursive(l.prefix)
+	if recursive {
+		return listRecursive(prefix)
 	}
-	return err
+	return listNonRecursive(prefix)
 }
 
 func listRecursive(prefix string) ([]ObjectAttr, error) {

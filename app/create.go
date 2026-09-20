@@ -107,19 +107,21 @@ func (uc *CreateBackup) checkSourceStorage(ctx context.Context, strategy backup.
 	ctx, cancel := context.WithTimeout(ctx, createStoragePreflightTimeout)
 	defer cancel()
 	prefix := mpath.MilvusInsertLogDir(uc.params.Milvus.Storage.RootPath.Val)
-	iter := uc.milvusStorage.NewObjectIter(ctx, prefix, true)
-	defer iter.Close()
-	// Cloud iterators fetch lazily: constructing one sends no request, so one
-	// Next is the least work that proves access; an empty result also means
-	// the request succeeded.
-	_, _, err := iter.Next(ctx)
-	if err == nil {
-		err = ctx.Err()
-	}
-	if err != nil {
-		conf := uc.milvusStorage.Config()
-		return fmt.Errorf("app: %w: source list preflight failed (provider=%s, endpoint=%s, bucket=%s, prefix=%s): %w",
-			ErrStorageNotReady, conf.Provider, conf.Endpoint, conf.Bucket, prefix, err)
+	// The sequence lists lazily: the range itself is what sends the request,
+	// so one iteration is the least work that proves access; an empty result
+	// also means the request succeeded.
+	for _, err := range uc.milvusStorage.NewObjectIter(ctx, prefix, true) {
+		if err == nil {
+			err = ctx.Err()
+		}
+		if err != nil {
+			conf := uc.milvusStorage.Config()
+			return fmt.Errorf("app: %w: source list preflight failed (provider=%s, endpoint=%s, bucket=%s, prefix=%s): %w",
+				ErrStorageNotReady, conf.Provider, conf.Endpoint, conf.Bucket, prefix, err)
+		}
+		// One listed object proves access; returning here stops the listing
+		// through the sequence itself.
+		return nil
 	}
 	return nil
 }

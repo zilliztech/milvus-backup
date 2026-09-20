@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"iter"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -18,7 +19,7 @@ import (
 func expectMetaExist(t *testing.T, cli *storage.MockClient, backupDir string, exist bool) {
 	t.Helper()
 
-	var iter *storage.MockObjectIterator
+	var iter iter.Seq2[storage.ObjectAttr, error]
 	if exist {
 		iter = storage.NewMockObjectIterator([]storage.ObjectAttr{
 			{Key: backupDir + "/meta/backup_meta.json"},
@@ -89,7 +90,7 @@ func TestGetBackupExecute(t *testing.T) {
 		cli := storage.NewMockClient(t)
 		cli.EXPECT().
 			NewObjectIter(mock.Anything, "root/backup1/meta/backup_meta.json", false).
-			Return(&errorIterator{err: errors.New("connection closed")})
+			Return(errorSeq(errors.New("connection closed")))
 
 		uc := &GetBackup{cli: cli, rootPath: "root"}
 		info, _, err := uc.Execute(context.Background(), "backup1")
@@ -105,7 +106,7 @@ func TestGetBackupExecute(t *testing.T) {
 		expectFullMeta(t, cli, backupDir, &backuppb.BackupInfo{Name: "backup1"})
 		cli.EXPECT().
 			NewObjectIter(mock.Anything, backupDir+"/meta/", true).
-			Return(&errorIterator{err: errors.New("connection closed")})
+			Return(errorSeq(errors.New("connection closed")))
 
 		uc := &GetBackup{cli: cli, rootPath: "root"}
 		info, _, err := uc.Execute(context.Background(), "backup1")

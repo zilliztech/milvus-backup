@@ -105,7 +105,7 @@ func TestRestoreStart(t *testing.T) {
 
 		backupCli.EXPECT().
 			NewObjectIter(mock.Anything, "backup1/meta/backup_meta.json", false).
-			Return(&errorIterator{err: errors.New("stat denied")})
+			Return(errorSeq(errors.New("stat denied")))
 
 		uc := newTestRestore(backupCli, storage.NewMockClient(t))
 		_, err := uc.Start(context.Background(), RestoreRequest{TaskID: "restore_1", BackupName: "backup1"})
@@ -121,7 +121,7 @@ func TestRestoreStart(t *testing.T) {
 		// fails instead of falling back to the per-level meta.
 		backupCli.EXPECT().
 			NewObjectIter(mock.Anything, "backup1/meta/full_meta.json", false).
-			Return(&errorIterator{err: errors.New("read denied")})
+			Return(errorSeq(errors.New("read denied")))
 
 		uc := newTestRestore(backupCli, storage.NewMockClient(t))
 		_, err := uc.Start(context.Background(), RestoreRequest{TaskID: "restore_1", BackupName: "backup1"})

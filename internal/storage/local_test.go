@@ -127,56 +127,48 @@ func TestLocalClient_NewObjectIter(t *testing.T) {
 
 	t.Run("PrefixIsFile", func(t *testing.T) {
 		cli := &LocalClient{}
-		iter := cli.NewObjectIter(context.Background(), path.Join(dir, "backup", "meta", "test.txt"), false)
+		file := path.Join(dir, "backup", "meta", "test.txt")
 
-		entry, ok, err := iter.Next(context.Background())
-		assert.True(t, ok)
-		assert.NoError(t, err)
-		assert.Equal(t, path.Join(dir, "backup", "meta", "test.txt"), entry.Key)
-		assert.Equal(t, int64(1), entry.Length)
-
-		iter = cli.NewObjectIter(context.Background(), path.Join(dir, "backup", "meta", "test.txt"), true)
-		entry, ok, err = iter.Next(context.Background())
-		assert.True(t, ok)
-		assert.NoError(t, err)
-		assert.Equal(t, path.Join(dir, "backup", "meta", "test.txt"), entry.Key)
-		assert.Equal(t, int64(1), entry.Length)
+		for _, recursive := range []bool{false, true} {
+			var entries []ObjectAttr
+			for entry, err := range cli.NewObjectIter(context.Background(), file, recursive) {
+				assert.NoError(t, err)
+				entries = append(entries, entry)
+			}
+			assert.Equal(t, []ObjectAttr{{Key: file, Length: 1}}, entries)
+		}
 	})
 
 	t.Run("Empty", func(t *testing.T) {
 		cli := &LocalClient{}
-		iter := cli.NewObjectIter(context.Background(), path.Join(dir, "not_exist"), false)
-		_, ok, err := iter.Next(context.Background())
-		assert.NoError(t, err)
-		assert.False(t, ok)
 
-		iter = cli.NewObjectIter(context.Background(), path.Join(dir, "not_exist"), true)
-		_, ok, err = iter.Next(context.Background())
-		assert.NoError(t, err)
-		assert.False(t, ok)
+		for _, recursive := range []bool{false, true} {
+			var count int
+			for _, err := range cli.NewObjectIter(context.Background(), path.Join(dir, "not_exist"), recursive) {
+				assert.NoError(t, err)
+				count++
+			}
+			assert.Equal(t, 0, count)
+		}
 	})
 
-	t.Run("StatErrorSurfacesThroughNext", func(t *testing.T) {
-		// The constructor is lazy and cannot fail: a prefix whose path crosses a
-		// regular file (ENOTDIR) must surface the stat error on the first Next.
+	t.Run("StatErrorSurfacesThroughFirstIteration", func(t *testing.T) {
+		// The sequence is lazy: a prefix whose path crosses a regular file
+		// (ENOTDIR) must surface the stat error on the first iteration.
 		cli := &LocalClient{}
-		iter := cli.NewObjectIter(context.Background(), path.Join(dir, "backup", "meta", "test.txt", "nested"), true)
-		_, ok, err := iter.Next(context.Background())
-		assert.Error(t, err)
-		assert.False(t, ok)
+		for _, err := range cli.NewObjectIter(context.Background(), path.Join(dir, "backup", "meta", "test.txt", "nested"), true) {
+			assert.Error(t, err)
+			return
+		}
+		assert.Fail(t, "expected a stat error from the first iteration")
 	})
 
 	t.Run("Recursive", func(t *testing.T) {
 		cli := &LocalClient{}
-		iter := cli.NewObjectIter(context.Background(), path.Join(dir, "backup"), true)
 
 		var entries []ObjectAttr
-		for {
-			entry, ok, err := iter.Next(context.Background())
+		for entry, err := range cli.NewObjectIter(context.Background(), path.Join(dir, "backup"), true) {
 			assert.NoError(t, err)
-			if !ok {
-				break
-			}
 			entries = append(entries, entry)
 		}
 
@@ -187,17 +179,13 @@ func TestLocalClient_NewObjectIter(t *testing.T) {
 
 	t.Run("NonRecursive", func(t *testing.T) {
 		cli := &LocalClient{}
-		iter := cli.NewObjectIter(context.Background(), path.Join(dir, "backup"), false)
 
 		var entries []ObjectAttr
-		for {
-			entry, ok, err := iter.Next(context.Background())
+		for entry, err := range cli.NewObjectIter(context.Background(), path.Join(dir, "backup"), false) {
 			assert.NoError(t, err)
-			if !ok {
-				break
-			}
 			entries = append(entries, entry)
 		}
+
 		assert.Len(t, entries, 2)
 		names := lo.Map(entries, func(entry ObjectAttr, _ int) string { return entry.Key })
 		assert.ElementsMatch(t, []string{path.Join(dir, "backup", "binlogs"), path.Join(dir, "backup", "meta")}, names)

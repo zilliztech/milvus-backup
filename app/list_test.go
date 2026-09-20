@@ -75,7 +75,7 @@ func TestListBackupsExecute(t *testing.T) {
 		// iterator's first read fails, which is where listing errors surface.
 		cli.EXPECT().
 			NewObjectIter(mock.Anything, "root/backup2/meta/full_meta.json", false).
-			Return(&errorIterator{err: errors.New("stat denied")})
+			Return(errorSeq(errors.New("stat denied")))
 
 		uc := &ListBackups{cli: cli, rootPath: "root"}
 		summaries, err := uc.Execute(context.Background())
@@ -92,7 +92,7 @@ func TestListBackupsExecute(t *testing.T) {
 
 		cli.EXPECT().
 			NewObjectIter(mock.Anything, "root/", false).
-			Return(&errorIterator{err: errors.New("connection closed")})
+			Return(errorSeq(errors.New("connection closed")))
 
 		uc := &ListBackups{cli: cli, rootPath: "root"}
 		_, err := uc.Execute(context.Background())

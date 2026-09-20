@@ -1,25 +1,16 @@
 package storage
 
-import "context"
+import "iter"
 
-var _ ObjectIterator = (*MockObjectIterator)(nil)
-
-type MockObjectIterator struct {
-	objs []ObjectAttr
-	idx  int
-}
-
-func (m *MockObjectIterator) Next(_ context.Context) (ObjectAttr, bool, error) {
-	if m.idx >= len(m.objs) {
-		return ObjectAttr{}, false, nil
+// NewMockObjectIterator returns a sequence that yields objs without error,
+// for tests that stub Client.NewObjectIter. Living outside a _test.go file
+// lets tests in importing packages use it too.
+func NewMockObjectIterator(objs []ObjectAttr) iter.Seq2[ObjectAttr, error] {
+	return func(yield func(ObjectAttr, error) bool) {
+		for _, obj := range objs {
+			if !yield(obj, nil) {
+				return
+			}
+		}
 	}
-	obj := m.objs[m.idx]
-	m.idx++
-	return obj, true, nil
-}
-
-func (m *MockObjectIterator) Close() error { return nil }
-
-func NewMockObjectIterator(objs []ObjectAttr) *MockObjectIterator {
-	return &MockObjectIterator{objs: objs}
 }
