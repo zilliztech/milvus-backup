@@ -12,6 +12,8 @@ enum ResponseCode {
   Fail = 3;
   Parameter_Error = 400;
   Request_Object_Not_Found = 404;
+  // Source List preflight failed before task registration. The caller may retry create.
+  Storage_Not_Ready = 503;
 }
 
 message IndexInfo {

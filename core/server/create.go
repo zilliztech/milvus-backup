@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -27,6 +28,7 @@ import (
 // CreateBackup Create backup interface
 // @Summary Create backup interface
 // @Description Create a backup with the given name and collections
+// @Description Source List preflight failures return HTTP 200 with code 503 (Storage_Not_Ready), without registering a task. The caller may retry the same request.
 // @Tags Backup
 // @Accept application/json
 // @Produce application/json
@@ -57,6 +59,33 @@ type createBackupHandler struct {
 	backupStorage storage.Client
 
 	milvusStorage storage.Client
+}
+
+const createStoragePreflightTimeout = 10 * time.Second
+
+func (h *createBackupHandler) checkSourceStorage(ctx context.Context, strategy backup.Strategy) error {
+	if strategy == backup.StrategyMetaOnly {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, createStoragePreflightTimeout)
+	defer cancel()
+	prefix := mpath.MilvusInsertLogDir(h.params.Milvus.Storage.RootPath.Val)
+	iter, err := h.milvusStorage.ListPrefix(ctx, prefix, true)
+	if err == nil {
+		defer iter.Close()
+		// ListPrefix may return before a request is made; Next surfaces errors.
+		// One result is enough, including an empty listing.
+		_, _, err = iter.Next(ctx)
+	}
+	if err == nil {
+		err = ctx.Err()
+	}
+	if err != nil {
+		conf := h.milvusStorage.Config()
+		return fmt.Errorf("source list preflight failed (provider=%s, endpoint=%s, bucket=%s, prefix=%s): %w",
+			conf.Provider, conf.Endpoint, conf.Bucket, prefix, err)
+	}
+	return nil
 }
 
 func newCreateBackupHandler(request *backuppb.CreateBackupRequest, params *v2.Config) *createBackupHandler {
@@ -322,6 +351,14 @@ func (h *createBackupHandler) run(ctx context.Context) *backuppb.BackupInfoRespo
 	args, err := h.toArgs()
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
+		resp.Msg = err.Error()
+		return resp
+	}
+
+	// Both execution modes call NewTask, which registers the job in memory.
+	// Reject inaccessible source storage before either mode can create a job.
+	if err := h.checkSourceStorage(ctx, args.Option.Strategy); err != nil {
+		resp.Code = backuppb.ResponseCode_Storage_Not_Ready
 		resp.Msg = err.Error()
 		return resp
 	}
