@@ -14,15 +14,6 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/retry"
 )
 
-// errorIterator always fails the next read.
-type errorIterator struct{}
-
-func (errorIterator) Next(context.Context) (ObjectAttr, bool, error) {
-	return ObjectAttr{}, false, assert.AnError
-}
-
-func (errorIterator) Close() error { return nil }
-
 func TestCopyPrefixTask_Execute(t *testing.T) {
 	t.Run("CopiesAllAndRemapsKeys", func(t *testing.T) {
 		src := NewMockClient(t)
@@ -35,15 +26,13 @@ func TestCopyPrefixTask_Execute(t *testing.T) {
 			{Key: "src/b/c", Length: 2},
 			{Key: "src/dir/", Length: 0}, // directory marker, must be skipped
 		}
-		iter := &mockObjectIterator{objs: objs}
 		src.EXPECT().NewObjectIter(mock.Anything, "src/", true).
-			Return(iter).Once()
+			Return(NewMockObjectIterator(objs)).Once()
 		dest.EXPECT().CopyObject(mock.Anything, CopyObjectInput{SrcCli: src, SrcAttr: ObjectAttr{Key: "src/a", Length: 1}, DestKey: "dest/a"}).Return(nil).Once()
 		dest.EXPECT().CopyObject(mock.Anything, CopyObjectInput{SrcCli: src, SrcAttr: ObjectAttr{Key: "src/b/c", Length: 2}, DestKey: "dest/b/c"}).Return(nil).Once()
 
 		task := NewCopyPrefixTask(CopyPrefixOpt{Src: src, Dest: dest, SrcPrefix: "src/", DestPrefix: "dest/", Sem: semaphore.NewWeighted(2)})
 		assert.NoError(t, task.Execute(context.Background()))
-		assert.True(t, iter.closed, "CopyPrefixTask must close the iterator")
 	})
 
 	t.Run("IterError", func(t *testing.T) {
@@ -51,7 +40,7 @@ func TestCopyPrefixTask_Execute(t *testing.T) {
 		dest := NewMockClient(t)
 		src.EXPECT().Config().Return(Config{Bucket: "src"}).Maybe()
 		dest.EXPECT().Config().Return(Config{Bucket: "dest"}).Maybe()
-		src.EXPECT().NewObjectIter(mock.Anything, "src/", true).Return(errorIterator{}).Once()
+		src.EXPECT().NewObjectIter(mock.Anything, "src/", true).Return(seqFailing(assert.AnError)).Once()
 
 		task := NewCopyPrefixTask(CopyPrefixOpt{Src: src, Dest: dest, SrcPrefix: "src/", DestPrefix: "dest/", Sem: semaphore.NewWeighted(2)})
 		err := task.Execute(context.Background())
@@ -65,13 +54,11 @@ func TestCopyPrefixTask_Execute(t *testing.T) {
 		src.EXPECT().Config().Return(Config{Bucket: "src"}).Maybe()
 		dest.EXPECT().Config().Return(Config{Bucket: "dest"}).Maybe()
 		objs := []ObjectAttr{{Key: "src/a", Length: 1}}
-		iter := &mockObjectIterator{objs: objs}
-		src.EXPECT().NewObjectIter(mock.Anything, "src/", true).Return(iter).Once()
+		src.EXPECT().NewObjectIter(mock.Anything, "src/", true).Return(NewMockObjectIterator(objs)).Once()
 		dest.EXPECT().CopyObject(mock.Anything, mock.Anything).Return(retry.Unrecoverable(assert.AnError)).Once()
 
 		task := NewCopyPrefixTask(CopyPrefixOpt{Src: src, Dest: dest, SrcPrefix: "src/", DestPrefix: "dest/", Sem: semaphore.NewWeighted(1)})
 		assert.Error(t, task.Execute(context.Background()))
-		assert.True(t, iter.closed, "CopyPrefixTask must close the iterator on error")
 	})
 
 	t.Run("StopsInflightCopiesOnIterError", func(t *testing.T) {
@@ -95,15 +82,14 @@ func TestCopyPrefixTask_Execute(t *testing.T) {
 				return ctx.Err()
 			}).Once()
 
-		// The iterator yields one object, then errors so Execute returns
-		// before the listing is drained.
-		iter := &iterWithError{objs: []ObjectAttr{{Key: "src/a", Length: 1}}}
-		src.EXPECT().NewObjectIter(mock.Anything, "src/", true).Return(iter).Once()
+		// The sequence yields one object, then a listing error, so Execute
+		// returns before the listing is drained.
+		src.EXPECT().NewObjectIter(mock.Anything, "src/", true).
+			Return(seqFailingAfter([]ObjectAttr{{Key: "src/a", Length: 1}}, assert.AnError)).Once()
 
 		task := NewCopyPrefixTask(CopyPrefixOpt{Src: src, Dest: dest, SrcPrefix: "src/", DestPrefix: "dest/", Sem: semaphore.NewWeighted(2)})
 		err := task.Execute(context.Background())
 		assert.Error(t, err)
-		assert.True(t, iter.closed, "CopyPrefixTask must close the iterator on early return")
 
 		select {
 		case <-released:

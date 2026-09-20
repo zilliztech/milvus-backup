@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"iter"
 	"net/http"
 	"sort"
 	"sync"
@@ -321,42 +322,34 @@ func (m *MinioClient) DeleteObject(ctx context.Context, key string) error {
 	})
 }
 
-type MinioObjectIterator struct {
-	cli *MinioClient
+// NewObjectIter lists objects in the bucket under prefix. minio-go's
+// ListObjects runs on a background goroutine that only returns once its
+// context is canceled and the channel is drained, so the sequence cancels
+// and drains in a defer. That defer runs whenever the range ends —
+// exhausted, cut short by a break or return, or stopped by a listing error —
+// and guarantees the goroutine exits; draining a fully-exhausted channel
+// returns immediately.
+func (m *MinioClient) NewObjectIter(ctx context.Context, prefix string, recursive bool) iter.Seq2[ObjectAttr, error] {
+	return func(yield func(ObjectAttr, error) bool) {
+		opt := minio.ListObjectsOptions{Prefix: prefix, Recursive: recursive}
+		subCtx, cancel := context.WithCancel(ctx)
+		objCh := m.cli.ListObjects(subCtx, m.cfg.Bucket, opt)
+		defer func() {
+			cancel()
+			for range objCh {
+			}
+		}()
 
-	cancel context.CancelFunc
-	objCh  <-chan minio.ObjectInfo
-}
-
-func (m *MinioObjectIterator) Next(_ context.Context) (ObjectAttr, bool, error) {
-	item, ok := <-m.objCh
-	if !ok {
-		return ObjectAttr{}, false, nil
+		for item := range objCh {
+			if item.Err != nil {
+				yield(ObjectAttr{}, fmt.Errorf("storage: %s list prefix %w", m.cfg.Provider, item.Err))
+				return
+			}
+			if !yield(ObjectAttr{Key: item.Key, Length: item.Size}, nil) {
+				return
+			}
+		}
 	}
-
-	if item.Err != nil {
-		return ObjectAttr{}, false, fmt.Errorf("storage: %s list prefix %w", m.cli.cfg.Provider, item.Err)
-	}
-	return ObjectAttr{Key: item.Key, Length: item.Size}, true, nil
-}
-
-// Close stops the background listing goroutine feeding objCh. minio-go's
-// ListObjects only returns once its context is canceled and the channel is
-// drained, so Close both cancels and drains to guarantee the goroutine exits
-// even when the caller stops iterating early. A fully-exhausted iterator is
-// already closed, in which case the drain returns immediately.
-func (m *MinioObjectIterator) Close() error {
-	m.cancel()
-	for range m.objCh {
-	}
-	return nil
-}
-
-func (m *MinioClient) NewObjectIter(ctx context.Context, prefix string, recursive bool) ObjectIterator {
-	opt := minio.ListObjectsOptions{Prefix: prefix, Recursive: recursive}
-	subCtx, cancel := context.WithCancel(ctx)
-	objCh := m.cli.ListObjects(subCtx, m.cfg.Bucket, opt)
-	return &MinioObjectIterator{cli: m, cancel: cancel, objCh: objCh}
 }
 
 // BucketExist checks if the bucket exists by listing a single object.

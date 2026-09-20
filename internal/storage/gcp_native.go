@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"iter"
 	"os"
 	"strings"
 
@@ -87,38 +88,35 @@ func (gcm *GCPNativeClient) DeleteObject(ctx context.Context, key string) error 
 	})
 }
 
-type GcpNativeObjectIterator struct {
-	iter *storage.ObjectIterator
-}
-
-func (g *GcpNativeObjectIterator) Next(_ context.Context) (ObjectAttr, bool, error) {
-	next, err := g.iter.Next()
-	if err != nil {
-		if errors.Is(err, iterator.Done) {
-			return ObjectAttr{}, false, nil
+// NewObjectIter constructs the GCS object iterator lazily inside the
+// sequence, so no request is made until the range starts. It fetches pages
+// synchronously and keeps no background goroutine.
+func (gcm *GCPNativeClient) NewObjectIter(ctx context.Context, prefix string, recursive bool) iter.Seq2[ObjectAttr, error] {
+	return func(yield func(ObjectAttr, error) bool) {
+		delimiter := ""
+		if !recursive {
+			delimiter = "/"
 		}
-		return ObjectAttr{}, false, fmt.Errorf("storage: gcp native list prefix %w", err)
+
+		iter := gcm.client.Bucket(gcm.cfg.Bucket).Objects(ctx, &storage.Query{
+			Prefix:    prefix,
+			Delimiter: delimiter,
+		})
+
+		for {
+			next, err := iter.Next()
+			if err != nil {
+				if errors.Is(err, iterator.Done) {
+					return
+				}
+				yield(ObjectAttr{}, fmt.Errorf("storage: gcp native list prefix %w", err))
+				return
+			}
+			if !yield(ObjectAttr{Key: next.Name, Length: next.Size}, nil) {
+				return
+			}
+		}
 	}
-
-	return ObjectAttr{Key: next.Name, Length: next.Size}, true, nil
-}
-
-// Close is a no-op: the GCP iterator fetches pages synchronously on Next and
-// keeps no background goroutine.
-func (g *GcpNativeObjectIterator) Close() error { return nil }
-
-func (gcm *GCPNativeClient) NewObjectIter(ctx context.Context, prefix string, recursive bool) ObjectIterator {
-	delimiter := ""
-	if !recursive {
-		delimiter = "/"
-	}
-
-	iter := gcm.client.Bucket(gcm.cfg.Bucket).Objects(ctx, &storage.Query{
-		Prefix:    prefix,
-		Delimiter: delimiter,
-	})
-
-	return &GcpNativeObjectIterator{iter: iter}
 }
 
 func (gcm *GCPNativeClient) BucketExist(ctx context.Context, _ string) (bool, error) {

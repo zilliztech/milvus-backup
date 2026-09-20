@@ -6,6 +6,7 @@ package storage
 
 import (
 	"context"
+	"iter"
 
 	mock "github.com/stretchr/testify/mock"
 )
@@ -447,19 +448,19 @@ func (_c *MockClient_HeadObject_Call) RunAndReturn(run func(ctx context.Context,
 }
 
 // NewObjectIter provides a mock function for the type MockClient
-func (_mock *MockClient) NewObjectIter(ctx context.Context, prefix string, recursive bool) ObjectIterator {
+func (_mock *MockClient) NewObjectIter(ctx context.Context, prefix string, recursive bool) iter.Seq2[ObjectAttr, error] {
 	ret := _mock.Called(ctx, prefix, recursive)
 
 	if len(ret) == 0 {
 		panic("no return value specified for NewObjectIter")
 	}
 
-	var r0 ObjectIterator
-	if returnFunc, ok := ret.Get(0).(func(context.Context, string, bool) ObjectIterator); ok {
+	var r0 iter.Seq2[ObjectAttr, error]
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, bool) iter.Seq2[ObjectAttr, error]); ok {
 		r0 = returnFunc(ctx, prefix, recursive)
 	} else {
 		if ret.Get(0) != nil {
-			r0 = ret.Get(0).(ObjectIterator)
+			r0 = ret.Get(0).(iter.Seq2[ObjectAttr, error])
 		}
 	}
 	return r0
@@ -501,12 +502,12 @@ func (_c *MockClient_NewObjectIter_Call) Run(run func(ctx context.Context, prefi
 	return _c
 }
 
-func (_c *MockClient_NewObjectIter_Call) Return(objectIterator ObjectIterator) *MockClient_NewObjectIter_Call {
-	_c.Call.Return(objectIterator)
+func (_c *MockClient_NewObjectIter_Call) Return(seq2 iter.Seq2[ObjectAttr, error]) *MockClient_NewObjectIter_Call {
+	_c.Call.Return(seq2)
 	return _c
 }
 
-func (_c *MockClient_NewObjectIter_Call) RunAndReturn(run func(ctx context.Context, prefix string, recursive bool) ObjectIterator) *MockClient_NewObjectIter_Call {
+func (_c *MockClient_NewObjectIter_Call) RunAndReturn(run func(ctx context.Context, prefix string, recursive bool) iter.Seq2[ObjectAttr, error]) *MockClient_NewObjectIter_Call {
 	_c.Call.Return(run)
 	return _c
 }

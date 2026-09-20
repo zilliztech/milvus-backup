@@ -58,8 +58,6 @@ func (c *CopyPrefixTask) copy(ctx context.Context, src ObjectAttr) error {
 
 func (c *CopyPrefixTask) Execute(ctx context.Context) error {
 	c.logger.Info("start copy prefix")
-	iter := c.opt.Src.NewObjectIter(ctx, c.opt.SrcPrefix, true)
-	defer iter.Close()
 
 	// Derive a cancellable context so in-flight copies can be stopped when the
 	// loop bails early, then join them through the single Wait below.
@@ -70,13 +68,9 @@ func (c *CopyPrefixTask) Execute(ctx context.Context) error {
 	g, subCtx := errgroup.WithContext(ctx)
 
 	var loopErr error
-	for {
-		attr, ok, err := iter.Next(ctx)
+	for attr, err := range c.opt.Src.NewObjectIter(ctx, c.opt.SrcPrefix, true) {
 		if err != nil {
 			loopErr = fmt.Errorf("storage: copy prefix iter object %w", err)
-			break
-		}
-		if !ok {
 			break
 		}
 		if attr.IsEmpty() && strings.HasSuffix(attr.Key, "/") {

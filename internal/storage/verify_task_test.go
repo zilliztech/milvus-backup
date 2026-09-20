@@ -16,10 +16,9 @@ func TestVerifyPrefixTask_Execute(t *testing.T) {
 			{Key: "dest/a", Length: 1},
 			{Key: "dest/b", Length: 2},
 		}
-		iter := &mockObjectIterator{objs: objs}
 		cli.EXPECT().
 			NewObjectIter(mock.Anything, "dest/", true).
-			Return(iter).Once()
+			Return(NewMockObjectIterator(objs)).Once()
 
 		task := NewVerifyPrefixTask(VerifyPrefixOpt{
 			Cli:      cli,
@@ -27,7 +26,6 @@ func TestVerifyPrefixTask_Execute(t *testing.T) {
 			Expected: map[string]int64{"dest/a": 1, "dest/b": 2},
 		})
 		assert.NoError(t, task.Execute(context.Background()))
-		assert.True(t, iter.closed, "VerifyPrefixTask must close the iterator")
 	})
 
 	t.Run("ExtraObjectsIgnored", func(t *testing.T) {
@@ -38,7 +36,7 @@ func TestVerifyPrefixTask_Execute(t *testing.T) {
 		}
 		cli.EXPECT().
 			NewObjectIter(mock.Anything, "dest/", true).
-			Return(&mockObjectIterator{objs: objs}).Once()
+			Return(NewMockObjectIterator(objs)).Once()
 
 		task := NewVerifyPrefixTask(VerifyPrefixOpt{
 			Cli:      cli,
@@ -51,10 +49,9 @@ func TestVerifyPrefixTask_Execute(t *testing.T) {
 	t.Run("SizeMismatch", func(t *testing.T) {
 		cli := NewMockClient(t)
 		objs := []ObjectAttr{{Key: "dest/a", Length: 3}}
-		iter := &mockObjectIterator{objs: objs}
 		cli.EXPECT().
 			NewObjectIter(mock.Anything, "dest/", true).
-			Return(iter).Once()
+			Return(NewMockObjectIterator(objs)).Once()
 
 		task := NewVerifyPrefixTask(VerifyPrefixOpt{
 			Cli:      cli,
@@ -64,7 +61,6 @@ func TestVerifyPrefixTask_Execute(t *testing.T) {
 		err := task.Execute(context.Background())
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "size mismatch")
-		assert.True(t, iter.closed, "VerifyPrefixTask must close the iterator on error")
 	})
 
 	t.Run("Missing", func(t *testing.T) {
@@ -72,7 +68,7 @@ func TestVerifyPrefixTask_Execute(t *testing.T) {
 		objs := []ObjectAttr{{Key: "dest/a", Length: 1}}
 		cli.EXPECT().
 			NewObjectIter(mock.Anything, "dest/", true).
-			Return(&mockObjectIterator{objs: objs}).Once()
+			Return(NewMockObjectIterator(objs)).Once()
 
 		task := NewVerifyPrefixTask(VerifyPrefixOpt{
 			Cli:      cli,
@@ -89,7 +85,7 @@ func TestVerifyPrefixTask_Execute(t *testing.T) {
 		cli := NewMockClient(t)
 		cli.EXPECT().
 			NewObjectIter(mock.Anything, "dest/", true).
-			Return(&mockObjectIterator{}).Once()
+			Return(NewMockObjectIterator(nil)).Once()
 
 		expected := make(map[string]int64, _missingSampleSize+3)
 		for i := 0; i < _missingSampleSize+3; i++ {
@@ -116,7 +112,7 @@ func TestVerifyPrefixTask_Execute(t *testing.T) {
 		cli := NewMockClient(t)
 		cli.EXPECT().
 			NewObjectIter(mock.Anything, "dest/", true).
-			Return(errorIterator{}).Once()
+			Return(seqFailing(assert.AnError)).Once()
 
 		task := NewVerifyPrefixTask(VerifyPrefixOpt{
 			Cli:      cli,
@@ -137,23 +133,20 @@ func TestExpectedDestObjects(t *testing.T) {
 			{Key: "src/sub/b", Length: 2},
 			{Key: "src/dir/", Length: 0}, // directory marker, must be skipped
 		}
-		iter := &mockObjectIterator{objs: objs}
 		cli.EXPECT().
 			NewObjectIter(mock.Anything, "src/", true).
-			Return(iter).Once()
+			Return(NewMockObjectIterator(objs)).Once()
 
 		expected, err := ExpectedDestObjects(context.Background(), cli, "src/", "dest/")
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]int64{"dest/a": 1, "dest/sub/b": 2}, expected)
-		assert.True(t, iter.closed, "ExpectedDestObjects must close the iterator")
 	})
 
 	t.Run("IterError", func(t *testing.T) {
 		cli := NewMockClient(t)
-		iter := &iterWithError{objs: []ObjectAttr{{Key: "src/a", Length: 1}}}
 		cli.EXPECT().
 			NewObjectIter(mock.Anything, "src/", true).
-			Return(iter).Once()
+			Return(seqFailingAfter([]ObjectAttr{{Key: "src/a", Length: 1}}, assert.AnError)).Once()
 
 		_, err := ExpectedDestObjects(context.Background(), cli, "src/", "dest/")
 		assert.Error(t, err)

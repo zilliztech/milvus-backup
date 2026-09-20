@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"iter"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -34,12 +35,11 @@ func TestAzureMultipartCopyThreshold(t *testing.T) {
 	})
 }
 
-// TestAzureObjectIteratorSurfacesPaginationError locks the iterator contract
-// that a pagination error must not be silently swallowed: Next returns
-// (zero, false, err) after a failed NextPage, so the caller loop propagates
-// the error instead of ending and reporting success (e.g. copy/delete/verify
-// tasks returning nil).
-func TestAzureObjectIteratorSurfacesPaginationError(t *testing.T) {
+// TestAzureIteratePagerSurfacesPaginationError locks the iterator contract
+// that a pagination error must not be silently swallowed: the sequence yields
+// the error as its last value, so a range loop propagates it instead of
+// ending and reporting success (e.g. copy/delete/verify tasks returning nil).
+func TestAzureIteratePagerSurfacesPaginationError(t *testing.T) {
 	listErr := errors.New("azure list blobs failed")
 
 	flatPager := runtime.NewPager(runtime.PagingHandler[azblob.ListBlobsFlatResponse]{
@@ -55,43 +55,41 @@ func TestAzureObjectIteratorSurfacesPaginationError(t *testing.T) {
 		},
 	})
 
+	flatSeq := func(yield func(ObjectAttr, error) bool) {
+		iteratePager(context.Background(), yield, flatPager, func(azblob.ListBlobsFlatResponse) []ObjectAttr { return nil })
+	}
+	hierSeq := func(yield func(ObjectAttr, error) bool) {
+		iteratePager(context.Background(), yield, hierPager, func(container.ListBlobsHierarchyResponse) []ObjectAttr { return nil })
+	}
+
 	tests := []struct {
 		name string
-		iter ObjectIterator
+		seq  iter.Seq2[ObjectAttr, error]
 	}{
-		{"Flat", &AzureObjectFlatIterator{pageIterator: pageIterator[azblob.ListBlobsFlatResponse]{pager: flatPager}}},
-		{"Hierarchy", &AzureObjectHierarchyIterator{pageIterator: pageIterator[container.ListBlobsHierarchyResponse]{pager: hierPager}}},
+		{"Flat", flatSeq},
+		{"Hierarchy", hierSeq},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			// Next must surface the pagination error instead of ending the loop.
-			_, ok, err := tt.iter.Next(context.Background())
-			assert.False(t, ok)
-			require.Error(t, err) // err is dereferenced below
-			assert.Contains(t, err.Error(), "azure list blobs failed")
-
-			// The standard caller loop must propagate the error rather than
-			// complete silently with a nil return.
-			walkErr := func(iter ObjectIterator) error {
-				for {
-					_, ok, err := iter.Next(context.Background())
-					if err != nil {
-						return err
-					}
-					if !ok {
-						return nil
-					}
+			// A standard range loop must receive the error and propagate it
+			// instead of completing silently with a nil return.
+			var got error
+			for _, err := range tt.seq {
+				if err != nil {
+					got = err
+					break
 				}
 			}
-			assert.Error(t, walkErr(tt.iter))
+			require.Error(t, got) // got is dereferenced below
+			assert.Contains(t, got.Error(), "azure list blobs failed")
 		})
 	}
 }
 
-// TestAzureObjectIteratorSkipsEmptyPage locks the empty-page handling: a pager
-// that yields a page with no objects before exhausting must terminate cleanly
-// with ok=false, not spin or error.
-func TestAzureObjectIteratorSkipsEmptyPage(t *testing.T) {
+// TestAzureIteratePagerSkipsEmptyPage locks the empty-page handling: a pager
+// that yields a page with no objects before exhausting must end the sequence
+// cleanly, not spin or error.
+func TestAzureIteratePagerSkipsEmptyPage(t *testing.T) {
 	fetched := 0
 	pager := runtime.NewPager(runtime.PagingHandler[azblob.ListBlobsFlatResponse]{
 		More: func(azblob.ListBlobsFlatResponse) bool {
@@ -103,15 +101,15 @@ func TestAzureObjectIteratorSkipsEmptyPage(t *testing.T) {
 			return azblob.ListBlobsFlatResponse{}, nil
 		},
 	})
-	iter := &AzureObjectFlatIterator{pageIterator: pageIterator[azblob.ListBlobsFlatResponse]{
-		pager: pager,
-		toAttrs: func(page azblob.ListBlobsFlatResponse) []ObjectAttr {
-			return nil
-		},
-	}}
+	seq := func(yield func(ObjectAttr, error) bool) {
+		iteratePager(context.Background(), yield, pager, func(azblob.ListBlobsFlatResponse) []ObjectAttr { return nil })
+	}
 
-	_, ok, err := iter.Next(context.Background())
-	assert.NoError(t, err)
-	assert.False(t, ok)
+	var count int
+	for _, err := range seq {
+		assert.NoError(t, err)
+		count++
+	}
+	assert.Equal(t, 0, count)
 	assert.Equal(t, 1, fetched)
 }

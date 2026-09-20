@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"iter"
 	"sort"
 	"strings"
 	"sync"
@@ -321,89 +322,57 @@ func (a *AzureClient) UploadObject(ctx context.Context, i UploadObjectInput) err
 	return nil
 }
 
-// pageIterator is a pull-based iterator over the Azure pager API. It fetches
-// one page at a time, skips pages that yield no objects, and surfaces pager
-// errors through Next. Both flat (recursive) and hierarchy (delimiter) listings
-// share this logic, differing only in the pager type and how a page is
-// converted to ObjectAttr entries.
-type pageIterator[T any] struct {
-	pager *runtime.Pager[T]
-
-	currPage []ObjectAttr
-	nextIdx  int
-
-	toAttrs func(T) []ObjectAttr
-}
-
-func (p *pageIterator[T]) Next(ctx context.Context) (ObjectAttr, bool, error) {
+// iteratePager drives the Azure pager API as a sequence. It fetches one page
+// at a time and yields the page's entries; a NextPage error is yielded and
+// stops the sequence. Both flat (recursive) and hierarchy (delimiter)
+// listings share this logic, differing only in the pager type and how a page
+// is converted to ObjectAttr entries.
+//
+// Notice: the first call to `pager.More()` returns `true` even if the current
+// prefix has no content, and ListBlobs* can yield empty pages (no blobs and
+// no prefixes), so the loop keeps fetching until a page yields an entry or
+// the pager is exhausted.
+func iteratePager[T any](ctx context.Context, yield func(ObjectAttr, error) bool, pager *runtime.Pager[T], toAttrs func(T) []ObjectAttr) {
 	for {
-		if p.nextIdx < len(p.currPage) {
-			attr := p.currPage[p.nextIdx]
-			p.nextIdx++
-			return attr, true, nil
+		if !pager.More() {
+			return
 		}
 
-		// Notice: the first call to `pager.More()` returns `true` even if the
-		// current prefix has no content.
-		if !p.pager.More() {
-			return ObjectAttr{}, false, nil
-		}
-
-		page, err := p.pager.NextPage(ctx)
+		page, err := pager.NextPage(ctx)
 		if err != nil {
-			return ObjectAttr{}, false, fmt.Errorf("storage: azure list prefix %w", err)
+			yield(ObjectAttr{}, fmt.Errorf("storage: azure list prefix %w", err))
+			return
 		}
-		p.currPage = p.currPage[:0]
-		p.nextIdx = 0
-		p.currPage = append(p.currPage, p.toAttrs(page)...)
 
-		// ListBlobs* can yield empty pages (no blobs and no prefixes). Loop
-		// until the page is non-empty or the pager is exhausted.
-	}
-}
-
-// Close is a no-op: the Azure pager fetches pages synchronously on Next and
-// keeps no background goroutine.
-func (p *pageIterator[T]) Close() error { return nil }
-
-type AzureObjectFlatIterator struct {
-	pageIterator[azblob.ListBlobsFlatResponse]
-}
-
-type AzureObjectHierarchyIterator struct {
-	pageIterator[container.ListBlobsHierarchyResponse]
-}
-
-func (a *AzureClient) NewObjectIter(_ context.Context, prefix string, recursive bool) ObjectIterator {
-	if recursive {
-		return a.newPrefixIterRecursive(prefix)
-	}
-	return a.newPrefixIterNonRecursive(prefix)
-}
-
-func (a *AzureClient) newPrefixIterRecursive(prefix string) *AzureObjectFlatIterator {
-	pager := a.cli.NewListBlobsFlatPager(a.cfg.Bucket, &azblob.ListBlobsFlatOptions{Prefix: to.Ptr(prefix)})
-
-	return &AzureObjectFlatIterator{pageIterator: pageIterator[azblob.ListBlobsFlatResponse]{
-		pager: pager,
-		toAttrs: func(page azblob.ListBlobsFlatResponse) []ObjectAttr {
-			attrs := make([]ObjectAttr, 0, len(page.Segment.BlobItems))
-			for _, blob := range page.Segment.BlobItems {
-				attrs = append(attrs, ObjectAttr{Key: *blob.Name, Length: *blob.Properties.ContentLength})
+		for _, attr := range toAttrs(page) {
+			if !yield(attr, nil) {
+				return
 			}
-			return attrs
-		},
-	}}
+		}
+	}
 }
 
-func (a *AzureClient) newPrefixIterNonRecursive(prefix string) *AzureObjectHierarchyIterator {
-	pager := a.cli.ServiceClient().
-		NewContainerClient(a.cfg.Bucket).
-		NewListBlobsHierarchyPager("/", &container.ListBlobsHierarchyOptions{Prefix: to.Ptr(prefix)})
+// NewObjectIter constructs the pager lazily inside the sequence, so no
+// request is made until the range starts. The pager fetches pages
+// synchronously and keeps no background goroutine.
+func (a *AzureClient) NewObjectIter(ctx context.Context, prefix string, recursive bool) iter.Seq2[ObjectAttr, error] {
+	return func(yield func(ObjectAttr, error) bool) {
+		if recursive {
+			pager := a.cli.NewListBlobsFlatPager(a.cfg.Bucket, &azblob.ListBlobsFlatOptions{Prefix: to.Ptr(prefix)})
+			iteratePager(ctx, yield, pager, func(page azblob.ListBlobsFlatResponse) []ObjectAttr {
+				attrs := make([]ObjectAttr, 0, len(page.Segment.BlobItems))
+				for _, blob := range page.Segment.BlobItems {
+					attrs = append(attrs, ObjectAttr{Key: *blob.Name, Length: *blob.Properties.ContentLength})
+				}
+				return attrs
+			})
+			return
+		}
 
-	return &AzureObjectHierarchyIterator{pageIterator: pageIterator[container.ListBlobsHierarchyResponse]{
-		pager: pager,
-		toAttrs: func(page container.ListBlobsHierarchyResponse) []ObjectAttr {
+		pager := a.cli.ServiceClient().
+			NewContainerClient(a.cfg.Bucket).
+			NewListBlobsHierarchyPager("/", &container.ListBlobsHierarchyOptions{Prefix: to.Ptr(prefix)})
+		iteratePager(ctx, yield, pager, func(page container.ListBlobsHierarchyResponse) []ObjectAttr {
 			attrs := make([]ObjectAttr, 0, len(page.Segment.BlobItems)+len(page.Segment.BlobPrefixes))
 			for _, blob := range page.Segment.BlobItems {
 				attrs = append(attrs, ObjectAttr{Key: *blob.Name, Length: *blob.Properties.ContentLength})
@@ -412,8 +381,8 @@ func (a *AzureClient) newPrefixIterNonRecursive(prefix string) *AzureObjectHiera
 				attrs = append(attrs, ObjectAttr{Key: *prefix.Name})
 			}
 			return attrs
-		},
-	}}
+		})
+	}
 }
 
 func (a *AzureClient) DeleteObject(ctx context.Context, key string) error {

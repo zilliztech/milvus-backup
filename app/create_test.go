@@ -3,6 +3,7 @@ package app
 import (
 	"context"
 	"errors"
+	"iter"
 	"testing"
 	"time"
 
@@ -116,11 +117,7 @@ func TestCreateBackupPreflight(t *testing.T) {
 		uc := &CreateBackup{params: params, milvusStorage: source, backupStorage: dest, taskMgr: taskmgr.NewMgr(), rootPath: "backup-root"}
 		req := CreateBackupRequest{TaskID: "retry-id", Option: backup.Option{BackupName: "retry_backup"}}
 		denied := errors.New("list access denied")
-		iter := &preflightIterator{}
-		iter.On("Next", mock.Anything).Return(storage.ObjectAttr{}, false, denied).Once()
-		iter.On("Close").Return(nil).Once()
-		t.Cleanup(func() { iter.AssertExpectations(t) })
-		source.EXPECT().NewObjectIter(mock.Anything, "instance/insert_log/", true).Return(iter).Once()
+		source.EXPECT().NewObjectIter(mock.Anything, "instance/insert_log/", true).Return(errorSeq(denied)).Once()
 		source.EXPECT().Config().Return(storage.Config{Bucket: "source-bucket"})
 
 		job, err := uc.Start(context.Background(), req)
@@ -135,11 +132,8 @@ func TestCreateBackupPreflight(t *testing.T) {
 		assert.ErrorIs(t, err, taskmgr.ErrTaskNotFound)
 
 		// Reuse the same client and request after access becomes available.
-		successIter := &preflightIterator{}
-		successIter.On("Next", mock.Anything).Return(storage.ObjectAttr{Key: "first"}, true, nil).Once()
-		successIter.On("Close").Return(nil).Once()
-		t.Cleanup(func() { successIter.AssertExpectations(t) })
-		source.EXPECT().NewObjectIter(mock.Anything, "instance/insert_log/", true).Return(successIter).Once()
+		source.EXPECT().NewObjectIter(mock.Anything, "instance/insert_log/", true).
+			Return(storage.NewMockObjectIterator([]storage.ObjectAttr{{Key: "first"}})).Once()
 		dest.EXPECT().Config().Return(storage.Config{})
 		job, err = uc.Start(context.Background(), req)
 		require.NoError(t, err)
@@ -166,18 +160,15 @@ func TestCreateBackupPreflight(t *testing.T) {
 		uc := &CreateBackup{params: v2.New(), milvusStorage: source, backupStorage: dest, taskMgr: taskmgr.NewMgr()}
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
-		iter := &preflightIterator{}
-		iter.On("Next", mock.Anything).Run(func(args mock.Arguments) {
-			cancel()
-			<-args.Get(0).(context.Context).Done()
-		}).Return(storage.ObjectAttr{}, false, context.Canceled).Once()
-		iter.On("Close").Return(nil).Once()
-		t.Cleanup(func() { iter.AssertExpectations(t) })
-		source.EXPECT().NewObjectIter(mock.Anything, mock.Anything, true).RunAndReturn(func(probeCtx context.Context, _ string, _ bool) storage.ObjectIterator {
+		source.EXPECT().NewObjectIter(mock.Anything, mock.Anything, true).RunAndReturn(func(probeCtx context.Context, _ string, _ bool) iter.Seq2[storage.ObjectAttr, error] {
 			deadline, ok := probeCtx.Deadline()
 			assert.True(t, ok)
 			assert.WithinDuration(t, time.Now().Add(10*time.Second), deadline, time.Second)
-			return iter
+			return func(yield func(storage.ObjectAttr, error) bool) {
+				cancel()
+				<-probeCtx.Done()
+				yield(storage.ObjectAttr{}, context.Canceled)
+			}
 		}).Once()
 		source.EXPECT().Config().Return(storage.Config{})
 		view, err := uc.Execute(ctx, CreateBackupRequest{TaskID: "cancel", Option: backup.Option{BackupName: "cancel_backup"}})
@@ -189,22 +180,10 @@ func TestCreateBackupPreflight(t *testing.T) {
 	})
 }
 
-// errorIterator fails every read. Since the iterator constructor cannot fail,
-// it stands in for listing errors that now surface through Next.
-type errorIterator struct{ err error }
-
-func (e *errorIterator) Next(context.Context) (storage.ObjectAttr, bool, error) {
-	return storage.ObjectAttr{}, false, e.err
+// errorSeq fails the listing on its first iteration, standing in for listing
+// errors surfaced through the sequence.
+func errorSeq(err error) iter.Seq2[storage.ObjectAttr, error] {
+	return func(yield func(storage.ObjectAttr, error) bool) {
+		yield(storage.ObjectAttr{}, err)
+	}
 }
-
-func (e *errorIterator) Close() error { return nil }
-
-// preflightIterator detects extra reads and verifies cleanup on success or error.
-type preflightIterator struct{ mock.Mock }
-
-func (i *preflightIterator) Next(ctx context.Context) (storage.ObjectAttr, bool, error) {
-	r := i.Called(ctx)
-	return r.Get(0).(storage.ObjectAttr), r.Bool(1), r.Error(2)
-}
-
-func (i *preflightIterator) Close() error { return i.Called().Error(0) }

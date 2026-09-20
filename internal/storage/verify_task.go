@@ -47,22 +47,15 @@ func (t *VerifyPrefixTask) Execute(ctx context.Context) error {
 	}
 	t.logger.Info("start verify prefix", zap.Int("expected_num", len(t.opt.Expected)))
 
-	iter := t.opt.Cli.NewObjectIter(ctx, t.opt.Prefix, true)
-	defer iter.Close()
-
 	// Track keys not yet seen in the listing; drop each as it is found.
 	missing := make(map[string]int64, len(t.opt.Expected))
 	for key, size := range t.opt.Expected {
 		missing[key] = size
 	}
 
-	for {
-		attr, ok, err := iter.Next(ctx)
+	for attr, err := range t.opt.Cli.NewObjectIter(ctx, t.opt.Prefix, true) {
 		if err != nil {
 			return fmt.Errorf("storage: verify prefix iter object %w", err)
-		}
-		if !ok {
-			break
 		}
 
 		want, ok := t.opt.Expected[attr.Key]

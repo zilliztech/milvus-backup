@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"io"
+	"iter"
 
 	minioCred "github.com/minio/minio-go/v7/pkg/credentials"
 	"golang.org/x/oauth2"
@@ -128,21 +129,6 @@ func (c CredentialType) String() string {
 	return "Can not find the credential type"
 }
 
-// ObjectIterator yields objects under a prefix. Each Next call returns the
-// next object, or ok=false once the listing is exhausted. err is non-nil only
-// on a real failure; exhaustion is not an error.
-//
-// It is not safe for concurrent use by multiple goroutines.
-//
-// The caller must Close the iterator when done, even after exhaustion or an
-// early return. Implementations may start a background listing goroutine that
-// Close is responsible for stopping; without it, a provider-backed iterator
-// can keep listing until its creation context is canceled.
-type ObjectIterator interface {
-	io.Closer
-	Next(ctx context.Context) (ObjectAttr, bool, error)
-}
-
 // Client is the interface for storage service.
 // All implementations should include retry logic internally for idempotent operations.
 type Client interface {
@@ -160,11 +146,28 @@ type Client interface {
 	// DeleteObject delete an object
 	DeleteObject(ctx context.Context, key string) error
 
-	// NewObjectIter returns an iterator over the objects sharing prefix. The
-	// constructor cannot fail: implementations start listing lazily and report
-	// errors through ObjectIterator.Next, so the iterator is never nil and
-	// Close is always callable.
-	NewObjectIter(ctx context.Context, prefix string, recursive bool) ObjectIterator
+	// NewObjectIter returns an iterator over the objects sharing prefix, as a
+	// range-over-function sequence:
+	//
+	//	for attr, err := range cli.NewObjectIter(ctx, prefix, true) {
+	//		if err != nil {
+	//			return err
+	//		}
+	//		// use attr
+	//	}
+	//
+	// The sequence is driven by the range: no request is made until the first
+	// iteration, so construction cannot fail, and listing errors surface as a
+	// non-nil err — the last value yielded before the sequence stops.
+	// Exhaustion simply ends the range.
+	//
+	// Leaving the loop early — break, return, or panic — stops the listing
+	// and releases its resources. A provider-backed listing may hold a
+	// background goroutine; ending the range is what stops it, so there is no
+	// Close to call and an early return leaks nothing.
+	//
+	// Each range over the returned sequence runs an independent listing.
+	NewObjectIter(ctx context.Context, prefix string, recursive bool) iter.Seq2[ObjectAttr, error]
 
 	// BucketExist use a prefix to check if bucket exist.
 	// Using a prefix to confirm whether a bucket exists can avoid requesting the head Bucket permission.

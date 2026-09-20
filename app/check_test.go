@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"iter"
 	"strings"
 	"testing"
 
@@ -63,10 +64,9 @@ func expectWriteAndCopy(t *testing.T, milvusCli, backupCli *storage.MockClient) 
 	milvusCli.EXPECT().Config().Return(storage.Config{}).Times(2)
 	backupCli.EXPECT().Config().Return(storage.Config{}).Times(2)
 
-	// One expectation per listing: the raw mock Call overwrites (not queues)
-	// chained Return values, so a Times(2) expectation would hand both calls
-	// the same iterator instance and the second listing would look empty.
-	oneObject := func() storage.ObjectIterator {
+	// One expectation per listing: each call gets a fresh sequence, so each
+	// listing sees its own objects regardless of how the mock evolves.
+	oneObject := func() iter.Seq2[storage.ObjectAttr, error] {
 		return storage.NewMockObjectIterator([]storage.ObjectAttr{{Key: "copied-object", Length: 1}})
 	}
 	milvusCli.EXPECT().
@@ -149,7 +149,7 @@ func TestCheckExecute(t *testing.T) {
 		milvusCli := storage.NewMockClient(t)
 		milvusCli.EXPECT().
 			NewObjectIter(mock.Anything, milvusRoot+"/", true).
-			Return(&errorIterator{err: errors.New("stat denied")})
+			Return(errorSeq(errors.New("stat denied")))
 
 		uc := newCheckUnderTest(grpc, milvusCli, storage.NewMockClient(t))
 		err := uc.Execute(context.Background(), &bytes.Buffer{})
@@ -170,7 +170,7 @@ func TestCheckExecute(t *testing.T) {
 		backupCli := storage.NewMockClient(t)
 		backupCli.EXPECT().
 			NewObjectIter(mock.Anything, backupRoot+"/", false).
-			Return(&errorIterator{err: errors.New("bucket denied")}).
+			Return(errorSeq(errors.New("bucket denied"))).
 			Once()
 
 		uc := newCheckUnderTest(grpc, milvusCli, backupCli)
@@ -212,7 +212,7 @@ func TestCheckExecute(t *testing.T) {
 		backupCli.EXPECT().Config().Return(storage.Config{}).Times(2)
 		milvusCli.EXPECT().
 			NewObjectIter(mock.Anything, mock.Anything, true).
-			Return(&errorIterator{err: errors.New("src list denied")}).
+			Return(errorSeq(errors.New("src list denied"))).
 			Once()
 		// The written check object is still cleaned up when the copy fails.
 		milvusCli.EXPECT().DeleteObject(mock.Anything, mock.Anything).Return(nil).Once()
