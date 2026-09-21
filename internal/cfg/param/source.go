@@ -2,6 +2,7 @@ package param
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -129,9 +130,7 @@ func (s *Source) WithOverrides(overrides map[string]string) *Source {
 		configFile: s.configFile,
 		override:   make(map[string]string, len(s.override)+len(overrides)),
 	}
-	for k, v := range s.override {
-		out.override[k] = v
-	}
+	maps.Copy(out.override, s.override)
 
 	spelling := make(map[string]string, len(s.overrideKeys)+len(overrides))
 	for _, k := range s.overrideKeys {

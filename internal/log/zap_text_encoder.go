@@ -66,7 +66,7 @@ func ShortCallerEncoder(caller zapcore.EntryCaller, enc zapcore.PrimitiveArrayEn
 // For JSON-escaping; see textEncoder.safeAddString below.
 const _hex = "0123456789abcdef"
 
-var _textPool = sync.Pool{New: func() interface{} {
+var _textPool = sync.Pool{New: func() any {
 	return &textEncoder{}
 }}
 
@@ -193,7 +193,7 @@ func (enc *textEncoder) resetReflectBuf() {
 	}
 }
 
-func (enc *textEncoder) AddReflected(key string, obj interface{}) error {
+func (enc *textEncoder) AddReflected(key string, obj any) error {
 	enc.resetReflectBuf()
 	err := enc.reflectEnc.Encode(obj)
 	if err != nil {
@@ -291,7 +291,7 @@ func (enc *textEncoder) AppendInt64(val int64) {
 	enc.buf.AppendInt(val)
 }
 
-func (enc *textEncoder) AppendReflected(val interface{}) error {
+func (enc *textEncoder) AppendReflected(val any) error {
 	enc.resetReflectBuf()
 	err := enc.reflectEnc.Encode(val)
 	if err != nil {

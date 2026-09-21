@@ -3,7 +3,7 @@ package secondary
 import (
 	"context"
 	"math/rand/v2"
-	"sort"
+	"slices"
 
 	"github.com/milvus-io/milvus/pkg/v3/proto/messagespb"
 	"github.com/milvus-io/milvus/pkg/v3/streaming/util/message"
@@ -101,9 +101,7 @@ func (clt *collLoadTask) buildHeader() *message.AlterLoadConfigMessageHeader {
 		return partition.GetPartitionId()
 	})
 
-	sort.Slice(partitionIDs, func(i, j int) bool {
-		return partitionIDs[i] < partitionIDs[j]
-	})
+	slices.Sort(partitionIDs)
 
 	return &message.AlterLoadConfigMessageHeader{
 		DbId:                  clt.dbBackup.GetDbId(),

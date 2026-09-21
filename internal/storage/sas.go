@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
@@ -64,7 +63,7 @@ func mintSourceSAS(ctx context.Context, cfg Config) (string, error) {
 		Protocol:      sas.ProtocolHTTPS,
 		StartTime:     now,
 		ExpiryTime:    expiry,
-		Permissions:   to.Ptr(sas.ContainerPermissions{Read: true, List: true}).String(),
+		Permissions:   new(sas.ContainerPermissions{Read: true, List: true}).String(),
 		ContainerName: cfg.Bucket,
 	}
 
@@ -95,8 +94,8 @@ func mintSourceSAS(ctx context.Context, cfg Config) (string, error) {
 		}
 
 		info := service.KeyInfo{
-			Start:  to.Ptr(now.Format(sas.TimeFormat)),
-			Expiry: to.Ptr(expiry.Format(sas.TimeFormat)),
+			Start:  new(now.Format(sas.TimeFormat)),
+			Expiry: new(expiry.Format(sas.TimeFormat)),
 		}
 		udc, err := svc.GetUserDelegationCredential(ctx, info, nil)
 		if err != nil {

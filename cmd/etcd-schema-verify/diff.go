@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 )
 
@@ -280,6 +281,6 @@ func collectIDs[V any](a, b map[int64]V) []int64 {
 	for k := range seen {
 		ids = append(ids, k)
 	}
-	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+	slices.Sort(ids)
 	return ids
 }

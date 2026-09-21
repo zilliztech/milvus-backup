@@ -13,7 +13,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/bloberror"
@@ -100,8 +99,8 @@ func (a *AzureClient) getSASBySharedKeyCredential(srcCli *AzureClient) (*sas.Que
 	sasQueryParams, err := sas.AccountSignatureValues{
 		Protocol:      sas.ProtocolHTTPS,
 		ExpiryTime:    time.Now().Add(48 * time.Hour),
-		Permissions:   to.Ptr(sas.AccountPermissions{Read: true, List: true}).String(),
-		ResourceTypes: to.Ptr(sas.AccountResourceTypes{Container: true, Object: true}).String(),
+		Permissions:   new(sas.AccountPermissions{Read: true, List: true}).String(),
+		ResourceTypes: new(sas.AccountResourceTypes{Container: true, Object: true}).String(),
 	}.SignWithSharedKey(credential)
 
 	if err != nil {
@@ -116,8 +115,8 @@ func (a *AzureClient) getSASByUserDelegation(ctx context.Context, srcCli *AzureC
 	now := time.Now().Add(-10 * time.Second)
 	expiry := now.Add(48 * time.Hour)
 	info := service.KeyInfo{
-		Start:  to.Ptr(now.Format(sas.TimeFormat)),
-		Expiry: to.Ptr(expiry.Format(sas.TimeFormat)),
+		Start:  new(now.Format(sas.TimeFormat)),
+		Expiry: new(expiry.Format(sas.TimeFormat)),
 	}
 	udc, err := srcCli.sasCli.GetUserDelegationCredential(ctx, info, nil)
 	if err != nil {
@@ -128,7 +127,7 @@ func (a *AzureClient) getSASByUserDelegation(ctx context.Context, srcCli *AzureC
 		Protocol:      sas.ProtocolHTTPS,
 		StartTime:     now,
 		ExpiryTime:    expiry,
-		Permissions:   to.Ptr(sas.ContainerPermissions{Read: true, List: true}).String(),
+		Permissions:   new(sas.ContainerPermissions{Read: true, List: true}).String(),
 		ContainerName: srcCli.cfg.Bucket,
 	}.SignWithUserDelegation(udc)
 	if err != nil {
@@ -358,7 +357,7 @@ func iteratePager[T any](ctx context.Context, yield func(ObjectAttr, error) bool
 func (a *AzureClient) NewObjectIter(ctx context.Context, prefix string, recursive bool) iter.Seq2[ObjectAttr, error] {
 	return func(yield func(ObjectAttr, error) bool) {
 		if recursive {
-			pager := a.cli.NewListBlobsFlatPager(a.cfg.Bucket, &azblob.ListBlobsFlatOptions{Prefix: to.Ptr(prefix)})
+			pager := a.cli.NewListBlobsFlatPager(a.cfg.Bucket, &azblob.ListBlobsFlatOptions{Prefix: new(prefix)})
 			iteratePager(ctx, yield, pager, func(page azblob.ListBlobsFlatResponse) []ObjectAttr {
 				attrs := make([]ObjectAttr, 0, len(page.Segment.BlobItems))
 				for _, blob := range page.Segment.BlobItems {
@@ -371,7 +370,7 @@ func (a *AzureClient) NewObjectIter(ctx context.Context, prefix string, recursiv
 
 		pager := a.cli.ServiceClient().
 			NewContainerClient(a.cfg.Bucket).
-			NewListBlobsHierarchyPager("/", &container.ListBlobsHierarchyOptions{Prefix: to.Ptr(prefix)})
+			NewListBlobsHierarchyPager("/", &container.ListBlobsHierarchyOptions{Prefix: new(prefix)})
 		iteratePager(ctx, yield, pager, func(page container.ListBlobsHierarchyResponse) []ObjectAttr {
 			attrs := make([]ObjectAttr, 0, len(page.Segment.BlobItems)+len(page.Segment.BlobPrefixes))
 			for _, blob := range page.Segment.BlobItems {
