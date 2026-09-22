@@ -2,6 +2,14 @@ import requests
 import argparse
 from tenacity import retry, stop_after_attempt
 
+# The 2.6-latest daily built from 20260920-b1aa37dc on (milvus-io/milvus#53540
+# backport) SIGKILLs standalone under L2 restore load with no panic in the
+# log, so resolve to the last daily before that commit until a fixed image
+# ships.
+PINNED_TAGS = {
+    "2.6-latest": "2.6-20260920-74a6cd84",
+}
+
 @retry(stop=stop_after_attempt(7))
 def get_image_tag_by_short_name(repository, tag, arch):
     
@@ -37,6 +45,9 @@ if __name__ == "__main__":
     args = argparse.parse_args()
     if "latest" not in args.tag:
         print(args.tag)
+    elif args.tag in PINNED_TAGS:
+        base = PINNED_TAGS[args.tag]
+        print(f"{base}-{args.arch}" if args.arch else base)
     else:
         res = get_image_tag_by_short_name(args.repository, args.tag, args.arch)
         print(res)
