@@ -211,6 +211,60 @@ func snapshotCloudProvider(provider string) (string, error) {
 	}
 }
 
+// SnapshotSameService reports whether a snapshot copy between a and b stays
+// inside one storage service. Milvus moves snapshot bundles with a server-side
+// copy addressed to a single service, so the copy can span that service's
+// buckets, accounts and regions, but never a second provider — and never a
+// second endpoint of a self-hosted store, which is a service of its own. The
+// binlog format has no such limit: it streams the bytes through milvus-backup.
+func SnapshotSameService(a, b Config) bool {
+	if SameBackend(a, b) {
+		return true
+	}
+
+	aProvider, err := snapshotCloudProvider(a.Provider)
+	if err != nil {
+		// An unsupported provider is rejected where the snapshot uri is built;
+		// here it only means the copy cannot be one service's work.
+		return false
+	}
+	bProvider, err := snapshotCloudProvider(b.Provider)
+	if err != nil {
+		return false
+	}
+	if aProvider != bProvider {
+		return false
+	}
+
+	if a.Provider == v2.ProviderMinio {
+		// A self-hosted store is its endpoint, as Milvus reaches it: two
+		// endpoints are two services, whatever the provider string says.
+		return milvusViewEndpoint(a) == milvusViewEndpoint(b)
+	}
+
+	// A cloud provider's service spans its accounts and regions, so a copy
+	// between two of its endpoints is still one service's work.
+	return true
+}
+
+// SnapshotStoreDescription renders the identity a snapshot copy is confined to,
+// for errors and logs: the provider, and the endpoint when there is one.
+func SnapshotStoreDescription(cfg Config) string {
+	if cfg.Endpoint != "" {
+		return cfg.Provider + " at " + cfg.Endpoint
+	}
+	return cfg.Provider
+}
+
+// milvusViewEndpoint is the endpoint Milvus connects to, which is the one a
+// snapshot copy is addressed to.
+func milvusViewEndpoint(cfg Config) string {
+	if cfg.MilvusEndpoint != "" {
+		return cfg.MilvusEndpoint
+	}
+	return cfg.Endpoint
+}
+
 func endpointHost(endpoint string) string {
 	host := strings.TrimSpace(endpoint)
 	host = strings.TrimPrefix(host, "https://")

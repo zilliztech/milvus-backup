@@ -26,6 +26,12 @@ For example, a backup created from Milvus 2.6 cannot be restored to Milvus 2.5.
 
 \* Supported from Milvus 3.0.1 and later; 3.0.0 is not supported.
 
+### Backup formats
+
+On Milvus 3.0.1 and later, backups are taken in the snapshot format by default: Milvus freezes each collection into a snapshot and copies the data to the backup storage itself, keeping the bytes off the milvus-backup host. Older servers use the binlog format, which streams the data through milvus-backup, and `--format=binlog` selects it explicitly.
+
+The snapshot copy is performed by Milvus inside one storage service, so the snapshot format requires the backup storage to be the same service as the Milvus storage: another bucket, account, or region of the same cloud provider works, but a different provider — or a second self-hosted MinIO — does not, and milvus-backup refuses the backup instead of producing a partial one. The binlog format has no such requirement and moves data between any two supported backends.
+
 ## Installation
 
 Download a binary from the [release page](https://github.com/zilliztech/milvus-backup/releases), or install it with Homebrew on macOS:

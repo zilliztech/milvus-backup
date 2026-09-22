@@ -326,21 +326,32 @@ func (t *Task) privateExecute(ctx context.Context) error {
 // not implemented ExportSnapshot yet, so auto cannot rely on it there, and the
 // explicit pin is the way to keep producing binlog backups on the 3.0 line.
 // Revisit the acceptance once the export lands on master.
+//
+// The storage fork comes on top of the version one: a snapshot is copied by the
+// server inside one storage service, so a backup target on another service — a
+// different provider, or a second self-hosted endpoint — cannot take one.
+// There is no binlog fallback to offer on a 3.0 server, so both auto and the
+// explicit pin fail here with the reason instead of a server-side copy error.
 func (t *Task) resolveFormat() (string, error) {
-	switch t.option.Format {
-	case FormatSnapshot:
-		if !t.grpc.HasFeature(milvus.Snapshot) {
-			return "", fmt.Errorf("backup: the snapshot format needs a milvus 3.0 or newer server")
-		}
-		return meta.FormatSnapshot, nil
-	case FormatBinlog:
-		return meta.FormatBinlog, nil
-	default: // FormatAuto
-		if t.grpc.HasFeature(milvus.Snapshot) {
-			return meta.FormatSnapshot, nil
-		}
+	if t.option.Format == FormatBinlog {
 		return meta.FormatBinlog, nil
 	}
+
+	// Auto and the explicit pin both ask for a snapshot from here on; they part
+	// ways only when the server cannot do one.
+	if !t.grpc.HasFeature(milvus.Snapshot) {
+		if t.option.Format == FormatAuto {
+			return meta.FormatBinlog, nil
+		}
+		return "", fmt.Errorf("backup: the snapshot format needs a milvus 3.0 or newer server")
+	}
+
+	if !storage.SnapshotSameService(t.milvusStorage.Config(), t.backupStorage.Config()) {
+		return "", fmt.Errorf("backup: the snapshot format copies data inside one storage service, but the milvus storage (%s) and the backup storage (%s) are not the same one; put the backup storage on the same service as the milvus storage",
+			storage.SnapshotStoreDescription(t.milvusStorage.Config()), storage.SnapshotStoreDescription(t.backupStorage.Config()))
+	}
+
+	return meta.FormatSnapshot, nil
 }
 
 // newDataTask builds the per-collection data task for the resolved format. The

@@ -25,6 +25,14 @@ type snapshotSource struct {
 }
 
 func newSnapshotSource(ctx context.Context, milvusCfg, backupCfg storage.Config, backupDir string) (snapshotSource, error) {
+	// Milvus copies the bundles in with a server-side copy inside one storage
+	// service, so a backup held on another service cannot be restored from
+	// directly — move it onto the milvus storage's service first.
+	if !storage.SnapshotSameService(milvusCfg, backupCfg) {
+		return snapshotSource{}, fmt.Errorf("restore: the snapshot format copies data inside one storage service, but the milvus storage (%s) and the backup storage (%s) are not the same one",
+			storage.SnapshotStoreDescription(milvusCfg), storage.SnapshotStoreDescription(backupCfg))
+	}
+
 	uri, err := storage.SnapshotStoreURI(milvusCfg, backupCfg, backupDir)
 	if err != nil {
 		return snapshotSource{}, err

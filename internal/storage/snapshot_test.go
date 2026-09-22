@@ -315,3 +315,93 @@ func TestSnapshotExternalSpec(t *testing.T) {
 		assert.ErrorContains(t, err, "source sas")
 	})
 }
+
+func TestSnapshotSameService(t *testing.T) {
+	tests := []struct {
+		name string
+		a    Config
+		b    Config
+		want bool
+	}{
+		{
+			// Buckets and credentials are not part of the identity: one backend
+			// serves both sides, and the copy stays inside it.
+			name: "SameBackend",
+			a:    Config{Provider: v2.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket"},
+			b:    Config{Provider: v2.ProviderMinio, Endpoint: "minio:9000", Bucket: "backup-bucket"},
+			want: true,
+		},
+		{
+			// One cloud service spans its regions and endpoints, so a
+			// cross-region copy is still server-side.
+			name: "SameCloudAcrossRegions",
+			a:    Config{Provider: v2.ProviderAWS, Region: "us-east-1", Bucket: "milvus-bucket"},
+			b:    Config{Provider: v2.ProviderAWS, Region: "us-west-2", Bucket: "backup-bucket"},
+			want: true,
+		},
+		{
+			// s3 and aws spell the same provider family in the extfs.
+			name: "S3AndAWSAreOneFamily",
+			a:    Config{Provider: v2.ProviderAWS, Region: "us-east-1", Bucket: "milvus-bucket"},
+			b:    Config{Provider: v2.ProviderS3, Region: "us-east-1", Bucket: "backup-bucket"},
+			want: true,
+		},
+		{
+			// The cross-account Azure copy exists, authorized by the source SAS.
+			name: "AzureAcrossAccounts",
+			a: Config{Provider: v2.ProviderAzure, Endpoint: "core.windows.net", Bucket: "milvus-bucket",
+				Credential: Credential{AzureAccountName: "milvus-account"}},
+			b: Config{Provider: v2.ProviderAzure, Endpoint: "core.windows.net", Bucket: "backup-bucket",
+				Credential: Credential{AzureAccountName: "backup-account"}},
+			want: true,
+		},
+		{
+			name: "CrossProvider",
+			a:    Config{Provider: v2.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket"},
+			b:    Config{Provider: v2.ProviderAWS, Region: "us-west-2", Bucket: "backup-bucket"},
+			want: false,
+		},
+		{
+			// gcp is the S3-compatible gateway and gcpnative the native client:
+			// two chunk managers upstream, not one service.
+			name: "GCPAndGCPNative",
+			a:    Config{Provider: v2.ProviderGCP, Endpoint: "storage.googleapis.com", Bucket: "milvus-bucket"},
+			b:    Config{Provider: v2.ProviderGCPNative, Bucket: "backup-bucket"},
+			want: false,
+		},
+		{
+			// Two self-hosted endpoints are two services, even under one
+			// provider string.
+			name: "MinioAcrossEndpoints",
+			a:    Config{Provider: v2.ProviderMinio, Endpoint: "minio-a:9000", Bucket: "milvus-bucket"},
+			b:    Config{Provider: v2.ProviderMinio, Endpoint: "minio-b:9000", Bucket: "backup-bucket"},
+			want: false,
+		},
+		{
+			// The copy is addressed as Milvus connects, so a shared Milvus-view
+			// endpoint makes one service out of two milvus-backup views.
+			name: "MinioOneMilvusView",
+			a:    Config{Provider: v2.ProviderMinio, Endpoint: "minio-a:9000", Bucket: "milvus-bucket"},
+			b: Config{Provider: v2.ProviderMinio, Endpoint: "minio-b:9000", MilvusEndpoint: "minio-a:9000",
+				Bucket: "backup-bucket"},
+			want: true,
+		},
+		{
+			// Local storage has no snapshot support at all; that error is
+			// raised where the uri is built.
+			name: "UnsupportedProvider",
+			a:    Config{Provider: v2.ProviderLocal, Endpoint: "/tmp/milvus", Bucket: "milvus-bucket"},
+			b:    Config{Provider: v2.ProviderLocal, Endpoint: "/tmp/backup", Bucket: "backup-bucket"},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, SnapshotSameService(tt.a, tt.b))
+			// The relation is symmetric: the export and the restore direction
+			// ask the same question.
+			assert.Equal(t, tt.want, SnapshotSameService(tt.b, tt.a))
+		})
+	}
+}

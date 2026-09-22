@@ -56,8 +56,14 @@ func TestNewSnapshotSource(t *testing.T) {
 		assert.Empty(t, source.externalSpec)
 	})
 
+	// Two s3 configs that are not one backend — different regions, different
+	// credentials — are still one storage service, so the copy goes ahead with
+	// the backup side's credentials spelled out in a spec.
 	t.Run("OtherBackendSendsSpec", func(t *testing.T) {
-		milvusCfg := storage.Config{Provider: v2.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket"}
+		milvusCfg := storage.Config{
+			Provider: v2.ProviderS3, Region: "us-east-1", Bucket: "milvus-bucket",
+			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
+		}
 		backupCfg := storage.Config{
 			Provider: v2.ProviderS3, Region: "us-west-2", Bucket: "backup-bucket",
 			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
@@ -67,6 +73,19 @@ func TestNewSnapshotSource(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "s3://backup-bucket/backup/mybackup", source.dirURI)
 		assert.Contains(t, source.externalSpec, `"access_key_id":"ak"`)
+	})
+
+	// A backup held on another provider's service is unreadable to the
+	// server-side copy, so the restore refuses it before any job is submitted.
+	t.Run("CrossServiceFails", func(t *testing.T) {
+		milvusCfg := storage.Config{Provider: v2.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket"}
+		backupCfg := storage.Config{
+			Provider: v2.ProviderS3, Region: "us-west-2", Bucket: "backup-bucket",
+			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
+		}
+
+		_, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/")
+		assert.ErrorContains(t, err, "are not the same one")
 	})
 
 	// A restore whose backup container lives in another storage account reads
@@ -109,6 +128,8 @@ func TestNewSnapshotSource(t *testing.T) {
 		assert.ErrorContains(t, err, "crosses azure storage accounts")
 	})
 
+	// A SAS minted for a backup on another provider's service never gets as far
+	// as the token check: the copy cannot cross services to begin with.
 	t.Run("NonAzureMilvusWithSASFails", func(t *testing.T) {
 		milvusCfg := storage.Config{
 			Provider: v2.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket",
@@ -118,7 +139,7 @@ func TestNewSnapshotSource(t *testing.T) {
 		backupCfg.SourceSAS = "sv=2024-08-04&sig=abc"
 
 		_, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/")
-		assert.ErrorContains(t, err, "crosses azure storage accounts")
+		assert.ErrorContains(t, err, "are not the same one")
 	})
 }
 
