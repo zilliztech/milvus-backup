@@ -1,0 +1,13 @@
+# Probe-only override used by the ci/unpin-26-coredump branch to capture a
+# kernel core dump when standalone dies. The kernel resolves core_pattern
+# inside the crashing process's mount namespace, so the pattern must point at
+# this bind mount (/cores), not at a host-only path; the CI step sets it with
+# `sysctl -w kernel.core_pattern=/cores/core.%p` before deploying.
+services:
+  standalone:
+    ulimits:
+      core: -1
+    environment:
+      GOTRACEBACK: crash
+    volumes:
+      - ./cores:/cores

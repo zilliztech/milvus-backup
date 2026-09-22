@@ -1333,6 +1333,16 @@ jobs:
         run: |
           pip install -r requirements.txt --trusted-host https://test.pypi.org
 
+      - name: Enable core dump capture
+        # The kernel resolves core_pattern inside the crashing process's mount
+        # namespace, so the pattern must name the /cores bind mount declared in
+        # docker-compose.coredump.yml, and the sysctl must run on the host
+        # before the containers start.
+        shell: bash
+        run: |
+          sudo sysctl -w kernel.core_pattern=/cores/core.%p
+          sudo sysctl -w kernel.core_uses_pid=1
+
       - name: Milvus deploy
 
         timeout-minutes: 15
@@ -1358,10 +1368,10 @@ jobs:
             yq -i '.dataCoord.compaction.enableAutoCompaction = true' custom_config.yaml
           fi
           cat custom_config.yaml || true
-          mkdir -p volumes/etcd volumes/minio volumes/milvus
+          mkdir -p volumes/etcd volumes/minio volumes/milvus cores
           sudo chmod -R 777 volumes
-          sudo docker compose -f docker-compose.yml up -d --wait
-          sudo docker compose -f docker-compose.yml ps -a
+          sudo docker compose -f docker-compose.yml -f docker-compose.coredump.yml up -d --wait
+          sudo docker compose -f docker-compose.yml -f docker-compose.coredump.yml ps -a
 
       - name: Start backup server
         timeout-minutes: 5
@@ -1399,6 +1409,16 @@ jobs:
             bash ../../scripts/export_log_docker.sh logs
           fi
 
+      - name: Collect core dumps
+        if: ${{ always() }}
+        shell: bash
+        working-directory: deployment/${{ matrix.milvus_mode }}
+        run: |
+          ls -lh cores/ || true
+          sudo chown -R $(id -u):$(id -g) cores || true
+          tar czf /tmp/cores.tar.gz cores || true
+          ls -lh /tmp/cores.tar.gz || true
+
       - name: Export Backup Server logs
         if: ${{ always() }}
         shell: bash
@@ -1414,6 +1434,7 @@ jobs:
           path: |
             /tmp/ci_logs
             deployment/${{ matrix.milvus_mode }}/logs
+            /tmp/cores.tar.gz
 
   ci-summary:
     name: CI summary
