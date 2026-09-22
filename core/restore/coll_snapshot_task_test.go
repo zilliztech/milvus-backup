@@ -158,6 +158,32 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 		assert.ErrorContains(t, err, "exceeding max_shard_num")
 	})
 
+	// A shard_num override equal to the bundle's shard count asks for exactly what the
+	// restore produces, so the restore proceeds with the bundle's own count.
+	t.Run("ShardNumOverrideMatchesBundle", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().RestoreExternalSnapshot(mock.Anything, mock.Anything).Return(9001, nil)
+		cli.EXPECT().GetRestoreSnapshotState(mock.Anything, int64(9001)).
+			Return(&milvuspb.RestoreSnapshotInfo{State: milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted}, nil)
+
+		task := newTestCollSnapshotTask(t, cli, false)
+		task.collBackup.ShardsNum = 8
+		task.shardNumOverride = 8
+		require.NoError(t, task.Execute(context.Background()))
+	})
+
+	// The snapshot path can neither raise nor lower the bundle's shard count, so an
+	// override naming a different count is refused and nothing is submitted.
+	t.Run("ShardNumOverrideDiffers", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+
+		task := newTestCollSnapshotTask(t, cli, false)
+		task.collBackup.ShardsNum = 8
+		task.shardNumOverride = 4
+		err := task.Execute(context.Background())
+		assert.ErrorContains(t, err, "can neither raise nor lower the shard count")
+	})
+
 	// The description cannot be written into the bundle's schema, so an override is applied
 	// with an AlterCollection once the restore job completes.
 	t.Run("DescOverride", func(t *testing.T) {

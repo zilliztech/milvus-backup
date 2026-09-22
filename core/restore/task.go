@@ -247,15 +247,10 @@ func checkSnapshotSupport(plan *Plan, opt *Option) error {
 		unsupported = append(unsupported, "ezk_mapping")
 	}
 	// A description override is applied with an AlterCollection after the restore
-	// completes, so it stays available. The shard count cannot: Milvus creates the
-	// collection from the bundle, and shards are not alterable afterwards.
-	for _, override := range plan.CollOverrides {
-		if override.ShardNum != 0 {
-			unsupported = append(unsupported, "shard_num collection overrides")
-			break
-		}
-	}
-
+	// completes, so it stays available. A shard_num override is checked per collection
+	// against the bundle's shard count in the snapshot task, where that count is known:
+	// an override asking for exactly what the restore produces passes, anything that
+	// would change the shard count is refused.
 	if len(unsupported) != 0 {
 		return fmt.Errorf("restore: %s cannot be used with a snapshot format backup",
 			strings.Join(unsupported, ", "))
@@ -391,8 +386,9 @@ func (t *Task) newCollTask(dbBackup *backuppb.DatabaseBackupInfo, collBackup *ba
 				target:       target,
 				source:       t.snapshotSource,
 				dropExist:    t.args.Option.DropExistCollection,
-				maxShardNum:  t.args.Option.MaxShardNum,
-				descOverride: t.args.Plan.CollOverrides[target.String()].Description,
+				maxShardNum:      t.args.Option.MaxShardNum,
+				shardNumOverride: t.args.Plan.CollOverrides[target.String()].ShardNum,
+				descOverride:     t.args.Plan.CollOverrides[target.String()].Description,
 				skipParams:   t.args.Option.SkipParams,
 				grpcCli:      t.grpc,
 				taskMgr:      t.args.TaskMgr,
