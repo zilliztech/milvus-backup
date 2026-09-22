@@ -96,6 +96,16 @@ jobs:
         exclude:
           - source_image_tag: 2.6-latest
             target_image_tag: 2.6-latest
+        include:
+          # TEMPORARY experiment: a 3.0 (master) instance with the Loon FFI
+          # storage disabled, backed up with the binlog format forced — does the
+          # artifact restore onto a 2.6 instance? Remove once measured.
+          - milvus_mode: standalone
+            another_milvus_mode: standalone
+            source_image_tag: master-latest
+            target_image_tag: 2.6-latest
+            source_use_loonffi: false
+            backup_format: binlog
 
     steps:
       - uses: actions/checkout@v7
@@ -133,6 +143,10 @@ jobs:
         run: |
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.source_image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          if [ -n "${{ matrix.source_use_loonffi }}" ]; then
+            yq -i '.common.storage.useLoonFFI = ${{ matrix.source_use_loonffi }}' custom_config.yaml
+          fi
+          cat custom_config.yaml || true
           mkdir -p volumes/etcd volumes/minio volumes/milvus
           sudo chmod -R 777 volumes
           sudo docker compose -f docker-compose.yml up -d --wait
@@ -170,14 +184,23 @@ jobs:
         run: |
           ./milvus-backup check
           ./milvus-backup list
-          ./milvus-backup create -n my_backup
+          if [ -n "${{ matrix.backup_format }}" ]; then
+            ./milvus-backup create -n my_backup --format=${{ matrix.backup_format }}
+          else
+            ./milvus-backup create -n my_backup
+          fi
           ./milvus-backup list
       - name: Restore backup
+        # The experiment leg restores the binlog artifact on the 3.0 source
+        # itself first, which is a side question — a failure there must not stop
+        # the 2.6 restore that the experiment is for.
+        continue-on-error: ${{ matrix.source_image_tag == 'master-latest' }}
         timeout-minutes: 5
         shell: bash
         run: |
           ./milvus-backup restore -n my_backup -s _recover
       - name: Verify data
+        continue-on-error: ${{ matrix.source_image_tag == 'master-latest' }}
         timeout-minutes: 5
         shell: bash
         run: |
