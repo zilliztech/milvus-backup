@@ -19,6 +19,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
+	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
@@ -243,18 +244,23 @@ func TestTask_excludeExternalColl(t *testing.T) {
 }
 
 func TestTask_resolveFormat(t *testing.T) {
+	sameService := storage.Config{Provider: v2.ProviderMinio, Endpoint: "minio:9000", Bucket: "a"}
+	crossService := storage.Config{Provider: v2.ProviderAWS, Region: "us-west-2", Bucket: "b"}
+
 	tests := []struct {
 		name      string
 		format    Format
 		snapshot  bool
+		backupCfg storage.Config
 		want      string
 		wantError string
 	}{
 		{
-			name:     "AutoPicksSnapshotOn3_0",
-			format:   FormatAuto,
-			snapshot: true,
-			want:     meta.FormatSnapshot,
+			name:      "AutoPicksSnapshotOn3_0",
+			format:    FormatAuto,
+			snapshot:  true,
+			backupCfg: sameService,
+			want:      meta.FormatSnapshot,
 		},
 		{
 			name:   "AutoPicksBinlogOnOldServer",
@@ -262,15 +268,33 @@ func TestTask_resolveFormat(t *testing.T) {
 			want:   meta.FormatBinlog,
 		},
 		{
-			name:     "SnapshotPinnedOn3_0",
-			format:   FormatSnapshot,
-			snapshot: true,
-			want:     meta.FormatSnapshot,
+			// The snapshot copy runs inside one storage service, and the binlog
+			// format does not cover a 3.0 server — so a cross-service target
+			// leaves auto with no working format, and it says so.
+			name:      "AutoRefusedAcrossServices",
+			format:    FormatAuto,
+			snapshot:  true,
+			backupCfg: crossService,
+			wantError: "are not the same one",
+		},
+		{
+			name:      "SnapshotPinnedOn3_0",
+			format:    FormatSnapshot,
+			snapshot:  true,
+			backupCfg: sameService,
+			want:      meta.FormatSnapshot,
 		},
 		{
 			name:      "SnapshotRefusedOnOldServer",
 			format:    FormatSnapshot,
 			wantError: "snapshot format needs a milvus 3.0 or newer server",
+		},
+		{
+			name:      "SnapshotRefusedAcrossServices",
+			format:    FormatSnapshot,
+			snapshot:  true,
+			backupCfg: crossService,
+			wantError: "put the backup storage on the same service",
 		},
 		{
 			name:     "BinlogAcceptedOn3_0",
@@ -292,10 +316,23 @@ func TestTask_resolveFormat(t *testing.T) {
 				mockGrpc.EXPECT().HasFeature(milvus.Snapshot).Return(tt.snapshot).Once()
 			}
 
+			backupCfg := tt.backupCfg
+			if backupCfg.Provider == "" {
+				backupCfg = sameService
+			}
+			milvusStorage := storage.NewMockClient(t)
+			backupStorage := storage.NewMockClient(t)
+			if tt.format != FormatBinlog && tt.snapshot {
+				milvusStorage.EXPECT().Config().Return(sameService)
+				backupStorage.EXPECT().Config().Return(backupCfg)
+			}
+
 			task := &Task{
-				logger: zap.NewNop(),
-				grpc:   mockGrpc,
-				option: Option{Format: tt.format},
+				logger:        zap.NewNop(),
+				grpc:          mockGrpc,
+				option:        Option{Format: tt.format},
+				milvusStorage: milvusStorage,
+				backupStorage: backupStorage,
 			}
 
 			got, err := task.resolveFormat()
