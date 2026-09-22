@@ -8,6 +8,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
@@ -213,6 +214,11 @@ func TestBucketExistReturnsFalseForNoSuchBucket(t *testing.T) {
 // when the range ends; the sequence must cancel it and drain until it exits.
 func TestMinioObjectIterEarlyStopStopsGoroutine(t *testing.T) {
 	canceled := make(chan struct{})
+	// pageTwoInFlight closes when the follow-up page request reaches the
+	// transport. The range must not end before that: a break taken before the
+	// listing has issued the next page cancels a goroutine with no request in
+	// flight, and the assertion below would be checking nothing.
+	pageTwoInFlight := make(chan struct{})
 	cli, err := newInternalMinio(Config{
 		Provider: "s3",
 		Endpoint: "example.com",
@@ -244,6 +250,7 @@ func TestMinioObjectIterEarlyStopStopsGoroutine(t *testing.T) {
 			// canceled records that the cancellation really reached the
 			// in-flight page request.
 			if token := r.URL.Query().Get("continuation-token"); token != "" {
+				close(pageTwoInFlight)
 				<-r.Context().Done()
 				close(canceled)
 				return nil, r.Context().Err()
@@ -276,15 +283,26 @@ func TestMinioObjectIterEarlyStopStopsGoroutine(t *testing.T) {
 		yielded = true
 		// The listing is truncated, so the goroutine is alive fetching page
 		// two. Leaving the loop must cancel it and drain the channel until it
-		// has exited, or the goroutine leaks blocked on the transport.
+		// has exited, or the goroutine leaks blocked on the transport. Wait
+		// until that page is actually in flight first, or the break can land
+		// in the window before the next request is issued and cancel nothing.
+		select {
+		case <-pageTwoInFlight:
+		case <-time.After(5 * time.Second):
+			assert.Fail(t, "the listing never fetched the follow-up page")
+			return
+		}
 		break
 	}
 	assert.True(t, yielded)
 
-	// Ending the range canceled the in-flight follow-up request.
+	// Ending the range canceled the in-flight follow-up request. The sequence
+	// drains until the listing goroutine has exited, so by the time the range
+	// ends the close already happened; the bounded wait only keeps a real
+	// goroutine leak from hanging the test.
 	select {
 	case <-canceled:
-	default:
+	case <-time.After(5 * time.Second):
 		assert.Fail(t, "ending the range did not stop the background listing goroutine")
 	}
 }
