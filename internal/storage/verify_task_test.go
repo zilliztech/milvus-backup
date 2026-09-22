@@ -88,7 +88,7 @@ func TestVerifyPrefixTask_Execute(t *testing.T) {
 			Return(NewMockObjectIterator(nil)).Once()
 
 		expected := make(map[string]int64, _missingSampleSize+3)
-		for i := 0; i < _missingSampleSize+3; i++ {
+		for i := range _missingSampleSize + 3 {
 			expected[fmt.Sprintf("dest/%d", i)] = 1
 		}
 		task := NewVerifyPrefixTask(VerifyPrefixOpt{Cli: cli, Prefix: "dest/", Expected: expected})

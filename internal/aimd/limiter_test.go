@@ -27,7 +27,7 @@ func TestAIMDLimiter_Success(t *testing.T) {
 		limiter := NewLimiter(1, 10, 5)
 		defer limiter.Stop()
 
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			limiter.Success()
 		}
 		assert.Equal(t, 10.0, limiter.CurRPS())
@@ -47,7 +47,7 @@ func TestAIMDLimiter_OnFailure(t *testing.T) {
 		limiter := NewLimiter(1, 10, 5)
 		defer limiter.Stop()
 
-		for i := 0; i < 10; i++ {
+		for range 10 {
 			limiter.Failure()
 		}
 		assert.Equal(t, limiter.CurRPS(), 1.0)

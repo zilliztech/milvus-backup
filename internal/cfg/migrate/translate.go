@@ -248,7 +248,7 @@ func (t *translator) translateEtcdEndpoints() {
 
 	if s, ok := h.value.(string); ok {
 		items := make([]any, 0, strings.Count(s, ",")+1)
-		for _, item := range strings.Split(s, ",") {
+		for item := range strings.SplitSeq(s, ",") {
 			if item = strings.TrimSpace(item); item != "" {
 				items = append(items, item)
 			}

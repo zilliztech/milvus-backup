@@ -161,7 +161,7 @@ func TestCollTask_destKey(t *testing.T) {
 
 func TestL0SegmentBatches(t *testing.T) {
 	segs := make([]*backuppb.SegmentBackupInfo, 0, 10)
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		vch := fmt.Sprintf("vch%d", i%2)
 		sv := int64(i % 2)
 		seg := &backuppb.SegmentBackupInfo{

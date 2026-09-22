@@ -412,10 +412,7 @@ func splitIntoParts(totalSize int64) ([]part, error) {
 	index := 1
 	for offset < totalSize {
 		remaining := totalSize - offset
-		size := partSize
-		if remaining < size {
-			size = remaining
-		}
+		size := min(remaining, partSize)
 		parts = append(parts, part{Index: index, Offset: offset, Size: size})
 		offset += size
 		index++

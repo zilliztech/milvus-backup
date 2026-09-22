@@ -385,7 +385,7 @@ func TestLoadV1Golden(t *testing.T) {
 // in the case list and on disk.
 func subtestName(name string) string {
 	var b strings.Builder
-	for _, part := range strings.Split(name, "-") {
+	for part := range strings.SplitSeq(name, "-") {
 		if part == "" {
 			continue
 		}

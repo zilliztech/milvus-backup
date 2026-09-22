@@ -1,7 +1,7 @@
 package funcs
 
 import (
-	"sort"
+	"slices"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
 	"github.com/milvus-io/milvus/pkg/v3/common"
@@ -24,7 +24,7 @@ func GuessDynFieldID(fields []*schemapb.FieldSchema) int64 {
 		fieldIDs = append(fieldIDs, field.GetFieldID())
 	}
 
-	sort.Slice(fieldIDs, func(i, j int) bool { return fieldIDs[i] < fieldIDs[j] })
+	slices.Sort(fieldIDs)
 	// if collection has gap in field id, means the collection added field after created.
 	// so the first gap is the dynamic field id.
 	// for example, if field ids are [1, 2, 4, 5], return 3

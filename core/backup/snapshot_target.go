@@ -166,7 +166,7 @@ func cleanSnapshotObjectKey(objectPath string) (string, error) {
 	if objectPath == "" {
 		return "", fmt.Errorf("uri needs an object key")
 	}
-	for _, part := range strings.Split(objectPath, "/") {
+	for part := range strings.SplitSeq(objectPath, "/") {
 		if part == "." || part == ".." {
 			return "", fmt.Errorf("object key must not contain path traversal")
 		}

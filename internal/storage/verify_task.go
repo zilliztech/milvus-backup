@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"maps"
 	"strings"
 
 	"go.uber.org/zap"
@@ -49,9 +50,7 @@ func (t *VerifyPrefixTask) Execute(ctx context.Context) error {
 
 	// Track keys not yet seen in the listing; drop each as it is found.
 	missing := make(map[string]int64, len(t.opt.Expected))
-	for key, size := range t.opt.Expected {
-		missing[key] = size
-	}
+	maps.Copy(missing, t.opt.Expected)
 
 	for attr, err := range t.opt.Cli.NewObjectIter(ctx, t.opt.Prefix, true) {
 		if err != nil {

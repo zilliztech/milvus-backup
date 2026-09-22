@@ -63,7 +63,7 @@ func maskSecret(s string) string {
 // Walk visits every field of the configuration struct pointed to by cfg,
 // depth first, passing the dotted Go field path of each leaf.
 func Walk(cfg any, fn func(name string, field Field)) {
-	fieldType := reflect.TypeOf((*Field)(nil)).Elem()
+	fieldType := reflect.TypeFor[Field]()
 
 	var collect func(v reflect.Value, prefix string)
 	collect = func(v reflect.Value, prefix string) {

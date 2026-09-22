@@ -232,29 +232,24 @@ func TestMemMsgQueue_ReplayCycle(t *testing.T) {
 // producer and a consumer running in parallel, then confirms everything.
 func TestMemMsgQueue_ConcurrentProducerConsumer(t *testing.T) {
 	q := newMemMsgQueue()
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	const n = 500
 
 	var wg sync.WaitGroup
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for i := uint64(1); i <= n; i++ {
 			assert.NoError(t, q.Enqueue(ctx, newMsg(i)))
 		}
-	}()
+	})
 
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
+	wg.Go(func() {
 		for i := uint64(1); i <= n; i++ {
 			m, err := q.ReadNext(ctx)
 			assert.NoError(t, err)
 			assert.Equal(t, i, msgTT(t, m), fmt.Sprintf("unexpected tt at seq %d", i))
 		}
-	}()
+	})
 
 	wg.Wait()
 	assert.Equal(t, n, q.Confirm(n))
