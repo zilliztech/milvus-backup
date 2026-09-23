@@ -381,17 +381,17 @@ func (t *Task) newCollTask(dbBackup *backuppb.DatabaseBackupInfo, collBackup *ba
 
 		if t.format == meta.FormatSnapshot {
 			tasks = append(tasks, newCollSnapshotTask(collSnapshotTaskArgs{
-				taskID:       t.args.TaskID,
-				collBackup:   collBackup,
-				target:       target,
-				source:       t.snapshotSource,
-				dropExist:    t.args.Option.DropExistCollection,
+				taskID:           t.args.TaskID,
+				collBackup:       collBackup,
+				target:           target,
+				source:           t.snapshotSource,
+				dropExist:        t.args.Option.DropExistCollection,
 				maxShardNum:      t.args.Option.MaxShardNum,
 				shardNumOverride: t.args.Plan.CollOverrides[target.String()].ShardNum,
 				descOverride:     t.args.Plan.CollOverrides[target.String()].Description,
-				skipParams:   t.args.Option.SkipParams,
-				grpcCli:      t.grpc,
-				taskMgr:      t.args.TaskMgr,
+				skipParams:       t.args.Option.SkipParams,
+				grpcCli:          t.grpc,
+				taskMgr:          t.args.TaskMgr,
 			}))
 			continue
 		}
