@@ -218,6 +218,7 @@ type limiters struct {
 	createPartition  *aimd.Limiter
 	createDatabase   *aimd.Limiter
 	createIndex      *aimd.Limiter
+	exportSnapshot   *aimd.Limiter
 }
 
 func newLimiters() limiters {
@@ -227,6 +228,10 @@ func newLimiters() limiters {
 		createPartition:  aimd.NewLimiter(1, 100, 5),
 		createDatabase:   aimd.NewLimiter(1, 100, 5),
 		createIndex:      aimd.NewLimiter(1, 100, 5),
+		// The server throttles export snapshot to a handful of requests per second, and
+		// every collection task of a snapshot backup submits one, so start at the same
+		// order and let AIMD settle wherever the instance actually accepts.
+		exportSnapshot: aimd.NewLimiter(0.5, 50, 5),
 	}
 }
 
@@ -236,6 +241,7 @@ func (l *limiters) close() {
 	l.createPartition.Stop()
 	l.createDatabase.Stop()
 	l.createIndex.Stop()
+	l.exportSnapshot.Stop()
 }
 
 var _ Grpc = (*GrpcClient)(nil)
@@ -1332,6 +1338,10 @@ type ExportSnapshotInput struct {
 //
 // The server keeps the source snapshot pinned until the job is terminal, so the referenced files
 // stay safe from GC for the whole copy window without the caller holding a pin of its own.
+//
+// The server throttles this RPC hard, so the call passes an AIMD limiter and retries only a
+// rate-limit rejection, backing the limiter off each time. Any other failure is not retried:
+// the submission may already have been accepted, and a second one would race the first.
 func (g *GrpcClient) ExportSnapshot(ctx context.Context, input ExportSnapshotInput) (int64, error) {
 	if !g.HasFeature(Snapshot) {
 		return 0, errSnapshotUnsupported
@@ -1344,18 +1354,40 @@ func (g *GrpcClient) ExportSnapshot(ctx context.Context, input ExportSnapshotInp
 		TargetS3Path:   input.TargetPath,
 		ExternalSpec:   input.ExternalSpec,
 	}
-	resp, err := g.srv.ExportSnapshot(ctx, in)
-	if err := checkResponse(resp, err); err != nil {
-		return 0, fmt.Errorf("client: export snapshot failed: %w", err)
+	if err := g.limiters.exportSnapshot.Wait(ctx); err != nil {
+		return 0, fmt.Errorf("client: export snapshot wait: %w", err)
 	}
 
-	return resp.GetJobId(), nil
+	var jobID int64
+	err := retry.Do(ctx, func() error {
+		resp, err := g.srv.ExportSnapshot(ctx, in)
+		if err := checkResponse(resp, err); err != nil {
+			if isRateLimitError(err) {
+				g.limiters.exportSnapshot.Failure()
+				return fmt.Errorf("client: export snapshot failed due to rate limit: %w", err)
+			}
+			return retry.Unrecoverable(fmt.Errorf("client: export snapshot: %w", err))
+		}
+		g.limiters.exportSnapshot.Success()
+
+		jobID = resp.GetJobId()
+		return nil
+	})
+	if err != nil {
+		return 0, err
+	}
+
+	return jobID, nil
 }
 
 // GetExportSnapshotState reports how an export job is doing. A job that failed comes back through
 // the returned info — its state and reason — not as an error; the error return covers the state
 // query itself. SnapshotMetadataUri is populated only once the job reaches the completed state,
 // and TotalBytes only then accounts for the whole bundle.
+//
+// A rate-limit rejection is retried, so one throttled poll does not fail a long-running export.
+// Any other failure surfaces immediately: the query is read-only but a persistent error such as
+// an unknown job is worth more than the retry window.
 func (g *GrpcClient) GetExportSnapshotState(ctx context.Context, jobID int64) (*milvuspb.ExportSnapshotInfo, error) {
 	if !g.HasFeature(Snapshot) {
 		return nil, errSnapshotUnsupported
@@ -1363,12 +1395,25 @@ func (g *GrpcClient) GetExportSnapshotState(ctx context.Context, jobID int64) (*
 
 	ctx = g.newCtx(ctx)
 	in := &milvuspb.GetExportSnapshotStateRequest{JobId: jobID}
-	resp, err := g.srv.GetExportSnapshotState(ctx, in)
-	if err := checkResponse(resp, err); err != nil {
-		return nil, fmt.Errorf("client: get export snapshot state failed: %w", err)
+
+	var info *milvuspb.ExportSnapshotInfo
+	err := retry.Do(ctx, func() error {
+		resp, err := g.srv.GetExportSnapshotState(ctx, in)
+		if err := checkResponse(resp, err); err != nil {
+			if isRateLimitError(err) {
+				return fmt.Errorf("client: get export snapshot state failed due to rate limit: %w", err)
+			}
+			return retry.Unrecoverable(fmt.Errorf("client: get export snapshot state: %w", err))
+		}
+
+		info = resp.GetInfo()
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	return resp.GetInfo(), nil
+	return info, nil
 }
 
 // RestoreExternalSnapshotInput describes one restore from an exported bundle.

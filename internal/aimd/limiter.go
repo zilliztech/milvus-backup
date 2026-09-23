@@ -2,11 +2,16 @@ package aimd
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"go.uber.org/atomic"
 )
+
+// ErrStopped is returned by Wait when the limiter has been stopped.
+var ErrStopped = errors.New("aimd_limiter: limiter stopped")
 
 // Limiter is an implementation of Additive Increase Multiplicative Decrease algorithm.
 // It uses leaky bucket to limit the rate.
@@ -17,7 +22,8 @@ type Limiter struct {
 
 	bucket chan struct{}
 
-	stop chan struct{}
+	stop     chan struct{}
+	stopOnce sync.Once
 }
 
 func NewLimiter(minRPS, maxRPS, initRPS float64) *Limiter {
@@ -60,36 +66,47 @@ func (a *Limiter) Wait(ctx context.Context) error {
 	select {
 	case <-a.bucket:
 		return nil
+	case <-a.stop:
+		return ErrStopped
 	case <-ctx.Done():
 		return fmt.Errorf("aimd_limiter: context canceled: %w", ctx.Err())
 	}
 }
 
 func (a *Limiter) Success() {
-	curRPS := a.curRPS.Load()
-	if curRPS >= a.maxRPS {
-		return
-	}
-	if curRPS < 1 {
-		a.curRPS.Add(0.1)
-	} else {
-		a.curRPS.Add(1)
+	for {
+		oldRPS := a.curRPS.Load()
+		if oldRPS >= a.maxRPS {
+			return
+		}
+
+		newRPS := oldRPS + 1
+		if oldRPS < 1 {
+			newRPS = oldRPS + 0.1
+		}
+
+		if a.curRPS.CompareAndSwap(oldRPS, newRPS) {
+			return
+		}
 	}
 }
 
 func (a *Limiter) Failure() {
-	oldRPS := a.curRPS.Load()
-	newRPS := oldRPS / 2
-	if newRPS <= a.minRPS {
-		newRPS = a.minRPS
-	}
+	for {
+		oldRPS := a.curRPS.Load()
+		newRPS := oldRPS / 2
+		if newRPS <= a.minRPS {
+			newRPS = a.minRPS
+		}
 
-	if newRPS == oldRPS {
-		return
+		if newRPS == oldRPS || a.curRPS.CompareAndSwap(oldRPS, newRPS) {
+			return
+		}
 	}
-
-	a.curRPS.Store(newRPS)
 }
 
 func (a *Limiter) CurRPS() float64 { return a.curRPS.Load() }
-func (a *Limiter) Stop()           { close(a.stop) }
+
+func (a *Limiter) Stop() {
+	a.stopOnce.Do(func() { close(a.stop) })
+}
