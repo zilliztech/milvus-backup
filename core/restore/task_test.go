@@ -91,7 +91,6 @@ func TestCheckSnapshotSupport(t *testing.T) {
 		{"MetaOnly", &Plan{}, &Option{MetaOnly: true}},
 		{"TruncateBinlogByTs", &Plan{}, &Option{TruncateBinlogByTs: true}},
 		{"EZKMapping", &Plan{}, &Option{EZKMapping: map[string]string{"old": "new"}}},
-		{"ShardNumOverride", &Plan{CollOverrides: map[string]CollOverride{"db1.coll1": {ShardNum: 2}}}, &Option{}},
 	}
 
 	for _, tt := range tests {
@@ -122,6 +121,14 @@ func TestCheckSnapshotSupport(t *testing.T) {
 	// stays available even though the collection is created by Milvus.
 	t.Run("DescriptionOverride", func(t *testing.T) {
 		plan := &Plan{CollOverrides: map[string]CollOverride{"db1.coll1": {Description: "new desc"}}}
+		assert.NoError(t, checkSnapshotSupport(plan, &Option{}))
+	})
+
+	// A shard_num override is not refused here: one equal to the bundle's shard count
+	// asks for exactly what the restore produces, and one that differs is checked
+	// against the collection's real shard count in the snapshot task.
+	t.Run("ShardNumOverride", func(t *testing.T) {
+		plan := &Plan{CollOverrides: map[string]CollOverride{"db1.coll1": {ShardNum: 2}}}
 		assert.NoError(t, checkSnapshotSupport(plan, &Option{}))
 	})
 }

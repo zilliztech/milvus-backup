@@ -28,11 +28,12 @@ type collSnapshotTask struct {
 	collBackup *backuppb.CollectionBackupInfo
 	target     collref.Name
 
-	source       snapshotSource
-	dropExist    bool
-	maxShardNum  int32
-	descOverride string
-	skipParams   SkipParams
+	source           snapshotSource
+	dropExist        bool
+	maxShardNum      int32
+	shardNumOverride int32
+	descOverride     string
+	skipParams       SkipParams
 
 	pollInterval time.Duration
 
@@ -48,11 +49,12 @@ type collSnapshotTaskArgs struct {
 	collBackup *backuppb.CollectionBackupInfo
 	target     collref.Name
 
-	source       snapshotSource
-	dropExist    bool
-	maxShardNum  int32
-	descOverride string
-	skipParams   SkipParams
+	source           snapshotSource
+	dropExist        bool
+	maxShardNum      int32
+	shardNumOverride int32
+	descOverride     string
+	skipParams       SkipParams
 
 	grpcCli milvus.Grpc
 	taskMgr *taskmgr.Mgr
@@ -76,11 +78,12 @@ func newCollSnapshotTask(args collSnapshotTaskArgs) *collSnapshotTask {
 		collBackup: args.collBackup,
 		target:     args.target,
 
-		source:       args.source,
-		dropExist:    args.dropExist,
-		maxShardNum:  args.maxShardNum,
-		descOverride: args.descOverride,
-		skipParams:   args.skipParams,
+		source:           args.source,
+		dropExist:        args.dropExist,
+		maxShardNum:      args.maxShardNum,
+		shardNumOverride: args.shardNumOverride,
+		descOverride:     args.descOverride,
+		skipParams:       args.skipParams,
 
 		pollInterval: _snapshotPollInterval,
 
@@ -126,6 +129,18 @@ func (ct *collSnapshotTask) privateExecute(ctx context.Context) error {
 		ct.logger.Info("max_shard_num does not bind, keeping the bundle's shard count",
 			zap.Int32("shard_num", ct.collBackup.GetShardsNum()),
 			zap.Int32("max_shard_num", ct.maxShardNum))
+	}
+
+	// A shard_num override names an exact count, and the snapshot path can neither raise
+	// nor lower the bundle's: only an override equal to it asks for what the restore
+	// actually produces, so that alone is allowed through.
+	if ct.shardNumOverride > 0 {
+		if shardNum := ct.collBackup.GetShardsNum(); shardNum != ct.shardNumOverride {
+			return fmt.Errorf("restore: shard_num override is %d, but the collection has %d shards; the snapshot path can neither raise nor lower the shard count",
+				ct.shardNumOverride, shardNum)
+		}
+		ct.logger.Info("shard_num override matches the bundle's shard count",
+			zap.Int32("shard_num", ct.shardNumOverride))
 	}
 
 	metadataURI, err := ct.source.metadataURI(ct.collBackup.GetSnapshotBackup().GetMetadataPath())
