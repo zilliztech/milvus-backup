@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	semver "github.com/Masterminds/semver/v3"
@@ -600,69 +601,112 @@ func TestGrpcClient_DropSnapshot(t *testing.T) {
 	})
 }
 
+// newLimiterTestClient builds a client whose snapshot paths need an AIMD limiter. The limiter
+// pumps tokens on a timer, so tests calling it must run inside a synctest bubble — its cleanup
+// stops the pump before the bubble closes, and virtual time keeps the waits instant.
+func newLimiterTestClient(t *testing.T, srv milvuspb.MilvusServiceClient) *GrpcClient {
+	t.Helper()
+	cli := &GrpcClient{srv: srv, flags: Snapshot, limiters: newLimiters()}
+	t.Cleanup(cli.limiters.close)
+	return cli
+}
+
 func TestGrpcClient_ExportSnapshot(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
-		mockSrv := NewMockMilvusServiceClient(t)
-		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
+		synctest.Test(t, func(t *testing.T) {
+			mockSrv := NewMockMilvusServiceClient(t)
+			cli := newLimiterTestClient(t, mockSrv)
 
-		var got *milvuspb.ExportSnapshotRequest
-		mockSrv.EXPECT().ExportSnapshot(mock.Anything, mock.Anything).
-			Run(func(_ context.Context, in *milvuspb.ExportSnapshotRequest, _ ...grpc.CallOption) { got = in }).
-			Return(&milvuspb.ExportSnapshotResponse{Status: &commonpb.Status{Code: 0}, JobId: 9001}, nil)
+			var got *milvuspb.ExportSnapshotRequest
+			mockSrv.EXPECT().ExportSnapshot(mock.Anything, mock.Anything).
+				Run(func(_ context.Context, in *milvuspb.ExportSnapshotRequest, _ ...grpc.CallOption) { got = in }).
+				Return(&milvuspb.ExportSnapshotResponse{Status: &commonpb.Status{Code: 0}, JobId: 9001}, nil)
 
-		jobID, err := cli.ExportSnapshot(context.Background(), ExportSnapshotInput{
-			DB:             "db",
-			CollectionName: "coll",
-			SnapshotName:   "snap",
-			TargetPath:     "s3://backup-bucket/backup_1",
-			ExternalSpec:   `{"extfs":{"use_iam":true}}`,
+			jobID, err := cli.ExportSnapshot(context.Background(), ExportSnapshotInput{
+				DB:             "db",
+				CollectionName: "coll",
+				SnapshotName:   "snap",
+				TargetPath:     "s3://backup-bucket/backup_1",
+				ExternalSpec:   `{"extfs":{"use_iam":true}}`,
+			})
+			require.NoError(t, err)
+			assert.EqualValues(t, 9001, jobID)
+			assert.Equal(t, "coll", got.GetCollectionName())
+			assert.Equal(t, "snap", got.GetName())
+			assert.Equal(t, "s3://backup-bucket/backup_1", got.GetTargetS3Path())
+			assert.Equal(t, `{"extfs":{"use_iam":true}}`, got.GetExternalSpec())
 		})
-		require.NoError(t, err)
-		assert.EqualValues(t, 9001, jobID)
-		assert.Equal(t, "coll", got.GetCollectionName())
-		assert.Equal(t, "snap", got.GetName())
-		assert.Equal(t, "s3://backup-bucket/backup_1", got.GetTargetS3Path())
-		assert.Equal(t, `{"extfs":{"use_iam":true}}`, got.GetExternalSpec())
 	})
 
 	// An empty spec is what tells the server to write with its own credential, so it must go out
 	// as an empty field rather than being filled in with anything here.
 	t.Run("NoExternalSpec", func(t *testing.T) {
-		mockSrv := NewMockMilvusServiceClient(t)
-		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
+		synctest.Test(t, func(t *testing.T) {
+			mockSrv := NewMockMilvusServiceClient(t)
+			cli := newLimiterTestClient(t, mockSrv)
 
-		var got *milvuspb.ExportSnapshotRequest
-		mockSrv.EXPECT().ExportSnapshot(mock.Anything, mock.Anything).
-			Run(func(_ context.Context, in *milvuspb.ExportSnapshotRequest, _ ...grpc.CallOption) { got = in }).
-			Return(&milvuspb.ExportSnapshotResponse{Status: &commonpb.Status{Code: 0}, JobId: 9001}, nil)
+			var got *milvuspb.ExportSnapshotRequest
+			mockSrv.EXPECT().ExportSnapshot(mock.Anything, mock.Anything).
+				Run(func(_ context.Context, in *milvuspb.ExportSnapshotRequest, _ ...grpc.CallOption) { got = in }).
+				Return(&milvuspb.ExportSnapshotResponse{Status: &commonpb.Status{Code: 0}, JobId: 9001}, nil)
 
-		_, err := cli.ExportSnapshot(context.Background(), ExportSnapshotInput{
-			DB:             "db",
-			CollectionName: "coll",
-			SnapshotName:   "snap",
-			TargetPath:     "backup_1",
+			_, err := cli.ExportSnapshot(context.Background(), ExportSnapshotInput{
+				DB:             "db",
+				CollectionName: "coll",
+				SnapshotName:   "snap",
+				TargetPath:     "backup_1",
+			})
+			require.NoError(t, err)
+			assert.Empty(t, got.GetExternalSpec())
 		})
-		require.NoError(t, err)
-		assert.Empty(t, got.GetExternalSpec())
 	})
 
-	t.Run("StatusError", func(t *testing.T) {
-		mockSrv := NewMockMilvusServiceClient(t)
-		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
+	// The server rejects a submission that bursts past its rate limit, so the call must retry
+	// that one error and signal the limiter to back off while doing so.
+	t.Run("RateLimitIsRetried", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			mockSrv := NewMockMilvusServiceClient(t)
+			cli := newLimiterTestClient(t, mockSrv)
 
-		mockSrv.EXPECT().ExportSnapshot(mock.Anything, mock.Anything).
-			Return(&milvuspb.ExportSnapshotResponse{
-				Status: &commonpb.Status{Code: 1, Reason: "target overlaps the source snapshot"},
-			}, nil)
+			rateLimited := &milvuspb.ExportSnapshotResponse{Status: &commonpb.Status{
+				Code:      8,
+				Reason:    "request is rejected by grpc RateLimiter middleware, please retry later: rate limit exceeded[rate=5]",
+				Retriable: true,
+			}}
+			// Two registrations rather than one chained call: a second Return on the same Call
+			// overwrites the first instead of being consumed in sequence.
+			mockSrv.EXPECT().ExportSnapshot(mock.Anything, mock.Anything).
+				Return(rateLimited, nil).Once()
+			mockSrv.EXPECT().ExportSnapshot(mock.Anything, mock.Anything).
+				Return(&milvuspb.ExportSnapshotResponse{Status: &commonpb.Status{Code: 0}, JobId: 9001}, nil).Once()
 
-		jobID, err := cli.ExportSnapshot(context.Background(), ExportSnapshotInput{
-			DB:             "db",
-			CollectionName: "coll",
-			SnapshotName:   "snap",
-			TargetPath:     "backup_1",
+			jobID, err := cli.ExportSnapshot(context.Background(), ExportSnapshotInput{
+				DB: "db", CollectionName: "coll", SnapshotName: "snap", TargetPath: "backup_1",
+			})
+			require.NoError(t, err)
+			assert.EqualValues(t, 9001, jobID)
+			assert.Less(t, cli.limiters.exportSnapshot.CurRPS(), 5.0, "a rate-limit failure must back the limiter off")
 		})
-		assert.Error(t, err)
-		assert.Zero(t, jobID)
+	})
+
+	// Any other failure must not be retried: the server may have accepted the job before the
+	// error came back, and a resubmission would race the job we never heard about.
+	t.Run("OtherErrorsAreNotRetried", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			mockSrv := NewMockMilvusServiceClient(t)
+			cli := newLimiterTestClient(t, mockSrv)
+
+			mockSrv.EXPECT().ExportSnapshot(mock.Anything, mock.Anything).
+				Return(&milvuspb.ExportSnapshotResponse{
+					Status: &commonpb.Status{Code: 1, Reason: "target overlaps the source snapshot"},
+				}, nil).Once()
+
+			jobID, err := cli.ExportSnapshot(context.Background(), ExportSnapshotInput{
+				DB: "db", CollectionName: "coll", SnapshotName: "snap", TargetPath: "backup_1",
+			})
+			assert.Error(t, err)
+			assert.Zero(t, jobID)
+		})
 	})
 }
 
@@ -715,14 +759,45 @@ func TestGrpcClient_GetExportSnapshotState(t *testing.T) {
 		assert.Equal(t, "copy failed", info.GetReason())
 	})
 
-	t.Run("StatusError", func(t *testing.T) {
+	// A throttled poll must retry rather than fail the export it is watching; the second
+	// registration answers the attempt after the retry backoff.
+	t.Run("RateLimitIsRetried", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			mockSrv := NewMockMilvusServiceClient(t)
+			cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
+
+			rateLimited := &milvuspb.GetExportSnapshotStateResponse{Status: &commonpb.Status{
+				Code:      8,
+				Reason:    "request is rejected by grpc RateLimiter middleware, please retry later: rate limit exceeded[rate=5]",
+				Retriable: true,
+			}}
+			mockSrv.EXPECT().GetExportSnapshotState(mock.Anything, mock.Anything).
+				Return(rateLimited, nil).Once()
+			mockSrv.EXPECT().GetExportSnapshotState(mock.Anything, mock.Anything).
+				Return(&milvuspb.GetExportSnapshotStateResponse{
+					Status: &commonpb.Status{Code: 0},
+					Info: &milvuspb.ExportSnapshotInfo{
+						JobId: 9001,
+						State: milvuspb.ExportSnapshotState_ExportSnapshotCompleted,
+					},
+				}, nil).Once()
+
+			info, err := cli.GetExportSnapshotState(context.Background(), 9001)
+			require.NoError(t, err)
+			assert.Equal(t, milvuspb.ExportSnapshotState_ExportSnapshotCompleted, info.GetState())
+		})
+	})
+
+	// Any other failure surfaces without a retry — an unknown job stays unknown no matter
+	// how often it is asked.
+	t.Run("StatusErrorIsNotRetried", func(t *testing.T) {
 		mockSrv := NewMockMilvusServiceClient(t)
 		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
 
 		mockSrv.EXPECT().GetExportSnapshotState(mock.Anything, mock.Anything).
 			Return(&milvuspb.GetExportSnapshotStateResponse{
 				Status: &commonpb.Status{Code: 1, Reason: "job not found"},
-			}, nil)
+			}, nil).Once()
 
 		info, err := cli.GetExportSnapshotState(context.Background(), 9001)
 		assert.Error(t, err)
