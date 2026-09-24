@@ -2,6 +2,7 @@ package server
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/gin-contrib/pprof"
 	"github.com/gin-gonic/gin"
@@ -14,9 +15,11 @@ import (
 
 // Server is the Backup Server
 type Server struct {
-	engine *gin.Engine
-	config *config
-	params *v2.Config
+	engine      *gin.Engine
+	config      *config
+	params      *v2.Config
+	compactMu   sync.Mutex
+	compactJobs map[string]*l0CompactJob
 }
 
 func New(params *v2.Config, opts ...Option) (*Server, error) {
@@ -68,6 +71,9 @@ func (s *Server) initEngine() {
 	apiv1.POST("/restore_secondary", s.handleRestoreSecondary)
 	apiv1.GET("/get_restore", s.handleGetRestore)
 	apiv1.GET("/check", s.handleCheck)
+	apiv1.POST("/l0compact", s.handleL0Compact)
+	apiv1.GET("/get_l0compact", s.handleGetL0Compact)
+	apiv1.GET("/has_l0", s.handleHasL0)
 	apiv1.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 }
 
