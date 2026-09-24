@@ -14,6 +14,7 @@ import (
 	"github.com/samber/lo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/goleak"
 )
 
 func TestSplitIntoParts(t *testing.T) {
@@ -207,12 +208,19 @@ func TestBucketExistReturnsFalseForNoSuchBucket(t *testing.T) {
 }
 
 // TestMinioObjectIterEarlyStopStopsGoroutine verifies that leaving the range
-// before the listing is exhausted actually stops minio-go's background
-// listing goroutine. The fake transport returns a truncated first page with a
-// continuation token, so the goroutine is still alive fetching the next page
-// when the range ends; the sequence must cancel it and drain until it exits.
+// before the listing is exhausted stops minio-go's background listing
+// goroutine. The cleanup is three lines of defer in NewObjectIter, nothing
+// else goes red when they are deleted, and a long-running server leaks one
+// goroutine per early-stopped copy or verify task — so guard it directly as
+// a leak check instead of observing cancellation through the transport.
+//
+// The follow-up page must actually be fetched: minio-go buffers one object,
+// so a single-page listing lets the goroutine exit on its own and a leak
+// would go undetected. With a truncated listing the goroutine blocks inside
+// the page-two request unless the canceled context kills it.
 func TestMinioObjectIterEarlyStopStopsGoroutine(t *testing.T) {
-	canceled := make(chan struct{})
+	defer goleak.VerifyNone(t)
+
 	cli, err := newInternalMinio(Config{
 		Provider: "s3",
 		Endpoint: "example.com",
@@ -240,12 +248,11 @@ func TestMinioObjectIterEarlyStopStopsGoroutine(t *testing.T) {
 				return nil, errors.New("unexpected request")
 			}
 
-			// A follow-up page blocks until its request context is canceled;
-			// canceled records that the cancellation really reached the
-			// in-flight page request.
+			// Page two never answers on its own; only the canceled request
+			// context releases it. Without the cancel-and-drain defer the
+			// listing goroutine is stuck here forever.
 			if token := r.URL.Query().Get("continuation-token"); token != "" {
 				<-r.Context().Done()
-				close(canceled)
 				return nil, r.Context().Err()
 			}
 
@@ -274,19 +281,9 @@ func TestMinioObjectIterEarlyStopStopsGoroutine(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "first-object", attr.Key)
 		yielded = true
-		// The listing is truncated, so the goroutine is alive fetching page
-		// two. Leaving the loop must cancel it and drain the channel until it
-		// has exited, or the goroutine leaks blocked on the transport.
 		break
 	}
 	assert.True(t, yielded)
-
-	// Ending the range canceled the in-flight follow-up request.
-	select {
-	case <-canceled:
-	default:
-		assert.Fail(t, "ending the range did not stop the background listing goroutine")
-	}
 }
 
 func TestBucketExistPropagatesContextCancellation(t *testing.T) {
