@@ -37,6 +37,11 @@ type l0CompactResponse struct {
 	ErrorMessage string `json:"error_message,omitempty"`
 }
 
+type hasL0Response struct {
+	BackupName string `json:"backup_name"`
+	HasL0      bool   `json:"has_l0"`
+}
+
 type l0CompactJob struct {
 	mu      sync.Mutex
 	request l0CompactRequest
@@ -51,6 +56,39 @@ func (j *l0CompactJob) response() l0CompactResponse {
 		StateCode: j.state, BackupName: j.request.BackupName,
 		OutputName: j.request.OutputName, ErrorMessage: j.err,
 	}
+}
+
+func (s *Server) handleHasL0(c *gin.Context) {
+	backupName := c.Query("backup_name")
+	backupPath := c.Query("path")
+	if backupName == "" || backupPath == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "backup_name and path are required"})
+		return
+	}
+	if err := backup.ValidateName(backupName); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	overrides := map[string]string{"backup.storage.rootPath": backupPath}
+	if bucket := c.Query("bucket_name"); bucket != "" {
+		overrides["backup.storage.bucketName"] = bucket
+	}
+	params, err := s.params.Fork(overrides)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	cli, err := storage.NewClient(c.Request.Context(), storage.BackupStorageConfig(params))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	info, err := meta.Read(c.Request.Context(), cli, mpath.BackupDir(params.Backup.Storage.RootPath.Val, backupName))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, hasL0Response{BackupName: backupName, HasL0: corel0.HasL0(info)})
 }
 
 func (s *Server) handleL0Compact(c *gin.Context) {

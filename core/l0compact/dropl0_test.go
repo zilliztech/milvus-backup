@@ -27,3 +27,19 @@ func TestDropL0(t *testing.T) {
 	assert.Len(t, segs, 1)
 	assert.Equal(t, int64(200), segs[0].GetSegmentId())
 }
+
+func TestHasL0(t *testing.T) {
+	info := &backuppb.BackupInfo{CollectionBackups: []*backuppb.CollectionBackupInfo{{
+		PartitionBackups: []*backuppb.PartitionBackupInfo{{
+			SegmentBackups: []*backuppb.SegmentBackupInfo{{SegmentId: 200}},
+		}},
+	}}}
+	assert.False(t, HasL0(info))
+
+	info.CollectionBackups[0].L0Segments = []*backuppb.SegmentBackupInfo{{SegmentId: 100}}
+	assert.True(t, HasL0(info))
+
+	info.CollectionBackups[0].L0Segments = nil
+	info.CollectionBackups[0].PartitionBackups[0].SegmentBackups[0].IsL0 = true
+	assert.True(t, HasL0(info))
+}

@@ -73,6 +73,7 @@ func (s *Server) initEngine() {
 	apiv1.GET("/check", s.handleCheck)
 	apiv1.POST("/l0compact", s.handleL0Compact)
 	apiv1.GET("/get_l0compact", s.handleGetL0Compact)
+	apiv1.GET("/has_l0", s.handleHasL0)
 	apiv1.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 }
 
