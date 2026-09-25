@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"path"
 	"sync"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	"github.com/zilliztech/milvus-backup/core/backup"
 	corel0 "github.com/zilliztech/milvus-backup/core/l0compact"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
@@ -65,7 +65,7 @@ func (s *Server) handleHasL0(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "backup_name and path are required"})
 		return
 	}
-	if err := backup.ValidateName(backupName); err != nil {
+	if err := validateBackupPathSegment(backupName); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
@@ -215,10 +215,17 @@ func validateL0CompactRequest(req l0CompactRequest) error {
 	if req.BackupName == req.OutputName {
 		return errors.New("output_name must differ from backup_name")
 	}
-	if err := backup.ValidateName(req.BackupName); err != nil {
+	if err := validateBackupPathSegment(req.BackupName); err != nil {
 		return err
 	}
-	return backup.ValidateName(req.OutputName)
+	return validateBackupPathSegment(req.OutputName)
+}
+
+func validateBackupPathSegment(name string) error {
+	if path.IsAbs(name) || name == "." || name == ".." || path.Base(name) != name {
+		return errors.New("backup name must be a single path segment")
+	}
+	return nil
 }
 
 func l0CompactKey(bucket, path, output string) string {
