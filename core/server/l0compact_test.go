@@ -60,23 +60,33 @@ func TestHasL0HTTP(t *testing.T) {
 			w := httptest.NewRecorder()
 			s.engine.ServeHTTP(w, httptest.NewRequest(http.MethodGet, query, nil))
 			require.Equal(t, http.StatusOK, w.Code)
-			var response hasL0Response
+			var response struct {
+				Code backuppb.ResponseCode `json:"code"`
+				Msg  string                `json:"msg"`
+				Data hasL0Response         `json:"data"`
+			}
 			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
-			assert.Equal(t, backupName, response.BackupName)
-			assert.Equal(t, tc.want, response.HasL0)
+			assert.Equal(t, backuppb.ResponseCode_Success, response.Code)
+			assert.Equal(t, "success", response.Msg)
+			assert.Equal(t, backupName, response.Data.BackupName)
+			assert.Equal(t, tc.want, response.Data.HasL0)
 		})
 	}
 
 	for _, tc := range []struct {
 		query string
-		code  int
+		code  backuppb.ResponseCode
 	}{
-		{query: "/api/v1/has_l0?backup_name=src", code: http.StatusBadRequest},
-		{query: "/api/v1/has_l0?backup_name=missing&path=" + url.QueryEscape(root), code: http.StatusInternalServerError},
+		{query: "/api/v1/has_l0?backup_name=src", code: backuppb.ResponseCode_Parameter_Error},
+		{query: "/api/v1/has_l0?backup_name=missing&path=" + url.QueryEscape(root), code: backuppb.ResponseCode_Fail},
 	} {
 		w := httptest.NewRecorder()
 		s.engine.ServeHTTP(w, httptest.NewRequest(http.MethodGet, tc.query, nil))
-		assert.Equal(t, tc.code, w.Code)
+		assert.Equal(t, http.StatusOK, w.Code)
+		var response l0APIResponse
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+		assert.Equal(t, tc.code, response.Code)
+		assert.NotEmpty(t, response.Msg)
 	}
 }
 
@@ -90,7 +100,11 @@ func TestL0CompactHTTPValidation(t *testing.T) {
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/l0compact", bytes.NewBufferString(body))
 		req.Header.Set("Content-Type", "application/json")
 		s.engine.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Equal(t, http.StatusOK, w.Code)
+		var response l0APIResponse
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+		assert.Equal(t, backuppb.ResponseCode_Parameter_Error, response.Code)
+		assert.NotEmpty(t, response.Msg)
 	}
 }
 
@@ -114,9 +128,15 @@ func TestL0CompactHTTPReturnsExistingJob(t *testing.T) {
 		}
 		s.engine.ServeHTTP(w, request)
 		assert.Equal(t, http.StatusOK, w.Code)
-		var response l0CompactResponse
+		var response struct {
+			Code backuppb.ResponseCode `json:"code"`
+			Msg  string                `json:"msg"`
+			Data l0CompactResponse     `json:"data"`
+		}
 		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
-		assert.Equal(t, l0CompactExecuting, response.StateCode)
-		assert.Equal(t, req.OutputName, response.OutputName)
+		assert.Equal(t, backuppb.ResponseCode_Success, response.Code)
+		assert.Equal(t, "success", response.Msg)
+		assert.Equal(t, l0CompactExecuting, response.Data.StateCode)
+		assert.Equal(t, req.OutputName, response.Data.OutputName)
 	}
 }
