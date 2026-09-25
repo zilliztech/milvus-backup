@@ -72,9 +72,6 @@ func TestHasL0HTTP(t *testing.T) {
 		code  int
 	}{
 		{query: "/api/v1/has_l0?backup_name=src", code: http.StatusBadRequest},
-		{query: "/api/v1/has_l0?backup_name=../bad&path=" + url.QueryEscape(root), code: http.StatusBadRequest},
-		{query: "/api/v1/has_l0?backup_name=..&path=" + url.QueryEscape(root), code: http.StatusBadRequest},
-		{query: "/api/v1/has_l0?backup_name=/&path=" + url.QueryEscape(root), code: http.StatusBadRequest},
 		{query: "/api/v1/has_l0?backup_name=missing&path=" + url.QueryEscape(root), code: http.StatusInternalServerError},
 	} {
 		w := httptest.NewRecorder()
@@ -88,9 +85,6 @@ func TestL0CompactHTTPValidation(t *testing.T) {
 	for _, body := range []string{
 		`{}`,
 		`{"backup_name":"src","output_name":"src","path":"restore/job"}`,
-		`{"backup_name":"../src","output_name":"dst","path":"restore/job"}`,
-		`{"backup_name":"src","output_name":"../dst","path":"restore/job"}`,
-		`{"backup_name":"src","output_name":"/","path":"restore/job"}`,
 	} {
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/l0compact", bytes.NewBufferString(body))

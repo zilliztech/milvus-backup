@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"path"
 	"sync"
 
 	"github.com/gin-gonic/gin"
@@ -63,10 +62,6 @@ func (s *Server) handleHasL0(c *gin.Context) {
 	backupPath := c.Query("path")
 	if backupName == "" || backupPath == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "backup_name and path are required"})
-		return
-	}
-	if err := validateBackupPathSegment(backupName); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	overrides := map[string]string{"backup.storage.rootPath": backupPath}
@@ -214,16 +209,6 @@ func validateL0CompactRequest(req l0CompactRequest) error {
 	}
 	if req.BackupName == req.OutputName {
 		return errors.New("output_name must differ from backup_name")
-	}
-	if err := validateBackupPathSegment(req.BackupName); err != nil {
-		return err
-	}
-	return validateBackupPathSegment(req.OutputName)
-}
-
-func validateBackupPathSegment(name string) error {
-	if path.IsAbs(name) || name == "." || name == ".." || path.Base(name) != name {
-		return errors.New("backup name must be a single path segment")
 	}
 	return nil
 }
