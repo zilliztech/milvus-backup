@@ -29,6 +29,7 @@ require (
 	github.com/vbauerster/mpb/v8 v8.12.1
 	go.etcd.io/etcd/client/v3 v3.7.0
 	go.uber.org/atomic v1.11.0
+	go.uber.org/goleak v1.3.0
 	go.uber.org/zap v1.28.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.22.0
