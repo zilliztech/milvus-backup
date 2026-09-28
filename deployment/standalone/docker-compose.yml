@@ -22,9 +22,10 @@ services:
 
   minio:
     container_name: milvus-minio
-    # Docker Hub deleted the minio/minio repository; MinIO's quay namespace
-    # still serves the same release tags, so pull from there instead.
-    image: quay.io/minio/minio:RELEASE.2024-05-28T17-19-04Z
+    # The upstream minio/minio images are gone from both Docker Hub and quay;
+    # milvusdb/minio is the Zilliz-maintained multi-arch mirror on Docker Hub
+    # (synced from the approved source image, see milvus-io/milvus#53889).
+    image: milvusdb/minio:RELEASE.2024-12-18T13-15-44Z
     environment:
       MINIO_ACCESS_KEY: minioadmin
       MINIO_SECRET_KEY: minioadmin
