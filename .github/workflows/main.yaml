@@ -470,9 +470,16 @@ jobs:
         deploy_tools: [docker-compose]
         milvus_mode: [standalone]
         another_milvus_mode: [standalone]
-        source_image_tag: [2.5-latest]
+        # Only in-place upgrades on the documented support matrix: 2.5 -> 2.6
+        # and 2.6 -> 3.0. A direct 2.5 -> master jump is not a supported
+        # upgrade path (2.5 sources never persist a streaming checkpoint, so
+        # it is cross-version restore territory — covered by
+        # test-backup-restore-cross-version with v2.5.20 sources).
+        source_image_tag: [2.5-latest, 2.6-latest]
         target_image_tag: [master-latest, 2.6-latest]
         exclude:
+          - source_image_tag: 2.5-latest
+            target_image_tag: master-latest
           - source_image_tag: 2.6-latest
             target_image_tag: 2.6-latest
 
