@@ -99,3 +99,17 @@ func TestRender_SkipsAzureOnlyKeys(t *testing.T) {
 	assert.NotContains(t, string(data), "accountName")
 	assert.NotContains(t, string(data), "sourceSASToken")
 }
+
+// caCertPath must survive a render/load round trip wherever validate accepts
+// it: azure honors the key without useSSL, so its render must not drop the
+// key an azure config carries, and an S3-compatible section must only emit
+// it when useSSL lets validation accept it.
+func TestRender_CACertPathRoundTrip(t *testing.T) {
+	yaml := "milvus:\n  storage:\n    provider: azure\n    accountName: account\n    caCertPath: /etc/ssl/private-ca.pem\n    auth:\n      type: sharedKey\n      accountKey: key\nbackup:\n  storage:\n    useSSL: true\n    caCertPath: /etc/ssl/private-ca.pem\n"
+	in, err := Load(writeYAML(t, yaml), nil)
+	require.NoError(t, err)
+
+	out := roundTrip(t, in)
+	assert.Equal(t, "/etc/ssl/private-ca.pem", out.Milvus.Storage.CACertPath.Val)
+	assert.Equal(t, "/etc/ssl/private-ca.pem", out.Backup.Storage.CACertPath.Val)
+}

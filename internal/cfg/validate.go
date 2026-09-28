@@ -116,6 +116,9 @@ func (c *StorageConfig) validate() error {
 		if c.MilvusAddress.Val != "" {
 			return fmt.Errorf("cfg: %s does not apply to the local provider", keyOf(&c.MilvusAddress))
 		}
+		if c.CACertPath.Val != "" {
+			return fmt.Errorf("cfg: %s does not apply to the local provider", keyOf(&c.CACertPath))
+		}
 		return nil
 	}
 
@@ -153,6 +156,25 @@ func (c *StorageConfig) validate() error {
 	if !c.LocalPath.IsDefault() {
 		errs = append(errs, fmt.Errorf("cfg: %s only applies to the local provider, but %s is %q",
 			keyOf(&c.LocalPath), keyOf(&c.Provider), provider))
+	}
+
+	// caCertPath reaches the S3-compatible and azure clients, whose endpoints
+	// may present a certificate signed outside the system pool. The GCS
+	// endpoints are public services whose certificates the system pool
+	// already verifies, so there is nothing for a private CA to do there.
+	if c.CACertPath.Val != "" {
+		switch provider {
+		case ProviderGCP, ProviderGCPNative:
+			errs = append(errs, fmt.Errorf("cfg: %s does not apply to the %s provider", keyOf(&c.CACertPath), provider))
+		case ProviderAzure:
+			// The blob service URL is always https, so there is no useSSL to
+			// require.
+		default:
+			if !c.UseSSL.Val {
+				errs = append(errs, fmt.Errorf("cfg: %s requires %s",
+					keyOf(&c.CACertPath), keyOf(&c.UseSSL)))
+			}
+		}
 	}
 
 	errs = append(errs, c.Auth.validate(provider))

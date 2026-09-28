@@ -84,6 +84,26 @@ func TestValidate_Storage(t *testing.T) {
 			wantErr: "milvus.storage.milvusAddress does not apply to the local provider",
 		},
 		{
+			name:    "CACertPathRequiresUseSSL",
+			yaml:    "milvus:\n  storage:\n    caCertPath: /etc/ssl/private-ca.pem\n",
+			wantErr: "milvus.storage.caCertPath requires milvus.storage.useSSL",
+		},
+		{
+			name:    "CACertPathRejectedForGCP",
+			yaml:    "milvus:\n  storage:\n    provider: gcp\n    useSSL: true\n    caCertPath: /etc/ssl/private-ca.pem\n",
+			wantErr: "milvus.storage.caCertPath does not apply to the gcp provider",
+		},
+		{
+			name:    "CACertPathRejectedForGCPNative",
+			yaml:    "milvus:\n  storage:\n    provider: gcpnative\n    useSSL: true\n    caCertPath: /etc/ssl/private-ca.pem\n    auth:\n      type: serviceAccount\n      credentialsFile: /gcp.json\n",
+			wantErr: "milvus.storage.caCertPath does not apply to the gcpnative provider",
+		},
+		{
+			name:    "CACertPathRejectedForLocal",
+			yaml:    "milvus:\n  storage:\n    provider: local\n    caCertPath: /etc/ssl/private-ca.pem\n",
+			wantErr: "milvus.storage.caCertPath does not apply to the local provider",
+		},
+		{
 			name:    "BackupStorageIsValidatedToo",
 			yaml:    "backup:\n  storage:\n    provider: ceph\n",
 			wantErr: `backup.storage.provider: invalid value "ceph"`,
@@ -109,6 +129,8 @@ func TestValidate_StorageAcceptsProviderShapes(t *testing.T) {
 		{name: "GCPNativeServiceAccount", yaml: "milvus:\n  storage:\n    provider: gcpnative\n    auth:\n      type: serviceAccount\n      credentialsFile: /gcp.json\n"},
 		{name: "IAMWithoutEndpoint", yaml: "milvus:\n  storage:\n    provider: aws\n    auth:\n      type: iam\n"},
 		{name: "IAMWithEndpoint", yaml: "milvus:\n  storage:\n    provider: minio\n    auth:\n      type: iam\n      endpoint: http://iam:8080\n"},
+		{name: "MinioWithCACertPath", yaml: "milvus:\n  storage:\n    useSSL: true\n    caCertPath: /etc/ssl/private-ca.pem\n"},
+		{name: "AzureWithCACertPath", yaml: "milvus:\n  storage:\n    provider: azure\n    accountName: account\n    caCertPath: /etc/ssl/private-ca.pem\n    auth:\n      type: sharedKey\n      accountKey: key\n"},
 		// Local storage is a directory: no endpoint, no credentials.
 		{name: "Local", yaml: "backup:\n  storage:\n    provider: local\n    rootPath: /data/backup\n"},
 		// localPath is the optional Milvus-view of the same directory.

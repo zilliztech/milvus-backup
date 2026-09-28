@@ -25,6 +25,7 @@ Milvus.Storage.Address	milvus-minio
 Milvus.Storage.Port	9000
 Milvus.Storage.Region	
 Milvus.Storage.UseSSL	false
+Milvus.Storage.CACertPath	
 Milvus.Storage.AccountName	
 Milvus.Storage.SourceSASToken	
 Milvus.Storage.BucketName	a-bucket
@@ -44,6 +45,7 @@ Backup.Storage.Address	backup-s3
 Backup.Storage.Port	9000
 Backup.Storage.Region	
 Backup.Storage.UseSSL	false
+Backup.Storage.CACertPath	
 Backup.Storage.AccountName	
 Backup.Storage.SourceSASToken	
 Backup.Storage.BucketName	a-bucket

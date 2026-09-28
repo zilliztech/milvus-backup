@@ -71,6 +71,10 @@ milvus:
     port: 9000
     region: ""
     useSSL: false
+    # Verifies the storage certificate. Used when the endpoint is signed by a
+    # CA outside the system pool; requires useSSL, and does not apply to the
+    # gcp, gcpnative, and local providers.
+    # caCertPath: ""
     # The Azure storage account. Required by the azure provider, and rejected
     # for every other one.
     # accountName: ""
@@ -113,6 +117,8 @@ backup:
     port: 9000
     region: ""
     useSSL: false
+    # Verifies the backup storage certificate, same rules as above.
+    # caCertPath: ""
     # accountName: ""
     # Backup data is stored under bucketName/rootPath.
     bucketName: "a-bucket"

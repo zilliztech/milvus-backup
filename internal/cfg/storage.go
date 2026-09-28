@@ -36,6 +36,12 @@ type StorageConfig struct {
 	Region  param.Value[string]
 	UseSSL  param.Value[bool]
 
+	// CACertPath is the path to a file of PEM-encoded CA certificates used to
+	// verify the storage endpoint's TLS certificate, for stores presenting a
+	// certificate signed outside the system pool. Empty means the system pool
+	// only.
+	CACertPath param.Value[string]
+
 	// AccountName is the Azure storage account, and is not used by any other
 	// provider.
 	AccountName param.Value[string]
@@ -89,6 +95,8 @@ func newStorageConfig(keyPrefix, envPrefix string) StorageConfig {
 		Region:  param.Value[string]{Default: "", Keys: key("region")},
 		UseSSL:  param.Value[bool]{Default: false, Keys: key("useSSL")},
 
+		CACertPath: param.Value[string]{Default: "", Keys: key("caCertPath")},
+
 		// The account name is half of the Azure credential: it is what the
 		// account key belongs to, and deployments hand out the two together.
 		AccountName: param.Value[string]{Default: "", Keys: key("accountName"), EnvKeys: env("ACCOUNT_NAME")},
@@ -133,6 +141,7 @@ func (c *StorageConfig) inherit(other *StorageConfig) {
 	c.Port.Default = other.Port.Val
 	c.Region.Default = other.Region.Val
 	c.UseSSL.Default = other.UseSSL.Val
+	c.CACertPath.Default = other.CACertPath.Val
 
 	c.AccountName.Default = other.AccountName.Val
 	c.BucketName.Default = other.BucketName.Val
@@ -149,7 +158,7 @@ func (c *StorageConfig) inherit(other *StorageConfig) {
 func (c *StorageConfig) Resolve(s *param.Source) error {
 	return param.Resolve(s,
 		&c.Provider,
-		&c.Address, &c.Port, &c.Region, &c.UseSSL,
+		&c.Address, &c.Port, &c.Region, &c.UseSSL, &c.CACertPath,
 		&c.AccountName, &c.SourceSASToken, &c.BucketName, &c.RootPath, &c.LocalPath,
 		&c.MilvusAddress, &c.MilvusPort,
 		&c.Auth.Type,
