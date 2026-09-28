@@ -2,23 +2,17 @@ package restore
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"path"
-	"slices"
-	"strconv"
-	"strings"
 	"sync"
-	"time"
 
-	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
+	"github.com/google/uuid"
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/core/tasklet"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/log"
@@ -27,13 +21,6 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
-
-const (
-	_bulkInsertTimeout       = 60 * time.Minute
-	_bulkInsertCheckInterval = 3 * time.Second
-)
-
-type tearDownFn func(ctx context.Context) error
 
 type collTask struct {
 	taskID string
@@ -71,11 +58,6 @@ type collTask struct {
 
 	grpcCli    milvus.Grpc
 	restfulCli milvus.Restful
-
-	tearDownFn struct {
-		mu  sync.Mutex
-		fns []tearDownFn
-	}
 
 	vchTimestamp struct {
 		mu    sync.RWMutex
@@ -174,60 +156,8 @@ func newCollTask(args collTaskArgs) *collTask {
 
 func (ct *collTask) Target() collref.Name { return ct.target }
 
-// isLocal reports whether the restore target keeps its data on the local
-// filesystem, where LocalClient keys are absolute paths and bulk insert paths
-// must be what the Milvus LocalChunkManager resolves directly.
-func (ct *collTask) isLocal() bool {
-	return ct.milvusStorage.Config().Provider == v2.ProviderLocal
-}
-
-// destKey maps a bucket-relative restore key onto the key LocalClient reads and
-// writes. A local target resolves keys against the directory milvus-backup
-// reaches the target's storage at (milvus.storage.rootPath); any other provider
-// keeps the bucket-relative key as-is. A trailing slash is preserved: the copy
-// task maps each object by replacing the source prefix with this key.
-func (ct *collTask) destKey(key string) string {
-	if !ct.isLocal() || key == "" {
-		return key
-	}
-	return joinLocal(ct.milvusRootPath, key)
-}
-
-// importPath maps a bucket-relative restore key onto the path handed to the
-// bulk insert API. A local target needs the path the Milvus process resolves
-// (milvus.storage.localPath, falling back to rootPath), with a trailing slash
-// kept because the LocalChunkManager lists a prefix by globbing it directly;
-// paths already absolute are left alone so a same-directory local backup can be
-// imported without a copy. Any other provider keeps the bucket-relative path
-// as-is.
-func (ct *collTask) importPath(p string) string {
-	if !ct.isLocal() || p == "" {
-		return p
-	}
-	if path.IsAbs(p) {
-		return p
-	}
-	return joinLocal(ct.milvusLocalPath, p)
-}
-
-// joinLocal prefixes p with base, keeping p's trailing slash and avoiding a
-// doubled separator. base is empty only when a config omitted the directory.
-func joinLocal(base, p string) string {
-	if base == "" {
-		return p
-	}
-	return strings.TrimSuffix(base, "/") + "/" + p
-}
-
 func (ct *collTask) Execute(ctx context.Context) error {
 	ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.SetRestoreCollExecuting(ct.target))
-
-	// tear down restore task
-	defer func() {
-		if err := ct.tearDown(ctx); err != nil {
-			ct.logger.Error("restore collection tear down failed", zap.Error(err))
-		}
-	}()
 
 	if err := ct.privateExecute(ctx); err != nil {
 		ct.logger.Error("restore collection failed", zap.Error(err))
@@ -257,96 +187,188 @@ func (ct *collTask) privateExecute(ctx context.Context) error {
 	return nil
 }
 
+// restoreData builds the import jobs for every partition and the global L0
+// segments, then runs them. Each job is self-contained: it stages its data
+// where Milvus can read it, imports, and removes its own temp files.
 func (ct *collTask) restoreData(ctx context.Context) error {
 	if ct.option.MetaOnly {
 		ct.logger.Info("skip restore data")
 		return nil
 	}
 
-	// restore collection data
+	factory := ct.newImportJobFactory()
+
+	ct.logger.Info("start restore partition segment", zap.Int("partition_num", len(ct.collBackup.GetPartitionBackups())))
+	g, subCtx := errgroup.WithContext(ctx)
+	for _, part := range ct.collBackup.GetPartitionBackups() {
+		g.Go(func() error {
+			if err := ct.restorePartition(subCtx, part, factory); err != nil {
+				return fmt.Errorf("restore_collection: restore partition: %w", err)
+			}
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return fmt.Errorf("restore_collection: wait for partition restore: %w", err)
+	}
+
+	// restore all partition l0 segment
+	ct.logger.Info("start restore all partition L0 segment", zap.Int("l0_segments", len(ct.collBackup.GetL0Segments())))
+	l0Batches, err := ct.l0SegmentBatches(ct.collBackup.GetL0Segments())
+	if err != nil {
+		return fmt.Errorf("restore_collection: get L0 batches: %w", err)
+	}
+	if err := ct.runBatches(ctx, "", l0Batches, factory); err != nil {
+		return fmt.Errorf("restore_collection: restore global L0 segment: %w", err)
+	}
+
+	return nil
+}
+
+func (ct *collTask) restorePartition(ctx context.Context, part *backuppb.PartitionBackupInfo, factory importJobFactory) error {
+	ct.logger.Info("start restore not L0 segment", zap.String("partition_name", part.GetPartitionName()))
+	notL0Batches, err := ct.notL0SegmentBatches(ctx, part)
+	if err != nil {
+		return fmt.Errorf("restore_collection: get not L0 groups: %w", err)
+	}
+	if err := ct.runBatches(ctx, part.GetPartitionName(), notL0Batches, factory); err != nil {
+		return fmt.Errorf("restore_collection: restore not L0 groups: %w", err)
+	}
+
+	ct.logger.Info("start restore L0 segment", zap.String("partition_name", part.GetPartitionName()))
+	l0Segs := lo.Filter(part.GetSegmentBackups(), func(seg *backuppb.SegmentBackupInfo, _ int) bool {
+		return seg.IsL0
+	})
+	l0Batches, err := ct.l0SegmentBatches(l0Segs)
+	if err != nil {
+		return fmt.Errorf("restore_collection: get L0 batches: %w", err)
+	}
+	if err := ct.runBatches(ctx, part.GetPartitionName(), l0Batches, factory); err != nil {
+		return fmt.Errorf("restore_collection: restore L0 segment: %w", err)
+	}
+
+	return nil
+}
+
+// runBatches runs the jobs of every batch. The v1 grpc path runs batches
+// serially, one batch's jobs at a time; the v2 restful path runs all batches'
+// jobs concurrently.
+func (ct *collTask) runBatches(ctx context.Context, partitionName string, batches []batch, factory importJobFactory) error {
 	if ct.option.UseV2Restore {
-		if err := ct.restoreDataV2(ctx); err != nil {
-			return fmt.Errorf("restore_collection: restore data v2: %w", err)
+		var jobs []tasklet.Tasklet
+		for _, b := range batches {
+			jobs = append(jobs, factory(partitionName, b)...)
 		}
-	} else {
-		if err := ct.restoreDataV1(ctx); err != nil {
-			return fmt.Errorf("restore_collection: restore data v1: %w", err)
-		}
+		return ct.runJobs(ctx, jobs)
 	}
 
-	return nil
-}
-
-func (ct *collTask) restoreDataV2(ctx context.Context) error {
-	// restore partition segment
-	ct.logger.Info("start restore partition segment", zap.Int("partition_num", len(ct.collBackup.GetPartitionBackups())))
-	g, subCtx := errgroup.WithContext(ctx)
-	for _, part := range ct.collBackup.GetPartitionBackups() {
-		g.Go(func() error {
-			if err := ct.restorePartitionV2(subCtx, part); err != nil {
-				return fmt.Errorf("restore_collection: restore partition v2: %w", err)
-			}
-			return nil
-		})
-	}
-	if err := g.Wait(); err != nil {
-		return fmt.Errorf("restore_collection: wait for partition restore: %w", err)
-	}
-
-	// restore all partition l0 segment
-	ct.logger.Info("start restore all partition L0 segment", zap.Int("l0_segments", len(ct.collBackup.GetL0Segments())))
-	if err := ct.restoreL0SegV2(ctx, "", ct.collBackup.GetL0Segments()); err != nil {
-		return fmt.Errorf("restore_collection: restore global L0 segment: %w", err)
-	}
-
-	return nil
-}
-
-func (ct *collTask) restoreDataV1(ctx context.Context) error {
-	// restore partition segment
-	ct.logger.Info("start restore partition segment", zap.Int("partition_num", len(ct.collBackup.GetPartitionBackups())))
-	g, subCtx := errgroup.WithContext(ctx)
-	for _, part := range ct.collBackup.GetPartitionBackups() {
-		g.Go(func() error {
-			if err := ct.restorePartitionV1(subCtx, part); err != nil {
-				return fmt.Errorf("restore_collection: restore partition data v1: %w", err)
-			}
-			return nil
-		})
-	}
-	if err := g.Wait(); err != nil {
-		return fmt.Errorf("restore_collection: wait for partition restore: %w", err)
-	}
-
-	// restore all partition l0 segment
-	ct.logger.Info("start restore all partition L0 segment", zap.Int("l0_segments", len(ct.collBackup.GetL0Segments())))
-	if err := ct.restoreL0SegV1(ctx, "", ct.collBackup.GetL0Segments()); err != nil {
-		return fmt.Errorf("restore_collection: restore global L0 segment: %w", err)
-	}
-
-	return nil
-}
-
-func (ct *collTask) tearDown(ctx context.Context) error {
-	if ct.keepTempFiles {
-		ct.logger.Info("skip clean temporary files")
-		return nil
-	}
-
-	ct.tearDownFn.mu.Lock()
-	defer ct.tearDownFn.mu.Unlock()
-
-	ct.logger.Info("restore task tear down")
-
-	slices.Reverse(ct.tearDownFn.fns)
-	for _, fn := range ct.tearDownFn.fns {
-		if err := fn(ctx); err != nil {
-			ct.logger.Error("tear down restore task failed", zap.Error(err))
+	for _, b := range batches {
+		if err := ct.runJobs(ctx, factory(partitionName, b)); err != nil {
 			return err
 		}
 	}
+	return nil
+}
+
+func (ct *collTask) runJobs(ctx context.Context, jobs []tasklet.Tasklet) error {
+	g, subCtx := errgroup.WithContext(ctx)
+	for _, job := range jobs {
+		if err := ct.bulkInsertSem.Acquire(ctx, 1); err != nil {
+			return fmt.Errorf("restore_collection: acquire bulk insert semaphore %w", err)
+		}
+
+		g.Go(func() error {
+			defer ct.bulkInsertSem.Release(1)
+
+			if err := job.Execute(subCtx); err != nil {
+				return fmt.Errorf("restore_collection: execute import job %w", err)
+			}
+
+			return nil
+		})
+	}
+
+	if err := g.Wait(); err != nil {
+		return fmt.Errorf("restore_collection: wait for import jobs: %w", err)
+	}
 
 	return nil
+}
+
+// newImportJobFactory returns the factory that turns a batch into import jobs.
+// The v1 grpc API takes one directory pair per call, so a batch becomes one job
+// per partition dir; the v2 restful API takes them all at once, so a batch is
+// one job.
+func (ct *collTask) newImportJobFactory() importJobFactory {
+	return func(partitionName string, b batch) []tasklet.Tasklet {
+		if ct.option.UseV2Restore {
+			job := &restfulImportJob{
+				importJobBase: ct.newImportJobBase(partitionName, b, b.partitionDirs),
+				restfulCli:    ct.restfulCli,
+			}
+			return []tasklet.Tasklet{job}
+		}
+
+		jobs := make([]tasklet.Tasklet, 0, len(b.partitionDirs))
+		for _, dir := range b.partitionDirs {
+			job := &grpcImportJob{
+				importJobBase: ct.newImportJobBase(partitionName, b, []partitionDir{dir}),
+				grpcCli:       ct.grpcCli,
+			}
+			jobs = append(jobs, job)
+		}
+		return jobs
+	}
+}
+
+func (ct *collTask) newImportJobBase(partitionName string, b batch, dirs []partitionDir) importJobBase {
+	return importJobBase{
+		taskID: ct.taskID,
+		target: ct.target,
+
+		partitionName:  partitionName,
+		dirs:           dirs,
+		timestamp:      b.timestamp,
+		isL0:           b.isL0,
+		storageVersion: b.storageVersion,
+		ezk:            ct.ezk(),
+
+		copy: ct.newCopyTask(),
+
+		keepTempFiles: ct.keepTempFiles,
+
+		milvusStorage:   ct.milvusStorage,
+		milvusLocalPath: ct.milvusLocalPath,
+
+		taskMgr: ct.taskMgr,
+		logger:  ct.logger,
+	}
+}
+
+// newCopyTask builds the copy task that stages a job's data into the target's
+// storage, with a temp dir unique to the job so the job cleans up after itself.
+// It returns nil when backup and target share a bucket and the transfer is not
+// streamed, in which case Milvus imports the backup in place.
+func (ct *collTask) newCopyTask() *copyTask {
+	isSameBucket := ct.milvusStorage.Config().Bucket == ct.backupStorage.Config().Bucket
+	isSameStorage := ct.backupStorage.Config().Provider == ct.milvusStorage.Config().Provider
+	if isSameBucket && isSameStorage && !ct.streaming {
+		return nil
+	}
+
+	tempDir := fmt.Sprintf("restore-temp-%s-%s-%s-%s/",
+		ct.taskID, ct.target.DBName(), ct.target.CollName(), uuid.NewString())
+	return &copyTask{
+		src:       ct.backupStorage,
+		dest:      ct.milvusStorage,
+		backupDir: ct.backupDir,
+		tempDir:   tempDir,
+		sem:       ct.copySem,
+
+		milvusRootPath: ct.milvusRootPath,
+
+		logger: ct.logger,
+	}
 }
 
 func (ct *collTask) ezk() string {
@@ -362,254 +384,6 @@ func (ct *collTask) ezk() string {
 	}
 
 	return oldEZK
-}
-
-func (ct *collTask) cleanTempFiles(dir string) tearDownFn {
-	return func(ctx context.Context) error {
-		if len(dir) == 0 {
-			return errors.New("restore_collection: empty temporary file dir")
-		}
-
-		ct.logger.Info("delete temporary file", zap.String("dir", dir))
-		if err := storage.DeletePrefix(ctx, ct.milvusStorage, ct.destKey(dir)); err != nil {
-			return fmt.Errorf("restore_collection: failed to delete temporary file: %w", err)
-		}
-
-		return nil
-	}
-}
-
-func (ct *collTask) copyToMilvusBucket(ctx context.Context, tempDir, srcPrefix string) (string, error) {
-	ct.logger.Info("milvus and backup store in different bucket, copy the data first", zap.String("temp_dir", tempDir))
-	dest := path.Join(tempDir, strings.Replace(srcPrefix, ct.backupDir, "", 1)) + "/"
-	destKey := ct.destKey(dest)
-	opt := storage.CopyPrefixOpt{
-		Sem:        ct.copySem,
-		Src:        ct.backupStorage,
-		Dest:       ct.milvusStorage,
-		SrcPrefix:  srcPrefix,
-		DestPrefix: destKey,
-		Streaming:  true,
-	}
-
-	ct.logger.Info("copy temporary restore file", zap.String("src", srcPrefix), zap.String("dest", destKey))
-	task := storage.NewCopyPrefixTask(opt)
-	if err := task.Execute(ctx); err != nil {
-		return "", fmt.Errorf("restore_collection: copy temporary restore file: %w", err)
-	}
-
-	expected, err := storage.ExpectedDestObjects(ctx, ct.backupStorage, srcPrefix, destKey)
-	if err != nil {
-		return "", fmt.Errorf("restore_collection: build expected for copy verify: %w", err)
-	}
-	verifyTask := storage.NewVerifyPrefixTask(storage.VerifyPrefixOpt{Cli: ct.milvusStorage, Prefix: destKey, Expected: expected})
-	if err := verifyTask.Execute(ctx); err != nil {
-		return "", fmt.Errorf("restore_collection: verify temporary restore file: %w", err)
-	}
-	ct.logger.Info("copy temporary restore file success", zap.String("src", srcPrefix), zap.String("dest", destKey))
-
-	return dest, nil
-}
-
-func (ct *collTask) copyAndRewriteDir(ctx context.Context, b batch) (batch, error) {
-	isSameBucket := ct.milvusStorage.Config().Bucket == ct.backupStorage.Config().Bucket
-	isSameStorage := ct.backupStorage.Config().Provider == ct.milvusStorage.Config().Provider
-	// if milvus bucket and backup bucket are not the same, should copy the data first
-	if isSameBucket && isSameStorage && !ct.streaming {
-		ct.logger.Info("milvus and backup store in the same bucket, no need to copy the data")
-		return b, nil
-	}
-
-	tempDir := fmt.Sprintf("restore-temp-%s-%s-%s/", ct.taskID, ct.target.DBName(), ct.target.CollName())
-	for i, dir := range b.partitionDirs {
-		// insert log
-		if len(dir.insertLogDir) != 0 {
-			insertLogDir, err := ct.copyToMilvusBucket(ctx, tempDir, dir.insertLogDir)
-			if err != nil {
-				return batch{}, fmt.Errorf("restore_collection: copy insert log dir: %w", err)
-			}
-			dir.insertLogDir = insertLogDir
-		}
-
-		// delta log
-		if len(dir.deltaLogDir) != 0 {
-			deltaLogDir, err := ct.copyToMilvusBucket(ctx, tempDir, dir.deltaLogDir)
-			if err != nil {
-				return batch{}, fmt.Errorf("restore_collection: copy delta log dir: %w", err)
-			}
-			dir.deltaLogDir = deltaLogDir
-		}
-
-		b.partitionDirs[i] = dir
-	}
-
-	ct.tearDownFn.mu.Lock()
-	defer ct.tearDownFn.mu.Unlock()
-	ct.tearDownFn.fns = append(ct.tearDownFn.fns, ct.cleanTempFiles(tempDir))
-	return b, nil
-}
-
-func (ct *collTask) restoreNotL0SegV1(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
-	notL0SegBatches, err := ct.notL0SegmentBatches(ctx, part)
-	if err != nil {
-		return fmt.Errorf("restore_collection: get not L0 groups: %w", err)
-	}
-
-	for _, b := range notL0SegBatches {
-		bat, err := ct.copyAndRewriteDir(ctx, b)
-		if err != nil {
-			return fmt.Errorf("restore_collection: restore data v1 copy files: %w", err)
-		}
-		if err := ct.bulkInsertViaGrpc(ctx, part.GetPartitionName(), bat); err != nil {
-			return fmt.Errorf("restore_collection: bulk insert via grpc: %w", err)
-		}
-	}
-
-	return nil
-}
-
-// toPaths builds the [insertLogDir, deltaLogDir] argument for the restful bulk
-// insert API, mapping each directory through the target storage's path
-// convention (absolute paths under localPath for a local target).
-func (ct *collTask) toPaths(dir partitionDir) []string {
-	paths := make([]string, 0, 2)
-	if dir.insertLogDir != "" {
-		paths = append(paths, ct.importPath(dir.insertLogDir))
-	}
-	if dir.deltaLogDir != "" {
-		paths = append(paths, ct.importPath(dir.deltaLogDir))
-	}
-	return paths
-}
-
-// toGrpcPaths builds the [insertLogDir, deltaLogDir] argument for the grpc bulk
-// insert API, mapping each directory through the target storage's path
-// convention (absolute paths under localPath for a local target).
-func (ct *collTask) toGrpcPaths(dir partitionDir) []string {
-	if len(dir.insertLogDir) == 0 {
-		return []string{ct.importPath(dir.deltaLogDir)}
-	}
-	return []string{ct.importPath(dir.insertLogDir), ct.importPath(dir.deltaLogDir)}
-}
-
-func (ct *collTask) restoreNotL0SegV2(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
-	batches, err := ct.notL0SegmentBatches(ctx, part)
-	if err != nil {
-		return fmt.Errorf("restore_collection: get not L0 groups: %w", err)
-	}
-
-	g, subCtx := errgroup.WithContext(ctx)
-	for _, b := range batches {
-		if err := ct.bulkInsertSem.Acquire(ctx, 1); err != nil {
-			return fmt.Errorf("restore_collection: acquire bulk insert semaphore %w", err)
-		}
-		g.Go(func() error {
-			defer ct.bulkInsertSem.Release(1)
-
-			bat, err := ct.copyAndRewriteDir(subCtx, b)
-			if err != nil {
-				return fmt.Errorf("restore_collection: restore data v2 copy files: %w", err)
-			}
-			if err := ct.bulkInsertViaRestful(subCtx, part.GetPartitionName(), bat); err != nil {
-				return fmt.Errorf("restore_collection: bulk insert via restful: %w", err)
-			}
-
-			return nil
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		return fmt.Errorf("restore_collection: wait for not L0 segment restore: %w", err)
-	}
-
-	return nil
-}
-
-func (ct *collTask) restoreL0SegV1(ctx context.Context, partitionName string, l0Segs []*backuppb.SegmentBackupInfo) error {
-	batches, err := ct.l0SegmentBatches(l0Segs)
-	if err != nil {
-		return fmt.Errorf("restore_collection: get L0 batches: %w", err)
-	}
-
-	for _, b := range batches {
-		bat, err := ct.copyAndRewriteDir(ctx, b)
-		if err != nil {
-			return fmt.Errorf("restore_collection: restore L0 segment copy files: %w", err)
-		}
-		if err := ct.bulkInsertViaGrpc(ctx, partitionName, bat); err != nil {
-			return fmt.Errorf("restore_collection: restore L0 segment bulk insert via grpc: %w", err)
-		}
-	}
-
-	return nil
-}
-
-func (ct *collTask) restoreL0SegV2(ctx context.Context, partitionName string, l0Segs []*backuppb.SegmentBackupInfo) error {
-	batches, err := ct.l0SegmentBatches(l0Segs)
-	if err != nil {
-		return fmt.Errorf("restore_collection: get L0 batches: %w", err)
-	}
-
-	g, subCtx := errgroup.WithContext(ctx)
-	for _, b := range batches {
-		if err := ct.bulkInsertSem.Acquire(ctx, 1); err != nil {
-			return fmt.Errorf("restore_collection: acquire bulk insert semaphore %w", err)
-		}
-
-		g.Go(func() error {
-			defer ct.bulkInsertSem.Release(1)
-
-			bat, err := ct.copyAndRewriteDir(subCtx, b)
-			if err != nil {
-				return fmt.Errorf("restore_collection: restore L0 segment copy files: %w", err)
-			}
-			if err := ct.bulkInsertViaRestful(subCtx, partitionName, bat); err != nil {
-				return fmt.Errorf("restore_collection: restore L0 segment bulk insert via restful: %w", err)
-			}
-
-			return nil
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		return fmt.Errorf("restore_collection: wait for L0 segment restore: %w", err)
-	}
-
-	return nil
-}
-
-func (ct *collTask) restorePartitionV1(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
-	ct.logger.Info("start restore not L0 segment", zap.String("partition_name", part.GetPartitionName()))
-	// restore not L0 data groups
-	if err := ct.restoreNotL0SegV1(ctx, part); err != nil {
-		return fmt.Errorf("restore_collection: restore not L0 groups: %w", err)
-	}
-
-	ct.logger.Info("start restore L0 segment", zap.String("partition_name", part.GetPartitionName()))
-	// restore partition L0 segment
-	l0Segs := lo.Filter(part.GetSegmentBackups(), func(seg *backuppb.SegmentBackupInfo, _ int) bool {
-		return seg.IsL0
-	})
-	if err := ct.restoreL0SegV1(ctx, part.GetPartitionName(), l0Segs); err != nil {
-		return fmt.Errorf("restore_collection: restore L0 segment: %w", err)
-	}
-
-	return nil
-}
-
-func (ct *collTask) restorePartitionV2(ctx context.Context, part *backuppb.PartitionBackupInfo) error {
-	ct.logger.Info("start restore partition not L0 segment v2", zap.String("partition_name", part.GetPartitionName()))
-	if err := ct.restoreNotL0SegV2(ctx, part); err != nil {
-		return fmt.Errorf("restore_collection: restore not L0 groups: %w", err)
-	}
-
-	ct.logger.Info("start restore partition L0 segment v2", zap.String("partition_name", part.GetPartitionName()))
-	l0Seg := lo.Filter(part.GetSegmentBackups(), func(seg *backuppb.SegmentBackupInfo, _ int) bool { return seg.IsL0 })
-	if err := ct.restoreL0SegV2(ctx, part.GetPartitionName(), l0Seg); err != nil {
-		return fmt.Errorf("restore_collection: restore L0 segment: %w", err)
-	}
-
-	return nil
 }
 
 func (ct *collTask) notL0SegBatchesWithoutGroupID(ctx context.Context, part *backuppb.PartitionBackupInfo) ([]batch, error) {
@@ -787,177 +561,6 @@ type batch struct {
 	storageVersion int64
 
 	partitionDirs []partitionDir
-}
-
-func (ct *collTask) checkBulkInsertViaGrpc(ctx context.Context, jobID int64) error {
-	// wait for bulk insert job done
-	var lastProgress int
-	lastUpdateTime := time.Now()
-	for range time.Tick(_bulkInsertCheckInterval) {
-		state, err := ct.grpcCli.GetBulkInsertState(ctx, jobID)
-		if err != nil {
-			return fmt.Errorf("restore_collection: failed to get bulk insert state: %w", err)
-		}
-
-		ct.logger.Info("bulk insert task state", zap.Int64("jobID", jobID), zap.Any("state", state.State),
-			zap.Any("backup", state.Infos))
-		switch state.State {
-		case commonpb.ImportState_ImportFailed:
-			return fmt.Errorf("restore_collection: bulk insert failed: %s", getFailedReason(state.Infos))
-		case commonpb.ImportState_ImportCompleted:
-			ct.logger.Info("bulk insert task success", zap.Int64("job_id", jobID))
-			return nil
-		default:
-			currentProgress := getProcess(state.Infos)
-			ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.UpdateRestoreImportJob(ct.target, strconv.FormatInt(jobID, 10), currentProgress))
-			if currentProgress > lastProgress {
-				lastProgress = currentProgress
-				lastUpdateTime = time.Now()
-			} else if time.Since(lastUpdateTime) >= _bulkInsertTimeout {
-				ct.logger.Warn("bulk insert task no progress for too long, may milvus is not healthy",
-					zap.Int64("job_id", jobID),
-					zap.Duration("timeout", _bulkInsertTimeout))
-				lastUpdateTime = time.Now()
-			}
-			continue
-		}
-	}
-
-	return errors.New("restore_collection: walk into unreachable code")
-}
-
-func (ct *collTask) bulkInsertViaGrpc(ctx context.Context, partitionName string, b batch) error {
-	g, subCtx := errgroup.WithContext(ctx)
-	for _, dir := range b.partitionDirs {
-		if err := ct.bulkInsertSem.Acquire(ctx, 1); err != nil {
-			return fmt.Errorf("restore_collection: acquire bulk insert semaphore %w", err)
-		}
-
-		g.Go(func() error {
-			defer ct.bulkInsertSem.Release(1)
-
-			paths := ct.toGrpcPaths(dir)
-			ct.logger.Info("start bulk insert via grpc", zap.Strings("paths", paths), zap.String("partition", partitionName))
-			in := milvus.GrpcBulkInsertInput{
-				DB:             ct.target.DBName(),
-				CollectionName: ct.target.CollName(),
-				PartitionName:  partitionName,
-				Paths:          paths,
-				BackupTS:       b.timestamp,
-				IsL0:           b.isL0,
-				StorageVersion: b.storageVersion,
-				EZK:            ct.ezk(),
-			}
-
-			jobID, err := ct.grpcCli.BulkInsert(subCtx, in)
-			if err != nil {
-				return fmt.Errorf("restore_collection: failed to bulk insert via grpc: %w", err)
-			}
-			ct.taskMgr.UpdateRestoreTask(ct.taskID,
-				taskmgr.AddRestoreImportJob(ct.target, strconv.FormatInt(jobID, 10), dir.size))
-			ct.logger.Info("create bulk insert via grpc success", zap.Int64("job_id", jobID))
-			return ct.checkBulkInsertViaGrpc(subCtx, jobID)
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		return fmt.Errorf("restore_collection: bulk insert via grpc: %w", err)
-	}
-
-	return nil
-}
-
-func (ct *collTask) checkBulkInsertViaRestful(ctx context.Context, jobID string) error {
-	// wait for bulk insert job done
-	var lastProgress int
-	lastUpdateTime := time.Now()
-	for range time.Tick(_bulkInsertCheckInterval) {
-		resp, err := ct.restfulCli.GetBulkInsertState(ctx, ct.target.DBName(), jobID)
-		if err != nil {
-			return fmt.Errorf("restore_collection: failed to get bulk insert state: %w", err)
-		}
-
-		ct.logger.Info("bulk insert task state", zap.String("job_id", jobID),
-			zap.String("state", resp.Data.State),
-			zap.Int("progress", resp.Data.Progress))
-		switch resp.Data.State {
-		case string(milvus.ImportStateFailed):
-			return fmt.Errorf("restore_collection: bulk insert failed: %s", resp.Data.Reason)
-		case string(milvus.ImportStateCompleted):
-			ct.logger.Info("bulk insert task success", zap.String("job_id", jobID))
-			ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.UpdateRestoreImportJob(ct.target, jobID, 100))
-			return nil
-		default:
-			currentProgress := resp.Data.Progress
-			ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.UpdateRestoreImportJob(ct.target, jobID, currentProgress))
-			if currentProgress > lastProgress {
-				lastProgress = currentProgress
-				lastUpdateTime = time.Now()
-			} else if time.Since(lastUpdateTime) >= _bulkInsertTimeout {
-				ct.logger.Warn("bulk insert task no progress for too long, may milvus is not healthy",
-					zap.String("job_id", jobID),
-					zap.Duration("timeout", _bulkInsertTimeout))
-				lastUpdateTime = time.Now()
-			}
-			continue
-		}
-	}
-
-	return errors.New("restore_collection: walk into unreachable code")
-}
-
-func (ct *collTask) bulkInsertViaRestful(ctx context.Context, partition string, b batch) error {
-	ct.logger.Info("start bulk insert via restful", zap.Int("batch_num", len(b.partitionDirs)), zap.String("partition", partition))
-	paths := lo.Map(b.partitionDirs, func(dir partitionDir, _ int) []string { return ct.toPaths(dir) })
-	in := milvus.BulkInsertV2Input{
-		DB:             ct.target.DBName(),
-		CollectionName: ct.target.CollName(),
-		PartitionName:  partition,
-		Paths:          paths,
-		BackupTS:       b.timestamp,
-		IsL0:           b.isL0,
-		StorageVersion: b.storageVersion,
-		EZK:            ct.ezk(),
-	}
-
-	jobID, err := ct.restfulCli.BulkInsert(ctx, in)
-	if err != nil {
-		return fmt.Errorf("restore_collection: failed to bulk insert via restful: %w", err)
-	}
-	ct.logger.Info("create bulk insert via restful success", zap.String("job_id", jobID))
-
-	size := lo.SumBy(b.partitionDirs, func(dir partitionDir) int64 { return dir.size })
-	ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.AddRestoreImportJob(ct.target, jobID, size))
-	if err := ct.checkBulkInsertViaRestful(ctx, jobID); err != nil {
-		return fmt.Errorf("restore_collection: check bulk insert via restful: %w", err)
-	}
-
-	return nil
-}
-
-func getProcess(infos []*commonpb.KeyValuePair) int {
-	m := lo.SliceToMap(infos, func(info *commonpb.KeyValuePair) (string, string) {
-		return info.Key, info.Value
-	})
-	if val, ok := m["progress_percent"]; ok {
-		progress, err := strconv.Atoi(val)
-		if err != nil {
-			return 0
-		}
-		return progress
-	}
-	return 0
-}
-
-func getFailedReason(infos []*commonpb.KeyValuePair) string {
-	m := lo.SliceToMap(infos, func(info *commonpb.KeyValuePair) (string, string) {
-		return info.Key, info.Value
-	})
-
-	if val, ok := m["failed_reason"]; ok {
-		return val
-	}
-	return ""
 }
 
 func (ct *collTask) buildBackupPartitionDir(ctx context.Context, size int64, pathOpt ...mpath.Option) (partitionDir, error) {
