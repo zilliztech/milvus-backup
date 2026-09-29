@@ -27,9 +27,9 @@ func TestDestKey(t *testing.T) {
 	assert.Equal(t, "", destKey(local, "/data", ""))
 }
 
-// newCopyTestCollTask builds a collTask whose backup and milvus storage differ
-// only in bucket, so each case picks the copy-or-not wiring it wants.
-func newCopyTestCollTask(t *testing.T, backupBucket, milvusBucket string, streaming bool) *collTask {
+// newCopyTestCollTask builds a collDMLTask whose backup and milvus storage
+// differ only in bucket, so each case picks the copy-or-not wiring it wants.
+func newCopyTestCollTask(t *testing.T, backupBucket, milvusBucket string, streaming bool) *collDMLTask {
 	newClient := func(bucket string) storage.Client {
 		cfg := storage.Config{
 			Provider:   v2.ProviderMinio,
@@ -42,7 +42,7 @@ func newCopyTestCollTask(t *testing.T, backupBucket, milvusBucket string, stream
 		return cli
 	}
 
-	return &collTask{
+	return &collDMLTask{
 		taskID:        "task1",
 		target:        collref.New("db", "coll"),
 		backupStorage: newClient(backupBucket),

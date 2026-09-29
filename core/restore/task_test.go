@@ -287,12 +287,12 @@ func TestTask_filterDBTask(t *testing.T) {
 func TestTask_filterCollTask(t *testing.T) {
 	t.Run("NoFilter", func(t *testing.T) {
 		task := newTestTask()
-		collTasks := []collectionTask{
-			&collTask{target: collref.New("db1", "coll1")},
-			&collTask{target: collref.New("db1", "coll2")},
-			&collTask{target: collref.New("db2", "coll1")},
+		collTargets := []collTarget{
+			{target: collref.New("db1", "coll1")},
+			{target: collref.New("db1", "coll2")},
+			{target: collref.New("db2", "coll1")},
 		}
-		assert.ElementsMatch(t, collTasks, task.filterCollTask(collTasks))
+		assert.ElementsMatch(t, collTargets, task.filterCollTask(collTargets))
 	})
 
 	t.Run("Filter", func(t *testing.T) {
@@ -301,15 +301,15 @@ func TestTask_filterCollTask(t *testing.T) {
 		}}}
 		task := newTestTask()
 		task.args.Plan = p
-		collTasks := []collectionTask{
-			&collTask{target: collref.New("db1", "coll1")},
-			&collTask{target: collref.New("db1", "coll2")},
-			&collTask{target: collref.New("db2", "coll1")},
+		collTargets := []collTarget{
+			{target: collref.New("db1", "coll1")},
+			{target: collref.New("db1", "coll2")},
+			{target: collref.New("db2", "coll1")},
 		}
-		expect := []collectionTask{
-			&collTask{target: collref.New("db1", "coll1")},
+		expect := []collTarget{
+			{target: collref.New("db1", "coll1")},
 		}
-		assert.ElementsMatch(t, expect, task.filterCollTask(collTasks))
+		assert.ElementsMatch(t, expect, task.filterCollTask(collTargets))
 	})
 
 	t.Run("AllowAll", func(t *testing.T) {
@@ -318,16 +318,16 @@ func TestTask_filterCollTask(t *testing.T) {
 		}}}
 		task := newTestTask()
 		task.args.Plan = p
-		collTasks := []collectionTask{
-			&collTask{target: collref.New("db1", "coll1")},
-			&collTask{target: collref.New("db1", "coll2")},
-			&collTask{target: collref.New("db2", "coll1")},
+		collTargets := []collTarget{
+			{target: collref.New("db1", "coll1")},
+			{target: collref.New("db1", "coll2")},
+			{target: collref.New("db2", "coll1")},
 		}
-		expect := []collectionTask{
-			&collTask{target: collref.New("db1", "coll1")},
-			&collTask{target: collref.New("db1", "coll2")},
+		expect := []collTarget{
+			{target: collref.New("db1", "coll1")},
+			{target: collref.New("db1", "coll2")},
 		}
-		assert.ElementsMatch(t, expect, task.filterCollTask(collTasks))
+		assert.ElementsMatch(t, expect, task.filterCollTask(collTargets))
 	})
 }
 
@@ -352,7 +352,7 @@ func TestTask_newDBTask(t *testing.T) {
 	})
 }
 
-func TestTask_newCollTasks(t *testing.T) {
+func TestTask_newCollTarget(t *testing.T) {
 	mapper := NewMockCollMapper(t)
 
 	collRef := collref.New("db1", "coll1")
@@ -370,35 +370,10 @@ func TestTask_newCollTasks(t *testing.T) {
 
 	dbBackup := &backuppb.DatabaseBackupInfo{DbName: "db1"}
 	collBackup := &backuppb.CollectionBackupInfo{DbName: "db1", CollectionName: "coll1"}
-	tasks := task.newCollTask(dbBackup, collBackup)
-	assert.Len(t, tasks, 2)
-	names := lo.Map(tasks, func(task collectionTask, _ int) string { return task.Target().String() })
+	targets := task.newCollTarget(dbBackup, collBackup)
+	assert.Len(t, targets, 2)
+	names := lo.Map(targets, func(tgt collTarget, _ int) string { return tgt.target.String() })
 	assert.ElementsMatch(t, []string{"db2.coll2", "db3.coll3"}, names)
-}
-
-// The same mapping, with a snapshot format backup, has to produce tasks that go down the
-// snapshot path instead.
-func TestTask_newCollTasks_Snapshot(t *testing.T) {
-	mapper := NewMockCollMapper(t)
-
-	collRef := collref.New("db1", "coll1")
-	mapper.EXPECT().TargetNames(collRef).Return([]collref.Name{collref.New("db2", "coll2")}).Once()
-
-	task := newTestTask()
-	task.format = meta.FormatSnapshot
-	task.args.Plan = &Plan{CollMapper: mapper}
-	task.args.Option = &Option{}
-	mgr := taskmgr.NewMgr()
-	mgr.AddRestoreTask("task1")
-	task.args.TaskID = "task1"
-	task.args.TaskMgr = mgr
-
-	dbBackup := &backuppb.DatabaseBackupInfo{DbName: "db1"}
-	collBackup := &backuppb.CollectionBackupInfo{DbName: "db1", CollectionName: "coll1"}
-	tasks := task.newCollTask(dbBackup, collBackup)
-	assert.Len(t, tasks, 1)
-	assert.IsType(t, &collSnapshotTask{}, tasks[0])
-	assert.Equal(t, "db2.coll2", tasks[0].Target().String())
 }
 
 func TestDefaultRenamer(t *testing.T) {
