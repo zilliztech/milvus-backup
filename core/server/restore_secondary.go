@@ -2,12 +2,13 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 
-	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/labstack/echo/v5"
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/app"
@@ -33,18 +34,17 @@ type restoreSecondaryUC interface {
 // @Param object body backuppb.RestoreSecondaryRequest   true  "RestoreBackupRequest JSON"
 // @Success 200 {object} backuppb.RestoreBackupResponse
 // @Router /restore_secondary [post]
-func (s *Server) handleRestoreSecondary(c *gin.Context) {
+func (s *Server) handleRestoreSecondary(c *echo.Context) error {
 	var request backuppb.RestoreSecondaryRequest
-	if err := c.ShouldBindJSON(&request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid request body: %s", err)})
-		return
+	if err := json.NewDecoder(c.Request().Body).Decode(&request); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": fmt.Sprintf("invalid request body: %s", err)})
 	}
 
 	log.Info("receive restore secondary request", zap.Any("request", &request))
 
-	resp := s.restoreSecondary(c.Request.Context(), &request)
+	resp := s.restoreSecondary(c.Request().Context(), &request)
 
-	writeResponse(c, "restore secondary fail", resp)
+	return writeResponse(c, "restore secondary fail", resp)
 }
 
 // restoreSecondary keeps the v1 contract of this endpoint: the request id is

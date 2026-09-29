@@ -7,8 +7,8 @@ import (
 	"fmt"
 	"net/http"
 
-	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/labstack/echo/v5"
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/app"
@@ -43,18 +43,17 @@ type createBackupUC interface {
 // @Param object body backuppb.CreateBackupRequest   true  "CreateBackupRequest JSON"
 // @Success 200 {object} backuppb.BackupInfoResponse
 // @Router /create [post]
-func (s *Server) handleCreateBackup(c *gin.Context) {
+func (s *Server) handleCreateBackup(c *echo.Context) error {
 	var requestBody backuppb.CreateBackupRequest
-	if err := c.ShouldBindJSON(&requestBody); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
-		return
+	if err := json.NewDecoder(c.Request().Body).Decode(&requestBody); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request body"})
 	}
-	requestBody.RequestId = c.GetHeader("request_id")
+	requestBody.RequestId = c.Request().Header.Get("request_id")
 
 	log.Info("receive create backup request", zap.Any("request", &requestBody))
-	resp := s.createBackup(c.Request.Context(), &requestBody)
+	resp := s.createBackup(c.Request().Context(), &requestBody)
 	log.Info("response create backup response", zap.Any("resp", resp))
-	writeResponse(c, "create backup fail", resp)
+	return writeResponse(c, "create backup fail", resp)
 }
 
 // createBackup maps the v1 request onto the create usecase and the usecase's

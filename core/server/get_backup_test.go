@@ -9,7 +9,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -89,7 +88,7 @@ func newLoadedTestServer(t *testing.T, opts ...Option) *Server {
 
 	s, err := New(params, opts...)
 	require.NoError(t, err)
-	gin.SetMode(gin.TestMode)
+	silenceEngine(s)
 
 	return s
 }
