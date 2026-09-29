@@ -3,8 +3,8 @@ package server
 import (
 	"context"
 
-	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/labstack/echo/v5"
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
@@ -29,12 +29,12 @@ type getRestoreUC interface {
 // @param id query string true "id"
 // @Success 200 {object} backuppb.RestoreBackupResponse
 // @Router /get_restore [get]
-func (s *Server) handleGetRestore(c *gin.Context) {
-	requestID := c.GetHeader("request_id")
+func (s *Server) handleGetRestore(c *echo.Context) error {
+	requestID := c.Request().Header.Get("request_id")
 	if requestID == "" {
 		requestID = uuid.NewString()
 	}
-	id := c.Query("id")
+	id := c.QueryParam("id")
 	log.Info("receive GetRestoreStateRequest", zap.String("id", id))
 
 	resp := &backuppb.RestoreBackupResponse{RequestId: requestID}
@@ -42,29 +42,26 @@ func (s *Server) handleGetRestore(c *gin.Context) {
 	if id == "" {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = "empty restore id"
-		writeResponse(c, "get restore fail", resp)
-		return
+		return writeResponse(c, "get restore fail", resp)
 	}
 
 	uc, err := s.config.newGetRestore()
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
-		writeResponse(c, "get restore fail", resp)
-		return
+		return writeResponse(c, "get restore fail", resp)
 	}
 
-	view, err := uc.Execute(c.Request.Context(), id)
+	view, err := uc.Execute(c.Request().Context(), id)
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
-		writeResponse(c, "get restore fail", resp)
-		return
+		return writeResponse(c, "get restore fail", resp)
 	}
 
 	resp.Code = backuppb.ResponseCode_Success
 	resp.Msg = "success"
 	resp.Data = pbconv.RestoreTaskViewToResp(view)
 	log.Info("End to GetRestoreStateRequest", zap.Any("resp", resp))
-	writeResponse(c, "get restore fail", resp)
+	return writeResponse(c, "get restore fail", resp)
 }

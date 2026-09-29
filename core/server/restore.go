@@ -8,8 +8,8 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/labstack/echo/v5"
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/app"
@@ -40,18 +40,17 @@ type restoreBackupUC interface {
 // @Param object body backuppb.RestoreBackupRequest   true  "RestoreBackupRequest JSON"
 // @Success 200 {object} backuppb.RestoreBackupResponse
 // @Router /restore [post]
-func (s *Server) handleRestoreBackup(c *gin.Context) {
+func (s *Server) handleRestoreBackup(c *echo.Context) error {
 	var request backuppb.RestoreBackupRequest
-	if err := c.ShouldBindJSON(&request); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("invalid request body: %s", err)})
-		return
+	if err := json.NewDecoder(c.Request().Body).Decode(&request); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": fmt.Sprintf("invalid request body: %s", err)})
 	}
 
 	// The restore outlives the HTTP request, so the usecase runs detached
 	// from it, exactly as this endpoint always has.
 	resp := s.restore(context.Background(), &request)
 
-	writeResponse(c, "restore backup fail", resp)
+	return writeResponse(c, "restore backup fail", resp)
 }
 
 // restore keeps the v1 contract of this endpoint: request id and task id are

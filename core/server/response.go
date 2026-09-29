@@ -3,7 +3,7 @@ package server
 import (
 	"net/http"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
@@ -20,12 +20,12 @@ type codeMsg interface {
 
 // writeResponse logs an error when the response carries a failure code, then
 // writes the response back to the client.
-func writeResponse(c *gin.Context, op string, resp codeMsg) {
+func writeResponse(c *echo.Context, op string, resp codeMsg) error {
 	if resp.GetCode() != backuppb.ResponseCode_Success {
 		log.Error(op,
 			zap.String("request_id", resp.GetRequestId()),
 			zap.String("code", resp.GetCode().String()),
 			zap.String("msg", resp.GetMsg()))
 	}
-	c.JSON(http.StatusOK, resp)
+	return c.JSON(http.StatusOK, resp)
 }
