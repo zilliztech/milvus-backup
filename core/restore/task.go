@@ -8,7 +8,6 @@ import (
 	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
 	"github.com/samber/lo"
 	"go.uber.org/zap"
-	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
@@ -279,13 +278,7 @@ func snapshotIgnoredOptions(opt *Option) []string {
 	return ignored
 }
 
-// collectionTask restores one collection, in whichever format the backup was taken.
-type collectionTask interface {
-	Target() collref.Name
-	Execute(ctx context.Context) error
-}
-
-func (t *Task) newDBAndCollTasks(backup *backuppb.BackupInfo) ([]*databaseTask, []collectionTask) {
+func (t *Task) newDBAndCollTasks(backup *backuppb.BackupInfo) ([]*databaseTask, []collTarget) {
 	dbNames := lo.Map(backup.GetDatabaseBackups(), func(db *backuppb.DatabaseBackupInfo, _ int) string { return db.GetDbName() })
 	t.logger.Info("databases in backup", zap.Strings("db_names", dbNames))
 	collNames := lo.Map(backup.GetCollectionBackups(), func(coll *backuppb.CollectionBackupInfo, _ int) string {
@@ -305,21 +298,21 @@ func (t *Task) newDBAndCollTasks(backup *backuppb.BackupInfo) ([]*databaseTask, 
 
 	// generate restore tasks
 	dbTasks := t.newDBTasks(dbBackups)
-	collTasks := t.newCollTasks(dbBackups, collBackups)
+	collTargets := t.newCollTargets(dbBackups, collBackups)
 	dbNames = lo.Map(dbTasks, func(db *databaseTask, _ int) string { return db.targetName })
 	t.logger.Info("databases task after mapping", zap.Strings("db_names", dbNames))
-	collNames = lo.Map(collTasks, func(coll collectionTask, _ int) string { return coll.Target().String() })
+	collNames = lo.Map(collTargets, func(tgt collTarget, _ int) string { return tgt.target.String() })
 	t.logger.Info("collections task after mapping", zap.Strings("colls", collNames))
 
 	// filter task
 	dbTasks = t.filterDBTask(dbTasks)
-	collTasks = t.filterCollTask(collTasks)
+	collTargets = t.filterCollTask(collTargets)
 	dbNames = lo.Map(dbTasks, func(db *databaseTask, _ int) string { return db.targetName })
 	t.logger.Info("databases task after filtering", zap.Strings("db_names", dbNames))
-	collNames = lo.Map(collTasks, func(coll collectionTask, _ int) string { return coll.Target().String() })
-	t.logger.Info("collections task after filtering", zap.Strings("coll_names", collNames))
+	collNames = lo.Map(collTargets, func(tgt collTarget, _ int) string { return tgt.target.String() })
+	t.logger.Info("collections task after filtering", zap.Strings("colls", collNames))
 
-	return dbTasks, collTasks
+	return dbTasks, collTargets
 }
 
 func (t *Task) filterDBBackup(dbBackups []*backuppb.DatabaseBackupInfo) []*backuppb.DatabaseBackupInfo {
@@ -363,83 +356,37 @@ func (t *Task) newDBTasks(dbBackups []*backuppb.DatabaseBackupInfo) []*databaseT
 	return dbTasks
 }
 
-func (t *Task) newCollTask(dbBackup *backuppb.DatabaseBackupInfo, collBackup *backuppb.CollectionBackupInfo) []collectionTask {
+func (t *Task) newCollTarget(dbBackup *backuppb.DatabaseBackupInfo, collBackup *backuppb.CollectionBackupInfo) []collTarget {
 	source := collref.New(collBackup.GetDbName(), collBackup.GetCollectionName())
 	targets := t.args.Plan.CollMapper.TargetNames(source)
 
-	// A local target resolves its storage directory two ways: the path
-	// milvus-backup reaches it at (rootPath) and the path the Milvus process
-	// itself resolves (localPath, falling back to rootPath).
-	milvusLocalPath := t.args.Params.Milvus.Storage.LocalPath.Val
-	if milvusLocalPath == "" {
-		milvusLocalPath = t.args.Params.Milvus.Storage.RootPath.Val
-	}
-
-	tasks := make([]collectionTask, 0, len(targets))
+	collTargets := make([]collTarget, 0, len(targets))
 	for _, target := range targets {
 		t.logger.Debug("generate restore collection task", zap.String("source", source.String()), zap.String("target", target.String()))
 
-		if t.format == meta.FormatSnapshot {
-			tasks = append(tasks, newCollSnapshotTask(collSnapshotTaskArgs{
-				taskID:           t.args.TaskID,
-				collBackup:       collBackup,
-				target:           target,
-				source:           t.snapshotSource,
-				dropExist:        t.args.Option.DropExistCollection,
-				maxShardNum:      t.args.Option.MaxShardNum,
-				shardNumOverride: t.args.Plan.CollOverrides[target.String()].ShardNum,
-				descOverride:     t.args.Plan.CollOverrides[target.String()].Description,
-				skipParams:       t.args.Option.SkipParams,
-				grpcCli:          t.grpc,
-				taskMgr:          t.args.TaskMgr,
-			}))
-			continue
-		}
-
-		args := collTaskArgs{
-			taskID:        t.args.TaskID,
-			taskMgr:       t.args.TaskMgr,
-			target:        target,
-			dbBackup:      dbBackup,
-			collBackup:    collBackup,
-			option:        t.args.Option,
-			collOverride:  t.args.Plan.CollOverrides[target.String()],
-			streaming:     t.streaming,
-			keepTempFiles: t.args.Params.Restore.KeepTempFiles.Val,
-			backupDir:     t.args.BackupDir,
-			backupStorage: t.args.BackupStorage,
-			milvusStorage: t.args.MilvusStorage,
-
-			milvusRootPath:  t.args.Params.Milvus.Storage.RootPath.Val,
-			milvusLocalPath: milvusLocalPath,
-
-			copySem:       t.copySem,
-			bulkInsertSem: t.bulkInsertSem,
-			grpcCli:       t.grpc,
-			restfulCli:    t.restful,
-
-			maxSegsPerImportJob: t.args.Params.Restore.MaxSegmentsPerImportJob.Val,
-		}
-
-		tasks = append(tasks, newCollTask(args))
+		collTargets = append(collTargets, collTarget{
+			dbBackup:     dbBackup,
+			collBackup:   collBackup,
+			target:       target,
+			collOverride: t.args.Plan.CollOverrides[target.String()],
+		})
 	}
 
-	return tasks
+	return collTargets
 }
 
-func (t *Task) newCollTasks(dbBackups []*backuppb.DatabaseBackupInfo, collBackups []*backuppb.CollectionBackupInfo) []collectionTask {
+func (t *Task) newCollTargets(dbBackups []*backuppb.DatabaseBackupInfo, collBackups []*backuppb.CollectionBackupInfo) []collTarget {
 	nameDBBackup := lo.SliceToMap(dbBackups, func(dbBackup *backuppb.DatabaseBackupInfo) (string, *backuppb.DatabaseBackupInfo) {
 		return dbBackup.GetDbName(), dbBackup
 	})
 
-	collTasks := make([]collectionTask, 0, len(collBackups))
+	collTargets := make([]collTarget, 0, len(collBackups))
 	for _, collBackup := range collBackups {
 		dbBackup := nameDBBackup[collBackup.GetDbName()]
-		tasks := t.newCollTask(dbBackup, collBackup)
-		collTasks = append(collTasks, tasks...)
+		collTargets = append(collTargets, t.newCollTarget(dbBackup, collBackup)...)
 	}
 
-	return collTasks
+	return collTargets
 }
 
 func (t *Task) filterDBTask(dbTask []*databaseTask) []*databaseTask {
@@ -448,16 +395,16 @@ func (t *Task) filterDBTask(dbTask []*databaseTask) []*databaseTask {
 	})
 }
 
-func (t *Task) filterCollTask(collTasks []collectionTask) []collectionTask {
-	return lo.Filter(collTasks, func(task collectionTask, _ int) bool {
-		return t.args.Plan.TaskFilter.AllowName(task.Target())
+func (t *Task) filterCollTask(collTargets []collTarget) []collTarget {
+	return lo.Filter(collTargets, func(target collTarget, _ int) bool {
+		return t.args.Plan.TaskFilter.AllowName(target.target)
 	})
 }
 
 // checkCollsExist check if the collection exist in target milvus, if collection exist, return error.
-func (t *Task) checkCollsExist(ctx context.Context, collTasks []collectionTask) error {
-	for _, collTask := range collTasks {
-		if err := t.checkCollExist(ctx, collTask.Target()); err != nil {
+func (t *Task) checkCollsExist(ctx context.Context, collTargets []collTarget) error {
+	for _, tgt := range collTargets {
+		if err := t.checkCollExist(ctx, tgt.target); err != nil {
 			return err
 		}
 	}
@@ -538,7 +485,7 @@ func (t *Task) privateExecute(ctx context.Context) error {
 		return fmt.Errorf("restore: a snapshot format backup needs a milvus 3.0 or newer server")
 	}
 
-	dbTasks, collTasks := t.newDBAndCollTasks(t.args.Backup)
+	dbTasks, collTargets := t.newDBAndCollTasks(t.args.Backup)
 
 	if err := t.restoreRBAC(ctx); err != nil {
 		return fmt.Errorf("restore: restore rbac %w", err)
@@ -548,16 +495,16 @@ func (t *Task) privateExecute(ctx context.Context) error {
 		return fmt.Errorf("restore: run database task %w", err)
 	}
 
-	if err := t.prepareDB(ctx, collTasks); err != nil {
+	if err := t.prepareDB(ctx, collTargets); err != nil {
 		return fmt.Errorf("restore: prepare database %w", err)
 	}
 
-	if err := t.checkCollsExist(ctx, collTasks); err != nil {
+	if err := t.checkCollsExist(ctx, collTargets); err != nil {
 		return fmt.Errorf("restore: check collection exist %w", err)
 	}
 
-	if err := t.runCollTasks(ctx, collTasks); err != nil {
-		return fmt.Errorf("restore: run collection task %w", err)
+	if err := t.selectPlan(collTargets).Execute(ctx); err != nil {
+		return fmt.Errorf("restore: run collection plan %w", err)
 	}
 
 	return nil
@@ -631,15 +578,15 @@ func (t *Task) runDBTasks(ctx context.Context, dbTasks []*databaseTask) error {
 }
 
 // prepareDB create database if not exist, for restore collection task.
-func (t *Task) prepareDB(ctx context.Context, collTasks []collectionTask) error {
+func (t *Task) prepareDB(ctx context.Context, collTargets []collTarget) error {
 	dbInTarget, err := t.grpc.ListDatabases(ctx)
 	if err != nil {
 		return fmt.Errorf("restore: list databases %w", err)
 	}
 
 	dbs := make(map[string]struct{})
-	for _, collTask := range collTasks {
-		dbs[collTask.Target().DBName()] = struct{}{}
+	for _, tgt := range collTargets {
+		dbs[tgt.target.DBName()] = struct{}{}
 	}
 	dbsNeedToRestores := lo.Keys(dbs)
 
@@ -651,28 +598,5 @@ func (t *Task) prepareDB(ctx context.Context, collTasks []collectionTask) error 
 		t.logger.Info("create db done", zap.String("database", db))
 	}
 
-	return nil
-}
-
-func (t *Task) runCollTasks(ctx context.Context, collTasks []collectionTask) error {
-	t.logger.Info("start restore collection")
-
-	g, subCtx := errgroup.WithContext(ctx)
-	g.SetLimit(t.args.Params.Restore.Concurrency.Collections.Val)
-	for _, collTask := range collTasks {
-		g.Go(func() error {
-			if err := collTask.Execute(subCtx); err != nil {
-				return fmt.Errorf("restore: restore collection %w", err)
-			}
-
-			return nil
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		return fmt.Errorf("restore: wait restore collections %w", err)
-	}
-
-	t.logger.Info("finish restore all collections")
 	return nil
 }
