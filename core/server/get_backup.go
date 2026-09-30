@@ -94,7 +94,18 @@ func (h *getBackupHandler) getByName(ctx context.Context, backupName string) (*b
 	var backup *backuppb.BackupInfo
 	var metaSize int64
 
-	if task != nil && task.StateCode() == backuppb.BackupTaskStateCode_BACKUP_SUCCESS {
+	readArtifact := task != nil && task.StateCode() == backuppb.BackupTaskStateCode_BACKUP_SUCCESS
+	if task == nil {
+		backupRootPath := h.params.Backup.Storage.RootPath.Val
+		if h.request.GetPath() != "" {
+			backupRootPath = h.request.GetPath()
+		}
+		readArtifact, err = meta.Exist(ctx, h.backupStorage, mpath.BackupDir(backupRootPath, backupName))
+		if err != nil {
+			return nil, fmt.Errorf("server: check backup by name %w", err)
+		}
+	}
+	if readArtifact {
 		// get backup meta from storage
 		backup, metaSize, err = h.readFromStorage(ctx, backupName)
 		if err != nil {

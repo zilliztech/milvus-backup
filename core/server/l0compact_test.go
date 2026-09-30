@@ -23,7 +23,7 @@ func TestHasL0HTTP(t *testing.T) {
 	root := t.TempDir()
 	params, err := v2.Load("", map[string]string{
 		"backup.storage.provider": v2.ProviderLocal,
-		"backup.storage.rootPath": root,
+		"backup.storage.rootPath": t.TempDir(),
 	})
 	require.NoError(t, err)
 	s, err := New(params)
