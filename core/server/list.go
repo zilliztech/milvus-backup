@@ -2,8 +2,9 @@ package server
 
 import (
 	"context"
+	"net/http"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 	"github.com/samber/lo"
 
 	"github.com/zilliztech/milvus-backup/app"
@@ -26,34 +27,31 @@ type listBackupsUC interface {
 // @Param collection_name query string false "collection_name"
 // @Success 200 {object} backuppb.ListBackupsResponse
 // @Router /list [get]
-func (s *Server) handleListBackups(c *gin.Context) {
+func (s *Server) handleListBackups(c *echo.Context) error {
 	req := backuppb.ListBackupsRequest{
-		RequestId:      c.GetHeader("request_id"),
-		CollectionName: c.Query("collection_name"),
+		RequestId:      c.Request().Header.Get("request_id"),
+		CollectionName: c.QueryParam("collection_name"),
 	}
 
 	resp := &backuppb.ListBackupsResponse{RequestId: req.GetRequestId()}
 	if len(req.GetCollectionName()) > 0 {
 		resp.Code = backuppb.ResponseCode_Parameter_Error
 		resp.Msg = "collection_name is deprecated"
-		c.JSON(200, resp)
-		return
+		return c.JSON(http.StatusOK, resp)
 	}
 
-	uc, err := s.config.newListBackups(c.Request.Context(), s.params)
+	uc, err := s.config.newListBackups(c.Request().Context(), s.params)
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
-		c.JSON(200, resp)
-		return
+		return c.JSON(http.StatusOK, resp)
 	}
 
-	summaries, err := uc.Execute(c.Request.Context())
+	summaries, err := uc.Execute(c.Request().Context())
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
-		c.JSON(200, resp)
-		return
+		return c.JSON(http.StatusOK, resp)
 	}
 
 	resp.Code = backuppb.ResponseCode_Success
@@ -65,5 +63,5 @@ func (s *Server) handleListBackups(c *gin.Context) {
 			MilvusVersion: s.MilvusVersion,
 		}
 	})
-	c.JSON(200, resp)
+	return c.JSON(http.StatusOK, resp)
 }
