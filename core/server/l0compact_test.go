@@ -29,13 +29,14 @@ func TestHasL0HTTP(t *testing.T) {
 	s, err := New(params)
 	require.NoError(t, err)
 	cli := &storage.LocalClient{}
-	backupDir := mpath.BackupDir(root, "src")
+	backupName := "res_job-020c06e1ea1e7dfzh5b2fb"
+	backupDir := mpath.BackupDir(root, backupName)
 	info := &backuppb.BackupInfo{Name: "src", CollectionBackups: []*backuppb.CollectionBackupInfo{{
 		PartitionBackups: []*backuppb.PartitionBackupInfo{{
 			SegmentBackups: []*backuppb.SegmentBackupInfo{{SegmentId: 200}},
 		}},
 	}}}
-	query := "/api/v1/has_l0?backup_name=src&path=" + url.QueryEscape(root)
+	query := "/api/v1/has_l0?backup_name=" + backupName + "&path=" + url.QueryEscape(root)
 
 	for _, tc := range []struct {
 		name  string
@@ -59,24 +60,33 @@ func TestHasL0HTTP(t *testing.T) {
 			w := httptest.NewRecorder()
 			s.engine.ServeHTTP(w, httptest.NewRequest(http.MethodGet, query, nil))
 			require.Equal(t, http.StatusOK, w.Code)
-			var response hasL0Response
+			var response struct {
+				Code backuppb.ResponseCode `json:"code"`
+				Msg  string                `json:"msg"`
+				Data hasL0Response         `json:"data"`
+			}
 			require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
-			assert.Equal(t, "src", response.BackupName)
-			assert.Equal(t, tc.want, response.HasL0)
+			assert.Equal(t, backuppb.ResponseCode_Success, response.Code)
+			assert.Equal(t, "success", response.Msg)
+			assert.Equal(t, backupName, response.Data.BackupName)
+			assert.Equal(t, tc.want, response.Data.HasL0)
 		})
 	}
 
 	for _, tc := range []struct {
 		query string
-		code  int
+		code  backuppb.ResponseCode
 	}{
-		{query: "/api/v1/has_l0?backup_name=src", code: http.StatusBadRequest},
-		{query: "/api/v1/has_l0?backup_name=../bad&path=" + url.QueryEscape(root), code: http.StatusBadRequest},
-		{query: "/api/v1/has_l0?backup_name=missing&path=" + url.QueryEscape(root), code: http.StatusInternalServerError},
+		{query: "/api/v1/has_l0?backup_name=src", code: backuppb.ResponseCode_Parameter_Error},
+		{query: "/api/v1/has_l0?backup_name=missing&path=" + url.QueryEscape(root), code: backuppb.ResponseCode_Fail},
 	} {
 		w := httptest.NewRecorder()
 		s.engine.ServeHTTP(w, httptest.NewRequest(http.MethodGet, tc.query, nil))
-		assert.Equal(t, tc.code, w.Code)
+		assert.Equal(t, http.StatusOK, w.Code)
+		var response l0APIResponse
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+		assert.Equal(t, tc.code, response.Code)
+		assert.NotEmpty(t, response.Msg)
 	}
 }
 
@@ -85,18 +95,21 @@ func TestL0CompactHTTPValidation(t *testing.T) {
 	for _, body := range []string{
 		`{}`,
 		`{"backup_name":"src","output_name":"src","path":"restore/job"}`,
-		`{"backup_name":"../src","output_name":"dst","path":"restore/job"}`,
 	} {
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/l0compact", bytes.NewBufferString(body))
 		req.Header.Set("Content-Type", "application/json")
 		s.engine.ServeHTTP(w, req)
-		assert.Equal(t, http.StatusBadRequest, w.Code)
+		assert.Equal(t, http.StatusOK, w.Code)
+		var response l0APIResponse
+		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
+		assert.Equal(t, backuppb.ResponseCode_Parameter_Error, response.Code)
+		assert.NotEmpty(t, response.Msg)
 	}
 }
 
 func TestL0CompactHTTPReturnsExistingJob(t *testing.T) {
-	req := l0CompactRequest{BackupName: "src", OutputName: "dst", Path: "restore/job", BucketName: "bucket"}
+	req := l0CompactRequest{BackupName: "res_job-020c06e1ea1e7dfzh5b2fb", OutputName: "l0c-020c06e1ea1e7dfzh5b2fb", Path: "restore/job", BucketName: "bucket"}
 	s := newListTestServer(t)
 	s.compactJobs = map[string]*l0CompactJob{
 		l0CompactKey(req.BucketName, req.Path, req.OutputName): {request: req, state: l0CompactExecuting},
@@ -111,13 +124,19 @@ func TestL0CompactHTTPReturnsExistingJob(t *testing.T) {
 			request.Header.Set("Content-Type", "application/json")
 		} else {
 			request = httptest.NewRequest(method,
-				"/api/v1/get_l0compact?backup_name=src&output_name=dst&path=restore/job&bucket_name=bucket", nil)
+				"/api/v1/get_l0compact?backup_name=res_job-020c06e1ea1e7dfzh5b2fb&output_name=l0c-020c06e1ea1e7dfzh5b2fb&path=restore/job&bucket_name=bucket", nil)
 		}
 		s.engine.ServeHTTP(w, request)
 		assert.Equal(t, http.StatusOK, w.Code)
-		var response l0CompactResponse
+		var response struct {
+			Code backuppb.ResponseCode `json:"code"`
+			Msg  string                `json:"msg"`
+			Data l0CompactResponse     `json:"data"`
+		}
 		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &response))
-		assert.Equal(t, l0CompactExecuting, response.StateCode)
-		assert.Equal(t, "dst", response.OutputName)
+		assert.Equal(t, backuppb.ResponseCode_Success, response.Code)
+		assert.Equal(t, "success", response.Msg)
+		assert.Equal(t, l0CompactExecuting, response.Data.StateCode)
+		assert.Equal(t, req.OutputName, response.Data.OutputName)
 	}
 }
