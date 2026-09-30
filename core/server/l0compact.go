@@ -3,14 +3,13 @@ package server
 import (
 	"context"
 	"errors"
-	"net/http"
 	"sync"
 
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 
-	"github.com/zilliztech/milvus-backup/core/backup"
 	corel0 "github.com/zilliztech/milvus-backup/core/l0compact"
+	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/storage"
@@ -42,6 +41,23 @@ type hasL0Response struct {
 	HasL0      bool   `json:"has_l0"`
 }
 
+type l0APIResponse struct {
+	RequestID string                `json:"requestId,omitempty"`
+	Code      backuppb.ResponseCode `json:"code"`
+	Msg       string                `json:"msg"`
+	Data      any                   `json:"data,omitempty"`
+}
+
+func (r l0APIResponse) GetRequestId() string           { return r.RequestID }
+func (r l0APIResponse) GetCode() backuppb.ResponseCode { return r.Code }
+func (r l0APIResponse) GetMsg() string                 { return r.Msg }
+
+func writeL0Response(c *gin.Context, code backuppb.ResponseCode, msg string, data any) {
+	writeResponse(c, "l0 request fail", l0APIResponse{
+		RequestID: c.GetHeader("request_id"), Code: code, Msg: msg, Data: data,
+	})
+}
+
 type l0CompactJob struct {
 	mu      sync.Mutex
 	request l0CompactRequest
@@ -62,11 +78,7 @@ func (s *Server) handleHasL0(c *gin.Context) {
 	backupName := c.Query("backup_name")
 	backupPath := c.Query("path")
 	if backupName == "" || backupPath == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "backup_name and path are required"})
-		return
-	}
-	if err := backup.ValidateName(backupName); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		writeL0Response(c, backuppb.ResponseCode_Parameter_Error, "backup_name and path are required", nil)
 		return
 	}
 	overrides := map[string]string{"backup.storage.rootPath": backupPath}
@@ -75,30 +87,31 @@ func (s *Server) handleHasL0(c *gin.Context) {
 	}
 	params, err := s.params.Fork(overrides)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		writeL0Response(c, backuppb.ResponseCode_Parameter_Error, err.Error(), nil)
 		return
 	}
 	cli, err := storage.NewClient(c.Request.Context(), storage.BackupStorageConfig(params))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeL0Response(c, backuppb.ResponseCode_Fail, err.Error(), nil)
 		return
 	}
 	info, err := meta.Read(c.Request.Context(), cli, mpath.BackupDir(params.Backup.Storage.RootPath.Val, backupName))
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeL0Response(c, backuppb.ResponseCode_Fail, err.Error(), nil)
 		return
 	}
-	c.JSON(http.StatusOK, hasL0Response{BackupName: backupName, HasL0: corel0.HasL0(info)})
+	writeL0Response(c, backuppb.ResponseCode_Success, "success",
+		hasL0Response{BackupName: backupName, HasL0: corel0.HasL0(info)})
 }
 
 func (s *Server) handleL0Compact(c *gin.Context) {
 	var req l0CompactRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		writeL0Response(c, backuppb.ResponseCode_Parameter_Error, err.Error(), nil)
 		return
 	}
 	if err := validateL0CompactRequest(req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		writeL0Response(c, backuppb.ResponseCode_Parameter_Error, err.Error(), nil)
 		return
 	}
 	key := l0CompactKey(req.BucketName, req.Path, req.OutputName)
@@ -106,10 +119,10 @@ func (s *Server) handleL0Compact(c *gin.Context) {
 	if existing := s.compactJobs[key]; existing != nil {
 		s.compactMu.Unlock()
 		if existing.request.BackupName != req.BackupName {
-			c.JSON(http.StatusConflict, gin.H{"error": "output belongs to a different source backup"})
+			writeL0Response(c, backuppb.ResponseCode_Parameter_Error, "output belongs to a different source backup", nil)
 			return
 		}
-		c.JSON(http.StatusOK, existing.response())
+		writeL0Response(c, backuppb.ResponseCode_Success, "success", existing.response())
 		return
 	}
 	params := s.params
@@ -121,19 +134,19 @@ func (s *Server) handleL0Compact(c *gin.Context) {
 	params, err = params.Fork(overrides)
 	if err != nil {
 		s.compactMu.Unlock()
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		writeL0Response(c, backuppb.ResponseCode_Parameter_Error, err.Error(), nil)
 		return
 	}
 	cli, err := storage.NewBackupStorage(c.Request.Context(), params)
 	if err != nil {
 		s.compactMu.Unlock()
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeL0Response(c, backuppb.ResponseCode_Fail, err.Error(), nil)
 		return
 	}
 	if info, readErr := meta.Read(c.Request.Context(), cli,
 		mpath.BackupDir(params.Backup.Storage.RootPath.Val, req.OutputName)); readErr == nil && info.GetName() == req.OutputName {
 		s.compactMu.Unlock()
-		c.JSON(http.StatusOK, l0CompactResponse{
+		writeL0Response(c, backuppb.ResponseCode_Success, "success", l0CompactResponse{
 			StateCode: l0CompactSuccess, BackupName: req.BackupName, OutputName: req.OutputName,
 		})
 		return
@@ -160,7 +173,7 @@ func (s *Server) handleL0Compact(c *gin.Context) {
 		}
 		job.state = l0CompactSuccess
 	}()
-	c.JSON(http.StatusOK, job.response())
+	writeL0Response(c, backuppb.ResponseCode_Success, "success", job.response())
 }
 
 func (s *Server) handleGetL0Compact(c *gin.Context) {
@@ -169,7 +182,7 @@ func (s *Server) handleGetL0Compact(c *gin.Context) {
 		Path: c.Query("path"), BucketName: c.Query("bucket_name"),
 	}
 	if err := validateL0CompactRequest(req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		writeL0Response(c, backuppb.ResponseCode_Parameter_Error, err.Error(), nil)
 		return
 	}
 	s.compactMu.Lock()
@@ -177,10 +190,10 @@ func (s *Server) handleGetL0Compact(c *gin.Context) {
 	s.compactMu.Unlock()
 	if job != nil {
 		if job.request.BackupName != req.BackupName {
-			c.JSON(http.StatusConflict, gin.H{"error": "output belongs to a different source backup"})
+			writeL0Response(c, backuppb.ResponseCode_Parameter_Error, "output belongs to a different source backup", nil)
 			return
 		}
-		c.JSON(http.StatusOK, job.response())
+		writeL0Response(c, backuppb.ResponseCode_Success, "success", job.response())
 		return
 	}
 	params := s.params
@@ -190,20 +203,20 @@ func (s *Server) handleGetL0Compact(c *gin.Context) {
 	}
 	params, err := params.Fork(overrides)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		writeL0Response(c, backuppb.ResponseCode_Parameter_Error, err.Error(), nil)
 		return
 	}
 	cli, err := storage.NewBackupStorage(c.Request.Context(), params)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeL0Response(c, backuppb.ResponseCode_Fail, err.Error(), nil)
 		return
 	}
 	info, err := meta.Read(c.Request.Context(), cli, mpath.BackupDir(params.Backup.Storage.RootPath.Val, req.OutputName))
 	if err != nil || info.GetName() != req.OutputName {
-		c.JSON(http.StatusNotFound, gin.H{"error": "l0compact task and completed output not found"})
+		writeL0Response(c, backuppb.ResponseCode_Request_Object_Not_Found, "l0compact task and completed output not found", nil)
 		return
 	}
-	c.JSON(http.StatusOK, l0CompactResponse{
+	writeL0Response(c, backuppb.ResponseCode_Success, "success", l0CompactResponse{
 		StateCode: l0CompactSuccess, BackupName: req.BackupName, OutputName: req.OutputName,
 	})
 }
@@ -215,10 +228,7 @@ func validateL0CompactRequest(req l0CompactRequest) error {
 	if req.BackupName == req.OutputName {
 		return errors.New("output_name must differ from backup_name")
 	}
-	if err := backup.ValidateName(req.BackupName); err != nil {
-		return err
-	}
-	return backup.ValidateName(req.OutputName)
+	return nil
 }
 
 func l0CompactKey(bucket, path, output string) string {
