@@ -15,22 +15,25 @@ import (
 	"github.com/zilliztech/milvus-backup/core/backup"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/utils"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
-// createBackupUC is the slice of app.CreateBackup the handler needs. The
-// consumer defines it: app returns concrete types, and this narrow interface
-// is what handler tests stub out.
-type createBackupUC interface {
-	// Execute runs the backup job synchronously and returns the job view.
-	Execute(ctx context.Context, req app.CreateBackupRequest) (taskmgr.BackupTaskView, error)
-	// Start registers the job and returns it ready to run; the async flag's
-	// goroutine placement is this server's deployment decision.
-	Start(ctx context.Context, req app.CreateBackupRequest) (app.BackupJob, error)
+// backupJob is the slice of app.BackupJob the handler needs. The consumer
+// defines it: app returns a concrete type, and this narrow interface is what
+// handler tests stub out.
+type backupJob interface {
+	// Run executes the job; where its goroutine goes is this server's
+	// deployment decision, selected by the request's async flag.
+	Run(ctx context.Context) error
 }
+
+// backupJobFactory builds and registers the job for one create request.
+// Unlike the other new* constructors it takes the request: a backup job is
+// per-request, so construction and registration are one step.
+type backupJobFactory func(ctx context.Context, params *v2.Config, req app.CreateBackupRequest) (backupJob, error)
 
 // CreateBackup Create backup interface
 // @Summary Create backup interface
@@ -56,10 +59,10 @@ func (s *Server) handleCreateBackup(c *echo.Context) error {
 	return writeResponse(c, "create backup fail", resp)
 }
 
-// createBackup maps the v1 request onto the create usecase and the usecase's
-// outcome onto the v1 wire shape. Binding, request_id defaulting, the
-// deprecated pb fields, name validation and the error-to-code mapping stay
-// here; the action itself lives in app.CreateBackup.
+// createBackup maps the v1 request onto the backup job and the outcome onto
+// the v1 wire shape. Binding, request_id defaulting, the deprecated pb fields,
+// name validation and the error-to-code mapping stay here; the action itself
+// lives in app.NewBackupJob.
 func (s *Server) createBackup(ctx context.Context, request *backuppb.CreateBackupRequest) *backuppb.BackupInfoResponse {
 	if request.GetRequestId() == "" {
 		request.RequestId = uuid.NewString()
@@ -90,13 +93,6 @@ func (s *Server) createBackup(ctx context.Context, request *backuppb.CreateBacku
 		}
 	}
 
-	uc, err := s.config.newCreateBackup(ctx, params)
-	if err != nil {
-		resp.Code = backuppb.ResponseCode_Fail
-		resp.Msg = err.Error()
-		return resp
-	}
-
 	req, err := s.toCreateBackupRequest(request)
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
@@ -105,9 +101,9 @@ func (s *Server) createBackup(ctx context.Context, request *backuppb.CreateBacku
 	}
 
 	if request.GetAsync() {
-		return runCreateBackupAsync(ctx, uc, request.GetRequestId(), req)
+		return runCreateBackupAsync(ctx, s.config.newBackupJob, params, request.GetRequestId(), req)
 	}
-	return runCreateBackupSync(ctx, uc, request.GetRequestId(), req)
+	return runCreateBackupSync(ctx, s.config.newBackupJob, params, request.GetRequestId(), req)
 }
 
 func createBackupErrorCode(err error) backuppb.ResponseCode {
@@ -118,14 +114,22 @@ func createBackupErrorCode(err error) backuppb.ResponseCode {
 }
 
 // runCreateBackupSync runs the job on the request path. The v1 success
-// response carries only code and msg, so the job view the usecase returns is
-// discarded — whatever a v1 response needs, this handler assembles itself,
-// and this one needs nothing. The historical handler additionally read the
-// persisted meta after a successful run and answered Fail when that read
-// failed, but the read only fed a payload the response then discarded, so it
-// is gone together with the payload.
-func runCreateBackupSync(ctx context.Context, uc createBackupUC, requestID string, req app.CreateBackupRequest) *backuppb.BackupInfoResponse {
-	if _, err := uc.Execute(ctx, req); err != nil {
+// response carries only code and msg — whatever a v1 response needs, this
+// handler assembles itself, and this one needs nothing. The historical
+// handler additionally read the persisted meta after a successful run and
+// answered Fail when that read failed, but the read only fed a payload the
+// response then discarded, so it is gone together with the payload.
+func runCreateBackupSync(ctx context.Context, newJob backupJobFactory, params *v2.Config, requestID string, req app.CreateBackupRequest) *backuppb.BackupInfoResponse {
+	job, err := newJob(ctx, params, req)
+	if err != nil {
+		return &backuppb.BackupInfoResponse{
+			RequestId: requestID,
+			Code:      createBackupErrorCode(err),
+			Msg:       err.Error(),
+		}
+	}
+
+	if err := job.Run(ctx); err != nil {
 		return &backuppb.BackupInfoResponse{
 			RequestId: requestID,
 			Code:      createBackupErrorCode(err),
@@ -136,12 +140,13 @@ func runCreateBackupSync(ctx context.Context, uc createBackupUC, requestID strin
 	return &backuppb.BackupInfoResponse{Code: backuppb.ResponseCode_Success, Msg: "success"}
 }
 
-// runCreateBackupAsync starts the job and returns immediately; running it in
-// the background is this server's deployment concern, the flag only selects it.
-func runCreateBackupAsync(ctx context.Context, uc createBackupUC, requestID string, req app.CreateBackupRequest) *backuppb.BackupInfoResponse {
+// runCreateBackupAsync registers the job and returns immediately; running it
+// in the background is this server's deployment concern, the flag only
+// selects it.
+func runCreateBackupAsync(ctx context.Context, newJob backupJobFactory, params *v2.Config, requestID string, req app.CreateBackupRequest) *backuppb.BackupInfoResponse {
 	resp := &backuppb.BackupInfoResponse{RequestId: requestID}
 
-	job, err := uc.Start(ctx, req)
+	job, err := newJob(ctx, params, req)
 	if err != nil {
 		resp.Code = createBackupErrorCode(err)
 		resp.Msg = err.Error()

@@ -19,59 +19,46 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/filter"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
-// stubCreateBackup stands in for app.CreateBackup: the request it was called
-// with, the params its constructor received, canned errors, and a call count
-// so tests can assert whether the handler reached the action at all. Start
-// hands out a job that signals the ran channel, so async tests can wait for
-// the handler's goroutine.
-type stubCreateBackup struct {
-	req        app.CreateBackupRequest
-	params     *v2.Config
-	startErr   error
-	executeErr error
-	calls      int
-	ran        chan struct{}
+// stubBackupJob stands in for *app.BackupJob: a canned Run error, and a ran
+// channel so async tests can wait for the handler's goroutine.
+type stubBackupJob struct {
+	runErr error
+	ran    chan struct{}
 }
 
-func (s *stubCreateBackup) Execute(_ context.Context, req app.CreateBackupRequest) (taskmgr.BackupTaskView, error) {
-	s.req = req
-	s.calls++
-	if s.executeErr != nil {
-		return nil, s.executeErr
-	}
-	return nil, nil
-}
-
-func (s *stubCreateBackup) Start(_ context.Context, req app.CreateBackupRequest) (app.BackupJob, error) {
-	s.req = req
-	s.calls++
-	if s.startErr != nil {
-		return nil, s.startErr
-	}
-	return stubJob{ran: s.ran}, nil
-}
-
-type stubJob struct {
-	ran chan struct{}
-}
-
-func (j stubJob) Run(context.Context) error {
+func (j stubBackupJob) Run(context.Context) error {
 	if j.ran != nil {
 		close(j.ran)
 	}
-	return nil
+	return j.runErr
 }
 
-// withCreateBackup wires the stub as the create usecase. newErr simulates the
-// client-construction failure, which happens before any action call.
-func withCreateBackup(stub *stubCreateBackup, newErr error) Option {
+// stubCreateFactory stands in for the job factory: the params and request it
+// was called with, a canned construction error, and a call count so tests can
+// assert whether the handler reached the action at all.
+type stubCreateFactory struct {
+	params *v2.Config
+	req    app.CreateBackupRequest
+	newErr error
+	job    stubBackupJob
+	calls  int
+}
+
+// withCreateBackup wires the stub as the job factory. newErr simulates a
+// construction failure — client build, preflight or registration — which
+// happens before any job runs.
+func withCreateBackup(stub *stubCreateFactory) Option {
 	return func(c *config) {
-		c.newCreateBackup = func(_ context.Context, params *v2.Config) (createBackupUC, error) {
+		c.newBackupJob = func(_ context.Context, params *v2.Config, req app.CreateBackupRequest) (backupJob, error) {
 			stub.params = params
-			return stub, newErr
+			stub.req = req
+			stub.calls++
+			if stub.newErr != nil {
+				return nil, stub.newErr
+			}
+			return stub.job, nil
 		}
 	}
 }
@@ -94,9 +81,9 @@ func postBackup(t *testing.T, s *Server, body, requestID string) backuppb.Backup
 }
 
 func TestHandleCreateBackup(t *testing.T) {
-	t.Run("SyncRunsThroughTheUsecase", func(t *testing.T) {
-		stub := &stubCreateBackup{}
-		s := newListTestServer(t, withCreateBackup(stub, nil))
+	t.Run("SyncRunsTheJob", func(t *testing.T) {
+		stub := &stubCreateFactory{}
+		s := newListTestServer(t, withCreateBackup(stub))
 
 		resp := postBackup(t, s, `{"backup_name":"backup1"}`, "rid-1")
 
@@ -111,9 +98,9 @@ func TestHandleCreateBackup(t *testing.T) {
 	t.Run("SyncSuccessResponseCarriesNoPayload", func(t *testing.T) {
 		// Preserved v1 wire behavior: the historical handler computed the
 		// backup payload and request id, then returned a bare code+msg
-		// response. The quirk is kept, not fixed, by this move-only PR.
-		stub := &stubCreateBackup{}
-		s := newListTestServer(t, withCreateBackup(stub, nil))
+		// response. The quirk is kept, not fixed.
+		stub := &stubCreateFactory{}
+		s := newListTestServer(t, withCreateBackup(stub))
 
 		resp := postBackup(t, s, `{"backup_name":"backup1"}`, "rid-1")
 
@@ -122,17 +109,17 @@ func TestHandleCreateBackup(t *testing.T) {
 	})
 
 	t.Run("GeneratesRequestIdWhenMissing", func(t *testing.T) {
-		stub := &stubCreateBackup{}
-		s := newListTestServer(t, withCreateBackup(stub, nil))
+		stub := &stubCreateFactory{}
+		s := newListTestServer(t, withCreateBackup(stub))
 
 		postBackup(t, s, `{"backup_name":"backup1"}`, "")
 
 		assert.NotEmpty(t, stub.req.TaskID)
 	})
 
-	t.Run("RejectsInvalidNameWithoutCallingUsecase", func(t *testing.T) {
-		stub := &stubCreateBackup{}
-		s := newListTestServer(t, withCreateBackup(stub, nil))
+	t.Run("RejectsInvalidNameWithoutBuildingAJob", func(t *testing.T) {
+		stub := &stubCreateFactory{}
+		s := newListTestServer(t, withCreateBackup(stub))
 
 		resp := postBackup(t, s, `{"backup_name":"bad name"}`, "")
 
@@ -141,8 +128,9 @@ func TestHandleCreateBackup(t *testing.T) {
 		assert.Zero(t, stub.calls)
 	})
 
-	t.Run("MapsConstructorErrorToFail", func(t *testing.T) {
-		s := newListTestServer(t, withCreateBackup(&stubCreateBackup{}, errors.New("dial timeout")))
+	t.Run("MapsJobBuildErrorToFail", func(t *testing.T) {
+		stub := &stubCreateFactory{newErr: errors.New("dial timeout")}
+		s := newListTestServer(t, withCreateBackup(stub))
 
 		resp := postBackup(t, s, `{"backup_name":"backup1"}`, "")
 
@@ -151,8 +139,8 @@ func TestHandleCreateBackup(t *testing.T) {
 	})
 
 	t.Run("MapsRequestBuildErrorToFail", func(t *testing.T) {
-		stub := &stubCreateBackup{}
-		s := newListTestServer(t, withCreateBackup(stub, nil))
+		stub := &stubCreateFactory{}
+		s := newListTestServer(t, withCreateBackup(stub))
 
 		resp := postBackup(t, s, `{"backup_name":"backup1","strategy":"bogus"}`, "")
 
@@ -161,9 +149,9 @@ func TestHandleCreateBackup(t *testing.T) {
 		assert.Zero(t, stub.calls)
 	})
 
-	t.Run("SyncMapsExecuteErrorToFail", func(t *testing.T) {
-		stub := &stubCreateBackup{executeErr: errors.New("bucket unavailable")}
-		s := newListTestServer(t, withCreateBackup(stub, nil))
+	t.Run("SyncMapsRunErrorToFail", func(t *testing.T) {
+		stub := &stubCreateFactory{job: stubBackupJob{runErr: errors.New("bucket unavailable")}}
+		s := newListTestServer(t, withCreateBackup(stub))
 
 		resp := postBackup(t, s, `{"backup_name":"backup1"}`, "rid-1")
 
@@ -173,9 +161,9 @@ func TestHandleCreateBackup(t *testing.T) {
 		assert.Equal(t, 1, stub.calls)
 	})
 
-	t.Run("AsyncStartsJobAndReturnsImmediately", func(t *testing.T) {
-		stub := &stubCreateBackup{ran: make(chan struct{})}
-		s := newListTestServer(t, withCreateBackup(stub, nil))
+	t.Run("AsyncRunsTheJobInTheBackground", func(t *testing.T) {
+		stub := &stubCreateFactory{job: stubBackupJob{ran: make(chan struct{})}}
+		s := newListTestServer(t, withCreateBackup(stub))
 
 		resp := postBackup(t, s, `{"backup_name":"backup1","async":true}`, "rid-1")
 
@@ -185,7 +173,7 @@ func TestHandleCreateBackup(t *testing.T) {
 		assert.Equal(t, "rid-1", stub.req.TaskID)
 		require.Eventually(t, func() bool {
 			select {
-			case <-stub.ran:
+			case <-stub.job.ran:
 				return true
 			default:
 				return false
@@ -193,9 +181,9 @@ func TestHandleCreateBackup(t *testing.T) {
 		}, time.Second, time.Millisecond)
 	})
 
-	t.Run("AsyncMapsStartErrorToFail", func(t *testing.T) {
-		stub := &stubCreateBackup{startErr: errors.New("backup1 (existing task task-1)")}
-		s := newListTestServer(t, withCreateBackup(stub, nil))
+	t.Run("AsyncMapsJobBuildErrorToFail", func(t *testing.T) {
+		stub := &stubCreateFactory{newErr: errors.New("backup1 (existing task task-1)")}
+		s := newListTestServer(t, withCreateBackup(stub))
 
 		resp := postBackup(t, s, `{"backup_name":"backup1","async":true}`, "rid-1")
 
@@ -207,35 +195,35 @@ func TestHandleCreateBackup(t *testing.T) {
 	t.Run("BackupRootPathForksConfig", func(t *testing.T) {
 		// The v1 backup_root_path field is applied as a config override, not
 		// sent through the request.
-		stub := &stubCreateBackup{}
-		s := newLoadedTestServer(t, withCreateBackup(stub, nil))
+		stub := &stubCreateFactory{}
+		s := newLoadedTestServer(t, withCreateBackup(stub))
 
 		resp := postBackup(t, s, `{"backup_name":"backup1","backup_root_path":"other"}`, "rid-1")
 
 		assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
 		require.NotNil(t, stub.params)
 		assert.Equal(t, "other", stub.params.Backup.Storage.RootPath.Val)
-		// The fork, not the server's own config, reaches the usecase.
+		// The fork, not the server's own config, reaches the job.
 		assert.NotSame(t, s.params, stub.params)
 		// The server's own config stays on the default root path.
 		assert.Equal(t, "backup", s.params.Backup.Storage.RootPath.Val)
 	})
 
 	t.Run("NoBackupRootPathKeepsServerConfig", func(t *testing.T) {
-		stub := &stubCreateBackup{}
-		s := newLoadedTestServer(t, withCreateBackup(stub, nil))
+		stub := &stubCreateFactory{}
+		s := newLoadedTestServer(t, withCreateBackup(stub))
 
 		resp := postBackup(t, s, `{"backup_name":"backup1"}`, "rid-1")
 
 		assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
-		// No backup_root_path: the config travels to the usecase untouched.
+		// No backup_root_path: the config travels to the job untouched.
 		assert.Same(t, s.params, stub.params)
 	})
 }
 
 func TestToCreateBackupRequest(t *testing.T) {
 	t.Run("MapsOptionFields", func(t *testing.T) {
-		s := newListTestServer(t, withCreateBackup(&stubCreateBackup{}, nil))
+		s := newListTestServer(t, withCreateBackup(&stubCreateFactory{}))
 
 		req, err := s.toCreateBackupRequest(&backuppb.CreateBackupRequest{
 			BackupName:     "backup1",
@@ -260,7 +248,7 @@ func TestToCreateBackupRequest(t *testing.T) {
 	})
 
 	t.Run("DeprecatedForceMapsToSkipFlush", func(t *testing.T) {
-		s := newListTestServer(t, withCreateBackup(&stubCreateBackup{}, nil))
+		s := newListTestServer(t, withCreateBackup(&stubCreateFactory{}))
 
 		req, err := s.toCreateBackupRequest(&backuppb.CreateBackupRequest{Force: true})
 
@@ -269,7 +257,7 @@ func TestToCreateBackupRequest(t *testing.T) {
 	})
 
 	t.Run("DeprecatedMetaOnlyMapsToMetaOnly", func(t *testing.T) {
-		s := newListTestServer(t, withCreateBackup(&stubCreateBackup{}, nil))
+		s := newListTestServer(t, withCreateBackup(&stubCreateFactory{}))
 
 		req, err := s.toCreateBackupRequest(&backuppb.CreateBackupRequest{MetaOnly: true})
 
@@ -278,7 +266,7 @@ func TestToCreateBackupRequest(t *testing.T) {
 	})
 
 	t.Run("ExplicitStrategyWinsOverDeprecatedFields", func(t *testing.T) {
-		s := newListTestServer(t, withCreateBackup(&stubCreateBackup{}, nil))
+		s := newListTestServer(t, withCreateBackup(&stubCreateFactory{}))
 
 		req, err := s.toCreateBackupRequest(&backuppb.CreateBackupRequest{Strategy: "meta_only", Force: true})
 

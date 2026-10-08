@@ -150,10 +150,6 @@ func (o *options) run(cmd *cobra.Command, params *v2.Config) error {
 	start := time.Now()
 
 	ctx := context.Background()
-	uc, err := app.NewCreateBackup(ctx, params, taskmgr.DefaultMgr())
-	if err != nil {
-		return fmt.Errorf("create: new create backup usecase: %w", err)
-	}
 
 	opt, err := o.toOption(params)
 	if err != nil {
@@ -164,12 +160,16 @@ func (o *options) run(cmd *cobra.Command, params *v2.Config) error {
 		cmd.Println(summary)
 	}
 
-	// The CLI reports the outcome itself and prints nothing from the view.
-	if _, err := uc.Execute(ctx, app.CreateBackupRequest{
+	job, err := app.NewBackupJob(ctx, params, taskmgr.DefaultMgr(), app.CreateBackupRequest{
 		TaskID: uuid.NewString(),
 		Option: opt,
-	}); err != nil {
-		return fmt.Errorf("create: execute backup: %w", err)
+	})
+	if err != nil {
+		return fmt.Errorf("create: new backup job: %w", err)
+	}
+
+	if err := job.Run(ctx); err != nil {
+		return fmt.Errorf("create: run backup job: %w", err)
 	}
 
 	cmd.Println("create backup success")
