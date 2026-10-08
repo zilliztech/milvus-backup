@@ -105,11 +105,9 @@ func preflightSourceStorage(ctx context.Context, params *v2.Config, milvusStorag
 	prefix := mpath.MilvusInsertLogDir(params.Milvus.Storage.RootPath.Val)
 	// The sequence lists lazily: the range itself is what sends the request,
 	// so one iteration is the least work that proves access; an empty result
-	// also means the request succeeded.
+	// also means the request succeeded. A yield that races context
+	// cancellation still counts: an object came back, so access is real.
 	for _, err := range milvusStorage.NewObjectIter(ctx, prefix, true) {
-		if err == nil {
-			err = ctx.Err()
-		}
 		if err != nil {
 			conf := milvusStorage.Config()
 			return fmt.Errorf("app: %w: source list preflight failed (provider=%s, endpoint=%s, bucket=%s, prefix=%s): %w",
