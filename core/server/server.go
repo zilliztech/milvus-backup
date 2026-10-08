@@ -2,12 +2,16 @@ package server
 
 import (
 	"fmt"
+	"net/http"
 	"sync"
 
-	"github.com/gin-contrib/pprof"
-	"github.com/gin-gonic/gin"
-	swaggerFiles "github.com/swaggo/files"
-	ginSwagger "github.com/swaggo/gin-swagger"
+	// Registers pprof handlers on http.DefaultServeMux; the mux is mounted
+	// below under /debug/pprof, so nothing else on it is reachable.
+	_ "net/http/pprof"
+
+	"github.com/labstack/echo/v5"
+	"github.com/labstack/echo/v5/middleware"
+	echoSwagger "github.com/swaggo/echo-swagger/v2"
 
 	"github.com/zilliztech/milvus-backup/docs"
 	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
@@ -15,7 +19,7 @@ import (
 
 // Server is the Backup Server
 type Server struct {
-	engine      *gin.Engine
+	engine      *echo.Echo
 	config      *config
 	params      *v2.Config
 	compactMu   sync.Mutex
@@ -35,22 +39,23 @@ func New(params *v2.Config, opts ...Option) (*Server, error) {
 }
 
 func (s *Server) Run() error {
-	err := s.engine.Run(s.config.port)
-	if err != nil {
+	// A bare http.Server instead of echo's Start keeps the old process
+	// semantics: no signal handling, so SIGTERM kills the process outright
+	// instead of draining long-running backup or restore requests.
+	srv := &http.Server{Addr: s.config.port, Handler: s.engine}
+	if err := srv.ListenAndServe(); err != nil {
 		return fmt.Errorf("server: run http server: %w", err)
 	}
 
 	return nil
 }
 
-// registerHTTPServer register the http server, panic when failed
+// initEngine registers the http server routes.
 func (s *Server) initEngine() {
-	if !s.params.Server.DebugMode.Val {
-		gin.SetMode(gin.ReleaseMode)
-	}
-
-	engine := gin.Default()
-	pprof.Register(engine)
+	engine := echo.New()
+	engine.Use(middleware.RequestLogger(), middleware.Recover())
+	engine.Any("/debug/pprof", echo.WrapHandler(http.DefaultServeMux))
+	engine.Any("/debug/pprof/*", echo.WrapHandler(http.DefaultServeMux))
 
 	s.engine = engine
 
@@ -58,7 +63,7 @@ func (s *Server) initEngine() {
 		docs.SwaggerInfo.BasePath = bp
 	}
 
-	engine.Any("", s.handleHello)
+	engine.Any("/", s.handleHello)
 
 	apiv1 := engine.Group("/api/v1")
 
@@ -74,9 +79,9 @@ func (s *Server) initEngine() {
 	apiv1.POST("/l0compact", s.handleL0Compact)
 	apiv1.GET("/get_l0compact", s.handleGetL0Compact)
 	apiv1.GET("/has_l0", s.handleHasL0)
-	apiv1.GET("/docs/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+	apiv1.GET("/docs/*", echoSwagger.EchoWrapHandler())
 }
 
-func (s *Server) handleHello(c *gin.Context) {
-	c.String(200, "Hello, This is backup service")
+func (s *Server) handleHello(c *echo.Context) error {
+	return c.String(http.StatusOK, "Hello, This is backup service")
 }

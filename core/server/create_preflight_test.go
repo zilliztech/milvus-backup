@@ -15,7 +15,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -52,7 +51,10 @@ func preflightTestServer(t *testing.T, source http.HandlerFunc) (*Server, string
 		"milvus.grpc.caCertPath":              dest + "/missing-ca.pem",
 	})
 	require.NoError(t, err)
-	return &Server{params: params, config: newDefaultConfig()}, dest
+	s, err := New(params)
+	require.NoError(t, err)
+	silenceEngine(s)
+	return s, dest
 }
 
 func callCreate(ctx context.Context, t *testing.T, s *Server, req *backuppb.CreateBackupRequest) *backuppb.BackupInfoResponse {
@@ -63,9 +65,7 @@ func callCreate(ctx context.Context, t *testing.T, s *Server, req *backuppb.Crea
 	r.Header.Set("Content-Type", "application/json")
 	r.Header.Set("request_id", req.RequestId)
 	w := httptest.NewRecorder()
-	c, _ := gin.CreateTestContext(w)
-	c.Request = r
-	s.handleCreateBackup(c)
+	s.engine.ServeHTTP(w, r)
 	assert.Equal(t, http.StatusOK, w.Code)
 	var resp backuppb.BackupInfoResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))

@@ -4,11 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -46,9 +46,16 @@ func newListTestServer(t *testing.T, opts ...Option) *Server {
 
 	s, err := New(v2.New(), opts...)
 	require.NoError(t, err)
-	gin.SetMode(gin.TestMode)
+	silenceEngine(s)
 
 	return s
+}
+
+// silenceEngine drops the engine's slog request logger to a discard sink:
+// gin.TestMode muted gin's access log, and echo has no test mode, so tests
+// quiet the engine by hand to keep output readable.
+func silenceEngine(s *Server) {
+	s.engine.Logger = slog.New(slog.DiscardHandler)
 }
 
 func getList(t *testing.T, s *Server, query string) backuppb.ListBackupsResponse {

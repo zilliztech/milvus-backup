@@ -3,8 +3,8 @@ package server
 import (
 	"context"
 
-	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/labstack/echo/v5"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 )
@@ -25,10 +25,10 @@ type deleteBackupUC interface {
 // @Param backup_name query string true "backup_name"
 // @Success 200 {object} backuppb.DeleteBackupResponse
 // @Router /delete [delete]
-func (s *Server) handleDeleteBackup(c *gin.Context) {
+func (s *Server) handleDeleteBackup(c *echo.Context) error {
 	req := &backuppb.DeleteBackupRequest{
-		RequestId:  c.GetHeader("request_id"),
-		BackupName: c.Query("backup_name"),
+		RequestId:  c.Request().Header.Get("request_id"),
+		BackupName: c.QueryParam("backup_name"),
 	}
 	if len(req.GetRequestId()) == 0 {
 		req.RequestId = uuid.NewString()
@@ -38,27 +38,24 @@ func (s *Server) handleDeleteBackup(c *gin.Context) {
 	if len(req.GetBackupName()) == 0 {
 		resp.Code = backuppb.ResponseCode_Parameter_Error
 		resp.Msg = "backup name is required"
-		writeResponse(c, "delete backup fail", resp)
-		return
+		return writeResponse(c, "delete backup fail", resp)
 	}
 
-	uc, err := s.config.newDeleteBackup(c.Request.Context(), s.params)
+	uc, err := s.config.newDeleteBackup(c.Request().Context(), s.params)
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
-		writeResponse(c, "delete backup fail", resp)
-		return
+		return writeResponse(c, "delete backup fail", resp)
 	}
 
-	if err := uc.Execute(c.Request.Context(), req.GetBackupName()); err != nil {
+	if err := uc.Execute(c.Request().Context(), req.GetBackupName()); err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
-		writeResponse(c, "delete backup fail", resp)
-		return
+		return writeResponse(c, "delete backup fail", resp)
 	}
 
 	resp.Code = backuppb.ResponseCode_Success
 	resp.Msg = "success"
 
-	writeResponse(c, "delete backup fail", resp)
+	return writeResponse(c, "delete backup fail", resp)
 }

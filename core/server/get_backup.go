@@ -4,8 +4,8 @@ import (
 	"context"
 	"errors"
 
-	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"github.com/labstack/echo/v5"
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/app"
@@ -44,15 +44,15 @@ type getBackupTaskUC interface {
 // the ephemeral job read through GetBackupTask. The app layer keeps the two
 // separate on purpose; the merge rules below are v1's wire contract, not a
 // property of either resource.
-func (s *Server) handleGetBackup(c *gin.Context) {
-	requestID := c.GetHeader("request_id")
+func (s *Server) handleGetBackup(c *echo.Context) error {
+	requestID := c.Request().Header.Get("request_id")
 	if requestID == "" {
 		requestID = uuid.NewString()
 	}
 
-	name := c.Query("backup_name")
-	id := c.Query("backup_id")
-	path := c.Query("path")
+	name := c.QueryParam("backup_name")
+	id := c.QueryParam("backup_id")
+	path := c.QueryParam("path")
 	log.Info("receive get backup request",
 		zap.String("backup_name", name), zap.String("backup_id", id), zap.String("path", path))
 
@@ -60,18 +60,16 @@ func (s *Server) handleGetBackup(c *gin.Context) {
 	if name == "" && id == "" {
 		resp.Code = backuppb.ResponseCode_Parameter_Error
 		resp.Msg = "server: empty backup name and backup id, please set a backup name or id"
-		writeResponse(c, "get backup fail", resp)
-		return
+		return writeResponse(c, "get backup fail", resp)
 	}
 
-	ctx := c.Request.Context()
+	ctx := c.Request().Context()
 
 	taskUC, err := s.config.newGetBackupTask()
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
-		writeResponse(c, "get backup fail", resp)
-		return
+		return writeResponse(c, "get backup fail", resp)
 	}
 	// The v1 path parameter asks for a different backup location for this
 	// call. That is a config override, not a selector: fork the loaded config
@@ -85,16 +83,14 @@ func (s *Server) handleGetBackup(c *gin.Context) {
 		if err != nil {
 			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = err.Error()
-			writeResponse(c, "get backup fail", resp)
-			return
+			return writeResponse(c, "get backup fail", resp)
 		}
 	}
 	backupUC, err := s.config.newGetBackup(ctx, params)
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
-		writeResponse(c, "get backup fail", resp)
-		return
+		return writeResponse(c, "get backup fail", resp)
 	}
 
 	// The job half. An ID selects the job directly and resolves the backup
@@ -107,8 +103,7 @@ func (s *Server) handleGetBackup(c *gin.Context) {
 		if err != nil {
 			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = err.Error()
-			writeResponse(c, "get backup fail", resp)
-			return
+			return writeResponse(c, "get backup fail", resp)
 		}
 		name = task.Name()
 	} else {
@@ -120,8 +115,7 @@ func (s *Server) handleGetBackup(c *gin.Context) {
 		default:
 			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = err.Error()
-			writeResponse(c, "get backup fail", resp)
-			return
+			return writeResponse(c, "get backup fail", resp)
 		}
 	}
 
@@ -135,8 +129,7 @@ func (s *Server) handleGetBackup(c *gin.Context) {
 	default:
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
-		writeResponse(c, "get backup fail", resp)
-		return
+		return writeResponse(c, "get backup fail", resp)
 	}
 
 	// The merge: the artifact is the source of truth, the job overlays
@@ -149,16 +142,14 @@ func (s *Server) handleGetBackup(c *gin.Context) {
 	case task != nil && task.StateCode() == backuppb.BackupTaskStateCode_BACKUP_SUCCESS:
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = "server: backup task " + name + " reports success but its meta is missing"
-		writeResponse(c, "get backup fail", resp)
-		return
+		return writeResponse(c, "get backup fail", resp)
 	case task != nil:
 		// An in-flight or failed job that has persisted nothing yet: the
 		// job view alone is the answer.
 	default:
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = "server: backup " + name + " not found"
-		writeResponse(c, "get backup fail", resp)
-		return
+		return writeResponse(c, "get backup fail", resp)
 	}
 
 	resp.Code = backuppb.ResponseCode_Success
@@ -166,5 +157,5 @@ func (s *Server) handleGetBackup(c *gin.Context) {
 	resp.Data = pbconv.NewBackupInfoBrief(task, metaInfo, metaSize)
 
 	log.Info("response get backup response", zap.Any("resp", resp))
-	writeResponse(c, "get backup fail", resp)
+	return writeResponse(c, "get backup fail", resp)
 }

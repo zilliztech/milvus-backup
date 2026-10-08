@@ -2,10 +2,11 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"sync"
 
-	"github.com/gin-gonic/gin"
+	"github.com/labstack/echo/v5"
 	"go.uber.org/zap"
 
 	corel0 "github.com/zilliztech/milvus-backup/core/l0compact"
@@ -23,9 +24,9 @@ const (
 )
 
 type l0CompactRequest struct {
-	BackupName string `json:"backup_name" binding:"required"`
-	OutputName string `json:"output_name" binding:"required"`
-	Path       string `json:"path" binding:"required"`
+	BackupName string `json:"backup_name"`
+	OutputName string `json:"output_name"`
+	Path       string `json:"path"`
 	BucketName string `json:"bucket_name"`
 }
 
@@ -52,9 +53,9 @@ func (r l0APIResponse) GetRequestId() string           { return r.RequestID }
 func (r l0APIResponse) GetCode() backuppb.ResponseCode { return r.Code }
 func (r l0APIResponse) GetMsg() string                 { return r.Msg }
 
-func writeL0Response(c *gin.Context, code backuppb.ResponseCode, msg string, data any) {
-	writeResponse(c, "l0 request fail", l0APIResponse{
-		RequestID: c.GetHeader("request_id"), Code: code, Msg: msg, Data: data,
+func writeL0Response(c *echo.Context, code backuppb.ResponseCode, msg string, data any) error {
+	return writeResponse(c, "l0 request fail", l0APIResponse{
+		RequestID: c.Request().Header.Get("request_id"), Code: code, Msg: msg, Data: data,
 	})
 }
 
@@ -74,56 +75,48 @@ func (j *l0CompactJob) response() l0CompactResponse {
 	}
 }
 
-func (s *Server) handleHasL0(c *gin.Context) {
-	backupName := c.Query("backup_name")
-	backupPath := c.Query("path")
+func (s *Server) handleHasL0(c *echo.Context) error {
+	backupName := c.QueryParam("backup_name")
+	backupPath := c.QueryParam("path")
 	if backupName == "" || backupPath == "" {
-		writeL0Response(c, backuppb.ResponseCode_Parameter_Error, "backup_name and path are required", nil)
-		return
+		return writeL0Response(c, backuppb.ResponseCode_Parameter_Error, "backup_name and path are required", nil)
 	}
 	overrides := map[string]string{"backup.storage.rootPath": backupPath}
-	if bucket := c.Query("bucket_name"); bucket != "" {
+	if bucket := c.QueryParam("bucket_name"); bucket != "" {
 		overrides["backup.storage.bucketName"] = bucket
 	}
 	params, err := s.params.Fork(overrides)
 	if err != nil {
-		writeL0Response(c, backuppb.ResponseCode_Parameter_Error, err.Error(), nil)
-		return
+		return writeL0Response(c, backuppb.ResponseCode_Parameter_Error, err.Error(), nil)
 	}
-	cli, err := storage.NewClient(c.Request.Context(), storage.BackupStorageConfig(params))
+	cli, err := storage.NewClient(c.Request().Context(), storage.BackupStorageConfig(params))
 	if err != nil {
-		writeL0Response(c, backuppb.ResponseCode_Fail, err.Error(), nil)
-		return
+		return writeL0Response(c, backuppb.ResponseCode_Fail, err.Error(), nil)
 	}
-	info, err := meta.Read(c.Request.Context(), cli, mpath.BackupDir(params.Backup.Storage.RootPath.Val, backupName))
+	info, err := meta.Read(c.Request().Context(), cli, mpath.BackupDir(params.Backup.Storage.RootPath.Val, backupName))
 	if err != nil {
-		writeL0Response(c, backuppb.ResponseCode_Fail, err.Error(), nil)
-		return
+		return writeL0Response(c, backuppb.ResponseCode_Fail, err.Error(), nil)
 	}
-	writeL0Response(c, backuppb.ResponseCode_Success, "success",
+	return writeL0Response(c, backuppb.ResponseCode_Success, "success",
 		hasL0Response{BackupName: backupName, HasL0: corel0.HasL0(info)})
 }
 
-func (s *Server) handleL0Compact(c *gin.Context) {
+func (s *Server) handleL0Compact(c *echo.Context) error {
 	var req l0CompactRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		writeL0Response(c, backuppb.ResponseCode_Parameter_Error, err.Error(), nil)
-		return
+	if err := json.NewDecoder(c.Request().Body).Decode(&req); err != nil {
+		return writeL0Response(c, backuppb.ResponseCode_Parameter_Error, err.Error(), nil)
 	}
 	if err := validateL0CompactRequest(req); err != nil {
-		writeL0Response(c, backuppb.ResponseCode_Parameter_Error, err.Error(), nil)
-		return
+		return writeL0Response(c, backuppb.ResponseCode_Parameter_Error, err.Error(), nil)
 	}
 	key := l0CompactKey(req.BucketName, req.Path, req.OutputName)
 	s.compactMu.Lock()
 	if existing := s.compactJobs[key]; existing != nil {
 		s.compactMu.Unlock()
 		if existing.request.BackupName != req.BackupName {
-			writeL0Response(c, backuppb.ResponseCode_Parameter_Error, "output belongs to a different source backup", nil)
-			return
+			return writeL0Response(c, backuppb.ResponseCode_Parameter_Error, "output belongs to a different source backup", nil)
 		}
-		writeL0Response(c, backuppb.ResponseCode_Success, "success", existing.response())
-		return
+		return writeL0Response(c, backuppb.ResponseCode_Success, "success", existing.response())
 	}
 	params := s.params
 	overrides := map[string]string{"backup.storage.rootPath": req.Path}
@@ -134,22 +127,19 @@ func (s *Server) handleL0Compact(c *gin.Context) {
 	params, err = params.Fork(overrides)
 	if err != nil {
 		s.compactMu.Unlock()
-		writeL0Response(c, backuppb.ResponseCode_Parameter_Error, err.Error(), nil)
-		return
+		return writeL0Response(c, backuppb.ResponseCode_Parameter_Error, err.Error(), nil)
 	}
-	cli, err := storage.NewBackupStorage(c.Request.Context(), params)
+	cli, err := storage.NewBackupStorage(c.Request().Context(), params)
 	if err != nil {
 		s.compactMu.Unlock()
-		writeL0Response(c, backuppb.ResponseCode_Fail, err.Error(), nil)
-		return
+		return writeL0Response(c, backuppb.ResponseCode_Fail, err.Error(), nil)
 	}
-	if info, readErr := meta.Read(c.Request.Context(), cli,
+	if info, readErr := meta.Read(c.Request().Context(), cli,
 		mpath.BackupDir(params.Backup.Storage.RootPath.Val, req.OutputName)); readErr == nil && info.GetName() == req.OutputName {
 		s.compactMu.Unlock()
-		writeL0Response(c, backuppb.ResponseCode_Success, "success", l0CompactResponse{
+		return writeL0Response(c, backuppb.ResponseCode_Success, "success", l0CompactResponse{
 			StateCode: l0CompactSuccess, BackupName: req.BackupName, OutputName: req.OutputName,
 		})
-		return
 	}
 	job := &l0CompactJob{request: req, state: l0CompactExecuting}
 	if s.compactJobs == nil {
@@ -173,28 +163,25 @@ func (s *Server) handleL0Compact(c *gin.Context) {
 		}
 		job.state = l0CompactSuccess
 	}()
-	writeL0Response(c, backuppb.ResponseCode_Success, "success", job.response())
+	return writeL0Response(c, backuppb.ResponseCode_Success, "success", job.response())
 }
 
-func (s *Server) handleGetL0Compact(c *gin.Context) {
+func (s *Server) handleGetL0Compact(c *echo.Context) error {
 	req := l0CompactRequest{
-		BackupName: c.Query("backup_name"), OutputName: c.Query("output_name"),
-		Path: c.Query("path"), BucketName: c.Query("bucket_name"),
+		BackupName: c.QueryParam("backup_name"), OutputName: c.QueryParam("output_name"),
+		Path: c.QueryParam("path"), BucketName: c.QueryParam("bucket_name"),
 	}
 	if err := validateL0CompactRequest(req); err != nil {
-		writeL0Response(c, backuppb.ResponseCode_Parameter_Error, err.Error(), nil)
-		return
+		return writeL0Response(c, backuppb.ResponseCode_Parameter_Error, err.Error(), nil)
 	}
 	s.compactMu.Lock()
 	job := s.compactJobs[l0CompactKey(req.BucketName, req.Path, req.OutputName)]
 	s.compactMu.Unlock()
 	if job != nil {
 		if job.request.BackupName != req.BackupName {
-			writeL0Response(c, backuppb.ResponseCode_Parameter_Error, "output belongs to a different source backup", nil)
-			return
+			return writeL0Response(c, backuppb.ResponseCode_Parameter_Error, "output belongs to a different source backup", nil)
 		}
-		writeL0Response(c, backuppb.ResponseCode_Success, "success", job.response())
-		return
+		return writeL0Response(c, backuppb.ResponseCode_Success, "success", job.response())
 	}
 	params := s.params
 	overrides := map[string]string{"backup.storage.rootPath": req.Path}
@@ -203,20 +190,17 @@ func (s *Server) handleGetL0Compact(c *gin.Context) {
 	}
 	params, err := params.Fork(overrides)
 	if err != nil {
-		writeL0Response(c, backuppb.ResponseCode_Parameter_Error, err.Error(), nil)
-		return
+		return writeL0Response(c, backuppb.ResponseCode_Parameter_Error, err.Error(), nil)
 	}
-	cli, err := storage.NewBackupStorage(c.Request.Context(), params)
+	cli, err := storage.NewBackupStorage(c.Request().Context(), params)
 	if err != nil {
-		writeL0Response(c, backuppb.ResponseCode_Fail, err.Error(), nil)
-		return
+		return writeL0Response(c, backuppb.ResponseCode_Fail, err.Error(), nil)
 	}
-	info, err := meta.Read(c.Request.Context(), cli, mpath.BackupDir(params.Backup.Storage.RootPath.Val, req.OutputName))
+	info, err := meta.Read(c.Request().Context(), cli, mpath.BackupDir(params.Backup.Storage.RootPath.Val, req.OutputName))
 	if err != nil || info.GetName() != req.OutputName {
-		writeL0Response(c, backuppb.ResponseCode_Request_Object_Not_Found, "l0compact task and completed output not found", nil)
-		return
+		return writeL0Response(c, backuppb.ResponseCode_Request_Object_Not_Found, "l0compact task and completed output not found", nil)
 	}
-	writeL0Response(c, backuppb.ResponseCode_Success, "success", l0CompactResponse{
+	return writeL0Response(c, backuppb.ResponseCode_Success, "success", l0CompactResponse{
 		StateCode: l0CompactSuccess, BackupName: req.BackupName, OutputName: req.OutputName,
 	})
 }
