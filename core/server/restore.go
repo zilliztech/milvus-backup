@@ -16,6 +16,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore"
 	"github.com/zilliztech/milvus-backup/core/utils"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
@@ -24,11 +25,19 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/validate"
 )
 
-// restoreBackupUC is the slice of app.Restore the handler needs. The consumer
-// defines it: this narrow interface is what handler tests stub out.
-type restoreBackupUC interface {
-	Start(ctx context.Context, req app.RestoreRequest) (app.RestoreJob, error)
+// restoreJob is the slice of app.RestoreJob the handler needs. The consumer
+// defines it: app returns a concrete type, and this narrow interface is what
+// handler tests stub out.
+type restoreJob interface {
+	// Run executes the job; where its goroutine goes is this server's
+	// deployment decision, selected by the request's async flag.
+	Run(ctx context.Context) error
 }
+
+// restoreJobFactory builds and registers the job for one restore request.
+// Unlike the other new* constructors it takes the request: a restore job is
+// per-request, so construction and registration are one step.
+type restoreJobFactory func(ctx context.Context, params *v2.Config, req app.RestoreRequest) (restoreJob, error)
 
 // RestoreBackup Restore interface
 // @Summary Restore interface
@@ -46,7 +55,7 @@ func (s *Server) handleRestoreBackup(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]any{"error": fmt.Sprintf("invalid request body: %s", err)})
 	}
 
-	// The restore outlives the HTTP request, so the usecase runs detached
+	// The restore outlives the HTTP request, so the job runs detached
 	// from it, exactly as this endpoint always has.
 	resp := s.restore(context.Background(), &request)
 
@@ -91,12 +100,7 @@ func (s *Server) restore(ctx context.Context, request *backuppb.RestoreBackupReq
 		}
 	}
 
-	uc, err := s.config.newRestoreBackup(ctx, params)
-	if err != nil {
-		return &backuppb.RestoreBackupResponse{Code: backuppb.ResponseCode_Fail, Msg: err.Error()}
-	}
-
-	job, err := uc.Start(ctx, *req)
+	job, err := s.config.newRestoreJob(ctx, params, *req)
 	if err != nil {
 		// A backup that is not there is the caller's mistake; everything
 		// else is the server's.
@@ -133,9 +137,9 @@ func (s *Server) restore(ctx context.Context, request *backuppb.RestoreBackupReq
 }
 
 // restoreAsync launches the job in the server's own goroutine — async is a
-// deployment concern of the HTTP server, not of the usecase — then reports
-// the freshly registered job's view.
-func (s *Server) restoreAsync(job app.RestoreJob, request *backuppb.RestoreBackupRequest) *backuppb.RestoreBackupResponse {
+// deployment concern of the HTTP server, not of the job — then reports the
+// freshly registered job's view.
+func (s *Server) restoreAsync(job restoreJob, request *backuppb.RestoreBackupRequest) *backuppb.RestoreBackupResponse {
 	go func() {
 		if err := job.Run(context.Background()); err != nil {
 			log.Error("restore backup task execute fail", zap.String("backupId", request.GetId()), zap.Error(err))
@@ -209,7 +213,7 @@ func validateRestoreRequest(request *backuppb.RestoreBackupRequest) error {
 	return nil
 }
 
-// newRestoreRequest translates the v1 pb grammar into the usecase request:
+// newRestoreRequest translates the v1 pb grammar into the restore request:
 // the plan and the option are built here because they are parse products of
 // pb-only fields, including the deprecated db_collections.
 func newRestoreRequest(request *backuppb.RestoreBackupRequest) (*app.RestoreRequest, error) {

@@ -42,12 +42,14 @@ type config struct {
 	// newCreateBackup is the create counterpart of newListBackups.
 	newCreateBackup func(ctx context.Context, params *v2.Config) (createBackupUC, error)
 
-	// newRestoreBackup is the restore counterpart of newListBackups.
-	newRestoreBackup func(ctx context.Context, params *v2.Config) (restoreBackupUC, error)
+	// newRestoreJob builds and registers the job for one restore request: a
+	// restore job is per-request, so building it and registering it are one
+	// step.
+	newRestoreJob restoreJobFactory
 
-	// newRestoreSecondary is the secondary-restore counterpart of
-	// newRestoreBackup.
-	newRestoreSecondary func(ctx context.Context, params *v2.Config) (restoreSecondaryUC, error)
+	// newRestoreSecondaryJob is the secondary-restore counterpart of
+	// newRestoreJob.
+	newRestoreSecondaryJob restoreSecondaryJobFactory
 }
 
 func newDefaultConfig() *config {
@@ -76,11 +78,11 @@ func newDefaultConfig() *config {
 		newCreateBackup: func(ctx context.Context, params *v2.Config) (createBackupUC, error) {
 			return app.NewCreateBackup(ctx, params, taskmgr.DefaultMgr())
 		},
-		newRestoreBackup: func(ctx context.Context, params *v2.Config) (restoreBackupUC, error) {
-			return app.NewRestore(ctx, params, taskmgr.DefaultMgr())
+		newRestoreJob: func(ctx context.Context, params *v2.Config, req app.RestoreRequest) (restoreJob, error) {
+			return app.NewRestoreJob(ctx, params, taskmgr.DefaultMgr(), req)
 		},
-		newRestoreSecondary: func(ctx context.Context, params *v2.Config) (restoreSecondaryUC, error) {
-			return app.NewRestoreSecondary(ctx, params, taskmgr.DefaultMgr())
+		newRestoreSecondaryJob: func(ctx context.Context, params *v2.Config, req app.RestoreSecondaryRequest) (restoreJob, error) {
+			return app.NewRestoreSecondaryJob(ctx, params, taskmgr.DefaultMgr(), req)
 		},
 	}
 }
