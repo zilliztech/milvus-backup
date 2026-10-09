@@ -18,6 +18,8 @@ func NewStore() *Store {
 		migrateTask:        make(map[string]*MigrateTask),
 		backupTask:         make(map[string]*BackupTask),
 		backupNameBackupID: make(map[string]string),
+		deleteTask:         make(map[string]*deleteTask),
+		deleteNameDeleteID: make(map[string]string),
 	}
 }
 
@@ -34,6 +36,11 @@ type Store struct {
 	backupTask map[string]*BackupTask
 	// backupName -> backupID
 	backupNameBackupID map[string]string
+
+	// deleteID -> deleteTask
+	deleteTask map[string]*deleteTask
+	// backupName -> deleteID
+	deleteNameDeleteID map[string]string
 }
 
 func (m *Store) AddRestoreTask(taskID string) {

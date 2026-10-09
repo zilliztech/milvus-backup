@@ -18,8 +18,8 @@ type config struct {
 	// tests never touch storage.
 	newListBackups func(ctx context.Context, params *cfg.Config) (listBackupsUC, error)
 
-	// newDeleteBackup is the delete counterpart of newListBackups.
-	newDeleteBackup func(ctx context.Context, params *cfg.Config) (deleteBackupUC, error)
+	// newDeleteJob is the delete counterpart of newBackupJob.
+	newDeleteJob deleteJobFactory
 
 	// newGetRestore is the get-restore counterpart of newListBackups. It
 	// takes no config: restore state is process-local, so there is no client
@@ -62,8 +62,8 @@ func newDefaultConfig() *config {
 		newListBackups: func(ctx context.Context, params *cfg.Config) (listBackupsUC, error) {
 			return app.NewListBackups(ctx, params)
 		},
-		newDeleteBackup: func(ctx context.Context, params *cfg.Config) (deleteBackupUC, error) {
-			return app.NewDeleteBackup(ctx, params)
+		newDeleteJob: func(ctx context.Context, params *cfg.Config, req app.DeleteBackupRequest) (deleteJob, error) {
+			return app.NewDeleteJob(ctx, params, jobstate.Default(), req)
 		},
 		newGetRestore: func() (getRestoreUC, error) {
 			return app.NewGetRestore(jobstate.Default()), nil

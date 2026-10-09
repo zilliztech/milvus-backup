@@ -11,31 +11,32 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
-// stubDeleteBackup stands in for app.DeleteBackup: a canned error, the name
-// it was called with, and a call count so tests can assert whether the
-// handler reached the action at all.
-type stubDeleteBackup struct {
-	name       string
-	executeErr error
-	calls      int
+// stubDeleteJob stands in for app.DeleteJob: Run does nothing and Wait
+// serves the canned status, because the handler answers from what Wait
+// returns, not from Run.
+type stubDeleteJob struct {
+	status jobstate.DeleteStatus
 }
 
-func (s *stubDeleteBackup) Execute(_ context.Context, name string) error {
-	s.name = name
-	s.calls++
-	return s.executeErr
+func (s *stubDeleteJob) Run(context.Context) {}
+
+func (s *stubDeleteJob) Wait(context.Context) (jobstate.DeleteStatus, error) {
+	return s.status, nil
 }
 
-// withDeleteBackup wires the stub as the delete usecase. newErr simulates the
-// client-construction failure, which happens before any Execute call.
-func withDeleteBackup(stub *stubDeleteBackup, newErr error) Option {
+// withDeleteJob wires the delete seam: newErr simulates a registration
+// failure (unreadable meta, duplicate name), status is what the job settles
+// on and the handler should answer with.
+func withDeleteJob(newErr error, status jobstate.DeleteStatus) Option {
 	return func(c *config) {
-		c.newDeleteBackup = func(context.Context, *cfg.Config) (deleteBackupUC, error) {
-			return stub, newErr
+		c.newDeleteJob = func(context.Context, *cfg.Config, app.DeleteBackupRequest) (deleteJob, error) {
+			return &stubDeleteJob{status: status}, newErr
 		}
 	}
 }
@@ -57,31 +58,28 @@ func delBackup(t *testing.T, s *Server, query string, requestID string) backuppb
 }
 
 func TestHandleDeleteBackup(t *testing.T) {
-	t.Run("DeletesThroughTheUsecase", func(t *testing.T) {
-		stub := &stubDeleteBackup{}
-		s := newListTestServer(t, withDeleteBackup(stub, nil))
+	successStatus := jobstate.DeleteStatus{State: jobstate.DeleteStateSuccess}
+
+	t.Run("AnswersSuccessWhenJobSettles", func(t *testing.T) {
+		s := newListTestServer(t, withDeleteJob(nil, successStatus))
 
 		resp := delBackup(t, s, "?backup_name=backup1", "")
 
 		assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
 		assert.Equal(t, "success", resp.GetMsg())
-		assert.Equal(t, "backup1", stub.name)
-		assert.Equal(t, 1, stub.calls)
 	})
 
-	t.Run("RejectsMissingNameWithoutCallingUsecase", func(t *testing.T) {
-		stub := &stubDeleteBackup{}
-		s := newListTestServer(t, withDeleteBackup(stub, nil))
+	t.Run("RejectsMissingNameWithoutRegisteringJob", func(t *testing.T) {
+		s := newListTestServer(t, withDeleteJob(errors.New("must not be built"), successStatus))
 
 		resp := delBackup(t, s, "", "")
 
 		assert.Equal(t, backuppb.ResponseCode_Parameter_Error, resp.GetCode())
 		assert.Contains(t, resp.GetMsg(), "backup name is required")
-		assert.Zero(t, stub.calls)
 	})
 
 	t.Run("GeneratesRequestIdWhenMissing", func(t *testing.T) {
-		s := newListTestServer(t, withDeleteBackup(&stubDeleteBackup{}, nil))
+		s := newListTestServer(t, withDeleteJob(nil, successStatus))
 
 		resp := delBackup(t, s, "?backup_name=backup1", "")
 
@@ -89,30 +87,32 @@ func TestHandleDeleteBackup(t *testing.T) {
 	})
 
 	t.Run("ForwardsRequestId", func(t *testing.T) {
-		s := newListTestServer(t, withDeleteBackup(&stubDeleteBackup{}, nil))
+		s := newListTestServer(t, withDeleteJob(nil, successStatus))
 
 		resp := delBackup(t, s, "?backup_name=backup1", "rid-1")
 
 		assert.Equal(t, "rid-1", resp.GetRequestId())
 	})
 
-	t.Run("MapsConstructorErrorToFail", func(t *testing.T) {
-		s := newListTestServer(t, withDeleteBackup(&stubDeleteBackup{}, errors.New("dial timeout")))
-
-		resp := delBackup(t, s, "?backup_name=backup1", "")
-
-		assert.Equal(t, backuppb.ResponseCode_Fail, resp.GetCode())
-		assert.Contains(t, resp.GetMsg(), "dial timeout")
-	})
-
-	t.Run("MapsExecuteErrorToFail", func(t *testing.T) {
-		stub := &stubDeleteBackup{executeErr: errors.New("meta unreadable")}
-		s := newListTestServer(t, withDeleteBackup(stub, nil))
+	t.Run("MapsRegistrationErrorToFail", func(t *testing.T) {
+		s := newListTestServer(t, withDeleteJob(errors.New("meta unreadable"), successStatus))
 
 		resp := delBackup(t, s, "?backup_name=backup1", "")
 
 		assert.Equal(t, backuppb.ResponseCode_Fail, resp.GetCode())
 		assert.Contains(t, resp.GetMsg(), "meta unreadable")
-		assert.Equal(t, 1, stub.calls)
+	})
+
+	t.Run("AnswersWithTheFailedStatusTheJobSettledOn", func(t *testing.T) {
+		failStatus := jobstate.DeleteStatus{
+			State:        jobstate.DeleteStateFail,
+			ErrorMessage: "connection closed",
+		}
+		s := newListTestServer(t, withDeleteJob(nil, failStatus))
+
+		resp := delBackup(t, s, "?backup_name=backup1", "")
+
+		assert.Equal(t, backuppb.ResponseCode_Fail, resp.GetCode())
+		assert.Contains(t, resp.GetMsg(), "connection closed")
 	})
 }

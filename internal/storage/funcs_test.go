@@ -6,6 +6,7 @@ import (
 	"io"
 	"iter"
 	"sync"
+	"sync/atomic"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -153,6 +154,48 @@ func TestDeletePrefix(t *testing.T) {
 		cli := NewMockClient(t)
 		err := DeletePrefix(context.Background(), cli, "")
 		assert.Error(t, err)
+	})
+}
+
+func TestDeleteWithCallback(t *testing.T) {
+	t.Run("CallbackFiresPerDeletedObject", func(t *testing.T) {
+		cli := NewMockClient(t)
+
+		objs := []ObjectAttr{
+			{Key: "a/b/c", Length: 1},
+			{Key: "a/b/d", Length: 2},
+			{Key: "a/b/e", Length: 3},
+		}
+
+		cli.EXPECT().
+			NewObjectIter(mock.Anything, "a/b", true).
+			Return(NewMockObjectIterator(objs))
+		for _, obj := range objs {
+			cli.EXPECT().
+				DeleteObject(mock.Anything, obj.Key).
+				Return(nil)
+		}
+
+		var deleted atomic.Int64
+		err := DeleteWithCallback(context.Background(), cli, "a/b", func() { deleted.Add(1) })
+		assert.NoError(t, err)
+		assert.Equal(t, int64(len(objs)), deleted.Load())
+	})
+
+	t.Run("CallbackDoesNotFireForFailedDelete", func(t *testing.T) {
+		cli := NewMockClient(t)
+
+		cli.EXPECT().
+			NewObjectIter(mock.Anything, "a/b", true).
+			Return(NewMockObjectIterator([]ObjectAttr{{Key: "a/b/c", Length: 1}}))
+		cli.EXPECT().
+			DeleteObject(mock.Anything, "a/b/c").
+			Return(assert.AnError)
+
+		var deleted atomic.Int64
+		err := DeleteWithCallback(context.Background(), cli, "a/b", func() { deleted.Add(1) })
+		assert.Error(t, err)
+		assert.Equal(t, int64(0), deleted.Load())
 	})
 }
 
