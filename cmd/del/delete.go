@@ -4,14 +4,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
+	"github.com/vbauerster/mpb/v8/cwriter"
 
 	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
+	"github.com/zilliztech/milvus-backup/internal/progressbar"
 )
 
 type options struct {
@@ -44,10 +48,21 @@ func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
 	}
 
 	// The CLI exposes no async form: the job runs in the background and the
-	// command waits on it, reading back the outcome Run recorded.
+	// command waits on it. On a terminal it renders progress from job-store
+	// snapshots; piped output keeps the old plain behavior, so scripts and CI
+	// logs never see bar frames.
 	job.Run(context.Background())
 
-	status, err := job.Wait(ctx)
+	var status jobstate.DeleteStatus
+	if cwriter.IsTerminal(int(os.Stdout.Fd())) {
+		p := progressbar.Progress()
+		status, err = renderDelete(ctx, p, store, taskID, 200*time.Millisecond)
+		// mpb buffers intercepted writes and the bar's last frame until the
+		// container shuts down, so the Wait must precede any plain output.
+		p.Wait()
+	} else {
+		status, err = job.Wait(ctx)
+	}
 	if err != nil {
 		return fmt.Errorf("cmd: wait delete backup: %w", err)
 	}
@@ -55,7 +70,7 @@ func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
 		return fmt.Errorf("cmd: delete backup: %s", status.ErrorMessage)
 	}
 
-	cmd.Println("delete backup done")
+	cmd.Println(deleteSummaryLine(status))
 
 	return nil
 }
