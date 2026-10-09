@@ -2,6 +2,7 @@ package storage
 
 import (
 	"fmt"
+	"sync"
 
 	"github.com/alibabacloud-go/tea/tea"
 	aliyunCred "github.com/aliyun/credentials-go/credentials"
@@ -16,7 +17,7 @@ func newAliyunClient(cfg Config) (*MinioClient, error) {
 	case IAM:
 		provider, err := newAliCredProvider()
 		if err != nil {
-			return nil, fmt.Errorf("storage: create aliyun credential: %w", err)
+			return nil, err
 		}
 		opts.Creds = minioCred.New(provider)
 	case Static:
@@ -33,32 +34,38 @@ func newAliyunClient(cfg Config) (*MinioClient, error) {
 // CredentialProvider implements "github.com/minio/minio-go/v7/pkg/credentials".Provider
 // also implements transport
 type aliCredProvider struct {
-	// aliyunCreds doesn't provide a way to get the expiry time, so we use the cache to check if it's expired
-	// when aliyunCreds.GetCredential is different from the cache, we know it's expired
-	credCache *aliyunCred.CredentialModel
-	cred      aliyunCred.Credential
+	// mu serializes the SDK calls: minio locks each Credentials wrapper
+	// separately while this provider is shared by all of them, and the
+	// credentials-go session caches hold no lock of their own.
+	mu   sync.Mutex
+	cred aliyunCred.Credential
 }
 
-func newAliCredProvider() (minioCred.Provider, error) {
+// newAliCredProvider returns the process-wide aliyun credential provider. One
+// per process, because the credentials-go SDK fetches and refreshes STS tokens
+// per provider instance: one per client would multiply the AssumeRoleWithOIDC
+// traffic by the number of clients and trip the STS rate limit.
+var newAliCredProvider = sync.OnceValues(func() (minioCred.Provider, error) {
 	cred, err := aliyunCred.NewCredential(nil)
 	if err != nil {
 		return nil, fmt.Errorf("storage: create aliyun credential: %w", err)
 	}
 
 	return &aliCredProvider{cred: cred}, nil
-}
+})
 
-// Retrieve returns nil if it successfully retrieved the value.
-// Error is returned if the value were not obtainable, or empty.
-// according to the caller minioCred.Credentials.Get(),
-// it already has a lock, so we don't need to worry about concurrency
+// Retrieve returns the current credentials-go session. The SDK serves its
+// cached session and refreshes it 180s before expiry, so answering minio's
+// every fetch costs no extra STS traffic.
 func (a *aliCredProvider) Retrieve() (minioCred.Value, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
 	cred, err := a.cred.GetCredential()
 	if err != nil {
 		return minioCred.Value{}, fmt.Errorf("storage: get credential from aliyun credential: %w", err)
 	}
 
-	a.credCache = cred
 	return minioCred.Value{
 		AccessKeyID:     tea.StringValue(cred.AccessKeyId),
 		SecretAccessKey: tea.StringValue(cred.AccessKeySecret),
@@ -70,24 +77,11 @@ func (a *aliCredProvider) RetrieveWithCredContext(_ *minioCred.CredContext) (min
 	return a.Retrieve()
 }
 
-// IsExpired returns if the credentials are no longer valid, and need
-// to be retrieved.
-// according to the caller minioCred.Credentials.IsExpired(),
-// it already has a lock, so we don't need to worry about concurrency
+// IsExpired always reports expired so minio re-fetches through Retrieve on
+// every signature. The SDK keeps the real expiration private and re-serves its
+// cached session until its own refresh time, so the cache-and-compare this
+// struct used to keep only bridged that gap; delegating expiry to the SDK is
+// simpler and cannot go stale.
 func (a *aliCredProvider) IsExpired() bool {
-	cred, err := a.cred.GetCredential()
-	if err != nil {
-		return true
-	}
-	if a.credCache == nil {
-		return true
-	}
-
-	if tea.StringValue(a.credCache.AccessKeyId) != tea.StringValue(cred.AccessKeyId) ||
-		tea.StringValue(a.credCache.AccessKeySecret) != tea.StringValue(cred.AccessKeySecret) ||
-		tea.StringValue(a.credCache.SecurityToken) != tea.StringValue(cred.SecurityToken) {
-		return true
-	}
-
-	return false
+	return true
 }
