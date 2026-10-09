@@ -52,14 +52,9 @@ func (o *secondaryOption) toRequest() app.RestoreSecondaryRequest {
 
 func (o *secondaryOption) run(cmd *cobra.Command, params *v2.Config) error {
 	ctx := context.Background()
-	uc, err := app.NewRestoreSecondary(ctx, params, taskmgr.DefaultMgr())
+	job, err := app.NewRestoreSecondaryJob(ctx, params, taskmgr.DefaultMgr(), o.toRequest())
 	if err != nil {
-		return fmt.Errorf("restore: new restore secondary usecase: %w", err)
-	}
-
-	job, err := uc.Start(ctx, o.toRequest())
-	if err != nil {
-		return err
+		return fmt.Errorf("restore: new restore secondary job: %w", err)
 	}
 
 	return job.Run(ctx)

@@ -152,7 +152,7 @@ func (o *options) renameCollectionNamesToMapper() (*restore.TableMapper, error) 
 	return newTableMapperFromCollRename(renameMap)
 }
 
-// toRequest translates the flag grammar into the usecase request: the plan is
+// toRequest translates the flag grammar into the restore request: the plan is
 // a parse product of flag-only inputs, so it is built here.
 func (o *options) toRequest() (app.RestoreRequest, error) {
 	plan, err := o.toPlan()
@@ -176,14 +176,9 @@ func (o *options) run(cmd *cobra.Command, params *v2.Config) error {
 		return err
 	}
 
-	uc, err := app.NewRestore(cmd.Context(), params, taskmgr.DefaultMgr())
+	job, err := app.NewRestoreJob(cmd.Context(), params, taskmgr.DefaultMgr(), req)
 	if err != nil {
-		return fmt.Errorf("restore: new restore usecase: %w", err)
-	}
-
-	job, err := uc.Start(cmd.Context(), req)
-	if err != nil {
-		return err
+		return fmt.Errorf("restore: new restore job: %w", err)
 	}
 
 	if err := job.Run(context.Background()); err != nil {

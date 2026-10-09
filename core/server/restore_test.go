@@ -391,8 +391,8 @@ func TestNewCollOverridesFromPlan(t *testing.T) {
 	})
 }
 
-// stubRestoreJob stands in for app.RestoreJob: a canned error and a call
-// count, so tests can assert whether the handler ran the job at all. The
+// stubRestoreJob stands in for *app.RestoreJob: a canned Run error and a
+// call count, so tests can assert whether the handler ran the job at all. The
 // count is atomic because async tests poll it from the test goroutine while
 // the handler's job goroutine increments it.
 type stubRestoreJob struct {
@@ -405,34 +405,30 @@ func (j *stubRestoreJob) Run(context.Context) error {
 	return j.runErr
 }
 
-// stubRestoreBackup stands in for app.Restore: the params its constructor
-// received, the request it was called with, canned errors, and a call count.
-type stubRestoreBackup struct {
-	job      app.RestoreJob
-	startErr error
-
+// stubRestoreFactory stands in for the job factory: the params and request it
+// was called with, a canned construction error, and a call count so tests can
+// assert whether the handler reached the action at all.
+type stubRestoreFactory struct {
 	params *v2.Config
 	req    app.RestoreRequest
+	newErr error
+	job    *stubRestoreJob
 	calls  int
 }
 
-func (s *stubRestoreBackup) Start(_ context.Context, req app.RestoreRequest) (app.RestoreJob, error) {
-	s.calls++
-	s.req = req
-	if s.startErr != nil {
-		return nil, s.startErr
-	}
-
-	return s.job, nil
-}
-
-// withRestoreBackup wires the stub as the restore usecase. newErr simulates
-// the construction failure, which happens before any Start call.
-func withRestoreBackup(stub *stubRestoreBackup, newErr error) Option {
+// withRestoreBackup wires the stub as the job factory. newErr simulates a
+// construction failure — client build, meta read or registration — which
+// happens before any job runs.
+func withRestoreBackup(stub *stubRestoreFactory) Option {
 	return func(c *config) {
-		c.newRestoreBackup = func(ctx context.Context, params *v2.Config) (restoreBackupUC, error) {
+		c.newRestoreJob = func(_ context.Context, params *v2.Config, req app.RestoreRequest) (restoreJob, error) {
 			stub.params = params
-			return stub, newErr
+			stub.req = req
+			stub.calls++
+			if stub.newErr != nil {
+				return nil, stub.newErr
+			}
+			return stub.job, nil
 		}
 	}
 }
@@ -471,11 +467,11 @@ func restoreBackup(t *testing.T, s *Server, body string, requestID string) backu
 }
 
 func TestHandleRestoreBackup(t *testing.T) {
-	t.Run("RestoresThroughTheUsecase", func(t *testing.T) {
+	t.Run("SyncRunsTheJob", func(t *testing.T) {
 		job := &stubRestoreJob{}
-		stub := &stubRestoreBackup{job: job}
+		stub := &stubRestoreFactory{job: job}
 		gr := &stubGetRestore{view: newStubRestoreView(t)}
-		s := newListTestServer(t, withRestoreBackup(stub, nil), withGetRestore(gr, nil))
+		s := newListTestServer(t, withRestoreBackup(stub), withGetRestore(gr, nil))
 
 		resp := restoreBackup(t, s, `{"backup_name":"backup1"}`, "")
 
@@ -485,13 +481,13 @@ func TestHandleRestoreBackup(t *testing.T) {
 		assert.Equal(t, 1, stub.calls)
 		assert.Equal(t, int32(1), job.calls.Load())
 		// The view is read through the get-restore usecase, for the same
-		// task id that went to Start.
+		// task id that went to the job factory.
 		assert.Equal(t, stub.req.TaskID, gr.id)
 	})
 
 	t.Run("RejectsInvalidBody", func(t *testing.T) {
-		stub := &stubRestoreBackup{}
-		s := newListTestServer(t, withRestoreBackup(stub, nil))
+		stub := &stubRestoreFactory{}
+		s := newListTestServer(t, withRestoreBackup(stub))
 
 		w := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/restore", strings.NewReader("{invalid"))
@@ -501,9 +497,9 @@ func TestHandleRestoreBackup(t *testing.T) {
 		assert.Zero(t, stub.calls)
 	})
 
-	t.Run("RejectsMissingNameWithoutCallingUsecase", func(t *testing.T) {
-		stub := &stubRestoreBackup{}
-		s := newListTestServer(t, withRestoreBackup(stub, nil))
+	t.Run("RejectsMissingNameWithoutBuildingAJob", func(t *testing.T) {
+		stub := &stubRestoreFactory{}
+		s := newListTestServer(t, withRestoreBackup(stub))
 
 		resp := restoreBackup(t, s, `{}`, "")
 
@@ -514,12 +510,12 @@ func TestHandleRestoreBackup(t *testing.T) {
 
 	t.Run("DefaultsRequestIdAndTaskId", func(t *testing.T) {
 		job := &stubRestoreJob{}
-		stub := &stubRestoreBackup{job: job}
-		s := newListTestServer(t, withRestoreBackup(stub, nil), withGetRestore(&stubGetRestore{view: newStubRestoreView(t)}, nil))
+		stub := &stubRestoreFactory{job: job}
+		s := newListTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{view: newStubRestoreView(t)}, nil))
 
 		resp := restoreBackup(t, s, `{"backup_name":"backup1"}`, "")
 
-		// The response echoes a generated request id; the usecase got a
+		// The response echoes a generated request id; the factory got a
 		// generated task id of the endpoint's own "restore_" shape.
 		assert.NotEmpty(t, resp.GetRequestId())
 		assert.True(t, strings.HasPrefix(stub.req.TaskID, "restore_"))
@@ -528,8 +524,8 @@ func TestHandleRestoreBackup(t *testing.T) {
 
 	t.Run("ForwardsRequestId", func(t *testing.T) {
 		job := &stubRestoreJob{}
-		stub := &stubRestoreBackup{job: job}
-		s := newListTestServer(t, withRestoreBackup(stub, nil), withGetRestore(&stubGetRestore{view: newStubRestoreView(t)}, nil))
+		stub := &stubRestoreFactory{job: job}
+		s := newListTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{view: newStubRestoreView(t)}, nil))
 
 		// This endpoint takes the request id from the body field, unlike the
 		// list and delete handlers, which read the header.
@@ -541,15 +537,15 @@ func TestHandleRestoreBackup(t *testing.T) {
 	t.Run("BucketNameForksConfig", func(t *testing.T) {
 		// The v1 bucket_name field is applied as a config override, not sent
 		// through the request.
-		stub := &stubRestoreBackup{job: &stubRestoreJob{}}
-		s := newLoadedTestServer(t, withRestoreBackup(stub, nil), withGetRestore(&stubGetRestore{view: newStubRestoreView(t)}, nil))
+		stub := &stubRestoreFactory{job: &stubRestoreJob{}}
+		s := newLoadedTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{view: newStubRestoreView(t)}, nil))
 
 		resp := restoreBackup(t, s, `{"backup_name":"backup1","bucket_name":"other-bucket"}`, "rid-1")
 
 		assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
 		require.NotNil(t, stub.params)
 		assert.Equal(t, "other-bucket", stub.params.Backup.Storage.BucketName.Val)
-		// The fork, not the server's own config, reaches the usecase.
+		// The fork, not the server's own config, reaches the job.
 		assert.NotSame(t, s.params, stub.params)
 		// The server's own config stays on its own bucket.
 		assert.NotEqual(t, "other-bucket", s.params.Backup.Storage.BucketName.Val)
@@ -558,34 +554,34 @@ func TestHandleRestoreBackup(t *testing.T) {
 	t.Run("PathForksConfig", func(t *testing.T) {
 		// The v1 path field is applied as a config override, not sent
 		// through the request.
-		stub := &stubRestoreBackup{job: &stubRestoreJob{}}
-		s := newLoadedTestServer(t, withRestoreBackup(stub, nil), withGetRestore(&stubGetRestore{view: newStubRestoreView(t)}, nil))
+		stub := &stubRestoreFactory{job: &stubRestoreJob{}}
+		s := newLoadedTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{view: newStubRestoreView(t)}, nil))
 
 		resp := restoreBackup(t, s, `{"backup_name":"backup1","path":"other"}`, "rid-1")
 
 		assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
 		require.NotNil(t, stub.params)
 		assert.Equal(t, "other", stub.params.Backup.Storage.RootPath.Val)
-		// The fork, not the server's own config, reaches the usecase.
+		// The fork, not the server's own config, reaches the job.
 		assert.NotSame(t, s.params, stub.params)
 		// The server's own config stays on the default root path.
 		assert.Equal(t, "backup", s.params.Backup.Storage.RootPath.Val)
 	})
 
 	t.Run("NoOverridesKeepServerConfig", func(t *testing.T) {
-		stub := &stubRestoreBackup{job: &stubRestoreJob{}}
-		s := newLoadedTestServer(t, withRestoreBackup(stub, nil), withGetRestore(&stubGetRestore{view: newStubRestoreView(t)}, nil))
+		stub := &stubRestoreFactory{job: &stubRestoreJob{}}
+		s := newLoadedTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{view: newStubRestoreView(t)}, nil))
 
 		resp := restoreBackup(t, s, `{"backup_name":"backup1"}`, "rid-1")
 
 		assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
-		// No override fields: the config travels to the usecase untouched.
+		// No override fields: the config travels to the job untouched.
 		assert.Same(t, s.params, stub.params)
 	})
 
 	t.Run("MapsUnknownBackupToParameterError", func(t *testing.T) {
-		stub := &stubRestoreBackup{startErr: fmt.Errorf("app: backup backup1: %w", app.ErrBackupNotFound)}
-		s := newListTestServer(t, withRestoreBackup(stub, nil))
+		stub := &stubRestoreFactory{newErr: fmt.Errorf("app: backup backup1: %w", app.ErrBackupNotFound)}
+		s := newListTestServer(t, withRestoreBackup(stub))
 
 		resp := restoreBackup(t, s, `{"backup_name":"backup1"}`, "rid-1")
 
@@ -594,20 +590,9 @@ func TestHandleRestoreBackup(t *testing.T) {
 		assert.Equal(t, 1, stub.calls)
 	})
 
-	t.Run("MapsConstructionErrorToFail", func(t *testing.T) {
-		stub := &stubRestoreBackup{}
-		s := newListTestServer(t, withRestoreBackup(stub, errors.New("dial timeout")))
-
-		resp := restoreBackup(t, s, `{"backup_name":"backup1"}`, "rid-1")
-
-		assert.Equal(t, backuppb.ResponseCode_Fail, resp.GetCode())
-		assert.Contains(t, resp.GetMsg(), "dial timeout")
-		assert.Zero(t, stub.calls)
-	})
-
-	t.Run("MapsStartErrorToFail", func(t *testing.T) {
-		stub := &stubRestoreBackup{startErr: errors.New("dial timeout")}
-		s := newListTestServer(t, withRestoreBackup(stub, nil))
+	t.Run("MapsJobBuildErrorToFail", func(t *testing.T) {
+		stub := &stubRestoreFactory{newErr: errors.New("dial timeout")}
+		s := newListTestServer(t, withRestoreBackup(stub))
 
 		resp := restoreBackup(t, s, `{"backup_name":"backup1"}`, "rid-1")
 
@@ -618,8 +603,8 @@ func TestHandleRestoreBackup(t *testing.T) {
 
 	t.Run("MapsRunErrorToFail", func(t *testing.T) {
 		job := &stubRestoreJob{runErr: errors.New("bulk insert failed")}
-		stub := &stubRestoreBackup{job: job}
-		s := newListTestServer(t, withRestoreBackup(stub, nil))
+		stub := &stubRestoreFactory{job: job}
+		s := newListTestServer(t, withRestoreBackup(stub))
 
 		resp := restoreBackup(t, s, `{"backup_name":"backup1"}`, "rid-1")
 
@@ -630,8 +615,8 @@ func TestHandleRestoreBackup(t *testing.T) {
 
 	t.Run("MapsGetRestoreErrorToFail", func(t *testing.T) {
 		job := &stubRestoreJob{}
-		stub := &stubRestoreBackup{job: job}
-		s := newListTestServer(t, withRestoreBackup(stub, nil), withGetRestore(&stubGetRestore{executeErr: errors.New("task mgr closed")}, nil))
+		stub := &stubRestoreFactory{job: job}
+		s := newListTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{executeErr: errors.New("task mgr closed")}, nil))
 
 		resp := restoreBackup(t, s, `{"backup_name":"backup1"}`, "rid-1")
 
@@ -641,8 +626,8 @@ func TestHandleRestoreBackup(t *testing.T) {
 
 	t.Run("AsyncRunsTheJobAndReportsIt", func(t *testing.T) {
 		job := &stubRestoreJob{}
-		stub := &stubRestoreBackup{job: job}
-		s := newListTestServer(t, withRestoreBackup(stub, nil), withGetRestore(&stubGetRestore{view: newStubRestoreView(t)}, nil))
+		stub := &stubRestoreFactory{job: job}
+		s := newListTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{view: newStubRestoreView(t)}, nil))
 
 		resp := restoreBackup(t, s, `{"backup_name":"backup1","async":true}`, "rid-1")
 
@@ -653,34 +638,29 @@ func TestHandleRestoreBackup(t *testing.T) {
 	})
 }
 
-// stubRestoreSecondary stands in for app.RestoreSecondary.
-type stubRestoreSecondary struct {
-	job      app.RestoreJob
-	startErr error
-
+// stubRestoreSecondaryFactory stands in for the secondary job factory: the
+// params and request it was called with, a canned construction error, and a
+// call count.
+type stubRestoreSecondaryFactory struct {
 	params *v2.Config
 	req    app.RestoreSecondaryRequest
+	newErr error
+	job    *stubRestoreJob
 	calls  int
 }
 
-func (s *stubRestoreSecondary) Start(_ context.Context, req app.RestoreSecondaryRequest) (app.RestoreJob, error) {
-	s.calls++
-	s.req = req
-	if s.startErr != nil {
-		return nil, s.startErr
-	}
-
-	return s.job, nil
-}
-
-// withRestoreSecondary wires the stub as the secondary restore usecase.
-// newErr simulates the construction failure, which happens before any Start
-// call.
-func withRestoreSecondary(stub *stubRestoreSecondary, newErr error) Option {
+// withRestoreSecondary wires the stub as the secondary job factory. newErr
+// simulates a construction failure, which happens before any job runs.
+func withRestoreSecondary(stub *stubRestoreSecondaryFactory) Option {
 	return func(c *config) {
-		c.newRestoreSecondary = func(ctx context.Context, params *v2.Config) (restoreSecondaryUC, error) {
+		c.newRestoreSecondaryJob = func(_ context.Context, params *v2.Config, req app.RestoreSecondaryRequest) (restoreJob, error) {
 			stub.params = params
-			return stub, newErr
+			stub.req = req
+			stub.calls++
+			if stub.newErr != nil {
+				return nil, stub.newErr
+			}
+			return stub.job, nil
 		}
 	}
 }
@@ -702,11 +682,11 @@ func restoreSecondary(t *testing.T, s *Server, body string, requestID string) ba
 }
 
 func TestHandleRestoreSecondary(t *testing.T) {
-	t.Run("RestoresThroughTheUsecase", func(t *testing.T) {
+	t.Run("SyncRunsTheJob", func(t *testing.T) {
 		job := &stubRestoreJob{}
-		stub := &stubRestoreSecondary{job: job}
+		stub := &stubRestoreSecondaryFactory{job: job}
 		gr := &stubGetRestore{view: newStubRestoreView(t)}
-		s := newListTestServer(t, withRestoreSecondary(stub, nil), withGetRestore(gr, nil))
+		s := newListTestServer(t, withRestoreSecondary(stub), withGetRestore(gr, nil))
 
 		resp := restoreSecondary(t, s, `{"backup_name":"backup1","sourceClusterID":"src","targetClusterID":"dst"}`, "")
 
@@ -723,9 +703,9 @@ func TestHandleRestoreSecondary(t *testing.T) {
 		assert.Equal(t, stub.req.TaskID, gr.id)
 	})
 
-	t.Run("RejectsMissingClusterIDsWithoutCallingUsecase", func(t *testing.T) {
-		stub := &stubRestoreSecondary{}
-		s := newListTestServer(t, withRestoreSecondary(stub, nil))
+	t.Run("RejectsMissingClusterIDsWithoutBuildingAJob", func(t *testing.T) {
+		stub := &stubRestoreSecondaryFactory{}
+		s := newListTestServer(t, withRestoreSecondary(stub))
 
 		resp := restoreSecondary(t, s, `{"backup_name":"backup1"}`, "")
 
@@ -737,23 +717,23 @@ func TestHandleRestoreSecondary(t *testing.T) {
 	t.Run("PathForksConfig", func(t *testing.T) {
 		// The v1 path field is applied as a config override, not sent
 		// through the request.
-		stub := &stubRestoreSecondary{job: &stubRestoreJob{}}
-		s := newLoadedTestServer(t, withRestoreSecondary(stub, nil), withGetRestore(&stubGetRestore{view: newStubRestoreView(t)}, nil))
+		stub := &stubRestoreSecondaryFactory{job: &stubRestoreJob{}}
+		s := newLoadedTestServer(t, withRestoreSecondary(stub), withGetRestore(&stubGetRestore{view: newStubRestoreView(t)}, nil))
 
 		resp := restoreSecondary(t, s, `{"backup_name":"backup1","sourceClusterID":"src","targetClusterID":"dst","path":"other"}`, "rid-1")
 
 		assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
 		require.NotNil(t, stub.params)
 		assert.Equal(t, "other", stub.params.Backup.Storage.RootPath.Val)
-		// The fork, not the server's own config, reaches the usecase.
+		// The fork, not the server's own config, reaches the job.
 		assert.NotSame(t, s.params, stub.params)
 		// The server's own config stays on the default root path.
 		assert.Equal(t, "backup", s.params.Backup.Storage.RootPath.Val)
 	})
 
 	t.Run("MapsUnknownBackupToParameterError", func(t *testing.T) {
-		stub := &stubRestoreSecondary{startErr: fmt.Errorf("app: backup backup1: %w", app.ErrBackupNotFound)}
-		s := newListTestServer(t, withRestoreSecondary(stub, nil))
+		stub := &stubRestoreSecondaryFactory{newErr: fmt.Errorf("app: backup backup1: %w", app.ErrBackupNotFound)}
+		s := newListTestServer(t, withRestoreSecondary(stub))
 
 		resp := restoreSecondary(t, s, `{"backup_name":"backup1","sourceClusterID":"src","targetClusterID":"dst"}`, "rid-1")
 
@@ -761,21 +741,21 @@ func TestHandleRestoreSecondary(t *testing.T) {
 		assert.Contains(t, resp.GetMsg(), "backup backup1: backup not found")
 	})
 
-	t.Run("MapsConstructionErrorToFail", func(t *testing.T) {
-		stub := &stubRestoreSecondary{}
-		s := newListTestServer(t, withRestoreSecondary(stub, errors.New("dial timeout")))
+	t.Run("MapsJobBuildErrorToFail", func(t *testing.T) {
+		stub := &stubRestoreSecondaryFactory{newErr: errors.New("dial timeout")}
+		s := newListTestServer(t, withRestoreSecondary(stub))
 
 		resp := restoreSecondary(t, s, `{"backup_name":"backup1","sourceClusterID":"src","targetClusterID":"dst"}`, "rid-1")
 
 		assert.Equal(t, backuppb.ResponseCode_Fail, resp.GetCode())
 		assert.Contains(t, resp.GetMsg(), "dial timeout")
-		assert.Zero(t, stub.calls)
+		assert.Equal(t, 1, stub.calls)
 	})
 
 	t.Run("MapsRunErrorToFail", func(t *testing.T) {
 		job := &stubRestoreJob{runErr: errors.New("ddl replay failed")}
-		stub := &stubRestoreSecondary{job: job}
-		s := newListTestServer(t, withRestoreSecondary(stub, nil))
+		stub := &stubRestoreSecondaryFactory{job: job}
+		s := newListTestServer(t, withRestoreSecondary(stub))
 
 		resp := restoreSecondary(t, s, `{"backup_name":"backup1","sourceClusterID":"src","targetClusterID":"dst"}`, "rid-1")
 
@@ -785,8 +765,8 @@ func TestHandleRestoreSecondary(t *testing.T) {
 
 	t.Run("AsyncRunsTheJobAndReportsIt", func(t *testing.T) {
 		job := &stubRestoreJob{}
-		stub := &stubRestoreSecondary{job: job}
-		s := newListTestServer(t, withRestoreSecondary(stub, nil), withGetRestore(&stubGetRestore{view: newStubRestoreView(t)}, nil))
+		stub := &stubRestoreSecondaryFactory{job: job}
+		s := newListTestServer(t, withRestoreSecondary(stub), withGetRestore(&stubGetRestore{view: newStubRestoreView(t)}, nil))
 
 		resp := restoreSecondary(t, s, `{"backup_name":"backup1","sourceClusterID":"src","targetClusterID":"dst","async":true}`, "rid-1")
 

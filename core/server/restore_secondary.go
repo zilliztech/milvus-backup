@@ -13,16 +13,14 @@ import (
 
 	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 )
 
-// restoreSecondaryUC is the slice of app.RestoreSecondary the handler needs.
-// The consumer defines it: this narrow interface is what handler tests stub
-// out.
-type restoreSecondaryUC interface {
-	Start(ctx context.Context, req app.RestoreSecondaryRequest) (app.RestoreJob, error)
-}
+// restoreSecondaryJobFactory is the secondary-restore counterpart of
+// restoreJobFactory.
+type restoreSecondaryJobFactory func(ctx context.Context, params *v2.Config, req app.RestoreSecondaryRequest) (restoreJob, error)
 
 // RestoreBackup Restore interface
 // @Summary Restore interface
@@ -76,14 +74,7 @@ func (s *Server) restoreSecondary(ctx context.Context, request *backuppb.Restore
 		}
 	}
 
-	uc, err := s.config.newRestoreSecondary(ctx, params)
-	if err != nil {
-		resp.Code = backuppb.ResponseCode_Fail
-		resp.Msg = err.Error()
-		return resp
-	}
-
-	job, err := uc.Start(ctx, newRestoreSecondaryRequest(request))
+	job, err := s.config.newRestoreSecondaryJob(ctx, params, newRestoreSecondaryRequest(request))
 	if err != nil {
 		// A backup that is not there is the caller's mistake; everything
 		// else is the server's.
@@ -119,9 +110,9 @@ func (s *Server) restoreSecondary(ctx context.Context, request *backuppb.Restore
 }
 
 // restoreSecondaryAsync launches the job in the server's own goroutine —
-// async is a deployment concern of the HTTP server, not of the usecase — then
+// async is a deployment concern of the HTTP server, not of the job — then
 // reports the freshly registered job's view.
-func (s *Server) restoreSecondaryAsync(job app.RestoreJob, request *backuppb.RestoreSecondaryRequest, resp *backuppb.RestoreBackupResponse) *backuppb.RestoreBackupResponse {
+func (s *Server) restoreSecondaryAsync(job restoreJob, request *backuppb.RestoreSecondaryRequest, resp *backuppb.RestoreBackupResponse) *backuppb.RestoreBackupResponse {
 	go func() {
 		if err := job.Run(context.Background()); err != nil {
 			log.Error("restore backup task execute fail", zap.String("request_id", request.GetRequestId()), zap.Error(err))
