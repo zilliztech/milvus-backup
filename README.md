@@ -7,31 +7,6 @@
 
 Milvus Backup is a command-line tool and API service for backing up and restoring Milvus data. Backup and restore operations run while the Milvus cluster remains available.
 
-## Compatibility
-
-Use the [latest release](https://github.com/zilliztech/milvus-backup/releases) whenever possible. The latest version supports backups from Milvus 2.2 and later, and restores to Milvus 2.5 and later.
-
-A backup can be restored only to the same or a newer Milvus version:
-
-| Backup version | Restore to 2.5 | Restore to 2.6 | Restore to 3.0* |
-|----------------|----------------|----------------|-----------------|
-| 2.2            | Supported      | Supported      | Supported       |
-| 2.3            | Supported      | Supported      | Supported       |
-| 2.4            | Supported      | Supported      | Supported       |
-| 2.5            | Supported      | Supported      | Supported       |
-| 2.6            | —              | Supported      | Supported       |
-| 3.0*           | —              | —              | Supported       |
-
-For example, a backup created from Milvus 2.6 cannot be restored to Milvus 2.5.
-
-\* Supported from Milvus 3.0.1 and later; 3.0.0 is not supported.
-
-### Backup formats
-
-On Milvus 3.0.1 and later, backups are taken in the snapshot format by default: Milvus freezes each collection into a snapshot and copies the data to the backup storage itself, keeping the bytes off the milvus-backup host. Older servers use the binlog format, which streams the data through milvus-backup, and `--format=binlog` selects it explicitly.
-
-The snapshot copy is performed by Milvus inside one storage service, so the snapshot format requires the backup storage to be the same service as the Milvus storage: another bucket, account, or region of the same cloud provider works, but a different provider — or a second self-hosted MinIO — does not, and milvus-backup refuses the backup instead of producing a partial one. The binlog format has no such requirement and moves data between any two supported backends.
-
 ## Installation
 
 Download a binary from the [release page](https://github.com/zilliztech/milvus-backup/releases), or install it with Homebrew on macOS:
@@ -40,65 +15,17 @@ Download a binary from the [release page](https://github.com/zilliztech/milvus-b
 brew install zilliztech/tap/milvus-backup
 ```
 
-## Configuration
+To build from source instead, run `make all`; the executable is written to `./milvus-backup`.
 
-Milvus Backup must be able to connect to Milvus, the storage used by Milvus, and the backup destination. Copy the example configuration and update it for your deployment:
+## Command-line usage
+
+Milvus Backup reads its connection settings from a configuration file. Copy the example and update it for your deployment — [Configuration](#configuration) explains what to change:
 
 ```shell
 cp configs/backup.yaml backup.yaml
 ```
 
-The main sections are:
-
-- `milvus`: how to reach Milvus — credentials, the gRPC endpoint and its TLS settings — and under `milvus.storage`, the storage the deployment keeps its data in. The `milvus.etcd` settings are only required when using `--backup_index_extra`. When connecting as a user other than `root`, see [Required Milvus privileges](docs/user_guide/privileges.md).
-- `backup`: where backup data is written, under `backup.storage`, and how much of the backup runs in parallel.
-- `restore`: restore concurrency and temporary file handling.
-- `transfer`: how objects move between the two storage backends.
-- `log`: log level and output settings.
-
-Both storage sections describe a backend the same way, and `backup.storage` inherits anything it does not name from `milvus.storage`. Backing up into the same backend takes little more than a bucket name; `rootPath` is the exception, and always defaults to `backup`.
-
-### Configuration examples
-
-| File | Scenario |
-|------|----------|
-| [backup.yaml](configs/backup.yaml) | MinIO, with every setting spelled out |
-| [backup-s3.yaml](configs/backup-s3.yaml) | Milvus on MinIO, backups on AWS S3 |
-| [backup-gcp.yaml](configs/backup-gcp.yaml) | Google Cloud Storage with a service account |
-| [backup-azure.yaml](configs/backup-azure.yaml) | Azure Blob Storage with an account key |
-| [backup-iam.yaml](configs/backup-iam.yaml) | AWS S3 with an instance role, no keys in the file |
-| [backup-local.yaml](configs/backup-local.yaml) | Milvus on MinIO, backups on a local disk |
-| [backup-local-milvus.yaml](configs/backup-local-milvus.yaml) | Milvus standalone with local storage (`COMMON_STORAGETYPE=local`), backups on MinIO |
-
-Use values that match the Milvus deployment. In common installations, the storage defaults differ:
-
-| Field | Docker Compose | Helm |
-|-------|----------------|------|
-| `milvus.storage.bucketName` | `a-bucket` | `milvus-bucket` |
-| `milvus.storage.rootPath` | `files` | `file` |
-
-Credentials can also be supplied through [environment variables](docs/user_guide/env_variables.md), and any value can be overridden for a single run with `--set`:
-
-```shell
-milvus-backup --set MILVUS_USER=root --set MILVUS_PASSWORD=Milvus list
-milvus-backup --set milvus.grpc.address=milvus-proxy list
-```
-
-Run `milvus-backup config show` to print the resolved configuration along with where each value came from.
-
-### Upgrading an existing configuration file
-
-Configuration files carry a `configVersion`. A file written before it existed still loads — it is read with the older schema and translated, with a warning naming the file. Convert one with:
-
-```shell
-milvus-backup config migrate --config backup.yaml -o backup-v2.yaml
-```
-
-The migration report is written to stderr and lists everything that needs a decision, such as a secret that has to move to a renamed environment variable, or a v1 variable whose parameter now belongs in the file. The converted file goes to stdout, or to `-o`.
-
-## Command-line usage
-
-Run the configuration check before creating a backup:
+Then validate the setup and run your first backup and restore:
 
 ```shell
 milvus-backup check
@@ -149,6 +76,81 @@ milvus-backup restore -n my_backup -r db1.coll1:db2.coll1 --filter db2.coll1
 ```
 
 Filtering on the pre-rename name matches nothing and restores nothing.
+
+## Compatibility
+
+Use the [latest release](https://github.com/zilliztech/milvus-backup/releases) whenever possible. The latest version supports backups from Milvus 2.2 and later, and restores to Milvus 2.5 and later.
+
+A backup can be restored only to the same or a newer Milvus version:
+
+| Backup version | Restore to 2.5 | Restore to 2.6 | Restore to 3.0* |
+|----------------|----------------|----------------|-----------------|
+| 2.2            | Supported      | Supported      | Supported       |
+| 2.3            | Supported      | Supported      | Supported       |
+| 2.4            | Supported      | Supported      | Supported       |
+| 2.5            | Supported      | Supported      | Supported       |
+| 2.6            | —              | Supported      | Supported       |
+| 3.0*           | —              | —              | Supported       |
+
+For example, a backup created from Milvus 2.6 cannot be restored to Milvus 2.5.
+
+\* Supported from Milvus 3.0.1 and later; 3.0.0 is not supported.
+
+### Backup formats
+
+On Milvus 3.0.1 and later, backups are taken in the snapshot format by default: Milvus freezes each collection into a snapshot and copies the data to the backup storage itself, keeping the bytes off the milvus-backup host. Older servers use the binlog format, which streams the data through milvus-backup, and `--format=binlog` selects it explicitly.
+
+The snapshot copy is performed by Milvus inside one storage service, so the snapshot format requires the backup storage to be the same service as the Milvus storage: another bucket, account, or region of the same cloud provider works, but a different provider — or a second self-hosted MinIO — does not, and milvus-backup refuses the backup instead of producing a partial one. The binlog format has no such requirement and moves data between any two supported backends.
+
+## Configuration
+
+The configuration file tells Milvus Backup how to reach Milvus, the storage used by Milvus, and the backup destination. Its main sections are:
+
+- `milvus`: how to reach Milvus — credentials, the gRPC endpoint and its TLS settings — and under `milvus.storage`, the storage the deployment keeps its data in. The `milvus.etcd` settings are only required when using `--backup_index_extra`. When connecting as a user other than `root`, see [Required Milvus privileges](docs/user_guide/privileges.md).
+- `backup`: where backup data is written, under `backup.storage`, and how much of the backup runs in parallel.
+- `restore`: restore concurrency and temporary file handling.
+- `transfer`: how objects move between the two storage backends.
+- `log`: log level and output settings.
+
+Both storage sections describe a backend the same way, and `backup.storage` inherits anything it does not name from `milvus.storage`. Backing up into the same backend takes little more than a bucket name; `rootPath` is the exception, and always defaults to `backup`.
+
+### Configuration examples
+
+| File | Scenario |
+|------|----------|
+| [backup.yaml](configs/backup.yaml) | MinIO, with every setting spelled out |
+| [backup-s3.yaml](configs/backup-s3.yaml) | Milvus on MinIO, backups on AWS S3 |
+| [backup-gcp.yaml](configs/backup-gcp.yaml) | Google Cloud Storage with a service account |
+| [backup-azure.yaml](configs/backup-azure.yaml) | Azure Blob Storage with an account key |
+| [backup-iam.yaml](configs/backup-iam.yaml) | AWS S3 with an instance role, no keys in the file |
+| [backup-local.yaml](configs/backup-local.yaml) | Milvus on MinIO, backups on a local disk |
+| [backup-local-milvus.yaml](configs/backup-local-milvus.yaml) | Milvus standalone with local storage (`COMMON_STORAGETYPE=local`), backups on MinIO |
+
+Use values that match the Milvus deployment. In common installations, the storage defaults differ:
+
+| Field | Docker Compose | Helm |
+|-------|----------------|------|
+| `milvus.storage.bucketName` | `a-bucket` | `milvus-bucket` |
+| `milvus.storage.rootPath` | `files` | `file` |
+
+Credentials can also be supplied through [environment variables](docs/user_guide/env_variables.md), and any value can be overridden for a single run with `--set`:
+
+```shell
+milvus-backup --set MILVUS_USER=root --set MILVUS_PASSWORD=Milvus list
+milvus-backup --set milvus.grpc.address=milvus-proxy list
+```
+
+Run `milvus-backup config show` to print the resolved configuration along with where each value came from.
+
+### Upgrading an existing configuration file
+
+Configuration files carry a `configVersion`. A file written before it existed still loads — it is read with the older schema and translated, with a warning naming the file. Convert one with:
+
+```shell
+milvus-backup config migrate --config backup.yaml -o backup-v2.yaml
+```
+
+The migration report is written to stderr and lists everything that needs a decision, such as a secret that has to move to a renamed environment variable, or a v1 variable whose parameter now belongs in the file. The converted file goes to stdout, or to `-o`.
 
 ## API server
 
@@ -220,23 +222,9 @@ Do not commit storage credentials to the repository. Prefer environment variable
 
 See [docs/FAQ.md](docs/FAQ.md) for common issues and troubleshooting advice.
 
-## Development
+## Contributing
 
-Build the binary:
-
-```shell
-make all
-```
-
-The resulting executable is written to `./milvus-backup`.
-
-Run the test suite:
-
-```shell
-make test
-```
-
-See [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a change.
+Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for the workflow, coding style, and how to run the test suite.
 
 ## License
 
