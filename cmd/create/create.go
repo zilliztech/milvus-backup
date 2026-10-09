@@ -15,7 +15,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/backup"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/filter"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
 // removedFlags are the create flags dropped in 0.6, after 0.5 accepted them with
@@ -160,7 +160,7 @@ func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
 		cmd.Println(summary)
 	}
 
-	job, err := app.NewBackupJob(ctx, params, taskmgr.DefaultMgr(), app.CreateBackupRequest{
+	job, err := app.NewBackupJob(ctx, params, jobstate.Default(), app.CreateBackupRequest{
 		TaskID: uuid.NewString(),
 		Option: opt,
 	})

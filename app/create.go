@@ -8,9 +8,9 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/backup"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 // ErrStorageNotReady means storage admission failed before a job was registered.
@@ -34,7 +34,7 @@ type BackupJob struct {
 	task *backup.Task
 }
 
-// Run executes the job. The outcome is also recorded in the task manager,
+// Run executes the job. The outcome is also recorded in the job state store,
 // where get_backup and the task API read it from.
 func (j *BackupJob) Run(ctx context.Context) error { return j.task.Execute(ctx) }
 
@@ -43,7 +43,7 @@ func (j *BackupJob) Run(ctx context.Context) error { return j.task.Execute(ctx) 
 // their request-id conventions and parse their own input format into Option
 // before calling.
 type CreateBackupRequest struct {
-	// TaskID is the id the job registers under in the task manager.
+	// TaskID is the id the job registers under in the job state store.
 	TaskID string
 
 	// Option carries the parsed backup parameters: the artifact name the job
@@ -54,10 +54,10 @@ type CreateBackupRequest struct {
 }
 
 // NewBackupJob creates both storage clients from the config and registers the
-// job: source List preflight first, then the task manager. The clients are
+// job: source List preflight first, then the job state store. The clients are
 // created per call; sharing them across calls is a lifecycle decision this
 // layer deliberately does not make.
-func NewBackupJob(ctx context.Context, params *cfg.Config, taskMgr *taskmgr.Mgr, req CreateBackupRequest) (*BackupJob, error) {
+func NewBackupJob(ctx context.Context, params *cfg.Config, store *jobstate.Store, req CreateBackupRequest) (*BackupJob, error) {
 	backupStorage, err := storage.NewBackupStorage(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("app: %w", err)
@@ -68,12 +68,12 @@ func NewBackupJob(ctx context.Context, params *cfg.Config, taskMgr *taskmgr.Mgr,
 		return nil, fmt.Errorf("app: %w", err)
 	}
 
-	return newBackupJob(ctx, params, taskMgr, milvusStorage, backupStorage, req)
+	return newBackupJob(ctx, params, store, milvusStorage, backupStorage, req)
 }
 
 // newBackupJob is NewBackupJob with the storage clients injected, so tests
 // exercise admission and registration without real storage behind the clients.
-func newBackupJob(ctx context.Context, params *cfg.Config, taskMgr *taskmgr.Mgr, milvusStorage, backupStorage storage.Client, req CreateBackupRequest) (*BackupJob, error) {
+func newBackupJob(ctx context.Context, params *cfg.Config, store *jobstate.Store, milvusStorage, backupStorage storage.Client, req CreateBackupRequest) (*BackupJob, error) {
 	if err := preflightSourceStorage(ctx, params, milvusStorage, req.Option.Strategy); err != nil {
 		return nil, err
 	}
@@ -87,7 +87,7 @@ func newBackupJob(ctx context.Context, params *cfg.Config, taskMgr *taskmgr.Mgr,
 		BackupStorage: backupStorage,
 		BackupDir:     mpath.BackupDir(params.Backup.Storage.RootPath.Val, req.Option.BackupName),
 		Params:        params,
-		TaskMgr:       taskMgr,
+		Store:         store,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("app: new backup task: %w", err)

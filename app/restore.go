@@ -7,10 +7,10 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 // RestoreJob is one registered restore job, ready to execute. A job is what
@@ -26,7 +26,7 @@ type RestoreJob struct {
 	task *restore.Task
 }
 
-// Run executes the job. The outcome is also recorded in the task manager,
+// Run executes the job. The outcome is also recorded in the job state store,
 // where get_restore and the task API read it from.
 func (j *RestoreJob) Run(ctx context.Context) error { return j.task.Execute(ctx) }
 
@@ -36,7 +36,7 @@ func (j *RestoreJob) Run(ctx context.Context) error { return j.task.Execute(ctx)
 // grammars do not map onto each other, so there is nothing transport-neutral
 // to put here instead.
 type RestoreRequest struct {
-	// TaskID identifies the restore job in the task manager. The transport
+	// TaskID identifies the restore job in the job state store. The transport
 	// defaults it when its contract carries no id.
 	TaskID string
 	// BackupName names the backup artifact to restore.
@@ -50,11 +50,11 @@ type RestoreRequest struct {
 // the job: validation against the backup storage first — the backup must
 // exist and its meta must be readable, because a not-found backup is the
 // caller's mistake and has to be answered before the job is registered —
-// then the task manager. NewBackupStorage also creates the backup bucket when
+// then the job state store. NewBackupStorage also creates the backup bucket when
 // it is missing: a restore may target a bucket nothing has written yet. The
 // clients are created per call; sharing them across calls is a lifecycle
 // decision this layer deliberately does not make.
-func NewRestoreJob(ctx context.Context, params *cfg.Config, taskMgr *taskmgr.Mgr, req RestoreRequest) (*RestoreJob, error) {
+func NewRestoreJob(ctx context.Context, params *cfg.Config, store *jobstate.Store, req RestoreRequest) (*RestoreJob, error) {
 	backupStorage, err := storage.NewBackupStorage(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("app: %w", err)
@@ -65,13 +65,13 @@ func NewRestoreJob(ctx context.Context, params *cfg.Config, taskMgr *taskmgr.Mgr
 		return nil, fmt.Errorf("app: %w", err)
 	}
 
-	return newRestoreJob(ctx, params, taskMgr, backupStorage, milvusStorage, req)
+	return newRestoreJob(ctx, params, store, backupStorage, milvusStorage, req)
 }
 
 // newRestoreJob is NewRestoreJob with the storage clients injected, so tests
 // exercise validation and registration without real storage behind the
 // clients.
-func newRestoreJob(ctx context.Context, params *cfg.Config, taskMgr *taskmgr.Mgr, backupStorage, milvusStorage storage.Client, req RestoreRequest) (*RestoreJob, error) {
+func newRestoreJob(ctx context.Context, params *cfg.Config, store *jobstate.Store, backupStorage, milvusStorage storage.Client, req RestoreRequest) (*RestoreJob, error) {
 	// A per-call root path is the transport forking the config, not a field
 	// of the request: the artifact directory resolves from the config as
 	// given.
@@ -90,7 +90,7 @@ func newRestoreJob(ctx context.Context, params *cfg.Config, taskMgr *taskmgr.Mgr
 		BackupStorage: backupStorage,
 		MilvusStorage: milvusStorage,
 
-		TaskMgr: taskMgr,
+		Store: store,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("app: new restore task: %w", err)

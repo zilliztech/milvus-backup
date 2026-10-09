@@ -10,7 +10,7 @@ packages:
     interfaces:
       MilvusServiceClient:
 
-  github.com/zilliztech/milvus-backup/internal/taskmgr:
+  github.com/zilliztech/milvus-backup/internal/jobstate:
     interfaces:
       RestoreCollTaskView:
       RestoreTaskView:

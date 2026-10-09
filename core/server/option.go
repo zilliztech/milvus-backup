@@ -6,7 +6,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
 // Config for setting params used by server.
@@ -66,7 +66,7 @@ func newDefaultConfig() *config {
 			return app.NewDeleteBackup(ctx, params)
 		},
 		newGetRestore: func() (getRestoreUC, error) {
-			return app.NewGetRestore(taskmgr.DefaultMgr()), nil
+			return app.NewGetRestore(jobstate.Default()), nil
 		},
 		newCheck: func(ctx context.Context, params *cfg.Config) (checkUC, error) {
 			return app.NewCheck(ctx, params)
@@ -75,16 +75,16 @@ func newDefaultConfig() *config {
 			return app.NewGetBackup(ctx, params)
 		},
 		newGetBackupTask: func() (getBackupTaskUC, error) {
-			return app.NewGetBackupTask(taskmgr.DefaultMgr()), nil
+			return app.NewGetBackupTask(jobstate.Default()), nil
 		},
 		newBackupJob: func(ctx context.Context, params *cfg.Config, req app.CreateBackupRequest) (backupJob, error) {
-			return app.NewBackupJob(ctx, params, taskmgr.DefaultMgr(), req)
+			return app.NewBackupJob(ctx, params, jobstate.Default(), req)
 		},
 		newRestoreJob: func(ctx context.Context, params *cfg.Config, req app.RestoreRequest) (restoreJob, error) {
-			return app.NewRestoreJob(ctx, params, taskmgr.DefaultMgr(), req)
+			return app.NewRestoreJob(ctx, params, jobstate.Default(), req)
 		},
 		newRestoreSecondaryJob: func(ctx context.Context, params *cfg.Config, req app.RestoreSecondaryRequest) (restoreJob, error) {
-			return app.NewRestoreSecondaryJob(ctx, params, taskmgr.DefaultMgr(), req)
+			return app.NewRestoreSecondaryJob(ctx, params, jobstate.Default(), req)
 		},
 	}
 }

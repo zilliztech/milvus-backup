@@ -22,7 +22,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
 func TestValidateRestoreRequest(t *testing.T) {
@@ -434,10 +434,10 @@ func withRestoreBackup(stub *stubRestoreFactory) Option {
 }
 
 // newStubRestoreView returns a task view the rendering can run over.
-func newStubRestoreView(t *testing.T) *taskmgr.MockRestoreTaskView {
+func newStubRestoreView(t *testing.T) *jobstate.MockRestoreTaskView {
 	t.Helper()
 
-	view := taskmgr.NewMockRestoreTaskView(t)
+	view := jobstate.NewMockRestoreTaskView(t)
 	view.EXPECT().ID().Return("task-1").Maybe()
 	view.EXPECT().StateCode().Return(backuppb.RestoreTaskStateCode_SUCCESS).Maybe()
 	view.EXPECT().ErrorMessage().Return("").Maybe()

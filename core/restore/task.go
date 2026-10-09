@@ -16,10 +16,10 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/storage"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 type DBMapping struct {
@@ -147,7 +147,7 @@ type TaskArgs struct {
 	BackupStorage storage.Client
 	MilvusStorage storage.Client
 
-	TaskMgr *taskmgr.Mgr
+	Store *jobstate.Store
 }
 
 type Task struct {
@@ -220,7 +220,7 @@ func NewTask(ctx context.Context, args TaskArgs) (*Task, error) {
 			zap.Bool("streaming", task.streaming))
 	}
 
-	args.TaskMgr.AddRestoreTask(args.TaskID)
+	args.Store.AddRestoreTask(args.TaskID)
 
 	return task, nil
 }
@@ -467,17 +467,17 @@ func (t *Task) Execute(ctx context.Context) error {
 
 	if err := t.privateExecute(ctx); err != nil {
 		t.logger.Error("restore task failed", zap.Error(err))
-		t.args.TaskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
+		t.args.Store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreFail(err))
 		return fmt.Errorf("restore: execute %w", err)
 	}
 
 	t.logger.Info("restore task finished")
-	t.args.TaskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreSuccess())
+	t.args.Store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreSuccess())
 	return nil
 }
 
 func (t *Task) privateExecute(ctx context.Context) error {
-	t.args.TaskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreExecuting())
+	t.args.Store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreExecuting())
 
 	// The server is only known once the client is connected, so this cannot be part of
 	// NewTask. Checking it once here beats one identical failure per collection.

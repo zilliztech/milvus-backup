@@ -16,8 +16,8 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 const _snapshotPollInterval = 3 * time.Second
@@ -38,7 +38,7 @@ type collSnapshotTask struct {
 	pollInterval time.Duration
 
 	grpcCli milvus.Grpc
-	taskMgr *taskmgr.Mgr
+	store   *jobstate.Store
 
 	logger *zap.Logger
 }
@@ -57,7 +57,7 @@ type collSnapshotTaskArgs struct {
 	skipParams       SkipParams
 
 	grpcCli milvus.Grpc
-	taskMgr *taskmgr.Mgr
+	store   *jobstate.Store
 }
 
 func newCollSnapshotTask(args collSnapshotTaskArgs) *collSnapshotTask {
@@ -70,7 +70,7 @@ func newCollSnapshotTask(args collSnapshotTaskArgs) *collSnapshotTask {
 
 	// The export job reported this as the size of the whole bundle, index files included,
 	// so it is what the restore job's progress is a fraction of.
-	args.taskMgr.UpdateRestoreTask(args.taskID, taskmgr.AddRestoreCollTask(args.target, args.collBackup.GetSize()))
+	args.store.UpdateRestoreTask(args.taskID, jobstate.AddRestoreCollTask(args.target, args.collBackup.GetSize()))
 
 	return &collSnapshotTask{
 		taskID: args.taskID,
@@ -88,7 +88,7 @@ func newCollSnapshotTask(args collSnapshotTaskArgs) *collSnapshotTask {
 		pollInterval: _snapshotPollInterval,
 
 		grpcCli: args.grpcCli,
-		taskMgr: args.taskMgr,
+		store:   args.store,
 
 		logger: logger,
 	}
@@ -100,16 +100,16 @@ func (ct *collSnapshotTask) Target() collref.Name { return ct.target }
 // restores its indexes and partitions, and copies the data. No bytes move through this
 // process, and nothing here creates anything in the target cluster.
 func (ct *collSnapshotTask) Execute(ctx context.Context) error {
-	ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.SetRestoreCollExecuting(ct.target))
+	ct.store.UpdateRestoreTask(ct.taskID, jobstate.SetRestoreCollExecuting(ct.target))
 
 	if err := ct.privateExecute(ctx); err != nil {
 		ct.logger.Error("restore collection from snapshot failed", zap.Error(err))
-		ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.SetRestoreCollFail(ct.target, err))
+		ct.store.UpdateRestoreTask(ct.taskID, jobstate.SetRestoreCollFail(ct.target, err))
 		return err
 	}
 
 	ct.logger.Info("restore collection from snapshot success")
-	ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.SetRestoreCollSuccess(ct.target))
+	ct.store.UpdateRestoreTask(ct.taskID, jobstate.SetRestoreCollSuccess(ct.target))
 
 	return nil
 }
@@ -287,7 +287,7 @@ func (ct *collSnapshotTask) waitRestore(ctx context.Context, jobID int64) error 
 	defer ticker.Stop()
 
 	job := strconv.FormatInt(jobID, 10)
-	ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.AddRestoreImportJob(ct.target, job, ct.collBackup.GetSize()))
+	ct.store.UpdateRestoreTask(ct.taskID, jobstate.AddRestoreImportJob(ct.target, job, ct.collBackup.GetSize()))
 
 	for {
 		info, err := ct.grpcCli.GetRestoreSnapshotState(ctx, jobID)
@@ -295,7 +295,7 @@ func (ct *collSnapshotTask) waitRestore(ctx context.Context, jobID int64) error 
 			return fmt.Errorf("restore: get restore snapshot state: %w", err)
 		}
 
-		ct.taskMgr.UpdateRestoreTask(ct.taskID, taskmgr.UpdateRestoreImportJob(ct.target, job, int(info.GetProgress())))
+		ct.store.UpdateRestoreTask(ct.taskID, jobstate.UpdateRestoreImportJob(ct.target, job, int(info.GetProgress())))
 
 		switch info.GetState() {
 		case milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted:

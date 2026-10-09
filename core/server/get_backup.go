@@ -10,9 +10,9 @@ import (
 
 	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 // getBackupUC is the slice of app.GetBackup the handler needs. The consumer
@@ -25,7 +25,7 @@ type getBackupUC interface {
 // getBackupTaskUC is the job-half counterpart of getBackupUC, the slice of
 // app.GetBackupTask the handler needs.
 type getBackupTaskUC interface {
-	Execute(ctx context.Context, req app.GetBackupTaskRequest) (taskmgr.BackupTaskView, error)
+	Execute(ctx context.Context, req app.GetBackupTaskRequest) (jobstate.BackupTaskView, error)
 }
 
 // Get backup Get backup interface
@@ -97,7 +97,7 @@ func (s *Server) handleGetBackup(c *echo.Context) error {
 	// name through it; an unknown ID has nothing to fall back to. A name only
 	// probes for a job — most backups outlive their creating process, so a
 	// miss is the common case, not an error.
-	var task taskmgr.BackupTaskView
+	var task jobstate.BackupTaskView
 	if id != "" {
 		task, err = taskUC.Execute(ctx, app.GetBackupTaskRequest{ID: id})
 		if err != nil {
@@ -110,7 +110,7 @@ func (s *Server) handleGetBackup(c *echo.Context) error {
 		task, err = taskUC.Execute(ctx, app.GetBackupTaskRequest{Name: name})
 		switch {
 		case err == nil:
-		case errors.Is(err, taskmgr.ErrTaskNotFound):
+		case errors.Is(err, jobstate.ErrTaskNotFound):
 			task = nil
 		default:
 			resp.Code = backuppb.ResponseCode_Fail

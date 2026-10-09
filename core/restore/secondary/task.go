@@ -23,9 +23,9 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/storage"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 type TaskArgs struct {
@@ -47,7 +47,7 @@ type TaskArgs struct {
 	// paths only from its own storage.
 	MilvusStorage storage.Client
 
-	TaskMgr *taskmgr.Mgr
+	Store *jobstate.Store
 }
 
 type Task struct {
@@ -58,18 +58,18 @@ type Task struct {
 
 	streamCli milvus.Stream
 
-	taskMgr *taskmgr.Mgr
+	store *jobstate.Store
 
 	logger *zap.Logger
 }
 
 func NewTask(args TaskArgs) (*Task, error) {
-	args.TaskMgr.AddRestoreTask(args.TaskID)
+	args.Store.AddRestoreTask(args.TaskID)
 
 	return &Task{
 		args: args,
 
-		taskMgr: args.TaskMgr,
+		store: args.Store,
 
 		logger: log.With(zap.String("task_id", args.TaskID)),
 	}, nil
@@ -110,7 +110,7 @@ func (t *Task) Execute(ctx context.Context) error {
 	// that cannot produce a matching secondary is rejected before it leaves a
 	// half-created collection behind.
 	if err := checkIndexExtra(t.args.Backup); err != nil {
-		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
+		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreFail(err))
 		return err
 	}
 
@@ -119,40 +119,40 @@ func (t *Task) Execute(ctx context.Context) error {
 		return err
 	}
 
-	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreExecuting())
+	t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreExecuting())
 
 	if err := t.checkBackupHasFullMeta(); err != nil {
-		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
+		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreFail(err))
 		return err
 	}
 
 	if err := t.checkTargetNotRestored(ctx); err != nil {
-		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
+		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreFail(err))
 		return err
 	}
 
 	if err := t.checkTargetIsUnused(ctx); err != nil {
-		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
+		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreFail(err))
 		return err
 	}
 
 	if err := t.runDBTasks(ctx); err != nil {
-		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
+		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreFail(err))
 		return fmt.Errorf("secondary: run database tasks: %w", err)
 	}
 
 	if err := t.runCollTasks(ctx); err != nil {
-		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
+		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreFail(err))
 		return fmt.Errorf("secondary: run collection tasks: %w", err)
 	}
 
 	if err := t.sendRBACMsg(ctx); err != nil {
-		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
+		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreFail(err))
 		return fmt.Errorf("secondary: send rbac msg: %w", err)
 	}
 
 	if err := t.sendFlushAll(ctx); err != nil {
-		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
+		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreFail(err))
 		return fmt.Errorf("secondary: send flush all: %w", err)
 	}
 
@@ -160,11 +160,11 @@ func (t *Task) Execute(ctx context.Context) error {
 	t.streamCli.WaitConfirm()
 
 	if err := t.verifyRestored(ctx); err != nil {
-		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreFail(err))
+		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreFail(err))
 		return err
 	}
 
-	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreSuccess())
+	t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreSuccess())
 	t.logger.Info("restore done")
 	return nil
 }
@@ -458,33 +458,33 @@ func (t *Task) ddlTaskArgs() ddlTaskArgs {
 
 func (t *Task) runCollTask(ctx context.Context, dbBackup *backuppb.DatabaseBackupInfo, collBackup *backuppb.CollectionBackupInfo, ddlArgs ddlTaskArgs, dmlArgs dmlTaskArgs, loadArgs loadTaskArgs) error {
 	collRef := collref.New(dbBackup.GetDbName(), collBackup.GetCollectionName())
-	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.AddRestoreCollTask(collRef, collBackup.GetSize()))
-	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollExecuting(collRef))
+	t.store.UpdateRestoreTask(t.args.TaskID, jobstate.AddRestoreCollTask(collRef, collBackup.GetSize()))
+	t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreCollExecuting(collRef))
 
 	ddlTask := newCollDDLTask(ddlArgs, dbBackup, collBackup)
 	if err := ddlTask.Execute(ctx); err != nil {
-		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollFail(collRef, err))
+		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreCollFail(collRef, err))
 		return fmt.Errorf("secondary: execute collection ddl task: %w", err)
 	}
 
 	if err := t.waitCollCreated(ctx, collRef, collBackup.GetCollectionId()); err != nil {
-		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollFail(collRef, err))
+		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreCollFail(collRef, err))
 		return err
 	}
 
 	dmlTask := newCollDMLTask(dmlArgs, collBackup)
 	if err := dmlTask.Execute(ctx); err != nil {
-		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollFail(collRef, err))
+		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreCollFail(collRef, err))
 		return fmt.Errorf("secondary: execute collection dml task: %w", err)
 	}
 
 	loadTask := newCollLoadTask(loadArgs, dbBackup, collBackup)
 	if err := loadTask.Execute(ctx); err != nil {
-		t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollFail(collRef, err))
+		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreCollFail(collRef, err))
 		return fmt.Errorf("secondary: execute collection load task: %w", err)
 	}
 
-	t.taskMgr.UpdateRestoreTask(t.args.TaskID, taskmgr.SetRestoreCollSuccess(collRef))
+	t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreCollSuccess(collRef))
 
 	return nil
 }

@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
 // stubGetRestore stands in for app.GetRestore: a canned view, the id it was
@@ -22,12 +22,12 @@ import (
 // reached the action at all.
 type stubGetRestore struct {
 	id         string
-	view       taskmgr.RestoreTaskView
+	view       jobstate.RestoreTaskView
 	executeErr error
 	calls      int
 }
 
-func (s *stubGetRestore) Execute(_ context.Context, id string) (taskmgr.RestoreTaskView, error) {
+func (s *stubGetRestore) Execute(_ context.Context, id string) (jobstate.RestoreTaskView, error) {
 	s.id = id
 	s.calls++
 	return s.view, s.executeErr
@@ -61,11 +61,11 @@ func getRestore(t *testing.T, s *Server, query, requestID string) backuppb.Resto
 
 // newRestoreTaskView returns a mock task view answering every read the v1
 // rendering makes.
-func newRestoreTaskView(t *testing.T) *taskmgr.MockRestoreTaskView {
+func newRestoreTaskView(t *testing.T) *jobstate.MockRestoreTaskView {
 	t.Helper()
 
 	now := time.Now()
-	task := taskmgr.NewMockRestoreTaskView(t)
+	task := jobstate.NewMockRestoreTaskView(t)
 	task.EXPECT().ID().Return("task-1")
 	task.EXPECT().StateCode().Return(backuppb.RestoreTaskStateCode_EXECUTING)
 	task.EXPECT().ErrorMessage().Return("coll1 fail")
@@ -137,7 +137,7 @@ func TestHandleGetRestore(t *testing.T) {
 
 	t.Run("MapsExecuteErrorToFail", func(t *testing.T) {
 		stub := &stubGetRestore{
-			executeErr: fmt.Errorf("app: get restore task task-1: %w", taskmgr.ErrTaskNotFound),
+			executeErr: fmt.Errorf("app: get restore task task-1: %w", jobstate.ErrTaskNotFound),
 		}
 		s := newListTestServer(t, withGetRestore(stub, nil))
 

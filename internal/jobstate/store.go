@@ -1,4 +1,4 @@
-package taskmgr
+package jobstate
 
 import (
 	"errors"
@@ -10,10 +10,10 @@ import (
 
 var ErrTaskNotFound = errors.New("task not found")
 
-var DefaultMgr = sync.OnceValue(NewMgr)
+var Default = sync.OnceValue(NewStore)
 
-func NewMgr() *Mgr {
-	return &Mgr{
+func NewStore() *Store {
+	return &Store{
 		restoreTask:        make(map[string]*RestoreTask),
 		migrateTask:        make(map[string]*MigrateTask),
 		backupTask:         make(map[string]*BackupTask),
@@ -21,7 +21,7 @@ func NewMgr() *Mgr {
 	}
 }
 
-type Mgr struct {
+type Store struct {
 	mu sync.RWMutex
 
 	// restoreID -> RestoreTask
@@ -36,14 +36,14 @@ type Mgr struct {
 	backupNameBackupID map[string]string
 }
 
-func (m *Mgr) AddRestoreTask(taskID string) {
+func (m *Store) AddRestoreTask(taskID string) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	m.restoreTask[taskID] = newRestoreTask(taskID)
 }
 
-func (m *Mgr) UpdateRestoreTask(taskID string, opts ...RestoreTaskOpt) {
+func (m *Store) UpdateRestoreTask(taskID string, opts ...RestoreTaskOpt) {
 	m.mu.RLock()
 	task := m.restoreTask[taskID]
 	m.mu.RUnlock()
@@ -53,7 +53,7 @@ func (m *Mgr) UpdateRestoreTask(taskID string, opts ...RestoreTaskOpt) {
 	}
 }
 
-func (m *Mgr) GetRestoreTask(taskID string) (RestoreTaskView, error) {
+func (m *Store) GetRestoreTask(taskID string) (RestoreTaskView, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -65,14 +65,14 @@ func (m *Mgr) GetRestoreTask(taskID string) (RestoreTaskView, error) {
 	return task, nil
 }
 
-func (m *Mgr) AddMigrateTask(taskID string, totalSize int64) {
+func (m *Store) AddMigrateTask(taskID string, totalSize int64) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	m.migrateTask[taskID] = newMigrateTask(taskID, totalSize)
 }
 
-func (m *Mgr) UpdateMigrateTask(taskID string, opts ...MigrateTaskOpt) {
+func (m *Store) UpdateMigrateTask(taskID string, opts ...MigrateTaskOpt) {
 	m.mu.RLock()
 	task := m.migrateTask[taskID]
 	m.mu.RUnlock()
@@ -82,7 +82,7 @@ func (m *Mgr) UpdateMigrateTask(taskID string, opts ...MigrateTaskOpt) {
 	}
 }
 
-func (m *Mgr) GetMigrateTask(taskID string) (*MigrateTask, error) {
+func (m *Store) GetMigrateTask(taskID string) (*MigrateTask, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -94,7 +94,7 @@ func (m *Mgr) GetMigrateTask(taskID string) (*MigrateTask, error) {
 	return task, nil
 }
 
-func (m *Mgr) AddBackupTask(taskID, backupName string) error {
+func (m *Store) AddBackupTask(taskID, backupName string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -124,7 +124,7 @@ func (m *Mgr) AddBackupTask(taskID, backupName string) error {
 	return nil
 }
 
-func (m *Mgr) UpdateBackupTask(taskID string, opts ...BackupTaskOpt) {
+func (m *Store) UpdateBackupTask(taskID string, opts ...BackupTaskOpt) {
 	m.mu.RLock()
 	task := m.backupTask[taskID]
 	m.mu.RUnlock()
@@ -134,7 +134,7 @@ func (m *Mgr) UpdateBackupTask(taskID string, opts ...BackupTaskOpt) {
 	}
 }
 
-func (m *Mgr) GetBackupTask(taskID string) (BackupTaskView, error) {
+func (m *Store) GetBackupTask(taskID string) (BackupTaskView, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
@@ -146,7 +146,7 @@ func (m *Mgr) GetBackupTask(taskID string) (BackupTaskView, error) {
 	return task, nil
 }
 
-func (m *Mgr) GetBackupTaskByName(backupName string) (BackupTaskView, error) {
+func (m *Store) GetBackupTaskByName(backupName string) (BackupTaskView, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 

@@ -17,13 +17,13 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
 func newTestCollSnapshotTask(t *testing.T, grpcCli milvus.Grpc, dropExist bool) *collSnapshotTask {
 	target := collref.New("db2", "coll2")
 
-	mgr := taskmgr.NewMgr()
+	mgr := jobstate.NewStore()
 	mgr.AddRestoreTask("task-1")
 
 	collBackup := &backuppb.CollectionBackupInfo{
@@ -42,7 +42,7 @@ func newTestCollSnapshotTask(t *testing.T, grpcCli milvus.Grpc, dropExist bool) 
 		source:     snapshotSource{dirURI: "s3://backup-bucket/backup/mybackup", externalSpec: `{"extfs":{}}`},
 		dropExist:  dropExist,
 		grpcCli:    grpcCli,
-		taskMgr:    mgr,
+		store:      mgr,
 	})
 	task.pollInterval = time.Millisecond
 	task.logger = zap.NewNop()
@@ -78,7 +78,7 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 		task := newTestCollSnapshotTask(t, cli, false)
 		require.NoError(t, task.Execute(context.Background()))
 
-		view, err := task.taskMgr.GetRestoreTask("task-1")
+		view, err := task.store.GetRestoreTask("task-1")
 		require.NoError(t, err)
 		assert.Equal(t, backuppb.RestoreTaskStateCode_SUCCESS, view.CollTasks()[task.target].StateCode())
 	})

@@ -11,8 +11,8 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 const (
@@ -30,7 +30,7 @@ type collSnapshotTask struct {
 
 	grpc milvus.Grpc
 
-	taskMgr     *taskmgr.Mgr
+	store       *jobstate.Store
 	metaBuilder *metaBuilder
 
 	logger *zap.Logger
@@ -49,7 +49,7 @@ func newCollSnapshotTask(collRef collref.Name, snapshotName string, target snaps
 		target:       target,
 		pollInterval: _snapshotPollInterval,
 		grpc:         args.Grpc,
-		taskMgr:      args.TaskMgr,
+		store:        args.Store,
 		metaBuilder:  args.MetaBuilder,
 		logger:       logger,
 	}
@@ -59,7 +59,7 @@ func newCollSnapshotTask(collRef collref.Name, snapshotName string, target snaps
 // directory, and records where the bundle landed. No bytes move through this process.
 func (st *collSnapshotTask) Execute(ctx context.Context) error {
 	st.logger.Info("start to backup collection with snapshot")
-	st.taskMgr.UpdateBackupTask(st.taskID, taskmgr.SetBackupCollDMLPrepare(st.collRef))
+	st.store.UpdateBackupTask(st.taskID, jobstate.SetBackupCollDMLPrepare(st.collRef))
 
 	// Compaction protection is left off: the snapshot holds its files against GC for
 	// as long as it exists, and it exists only for this export.
@@ -109,7 +109,7 @@ func (st *collSnapshotTask) Execute(ctx context.Context) error {
 		return fmt.Errorf("backup: add snapshot meta: %w", err)
 	}
 
-	st.taskMgr.UpdateBackupTask(st.taskID, taskmgr.SetBackupCollDMLDone(st.collRef))
+	st.store.UpdateBackupTask(st.taskID, jobstate.SetBackupCollDMLDone(st.collRef))
 	st.logger.Info("backup collection with snapshot done",
 		zap.String("metadata_path", metadataPath),
 		zap.Int64("total_files", info.GetTotalFiles()),
@@ -125,7 +125,7 @@ func (st *collSnapshotTask) waitExport(ctx context.Context, jobID int64) (*milvu
 	defer ticker.Stop()
 
 	// The job reports files, not bytes: total_bytes is only known once the bundle is
-	// published. Progress is a ratio either way, and nothing outside the task manager
+	// published. Progress is a ratio either way, and nothing outside the job state store
 	// reads these as a size.
 	var reportedTotal, copied int64
 	for {
@@ -136,10 +136,10 @@ func (st *collSnapshotTask) waitExport(ctx context.Context, jobID int64) (*milvu
 
 		if total := info.GetTotalFiles(); total != reportedTotal {
 			reportedTotal = total
-			st.taskMgr.UpdateBackupTask(st.taskID, taskmgr.SetBackupCollDMLExecuting(st.collRef, total))
+			st.store.UpdateBackupTask(st.taskID, jobstate.SetBackupCollDMLExecuting(st.collRef, total))
 		}
 		if done := info.GetCopiedFiles(); done > copied {
-			st.taskMgr.UpdateBackupTask(st.taskID, taskmgr.IncBackupCollCopiedSize(st.collRef, done-copied, 0))
+			st.store.UpdateBackupTask(st.taskID, jobstate.IncBackupCollCopiedSize(st.collRef, done-copied, 0))
 			copied = done
 		}
 

@@ -14,10 +14,10 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 const _allPartitionID = -1
@@ -42,7 +42,7 @@ type collDMLTask struct {
 
 	gcCtrl gcCtrl
 
-	taskMgr     *taskmgr.Mgr
+	store       *jobstate.Store
 	metaBuilder *metaBuilder
 
 	logger *zap.Logger
@@ -68,7 +68,7 @@ func newCollDMLTask(collRef collref.Name, args collTaskArgs) *collDMLTask {
 		grpc:    args.Grpc,
 		restful: args.Restful,
 
-		taskMgr:     args.TaskMgr,
+		store:       args.Store,
 		metaBuilder: args.MetaBuilder,
 
 		gcCtrl: args.gcCtrl,
@@ -342,7 +342,7 @@ func (dmlt *collDMLTask) getSegmentInfoByAPI(ctx context.Context, seg *milvuspb.
 func (dmlt *collDMLTask) Execute(ctx context.Context) error {
 	dmlt.logger.Info("start to backup dml of collection")
 
-	dmlt.taskMgr.UpdateBackupTask(dmlt.taskID, taskmgr.SetBackupCollDMLPrepare(dmlt.collRef))
+	dmlt.store.UpdateBackupTask(dmlt.taskID, jobstate.SetBackupCollDMLPrepare(dmlt.collRef))
 
 	describe, err := dmlt.grpc.DescribeCollection(ctx, dmlt.collRef.DBName(), dmlt.collRef.CollName())
 	if err != nil {
@@ -361,7 +361,7 @@ func (dmlt *collDMLTask) Execute(ctx context.Context) error {
 	}
 
 	size := lo.SumBy(segments, func(seg *backuppb.SegmentBackupInfo) int64 { return seg.GetSize() })
-	dmlt.taskMgr.UpdateBackupTask(dmlt.taskID, taskmgr.SetBackupCollDMLExecuting(dmlt.collRef, size))
+	dmlt.store.UpdateBackupTask(dmlt.taskID, jobstate.SetBackupCollDMLExecuting(dmlt.collRef, size))
 
 	if err := dmlt.backupSegmentsData(ctx, segments); err != nil {
 		return fmt.Errorf("backup: backup segments %w", err)
@@ -371,7 +371,7 @@ func (dmlt *collDMLTask) Execute(ctx context.Context) error {
 		return fmt.Errorf("backup: verify segments %w", err)
 	}
 
-	dmlt.taskMgr.UpdateBackupTask(dmlt.taskID, taskmgr.SetBackupCollDMLDone(dmlt.collRef))
+	dmlt.store.UpdateBackupTask(dmlt.taskID, jobstate.SetBackupCollDMLDone(dmlt.collRef))
 
 	return nil
 }
@@ -532,7 +532,7 @@ func (dmlt *collDMLTask) backupSegmentData(ctx context.Context, seg *backuppb.Se
 		Streaming: dmlt.streaming,
 		Sem:       dmlt.throttling.CopySem,
 		TraceFn: func(size int64, cost time.Duration) {
-			dmlt.taskMgr.UpdateBackupTask(dmlt.taskID, taskmgr.IncBackupCollCopiedSize(dmlt.collRef, size, cost))
+			dmlt.store.UpdateBackupTask(dmlt.taskID, jobstate.IncBackupCollCopiedSize(dmlt.collRef, size, cost))
 		},
 	}
 	cpTask := storage.NewCopyObjectsTask(opt)

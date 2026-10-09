@@ -16,9 +16,9 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/storage"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 func newTestTask() *Task {
@@ -66,7 +66,7 @@ func TestNewTask_SnapshotSource(t *testing.T) {
 		BackupDir:     "backup/mybackup/",
 		BackupStorage: backupStorage,
 		MilvusStorage: milvusStorage,
-		TaskMgr:       taskmgr.NewMgr(),
+		Store:         jobstate.NewStore(),
 	}
 
 	task, err := NewTask(t.Context(), args)
@@ -363,10 +363,10 @@ func TestTask_newCollTarget(t *testing.T) {
 
 	task := newTestTask()
 	task.args.Plan = &Plan{CollMapper: mapper}
-	mgr := taskmgr.NewMgr()
+	mgr := jobstate.NewStore()
 	mgr.AddRestoreTask("task1")
 	task.args.TaskID = "task1"
-	task.args.TaskMgr = mgr
+	task.args.Store = mgr
 
 	dbBackup := &backuppb.DatabaseBackupInfo{DbName: "db1"}
 	collBackup := &backuppb.CollectionBackupInfo{DbName: "db1", CollectionName: "coll1"}

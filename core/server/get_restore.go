@@ -8,16 +8,16 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 // getRestoreUC is the slice of app.GetRestore the handler needs. The consumer
 // defines it: app returns concrete types, and this narrow interface is what
 // handler tests stub out.
 type getRestoreUC interface {
-	Execute(ctx context.Context, id string) (taskmgr.RestoreTaskView, error)
+	Execute(ctx context.Context, id string) (jobstate.RestoreTaskView, error)
 }
 
 // GetRestore Get restore interface

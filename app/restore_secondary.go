@@ -6,8 +6,8 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/restore/secondary"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/storage"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 // RestoreSecondaryJob is one registered secondary-restore job, ready to
@@ -19,13 +19,13 @@ type RestoreSecondaryJob struct {
 	task *secondary.Task
 }
 
-// Run executes the job. The outcome is also recorded in the task manager,
+// Run executes the job. The outcome is also recorded in the job state store,
 // where get_restore and the task API read it from.
 func (j *RestoreSecondaryJob) Run(ctx context.Context) error { return j.task.Execute(ctx) }
 
 // RestoreSecondaryRequest selects one secondary restore.
 type RestoreSecondaryRequest struct {
-	// TaskID identifies the restore job in the task manager. The transport
+	// TaskID identifies the restore job in the job state store. The transport
 	// defaults it when its contract carries no id.
 	TaskID string
 	// BackupName names the backup artifact to restore.
@@ -38,10 +38,10 @@ type RestoreSecondaryRequest struct {
 
 // NewRestoreSecondaryJob creates both storage clients from the config and
 // registers one secondary-restore job: validation against the backup storage
-// first, then the task manager. The clients are created per call; sharing
+// first, then the job state store. The clients are created per call; sharing
 // them across calls is a lifecycle decision this layer deliberately does not
 // make.
-func NewRestoreSecondaryJob(ctx context.Context, params *cfg.Config, taskMgr *taskmgr.Mgr, req RestoreSecondaryRequest) (*RestoreSecondaryJob, error) {
+func NewRestoreSecondaryJob(ctx context.Context, params *cfg.Config, store *jobstate.Store, req RestoreSecondaryRequest) (*RestoreSecondaryJob, error) {
 	backupStorage, err := storage.NewBackupStorage(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("app: %w", err)
@@ -52,13 +52,13 @@ func NewRestoreSecondaryJob(ctx context.Context, params *cfg.Config, taskMgr *ta
 		return nil, fmt.Errorf("app: %w", err)
 	}
 
-	return newRestoreSecondaryJob(ctx, params, taskMgr, backupStorage, milvusStorage, req)
+	return newRestoreSecondaryJob(ctx, params, store, backupStorage, milvusStorage, req)
 }
 
 // newRestoreSecondaryJob is NewRestoreSecondaryJob with the storage clients
 // injected, so tests exercise validation and registration without real
 // storage behind the clients.
-func newRestoreSecondaryJob(ctx context.Context, params *cfg.Config, taskMgr *taskmgr.Mgr, backupStorage, milvusStorage storage.Client, req RestoreSecondaryRequest) (*RestoreSecondaryJob, error) {
+func newRestoreSecondaryJob(ctx context.Context, params *cfg.Config, store *jobstate.Store, backupStorage, milvusStorage storage.Client, req RestoreSecondaryRequest) (*RestoreSecondaryJob, error) {
 	backupDir, backup, err := backupMeta(ctx, backupStorage, params.Backup.Storage.RootPath.Val, req.BackupName)
 	if err != nil {
 		return nil, err
@@ -76,7 +76,7 @@ func newRestoreSecondaryJob(ctx context.Context, params *cfg.Config, taskMgr *ta
 		BackupStorage: backupStorage,
 		MilvusStorage: milvusStorage,
 
-		TaskMgr: taskMgr,
+		Store: store,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("app: new restore task: %w", err)

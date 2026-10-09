@@ -14,13 +14,13 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
 func newTestCollSnapshotTask(t *testing.T, collRef collref.Name, grpc milvus.Grpc) (*collSnapshotTask, *metaBuilder) {
-	mgr := taskmgr.NewMgr()
+	mgr := jobstate.NewStore()
 	require.NoError(t, mgr.AddBackupTask("task-1", "mybackup"))
-	mgr.UpdateBackupTask("task-1", taskmgr.AddBackupCollTasks([]collref.Name{collRef}))
+	mgr.UpdateBackupTask("task-1", jobstate.AddBackupCollTasks([]collref.Name{collRef}))
 
 	builder := newMetaBuilder("task-1", "mybackup")
 	builder.addCollection(collRef, &backuppb.CollectionBackupInfo{CollectionId: 1, CollectionName: collRef.CollName()})
@@ -32,7 +32,7 @@ func newTestCollSnapshotTask(t *testing.T, collRef collref.Name, grpc milvus.Grp
 		target:       snapshotTarget{Path: "s3://backup-bucket/backup/mybackup/bundle", Dir: "bundle"},
 		pollInterval: time.Millisecond,
 		grpc:         grpc,
-		taskMgr:      mgr,
+		store:        mgr,
 		metaBuilder:  builder,
 		logger:       zap.NewNop(),
 	}

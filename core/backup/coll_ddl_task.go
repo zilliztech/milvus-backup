@@ -13,10 +13,10 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 type collDDLTask struct {
@@ -26,7 +26,7 @@ type collDDLTask struct {
 
 	grpc milvus.Grpc
 
-	taskMgr     *taskmgr.Mgr
+	store       *jobstate.Store
 	metaBuilder *metaBuilder
 
 	logger *zap.Logger
@@ -39,7 +39,7 @@ func newCollDDLTask(collRef collref.Name, args collTaskArgs) *collDDLTask {
 		taskID:      args.TaskID,
 		collRef:     collRef,
 		grpc:        args.Grpc,
-		taskMgr:     args.TaskMgr,
+		store:       args.Store,
 		metaBuilder: args.MetaBuilder,
 		logger:      logger,
 	}
@@ -256,7 +256,7 @@ func (ddlt *collDDLTask) backupPartitionDDL(ctx context.Context, collID int64, c
 func (ddlt *collDDLTask) Execute(ctx context.Context) error {
 	ddlt.logger.Info("start to backup ddl of collection")
 
-	ddlt.taskMgr.UpdateBackupTask(ddlt.taskID, taskmgr.SetBackupCollDDLExecuting(ddlt.collRef))
+	ddlt.store.UpdateBackupTask(ddlt.taskID, jobstate.SetBackupCollDDLExecuting(ddlt.collRef))
 
 	descResp, err := ddlt.grpc.DescribeCollection(ctx, ddlt.collRef.DBName(), ddlt.collRef.CollName())
 	if err != nil {
@@ -301,7 +301,7 @@ func (ddlt *collDDLTask) Execute(ctx context.Context) error {
 	}
 
 	ddlt.metaBuilder.addCollection(ddlt.collRef, collBackup)
-	ddlt.taskMgr.UpdateBackupTask(ddlt.taskID, taskmgr.SetBackupCollDDLDone(ddlt.collRef))
+	ddlt.store.UpdateBackupTask(ddlt.taskID, jobstate.SetBackupCollDDLDone(ddlt.collRef))
 
 	ddlt.logger.Info("backup ddl of collection done")
 

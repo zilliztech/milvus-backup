@@ -10,8 +10,8 @@ import (
 	"github.com/zilliztech/milvus-backup/core/tasklet"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/storage"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 // restfulImportPlanner plans imports for the v2 restful bulk insert api. The
@@ -45,7 +45,7 @@ type restfulImportPlanner struct {
 	multiL0InOneJob bool
 
 	restfulCli milvus.Restful
-	taskMgr    *taskmgr.Mgr
+	store      *jobstate.Store
 	logger     *zap.Logger
 }
 
@@ -67,7 +67,7 @@ func newRestfulImportPlanner(dt *collDMLTask, multiL0InOneJob bool) *restfulImpo
 		multiL0InOneJob:     multiL0InOneJob,
 
 		restfulCli: dt.restfulCli,
-		taskMgr:    dt.taskMgr,
+		store:      dt.store,
 		logger:     dt.logger,
 	}
 }
@@ -109,7 +109,7 @@ func (p *restfulImportPlanner) newTask(partitionName string, g dirGroup, dirs []
 		milvusLocalPath: p.milvusLocalPath,
 
 		restfulCli: p.restfulCli,
-		taskMgr:    p.taskMgr,
+		store:      p.store,
 		logger:     p.logger,
 	}
 }
@@ -144,7 +144,7 @@ type importViaRESTFulTask struct {
 	milvusLocalPath string
 
 	restfulCli milvus.Restful
-	taskMgr    *taskmgr.Mgr
+	store      *jobstate.Store
 	logger     *zap.Logger
 }
 
@@ -202,7 +202,7 @@ func (rt *importViaRESTFulTask) sendImportReq(ctx context.Context) (string, erro
 	rt.logger.Info("create bulk insert via restful success", zap.String("job_id", jobID))
 
 	size := lo.SumBy(rt.dirs, func(dir partitionDir) int64 { return dir.size })
-	rt.taskMgr.UpdateRestoreTask(rt.taskID, taskmgr.AddRestoreImportJob(rt.target, jobID, size))
+	rt.store.UpdateRestoreTask(rt.taskID, jobstate.AddRestoreImportJob(rt.target, jobID, size))
 
 	return jobID, nil
 }
@@ -221,14 +221,14 @@ func (rt *importViaRESTFulTask) waitImport(ctx context.Context, jobID string) er
 		case string(milvus.ImportStateFailed):
 			return importJobState{failedReason: resp.Data.Reason}, nil
 		case string(milvus.ImportStateCompleted):
-			rt.taskMgr.UpdateRestoreTask(rt.taskID, taskmgr.UpdateRestoreImportJob(rt.target, jobID, 100))
+			rt.store.UpdateRestoreTask(rt.taskID, jobstate.UpdateRestoreImportJob(rt.target, jobID, 100))
 			return importJobState{completed: true}, nil
 		default:
 			return importJobState{progress: resp.Data.Progress}, nil
 		}
 	}
 
-	return waitImportJob(ctx, rt.logger, rt.taskMgr, rt.taskID, rt.target, jobID, state)
+	return waitImportJob(ctx, rt.logger, rt.store, rt.taskID, rt.target, jobID, state)
 }
 
 // toPaths builds the [insertLogDir, deltaLogDir] argument for the restful bulk

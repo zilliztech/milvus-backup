@@ -10,7 +10,7 @@ import (
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/migrate"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
 type options struct {
@@ -45,7 +45,7 @@ func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
 		return err
 	}
 
-	taskStat, err := taskmgr.DefaultMgr().GetMigrateTask(taskID)
+	taskStat, err := jobstate.Default().GetMigrateTask(taskID)
 	if err != nil {
 		return err
 	}

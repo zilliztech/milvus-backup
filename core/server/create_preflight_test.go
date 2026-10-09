@@ -21,7 +21,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
 // Use real storage clients against an HTTP stub so these tests cover both the
@@ -75,10 +75,10 @@ func callCreate(ctx context.Context, t *testing.T, s *Server, req *backuppb.Crea
 
 func requireNoBackupTask(t *testing.T, req *backuppb.CreateBackupRequest, dest string) {
 	t.Helper()
-	_, err := taskmgr.DefaultMgr().GetBackupTask(req.RequestId)
-	assert.ErrorIs(t, err, taskmgr.ErrTaskNotFound)
-	_, err = taskmgr.DefaultMgr().GetBackupTaskByName(req.BackupName)
-	assert.ErrorIs(t, err, taskmgr.ErrTaskNotFound)
+	_, err := jobstate.Default().GetBackupTask(req.RequestId)
+	assert.ErrorIs(t, err, jobstate.ErrTaskNotFound)
+	_, err = jobstate.Default().GetBackupTaskByName(req.BackupName)
+	assert.ErrorIs(t, err, jobstate.ErrTaskNotFound)
 	entries, err := os.ReadDir(dest)
 	require.NoError(t, err)
 	assert.Empty(t, entries)
@@ -124,9 +124,9 @@ func TestCreateStoragePreflightRetry(t *testing.T) {
 				assert.Equal(t, backuppb.ResponseCode_Fail, resp.Code)
 				assert.Contains(t, resp.Msg, "read ca cert")
 			}
-			_, err := taskmgr.DefaultMgr().GetBackupTask(req.RequestId)
+			_, err := jobstate.Default().GetBackupTask(req.RequestId)
 			require.NoError(t, err)
-			_, err = taskmgr.DefaultMgr().GetBackupTaskByName(req.BackupName)
+			_, err = jobstate.Default().GetBackupTaskByName(req.BackupName)
 			require.NoError(t, err)
 			require.EqualValues(t, 2, calls.Load())
 		})

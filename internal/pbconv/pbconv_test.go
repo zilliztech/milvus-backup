@@ -12,7 +12,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/collref"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
 func TestBakKVToMilvusKV(t *testing.T) {
@@ -50,7 +50,7 @@ func TestMilvusKVToMap(t *testing.T) {
 func TestRestoreCollTaskViewToResp(t *testing.T) {
 	now := time.Now()
 	collRef := collref.New("db1", "coll1")
-	taskView := taskmgr.NewMockRestoreCollTaskView(t)
+	taskView := jobstate.NewMockRestoreCollTaskView(t)
 	taskView.EXPECT().ID().Return("id1")
 	taskView.EXPECT().StateCode().Return(backuppb.RestoreTaskStateCode_INITIAL)
 	taskView.EXPECT().ErrorMessage().Return("error message")
@@ -70,7 +70,7 @@ func TestRestoreCollTaskViewToResp(t *testing.T) {
 func TestRestoreTaskViewToResp(t *testing.T) {
 	now := time.Now()
 
-	collTaskView := taskmgr.NewMockRestoreCollTaskView(t)
+	collTaskView := jobstate.NewMockRestoreCollTaskView(t)
 	collTaskView.EXPECT().ID().Return("id1")
 	collTaskView.EXPECT().StateCode().Return(backuppb.RestoreTaskStateCode_INITIAL)
 	collTaskView.EXPECT().ErrorMessage().Return("error message")
@@ -78,14 +78,14 @@ func TestRestoreTaskViewToResp(t *testing.T) {
 	collTaskView.EXPECT().EndTime().Return(now)
 	collTaskView.EXPECT().Progress().Return(int32(100))
 
-	taskView := taskmgr.NewMockRestoreTaskView(t)
+	taskView := jobstate.NewMockRestoreTaskView(t)
 	taskView.EXPECT().ID().Return("id1")
 	taskView.EXPECT().StateCode().Return(backuppb.RestoreTaskStateCode_INITIAL)
 	taskView.EXPECT().ErrorMessage().Return("error message")
 	taskView.EXPECT().StartTime().Return(now)
 	taskView.EXPECT().EndTime().Return(now)
 	taskView.EXPECT().Progress().Return(int32(100))
-	taskView.EXPECT().CollTasks().Return(map[collref.Name]taskmgr.RestoreCollTaskView{
+	taskView.EXPECT().CollTasks().Return(map[collref.Name]jobstate.RestoreCollTaskView{
 		collref.New("db1", "coll1"): collTaskView,
 	})
 

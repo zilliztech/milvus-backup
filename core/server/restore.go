@@ -19,9 +19,9 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 	"github.com/zilliztech/milvus-backup/internal/validate"
 )
 
@@ -166,7 +166,7 @@ func (s *Server) restoreAsync(job restoreJob, request *backuppb.RestoreBackupReq
 // restoreTaskView reads the view of a restore job through the get-restore
 // usecase — the same usecase the /get_restore endpoint reads state through,
 // so the job half has one reader in this package.
-func (s *Server) restoreTaskView(ctx context.Context, taskID string) (taskmgr.RestoreTaskView, error) {
+func (s *Server) restoreTaskView(ctx context.Context, taskID string) (jobstate.RestoreTaskView, error) {
 	uc, err := s.config.newGetRestore()
 	if err != nil {
 		return nil, err

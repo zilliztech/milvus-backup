@@ -18,7 +18,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
 func TestGRPCImportPlannerPlanTasks(t *testing.T) {
@@ -100,10 +100,10 @@ func newLocalGRPCTask(t *testing.T, keepTempFiles bool) (*importViaGRPCTask, str
 	backupCli := newTestStorageClient(t, cfg.ProviderLocal)
 	milvusCli := newTestStorageClient(t, cfg.ProviderLocal)
 
-	mgr := taskmgr.NewMgr()
+	mgr := jobstate.NewStore()
 	target := collref.New("db", "coll")
 	mgr.AddRestoreTask("task1")
-	mgr.UpdateRestoreTask("task1", taskmgr.AddRestoreCollTask(target, 5))
+	mgr.UpdateRestoreTask("task1", jobstate.AddRestoreCollTask(target, 5))
 
 	staging := &copyTask{
 		src:            backupCli,
@@ -125,7 +125,7 @@ func newLocalGRPCTask(t *testing.T, keepTempFiles bool) (*importViaGRPCTask, str
 		milvusStorage:   milvusCli,
 		milvusRootPath:  milvusRoot,
 		milvusLocalPath: milvusRoot,
-		taskMgr:         mgr,
+		store:           mgr,
 		logger:          zap.NewNop(),
 	}
 	return task, backupRoot, milvusRoot

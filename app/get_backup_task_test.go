@@ -7,12 +7,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
 func TestGetBackupTaskExecute(t *testing.T) {
 	t.Run("ByName", func(t *testing.T) {
-		mgr := taskmgr.NewMgr()
+		mgr := jobstate.NewStore()
 		require.NoError(t, mgr.AddBackupTask("task-1", "backup1"))
 
 		uc := NewGetBackupTask(mgr)
@@ -24,7 +24,7 @@ func TestGetBackupTaskExecute(t *testing.T) {
 	})
 
 	t.Run("ByID", func(t *testing.T) {
-		mgr := taskmgr.NewMgr()
+		mgr := jobstate.NewStore()
 		require.NoError(t, mgr.AddBackupTask("task-1", "backup1"))
 
 		uc := NewGetBackupTask(mgr)
@@ -35,7 +35,7 @@ func TestGetBackupTaskExecute(t *testing.T) {
 	})
 
 	t.Run("IDWinsOverName", func(t *testing.T) {
-		mgr := taskmgr.NewMgr()
+		mgr := jobstate.NewStore()
 		require.NoError(t, mgr.AddBackupTask("task-1", "backup1"))
 		require.NoError(t, mgr.AddBackupTask("task-2", "backup2"))
 
@@ -48,23 +48,23 @@ func TestGetBackupTaskExecute(t *testing.T) {
 	})
 
 	t.Run("UnknownNameIsTaskNotFound", func(t *testing.T) {
-		uc := NewGetBackupTask(taskmgr.NewMgr())
+		uc := NewGetBackupTask(jobstate.NewStore())
 		task, err := uc.Execute(context.Background(), GetBackupTaskRequest{Name: "backup1"})
 
 		assert.Nil(t, task)
-		assert.ErrorIs(t, err, taskmgr.ErrTaskNotFound)
+		assert.ErrorIs(t, err, jobstate.ErrTaskNotFound)
 	})
 
 	t.Run("UnknownIDIsTaskNotFound", func(t *testing.T) {
-		uc := NewGetBackupTask(taskmgr.NewMgr())
+		uc := NewGetBackupTask(jobstate.NewStore())
 		task, err := uc.Execute(context.Background(), GetBackupTaskRequest{ID: "task-1"})
 
 		assert.Nil(t, task)
-		assert.ErrorIs(t, err, taskmgr.ErrTaskNotFound)
+		assert.ErrorIs(t, err, jobstate.ErrTaskNotFound)
 	})
 
 	t.Run("RejectsEmptyNameAndID", func(t *testing.T) {
-		uc := NewGetBackupTask(taskmgr.NewMgr())
+		uc := NewGetBackupTask(jobstate.NewStore())
 		task, err := uc.Execute(context.Background(), GetBackupTaskRequest{})
 
 		assert.Nil(t, task)

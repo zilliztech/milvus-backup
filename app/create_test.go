@@ -13,8 +13,8 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/backup"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/storage"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 // expectClientConfigs teaches both mock clients the config probe NewTask does
@@ -32,14 +32,14 @@ func TestNewBackupJob(t *testing.T) {
 		milvusStorage := storage.NewMockClient(t)
 		backupStorage := storage.NewMockClient(t)
 		expectClientConfigs(t, milvusStorage, backupStorage)
-		taskMgr := taskmgr.NewMgr()
+		store := jobstate.NewStore()
 
-		job, err := newBackupJob(context.Background(), cfg.New(), taskMgr, milvusStorage, backupStorage,
+		job, err := newBackupJob(context.Background(), cfg.New(), store, milvusStorage, backupStorage,
 			CreateBackupRequest{TaskID: "task-1", Option: backup.Option{BackupName: "backup1"}})
 
 		require.NoError(t, err)
 		require.NotNil(t, job)
-		view, err := taskMgr.GetBackupTask("task-1")
+		view, err := store.GetBackupTask("task-1")
 		require.NoError(t, err)
 		assert.Equal(t, "backup1", view.Name())
 	})
@@ -49,13 +49,13 @@ func TestNewBackupJob(t *testing.T) {
 		backupStorage := storage.NewMockClient(t)
 		expectClientConfigs(t, milvusStorage, backupStorage)
 		expectClientConfigs(t, milvusStorage, backupStorage)
-		taskMgr := taskmgr.NewMgr()
+		store := jobstate.NewStore()
 
-		_, err := newBackupJob(context.Background(), cfg.New(), taskMgr, milvusStorage, backupStorage,
+		_, err := newBackupJob(context.Background(), cfg.New(), store, milvusStorage, backupStorage,
 			CreateBackupRequest{TaskID: "task-1", Option: backup.Option{BackupName: "backup1"}})
 		require.NoError(t, err)
 
-		job, err := newBackupJob(context.Background(), cfg.New(), taskMgr, milvusStorage, backupStorage,
+		job, err := newBackupJob(context.Background(), cfg.New(), store, milvusStorage, backupStorage,
 			CreateBackupRequest{TaskID: "task-2", Option: backup.Option{BackupName: "backup1"}})
 
 		assert.Nil(t, job)
@@ -69,31 +69,31 @@ func TestNewBackupJobPreflight(t *testing.T) {
 		dest := storage.NewMockClient(t)
 		params := cfg.New()
 		params.Milvus.Storage.RootPath.Val = "instance/"
-		taskMgr := taskmgr.NewMgr()
+		store := jobstate.NewStore()
 		req := CreateBackupRequest{TaskID: "retry-id", Option: backup.Option{BackupName: "retry_backup"}}
 		denied := errors.New("list access denied")
 		source.EXPECT().NewObjectIter(mock.Anything, "instance/insert_log/", true).Return(errorSeq(denied)).Once()
 		source.EXPECT().Config().Return(storage.Config{Bucket: "source-bucket"})
 
-		job, err := newBackupJob(context.Background(), params, taskMgr, source, dest, req)
+		job, err := newBackupJob(context.Background(), params, store, source, dest, req)
 
 		assert.Nil(t, job)
 		assert.ErrorIs(t, err, ErrStorageNotReady)
 		assert.ErrorIs(t, err, denied)
 		assert.ErrorContains(t, err, "source-bucket")
-		_, err = taskMgr.GetBackupTask(req.TaskID)
-		assert.ErrorIs(t, err, taskmgr.ErrTaskNotFound)
-		_, err = taskMgr.GetBackupTaskByName(req.Option.BackupName)
-		assert.ErrorIs(t, err, taskmgr.ErrTaskNotFound)
+		_, err = store.GetBackupTask(req.TaskID)
+		assert.ErrorIs(t, err, jobstate.ErrTaskNotFound)
+		_, err = store.GetBackupTaskByName(req.Option.BackupName)
+		assert.ErrorIs(t, err, jobstate.ErrTaskNotFound)
 
 		// Reuse the same client and request after access becomes available.
 		source.EXPECT().NewObjectIter(mock.Anything, "instance/insert_log/", true).
 			Return(storage.NewMockObjectIterator([]storage.ObjectAttr{{Key: "first"}})).Once()
 		dest.EXPECT().Config().Return(storage.Config{})
-		job, err = newBackupJob(context.Background(), params, taskMgr, source, dest, req)
+		job, err = newBackupJob(context.Background(), params, store, source, dest, req)
 		require.NoError(t, err)
 		assert.NotNil(t, job)
-		view, err := taskMgr.GetBackupTask(req.TaskID)
+		view, err := store.GetBackupTask(req.TaskID)
 		require.NoError(t, err)
 		assert.Equal(t, req.Option.BackupName, view.Name())
 	})
@@ -103,7 +103,7 @@ func TestNewBackupJobPreflight(t *testing.T) {
 		dest := storage.NewMockClient(t)
 		source.EXPECT().Config().Return(storage.Config{})
 		dest.EXPECT().Config().Return(storage.Config{})
-		job, err := newBackupJob(context.Background(), cfg.New(), taskmgr.NewMgr(), source, dest,
+		job, err := newBackupJob(context.Background(), cfg.New(), jobstate.NewStore(), source, dest,
 			CreateBackupRequest{TaskID: "meta", Option: backup.Option{BackupName: "meta_backup", Strategy: backup.StrategyMetaOnly}})
 		assert.NoError(t, err)
 		assert.NotNil(t, job)
@@ -112,7 +112,7 @@ func TestNewBackupJobPreflight(t *testing.T) {
 	t.Run("BoundsListDeadlineAndPreservesCancellation", func(t *testing.T) {
 		source := storage.NewMockClient(t)
 		dest := storage.NewMockClient(t)
-		taskMgr := taskmgr.NewMgr()
+		store := jobstate.NewStore()
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		source.EXPECT().NewObjectIter(mock.Anything, mock.Anything, true).RunAndReturn(func(probeCtx context.Context, _ string, _ bool) iter.Seq2[storage.ObjectAttr, error] {
@@ -126,13 +126,13 @@ func TestNewBackupJobPreflight(t *testing.T) {
 			}
 		}).Once()
 		source.EXPECT().Config().Return(storage.Config{})
-		job, err := newBackupJob(ctx, cfg.New(), taskMgr, source, dest,
+		job, err := newBackupJob(ctx, cfg.New(), store, source, dest,
 			CreateBackupRequest{TaskID: "cancel", Option: backup.Option{BackupName: "cancel_backup"}})
 		assert.Nil(t, job)
 		assert.ErrorIs(t, err, ErrStorageNotReady)
 		assert.ErrorIs(t, err, context.Canceled)
-		_, err = taskMgr.GetBackupTask("cancel")
-		assert.ErrorIs(t, err, taskmgr.ErrTaskNotFound)
+		_, err = store.GetBackupTask("cancel")
+		assert.ErrorIs(t, err, jobstate.ErrTaskNotFound)
 	})
 }
 
