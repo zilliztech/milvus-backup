@@ -20,6 +20,20 @@ const (
 	// between reconnect attempts when the gRPC stream fails.
 	pchReconnectInitialBackoff = 100 * time.Millisecond
 	pchReconnectMaxBackoff     = 10 * time.Second
+
+	// pchMinEstablishedLifetime is how long a stream must stay open, when it
+	// confirms nothing, before the reconnect loop treats the attempt as
+	// established and resets backoff. An accept-then-immediate close is
+	// shorter than this and takes the backoff path.
+	pchMinEstablishedLifetime = time.Second
+
+	// pchFailureSummaryInterval rate-limits the channel-level failure report.
+	// Per-attempt lines stay at Debug; the Warn is at most one per interval.
+	pchFailureSummaryInterval = 5 * time.Second
+
+	// pchNoProgressWarnAfter is how long WaitConfirm stays quiet before
+	// warning that a non-empty channel has not been confirmed.
+	pchNoProgressWarnAfter = 15 * time.Second
 )
 
 // Stream is the replicate stream client used by the secondary restore path.
@@ -209,6 +223,16 @@ type pchClient struct {
 	finishedCh chan struct{}
 
 	logger *zap.Logger
+
+	// mu guards the failure streak and the confirm counters. Lock order is
+	// mu then the queue mutex: never call into the queue while holding mu.
+	mu                  sync.Mutex
+	consecutiveFailures int
+	failingSince        time.Time
+	lastSummaryAt       time.Time
+	totalConfirmed      int
+	lastConfirmAt       time.Time
+	connConfirmed       int // messages this connection's Confirm dropped
 }
 
 func newPchClient(ctx context.Context, sourceClusterID, taskID, pch string, grpc Grpc) *pchClient {
@@ -233,9 +257,61 @@ func (p *pchClient) enqueue(ctx context.Context, msgs ...*commonpb.ImmutableMess
 }
 
 func (p *pchClient) waitConfirm() {
-	if err := p.queue.WaitEmpty(p.ctx); err != nil {
-		p.logger.Warn("wait confirm aborted", zap.Error(err))
+	done := make(chan error, 1)
+	go func() {
+		done <- p.queue.WaitEmpty(p.ctx)
+	}()
+
+	waitStart := time.Now()
+	ticker := time.NewTicker(pchNoProgressWarnAfter)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case err := <-done:
+			if err != nil {
+				p.logger.Warn("wait confirm aborted", zap.Error(err))
+			}
+			return
+		case now := <-ticker.C:
+			p.warnIfNoProgress(waitStart, now)
+		}
 	}
+}
+
+// warnIfNoProgress logs when the queue is non-empty and this channel has not
+// confirmed for pchNoProgressWarnAfter. Silence is measured from lastConfirmAt
+// when that is set, otherwise from the later of the wait start and
+// failingSince. A confirm already older than the interval does not look
+// healthy just because the wait started now, and a zero failingSince does not
+// warn a freshly enqueued channel on entry.
+func (p *pchClient) warnIfNoProgress(waitStart, now time.Time) {
+	p.mu.Lock()
+	confirmed := p.totalConfirmed
+	lastConfirm := p.lastConfirmAt
+	failingSince := p.failingSince
+	p.mu.Unlock()
+
+	anchor := waitStart
+	if !lastConfirm.IsZero() {
+		anchor = lastConfirm
+	} else if failingSince.After(anchor) {
+		anchor = failingSince
+	}
+	silent := now.Sub(anchor)
+	if silent < pchNoProgressWarnAfter {
+		return
+	}
+
+	head, n, ok := p.queue.Head()
+	if !ok {
+		return
+	}
+	p.logger.Warn("replicate stream made no progress",
+		zap.Int("confirmed", confirmed),
+		zap.Int("queued", n),
+		zap.Duration("no_progress_for", silent),
+		zap.Object("head", newMsgLogObject(head)))
 }
 
 func (p *pchClient) wait() {
@@ -251,18 +327,25 @@ func (p *pchClient) runForever() {
 			return
 		}
 
-		established := p.runOneConnection()
+		established, cause := p.runOneConnection()
 
+		// Parent cancellation is not a failure of the channel. Return before
+		// the backoff sleep and before the streak is touched.
 		if p.ctx.Err() != nil {
 			return
 		}
 
 		if established {
+			p.resetFailureStreak()
 			backoff = pchReconnectInitialBackoff
 			continue
 		}
 
-		p.logger.Warn("replicate stream reconnect", zap.Duration("backoff", backoff))
+		if !errors.Is(cause, context.Canceled) {
+			p.noteFailure(cause, backoff)
+		}
+
+		p.logger.Debug("replicate stream reconnect", zap.Duration("backoff", backoff))
 		select {
 		case <-time.After(backoff):
 		case <-p.ctx.Done():
@@ -276,16 +359,23 @@ func (p *pchClient) runForever() {
 }
 
 // runOneConnection opens one gRPC stream, runs sendLoop+recvLoop until either
-// fails, then tears down. Returns true if the connection actually established
-// (so the outer loop resets backoff), false otherwise.
-func (p *pchClient) runOneConnection() (established bool) {
+// fails, then tears down. established is true only when this connection
+// confirmed at least one message or stayed open for pchMinEstablishedLifetime,
+// so the outer loop resets backoff. A stream the peer accepts and closes at
+// once is not established and takes the backoff path. cause is the create or
+// loop error, nil when the connection ended without one.
+func (p *pchClient) runOneConnection() (established bool, cause error) {
 	connCtx, connCancel := context.WithCancel(p.ctx)
 	defer connCancel()
 
+	p.mu.Lock()
+	p.connConfirmed = 0
+	p.mu.Unlock()
+
 	cli, err := p.grpc.CreateReplicateStream(connCtx, p.sourceClusterID)
 	if err != nil {
-		p.logger.Warn("create replicate stream failed", zap.Error(err))
-		return false
+		p.logger.Debug("create replicate stream failed", zap.Error(err))
+		return false, err
 	}
 	defer func() {
 		if err := cli.CloseSend(); err != nil {
@@ -293,7 +383,8 @@ func (p *pchClient) runOneConnection() (established bool) {
 		}
 	}()
 
-	p.logger.Info("replicate stream connected")
+	openedAt := time.Now()
+	p.logger.Debug("replicate stream opened")
 
 	// Rewind the read cursor so any unconfirmed messages from the previous
 	// connection are replayed on this fresh stream in time-tick order.
@@ -327,9 +418,70 @@ func (p *pchClient) runOneConnection() (established bool) {
 	<-recvErrCh
 
 	if loopErr != nil && !errors.Is(loopErr, context.Canceled) {
-		p.logger.Warn("replicate stream loop failed", zap.Error(loopErr))
+		p.logger.Debug("replicate stream loop failed", zap.Error(loopErr))
 	}
-	return true
+
+	p.mu.Lock()
+	confirmed := p.connConfirmed > 0
+	p.mu.Unlock()
+	if confirmed || time.Since(openedAt) >= pchMinEstablishedLifetime {
+		return true, loopErr
+	}
+	return false, loopErr
+}
+
+// resetFailureStreak clears the consecutive-failure report. Confirm totals are
+// kept: they count every message this channel has ever had acknowledged.
+func (p *pchClient) resetFailureStreak() {
+	p.mu.Lock()
+	p.consecutiveFailures = 0
+	p.failingSince = time.Time{}
+	p.lastSummaryAt = time.Time{}
+	p.mu.Unlock()
+}
+
+// noteFailure records one non-established attempt. The Warn is the channel
+// report — streak length, how long it has lasted, how many messages have been
+// confirmed, and the oldest unconfirmed message — emitted on the second
+// consecutive failure and then at most once per pchFailureSummaryInterval.
+// The first failure is only counted: it can race the producer's enqueue, so
+// the head of queue would be missing, and a one-off blip is not the report.
+func (p *pchClient) noteFailure(cause error, backoff time.Duration) {
+	if errors.Is(cause, context.Canceled) {
+		return
+	}
+
+	now := time.Now()
+	p.mu.Lock()
+	p.consecutiveFailures++
+	if p.failingSince.IsZero() {
+		p.failingSince = now
+	}
+	failingFor := now.Sub(p.failingSince)
+	consecutive := p.consecutiveFailures
+	confirmed := p.totalConfirmed
+	due := consecutive >= 2 && (p.lastSummaryAt.IsZero() || now.Sub(p.lastSummaryAt) >= pchFailureSummaryInterval)
+	if due {
+		p.lastSummaryAt = now
+	}
+	p.mu.Unlock()
+	if !due {
+		return
+	}
+
+	head, n, ok := p.queue.Head()
+	fields := []zap.Field{
+		zap.Int("consecutive_failures", consecutive),
+		zap.Duration("failing_for", failingFor),
+		zap.Int("confirmed", confirmed),
+		zap.Int("queued", n),
+		zap.Duration("backoff", backoff),
+		zap.Error(cause),
+	}
+	if ok {
+		fields = append(fields, zap.Object("head", newMsgLogObject(head)))
+	}
+	p.logger.Warn("replicate stream failing", fields...)
 }
 
 func (p *pchClient) sendLoop(ctx context.Context, cli milvuspb.MilvusService_CreateReplicateStreamClient) error {
@@ -359,10 +511,26 @@ func (p *pchClient) recvLoop(ctx context.Context, cli milvuspb.MilvusService_Cre
 		}
 		dropped := p.queue.Confirm(confirmedTT)
 		if dropped > 0 {
+			p.observeConfirm(dropped)
 			p.logger.Debug("recv confirm",
 				zap.Uint64("confirmed_tt", confirmedTT),
 				zap.Int("dropped", dropped))
 		}
+	}
+}
+
+// observeConfirm counts messages this connection and this channel have had
+// acknowledged. The Info line fires on the first confirm of the connection,
+// not when the RPC is merely opened.
+func (p *pchClient) observeConfirm(dropped int) {
+	p.mu.Lock()
+	first := p.connConfirmed == 0
+	p.connConfirmed += dropped
+	p.totalConfirmed += dropped
+	p.lastConfirmAt = time.Now()
+	p.mu.Unlock()
+	if first {
+		p.logger.Info("replicate stream connected")
 	}
 }
 

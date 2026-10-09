@@ -156,6 +156,35 @@ func TestMemMsgQueue_SeekToHeadWakesWaiter(t *testing.T) {
 	})
 }
 
+func TestMemMsgQueue_Head(t *testing.T) {
+	q := newMemMsgQueue()
+	ctx := context.Background()
+
+	_, _, ok := q.Head()
+	assert.False(t, ok)
+
+	assert.NoError(t, q.Enqueue(ctx, newMsg(1), newMsg(2), newMsg(3)))
+	head, n, ok := q.Head()
+	assert.True(t, ok)
+	assert.Equal(t, 3, n)
+	assert.Equal(t, uint64(1), msgTT(t, head))
+
+	// Confirming a prefix advances the head. The read cursor is irrelevant.
+	_, _ = q.ReadNext(ctx)
+	assert.Equal(t, 1, q.Confirm(1))
+	head, n, ok = q.Head()
+	assert.True(t, ok)
+	assert.Equal(t, 2, n)
+	assert.Equal(t, uint64(2), msgTT(t, head))
+
+	before, beforeN, beforeOK := q.Head()
+	q.SeekToHead()
+	head, n, ok = q.Head()
+	assert.Equal(t, beforeOK, ok)
+	assert.Equal(t, beforeN, n)
+	assert.Equal(t, msgTT(t, before), msgTT(t, head))
+}
+
 func TestMemMsgQueue_WaitEmpty(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		q := newMemMsgQueue()

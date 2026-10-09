@@ -8,12 +8,19 @@ import (
 	"sync/atomic"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
 	"github.com/milvus-io/milvus/pkg/v3/streaming/util/message"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
 	"google.golang.org/grpc"
+
+	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
 // fakeReplicateStream satisfies milvuspb.MilvusService_CreateReplicateStreamClient.
@@ -125,6 +132,39 @@ func (g *fakeGrpc) CreateReplicateStream(ctx context.Context, _ string) (milvusp
 	s := g.streams[i]
 	s.ctx = ctx
 	return s, nil
+}
+
+// eofGrpc returns a new already-closed stream on every open. Recv and Send
+// both yield io.EOF, which is the accept-then-immediate-close the reconnect
+// loop has to back off.
+type eofGrpc struct {
+	Grpc
+
+	opens atomic.Int64
+}
+
+func (g *eofGrpc) CreateReplicateStream(ctx context.Context, _ string) (milvuspb.MilvusService_CreateReplicateStreamClient, error) {
+	s := newFakeReplicateStream()
+	s.ctx = ctx
+	s.CloseSend()
+	g.opens.Add(1)
+	return s, nil
+}
+
+// useObservedLogger installs an observer core as the global logger and puts
+// the previous one back when the test ends. NewStreamClient copies the global
+// logger, so this has to run first. Not parallel-safe: the global is process-wide.
+func useObservedLogger(t *testing.T) *observer.ObservedLogs {
+	t.Helper()
+
+	prev := log.L()
+	prevLevel := log.GetLevel()
+	core, logs := observer.New(zapcore.DebugLevel)
+	log.ReplaceGlobals(zap.New(core), &log.ZapProperties{Level: zap.NewAtomicLevelAt(prevLevel)})
+	t.Cleanup(func() {
+		log.ReplaceGlobals(prev, &log.ZapProperties{Level: zap.NewAtomicLevelAt(prevLevel)})
+	})
+	return logs
 }
 
 // buildImportMsg constructs a single-vchannel Import immutable suitable for Forward tests.
@@ -291,8 +331,14 @@ func TestStreamClient_ReplayOnReconnect(t *testing.T) {
 		synctest.Wait()
 		assert.Len(t, first.sentMsgs(), 2, "both msgs ship on the first stream")
 
-		// Break the first stream before any confirm arrives.
+		// Break the first stream before any confirm and without advancing the
+		// bubble clock. The attempt is not established, so runForever parks on
+		// the initial backoff. Wait returns here without moving time.
 		first.failRecv(errors.New("boom"))
+		synctest.Wait()
+		assert.Empty(t, second.sentMsgs(), "replacement stays parked on the initial backoff")
+
+		time.Sleep(pchReconnectInitialBackoff)
 		synctest.Wait()
 
 		secondSent := second.sentMsgs()
@@ -399,5 +445,207 @@ func TestStreamClient_UnknownPchRejected(t *testing.T) {
 		err := cli.Forward(context.Background(), buildImportMsg(t, 1, "other-pch_1v0"))
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "no pch client")
+	})
+}
+
+// TestStreamClient_ImmediateEOFBacksOff is the accept-then-close regression:
+// every open returns an already-closed stream, so the reconnect loop must take
+// the backoff path. A tight loop is not durably blocked and this sleep would
+// hang — that hang is the failure, not a reason to drop the timer.
+//
+// Opens land at t=0, 100ms, 300ms, 700ms, and 1500ms (backoff 100, 200, 400,
+// 800). The next wait is 1600ms and would land at 3100ms, past this window.
+func TestStreamClient_ImmediateEOFBacksOff(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		logs := useObservedLogger(t)
+		g := &eofGrpc{}
+		cli := NewStreamClient("src", "task", []string{testPch}, g)
+		defer cli.Close()
+
+		imm := buildImportMsg(t, 77, testDataVch)
+		assert.NoError(t, cli.Forward(context.Background(), imm))
+		time.Sleep(2 * time.Second)
+		synctest.Wait()
+
+		assert.Equal(t, int64(5), g.opens.Load())
+		assert.Empty(t, logs.FilterLevelExact(zap.InfoLevel).FilterMessage("replicate stream connected").All())
+
+		warns := logs.FilterLevelExact(zap.WarnLevel).FilterMessage("replicate stream failing").All()
+		require.Len(t, warns, 1)
+		fields := warns[0].ContextMap()
+		assert.Equal(t, int64(0), fields["confirmed"])
+		consecutive, ok := fields["consecutive_failures"].(int64)
+		require.True(t, ok)
+		assert.GreaterOrEqual(t, consecutive, int64(2))
+		head, ok := fields["head"].(map[string]any)
+		require.True(t, ok, "head field missing: %v", fields)
+		assert.Equal(t, uint64(77), head["timetick"])
+	})
+}
+
+// TestStreamClient_ConfirmedDisconnectReconnectsImmediately checks the branch
+// that must keep resetting backoff. Confirming the lower timetick marks the
+// connection established and leaves the higher one queued; the replacement
+// already has that replay with no backoff sleep.
+func TestStreamClient_ConfirmedDisconnectReconnectsImmediately(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		first := newFakeReplicateStream()
+		second := newFakeReplicateStream()
+		cli := NewStreamClient("src", "task", []string{testPch}, newFakeGrpc(first, second))
+		defer cli.Close()
+
+		synctest.Wait()
+
+		assert.NoError(t, cli.Forward(context.Background(),
+			buildImportMsg(t, 10, testDataVch),
+			buildImportMsg(t, 11, testDataVch)))
+		synctest.Wait()
+		assert.Len(t, first.sentMsgs(), 2)
+
+		first.pushConfirm(10)
+		synctest.Wait()
+
+		first.failRecv(errors.New("boom"))
+		synctest.Wait()
+
+		sent := second.sentMsgs()
+		require.Len(t, sent, 1, "replacement already has the unconfirmed replay")
+		tt, err := GetTT(sent[0])
+		require.NoError(t, err)
+		assert.Equal(t, uint64(11), tt)
+	})
+}
+
+// TestStreamClient_LifetimeWithoutConfirmCountsAsEstablished covers the other
+// half of the established predicate: staying open for pchMinEstablishedLifetime
+// resets backoff even when nothing was confirmed. Half of that does not.
+func TestStreamClient_LifetimeWithoutConfirmCountsAsEstablished(t *testing.T) {
+	t.Run("FullLifetime", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			first := newFakeReplicateStream()
+			second := newFakeReplicateStream()
+			cli := NewStreamClient("src", "task", []string{testPch}, newFakeGrpc(first, second))
+			defer cli.Close()
+
+			synctest.Wait()
+			assert.NoError(t, cli.Forward(context.Background(), buildImportMsg(t, 7, testDataVch)))
+			synctest.Wait()
+			assert.Len(t, first.sentMsgs(), 1)
+
+			time.Sleep(pchMinEstablishedLifetime)
+			first.failRecv(errors.New("boom"))
+			synctest.Wait()
+
+			sent := second.sentMsgs()
+			require.Len(t, sent, 1, "full lifetime reconnects without backoff")
+			tt, err := GetTT(sent[0])
+			require.NoError(t, err)
+			assert.Equal(t, uint64(7), tt)
+		})
+	})
+
+	t.Run("HalfLifetime", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			first := newFakeReplicateStream()
+			second := newFakeReplicateStream()
+			cli := NewStreamClient("src", "task", []string{testPch}, newFakeGrpc(first, second))
+			defer cli.Close()
+
+			synctest.Wait()
+			assert.NoError(t, cli.Forward(context.Background(), buildImportMsg(t, 7, testDataVch)))
+			synctest.Wait()
+			assert.Len(t, first.sentMsgs(), 1)
+
+			time.Sleep(pchMinEstablishedLifetime / 2)
+			first.failRecv(errors.New("boom"))
+			synctest.Wait()
+			assert.Empty(t, second.sentMsgs(), "half lifetime stays parked on the initial backoff")
+
+			time.Sleep(pchReconnectInitialBackoff)
+			synctest.Wait()
+			sent := second.sentMsgs()
+			require.Len(t, sent, 1)
+			tt, err := GetTT(sent[0])
+			require.NoError(t, err)
+			assert.Equal(t, uint64(7), tt)
+		})
+	})
+}
+
+// TestStreamClient_WaitConfirmNoProgress warns while a live stream never
+// acks, then still returns once the broker confirms. Cancel unblocks the same
+// wait without counting it as a channel failure.
+func TestStreamClient_WaitConfirmNoProgress(t *testing.T) {
+	t.Run("WarnsThenCompletes", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			logs := useObservedLogger(t)
+			fs := newFakeReplicateStream()
+			cli := NewStreamClient("src", "task", []string{testPch}, newFakeGrpc(fs))
+			defer cli.Close()
+
+			synctest.Wait()
+			assert.NoError(t, cli.Forward(context.Background(), buildImportMsg(t, 42, testDataVch)))
+
+			done := make(chan struct{})
+			go func() { cli.WaitConfirm(); close(done) }()
+			synctest.Wait()
+
+			time.Sleep(pchNoProgressWarnAfter - time.Nanosecond)
+			synctest.Wait()
+			select {
+			case <-done:
+				t.Fatal("WaitConfirm returned before any confirm")
+			default:
+			}
+			assert.Empty(t, logs.FilterMessage("replicate stream made no progress").All())
+
+			time.Sleep(time.Nanosecond)
+			synctest.Wait()
+			warns := logs.FilterLevelExact(zap.WarnLevel).FilterMessage("replicate stream made no progress").All()
+			require.Len(t, warns, 1)
+			fields := warns[0].ContextMap()
+			assert.Equal(t, int64(0), fields["confirmed"])
+			queued, ok := fields["queued"].(int64)
+			require.True(t, ok)
+			assert.Greater(t, queued, int64(0))
+			head, ok := fields["head"].(map[string]any)
+			require.True(t, ok, "head field missing: %v", fields)
+			assert.Equal(t, uint64(42), head["timetick"])
+
+			fs.pushConfirm(42)
+			synctest.Wait()
+			select {
+			case <-done:
+			default:
+				t.Fatal("WaitConfirm did not return after confirm")
+			}
+		})
+	})
+
+	t.Run("CancelAbortsWithoutFailureStreak", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			logs := useObservedLogger(t)
+			fs := newFakeReplicateStream()
+			cli := NewStreamClient("src", "task", []string{testPch}, newFakeGrpc(fs))
+
+			synctest.Wait()
+			assert.NoError(t, cli.Forward(context.Background(), buildImportMsg(t, 42, testDataVch)))
+
+			done := make(chan struct{})
+			go func() { cli.WaitConfirm(); close(done) }()
+			synctest.Wait()
+
+			cli.Close()
+			synctest.Wait()
+			select {
+			case <-done:
+			default:
+				t.Fatal("WaitConfirm did not return after cancel")
+			}
+
+			aborted := logs.FilterLevelExact(zap.WarnLevel).FilterMessage("wait confirm aborted").All()
+			assert.NotEmpty(t, aborted)
+			assert.Empty(t, logs.FilterMessage("replicate stream failing").All())
+		})
 	})
 }

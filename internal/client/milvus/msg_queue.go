@@ -22,6 +22,9 @@ type msgQueue interface {
 	ReadNext(ctx context.Context) (*commonpb.ImmutableMessage, error)
 	Confirm(confirmedTT uint64) int
 	SeekToHead()
+	// Head returns the oldest unconfirmed message and the queue length.
+	// ok is false when the queue is empty.
+	Head() (head *commonpb.ImmutableMessage, n int, ok bool)
 	WaitEmpty(ctx context.Context) error
 }
 
@@ -114,6 +117,20 @@ func (q *memMsgQueue) SeekToHead() {
 	if len(q.buf) > 0 {
 		q.notEmpty.Broadcast()
 	}
+}
+
+// Head returns the oldest buffered message and how many are still unconfirmed.
+// The read cursor does not move: SeekToHead replays from here, and Confirm is
+// what advances it.
+func (q *memMsgQueue) Head() (head *commonpb.ImmutableMessage, n int, ok bool) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	n = len(q.buf)
+	if n == 0 {
+		return nil, 0, false
+	}
+	return q.buf[0], n, true
 }
 
 func (q *memMsgQueue) WaitEmpty(ctx context.Context) error {
