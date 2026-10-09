@@ -41,7 +41,7 @@ sed -i "" -e "s/state_code,omitempty/state_code/g" ./backuppb/backup.pb.go
 
 popd
 
-swag init
+swag init --generalInfo core/server/server.go
 
 pushd ${BACK_PROTO_DIR}
 
