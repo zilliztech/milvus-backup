@@ -39,8 +39,10 @@ type config struct {
 	// other constructors.
 	newGetBackupTask func() (getBackupTaskUC, error)
 
-	// newCreateBackup is the create counterpart of newListBackups.
-	newCreateBackup func(ctx context.Context, params *v2.Config) (createBackupUC, error)
+	// newBackupJob is the create counterpart of newListBackups, extended with
+	// the request: a backup job is per-request, so building it and registering
+	// it are one step.
+	newBackupJob backupJobFactory
 
 	// newRestoreBackup is the restore counterpart of newListBackups.
 	newRestoreBackup func(ctx context.Context, params *v2.Config) (restoreBackupUC, error)
@@ -73,8 +75,8 @@ func newDefaultConfig() *config {
 		newGetBackupTask: func() (getBackupTaskUC, error) {
 			return app.NewGetBackupTask(taskmgr.DefaultMgr()), nil
 		},
-		newCreateBackup: func(ctx context.Context, params *v2.Config) (createBackupUC, error) {
-			return app.NewCreateBackup(ctx, params, taskmgr.DefaultMgr())
+		newBackupJob: func(ctx context.Context, params *v2.Config, req app.CreateBackupRequest) (backupJob, error) {
+			return app.NewBackupJob(ctx, params, taskmgr.DefaultMgr(), req)
 		},
 		newRestoreBackup: func(ctx context.Context, params *v2.Config) (restoreBackupUC, error) {
 			return app.NewRestore(ctx, params, taskmgr.DefaultMgr())

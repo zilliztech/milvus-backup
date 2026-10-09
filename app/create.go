@@ -19,54 +19,24 @@ var ErrStorageNotReady = errors.New("storage not ready")
 
 const createStoragePreflightTimeout = 10 * time.Second
 
-// BackupJob is one registered create-backup run, ready to execute. Starting a
-// job and running it are separate steps so a transport that executes jobs
-// asynchronously can decide itself where the goroutine goes.
-type BackupJob interface {
-	// Run executes the job. The outcome is also recorded in the task manager,
-	// where get_backup and the task API read it from.
-	Run(ctx context.Context) error
+// BackupJob is one registered create-backup run, ready to execute. A job is
+// what a create call makes: the backup artifact is what a successful job
+// leaves behind in storage, a different resource with its own usecase
+// (GetBackup) — the split the v2 API draws between jobs/backup/create, which
+// returns the job, and backups/describe, which reads the artifact.
+//
+// Registering a job and running it are separate steps: registration happens in
+// NewBackupJob, synchronously, so a duplicate name or an unreachable source
+// storage is the caller's immediate answer. Running is Run, and where its
+// goroutine goes — the request path or a background one — is the transport's
+// deployment decision.
+type BackupJob struct {
+	task *backup.Task
 }
 
-// CreateBackup registers backup jobs. A job is what a create call makes: the
-// backup artifact is what a successful job leaves behind in storage, a
-// different resource with its own usecase (GetBackup). This usecase therefore
-// answers with the job and nothing of the artifact — the split the v2 API
-// draws between jobs/backup/create, which returns the job, and
-// backups/describe, which reads the artifact.
-type CreateBackup struct {
-	params *v2.Config
-
-	milvusStorage storage.Client
-	backupStorage storage.Client
-
-	taskMgr  *taskmgr.Mgr
-	rootPath string
-}
-
-// NewCreateBackup builds the usecase from config and the given task manager,
-// creating both storage clients itself so the transports never import
-// internal/storage. The clients are created per call; sharing them across
-// calls is a lifecycle decision this layer deliberately does not make.
-func NewCreateBackup(ctx context.Context, params *v2.Config, taskMgr *taskmgr.Mgr) (*CreateBackup, error) {
-	backupStorage, err := storage.NewBackupStorage(ctx, params)
-	if err != nil {
-		return nil, fmt.Errorf("app: %w", err)
-	}
-
-	milvusStorage, err := storage.NewMilvusStorage(ctx, params)
-	if err != nil {
-		return nil, fmt.Errorf("app: %w", err)
-	}
-
-	return &CreateBackup{
-		params:        params,
-		milvusStorage: milvusStorage,
-		backupStorage: backupStorage,
-		taskMgr:       taskMgr,
-		rootPath:      params.Backup.Storage.RootPath.Val,
-	}, nil
-}
+// Run executes the job. The outcome is also recorded in the task manager,
+// where get_backup and the task API read it from.
+func (j *BackupJob) Run(ctx context.Context) error { return j.task.Execute(ctx) }
 
 // CreateBackupRequest describes one backup job. It is the transport-neutral
 // whole of what the action accepts: both transports derive the task id from
@@ -83,39 +53,63 @@ type CreateBackupRequest struct {
 	Option backup.Option
 }
 
-// Start checks source List access before registering the job in the task manager.
-// Registration is the synchronous part of starting: from here on the job is
-// visible to the task APIs under its task id and backup name. Running is a
-// separate step — Execute for the synchronous case, the transport's own
-// goroutine for the asynchronous one.
-func (uc *CreateBackup) Start(ctx context.Context, req CreateBackupRequest) (BackupJob, error) {
-	if err := uc.checkSourceStorage(ctx, req.Option.Strategy); err != nil {
+// NewBackupJob creates both storage clients from the config and registers the
+// job: source List preflight first, then the task manager. The clients are
+// created per call; sharing them across calls is a lifecycle decision this
+// layer deliberately does not make.
+func NewBackupJob(ctx context.Context, params *v2.Config, taskMgr *taskmgr.Mgr, req CreateBackupRequest) (*BackupJob, error) {
+	backupStorage, err := storage.NewBackupStorage(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("app: %w", err)
+	}
+
+	milvusStorage, err := storage.NewMilvusStorage(ctx, params)
+	if err != nil {
+		return nil, fmt.Errorf("app: %w", err)
+	}
+
+	return newBackupJob(ctx, params, taskMgr, milvusStorage, backupStorage, req)
+}
+
+// newBackupJob is NewBackupJob with the storage clients injected, so tests
+// exercise admission and registration without real storage behind the clients.
+func newBackupJob(ctx context.Context, params *v2.Config, taskMgr *taskmgr.Mgr, milvusStorage, backupStorage storage.Client, req CreateBackupRequest) (*BackupJob, error) {
+	if err := preflightSourceStorage(ctx, params, milvusStorage, req.Option.Strategy); err != nil {
 		return nil, err
 	}
-	task, err := backup.NewTask(uc.toArgs(req))
+
+	// A per-call root path is the transport forking the config, not a field of
+	// the request: the artifact directory resolves from the config as given.
+	task, err := backup.NewTask(backup.TaskArgs{
+		TaskID:        req.TaskID,
+		Option:        req.Option,
+		MilvusStorage: milvusStorage,
+		BackupStorage: backupStorage,
+		BackupDir:     mpath.BackupDir(params.Backup.Storage.RootPath.Val, req.Option.BackupName),
+		Params:        params,
+		TaskMgr:       taskMgr,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("app: new backup task: %w", err)
 	}
 
-	return backupJob{task: task}, nil
+	return &BackupJob{task: task}, nil
 }
 
-func (uc *CreateBackup) checkSourceStorage(ctx context.Context, strategy backup.Strategy) error {
+func preflightSourceStorage(ctx context.Context, params *v2.Config, milvusStorage storage.Client, strategy backup.Strategy) error {
 	if strategy == backup.StrategyMetaOnly {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(ctx, createStoragePreflightTimeout)
 	defer cancel()
-	prefix := mpath.MilvusInsertLogDir(uc.params.Milvus.Storage.RootPath.Val)
+	prefix := mpath.MilvusInsertLogDir(params.Milvus.Storage.RootPath.Val)
 	// The sequence lists lazily: the range itself is what sends the request,
 	// so one iteration is the least work that proves access; an empty result
-	// also means the request succeeded.
-	for _, err := range uc.milvusStorage.NewObjectIter(ctx, prefix, true) {
-		if err == nil {
-			err = ctx.Err()
-		}
+	// also means the request succeeded. A yield that races context
+	// cancellation still counts: an object came back, so access is real.
+	for _, err := range milvusStorage.NewObjectIter(ctx, prefix, true) {
 		if err != nil {
-			conf := uc.milvusStorage.Config()
+			conf := milvusStorage.Config()
 			return fmt.Errorf("app: %w: source list preflight failed (provider=%s, endpoint=%s, bucket=%s, prefix=%s): %w",
 				ErrStorageNotReady, conf.Provider, conf.Endpoint, conf.Bucket, prefix, err)
 		}
@@ -125,53 +119,3 @@ func (uc *CreateBackup) checkSourceStorage(ctx context.Context, strategy backup.
 	}
 	return nil
 }
-
-// Execute runs the job synchronously on the calling goroutine and returns the
-// task manager's view of it: id, state, progress and the rest of the job half
-// — the whole answer of a create call, the shape v2's jobs/backup/create
-// responds with. Nothing of the produced artifact is read here; a transport
-// whose contract merges the two resources (v1) assembles what it needs itself.
-func (uc *CreateBackup) Execute(ctx context.Context, req CreateBackupRequest) (taskmgr.BackupTaskView, error) {
-	job, err := uc.Start(ctx, req)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := job.Run(ctx); err != nil {
-		return nil, err
-	}
-
-	view, err := uc.taskMgr.GetBackupTask(req.TaskID)
-	if err != nil {
-		return nil, fmt.Errorf("app: get backup task: %w", err)
-	}
-
-	return view, nil
-}
-
-// backupDir resolves the artifact directory: the root path comes from the
-// config the usecase was built with, the artifact name from the option. A
-// per-call root path is the transport forking the config, not a field here.
-func (uc *CreateBackup) backupDir(name string) string {
-	return mpath.BackupDir(uc.rootPath, name)
-}
-
-func (uc *CreateBackup) toArgs(req CreateBackupRequest) backup.TaskArgs {
-	return backup.TaskArgs{
-		TaskID:        req.TaskID,
-		Option:        req.Option,
-		MilvusStorage: uc.milvusStorage,
-		BackupStorage: uc.backupStorage,
-		BackupDir:     uc.backupDir(req.Option.BackupName),
-		Params:        uc.params,
-		TaskMgr:       uc.taskMgr,
-	}
-}
-
-// backupJob hides the core/backup task, the action's engine, behind the
-// interface the transports see.
-type backupJob struct {
-	task *backup.Task
-}
-
-func (j backupJob) Run(ctx context.Context) error { return j.task.Execute(ctx) }
