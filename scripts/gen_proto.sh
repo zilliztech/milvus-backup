@@ -3,12 +3,16 @@
 PROGRAM=${PWD}
 GOPATH=$(go env GOPATH)
 BACK_PROTO_DIR=$PROGRAM/core/proto/
-GOOGLE_PROTO_DIR=${PROGRAM}/build/thirdparty/protobuf-src/src/
 
 echo ${PROGRAM}
-export protoc=${PROGRAM}/build/thirdparty/protobuf-build/protoc
-echo `${protoc} --version`
-which protoc-gen-go 1>/dev/null || (echo "Installing protoc-gen-go" && cd /tmp && go install github.com/golang/protobuf/protoc-gen-go@v1.3.2)
+if ! command -v protoc 1>/dev/null; then
+    echo "Error: protoc is required but not installed. Install it with:" > /dev/stderr
+    echo "  macOS:         brew install protobuf" > /dev/stderr
+    echo "  Debian/Ubuntu: apt install protobuf-compiler" > /dev/stderr
+    exit 1
+fi
+protoc --version
+which protoc-gen-go 1>/dev/null || (echo "Installing protoc-gen-go" && cd /tmp && go install github.com/golang/protobuf/protoc-gen-go@v1.4.3)
 
 if [ -z $GOPATH ]; then
     printf "Error: the environment variable GOPATH is not set, please set it before running %s\n" $PROGRAM > /dev/stderr
@@ -23,7 +27,7 @@ pushd ${BACK_PROTO_DIR}
 
 mkdir -p backuppb
 
-${protoc} --proto_path="${GOOGLE_PROTO_DIR}" --proto_path=. --go_out=plugins=grpc,paths=source_relative:./backuppb backup.proto
+protoc --proto_path=. --go_out=plugins=grpc,paths=source_relative:./backuppb backup.proto
 
 # remove has_index omitempty
 sed -i "" -e "s/has_index,omitempty/has_index/g" ./backuppb/backup.pb.go
