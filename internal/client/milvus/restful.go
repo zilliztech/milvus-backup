@@ -10,7 +10,7 @@ import (
 	"github.com/imroc/req/v3"
 	"go.uber.org/zap"
 
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/retry"
 )
@@ -251,7 +251,7 @@ func restfulAuth(username, password string) string {
 	return ""
 }
 
-func NewRestful(c *v2.MilvusConfig) (*RestfulClient, error) {
+func NewRestful(c *cfg.MilvusConfig) (*RestfulClient, error) {
 	baseURL := restfulBaseURL(c)
 	log.Info("new milvus restful client", zap.String("baseURL", baseURL))
 
@@ -267,13 +267,13 @@ func NewRestful(c *v2.MilvusConfig) (*RestfulClient, error) {
 // restfulBaseURL uses the configured REST endpoint, and derives one from the
 // gRPC connection when none is set, which covers the deployments where a single
 // proxy serves both protocols.
-func restfulBaseURL(c *v2.MilvusConfig) string {
+func restfulBaseURL(c *cfg.MilvusConfig) string {
 	if endpoint := c.Rest.Endpoint.Val; endpoint != "" {
 		return endpoint
 	}
 
 	host := net.JoinHostPort(c.Grpc.Address.Val, strconv.Itoa(c.Grpc.Port.Val))
-	if c.Grpc.TLSMode.Val == v2.TLSDisabled {
+	if c.Grpc.TLSMode.Val == cfg.TLSDisabled {
 		return "http://" + host
 	}
 

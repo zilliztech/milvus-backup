@@ -14,7 +14,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
@@ -23,7 +23,7 @@ import (
 // count so tests can assert whether the handler reached the action at all.
 type stubGetBackup struct {
 	name   string
-	params *v2.Config
+	params *cfg.Config
 	info   *backuppb.BackupInfo
 	size   int64
 	err    error
@@ -55,7 +55,7 @@ func (s *stubGetBackupTask) Execute(_ context.Context, req app.GetBackupTaskRequ
 // client-construction failure, which happens before any Execute call.
 func withGetBackup(stub *stubGetBackup, newErr error) Option {
 	return func(c *config) {
-		c.newGetBackup = func(_ context.Context, params *v2.Config) (getBackupUC, error) {
+		c.newGetBackup = func(_ context.Context, params *cfg.Config) (getBackupUC, error) {
 			stub.params = params
 			return stub, newErr
 		}
@@ -79,11 +79,11 @@ func noBackupTask() Option {
 
 // newLoadedTestServer is the fork-capable counterpart of newListTestServer:
 // the params are Load'ed the way the real server's are, so a request can fork
-// them. A hand-built v2.New() has no source behind it, and Fork refuses one.
+// them. A hand-built cfg.New() has no source behind it, and Fork refuses one.
 func newLoadedTestServer(t *testing.T, opts ...Option) *Server {
 	t.Helper()
 
-	params, err := v2.Load("", nil)
+	params, err := cfg.Load("", nil)
 	require.NoError(t, err)
 
 	s, err := New(params, opts...)

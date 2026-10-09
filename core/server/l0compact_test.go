@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
@@ -21,8 +21,8 @@ import (
 
 func TestHasL0HTTP(t *testing.T) {
 	root := t.TempDir()
-	params, err := v2.Load("", map[string]string{
-		"backup.storage.provider": v2.ProviderLocal,
+	params, err := cfg.Load("", map[string]string{
+		"backup.storage.provider": cfg.ProviderLocal,
 		"backup.storage.rootPath": root,
 	})
 	require.NoError(t, err)

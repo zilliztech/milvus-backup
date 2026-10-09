@@ -14,9 +14,9 @@ import (
 
 	"go.uber.org/zap"
 
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/cfg/migrate"
 	"github.com/zilliztech/milvus-backup/internal/cfg/param"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
@@ -31,37 +31,37 @@ const versionV1 = "v1"
 // precedence: overrides (--set) > env > config file > default, among the names
 // the file's own schema version defines. A v1 file is resolved with v1 names,
 // including the v1 environment variables, and translated afterwards.
-func Load(configPath string, overrides map[string]string) (*v2.Config, error) {
+func Load(configPath string, overrides map[string]string) (*cfg.Config, error) {
 	src, err := param.NewSource(configPath, overrides)
 	if err != nil {
 		return nil, err
 	}
 
-	version, declared := v2.DeclaredVersion(src)
+	version, declared := cfg.DeclaredVersion(src)
 	if !declared {
 		// With no file, overrides and env are all there is, and they name v2
 		// parameters. With a file, the missing discriminator dates it to v1.
 		if src.ConfigFilePath() == "" {
-			return v2.LoadFrom(src)
+			return cfg.LoadFrom(src)
 		}
 
 		return loadV1(src)
 	}
 
 	switch {
-	case strings.EqualFold(version, v2.Version):
-		return v2.LoadFrom(src)
+	case strings.EqualFold(version, cfg.Version):
+		return cfg.LoadFrom(src)
 	case strings.EqualFold(version, versionV1):
 		return loadV1(src)
 	default:
 		return nil, fmt.Errorf("cfg: %s declares %s %q, which is not a schema version this build knows (want %q or %q)",
-			src.ConfigFilePath(), v2.VersionKey, version, versionV1, v2.Version)
+			src.ConfigFilePath(), cfg.VersionKey, version, versionV1, cfg.Version)
 	}
 }
 
 // loadV1 translates the v1 key space of a file into the v2 source the v2
 // loader resolves, so a deployment that has not migrated yet keeps working.
-func loadV1(src *param.Source) (*v2.Config, error) {
+func loadV1(src *param.Source) (*cfg.Config, error) {
 	out, err := migrate.Translate(src)
 	if err != nil {
 		return nil, err

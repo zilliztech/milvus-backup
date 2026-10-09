@@ -26,7 +26,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore/conv"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/storage"
@@ -632,7 +632,7 @@ func (dmlt *collDMLTask) needStaging() bool {
 }
 
 func (dmlt *collDMLTask) isLocal() bool {
-	return dmlt.milvusStorage.Config().Provider == v2.ProviderLocal
+	return dmlt.milvusStorage.Config().Provider == cfg.ProviderLocal
 }
 
 // destKey maps a bucket-relative key onto the key the milvus storage client

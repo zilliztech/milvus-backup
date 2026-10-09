@@ -33,7 +33,7 @@ import (
 	"google.golang.org/protobuf/proto"
 
 	"github.com/zilliztech/milvus-backup/internal/aimd"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/retry"
@@ -272,8 +272,8 @@ func grpcAuth(username, password string) string {
 	return ""
 }
 
-func transCred(c *v2.MilvusGrpcConfig) (credentials.TransportCredentials, error) {
-	if c.TLSMode.Val == v2.TLSDisabled {
+func transCred(c *cfg.MilvusGrpcConfig) (credentials.TransportCredentials, error) {
+	if c.TLSMode.Val == cfg.TLSDisabled {
 		return insecure.NewCredentials(), nil
 	}
 
@@ -296,7 +296,7 @@ func transCred(c *v2.MilvusGrpcConfig) (credentials.TransportCredentials, error)
 	// server TLS when the key pair was missing; nothing falls back here, because
 	// a v2 config is rejected in validation and a v1 config is downgraded while
 	// it is translated. Silently weakening TLS is not something to keep doing.
-	if c.TLSMode.Val == v2.TLSMutual {
+	if c.TLSMode.Val == cfg.TLSMutual {
 		cert, err := tls.LoadX509KeyPair(c.MTLSCertPath.Val, c.MTLSKeyPath.Val)
 		if err != nil {
 			return nil, fmt.Errorf("client: load client cert: %w", err)
@@ -318,7 +318,7 @@ func isUnimplemented(err error) bool {
 	return s.Code() == codes.Unimplemented
 }
 
-func NewGrpc(c *v2.MilvusConfig) (*GrpcClient, error) {
+func NewGrpc(c *cfg.MilvusConfig) (*GrpcClient, error) {
 	logger := log.L()
 
 	host := net.JoinHostPort(c.Grpc.Address.Val, strconv.Itoa(c.Grpc.Port.Val))

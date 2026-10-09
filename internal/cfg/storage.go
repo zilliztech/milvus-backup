@@ -1,4 +1,4 @@
-package v2
+package cfg
 
 import "github.com/zilliztech/milvus-backup/internal/cfg/param"
 

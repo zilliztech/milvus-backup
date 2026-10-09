@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/zilliztech/milvus-backup/app"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
@@ -16,10 +16,10 @@ type config struct {
 	// newListBackups builds the usecase a list request runs through. The
 	// default wires the real one; tests replace it with a stub so handler
 	// tests never touch storage.
-	newListBackups func(ctx context.Context, params *v2.Config) (listBackupsUC, error)
+	newListBackups func(ctx context.Context, params *cfg.Config) (listBackupsUC, error)
 
 	// newDeleteBackup is the delete counterpart of newListBackups.
-	newDeleteBackup func(ctx context.Context, params *v2.Config) (deleteBackupUC, error)
+	newDeleteBackup func(ctx context.Context, params *cfg.Config) (deleteBackupUC, error)
 
 	// newGetRestore is the get-restore counterpart of newListBackups. It
 	// takes no config: restore state is process-local, so there is no client
@@ -28,10 +28,10 @@ type config struct {
 	newGetRestore func() (getRestoreUC, error)
 
 	// newCheck is the check counterpart of newListBackups.
-	newCheck func(ctx context.Context, params *v2.Config) (checkUC, error)
+	newCheck func(ctx context.Context, params *cfg.Config) (checkUC, error)
 
 	// newGetBackup is the get counterpart of newListBackups.
-	newGetBackup func(ctx context.Context, params *v2.Config) (getBackupUC, error)
+	newGetBackup func(ctx context.Context, params *cfg.Config) (getBackupUC, error)
 
 	// newGetBackupTask is the get-backup-task counterpart of newGetRestore:
 	// job state is process-local, so there is no client to build and
@@ -59,31 +59,31 @@ func newDefaultConfig() *config {
 		port: ":8080",
 		// Go function types do not convert covariantly, so the concrete
 		// *app.ListBackups needs this thin wrapper to become the interface.
-		newListBackups: func(ctx context.Context, params *v2.Config) (listBackupsUC, error) {
+		newListBackups: func(ctx context.Context, params *cfg.Config) (listBackupsUC, error) {
 			return app.NewListBackups(ctx, params)
 		},
-		newDeleteBackup: func(ctx context.Context, params *v2.Config) (deleteBackupUC, error) {
+		newDeleteBackup: func(ctx context.Context, params *cfg.Config) (deleteBackupUC, error) {
 			return app.NewDeleteBackup(ctx, params)
 		},
 		newGetRestore: func() (getRestoreUC, error) {
 			return app.NewGetRestore(taskmgr.DefaultMgr()), nil
 		},
-		newCheck: func(ctx context.Context, params *v2.Config) (checkUC, error) {
+		newCheck: func(ctx context.Context, params *cfg.Config) (checkUC, error) {
 			return app.NewCheck(ctx, params)
 		},
-		newGetBackup: func(ctx context.Context, params *v2.Config) (getBackupUC, error) {
+		newGetBackup: func(ctx context.Context, params *cfg.Config) (getBackupUC, error) {
 			return app.NewGetBackup(ctx, params)
 		},
 		newGetBackupTask: func() (getBackupTaskUC, error) {
 			return app.NewGetBackupTask(taskmgr.DefaultMgr()), nil
 		},
-		newBackupJob: func(ctx context.Context, params *v2.Config, req app.CreateBackupRequest) (backupJob, error) {
+		newBackupJob: func(ctx context.Context, params *cfg.Config, req app.CreateBackupRequest) (backupJob, error) {
 			return app.NewBackupJob(ctx, params, taskmgr.DefaultMgr(), req)
 		},
-		newRestoreJob: func(ctx context.Context, params *v2.Config, req app.RestoreRequest) (restoreJob, error) {
+		newRestoreJob: func(ctx context.Context, params *cfg.Config, req app.RestoreRequest) (restoreJob, error) {
 			return app.NewRestoreJob(ctx, params, taskmgr.DefaultMgr(), req)
 		},
-		newRestoreSecondaryJob: func(ctx context.Context, params *v2.Config, req app.RestoreSecondaryRequest) (restoreJob, error) {
+		newRestoreSecondaryJob: func(ctx context.Context, params *cfg.Config, req app.RestoreSecondaryRequest) (restoreJob, error) {
 			return app.NewRestoreSecondaryJob(ctx, params, taskmgr.DefaultMgr(), req)
 		},
 	}

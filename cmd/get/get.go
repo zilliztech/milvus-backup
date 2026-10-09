@@ -10,7 +10,7 @@ import (
 	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/cmd/flags"
 	"github.com/zilliztech/milvus-backup/cmd/root"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 )
 
@@ -36,7 +36,7 @@ func (o *options) validate() error {
 	return nil
 }
 
-func (o *options) run(cmd *cobra.Command, params *v2.Config) error {
+func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
 	ctx := context.Background()
 
 	uc, err := app.NewGetBackup(ctx, params)

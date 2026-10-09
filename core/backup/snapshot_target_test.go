@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
@@ -17,7 +17,7 @@ import (
 func azureCfg(account, bucket string) storage.Config {
 	key := base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
 	return storage.Config{
-		Provider:   v2.ProviderAzure,
+		Provider:   cfg.ProviderAzure,
 		Endpoint:   "core.windows.net:443",
 		Bucket:     bucket,
 		Credential: storage.Credential{Type: storage.Static, AK: account, SK: key, AzureAccountName: account},
@@ -44,7 +44,7 @@ func TestNewSnapshotTarget(t *testing.T) {
 	// resolves through its own storage config.
 	t.Run("SameBackendSendsNoSpec", func(t *testing.T) {
 		milvusCfg := storage.Config{
-			Provider: v2.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket",
+			Provider: cfg.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket",
 			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
 		}
 		backupCfg := milvusCfg
@@ -60,7 +60,7 @@ func TestNewSnapshotTarget(t *testing.T) {
 	// A pinned Milvus-view endpoint is written into the uri instead of being omitted.
 	t.Run("SameBackendWithMilvusEndpointPinsTheURI", func(t *testing.T) {
 		milvusCfg := storage.Config{
-			Provider: v2.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket",
+			Provider: cfg.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket",
 			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
 		}
 		backupCfg := milvusCfg
@@ -74,9 +74,9 @@ func TestNewSnapshotTarget(t *testing.T) {
 	})
 
 	t.Run("OtherBackendSendsSpec", func(t *testing.T) {
-		milvusCfg := storage.Config{Provider: v2.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket"}
+		milvusCfg := storage.Config{Provider: cfg.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket"}
 		backupCfg := storage.Config{
-			Provider: v2.ProviderS3, Region: "us-west-2", Bucket: "backup-bucket",
+			Provider: cfg.ProviderS3, Region: "us-west-2", Bucket: "backup-bucket",
 			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
 		}
 
@@ -130,7 +130,7 @@ func TestNewSnapshotTarget(t *testing.T) {
 		milvusCfg := azureCfg("milvus-account", "milvus-bucket")
 		milvusCfg.SourceSAS = "sv=2024-08-04&sig=abc"
 		backupCfg := storage.Config{
-			Provider: v2.ProviderS3, Region: "us-west-2", Bucket: "backup-bucket",
+			Provider: cfg.ProviderS3, Region: "us-west-2", Bucket: "backup-bucket",
 			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
 		}
 

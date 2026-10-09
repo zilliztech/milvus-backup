@@ -7,8 +7,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/cfg/param"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 )
 
 // The loader needs the secret itself, so Translate carries an env-supplied one
@@ -124,8 +124,8 @@ minio:
 
 	// v1 downgraded mutual TLS to server TLS without a client key pair, and v2
 	// rejects the un-downgraded value, so the translation has to settle it.
-	assert.Equal(t, v2.TLSServer, out.Milvus.Grpc.TLSMode.Val)
-	assert.Equal(t, v2.TransferAuto, out.Transfer.Mode.Val)
+	assert.Equal(t, cfg.TLSServer, out.Milvus.Grpc.TLSMode.Val)
+	assert.Equal(t, cfg.TransferAuto, out.Transfer.Mode.Val)
 	// v1 put backup data under a customized Milvus root path; v2 keeps the two
 	// independent, so the inherited location is carried over explicitly.
 	assert.Equal(t, "custom-root", out.Backup.Storage.RootPath.Val)
@@ -150,7 +150,7 @@ func TestTranslate_CrossStorageStreams(t *testing.T) {
 	out, err := Translate(v1Source(t, "minio:\n  crossStorage: true\n"))
 	require.NoError(t, err)
 
-	assert.Equal(t, v2.TransferStreaming, out.Transfer.Mode.Val)
+	assert.Equal(t, cfg.TransferStreaming, out.Transfer.Mode.Val)
 }
 
 // The root path inheritance is settled exactly as v1's cmp.Or settled it:
@@ -188,11 +188,11 @@ minio:
 `))
 	require.NoError(t, err)
 
-	assert.Equal(t, v2.AuthDefault, out.Milvus.Storage.Auth.Type.Val)
+	assert.Equal(t, cfg.AuthDefault, out.Milvus.Storage.Auth.Type.Val)
 	assert.Equal(t, "myaccount", out.Milvus.Storage.AccountName.Val)
 	// The backup side inherits useIAM from the primary in v1, so it must land
 	// on default too rather than demand an account key.
-	assert.Equal(t, v2.AuthDefault, out.Backup.Storage.Auth.Type.Val)
+	assert.Equal(t, cfg.AuthDefault, out.Backup.Storage.Auth.Type.Val)
 	assert.Equal(t, "backupaccount", out.Backup.Storage.AccountName.Val)
 }
 

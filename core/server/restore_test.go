@@ -19,7 +19,7 @@ import (
 	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
@@ -409,7 +409,7 @@ func (j *stubRestoreJob) Run(context.Context) error {
 // was called with, a canned construction error, and a call count so tests can
 // assert whether the handler reached the action at all.
 type stubRestoreFactory struct {
-	params *v2.Config
+	params *cfg.Config
 	req    app.RestoreRequest
 	newErr error
 	job    *stubRestoreJob
@@ -421,7 +421,7 @@ type stubRestoreFactory struct {
 // happens before any job runs.
 func withRestoreBackup(stub *stubRestoreFactory) Option {
 	return func(c *config) {
-		c.newRestoreJob = func(_ context.Context, params *v2.Config, req app.RestoreRequest) (restoreJob, error) {
+		c.newRestoreJob = func(_ context.Context, params *cfg.Config, req app.RestoreRequest) (restoreJob, error) {
 			stub.params = params
 			stub.req = req
 			stub.calls++
@@ -642,7 +642,7 @@ func TestHandleRestoreBackup(t *testing.T) {
 // params and request it was called with, a canned construction error, and a
 // call count.
 type stubRestoreSecondaryFactory struct {
-	params *v2.Config
+	params *cfg.Config
 	req    app.RestoreSecondaryRequest
 	newErr error
 	job    *stubRestoreJob
@@ -653,7 +653,7 @@ type stubRestoreSecondaryFactory struct {
 // simulates a construction failure, which happens before any job runs.
 func withRestoreSecondary(stub *stubRestoreSecondaryFactory) Option {
 	return func(c *config) {
-		c.newRestoreSecondaryJob = func(_ context.Context, params *v2.Config, req app.RestoreSecondaryRequest) (restoreJob, error) {
+		c.newRestoreSecondaryJob = func(_ context.Context, params *cfg.Config, req app.RestoreSecondaryRequest) (restoreJob, error) {
 			stub.params = params
 			stub.req = req
 			stub.calls++

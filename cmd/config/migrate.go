@@ -8,9 +8,9 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/cfg/migrate"
 	"github.com/zilliztech/milvus-backup/internal/cfg/param"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 )
 
 type migrateOptions struct {
@@ -38,7 +38,7 @@ func (o *migrateOptions) run(cmd *cobra.Command, opt *root.Options) error {
 		return fmt.Errorf("migrate v1 config %s: %w", opt.Config, err)
 	}
 
-	data, err := v2.Render(out, report.Comments)
+	data, err := cfg.Render(out, report.Comments)
 	if err != nil {
 		return err
 	}
@@ -82,8 +82,8 @@ func ensureNotV2(configPath string) error {
 	if err != nil {
 		return err
 	}
-	if raw, ok := src.ConfigFileValue(v2.VersionKey); ok {
-		if s, _ := raw.(string); strings.EqualFold(s, v2.Version) {
+	if raw, ok := src.ConfigFileValue(cfg.VersionKey); ok {
+		if s, _ := raw.(string); strings.EqualFold(s, cfg.Version) {
 			return fmt.Errorf("%s is already a v2 config", configPath)
 		}
 	}

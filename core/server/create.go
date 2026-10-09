@@ -15,7 +15,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/backup"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/utils"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
@@ -33,7 +33,7 @@ type backupJob interface {
 // backupJobFactory builds and registers the job for one create request.
 // Unlike the other new* constructors it takes the request: a backup job is
 // per-request, so construction and registration are one step.
-type backupJobFactory func(ctx context.Context, params *v2.Config, req app.CreateBackupRequest) (backupJob, error)
+type backupJobFactory func(ctx context.Context, params *cfg.Config, req app.CreateBackupRequest) (backupJob, error)
 
 // CreateBackup Create backup interface
 // @Summary Create backup interface
@@ -119,7 +119,7 @@ func createBackupErrorCode(err error) backuppb.ResponseCode {
 // handler additionally read the persisted meta after a successful run and
 // answered Fail when that read failed, but the read only fed a payload the
 // response then discarded, so it is gone together with the payload.
-func runCreateBackupSync(ctx context.Context, newJob backupJobFactory, params *v2.Config, requestID string, req app.CreateBackupRequest) *backuppb.BackupInfoResponse {
+func runCreateBackupSync(ctx context.Context, newJob backupJobFactory, params *cfg.Config, requestID string, req app.CreateBackupRequest) *backuppb.BackupInfoResponse {
 	job, err := newJob(ctx, params, req)
 	if err != nil {
 		return &backuppb.BackupInfoResponse{
@@ -143,7 +143,7 @@ func runCreateBackupSync(ctx context.Context, newJob backupJobFactory, params *v
 // runCreateBackupAsync registers the job and returns immediately; running it
 // in the background is this server's deployment concern, the flag only
 // selects it.
-func runCreateBackupAsync(ctx context.Context, newJob backupJobFactory, params *v2.Config, requestID string, req app.CreateBackupRequest) *backuppb.BackupInfoResponse {
+func runCreateBackupAsync(ctx context.Context, newJob backupJobFactory, params *cfg.Config, requestID string, req app.CreateBackupRequest) *backuppb.BackupInfoResponse {
 	resp := &backuppb.BackupInfoResponse{RequestId: requestID}
 
 	job, err := newJob(ctx, params, req)

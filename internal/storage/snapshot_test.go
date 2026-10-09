@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 )
 
 func TestSnapshotURI(t *testing.T) {
@@ -21,19 +21,19 @@ func TestSnapshotURI(t *testing.T) {
 			endpoint string
 			want     string
 		}{
-			{"Minio", v2.ProviderMinio, "minio:9000", "minio://minio:9000/backup-bucket/backup/mybackup"},
-			{"MinioWithScheme", v2.ProviderMinio, "http://minio:9000", "minio://minio:9000/backup-bucket/backup/mybackup"},
-			{"Tencent", v2.ProviderTencent, "cos.ap-guangzhou.myqcloud.com", "minio://cos.ap-guangzhou.myqcloud.com/backup-bucket/backup/mybackup"},
-			{"Aliyun", v2.ProviderAliyun, "oss-cn-hangzhou.aliyuncs.com", "minio://oss-cn-hangzhou.aliyuncs.com/backup-bucket/backup/mybackup"},
-			{"Huawei", v2.ProviderHwc, "obs.cn-north-4.myhuaweicloud.com", "minio://obs.cn-north-4.myhuaweicloud.com/backup-bucket/backup/mybackup"},
-			{"AWS", v2.ProviderAWS, "s3.us-west-2.amazonaws.com", "minio://s3.us-west-2.amazonaws.com/backup-bucket/backup/mybackup"},
-			{"GCP", v2.ProviderGCP, "storage.googleapis.com", "minio://storage.googleapis.com/backup-bucket/backup/mybackup"},
+			{"Minio", cfg.ProviderMinio, "minio:9000", "minio://minio:9000/backup-bucket/backup/mybackup"},
+			{"MinioWithScheme", cfg.ProviderMinio, "http://minio:9000", "minio://minio:9000/backup-bucket/backup/mybackup"},
+			{"Tencent", cfg.ProviderTencent, "cos.ap-guangzhou.myqcloud.com", "minio://cos.ap-guangzhou.myqcloud.com/backup-bucket/backup/mybackup"},
+			{"Aliyun", cfg.ProviderAliyun, "oss-cn-hangzhou.aliyuncs.com", "minio://oss-cn-hangzhou.aliyuncs.com/backup-bucket/backup/mybackup"},
+			{"Huawei", cfg.ProviderHwc, "obs.cn-north-4.myhuaweicloud.com", "minio://obs.cn-north-4.myhuaweicloud.com/backup-bucket/backup/mybackup"},
+			{"AWS", cfg.ProviderAWS, "s3.us-west-2.amazonaws.com", "minio://s3.us-west-2.amazonaws.com/backup-bucket/backup/mybackup"},
+			{"GCP", cfg.ProviderGCP, "storage.googleapis.com", "minio://storage.googleapis.com/backup-bucket/backup/mybackup"},
 		}
 
 		for _, tt := range tests {
 			t.Run(tt.name, func(t *testing.T) {
-				cfg := Config{Provider: tt.provider, Bucket: "backup-bucket", Endpoint: tt.endpoint}
-				got, err := SnapshotURI(cfg, "backup/mybackup")
+				storeCfg := Config{Provider: tt.provider, Bucket: "backup-bucket", Endpoint: tt.endpoint}
+				got, err := SnapshotURI(storeCfg, "backup/mybackup")
 				require.NoError(t, err)
 				assert.Equal(t, tt.want, got)
 			})
@@ -42,8 +42,8 @@ func TestSnapshotURI(t *testing.T) {
 
 	// Without one, Milvus derives the endpoint from cloud_provider and region.
 	t.Run("NoEndpointLeavesItToMilvus", func(t *testing.T) {
-		cfg := Config{Provider: v2.ProviderS3, Bucket: "backup-bucket", Region: "us-west-2"}
-		got, err := SnapshotURI(cfg, "backup/mybackup")
+		storeCfg := Config{Provider: cfg.ProviderS3, Bucket: "backup-bucket", Region: "us-west-2"}
+		got, err := SnapshotURI(storeCfg, "backup/mybackup")
 		require.NoError(t, err)
 		assert.Equal(t, "s3://backup-bucket/backup/mybackup", got)
 	})
@@ -51,8 +51,8 @@ func TestSnapshotURI(t *testing.T) {
 	// GCP without an endpoint is an S3-family store, so Milvus derives the GCS endpoint
 	// from cloud_provider and region the same way it does for AWS.
 	t.Run("GCPNoEndpointUsesS3SchemeWithRegion", func(t *testing.T) {
-		cfg := Config{Provider: v2.ProviderGCP, Bucket: "backup-bucket", Region: "us-west1"}
-		got, err := SnapshotURI(cfg, "backup/mybackup")
+		storeCfg := Config{Provider: cfg.ProviderGCP, Bucket: "backup-bucket", Region: "us-west1"}
+		got, err := SnapshotURI(storeCfg, "backup/mybackup")
 		require.NoError(t, err)
 		assert.Equal(t, "s3://backup-bucket/backup/mybackup", got)
 	})
@@ -60,8 +60,8 @@ func TestSnapshotURI(t *testing.T) {
 	// Native GCS is not an S3-family store: the gcs:// scheme alone tells Milvus which
 	// client to build, so neither endpoint nor region is needed.
 	t.Run("GCPNativeUsesGcsScheme", func(t *testing.T) {
-		cfg := Config{Provider: v2.ProviderGCPNative, Bucket: "backup-bucket"}
-		got, err := SnapshotURI(cfg, "backup/mybackup")
+		storeCfg := Config{Provider: cfg.ProviderGCPNative, Bucket: "backup-bucket"}
+		got, err := SnapshotURI(storeCfg, "backup/mybackup")
 		require.NoError(t, err)
 		assert.Equal(t, "gcs://backup-bucket/backup/mybackup", got)
 	})
@@ -69,8 +69,8 @@ func TestSnapshotURI(t *testing.T) {
 	// Every provider Milvus can derive an endpoint for needs the region to do it, so
 	// neither being set is refused here rather than as a copy failure later.
 	t.Run("NeedsAnEndpointOrARegion", func(t *testing.T) {
-		cfg := Config{Provider: v2.ProviderS3, Bucket: "backup-bucket"}
-		_, err := SnapshotURI(cfg, "backup/mybackup")
+		storeCfg := Config{Provider: cfg.ProviderS3, Bucket: "backup-bucket"}
+		_, err := SnapshotURI(storeCfg, "backup/mybackup")
 		assert.ErrorContains(t, err, "region")
 	})
 
@@ -79,55 +79,55 @@ func TestSnapshotURI(t *testing.T) {
 	// <account>.blob.<service-endpoint>, with the default https port dropped to
 	// match the metadata URI Milvus reports back.
 	t.Run("AzureNamesTheAccountEndpoint", func(t *testing.T) {
-		cfg := Config{
-			Provider: v2.ProviderAzure, Bucket: "backup-bucket", Endpoint: "core.windows.net:443",
+		storeCfg := Config{
+			Provider: cfg.ProviderAzure, Bucket: "backup-bucket", Endpoint: "core.windows.net:443",
 			Credential: Credential{AzureAccountName: "azure-account"},
 		}
-		got, err := SnapshotURI(cfg, "backup/mybackup")
+		got, err := SnapshotURI(storeCfg, "backup/mybackup")
 		require.NoError(t, err)
 		assert.Equal(t, "azure://azure-account.blob.core.windows.net/backup-bucket/backup/mybackup", got)
 	})
 
 	t.Run("AzureNeedsAnAccountName", func(t *testing.T) {
-		cfg := Config{Provider: v2.ProviderAzure, Bucket: "backup-bucket", Endpoint: "core.windows.net:443"}
-		_, err := SnapshotURI(cfg, "backup/mybackup")
+		storeCfg := Config{Provider: cfg.ProviderAzure, Bucket: "backup-bucket", Endpoint: "core.windows.net:443"}
+		_, err := SnapshotURI(storeCfg, "backup/mybackup")
 		assert.ErrorContains(t, err, "account name")
 	})
 
 	// The Milvus-view override names the full host Milvus resolves, account
 	// prefix included, and is used verbatim.
 	t.Run("AzureMilvusEndpointOverridesTheEndpoint", func(t *testing.T) {
-		cfg := Config{
-			Provider: v2.ProviderAzure, Bucket: "backup-bucket", Endpoint: "core.windows.net:443",
+		storeCfg := Config{
+			Provider: cfg.ProviderAzure, Bucket: "backup-bucket", Endpoint: "core.windows.net:443",
 			Credential:     Credential{AzureAccountName: "azure-account"},
 			MilvusEndpoint: "other-account.blob.core.windows.net",
 		}
-		got, err := SnapshotURI(cfg, "backup/mybackup")
+		got, err := SnapshotURI(storeCfg, "backup/mybackup")
 		require.NoError(t, err)
 		assert.Equal(t, "azure://other-account.blob.core.windows.net/backup-bucket/backup/mybackup", got)
 	})
 
 	t.Run("AzureNeedsAnEndpoint", func(t *testing.T) {
-		cfg := Config{Provider: v2.ProviderAzure, Bucket: "backup-bucket",
+		storeCfg := Config{Provider: cfg.ProviderAzure, Bucket: "backup-bucket",
 			Credential: Credential{AzureAccountName: "azure-account"}}
-		_, err := SnapshotURI(cfg, "backup/mybackup")
+		_, err := SnapshotURI(storeCfg, "backup/mybackup")
 		assert.ErrorContains(t, err, "endpoint")
 	})
 
 	// The Milvus-view endpoint override is what the URI names, since Milvus connects to it.
 	t.Run("MilvusEndpointOverridesTheEndpoint", func(t *testing.T) {
-		cfg := Config{
-			Provider: v2.ProviderMinio, Bucket: "backup-bucket",
+		storeCfg := Config{
+			Provider: cfg.ProviderMinio, Bucket: "backup-bucket",
 			Endpoint: "localhost:9000", MilvusEndpoint: "minio:9000",
 		}
-		got, err := SnapshotURI(cfg, "backup/mybackup")
+		got, err := SnapshotURI(storeCfg, "backup/mybackup")
 		require.NoError(t, err)
 		assert.Equal(t, "minio://minio:9000/backup-bucket/backup/mybackup", got)
 	})
 
 	t.Run("UnsupportedProvider", func(t *testing.T) {
-		cfg := Config{Provider: "madeup", Bucket: "backup-bucket", Endpoint: "acct.blob.core.windows.net"}
-		_, err := SnapshotURI(cfg, "backup/mybackup")
+		storeCfg := Config{Provider: "madeup", Bucket: "backup-bucket", Endpoint: "acct.blob.core.windows.net"}
+		_, err := SnapshotURI(storeCfg, "backup/mybackup")
 		assert.ErrorContains(t, err, "madeup")
 	})
 }
@@ -135,7 +135,7 @@ func TestSnapshotURI(t *testing.T) {
 func TestSnapshotStoreURI(t *testing.T) {
 	minioCfg := func() Config {
 		return Config{
-			Provider: v2.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket",
+			Provider: cfg.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket",
 			Credential: Credential{Type: Static, AK: "ak", SK: "sk"},
 		}
 	}
@@ -170,7 +170,7 @@ func TestSnapshotStoreURI(t *testing.T) {
 	// backup storage's own endpoint as before.
 	t.Run("OtherBackendKeepsTheEndpoint", func(t *testing.T) {
 		milvusCfg := minioCfg()
-		backupCfg := Config{Provider: v2.ProviderMinio, Endpoint: "other:9000", Bucket: "backup-bucket"}
+		backupCfg := Config{Provider: cfg.ProviderMinio, Endpoint: "other:9000", Bucket: "backup-bucket"}
 
 		got, err := SnapshotStoreURI(milvusCfg, backupCfg, "backup/mybackup")
 		require.NoError(t, err)
@@ -181,7 +181,7 @@ func TestSnapshotStoreURI(t *testing.T) {
 	// endpoint even on the same backend.
 	t.Run("AzureKeepsTheEndpoint", func(t *testing.T) {
 		milvusCfg := Config{
-			Provider: v2.ProviderAzure, Endpoint: "core.windows.net", Bucket: "milvus-bucket",
+			Provider: cfg.ProviderAzure, Endpoint: "core.windows.net", Bucket: "milvus-bucket",
 			Credential: Credential{AzureAccountName: "azure-account"},
 		}
 		backupCfg := milvusCfg
@@ -194,7 +194,7 @@ func TestSnapshotStoreURI(t *testing.T) {
 
 	// Native GCS never carries an endpoint, so same-backend changes nothing.
 	t.Run("GCPNativeUnchanged", func(t *testing.T) {
-		milvusCfg := Config{Provider: v2.ProviderGCPNative, Bucket: "milvus-bucket"}
+		milvusCfg := Config{Provider: cfg.ProviderGCPNative, Bucket: "milvus-bucket"}
 		backupCfg := milvusCfg
 		backupCfg.Bucket = "backup-bucket"
 
@@ -206,25 +206,25 @@ func TestSnapshotStoreURI(t *testing.T) {
 
 func TestSnapshotExternalSpec(t *testing.T) {
 	t.Run("Static", func(t *testing.T) {
-		cfg := Config{
-			Provider:   v2.ProviderTencent,
+		storeCfg := Config{
+			Provider:   cfg.ProviderTencent,
 			Region:     "ap-guangzhou",
 			UseSSL:     true,
 			Credential: Credential{Type: Static, AK: "ak", SK: "sk"},
 		}
 
-		spec, err := SnapshotExternalSpec(cfg)
+		spec, err := SnapshotExternalSpec(storeCfg)
 		require.NoError(t, err)
 		assert.JSONEq(t, `{"extfs":{"cloud_provider":"tencent","access_key_id":"ak","access_key_value":"sk","region":"ap-guangzhou","use_ssl":"true"}}`, spec)
 	})
 
 	t.Run("IAM", func(t *testing.T) {
-		cfg := Config{
-			Provider:   v2.ProviderAWS,
+		storeCfg := Config{
+			Provider:   cfg.ProviderAWS,
 			Credential: Credential{Type: IAM, IAMEndpoint: "http://169.254.169.254"},
 		}
 
-		spec, err := SnapshotExternalSpec(cfg)
+		spec, err := SnapshotExternalSpec(storeCfg)
 		require.NoError(t, err)
 		assert.JSONEq(t, `{"extfs":{"cloud_provider":"aws","iam_endpoint":"http://169.254.169.254","use_iam":"true","use_ssl":"false"}}`, spec)
 	})
@@ -232,12 +232,12 @@ func TestSnapshotExternalSpec(t *testing.T) {
 	// For azure the static key pair is the account name and the account key: Milvus
 	// reads access_key_id as the storage account, matching what the tool signs with.
 	t.Run("AzureAccountKey", func(t *testing.T) {
-		cfg := Config{
-			Provider:   v2.ProviderAzure,
+		storeCfg := Config{
+			Provider:   cfg.ProviderAzure,
 			Credential: Credential{Type: Static, AK: "azure-account", SK: "azure-key"},
 		}
 
-		spec, err := SnapshotExternalSpec(cfg)
+		spec, err := SnapshotExternalSpec(storeCfg)
 		require.NoError(t, err)
 		assert.JSONEq(t, `{"extfs":{"cloud_provider":"azure","access_key_id":"azure-account","access_key_value":"azure-key","use_ssl":"false"}}`, spec)
 	})
@@ -246,14 +246,14 @@ func TestSnapshotExternalSpec(t *testing.T) {
 	// to do the same: cloud_provider gcp puts it in the S3 family, use_iam leaves it to
 	// the node's own credentials.
 	t.Run("GCPIAM", func(t *testing.T) {
-		cfg := Config{
-			Provider:   v2.ProviderGCP,
+		storeCfg := Config{
+			Provider:   cfg.ProviderGCP,
 			Region:     "us-west1",
 			UseSSL:     true,
 			Credential: Credential{Type: IAM},
 		}
 
-		spec, err := SnapshotExternalSpec(cfg)
+		spec, err := SnapshotExternalSpec(storeCfg)
 		require.NoError(t, err)
 		assert.JSONEq(t, `{"extfs":{"cloud_provider":"gcp","region":"us-west1","use_iam":"true","use_ssl":"true"}}`, spec)
 	})
@@ -264,12 +264,12 @@ func TestSnapshotExternalSpec(t *testing.T) {
 		saPath := filepath.Join(t.TempDir(), "service-account.json")
 		require.NoError(t, os.WriteFile(saPath, []byte(`{"type":"service_account","project_id":"snapshot-project"}`), 0o600))
 
-		cfg := Config{
-			Provider:   v2.ProviderGCPNative,
+		storeCfg := Config{
+			Provider:   cfg.ProviderGCPNative,
 			Credential: Credential{Type: GCPCredJSON, GCPCredJSON: saPath},
 		}
 
-		spec, err := SnapshotExternalSpec(cfg)
+		spec, err := SnapshotExternalSpec(storeCfg)
 		require.NoError(t, err)
 		assert.JSONEq(t, `{"extfs":{"cloud_provider":"gcpnative","credential_json":"{\"type\":\"service_account\",\"project_id\":\"snapshot-project\"}","use_ssl":"false"}}`, spec)
 	})
@@ -277,27 +277,27 @@ func TestSnapshotExternalSpec(t *testing.T) {
 	// extfs has no session token field, so sending the key pair alone would fail to
 	// authorize with nothing pointing at the cause.
 	t.Run("RejectsSessionToken", func(t *testing.T) {
-		cfg := Config{Provider: v2.ProviderAWS, Credential: Credential{Type: Static, AK: "ak", SK: "sk", Token: "token"}}
-		_, err := SnapshotExternalSpec(cfg)
+		storeCfg := Config{Provider: cfg.ProviderAWS, Credential: Credential{Type: Static, AK: "ak", SK: "sk", Token: "token"}}
+		_, err := SnapshotExternalSpec(storeCfg)
 		assert.Error(t, err)
 	})
 
 	t.Run("RejectsUnsupportedCredential", func(t *testing.T) {
-		cfg := Config{Provider: v2.ProviderAWS, Credential: Credential{Type: MinioCredProvider}}
-		_, err := SnapshotExternalSpec(cfg)
+		storeCfg := Config{Provider: cfg.ProviderAWS, Credential: Credential{Type: MinioCredProvider}}
+		_, err := SnapshotExternalSpec(storeCfg)
 		assert.Error(t, err)
 	})
 
 	// The SAS rides next to the destination credentials: it authorizes the
 	// source read of a cross-account Azure copy, which those credentials cannot.
 	t.Run("AzureCarriesTheSourceSAS", func(t *testing.T) {
-		cfg := Config{
-			Provider:   v2.ProviderAzure,
+		storeCfg := Config{
+			Provider:   cfg.ProviderAzure,
 			SourceSAS:  "sv=2024-08-04&sig=abc",
 			Credential: Credential{Type: Static, AK: "backup-account", SK: "backup-key"},
 		}
 
-		spec, err := SnapshotExternalSpec(cfg)
+		spec, err := SnapshotExternalSpec(storeCfg)
 		require.NoError(t, err)
 		assert.JSONEq(t, `{"extfs":{"cloud_provider":"azure","access_key_id":"backup-account","access_key_value":"backup-key","source_sas_token":"sv=2024-08-04&sig=abc","use_ssl":"false"}}`, spec)
 	})
@@ -305,13 +305,13 @@ func TestSnapshotExternalSpec(t *testing.T) {
 	// No other provider has a source-read grant, so a SAS anywhere else is a
 	// misconfiguration rather than an ignored field.
 	t.Run("RejectsSourceSASOutsideAzure", func(t *testing.T) {
-		cfg := Config{
-			Provider:   v2.ProviderAWS,
+		storeCfg := Config{
+			Provider:   cfg.ProviderAWS,
 			SourceSAS:  "sv=2024-08-04&sig=abc",
 			Credential: Credential{Type: Static, AK: "ak", SK: "sk"},
 		}
 
-		_, err := SnapshotExternalSpec(cfg)
+		_, err := SnapshotExternalSpec(storeCfg)
 		assert.ErrorContains(t, err, "source sas")
 	})
 }
@@ -327,62 +327,62 @@ func TestSnapshotSameService(t *testing.T) {
 			// Buckets and credentials are not part of the identity: one backend
 			// serves both sides, and the copy stays inside it.
 			name: "SameBackend",
-			a:    Config{Provider: v2.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket"},
-			b:    Config{Provider: v2.ProviderMinio, Endpoint: "minio:9000", Bucket: "backup-bucket"},
+			a:    Config{Provider: cfg.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket"},
+			b:    Config{Provider: cfg.ProviderMinio, Endpoint: "minio:9000", Bucket: "backup-bucket"},
 			want: true,
 		},
 		{
 			// One cloud service spans its regions and endpoints, so a
 			// cross-region copy is still server-side.
 			name: "SameCloudAcrossRegions",
-			a:    Config{Provider: v2.ProviderAWS, Region: "us-east-1", Bucket: "milvus-bucket"},
-			b:    Config{Provider: v2.ProviderAWS, Region: "us-west-2", Bucket: "backup-bucket"},
+			a:    Config{Provider: cfg.ProviderAWS, Region: "us-east-1", Bucket: "milvus-bucket"},
+			b:    Config{Provider: cfg.ProviderAWS, Region: "us-west-2", Bucket: "backup-bucket"},
 			want: true,
 		},
 		{
 			// s3 and aws spell the same provider family in the extfs.
 			name: "S3AndAWSAreOneFamily",
-			a:    Config{Provider: v2.ProviderAWS, Region: "us-east-1", Bucket: "milvus-bucket"},
-			b:    Config{Provider: v2.ProviderS3, Region: "us-east-1", Bucket: "backup-bucket"},
+			a:    Config{Provider: cfg.ProviderAWS, Region: "us-east-1", Bucket: "milvus-bucket"},
+			b:    Config{Provider: cfg.ProviderS3, Region: "us-east-1", Bucket: "backup-bucket"},
 			want: true,
 		},
 		{
 			// The cross-account Azure copy exists, authorized by the source SAS.
 			name: "AzureAcrossAccounts",
-			a: Config{Provider: v2.ProviderAzure, Endpoint: "core.windows.net", Bucket: "milvus-bucket",
+			a: Config{Provider: cfg.ProviderAzure, Endpoint: "core.windows.net", Bucket: "milvus-bucket",
 				Credential: Credential{AzureAccountName: "milvus-account"}},
-			b: Config{Provider: v2.ProviderAzure, Endpoint: "core.windows.net", Bucket: "backup-bucket",
+			b: Config{Provider: cfg.ProviderAzure, Endpoint: "core.windows.net", Bucket: "backup-bucket",
 				Credential: Credential{AzureAccountName: "backup-account"}},
 			want: true,
 		},
 		{
 			name: "CrossProvider",
-			a:    Config{Provider: v2.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket"},
-			b:    Config{Provider: v2.ProviderAWS, Region: "us-west-2", Bucket: "backup-bucket"},
+			a:    Config{Provider: cfg.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket"},
+			b:    Config{Provider: cfg.ProviderAWS, Region: "us-west-2", Bucket: "backup-bucket"},
 			want: false,
 		},
 		{
 			// gcp is the S3-compatible gateway and gcpnative the native client:
 			// two chunk managers upstream, not one service.
 			name: "GCPAndGCPNative",
-			a:    Config{Provider: v2.ProviderGCP, Endpoint: "storage.googleapis.com", Bucket: "milvus-bucket"},
-			b:    Config{Provider: v2.ProviderGCPNative, Bucket: "backup-bucket"},
+			a:    Config{Provider: cfg.ProviderGCP, Endpoint: "storage.googleapis.com", Bucket: "milvus-bucket"},
+			b:    Config{Provider: cfg.ProviderGCPNative, Bucket: "backup-bucket"},
 			want: false,
 		},
 		{
 			// Two self-hosted endpoints are two services, even under one
 			// provider string.
 			name: "MinioAcrossEndpoints",
-			a:    Config{Provider: v2.ProviderMinio, Endpoint: "minio-a:9000", Bucket: "milvus-bucket"},
-			b:    Config{Provider: v2.ProviderMinio, Endpoint: "minio-b:9000", Bucket: "backup-bucket"},
+			a:    Config{Provider: cfg.ProviderMinio, Endpoint: "minio-a:9000", Bucket: "milvus-bucket"},
+			b:    Config{Provider: cfg.ProviderMinio, Endpoint: "minio-b:9000", Bucket: "backup-bucket"},
 			want: false,
 		},
 		{
 			// The copy is addressed as Milvus connects, so a shared Milvus-view
 			// endpoint makes one service out of two milvus-backup views.
 			name: "MinioOneMilvusView",
-			a:    Config{Provider: v2.ProviderMinio, Endpoint: "minio-a:9000", Bucket: "milvus-bucket"},
-			b: Config{Provider: v2.ProviderMinio, Endpoint: "minio-b:9000", MilvusEndpoint: "minio-a:9000",
+			a:    Config{Provider: cfg.ProviderMinio, Endpoint: "minio-a:9000", Bucket: "milvus-bucket"},
+			b: Config{Provider: cfg.ProviderMinio, Endpoint: "minio-b:9000", MilvusEndpoint: "minio-a:9000",
 				Bucket: "backup-bucket"},
 			want: true,
 		},
@@ -390,8 +390,8 @@ func TestSnapshotSameService(t *testing.T) {
 			// Local storage has no snapshot support at all; that error is
 			// raised where the uri is built.
 			name: "UnsupportedProvider",
-			a:    Config{Provider: v2.ProviderLocal, Endpoint: "/tmp/milvus", Bucket: "milvus-bucket"},
-			b:    Config{Provider: v2.ProviderLocal, Endpoint: "/tmp/backup", Bucket: "backup-bucket"},
+			a:    Config{Provider: cfg.ProviderLocal, Endpoint: "/tmp/milvus", Bucket: "milvus-bucket"},
+			b:    Config{Provider: cfg.ProviderLocal, Endpoint: "/tmp/backup", Bucket: "backup-bucket"},
 			want: false,
 		},
 	}

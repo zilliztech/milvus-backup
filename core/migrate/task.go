@@ -11,7 +11,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/sync/semaphore"
 
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/cloud"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
@@ -153,15 +153,15 @@ func (v *volume) apply(ctx context.Context) error {
 func newVolumeStorage(ctx context.Context, vol *volume) (storage.Client, error) {
 	var cred storage.Credential
 	switch vol.currentResp.resp.Cloud {
-	case v2.ProviderGCP:
+	case cfg.ProviderGCP:
 		cred = storage.Credential{Type: storage.OAuth2TokenSource, OAuth2TokenSource: vol}
-	case v2.ProviderAWS:
+	case cfg.ProviderAWS:
 		cred = storage.Credential{Type: storage.MinioCredProvider, MinioCredProvider: vol}
 	default:
 		return nil, fmt.Errorf("migrate: unsupported cloud provider %s", vol.currentResp.resp.Cloud)
 	}
 
-	cfg := storage.Config{
+	storeCfg := storage.Config{
 		Provider:   vol.currentResp.resp.Cloud,
 		Endpoint:   vol.currentResp.resp.Endpoint,
 		UseSSL:     true,
@@ -169,7 +169,7 @@ func newVolumeStorage(ctx context.Context, vol *volume) (storage.Client, error) 
 		Bucket:     vol.currentResp.resp.BucketName,
 	}
 
-	cli, err := storage.NewClient(ctx, cfg)
+	cli, err := storage.NewClient(ctx, storeCfg)
 	if err != nil {
 		return nil, fmt.Errorf("migrate: new volume storage %w", err)
 	}
@@ -194,7 +194,7 @@ type Task struct {
 	copySem *semaphore.Weighted
 }
 
-func NewTask(taskID, backupName, clusterID string, params *v2.Config) (*Task, error) {
+func NewTask(taskID, backupName, clusterID string, params *cfg.Config) (*Task, error) {
 	logger := log.With(zap.String("task_id", taskID))
 	cloudCli := cloud.NewClient(params.Cloud.Endpoint.Val, params.Cloud.APIKey.Val)
 

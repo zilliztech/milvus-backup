@@ -10,7 +10,7 @@ import (
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/backup"
 	corel0 "github.com/zilliztech/milvus-backup/core/l0compact"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 )
@@ -43,7 +43,7 @@ func (o *options) validate() error {
 	return nil
 }
 
-func (o *options) run(cmd *cobra.Command, params *v2.Config) error {
+func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
 	ctx := context.Background()
 	cli, err := storage.NewBackupStorage(ctx, params)
 	if err != nil {

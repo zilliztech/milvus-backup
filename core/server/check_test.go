@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 )
 
 // stubCheck stands in for app.Check: a canned error and the writer the handler
@@ -38,7 +38,7 @@ func (s *stubCheck) Execute(_ context.Context, output io.Writer) error {
 // client-construction failure, which happens before any Execute call.
 func withCheck(stub *stubCheck, newErr error) Option {
 	return func(c *config) {
-		c.newCheck = func(context.Context, *v2.Config) (checkUC, error) {
+		c.newCheck = func(context.Context, *cfg.Config) (checkUC, error) {
 			return stub, newErr
 		}
 	}

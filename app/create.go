@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"github.com/zilliztech/milvus-backup/core/backup"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
@@ -57,7 +57,7 @@ type CreateBackupRequest struct {
 // job: source List preflight first, then the task manager. The clients are
 // created per call; sharing them across calls is a lifecycle decision this
 // layer deliberately does not make.
-func NewBackupJob(ctx context.Context, params *v2.Config, taskMgr *taskmgr.Mgr, req CreateBackupRequest) (*BackupJob, error) {
+func NewBackupJob(ctx context.Context, params *cfg.Config, taskMgr *taskmgr.Mgr, req CreateBackupRequest) (*BackupJob, error) {
 	backupStorage, err := storage.NewBackupStorage(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("app: %w", err)
@@ -73,7 +73,7 @@ func NewBackupJob(ctx context.Context, params *v2.Config, taskMgr *taskmgr.Mgr, 
 
 // newBackupJob is NewBackupJob with the storage clients injected, so tests
 // exercise admission and registration without real storage behind the clients.
-func newBackupJob(ctx context.Context, params *v2.Config, taskMgr *taskmgr.Mgr, milvusStorage, backupStorage storage.Client, req CreateBackupRequest) (*BackupJob, error) {
+func newBackupJob(ctx context.Context, params *cfg.Config, taskMgr *taskmgr.Mgr, milvusStorage, backupStorage storage.Client, req CreateBackupRequest) (*BackupJob, error) {
 	if err := preflightSourceStorage(ctx, params, milvusStorage, req.Option.Strategy); err != nil {
 		return nil, err
 	}
@@ -96,7 +96,7 @@ func newBackupJob(ctx context.Context, params *v2.Config, taskMgr *taskmgr.Mgr, 
 	return &BackupJob{task: task}, nil
 }
 
-func preflightSourceStorage(ctx context.Context, params *v2.Config, milvusStorage storage.Client, strategy backup.Strategy) error {
+func preflightSourceStorage(ctx context.Context, params *cfg.Config, milvusStorage storage.Client, strategy backup.Strategy) error {
 	if strategy == backup.StrategyMetaOnly {
 		return nil
 	}

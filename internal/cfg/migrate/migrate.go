@@ -26,19 +26,19 @@ package migrate
 import (
 	"fmt"
 
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/cfg/param"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 )
 
 // Migrate translates the v1 source into a resolved v2 configuration and a
 // report. The returned config always renders; the report carries the
 // warnings, the embedded comments, the environment renames, and any
 // validation problems (via Report.Err) that --strict promotes to a failure.
-func Migrate(src *param.Source) (*v2.Config, *Report, error) {
+func Migrate(src *param.Source) (*cfg.Config, *Report, error) {
 	r := newReport()
 
 	tr := newTranslator(src, r)
-	out, err := v2.Resolve(tr.translate())
+	out, err := cfg.Resolve(tr.translate())
 	if err != nil {
 		return nil, r, fmt.Errorf("cfg: resolve translated v1 config: %w", err)
 	}
@@ -49,7 +49,7 @@ func Migrate(src *param.Source) (*v2.Config, *Report, error) {
 	// the resolved backends, so it is made here rather than in the
 	// translation, and it is keyed off the flag having come from crossStorage
 	// rather than off the resolved mode, which a v2-spelled override can set.
-	if tr.crossStorageAuto && out.Transfer.Mode.Val == v2.TransferAuto && !sameBackend(&out.Milvus.Storage, &out.Backup.Storage) {
+	if tr.crossStorageAuto && out.Transfer.Mode.Val == cfg.TransferAuto && !sameBackend(&out.Milvus.Storage, &out.Backup.Storage) {
 		r.warnf("minio.crossStorage=false mapped to transfer.mode=auto, but milvus and backup storage differ; auto streams between them where v1 could attempt direct copy — verify this is intended")
 	}
 
@@ -64,8 +64,8 @@ func Migrate(src *param.Source) (*v2.Config, *Report, error) {
 // yet keeps working. Unlike Migrate it carries every value into the result,
 // including a secret that reached v1 through an environment variable, which
 // the process needs in hand to connect.
-func Translate(src *param.Source) (*v2.Config, error) {
-	out, err := v2.LoadFrom(newTranslator(src, nil).translate())
+func Translate(src *param.Source) (*cfg.Config, error) {
+	out, err := cfg.LoadFrom(newTranslator(src, nil).translate())
 	if err != nil {
 		return nil, fmt.Errorf("cfg: translate v1 config to v2: %w", err)
 	}
@@ -88,7 +88,7 @@ func scanLegacyEnv(src *param.Source, r *Report) {
 			if _, ok := src.EnvValue(env); !ok {
 				continue
 			}
-			if to, legacy := v2.Migration(env); legacy {
+			if to, legacy := cfg.Migration(env); legacy {
 				r.EnvRenames = append(r.EnvRenames, EnvRename{From: env, To: to})
 			}
 		}
@@ -98,7 +98,7 @@ func scanLegacyEnv(src *param.Source, r *Report) {
 // sameBackend reports whether two storage configs name the same backend, i.e.
 // the same provider reached at the same endpoint. Buckets and root paths may
 // differ within one backend.
-func sameBackend(a, b *v2.StorageConfig) bool {
+func sameBackend(a, b *cfg.StorageConfig) bool {
 	return a.Provider.Val == b.Provider.Val &&
 		a.Address.Val == b.Address.Val &&
 		a.Port.Val == b.Port.Val &&

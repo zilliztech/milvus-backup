@@ -1,4 +1,4 @@
-// Package v2 implements the v2 milvus-backup configuration schema.
+// Package cfg implements the v2 milvus-backup configuration schema.
 //
 // A configuration file is decoded entirely as one schema version: v2 accepts
 // only v2 keys, environment variables and --set paths, and rejects everything
@@ -19,7 +19,7 @@
 // injected value silently override the config file, reported twice as a
 // connection bug (#197, #617). Credential names are not at risk: the injected
 // names always end in _PORT, _HOST or _SERVICE_*.
-package v2
+package cfg
 
 import (
 	"io"

@@ -12,7 +12,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore/conv"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
@@ -141,7 +141,7 @@ type TaskArgs struct {
 	Plan   *Plan
 	Option *Option
 
-	Params *v2.Config
+	Params *cfg.Config
 
 	BackupDir     string
 	BackupStorage storage.Client

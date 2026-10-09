@@ -9,8 +9,8 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/cfg/param"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 )
 
 // writeTempV1 writes content to a temp file and returns its path.
@@ -36,7 +36,7 @@ func v1Source(t *testing.T, content string) *param.Source {
 
 // migrateRun runs Migrate and requires the translation itself to succeed;
 // report.Err still carries the validation problems the output has.
-func migrateRun(t *testing.T, src *param.Source) (*v2.Config, *Report) {
+func migrateRun(t *testing.T, src *param.Source) (*cfg.Config, *Report) {
 	t.Helper()
 
 	out, report, err := Migrate(src)
@@ -114,24 +114,24 @@ func TestMigrate_ProvenanceKeepsV1Spelling(t *testing.T) {
 func TestMigrate_TLSMode(t *testing.T) {
 	t.Run("Disabled", func(t *testing.T) {
 		out, _ := migrateRun(t, v1Source(t, "milvus:\n  tlsMode: 0\n"))
-		assert.Equal(t, v2.TLSDisabled, out.Milvus.Grpc.TLSMode.Val)
+		assert.Equal(t, cfg.TLSDisabled, out.Milvus.Grpc.TLSMode.Val)
 	})
 
 	t.Run("Server", func(t *testing.T) {
 		out, _ := migrateRun(t, v1Source(t, "milvus:\n  tlsMode: 1\n"))
-		assert.Equal(t, v2.TLSServer, out.Milvus.Grpc.TLSMode.Val)
+		assert.Equal(t, cfg.TLSServer, out.Milvus.Grpc.TLSMode.Val)
 	})
 
 	t.Run("Mutual", func(t *testing.T) {
 		out, _ := migrateRun(t, v1Source(t, "milvus:\n  tlsMode: 2\n  mtlsCertPath: /c.pem\n  mtlsKeyPath: /c.key\n"))
-		assert.Equal(t, v2.TLSMutual, out.Milvus.Grpc.TLSMode.Val)
+		assert.Equal(t, cfg.TLSMutual, out.Milvus.Grpc.TLSMode.Val)
 	})
 
 	// v1 silently downgraded mutual TLS to server TLS without a key pair. v2
 	// rejects it, so the migrator settles the downgrade and warns.
 	t.Run("MutualWithoutKeyPairDowngrades", func(t *testing.T) {
 		out, report := migrateRun(t, v1Source(t, "milvus:\n  tlsMode: 2\n"))
-		assert.Equal(t, v2.TLSServer, out.Milvus.Grpc.TLSMode.Val)
+		assert.Equal(t, cfg.TLSServer, out.Milvus.Grpc.TLSMode.Val)
 		assert.NoError(t, report.Err())
 		require.Len(t, report.Warnings, 1)
 		assert.Contains(t, report.Warnings[0], "mutual")
@@ -141,12 +141,12 @@ func TestMigrate_TLSMode(t *testing.T) {
 func TestMigrate_StorageProviderAlias(t *testing.T) {
 	t.Run("Aliyun", func(t *testing.T) {
 		out, _ := migrateRun(t, v1Source(t, "minio:\n  storageType: ali\n"))
-		assert.Equal(t, v2.ProviderAliyun, out.Milvus.Storage.Provider.Val)
+		assert.Equal(t, cfg.ProviderAliyun, out.Milvus.Storage.Provider.Val)
 	})
 
 	t.Run("Tencent", func(t *testing.T) {
 		out, _ := migrateRun(t, v1Source(t, "minio:\n  storageType: tc\n"))
-		assert.Equal(t, v2.ProviderTencent, out.Milvus.Storage.Provider.Val)
+		assert.Equal(t, cfg.ProviderTencent, out.Milvus.Storage.Provider.Val)
 	})
 }
 
@@ -154,10 +154,10 @@ func TestMigrate_StorageProviderAlias(t *testing.T) {
 // declaration order wins, not map iteration.
 func TestMigrate_StorageProviderPrecedence(t *testing.T) {
 	out, _ := migrateRun(t, v1Source(t, "storage:\n  storageType: s3\nminio:\n  storageType: azure\n  cloudProvider: aws\n"))
-	assert.Equal(t, v2.ProviderS3, out.Milvus.Storage.Provider.Val)
+	assert.Equal(t, cfg.ProviderS3, out.Milvus.Storage.Provider.Val)
 
 	out, _ = migrateRun(t, v1Source(t, "minio:\n  storageType: azure\n  cloudProvider: aws\n"))
-	assert.Equal(t, v2.ProviderAzure, out.Milvus.Storage.Provider.Val)
+	assert.Equal(t, cfg.ProviderAzure, out.Milvus.Storage.Provider.Val)
 }
 
 func TestMigrate_StorageAuth(t *testing.T) {
@@ -170,7 +170,7 @@ minio:
   token: tok
 `))
 		s := out.Milvus.Storage
-		assert.Equal(t, v2.AuthStatic, s.Auth.Type.Val)
+		assert.Equal(t, cfg.AuthStatic, s.Auth.Type.Val)
 		assert.Equal(t, "ak", s.Auth.AccessKeyID.Val)
 		assert.Equal(t, "sk", s.Auth.SecretAccessKey.Val)
 		assert.Equal(t, "tok", s.Auth.SessionToken.Val)
@@ -187,10 +187,10 @@ minio:
   bucketName: mycontainer
 `))
 		s := out.Milvus.Storage
-		assert.Equal(t, v2.ProviderAzure, s.Provider.Val)
+		assert.Equal(t, cfg.ProviderAzure, s.Provider.Val)
 		assert.Equal(t, "myaccount", s.AccountName.Val)
 		assert.Equal(t, "mycontainer", s.BucketName.Val)
-		assert.Equal(t, v2.AuthSharedKey, s.Auth.Type.Val)
+		assert.Equal(t, cfg.AuthSharedKey, s.Auth.Type.Val)
 		assert.Equal(t, "mykey", s.Auth.AccountKey.Val)
 	})
 
@@ -206,9 +206,9 @@ minio:
   bucketName: mycontainer
 `))
 		s := out.Milvus.Storage
-		assert.Equal(t, v2.ProviderAzure, s.Provider.Val)
+		assert.Equal(t, cfg.ProviderAzure, s.Provider.Val)
 		assert.Equal(t, "myaccount", s.AccountName.Val)
-		assert.Equal(t, v2.AuthDefault, s.Auth.Type.Val)
+		assert.Equal(t, cfg.AuthDefault, s.Auth.Type.Val)
 		assert.Equal(t, "", s.Auth.AccountKey.Val)
 	})
 
@@ -219,7 +219,7 @@ minio:
   gcpCredentialJSON: /creds.json
 `))
 		s := out.Milvus.Storage
-		assert.Equal(t, v2.AuthServiceAccount, s.Auth.Type.Val)
+		assert.Equal(t, cfg.AuthServiceAccount, s.Auth.Type.Val)
 		assert.Equal(t, "/creds.json", s.Auth.CredentialsFile.Val)
 	})
 
@@ -231,7 +231,7 @@ minio:
   iamEndpoint: http://iam.local
 `))
 		s := out.Milvus.Storage
-		assert.Equal(t, v2.AuthIAM, s.Auth.Type.Val)
+		assert.Equal(t, cfg.AuthIAM, s.Auth.Type.Val)
 		assert.Equal(t, "http://iam.local", s.Auth.Endpoint.Val)
 	})
 }
@@ -250,7 +250,7 @@ minio:
   backupBucketName: backup-bucket
 `))
 
-	assert.Equal(t, v2.ProviderS3, out.Backup.Storage.Provider.Val)
+	assert.Equal(t, cfg.ProviderS3, out.Backup.Storage.Provider.Val)
 	assert.Equal(t, "s3.amazonaws.com", out.Backup.Storage.Address.Val)
 	assert.True(t, out.Backup.Storage.UseSSL.Val)
 	assert.Equal(t, "ak", out.Backup.Storage.Auth.AccessKeyID.Val)
@@ -272,8 +272,8 @@ minio:
   backupSecretAccessKey: sk
 `))
 
-	assert.Equal(t, v2.AuthIAM, out.Milvus.Storage.Auth.Type.Val)
-	assert.Equal(t, v2.AuthStatic, out.Backup.Storage.Auth.Type.Val)
+	assert.Equal(t, cfg.AuthIAM, out.Milvus.Storage.Auth.Type.Val)
+	assert.Equal(t, cfg.AuthStatic, out.Backup.Storage.Auth.Type.Val)
 	assert.Equal(t, "ak", out.Backup.Storage.Auth.AccessKeyID.Val)
 	// The endpoint rides along through v2's standard backup-side inheritance,
 	// which the retired translate path bypassed; a static-auth client never
@@ -284,19 +284,19 @@ minio:
 func TestMigrate_CrossStorage(t *testing.T) {
 	t.Run("TrueStreams", func(t *testing.T) {
 		out, _ := migrateRun(t, v1Source(t, "minio:\n  crossStorage: true\n"))
-		assert.Equal(t, v2.TransferStreaming, out.Transfer.Mode.Val)
+		assert.Equal(t, cfg.TransferStreaming, out.Transfer.Mode.Val)
 	})
 
 	t.Run("FalseAuto", func(t *testing.T) {
 		out, _ := migrateRun(t, v1Source(t, "minio:\n  crossStorage: false\n"))
-		assert.Equal(t, v2.TransferAuto, out.Transfer.Mode.Val)
+		assert.Equal(t, cfg.TransferAuto, out.Transfer.Mode.Val)
 	})
 
 	// The behavior change only matters when the two backends differ.
 	t.Run("WarnsOnlyWhenBackendsDiffer", func(t *testing.T) {
 		same, report := migrateRun(t, v1Source(t, "minio:\n  crossStorage: false\n"))
 		assert.Empty(t, report.Warnings)
-		assert.Equal(t, v2.TransferAuto, same.Transfer.Mode.Val)
+		assert.Equal(t, cfg.TransferAuto, same.Transfer.Mode.Val)
 
 		_, report = migrateRun(t, v1Source(t, `
 minio:
@@ -318,12 +318,12 @@ minio:
   crossStorage: true
   address: milvus-minio
   backupAddress: backup-s3
-`), map[string]string{"transfer.mode": v2.TransferAuto})
+`), map[string]string{"transfer.mode": cfg.TransferAuto})
 	require.NoError(t, err)
 
 	out, report := migrateRun(t, src)
 
-	assert.Equal(t, v2.TransferAuto, out.Transfer.Mode.Val)
+	assert.Equal(t, cfg.TransferAuto, out.Transfer.Mode.Val)
 	assert.Empty(t, report.Warnings)
 }
 
@@ -443,14 +443,14 @@ minio:
 `))
 	require.NoError(t, report.Err())
 
-	data, err := v2.Render(out, report.Comments)
+	data, err := cfg.Render(out, report.Comments)
 	require.NoError(t, err)
 
 	p := filepath.Join(t.TempDir(), "v2.yaml")
 	require.NoError(t, os.WriteFile(p, data, 0o600))
 
-	loaded, err := v2.Load(p, nil)
+	loaded, err := cfg.Load(p, nil)
 	require.NoError(t, err)
-	assert.Equal(t, v2.ProviderS3, loaded.Milvus.Storage.Provider.Val)
+	assert.Equal(t, cfg.ProviderS3, loaded.Milvus.Storage.Provider.Val)
 	assert.Equal(t, "ak", loaded.Milvus.Storage.Auth.AccessKeyID.Val)
 }

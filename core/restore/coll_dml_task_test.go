@@ -10,7 +10,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
@@ -105,7 +105,7 @@ func TestNotL0DirGroups(t *testing.T) {
 		ct := newTestCollDMLTask()
 		ct.collBackup = &backuppb.CollectionBackupInfo{CollectionId: 1}
 		ct.backupDir = "backup/"
-		ct.backupStorage = newTestStorageClient(t, v2.ProviderLocal)
+		ct.backupStorage = newTestStorageClient(t, cfg.ProviderLocal)
 
 		part := &backuppb.PartitionBackupInfo{PartitionId: 1, PartitionName: "p1", Size: 10}
 		for _, seg := range segs10() {
@@ -134,7 +134,7 @@ func TestNotL0DirGroups(t *testing.T) {
 		ct := newTestCollDMLTask()
 		ct.collBackup = &backuppb.CollectionBackupInfo{CollectionId: 1}
 		ct.backupDir = "backup/"
-		ct.backupStorage = newTestStorageClient(t, v2.ProviderLocal)
+		ct.backupStorage = newTestStorageClient(t, cfg.ProviderLocal)
 
 		// an old backup without group ids: the whole partition is one dir
 		// group with default request parameters

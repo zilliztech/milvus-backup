@@ -12,7 +12,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
@@ -27,7 +27,7 @@ func newTestTask() *Task {
 
 		args: TaskArgs{
 			Plan:   &Plan{},
-			Params: &v2.Config{},
+			Params: &cfg.Config{},
 		},
 	}
 }
@@ -50,11 +50,11 @@ func TestNewTask_RefusesUnknownFormat(t *testing.T) {
 func TestNewTask_SnapshotSource(t *testing.T) {
 	milvusStorage := storage.NewMockClient(t)
 	milvusStorage.EXPECT().Config().Return(storage.Config{
-		Provider: v2.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket",
+		Provider: cfg.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket",
 	})
 	backupStorage := storage.NewMockClient(t)
 	backupStorage.EXPECT().Config().Return(storage.Config{
-		Provider: v2.ProviderMinio, Endpoint: "minio:9000", Bucket: "backup-bucket",
+		Provider: cfg.ProviderMinio, Endpoint: "minio:9000", Bucket: "backup-bucket",
 	})
 
 	args := TaskArgs{
@@ -62,7 +62,7 @@ func TestNewTask_SnapshotSource(t *testing.T) {
 		Backup:        &backuppb.BackupInfo{Name: "mybackup", Format: meta.FormatSnapshot},
 		Plan:          &Plan{},
 		Option:        &Option{},
-		Params:        &v2.Config{},
+		Params:        &cfg.Config{},
 		BackupDir:     "backup/mybackup/",
 		BackupStorage: backupStorage,
 		MilvusStorage: milvusStorage,

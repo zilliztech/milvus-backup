@@ -10,7 +10,7 @@ import (
 	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/cmd/flags"
 	"github.com/zilliztech/milvus-backup/cmd/root"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 )
 
 // removedFlags are the list flags dropped in 0.6.
@@ -18,7 +18,7 @@ var removedFlags = []flags.Removed{
 	{Name: "collection", Shorthand: "c", Advice: "listing backups by collection is no longer supported"},
 }
 
-func run(cmd *cobra.Command, params *v2.Config) error {
+func run(cmd *cobra.Command, params *cfg.Config) error {
 	ctx := context.Background()
 
 	uc, err := app.NewListBackups(ctx, params)
