@@ -76,6 +76,7 @@ definitions:
     - 2
     - 3
     - 4
+    format: int32
     type: integer
     x-enum-varnames:
     - BackupTaskStateCode_BACKUP_INITIAL
@@ -186,6 +187,10 @@ definitions:
           force backup skip flush, Should make sure data has been stored into disk when using it
           Deprecated: set strategy=skip_flush instead
         type: boolean
+      format:
+        description: format for backup, one of [auto, binlog, snapshot], if not set
+          will auto select
+        type: string
       gc_pause_address:
         description: gc pause API address
         type: string
@@ -240,6 +245,7 @@ definitions:
     - 106
     - 200
     - 201
+    format: int32
     type: integer
     x-enum-varnames:
     - DataType_None
@@ -340,6 +346,7 @@ definitions:
     - 1
     - 2
     - 3
+    format: int32
     type: integer
     x-enum-varnames:
     - FieldState_FieldCreated
@@ -382,6 +389,7 @@ definitions:
     - 0
     - 1
     - 2
+    format: int32
     type: integer
     x-enum-varnames:
     - FunctionType_Unknown
@@ -466,6 +474,7 @@ definitions:
     - 400
     - 404
     - 503
+    format: int32
     type: integer
     x-enum-varnames:
     - ResponseCode_Success
@@ -690,6 +699,7 @@ definitions:
     - 2
     - 3
     - 4
+    format: int32
     type: integer
     x-enum-varnames:
     - RestoreTaskStateCode_INITIAL
@@ -728,16 +738,19 @@ definitions:
         type: array
       name:
         type: string
+      nullable:
+        description: |-
+          nullable is a struct-level flag: the server propagates it to every
+          sub-field, and sub-fields must not be nullable unless it is set.
+        type: boolean
     type: object
   backuppb.ValueField:
     properties:
       data:
-        description: "Types that are valid to be assigned to Data:\n\n\t*ValueField_BoolData\n\t*ValueField_IntData\n\t*ValueField_LongData\n\t*ValueField_FloatData\n\t*ValueField_DoubleData\n\t*ValueField_StringData\n\t*ValueField_BytesData"
+        description: "Types that are valid to be assigned to Data:\n\t*ValueField_BoolData\n\t*ValueField_IntData\n\t*ValueField_LongData\n\t*ValueField_FloatData\n\t*ValueField_DoubleData\n\t*ValueField_StringData\n\t*ValueField_BytesData"
     type: object
 info:
-  contact:
-    email: wayasxxx@gmail.com
-    name: wanganyang
+  contact: {}
   description: A data backup & restore tool for Milvus
   license:
     name: Apache 2.0
@@ -749,7 +762,9 @@ paths:
     post:
       consumes:
       - application/json
-      description: "Create a backup with the given name and collections\nStorage preflight failures return HTTP 200 with code 503 (Storage_Not_Ready), without registering a task. The caller may retry the same request."
+      description: |-
+        Create a backup with the given name and collections
+        Storage preflight failures return HTTP 200 with code 503 (Storage_Not_Ready), without registering a task. The caller may retry the same request.
       parameters:
       - description: request_id
         in: header

@@ -9,10 +9,7 @@ const docTemplate = `{
     "info": {
         "description": "{{escape .Description}}",
         "title": "{{.Title}}",
-        "contact": {
-            "name": "wanganyang",
-            "email": "wayasxxx@gmail.com"
-        },
+        "contact": {},
         "license": {
             "name": "Apache 2.0",
             "url": "http://www.apache.org/licenses/LICENSE-2.0.html"
@@ -396,6 +393,7 @@ const docTemplate = `{
         },
         "backuppb.BackupTaskStateCode": {
             "type": "integer",
+            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -558,6 +556,10 @@ const docTemplate = `{
                     "description": "force backup skip flush, Should make sure data has been stored into disk when using it\nDeprecated: set strategy=skip_flush instead",
                     "type": "boolean"
                 },
+                "format": {
+                    "description": "format for backup, one of [auto, binlog, snapshot], if not set will auto select",
+                    "type": "string"
+                },
                 "gc_pause_address": {
                     "description": "gc pause API address",
                     "type": "string"
@@ -593,6 +595,7 @@ const docTemplate = `{
         },
         "backuppb.DataType": {
             "type": "integer",
+            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -752,6 +755,7 @@ const docTemplate = `{
         },
         "backuppb.FieldState": {
             "type": "integer",
+            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -814,6 +818,7 @@ const docTemplate = `{
         },
         "backuppb.FunctionType": {
             "type": "integer",
+            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -934,6 +939,7 @@ const docTemplate = `{
         },
         "backuppb.ResponseCode": {
             "type": "integer",
+            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -1248,6 +1254,7 @@ const docTemplate = `{
         },
         "backuppb.RestoreTaskStateCode": {
             "type": "integer",
+            "format": "int32",
             "enum": [
                 0,
                 1,
@@ -1311,6 +1318,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "nullable": {
+                    "description": "nullable is a struct-level flag: the server propagates it to every\nsub-field, and sub-fields must not be nullable unless it is set.",
                     "type": "boolean"
                 }
             }
@@ -1319,7 +1327,7 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "data": {
-                    "description": "Types that are valid to be assigned to Data:\n\n\t*ValueField_BoolData\n\t*ValueField_IntData\n\t*ValueField_LongData\n\t*ValueField_FloatData\n\t*ValueField_DoubleData\n\t*ValueField_StringData\n\t*ValueField_BytesData"
+                    "description": "Types that are valid to be assigned to Data:\n\t*ValueField_BoolData\n\t*ValueField_IntData\n\t*ValueField_LongData\n\t*ValueField_FloatData\n\t*ValueField_DoubleData\n\t*ValueField_StringData\n\t*ValueField_BytesData"
                 }
             }
         }
