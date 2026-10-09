@@ -51,6 +51,13 @@ func (s *Server) Run() error {
 }
 
 // initEngine registers the http server routes.
+//
+// @title           Milvus Backup Service
+// @version         1.0
+// @description     A data backup & restore tool for Milvus
+// @license.name  Apache 2.0
+// @license.url   http://www.apache.org/licenses/LICENSE-2.0.html
+// @BasePath  /api/v1
 func (s *Server) initEngine() {
 	engine := echo.New()
 	engine.Use(middleware.RequestLogger(), middleware.Recover())
