@@ -16,10 +16,13 @@ The tests use MilvusClient (not ORM) because:
 """
 
 
+import re
+
 import numpy as np
 import ml_dtypes
 import pytest
 from pymilvus import DataType
+from pymilvus import utility
 
 from base.client_base import TestcaseBase
 from common import common_func as cf
@@ -127,6 +130,19 @@ _VECTOR_CASES = [
 
 class TestRestoreNullableVector(TestcaseBase):
     """Backup/restore behavior for vector fields declared with nullable=True."""
+
+    @pytest.fixture(autouse=True)
+    def _require_nullable_vector_support(self, init_client):
+        """Nullable vector fields (and AddCollectionField) exist only on
+        Milvus >= 2.6.18; the nightly matrix also runs these cases against
+        2.5, where they can only fail."""
+        self._connect()
+        server_version = utility.get_server_version()
+        match = re.match(r"(\d+)\.(\d+)\.(\d+)", server_version)
+        # An unparseable (dev) version is treated as new enough: fail loud
+        # there rather than silently skipping.
+        if match and tuple(int(p) for p in match.groups()) < (2, 6, 18):
+            pytest.skip(f"nullable vector fields require Milvus >= 2.6.18, server is {server_version}")
 
     @pytest.mark.tags(CaseLabel.L1)
     @pytest.mark.parametrize("data_type,dim", _VECTOR_CASES)
