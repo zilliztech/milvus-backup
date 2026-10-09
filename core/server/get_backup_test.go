@@ -15,7 +15,7 @@ import (
 	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
 // stubGetBackup stands in for app.GetBackup: a canned artifact read, the
@@ -40,12 +40,12 @@ func (s *stubGetBackup) Execute(_ context.Context, name string) (*backuppb.Backu
 // in for app.GetBackupTask.
 type stubGetBackupTask struct {
 	req   app.GetBackupTaskRequest
-	view  taskmgr.BackupTaskView
+	view  jobstate.BackupTaskView
 	err   error
 	calls int
 }
 
-func (s *stubGetBackupTask) Execute(_ context.Context, req app.GetBackupTaskRequest) (taskmgr.BackupTaskView, error) {
+func (s *stubGetBackupTask) Execute(_ context.Context, req app.GetBackupTaskRequest) (jobstate.BackupTaskView, error) {
 	s.req = req
 	s.calls++
 	return s.view, s.err
@@ -74,7 +74,7 @@ func withGetBackupTask(stub *stubGetBackupTask, newErr error) Option {
 // noBackupTask wires the common post-restart case: no job is known for any
 // selector.
 func noBackupTask() Option {
-	return withGetBackupTask(&stubGetBackupTask{err: taskmgr.ErrTaskNotFound}, nil)
+	return withGetBackupTask(&stubGetBackupTask{err: jobstate.ErrTaskNotFound}, nil)
 }
 
 // newLoadedTestServer is the fork-capable counterpart of newListTestServer:
@@ -95,7 +95,7 @@ func newLoadedTestServer(t *testing.T, opts ...Option) *Server {
 
 // expectBriefRender teaches the mock job view the calls
 // pbconv.NewBackupInfoBrief makes when it renders a task half.
-func expectBriefRender(task *taskmgr.MockBackupTaskView, id, name string, state backuppb.BackupTaskStateCode) {
+func expectBriefRender(task *jobstate.MockBackupTaskView, id, name string, state backuppb.BackupTaskStateCode) {
 	task.EXPECT().Name().Return(name)
 	task.EXPECT().ID().Return(id)
 	task.EXPECT().StateCode().Return(state)
@@ -123,7 +123,7 @@ func getBackup(t *testing.T, s *Server, query, requestID string) backuppb.Backup
 
 func TestHandleGetBackup(t *testing.T) {
 	t.Run("MergesArtifactAndJob", func(t *testing.T) {
-		task := taskmgr.NewMockBackupTaskView(t)
+		task := jobstate.NewMockBackupTaskView(t)
 		expectBriefRender(task, "task-1", "backup1", backuppb.BackupTaskStateCode_BACKUP_SUCCESS)
 
 		backup := &stubGetBackup{info: &backuppb.BackupInfo{Name: "backup1", Size: 100}, size: 42}
@@ -181,7 +181,7 @@ func TestHandleGetBackup(t *testing.T) {
 	})
 
 	t.Run("InFlightJobWithoutArtifact", func(t *testing.T) {
-		task := taskmgr.NewMockBackupTaskView(t)
+		task := jobstate.NewMockBackupTaskView(t)
 		// The same StateCode expectation serves both the handler's
 		// success check and the brief rendering.
 		expectBriefRender(task, "task-1", "backup1", backuppb.BackupTaskStateCode_BACKUP_EXECUTING)
@@ -200,7 +200,7 @@ func TestHandleGetBackup(t *testing.T) {
 	})
 
 	t.Run("SuccessJobWithoutArtifactFails", func(t *testing.T) {
-		task := taskmgr.NewMockBackupTaskView(t)
+		task := jobstate.NewMockBackupTaskView(t)
 		task.EXPECT().StateCode().Return(backuppb.BackupTaskStateCode_BACKUP_SUCCESS)
 
 		backup := &stubGetBackup{err: app.ErrBackupNotFound}
@@ -224,7 +224,7 @@ func TestHandleGetBackup(t *testing.T) {
 	})
 
 	t.Run("IDResolvesBackupNameThroughJob", func(t *testing.T) {
-		task := taskmgr.NewMockBackupTaskView(t)
+		task := jobstate.NewMockBackupTaskView(t)
 		expectBriefRender(task, "task-1", "backup1", backuppb.BackupTaskStateCode_BACKUP_SUCCESS)
 
 		backup := &stubGetBackup{info: &backuppb.BackupInfo{Name: "backup1"}}

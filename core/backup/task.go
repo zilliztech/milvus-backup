@@ -16,11 +16,11 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 const (
@@ -40,7 +40,7 @@ type TaskArgs struct {
 
 	Params *cfg.Config
 
-	TaskMgr *taskmgr.Mgr
+	Store *jobstate.Store
 }
 
 type Option struct {
@@ -90,7 +90,7 @@ type Task struct {
 
 	gcCtrl gcCtrl
 
-	taskMgr *taskmgr.Mgr
+	store *jobstate.Store
 
 	rpcChannelName string
 
@@ -123,7 +123,7 @@ func NewTask(args TaskArgs) (*Task, error) {
 		zap.Bool("streaming", streaming))
 
 	mb := newMetaBuilder(args.TaskID, args.Option.BackupName)
-	err := args.TaskMgr.AddBackupTask(args.TaskID, args.Option.BackupName)
+	err := args.Store.AddBackupTask(args.TaskID, args.Option.BackupName)
 	if err != nil {
 		return nil, fmt.Errorf("backup: add backup task to manager: %w", err)
 	}
@@ -157,7 +157,7 @@ func NewTask(args TaskArgs) (*Task, error) {
 
 		metaBuilder: mb,
 
-		taskMgr: args.TaskMgr,
+		store: args.Store,
 
 		rpcChannelName: args.Params.Milvus.Replicate.RPCChannelName.Val,
 	}, nil
@@ -225,7 +225,7 @@ func (t *Task) Execute(ctx context.Context) (err error) {
 	defer t.closeClients()
 	defer func() {
 		if err != nil {
-			t.taskMgr.UpdateBackupTask(t.taskID, taskmgr.SetBackupFail(err))
+			t.store.UpdateBackupTask(t.taskID, jobstate.SetBackupFail(err))
 		}
 	}()
 
@@ -241,7 +241,7 @@ func (t *Task) Execute(ctx context.Context) (err error) {
 		return err
 	}
 
-	t.taskMgr.UpdateBackupTask(t.taskID, taskmgr.SetBackupSuccess())
+	t.store.UpdateBackupTask(t.taskID, jobstate.SetBackupSuccess())
 	return nil
 }
 
@@ -519,7 +519,7 @@ func nameStrings(collRefs []collref.Name) []string {
 
 func (t *Task) backupDatabase(ctx context.Context, dbNames []string) error {
 	t.logger.Info("start backup databases", zap.Int("count", len(dbNames)))
-	t.taskMgr.UpdateBackupTask(t.taskID, taskmgr.SetBackupDatabaseExecuting())
+	t.store.UpdateBackupTask(t.taskID, jobstate.SetBackupDatabaseExecuting())
 
 	for _, dbName := range dbNames {
 		dbTask := newDatabaseTask(t.taskID, dbName, t.grpc, t.manage, t.metaBuilder)
@@ -543,7 +543,7 @@ func (t *Task) newCollTaskArgs() collTaskArgs {
 		BackupDir:      t.backupDir,
 		Throttling:     t.throttling,
 		MetaBuilder:    t.metaBuilder,
-		TaskMgr:        t.taskMgr,
+		Store:          t.store,
 		Grpc:           t.grpc,
 		Restful:        t.restful,
 		gcCtrl:         t.gcCtrl,
@@ -553,8 +553,8 @@ func (t *Task) newCollTaskArgs() collTaskArgs {
 func (t *Task) backupCollection(ctx context.Context, collRefs []collref.Name) error {
 	t.logger.Info("start backup collections", zap.Int("count", len(collRefs)))
 
-	t.taskMgr.UpdateBackupTask(t.taskID, taskmgr.AddBackupCollTasks(collRefs))
-	t.taskMgr.UpdateBackupTask(t.taskID, taskmgr.SetBackupCollectionExecuting())
+	t.store.UpdateBackupTask(t.taskID, jobstate.AddBackupCollTasks(collRefs))
+	t.store.UpdateBackupTask(t.taskID, jobstate.SetBackupCollectionExecuting())
 
 	plan, err := t.selectPlan(collRefs, t.option.Strategy, t.resolvedFormat)
 	if err != nil {

@@ -17,8 +17,8 @@ import (
 	"github.com/zilliztech/milvus-backup/core/tasklet"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/collref"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/storage"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 const (
@@ -72,13 +72,13 @@ type importJobState struct {
 }
 
 // waitImportJob polls an import job every _bulkInsertCheckInterval until it
-// reaches a terminal state, reporting progress to the task manager and
+// reaches a terminal state, reporting progress to the job state store and
 // warning when the job stops making progress. state fetches one snapshot of
 // the job; it is what differs between the grpc and restful apis.
 func waitImportJob(
 	ctx context.Context,
 	logger *zap.Logger,
-	taskMgr *taskmgr.Mgr,
+	store *jobstate.Store,
 	taskID string,
 	target collref.Name,
 	jobID string,
@@ -100,7 +100,7 @@ func waitImportJob(
 			return nil
 		}
 
-		taskMgr.UpdateRestoreTask(taskID, taskmgr.UpdateRestoreImportJob(target, jobID, s.progress))
+		store.UpdateRestoreTask(taskID, jobstate.UpdateRestoreImportJob(target, jobID, s.progress))
 		if s.progress > lastProgress {
 			lastProgress = s.progress
 			lastUpdateTime = time.Now()

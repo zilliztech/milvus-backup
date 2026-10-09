@@ -11,7 +11,7 @@ import (
 	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
 type secondaryOption struct {
@@ -52,7 +52,7 @@ func (o *secondaryOption) toRequest() app.RestoreSecondaryRequest {
 
 func (o *secondaryOption) run(cmd *cobra.Command, params *cfg.Config) error {
 	ctx := context.Background()
-	job, err := app.NewRestoreSecondaryJob(ctx, params, taskmgr.DefaultMgr(), o.toRequest())
+	job, err := app.NewRestoreSecondaryJob(ctx, params, jobstate.Default(), o.toRequest())
 	if err != nil {
 		return fmt.Errorf("restore: new restore secondary job: %w", err)
 	}

@@ -14,11 +14,11 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 // collDMLTask restores one collection's DML from a binlog backup: it builds
@@ -33,7 +33,7 @@ type collDMLTask struct {
 
 	option *Option
 
-	taskMgr *taskmgr.Mgr
+	store *jobstate.Store
 
 	target collref.Name
 
@@ -83,7 +83,7 @@ type collDMLTaskArgs struct {
 
 	option *Option
 
-	taskMgr *taskmgr.Mgr
+	store *jobstate.Store
 
 	backupDir     string
 	keepTempFiles bool
@@ -115,7 +115,7 @@ func newCollDMLTask(args collDMLTaskArgs) *collDMLTask {
 	size := lo.SumBy(args.collBackup.GetPartitionBackups(), func(partition *backuppb.PartitionBackupInfo) int64 {
 		return partition.GetSize()
 	})
-	args.taskMgr.UpdateRestoreTask(args.taskID, taskmgr.AddRestoreCollTask(args.target, size))
+	args.store.UpdateRestoreTask(args.taskID, jobstate.AddRestoreCollTask(args.target, size))
 
 	return &collDMLTask{
 		taskID: args.taskID,
@@ -127,7 +127,7 @@ func newCollDMLTask(args collDMLTaskArgs) *collDMLTask {
 
 		target: args.target,
 
-		taskMgr: args.taskMgr,
+		store: args.store,
 
 		copySem:       args.copySem,
 		bulkInsertSem: args.bulkInsertSem,

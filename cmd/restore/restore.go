@@ -17,7 +17,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
 // removedFlags are the restore flags dropped in 0.6, after 0.5 accepted them
@@ -176,7 +176,7 @@ func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
 		return err
 	}
 
-	job, err := app.NewRestoreJob(cmd.Context(), params, taskmgr.DefaultMgr(), req)
+	job, err := app.NewRestoreJob(cmd.Context(), params, jobstate.Default(), req)
 	if err != nil {
 		return fmt.Errorf("restore: new restore job: %w", err)
 	}

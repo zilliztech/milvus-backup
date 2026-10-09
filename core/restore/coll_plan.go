@@ -10,9 +10,9 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 // collTarget is one collection the restore task will land: the backup's view
@@ -93,9 +93,9 @@ func (t *Task) newCollDMLTaskArgs(tgt collTarget) collDMLTaskArgs {
 	}
 
 	return collDMLTaskArgs{
-		taskID:  t.args.TaskID,
-		taskMgr: t.args.TaskMgr,
-		target:  tgt.target,
+		taskID: t.args.TaskID,
+		store:  t.args.Store,
+		target: tgt.target,
 
 		dbBackup:   tgt.dbBackup,
 		collBackup: tgt.collBackup,
@@ -124,30 +124,30 @@ func (t *Task) newCollDMLTaskArgs(tgt collTarget) collDMLTaskArgs {
 
 // newBinlogCollPlanTask wraps one collection's binlog restore — DDL, then
 // DML — with its task-manager state transitions.
-func newBinlogCollPlanTask(taskMgr *taskmgr.Mgr, taskID string, target collref.Name, ddl *collDDLTask, dml *collDMLTask) collPlanTask {
+func newBinlogCollPlanTask(store *jobstate.Store, taskID string, target collref.Name, ddl *collDDLTask, dml *collDMLTask) collPlanTask {
 	logger := log.With(
 		zap.String("restore_task_id", taskID),
 		zap.String("target_coll", target.String()))
 
 	return func(ctx context.Context) error {
-		taskMgr.UpdateRestoreTask(taskID, taskmgr.SetRestoreCollExecuting(target))
+		store.UpdateRestoreTask(taskID, jobstate.SetRestoreCollExecuting(target))
 
 		if err := ddl.Execute(ctx); err != nil {
 			err := fmt.Errorf("restore_collection: restore collection ddl: %w", err)
 			logger.Error("restore collection failed", zap.Error(err))
-			taskMgr.UpdateRestoreTask(taskID, taskmgr.SetRestoreCollFail(target, err))
+			store.UpdateRestoreTask(taskID, jobstate.SetRestoreCollFail(target, err))
 			return err
 		}
 
 		if err := dml.Execute(ctx); err != nil {
 			err := fmt.Errorf("restore_collection: restore collection data: %w", err)
 			logger.Error("restore collection failed", zap.Error(err))
-			taskMgr.UpdateRestoreTask(taskID, taskmgr.SetRestoreCollFail(target, err))
+			store.UpdateRestoreTask(taskID, jobstate.SetRestoreCollFail(target, err))
 			return err
 		}
 
 		logger.Info("restore collection success")
-		taskMgr.UpdateRestoreTask(taskID, taskmgr.SetRestoreCollSuccess(target))
+		store.UpdateRestoreTask(taskID, jobstate.SetRestoreCollSuccess(target))
 		return nil
 	}
 }
@@ -174,7 +174,7 @@ func newBinlogGRPCPlan(t *Task, targets []collTarget) *binlogGRPCPlan {
 		dml := newCollDMLTask(t.newCollDMLTaskArgs(tgt))
 		dml.importer = newGRPCImportPlanner(dml)
 
-		tasks = append(tasks, newBinlogCollPlanTask(t.args.TaskMgr, t.args.TaskID, tgt.target, ddl, dml))
+		tasks = append(tasks, newBinlogCollPlanTask(t.args.Store, t.args.TaskID, tgt.target, ddl, dml))
 	}
 
 	return &binlogGRPCPlan{
@@ -214,7 +214,7 @@ func newBinlogRESTFulPlan(t *Task, targets []collTarget) *binlogRESTFulPlan {
 		dml := newCollDMLTask(t.newCollDMLTaskArgs(tgt))
 		dml.importer = newRestfulImportPlanner(dml, multiL0InOneJob)
 
-		tasks = append(tasks, newBinlogCollPlanTask(t.args.TaskMgr, t.args.TaskID, tgt.target, ddl, dml))
+		tasks = append(tasks, newBinlogCollPlanTask(t.args.Store, t.args.TaskID, tgt.target, ddl, dml))
 	}
 
 	return &binlogRESTFulPlan{
@@ -255,7 +255,7 @@ func newRestoreSnapPlan(t *Task, targets []collTarget) *restoreSnapPlan {
 			descOverride:     tgt.collOverride.Description,
 			skipParams:       t.args.Option.SkipParams,
 			grpcCli:          t.grpc,
-			taskMgr:          t.args.TaskMgr,
+			store:            t.args.Store,
 		})
 		tasks = append(tasks, st.Execute)
 	}

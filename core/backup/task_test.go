@@ -17,23 +17,23 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 	"github.com/zilliztech/milvus-backup/internal/storage"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 func TestTask_ExecuteMarksInitClientFailure(t *testing.T) {
-	mgr := taskmgr.NewMgr()
+	mgr := jobstate.NewStore()
 	require.NoError(t, mgr.AddBackupTask("task1", "backup1"))
 	params := cfg.New()
 	params.Milvus.Grpc.TLSMode.Val = cfg.TLSMutual
 
 	task := &Task{
-		taskID:  "task1",
-		logger:  zap.NewNop(),
-		params:  params,
-		taskMgr: mgr,
+		taskID: "task1",
+		logger: zap.NewNop(),
+		params: params,
+		store:  mgr,
 	}
 
 	err := task.Execute(context.Background())

@@ -11,7 +11,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/collref"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
 func BakKVToMilvusKV(kv []*backuppb.KeyValuePair, skipKeys ...string) []*commonpb.KeyValuePair {
@@ -45,7 +45,7 @@ func MilvusKVToMap(kvs []*commonpb.KeyValuePair) map[string]string {
 	return res
 }
 
-func RestoreCollTaskViewToResp(collRef collref.Name, taskView taskmgr.RestoreCollTaskView) *backuppb.RestoreCollectionTaskResponse {
+func RestoreCollTaskViewToResp(collRef collref.Name, taskView jobstate.RestoreCollTaskView) *backuppb.RestoreCollectionTaskResponse {
 	return &backuppb.RestoreCollectionTaskResponse{
 		Id:                   taskView.ID(),
 		StateCode:            taskView.StateCode(),
@@ -58,7 +58,7 @@ func RestoreCollTaskViewToResp(collRef collref.Name, taskView taskmgr.RestoreCol
 	}
 }
 
-func RestoreTaskViewToResp(view taskmgr.RestoreTaskView) *backuppb.RestoreBackupTaskResponse {
+func RestoreTaskViewToResp(view jobstate.RestoreTaskView) *backuppb.RestoreBackupTaskResponse {
 	collTasks := view.CollTasks()
 	collTaskResps := make([]*backuppb.RestoreCollectionTaskResponse, 0, len(collTasks))
 	for collRef, taskView := range collTasks {
@@ -97,7 +97,7 @@ func Base64DecodeMsgPosition(position string) (*msgpb.MsgPosition, error) {
 	return &msgPosition, nil
 }
 
-func NewBackupInfoBrief(task taskmgr.BackupTaskView, backup *backuppb.BackupInfo, metaSize int64) *backuppb.BackupInfoBrief {
+func NewBackupInfoBrief(task jobstate.BackupTaskView, backup *backuppb.BackupInfo, metaSize int64) *backuppb.BackupInfoBrief {
 	brief := &backuppb.BackupInfoBrief{MetaSize: metaSize}
 
 	if task != nil {

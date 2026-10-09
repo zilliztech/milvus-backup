@@ -1,4 +1,4 @@
-package taskmgr
+package jobstate
 
 import (
 	"testing"
@@ -7,7 +7,7 @@ import (
 )
 
 func TestMgr_AddBackupTask_DuplicateName(t *testing.T) {
-	mgr := NewMgr()
+	mgr := NewStore()
 
 	// first create should succeed
 	assert.NoError(t, mgr.AddBackupTask("task1", "backupA"))

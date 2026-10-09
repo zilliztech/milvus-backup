@@ -11,8 +11,8 @@ import (
 	"github.com/zilliztech/milvus-backup/core/tasklet"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/storage"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 // grpcImportPlanner plans imports for the v1 grpc bulk insert api. The api
@@ -38,7 +38,7 @@ type grpcImportPlanner struct {
 	milvusLocalPath string
 
 	grpcCli milvus.Grpc
-	taskMgr *taskmgr.Mgr
+	store   *jobstate.Store
 	logger  *zap.Logger
 }
 
@@ -57,7 +57,7 @@ func newGRPCImportPlanner(dt *collDMLTask) *grpcImportPlanner {
 		milvusLocalPath: dt.milvusLocalPath,
 
 		grpcCli: dt.grpcCli,
-		taskMgr: dt.taskMgr,
+		store:   dt.store,
 		logger:  dt.logger,
 	}
 }
@@ -94,7 +94,7 @@ func (p *grpcImportPlanner) newTask(partitionName string, g dirGroup, dir partit
 		milvusLocalPath: p.milvusLocalPath,
 
 		grpcCli: p.grpcCli,
-		taskMgr: p.taskMgr,
+		store:   p.store,
 		logger:  p.logger,
 	}
 }
@@ -129,7 +129,7 @@ type importViaGRPCTask struct {
 	milvusLocalPath string
 
 	grpcCli milvus.Grpc
-	taskMgr *taskmgr.Mgr
+	store   *jobstate.Store
 	logger  *zap.Logger
 }
 
@@ -183,8 +183,8 @@ func (gt *importViaGRPCTask) sendImportReq(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("restore: failed to bulk insert via grpc: %w", err)
 	}
-	gt.taskMgr.UpdateRestoreTask(gt.taskID,
-		taskmgr.AddRestoreImportJob(gt.target, strconv.FormatInt(jobID, 10), gt.dir.size))
+	gt.store.UpdateRestoreTask(gt.taskID,
+		jobstate.AddRestoreImportJob(gt.target, strconv.FormatInt(jobID, 10), gt.dir.size))
 	gt.logger.Info("create bulk insert via grpc success", zap.Int64("job_id", jobID))
 
 	return jobID, nil
@@ -209,7 +209,7 @@ func (gt *importViaGRPCTask) waitImport(ctx context.Context, jobID int64) error 
 		}
 	}
 
-	return waitImportJob(ctx, gt.logger, gt.taskMgr, gt.taskID, gt.target, strconv.FormatInt(jobID, 10), state)
+	return waitImportJob(ctx, gt.logger, gt.store, gt.taskID, gt.target, strconv.FormatInt(jobID, 10), state)
 }
 
 // toGrpcPaths builds the [insertLogDir, deltaLogDir] argument for the grpc bulk

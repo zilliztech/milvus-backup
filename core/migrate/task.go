@@ -13,11 +13,11 @@ import (
 
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/cloud"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 var (
@@ -185,7 +185,7 @@ type Task struct {
 	cloudCli  cloud.Client
 	clusterID string
 
-	taskMgr *taskmgr.Mgr
+	store *jobstate.Store
 
 	backupDir     string
 	backupStorage storage.Client
@@ -213,7 +213,7 @@ func NewTask(taskID, backupName, clusterID string, params *cfg.Config) (*Task, e
 
 		cloudCli:  cloudCli,
 		clusterID: clusterID,
-		taskMgr:   taskmgr.DefaultMgr(),
+		store:     jobstate.Default(),
 
 		backupDir:     backupDir,
 		backupStorage: backupStorage,
@@ -231,7 +231,7 @@ func (t *Task) Prepare(ctx context.Context) error {
 		return fmt.Errorf("migrate: read backup meta info %w", err)
 	}
 
-	t.taskMgr.AddMigrateTask(t.taskID, backupInfo.GetSize())
+	t.store.AddMigrateTask(t.taskID, backupInfo.GetSize())
 
 	return nil
 }
@@ -254,7 +254,7 @@ func (t *Task) copyToCloud(ctx context.Context) error {
 		Sem:        t.copySem,
 
 		TraceFn: func(size int64, cost time.Duration) {
-			t.taskMgr.UpdateMigrateTask(t.taskID, taskmgr.IncMigrateCopiedSize(size, cost))
+			t.store.UpdateMigrateTask(t.taskID, jobstate.IncMigrateCopiedSize(size, cost))
 		},
 
 		Streaming: true,
@@ -300,7 +300,7 @@ func (t *Task) startMigrate(ctx context.Context) error {
 		return fmt.Errorf("migrate: start migrate %w", err)
 	}
 	t.logger.Info("trigger migrate job done", zap.String("job_id", jobID))
-	t.taskMgr.UpdateMigrateTask(t.taskID, taskmgr.SetMigrateJobID(jobID))
+	t.store.UpdateMigrateTask(t.taskID, jobstate.SetMigrateJobID(jobID))
 
 	return nil
 }
@@ -310,12 +310,12 @@ func (t *Task) Execute(ctx context.Context) error {
 		return fmt.Errorf("migrate: apply volume %w", err)
 	}
 
-	t.taskMgr.UpdateMigrateTask(t.taskID, taskmgr.SetMigrateCopyStart())
+	t.store.UpdateMigrateTask(t.taskID, jobstate.SetMigrateCopyStart())
 	if err := t.copyToCloud(ctx); err != nil {
-		t.taskMgr.UpdateMigrateTask(t.taskID, taskmgr.SetMigrateCopyComplete())
+		t.store.UpdateMigrateTask(t.taskID, jobstate.SetMigrateCopyComplete())
 		return fmt.Errorf("migrate: copy to cloud %w", err)
 	}
-	t.taskMgr.UpdateMigrateTask(t.taskID, taskmgr.SetMigrateCopyComplete())
+	t.store.UpdateMigrateTask(t.taskID, jobstate.SetMigrateCopyComplete())
 
 	if err := t.startMigrate(ctx); err != nil {
 		return fmt.Errorf("migrate: start migrate %w", err)

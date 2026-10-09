@@ -14,10 +14,10 @@ import (
 	"github.com/zilliztech/milvus-backup/core/tasklet"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 	"github.com/zilliztech/milvus-backup/internal/storage"
-	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
 // Strategy decides when the backup's point-in-time boundary is established: when,
@@ -73,7 +73,7 @@ type collTaskArgs struct {
 
 	MetaBuilder *metaBuilder
 
-	TaskMgr *taskmgr.Mgr
+	Store *jobstate.Store
 
 	Grpc    milvus.Grpc
 	Restful milvus.Restful
@@ -118,7 +118,7 @@ func newDDLTasks(collRefs []collref.Name, args collTaskArgs) []collTask {
 	for _, collRef := range collRefs {
 		task := func(ctx context.Context) error {
 			if err := newCollDDLTask(collRef, args).Execute(ctx); err != nil {
-				args.TaskMgr.UpdateBackupTask(args.TaskID, taskmgr.SetBackupCollFail(collRef, err))
+				args.Store.UpdateBackupTask(args.TaskID, jobstate.SetBackupCollFail(collRef, err))
 				return fmt.Errorf("backup: execute ddl task %w", err)
 			}
 
@@ -135,11 +135,11 @@ func newDMLTasks(collRefs []collref.Name, args collTaskArgs, newData dataTaskFac
 	for _, collRef := range collRefs {
 		task := func(ctx context.Context) error {
 			if err := newData(collRef, args).Execute(ctx); err != nil {
-				args.TaskMgr.UpdateBackupTask(args.TaskID, taskmgr.SetBackupCollFail(collRef, err))
+				args.Store.UpdateBackupTask(args.TaskID, jobstate.SetBackupCollFail(collRef, err))
 				return fmt.Errorf("backup: execute data task %w", err)
 			}
 
-			args.TaskMgr.UpdateBackupTask(args.TaskID, taskmgr.SetBackupCollSuccess(collRef))
+			args.Store.UpdateBackupTask(args.TaskID, jobstate.SetBackupCollSuccess(collRef))
 
 			return nil
 		}
@@ -266,16 +266,16 @@ func (sf *serialFlushPlan) executeDMLTask(ctx context.Context) error {
 	for _, collRef := range sf.collRefs {
 		task := func(ctx context.Context) error {
 			if err := sf.flushAndBackupPOS(ctx, collRef); err != nil {
-				sf.args.TaskMgr.UpdateBackupTask(sf.args.TaskID, taskmgr.SetBackupCollFail(collRef, err))
+				sf.args.Store.UpdateBackupTask(sf.args.TaskID, jobstate.SetBackupCollFail(collRef, err))
 				return fmt.Errorf("backup: flush and backup pos %w", err)
 			}
 
 			if err := sf.newData(collRef, sf.args).Execute(ctx); err != nil {
-				sf.args.TaskMgr.UpdateBackupTask(sf.args.TaskID, taskmgr.SetBackupCollFail(collRef, err))
+				sf.args.Store.UpdateBackupTask(sf.args.TaskID, jobstate.SetBackupCollFail(collRef, err))
 				return fmt.Errorf("backup: execute data task %w", err)
 			}
 
-			sf.args.TaskMgr.UpdateBackupTask(sf.args.TaskID, taskmgr.SetBackupCollSuccess(collRef))
+			sf.args.Store.UpdateBackupTask(sf.args.TaskID, jobstate.SetBackupCollSuccess(collRef))
 			return nil
 		}
 
