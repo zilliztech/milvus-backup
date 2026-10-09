@@ -12,7 +12,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"github.com/zilliztech/milvus-backup/core/tasklet"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
@@ -38,7 +38,7 @@ type TaskArgs struct {
 	BackupStorage storage.Client
 	BackupDir     string
 
-	Params *v2.Config
+	Params *cfg.Config
 
 	TaskMgr *taskmgr.Mgr
 }
@@ -66,7 +66,7 @@ type Task struct {
 	logger *zap.Logger
 
 	option Option
-	params *v2.Config
+	params *cfg.Config
 
 	milvusStorage  storage.Client
 	milvusRootPath string

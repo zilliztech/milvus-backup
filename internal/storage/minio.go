@@ -14,7 +14,7 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/retry"
 )
@@ -41,36 +41,36 @@ const (
 
 var _ Client = (*MinioClient)(nil)
 
-func newMinioClient(cfg Config) (*MinioClient, error) {
-	opts := minio.Options{Secure: cfg.UseSSL, Region: cfg.Region}
-	switch cfg.Credential.Type {
+func newMinioClient(storeCfg Config) (*MinioClient, error) {
+	opts := minio.Options{Secure: storeCfg.UseSSL, Region: storeCfg.Region}
+	switch storeCfg.Credential.Type {
 	case IAM:
-		opts.Creds = credentials.NewIAM(cfg.Credential.IAMEndpoint)
+		opts.Creds = credentials.NewIAM(storeCfg.Credential.IAMEndpoint)
 	case Static:
-		opts.Creds = credentials.NewStaticV4(cfg.Credential.AK, cfg.Credential.SK, cfg.Credential.Token)
+		opts.Creds = credentials.NewStaticV4(storeCfg.Credential.AK, storeCfg.Credential.SK, storeCfg.Credential.Token)
 	case MinioCredProvider:
-		opts.Creds = credentials.New(cfg.Credential.MinioCredProvider)
+		opts.Creds = credentials.New(storeCfg.Credential.MinioCredProvider)
 	default:
-		return nil, fmt.Errorf("storage: minio unsupported credential type %s", cfg.Credential.Type.String())
+		return nil, fmt.Errorf("storage: minio unsupported credential type %s", storeCfg.Credential.Type.String())
 	}
 
-	return newInternalMinio(cfg, &opts)
+	return newInternalMinio(storeCfg, &opts)
 }
 
-func newInternalMinio(cfg Config, opts *minio.Options) (*MinioClient, error) {
-	cli, err := minio.New(cfg.Endpoint, opts)
+func newInternalMinio(storeCfg Config, opts *minio.Options) (*MinioClient, error) {
+	cli, err := minio.New(storeCfg.Endpoint, opts)
 	if err != nil {
-		return nil, fmt.Errorf("storage: create %s client: %w", cfg.Provider, err)
+		return nil, fmt.Errorf("storage: create %s client: %w", storeCfg.Provider, err)
 	}
 
-	core, err := minio.NewCore(cfg.Endpoint, opts)
+	core, err := minio.NewCore(storeCfg.Endpoint, opts)
 	if err != nil {
-		return nil, fmt.Errorf("storage: create %s client: %w", cfg.Provider, err)
+		return nil, fmt.Errorf("storage: create %s client: %w", storeCfg.Provider, err)
 	}
 
-	logger := log.L().With(zap.String("provider", cfg.Provider), zap.String("endpoint", cfg.Endpoint))
+	logger := log.L().With(zap.String("provider", storeCfg.Provider), zap.String("endpoint", storeCfg.Endpoint))
 
-	return &MinioClient{cfg: cfg, cli: cli, core: core, logger: logger}, nil
+	return &MinioClient{cfg: storeCfg, cli: cli, core: core, logger: logger}, nil
 }
 
 type MinioClient struct {
@@ -94,7 +94,7 @@ func (m *MinioClient) CopyObject(ctx context.Context, i CopyObjectInput) error {
 
 	// gcp does not support multipart copy
 	threshold := m.multipartCopyThreshold()
-	if i.SrcAttr.Length >= threshold && srcCli.cfg.Provider != v2.ProviderGCP {
+	if i.SrcAttr.Length >= threshold && srcCli.cfg.Provider != cfg.ProviderGCP {
 		m.logger.Debug("copy object by multipart", zap.String("src_key", i.SrcAttr.Key), zap.String("dest_key", i.DestKey))
 		return m.multiPartCopy(ctx, srcCli, i)
 	}

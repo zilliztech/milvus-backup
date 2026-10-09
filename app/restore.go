@@ -6,7 +6,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
@@ -54,7 +54,7 @@ type RestoreRequest struct {
 // it is missing: a restore may target a bucket nothing has written yet. The
 // clients are created per call; sharing them across calls is a lifecycle
 // decision this layer deliberately does not make.
-func NewRestoreJob(ctx context.Context, params *v2.Config, taskMgr *taskmgr.Mgr, req RestoreRequest) (*RestoreJob, error) {
+func NewRestoreJob(ctx context.Context, params *cfg.Config, taskMgr *taskmgr.Mgr, req RestoreRequest) (*RestoreJob, error) {
 	backupStorage, err := storage.NewBackupStorage(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("app: %w", err)
@@ -71,7 +71,7 @@ func NewRestoreJob(ctx context.Context, params *v2.Config, taskMgr *taskmgr.Mgr,
 // newRestoreJob is NewRestoreJob with the storage clients injected, so tests
 // exercise validation and registration without real storage behind the
 // clients.
-func newRestoreJob(ctx context.Context, params *v2.Config, taskMgr *taskmgr.Mgr, backupStorage, milvusStorage storage.Client, req RestoreRequest) (*RestoreJob, error) {
+func newRestoreJob(ctx context.Context, params *cfg.Config, taskMgr *taskmgr.Mgr, backupStorage, milvusStorage storage.Client, req RestoreRequest) (*RestoreJob, error) {
 	// A per-call root path is the transport forking the config, not a field
 	// of the request: the artifact directory resolves from the config as
 	// given.

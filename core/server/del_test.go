@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 )
 
 // stubDeleteBackup stands in for app.DeleteBackup: a canned error, the name
@@ -34,7 +34,7 @@ func (s *stubDeleteBackup) Execute(_ context.Context, name string) error {
 // client-construction failure, which happens before any Execute call.
 func withDeleteBackup(stub *stubDeleteBackup, newErr error) Option {
 	return func(c *config) {
-		c.newDeleteBackup = func(context.Context, *v2.Config) (deleteBackupUC, error) {
+		c.newDeleteBackup = func(context.Context, *cfg.Config) (deleteBackupUC, error) {
 			return stub, newErr
 		}
 	}

@@ -17,7 +17,7 @@ import (
 	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/core/backup"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 )
 
@@ -39,7 +39,7 @@ func (j stubBackupJob) Run(context.Context) error {
 // was called with, a canned construction error, and a call count so tests can
 // assert whether the handler reached the action at all.
 type stubCreateFactory struct {
-	params *v2.Config
+	params *cfg.Config
 	req    app.CreateBackupRequest
 	newErr error
 	job    stubBackupJob
@@ -51,7 +51,7 @@ type stubCreateFactory struct {
 // happens before any job runs.
 func withCreateBackup(stub *stubCreateFactory) Option {
 	return func(c *config) {
-		c.newBackupJob = func(_ context.Context, params *v2.Config, req app.CreateBackupRequest) (backupJob, error) {
+		c.newBackupJob = func(_ context.Context, params *cfg.Config, req app.CreateBackupRequest) (backupJob, error) {
 			stub.params = params
 			stub.req = req
 			stub.calls++

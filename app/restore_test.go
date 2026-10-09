@@ -12,7 +12,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
@@ -55,7 +55,7 @@ func TestNewRestoreJob(t *testing.T) {
 			Plan:       &restore.Plan{},
 			Option:     &restore.Option{},
 		}
-		job, err := newRestoreJob(context.Background(), v2.New(), taskMgr, backupCli, milvusCli, req)
+		job, err := newRestoreJob(context.Background(), cfg.New(), taskMgr, backupCli, milvusCli, req)
 
 		require.NoError(t, err)
 		require.NotNil(t, job)
@@ -72,7 +72,7 @@ func TestNewRestoreJob(t *testing.T) {
 
 		expectNoBackup(t, backupCli, "backup1/")
 
-		_, err := newRestoreJob(context.Background(), v2.New(), taskmgr.NewMgr(), backupCli, storage.NewMockClient(t),
+		_, err := newRestoreJob(context.Background(), cfg.New(), taskmgr.NewMgr(), backupCli, storage.NewMockClient(t),
 			RestoreRequest{TaskID: "restore_1", BackupName: "backup1"})
 
 		assert.ErrorIs(t, err, ErrBackupNotFound)
@@ -86,7 +86,7 @@ func TestNewRestoreJob(t *testing.T) {
 			NewObjectIter(mock.Anything, "backup1/meta/backup_meta.json", false).
 			Return(errorSeq(errors.New("stat denied")))
 
-		_, err := newRestoreJob(context.Background(), v2.New(), taskmgr.NewMgr(), backupCli, storage.NewMockClient(t),
+		_, err := newRestoreJob(context.Background(), cfg.New(), taskmgr.NewMgr(), backupCli, storage.NewMockClient(t),
 			RestoreRequest{TaskID: "restore_1", BackupName: "backup1"})
 
 		assert.ErrorContains(t, err, "stat denied")
@@ -102,7 +102,7 @@ func TestNewRestoreJob(t *testing.T) {
 			NewObjectIter(mock.Anything, "backup1/meta/full_meta.json", false).
 			Return(errorSeq(errors.New("read denied")))
 
-		_, err := newRestoreJob(context.Background(), v2.New(), taskmgr.NewMgr(), backupCli, storage.NewMockClient(t),
+		_, err := newRestoreJob(context.Background(), cfg.New(), taskmgr.NewMgr(), backupCli, storage.NewMockClient(t),
 			RestoreRequest{TaskID: "restore_1", BackupName: "backup1"})
 
 		assert.ErrorContains(t, err, "read denied")
@@ -115,7 +115,7 @@ func TestNewRestoreJob(t *testing.T) {
 		expectFullMeta(t, backupCli, "backup1",
 			&backuppb.BackupInfo{Id: "a", Name: "backup1", Format: "parquet"})
 
-		_, err := newRestoreJob(context.Background(), v2.New(), taskmgr.NewMgr(), backupCli, storage.NewMockClient(t),
+		_, err := newRestoreJob(context.Background(), cfg.New(), taskmgr.NewMgr(), backupCli, storage.NewMockClient(t),
 			RestoreRequest{TaskID: "restore_1", BackupName: "backup1"})
 
 		assert.ErrorContains(t, err, "new restore task")
@@ -138,7 +138,7 @@ func TestNewRestoreSecondaryJob(t *testing.T) {
 			SourceClusterID: "source",
 			TargetClusterID: "target",
 		}
-		job, err := newRestoreSecondaryJob(context.Background(), v2.New(), taskMgr, backupCli, milvusCli, req)
+		job, err := newRestoreSecondaryJob(context.Background(), cfg.New(), taskMgr, backupCli, milvusCli, req)
 
 		require.NoError(t, err)
 		require.NotNil(t, job)
@@ -154,7 +154,7 @@ func TestNewRestoreSecondaryJob(t *testing.T) {
 
 		expectNoBackup(t, backupCli, "backup1/")
 
-		_, err := newRestoreSecondaryJob(context.Background(), v2.New(), taskmgr.NewMgr(), backupCli, storage.NewMockClient(t),
+		_, err := newRestoreSecondaryJob(context.Background(), cfg.New(), taskmgr.NewMgr(), backupCli, storage.NewMockClient(t),
 			RestoreSecondaryRequest{TaskID: "restore_1", BackupName: "backup1"})
 
 		assert.ErrorIs(t, err, ErrBackupNotFound)

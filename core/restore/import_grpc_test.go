@@ -15,7 +15,7 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
 
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
@@ -63,7 +63,7 @@ func TestGRPCImportPlannerPlanTasks(t *testing.T) {
 
 func TestToGrpcPaths(t *testing.T) {
 	// a non-local target keeps the bucket-relative paths as-is
-	task := &importViaGRPCTask{milvusStorage: newTestStorageClient(t, v2.ProviderMinio)}
+	task := &importViaGRPCTask{milvusStorage: newTestStorageClient(t, cfg.ProviderMinio)}
 
 	// normal
 	dir := partitionDir{insertLogDir: "insert", deltaLogDir: "delta"}
@@ -79,7 +79,7 @@ func TestToGrpcPaths(t *testing.T) {
 
 	// a local target resolves import paths against the path Milvus sees
 	task = &importViaGRPCTask{
-		milvusStorage:   newTestStorageClient(t, v2.ProviderLocal),
+		milvusStorage:   newTestStorageClient(t, cfg.ProviderLocal),
 		milvusLocalPath: "/var/lib/milvus/data",
 	}
 	dir = partitionDir{insertLogDir: "insert", deltaLogDir: "delta"}
@@ -97,8 +97,8 @@ func newLocalGRPCTask(t *testing.T, keepTempFiles bool) (*importViaGRPCTask, str
 	require.NoError(t, os.MkdirAll(srcDir, 0o755))
 	require.NoError(t, os.WriteFile(srcDir+"file1", []byte("hello"), 0o644))
 
-	backupCli := newTestStorageClient(t, v2.ProviderLocal)
-	milvusCli := newTestStorageClient(t, v2.ProviderLocal)
+	backupCli := newTestStorageClient(t, cfg.ProviderLocal)
+	milvusCli := newTestStorageClient(t, cfg.ProviderLocal)
 
 	mgr := taskmgr.NewMgr()
 	target := collref.New("db", "coll")

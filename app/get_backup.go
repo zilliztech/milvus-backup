@@ -6,7 +6,7 @@ import (
 	"fmt"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
@@ -31,7 +31,7 @@ type GetBackup struct {
 // client itself so the transports never import internal/storage. The client
 // is created per call; sharing one across calls is a lifecycle decision this
 // layer deliberately does not make.
-func NewGetBackup(ctx context.Context, params *v2.Config) (*GetBackup, error) {
+func NewGetBackup(ctx context.Context, params *cfg.Config) (*GetBackup, error) {
 	cli, err := storage.NewBackupStorage(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("app: %w", err)

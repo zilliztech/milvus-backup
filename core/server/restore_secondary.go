@@ -13,14 +13,14 @@ import (
 
 	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 )
 
 // restoreSecondaryJobFactory is the secondary-restore counterpart of
 // restoreJobFactory.
-type restoreSecondaryJobFactory func(ctx context.Context, params *v2.Config, req app.RestoreSecondaryRequest) (restoreJob, error)
+type restoreSecondaryJobFactory func(ctx context.Context, params *cfg.Config, req app.RestoreSecondaryRequest) (restoreJob, error)
 
 // RestoreBackup Restore interface
 // @Summary Restore interface

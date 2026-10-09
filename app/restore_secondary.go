@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"github.com/zilliztech/milvus-backup/core/restore/secondary"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
@@ -41,7 +41,7 @@ type RestoreSecondaryRequest struct {
 // first, then the task manager. The clients are created per call; sharing
 // them across calls is a lifecycle decision this layer deliberately does not
 // make.
-func NewRestoreSecondaryJob(ctx context.Context, params *v2.Config, taskMgr *taskmgr.Mgr, req RestoreSecondaryRequest) (*RestoreSecondaryJob, error) {
+func NewRestoreSecondaryJob(ctx context.Context, params *cfg.Config, taskMgr *taskmgr.Mgr, req RestoreSecondaryRequest) (*RestoreSecondaryJob, error) {
 	backupStorage, err := storage.NewBackupStorage(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("app: %w", err)
@@ -58,7 +58,7 @@ func NewRestoreSecondaryJob(ctx context.Context, params *v2.Config, taskMgr *tas
 // newRestoreSecondaryJob is NewRestoreSecondaryJob with the storage clients
 // injected, so tests exercise validation and registration without real
 // storage behind the clients.
-func newRestoreSecondaryJob(ctx context.Context, params *v2.Config, taskMgr *taskmgr.Mgr, backupStorage, milvusStorage storage.Client, req RestoreSecondaryRequest) (*RestoreSecondaryJob, error) {
+func newRestoreSecondaryJob(ctx context.Context, params *cfg.Config, taskMgr *taskmgr.Mgr, backupStorage, milvusStorage storage.Client, req RestoreSecondaryRequest) (*RestoreSecondaryJob, error) {
 	backupDir, backup, err := backupMeta(ctx, backupStorage, params.Backup.Storage.RootPath.Val, req.BackupName)
 	if err != nil {
 		return nil, err

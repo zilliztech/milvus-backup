@@ -9,7 +9,7 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
 
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
@@ -98,7 +98,7 @@ func (t *copyTask) copyPrefix(ctx context.Context, srcPrefix string) (string, er
 // preserved: the copy task maps each object by replacing the source prefix
 // with this key.
 func destKey(cli storage.Client, rootPath, key string) string {
-	if cli.Config().Provider != v2.ProviderLocal || key == "" {
+	if cli.Config().Provider != cfg.ProviderLocal || key == "" {
 		return key
 	}
 	return joinLocal(rootPath, key)

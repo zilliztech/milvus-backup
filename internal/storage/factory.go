@@ -8,7 +8,7 @@ import (
 
 	"go.uber.org/zap"
 
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
@@ -16,7 +16,7 @@ import (
 // take. v2 names the authentication method outright, so this is a switch on
 // auth.type rather than v1's guesswork over the provider, the useIAM flag and
 // whether a GCP credential file happened to be set.
-func newCredential(s *v2.StorageConfig) Credential {
+func newCredential(s *cfg.StorageConfig) Credential {
 	auth := &s.Auth
 
 	// Azure builds its service URL from the account name whichever way it
@@ -24,18 +24,18 @@ func newCredential(s *v2.StorageConfig) Credential {
 	cred := Credential{AzureAccountName: s.AccountName.Val}
 
 	switch auth.Type.Val {
-	case v2.AuthSharedKey:
+	case cfg.AuthSharedKey:
 		// Azure signs with the account name and one of its access keys.
 		cred.Type = Static
 		cred.AK = s.AccountName.Val
 		cred.SK = auth.AccountKey.Val
-	case v2.AuthServiceAccount:
+	case cfg.AuthServiceAccount:
 		cred.Type = GCPCredJSON
 		cred.GCPCredJSON = auth.CredentialsFile.Val
-	case v2.AuthIAM:
+	case cfg.AuthIAM:
 		cred.Type = IAM
 		cred.IAMEndpoint = auth.Endpoint.Val
-	case v2.AuthDefault:
+	case cfg.AuthDefault:
 		// The provider SDK resolves credentials on its own: an instance role,
 		// workload identity, or DefaultAzureCredential. That is what the clients
 		// already do for IAM when there is no endpoint to fetch from.
@@ -54,7 +54,7 @@ func newCredential(s *v2.StorageConfig) Credential {
 // multipartCopyThresholdMiB is passed in because it belongs to the transfer
 // policy rather than to either backend: it describes how bytes move between
 // them.
-func storageConfig(s *v2.StorageConfig, multipartCopyThresholdMiB int64) Config {
+func storageConfig(s *cfg.StorageConfig, multipartCopyThresholdMiB int64) Config {
 	return Config{
 		Provider:                  s.Provider.Val,
 		Endpoint:                  net.JoinHostPort(s.Address.Val, strconv.Itoa(s.Port.Val)),
@@ -70,7 +70,7 @@ func storageConfig(s *v2.StorageConfig, multipartCopyThresholdMiB int64) Config 
 
 // milvusEndpoint renders the optional Milvus-view endpoint override. The port
 // falls back to the section's own port, so a host-only override stays short.
-func milvusEndpoint(s *v2.StorageConfig) string {
+func milvusEndpoint(s *cfg.StorageConfig) string {
 	if s.MilvusAddress.Val == "" {
 		return ""
 	}
@@ -83,16 +83,16 @@ func milvusEndpoint(s *v2.StorageConfig) string {
 
 // MilvusStorageConfig describes the backend the Milvus deployment keeps its
 // data in.
-func MilvusStorageConfig(c *v2.Config) Config {
+func MilvusStorageConfig(c *cfg.Config) Config {
 	return storageConfig(&c.Milvus.Storage, c.Transfer.MultipartCopyThresholdMiB.Val)
 }
 
 // BackupStorageConfig describes the backend backup data is written to.
-func BackupStorageConfig(c *v2.Config) Config {
+func BackupStorageConfig(c *cfg.Config) Config {
 	return storageConfig(&c.Backup.Storage, c.Transfer.MultipartCopyThresholdMiB.Val)
 }
 
-func NewMilvusStorage(ctx context.Context, c *v2.Config) (Client, error) {
+func NewMilvusStorage(ctx context.Context, c *cfg.Config) (Client, error) {
 	conf := MilvusStorageConfig(c)
 	log.Info("create milvus storage client",
 		zap.String("endpoint", conf.Endpoint),
@@ -101,7 +101,7 @@ func NewMilvusStorage(ctx context.Context, c *v2.Config) (Client, error) {
 	return NewClient(ctx, conf)
 }
 
-func NewBackupStorage(ctx context.Context, c *v2.Config) (Client, error) {
+func NewBackupStorage(ctx context.Context, c *cfg.Config) (Client, error) {
 	conf := BackupStorageConfig(c)
 	log.Info("create backup storage client",
 		zap.String("endpoint", conf.Endpoint),
@@ -126,9 +126,9 @@ func NewBackupStorage(ctx context.Context, c *v2.Config) (Client, error) {
 // auto keeps that rule, while direct and streaming pin the answer.
 func UseStreaming(mode string, src, dest Config) bool {
 	switch mode {
-	case v2.TransferStreaming:
+	case cfg.TransferStreaming:
 		return true
-	case v2.TransferDirect:
+	case cfg.TransferDirect:
 		return false
 	default:
 		return !SameBackend(src, dest)
@@ -151,21 +151,21 @@ func NewClient(ctx context.Context, conf Config) (Client, error) {
 	// alibaba, alicloud, tc) do not reach here: they are folded into the
 	// canonical name while the configuration is loaded.
 	switch conf.Provider {
-	case v2.ProviderAliyun:
+	case cfg.ProviderAliyun:
 		return newAliyunClient(conf)
-	case v2.ProviderAWS, v2.ProviderS3, v2.ProviderMinio:
+	case cfg.ProviderAWS, cfg.ProviderS3, cfg.ProviderMinio:
 		return newMinioClient(conf)
-	case v2.ProviderAzure:
+	case cfg.ProviderAzure:
 		return newAzureClient(conf)
-	case v2.ProviderTencent:
+	case cfg.ProviderTencent:
 		return newTencentClient(conf)
-	case v2.ProviderGCP:
+	case cfg.ProviderGCP:
 		return newGCPClient(conf)
-	case v2.ProviderGCPNative:
+	case cfg.ProviderGCPNative:
 		return newGCPNativeClient(ctx, conf)
-	case v2.ProviderHwc:
+	case cfg.ProviderHwc:
 		return NewHwcClient(conf)
-	case v2.ProviderLocal:
+	case cfg.ProviderLocal:
 		return newLocalClient(conf), nil
 	default:
 		return nil, fmt.Errorf("storage: unsupported storage type: %s", conf.Provider)

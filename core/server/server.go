@@ -14,25 +14,25 @@ import (
 	echoSwagger "github.com/swaggo/echo-swagger/v2"
 
 	"github.com/zilliztech/milvus-backup/docs"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 )
 
 // Server is the Backup Server
 type Server struct {
 	engine      *echo.Echo
 	config      *config
-	params      *v2.Config
+	params      *cfg.Config
 	compactMu   sync.Mutex
 	compactJobs map[string]*l0CompactJob
 }
 
-func New(params *v2.Config, opts ...Option) (*Server, error) {
-	cfg := newDefaultConfig()
+func New(params *cfg.Config, opts ...Option) (*Server, error) {
+	conf := newDefaultConfig()
 	for _, opt := range opts {
-		opt(cfg)
+		opt(conf)
 	}
 
-	s := &Server{config: cfg, params: params}
+	s := &Server{config: conf, params: params}
 	s.initEngine()
 
 	return s, nil

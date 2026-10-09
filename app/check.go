@@ -11,7 +11,7 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
 
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/storage"
@@ -35,7 +35,7 @@ type Check struct {
 // both storage clients itself so the transports never import internal/storage
 // or internal/client/milvus. The clients are created per call; sharing them
 // across calls is a lifecycle decision this layer deliberately does not make.
-func NewCheck(ctx context.Context, params *v2.Config) (*Check, error) {
+func NewCheck(ctx context.Context, params *cfg.Config) (*Check, error) {
 	grpc, err := milvus.NewGrpc(&params.Milvus)
 	if err != nil {
 		return nil, fmt.Errorf("app: %w", err)

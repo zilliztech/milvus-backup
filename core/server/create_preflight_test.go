@@ -20,7 +20,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
 
@@ -35,19 +35,19 @@ func preflightTestServer(t *testing.T, source http.HandlerFunc) (*Server, string
 	portNum, err := strconv.Atoi(port)
 	require.NoError(t, err)
 	dest := t.TempDir()
-	params, err := v2.Load("", map[string]string{
-		"milvus.storage.provider":             v2.ProviderMinio,
+	params, err := cfg.Load("", map[string]string{
+		"milvus.storage.provider":             cfg.ProviderMinio,
 		"milvus.storage.address":              host,
 		"milvus.storage.port":                 strconv.Itoa(portNum),
 		"milvus.storage.region":               "cn-hangzhou",
-		"milvus.storage.auth.type":            v2.AuthStatic,
+		"milvus.storage.auth.type":            cfg.AuthStatic,
 		"milvus.storage.auth.accessKeyID":     "test-ak",
 		"milvus.storage.auth.secretAccessKey": "test-sk",
 		"milvus.storage.bucketName":           "source-bucket",
 		"milvus.storage.rootPath":             "source-instance/",
-		"backup.storage.provider":             v2.ProviderLocal,
+		"backup.storage.provider":             cfg.ProviderLocal,
 		"backup.storage.rootPath":             dest,
-		"milvus.grpc.tlsMode":                 v2.TLSServer,
+		"milvus.grpc.tlsMode":                 cfg.TLSServer,
 		"milvus.grpc.caCertPath":              dest + "/missing-ca.pem",
 	})
 	require.NoError(t, err)

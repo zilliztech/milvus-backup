@@ -9,11 +9,11 @@ import (
 
 	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/cmd/root"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 )
 
 // writeConfig prints a labeled table of the effective configuration to w.
-func writeConfig(w io.Writer, c *v2.Config) error {
+func writeConfig(w io.Writer, c *cfg.Config) error {
 	if _, err := io.WriteString(w, "Configuration:\n"); err != nil {
 		return fmt.Errorf("check: write config header: %w", err)
 	}

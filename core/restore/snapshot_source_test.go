@@ -8,7 +8,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
@@ -17,7 +17,7 @@ import (
 func azureCfg(account, bucket string) storage.Config {
 	key := base64.StdEncoding.EncodeToString([]byte("0123456789abcdef0123456789abcdef"))
 	return storage.Config{
-		Provider:   v2.ProviderAzure,
+		Provider:   cfg.ProviderAzure,
 		Endpoint:   "core.windows.net:443",
 		Bucket:     bucket,
 		Credential: storage.Credential{Type: storage.Static, AK: account, SK: key, AzureAccountName: account},
@@ -44,7 +44,7 @@ func TestNewSnapshotSource(t *testing.T) {
 	// through its own storage config.
 	t.Run("SameBackendSendsNoSpec", func(t *testing.T) {
 		milvusCfg := storage.Config{
-			Provider: v2.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket",
+			Provider: cfg.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket",
 			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
 		}
 		backupCfg := milvusCfg
@@ -61,11 +61,11 @@ func TestNewSnapshotSource(t *testing.T) {
 	// the backup side's credentials spelled out in a spec.
 	t.Run("OtherBackendSendsSpec", func(t *testing.T) {
 		milvusCfg := storage.Config{
-			Provider: v2.ProviderS3, Region: "us-east-1", Bucket: "milvus-bucket",
+			Provider: cfg.ProviderS3, Region: "us-east-1", Bucket: "milvus-bucket",
 			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
 		}
 		backupCfg := storage.Config{
-			Provider: v2.ProviderS3, Region: "us-west-2", Bucket: "backup-bucket",
+			Provider: cfg.ProviderS3, Region: "us-west-2", Bucket: "backup-bucket",
 			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
 		}
 
@@ -78,9 +78,9 @@ func TestNewSnapshotSource(t *testing.T) {
 	// A backup held on another provider's service is unreadable to the
 	// server-side copy, so the restore refuses it before any job is submitted.
 	t.Run("CrossServiceFails", func(t *testing.T) {
-		milvusCfg := storage.Config{Provider: v2.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket"}
+		milvusCfg := storage.Config{Provider: cfg.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket"}
 		backupCfg := storage.Config{
-			Provider: v2.ProviderS3, Region: "us-west-2", Bucket: "backup-bucket",
+			Provider: cfg.ProviderS3, Region: "us-west-2", Bucket: "backup-bucket",
 			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
 		}
 
@@ -132,7 +132,7 @@ func TestNewSnapshotSource(t *testing.T) {
 	// as the token check: the copy cannot cross services to begin with.
 	t.Run("NonAzureMilvusWithSASFails", func(t *testing.T) {
 		milvusCfg := storage.Config{
-			Provider: v2.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket",
+			Provider: cfg.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket",
 			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
 		}
 		backupCfg := azureCfg("backup-account", "backup-bucket")

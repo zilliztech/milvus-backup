@@ -14,7 +14,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 )
 
 // stubListBackups stands in for app.ListBackups: canned data or errors, and a
@@ -35,7 +35,7 @@ func (s *stubListBackups) Execute(_ context.Context) ([]app.BackupSummary, error
 // client-construction failure, which happens before any Execute call.
 func withListBackups(stub *stubListBackups, newErr error) Option {
 	return func(c *config) {
-		c.newListBackups = func(context.Context, *v2.Config) (listBackupsUC, error) {
+		c.newListBackups = func(context.Context, *cfg.Config) (listBackupsUC, error) {
 			return stub, newErr
 		}
 	}
@@ -44,7 +44,7 @@ func withListBackups(stub *stubListBackups, newErr error) Option {
 func newListTestServer(t *testing.T, opts ...Option) *Server {
 	t.Helper()
 
-	s, err := New(v2.New(), opts...)
+	s, err := New(cfg.New(), opts...)
 	require.NoError(t, err)
 	silenceEngine(s)
 

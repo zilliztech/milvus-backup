@@ -7,7 +7,7 @@ import (
 
 	"go.uber.org/zap"
 
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/storage"
@@ -24,7 +24,7 @@ type DeleteBackup struct {
 // client itself so the transports never import internal/storage. The client
 // is created per call; sharing one across calls is a lifecycle decision this
 // layer deliberately does not make.
-func NewDeleteBackup(ctx context.Context, params *v2.Config) (*DeleteBackup, error) {
+func NewDeleteBackup(ctx context.Context, params *cfg.Config) (*DeleteBackup, error) {
 	cli, err := storage.NewBackupStorage(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("app: %w", err)

@@ -8,19 +8,19 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
 
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
 func TestDestKey(t *testing.T) {
 	// a non-local target keeps the key as-is, whatever the root path says
-	minio := newTestStorageClient(t, v2.ProviderMinio)
+	minio := newTestStorageClient(t, cfg.ProviderMinio)
 	assert.Equal(t, "restore-temp-1/", destKey(minio, "/data", "restore-temp-1/"))
 
 	// a local target resolves against the directory milvus-backup writes to,
 	// keeping the key's trailing slash for the prefix replacement on copy
-	local := newTestStorageClient(t, v2.ProviderLocal)
+	local := newTestStorageClient(t, cfg.ProviderLocal)
 	assert.Equal(t, "/data/restore-temp-1/", destKey(local, "/data", "restore-temp-1/"))
 	assert.Equal(t, "/data/insert", destKey(local, "/data", "insert"))
 
@@ -31,13 +31,13 @@ func TestDestKey(t *testing.T) {
 // differ only in bucket, so each case picks the copy-or-not wiring it wants.
 func newCopyTestCollTask(t *testing.T, backupBucket, milvusBucket string, streaming bool) *collDMLTask {
 	newClient := func(bucket string) storage.Client {
-		cfg := storage.Config{
-			Provider:   v2.ProviderMinio,
+		storeCfg := storage.Config{
+			Provider:   cfg.ProviderMinio,
 			Endpoint:   "localhost:9000",
 			Bucket:     bucket,
 			Credential: storage.Credential{Type: storage.Static, AK: "a", SK: "b"},
 		}
-		cli, err := storage.NewClient(t.Context(), cfg)
+		cli, err := storage.NewClient(t.Context(), storeCfg)
 		assert.NoError(t, err)
 		return cli
 	}

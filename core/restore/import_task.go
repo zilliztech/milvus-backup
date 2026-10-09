@@ -15,7 +15,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"github.com/zilliztech/milvus-backup/core/tasklet"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
@@ -123,7 +123,7 @@ func waitImportJob(
 // imported without a copy. Any other provider keeps the bucket-relative path
 // as-is.
 func importPath(cli storage.Client, localPath, p string) string {
-	if cli.Config().Provider != v2.ProviderLocal || p == "" {
+	if cli.Config().Provider != cfg.ProviderLocal || p == "" {
 		return p
 	}
 	if path.IsAbs(p) {

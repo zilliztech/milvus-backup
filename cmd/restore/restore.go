@@ -14,7 +14,7 @@ import (
 	"github.com/zilliztech/milvus-backup/cmd/flags"
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/restore"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
@@ -168,7 +168,7 @@ func (o *options) toRequest() (app.RestoreRequest, error) {
 	}, nil
 }
 
-func (o *options) run(cmd *cobra.Command, params *v2.Config) error {
+func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
 	start := time.Now()
 
 	req, err := o.toRequest()

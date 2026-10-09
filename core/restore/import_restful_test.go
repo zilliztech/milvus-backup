@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 )
 
 func TestRESTfulImportPlannerPlanTasks(t *testing.T) {
@@ -63,7 +63,7 @@ func TestRESTfulImportPlannerPlanTasks(t *testing.T) {
 
 func TestToPaths(t *testing.T) {
 	// a non-local target keeps the bucket-relative paths as-is
-	task := &importViaRESTFulTask{milvusStorage: newTestStorageClient(t, v2.ProviderMinio)}
+	task := &importViaRESTFulTask{milvusStorage: newTestStorageClient(t, cfg.ProviderMinio)}
 
 	// normal
 	dir := partitionDir{insertLogDir: "insert", deltaLogDir: "delta"}
@@ -83,7 +83,7 @@ func TestToPaths(t *testing.T) {
 
 	// a local target resolves import paths against the path Milvus sees
 	task = &importViaRESTFulTask{
-		milvusStorage:   newTestStorageClient(t, v2.ProviderLocal),
+		milvusStorage:   newTestStorageClient(t, cfg.ProviderLocal),
 		milvusLocalPath: "/var/lib/milvus/data",
 	}
 	dir = partitionDir{insertLogDir: "insert", deltaLogDir: "delta"}

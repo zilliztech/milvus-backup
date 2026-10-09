@@ -13,7 +13,7 @@ import (
 	"github.com/zilliztech/milvus-backup/cmd/flags"
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/backup"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/taskmgr"
 )
@@ -108,7 +108,7 @@ func (o *options) toFilter() (filter.Filter, error) {
 
 // toOption parses the flags into the transport-neutral request option. The
 // strategy and format are already validated in validate().
-func (o *options) toOption(params *v2.Config) (backup.Option, error) {
+func (o *options) toOption(params *cfg.Config) (backup.Option, error) {
 	f, err := o.toFilter()
 	if err != nil {
 		return backup.Option{}, err
@@ -146,7 +146,7 @@ func (o *options) toOption(params *v2.Config) (backup.Option, error) {
 	return option, nil
 }
 
-func (o *options) run(cmd *cobra.Command, params *v2.Config) error {
+func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
 	start := time.Now()
 
 	ctx := context.Background()

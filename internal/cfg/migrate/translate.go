@@ -5,13 +5,13 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/cfg/param"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
 // A translator carries a v1 source across the schema boundary, producing the
-// v2 source that v2.LoadFrom resolves. The version boundary moves with it:
+// v2 source that cfg.LoadFrom resolves. The version boundary moves with it:
 // instead of resolving the v1 schema and copying the result field by field,
 // the flattened v1 key map is translated into a flattened v2 key map, and the
 // v2 schema does all resolution.
@@ -201,29 +201,29 @@ func (t *translator) translateTLSMode() {
 
 	mode, err := asInt(h.value)
 	if err != nil {
-		t.warn("milvus.tlsMode=%v is not a valid v1 TLS mode; migrated as %q", h.value, v2.TLSDisabled)
-		emit(v2.TLSDisabled)
+		t.warn("milvus.tlsMode=%v is not a valid v1 TLS mode; migrated as %q", h.value, cfg.TLSDisabled)
+		emit(cfg.TLSDisabled)
 		return
 	}
 
 	switch mode {
 	case 0:
-		emit(v2.TLSDisabled)
+		emit(cfg.TLSDisabled)
 	case 1:
-		emit(v2.TLSServer)
+		emit(cfg.TLSServer)
 	case 2:
 		if t.gatherNonEmpty(fMTLSCertPath) && t.gatherNonEmpty(fMTLSKeyPath) {
-			emit(v2.TLSMutual)
+			emit(cfg.TLSMutual)
 			return
 		}
-		t.warn("milvus.tlsMode=2 (mutual) but no client certificate/key is set; v1 used server TLS, migrated as %q", v2.TLSServer)
+		t.warn("milvus.tlsMode=2 (mutual) but no client certificate/key is set; v1 used server TLS, migrated as %q", cfg.TLSServer)
 		if t.report != nil {
 			t.report.commentKey("milvus.grpc.tlsMode", "v1 tlsMode 2 without an mTLS key pair; downgraded to server (v1 behavior)")
 		}
-		emit(v2.TLSServer)
+		emit(cfg.TLSServer)
 	default:
-		t.warn("milvus.tlsMode=%d is not a valid v1 TLS mode; migrated as %q", mode, v2.TLSDisabled)
-		emit(v2.TLSDisabled)
+		t.warn("milvus.tlsMode=%d is not a valid v1 TLS mode; migrated as %q", mode, cfg.TLSDisabled)
+		emit(cfg.TLSDisabled)
 	}
 }
 
@@ -273,9 +273,9 @@ func (t *translator) translateCrossStorage() {
 		return
 	}
 
-	mode := v2.TransferAuto
+	mode := cfg.TransferAuto
 	if asBool(h.value) {
-		mode = v2.TransferStreaming
+		mode = cfg.TransferStreaming
 	} else {
 		t.crossStorageAuto = true
 		if t.report != nil {
@@ -333,7 +333,7 @@ func (t *translator) storageSide(s *storageSide, inherit *storageSide, up *sideS
 	// inherit: the Milvus side inherits the v2 default, the backup side the
 	// Milvus side's value. The emission carries the key that drove the
 	// decision as its origin — one always exists when the outcome diverges.
-	inherited := v2.AuthStatic
+	inherited := cfg.AuthStatic
 	if up != nil {
 		inherited = up.auth
 	}
@@ -371,23 +371,23 @@ func (t *translator) storageSide(s *storageSide, inherit *storageSide, up *sideS
 		}
 	}
 	switch st.auth {
-	case v2.AuthStatic:
+	case cfg.AuthStatic:
 		t.emitCredential(s, "auth.accessKeyID", s.accessKeyID, fallback(s.accessKeyID), "")
 		t.emitCredential(s, "auth.secretAccessKey", s.secretAccessKey, fallback(s.secretAccessKey), "AUTH_SECRET_ACCESS_KEY")
 		t.emitCredential(s, "auth.sessionToken", s.token, fallback(s.token), "AUTH_SESSION_TOKEN")
-	case v2.AuthSharedKey:
+	case cfg.AuthSharedKey:
 		// v1 overloaded the access key ID as the Azure account name and the
 		// secret access key as the account key.
 		t.emitCredential(s, "accountName", s.accessKeyID, fallback(s.accessKeyID), "")
 		t.emitCredential(s, "auth.accountKey", s.secretAccessKey, fallback(s.secretAccessKey), "AUTH_ACCOUNT_KEY")
-	case v2.AuthDefault:
+	case cfg.AuthDefault:
 		// Azure with v1's useIAM: DefaultAzureCredential, so no key exists to
 		// migrate, but the account name still builds the blob service URL.
 		t.emitCredential(s, "accountName", s.accessKeyID, fallback(s.accessKeyID), "")
-	case v2.AuthServiceAccount:
+	case cfg.AuthServiceAccount:
 		t.emitCredential(s, "auth.credentialsFile", s.gcpCredentialJSON, nil, "AUTH_CREDENTIALS_FILE")
 		t.warn("%s.auth.credentialsFile expects a path to the service account JSON file; verify it is not inline JSON", s.prefix)
-	case v2.AuthIAM:
+	case cfg.AuthIAM:
 		t.emitCredential(s, "auth.endpoint", s.iamEndpoint, fallback(s.iamEndpoint), "")
 	}
 
@@ -446,11 +446,11 @@ func (t *translator) injectBackupRootPath() {
 	t.settle(backupStorage.rootPath.v2, "files")
 }
 
-// declareV2 stamps the discriminator v2.LoadFrom requires onto the translated
+// declareV2 stamps the discriminator cfg.LoadFrom requires onto the translated
 // source. The translation vouches for the result being v2-shaped, so it
 // declares v2 on the translated file's behalf.
 func (t *translator) declareV2() {
-	t.settle(v2.VersionKey, v2.Version)
+	t.settle(cfg.VersionKey, cfg.Version)
 }
 
 // settle writes a value the translation worked out itself rather than read
@@ -470,7 +470,7 @@ func (t *translator) settle(key, value string) {
 // the v2 loader.
 func (t *translator) finishLeftovers() {
 	for _, key := range t.src.ConfigFileKeys() {
-		if key == strings.ToLower(v2.VersionKey) || t.consumedFile[key] || v1FileKeys[key] {
+		if key == strings.ToLower(cfg.VersionKey) || t.consumedFile[key] || v1FileKeys[key] {
 			continue
 		}
 		t.warn("cfg: unknown v1 config file key %q, ignoring it", key)
@@ -491,22 +491,22 @@ func (t *translator) finishLeftovers() {
 // decides first, and useIAM only speaks for the S3-compatible providers.
 func effectiveAuth(provider string, useIAM bool) string {
 	switch {
-	case provider == v2.ProviderLocal:
+	case provider == cfg.ProviderLocal:
 		// Local storage is a directory: no credentials, no auth type.
 		return ""
-	case provider == v2.ProviderAzure:
+	case provider == cfg.ProviderAzure:
 		if useIAM {
 			// v1's useIAM for Azure meant DefaultAzureCredential (managed
 			// identity / workload identity).
-			return v2.AuthDefault
+			return cfg.AuthDefault
 		}
-		return v2.AuthSharedKey
-	case provider == v2.ProviderGCPNative:
-		return v2.AuthServiceAccount
+		return cfg.AuthSharedKey
+	case provider == cfg.ProviderGCPNative:
+		return cfg.AuthServiceAccount
 	case useIAM:
-		return v2.AuthIAM
+		return cfg.AuthIAM
 	default:
-		return v2.AuthStatic
+		return cfg.AuthStatic
 	}
 }
 
@@ -515,9 +515,9 @@ func effectiveAuth(provider string, useIAM bool) string {
 func canonicalProvider(p string) string {
 	switch strings.ToLower(p) {
 	case "ali", "alibaba", "alicloud", "aliyun":
-		return v2.ProviderAliyun
+		return cfg.ProviderAliyun
 	case "tc", "tencent":
-		return v2.ProviderTencent
+		return cfg.ProviderTencent
 	default:
 		return strings.ToLower(p)
 	}

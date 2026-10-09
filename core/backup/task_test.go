@@ -13,7 +13,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
@@ -26,8 +26,8 @@ import (
 func TestTask_ExecuteMarksInitClientFailure(t *testing.T) {
 	mgr := taskmgr.NewMgr()
 	require.NoError(t, mgr.AddBackupTask("task1", "backup1"))
-	params := v2.New()
-	params.Milvus.Grpc.TLSMode.Val = v2.TLSMutual
+	params := cfg.New()
+	params.Milvus.Grpc.TLSMode.Val = cfg.TLSMutual
 
 	task := &Task{
 		taskID:  "task1",
@@ -244,8 +244,8 @@ func TestTask_excludeExternalColl(t *testing.T) {
 }
 
 func TestTask_resolveFormat(t *testing.T) {
-	sameService := storage.Config{Provider: v2.ProviderMinio, Endpoint: "minio:9000", Bucket: "a"}
-	crossService := storage.Config{Provider: v2.ProviderAWS, Region: "us-west-2", Bucket: "b"}
+	sameService := storage.Config{Provider: cfg.ProviderMinio, Endpoint: "minio:9000", Bucket: "a"}
+	crossService := storage.Config{Provider: cfg.ProviderAWS, Region: "us-west-2", Bucket: "b"}
 
 	tests := []struct {
 		name      string

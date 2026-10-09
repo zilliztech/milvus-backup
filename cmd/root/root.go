@@ -7,8 +7,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/cfg/loader"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
@@ -19,7 +19,7 @@ type Options struct {
 
 // InitGlobalVars loads the configuration, whichever schema version the file is
 // written in, and initializes logging from it. Everything downstream sees v2.
-func (o *Options) InitGlobalVars() *v2.Config {
+func (o *Options) InitGlobalVars() *cfg.Config {
 	overrides, err := parseOverrides(o.YamlOverrides)
 	if err != nil {
 		panic(err)
@@ -37,7 +37,7 @@ func (o *Options) InitGlobalVars() *v2.Config {
 
 // logConfig maps the log section onto the logger's own configuration, so the
 // log package does not have to know about a configuration schema.
-func logConfig(c *v2.LogConfig) *log.Config {
+func logConfig(c *cfg.LogConfig) *log.Config {
 	return &log.Config{
 		Level:   c.Level.Val,
 		Console: c.Console.Val,

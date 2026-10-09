@@ -16,7 +16,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore"
 	"github.com/zilliztech/milvus-backup/core/utils"
-	v2 "github.com/zilliztech/milvus-backup/internal/cfg/v2"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/log"
@@ -37,7 +37,7 @@ type restoreJob interface {
 // restoreJobFactory builds and registers the job for one restore request.
 // Unlike the other new* constructors it takes the request: a restore job is
 // per-request, so construction and registration are one step.
-type restoreJobFactory func(ctx context.Context, params *v2.Config, req app.RestoreRequest) (restoreJob, error)
+type restoreJobFactory func(ctx context.Context, params *cfg.Config, req app.RestoreRequest) (restoreJob, error)
 
 // RestoreBackup Restore interface
 // @Summary Restore interface
