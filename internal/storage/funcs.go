@@ -63,6 +63,13 @@ func ExpectedDestObjects(ctx context.Context, src Client, srcPrefix, destPrefix 
 }
 
 func DeletePrefix(ctx context.Context, cli Client, prefix string) error {
+	return DeleteWithCallback(ctx, cli, prefix, nil)
+}
+
+// DeleteWithCallback is DeletePrefix with a progress hook: onDeleted runs
+// once per successfully deleted object. It fires from the concurrent delete
+// workers, so it must be goroutine-safe; a nil onDeleted deletes silently.
+func DeleteWithCallback(ctx context.Context, cli Client, prefix string, onDeleted func()) error {
 	if prefix == "" {
 		return fmt.Errorf("storage: delete prefix empty prefix")
 	}
@@ -89,7 +96,13 @@ func DeletePrefix(ctx context.Context, cli Client, prefix string) error {
 
 		g.Go(func() error {
 			log.Debug("delete object", zap.String("key", attr.Key))
-			return cli.DeleteObject(subCtx, attr.Key)
+			if err := cli.DeleteObject(subCtx, attr.Key); err != nil {
+				return err
+			}
+			if onDeleted != nil {
+				onDeleted()
+			}
+			return nil
 		})
 	}
 

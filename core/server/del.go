@@ -6,15 +6,26 @@ import (
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
 
+	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
-// deleteBackupUC is the slice of app.DeleteBackup the handler needs. The
-// consumer defines it: app returns concrete types, and this narrow interface
-// is what handler tests stub out.
-type deleteBackupUC interface {
-	Execute(ctx context.Context, name string) error
+// deleteJob is the slice of app.DeleteJob the handler needs. The consumer
+// defines it: app returns concrete types, and this narrow interface is what
+// handler tests stub out.
+type deleteJob interface {
+	// Run releases the job into the background.
+	Run(ctx context.Context)
+	// Wait answers with the outcome the job records when it settles; it is
+	// what the handler blocks on, since v1 exposes no async form.
+	Wait(ctx context.Context) (jobstate.DeleteStatus, error)
 }
+
+// deleteJobFactory builds and registers the job for one delete request: a
+// delete job is per-request, so building it and registering it are one step.
+type deleteJobFactory func(ctx context.Context, params *cfg.Config, req app.DeleteBackupRequest) (deleteJob, error)
 
 // DeleteBackup Delete backup interface
 // @Summary Delete backup interface
@@ -26,31 +37,41 @@ type deleteBackupUC interface {
 // @Success 200 {object} backuppb.DeleteBackupResponse
 // @Router /delete [delete]
 func (s *Server) handleDeleteBackup(c *echo.Context) error {
-	req := &backuppb.DeleteBackupRequest{
-		RequestId:  c.Request().Header.Get("request_id"),
-		BackupName: c.QueryParam("backup_name"),
-	}
-	if len(req.GetRequestId()) == 0 {
-		req.RequestId = uuid.NewString()
+	requestID := c.Request().Header.Get("request_id")
+	if len(requestID) == 0 {
+		requestID = uuid.NewString()
 	}
 
-	resp := &backuppb.DeleteBackupResponse{RequestId: req.GetRequestId()}
-	if len(req.GetBackupName()) == 0 {
+	resp := &backuppb.DeleteBackupResponse{RequestId: requestID}
+	backupName := c.QueryParam("backup_name")
+	if len(backupName) == 0 {
 		resp.Code = backuppb.ResponseCode_Parameter_Error
 		resp.Msg = "backup name is required"
 		return writeResponse(c, "delete backup fail", resp)
 	}
 
-	uc, err := s.config.newDeleteBackup(c.Request().Context(), s.params)
+	job, err := s.config.newDeleteJob(c.Request().Context(), s.params,
+		app.DeleteBackupRequest{TaskID: requestID, BackupName: backupName})
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
 		return writeResponse(c, "delete backup fail", resp)
 	}
 
-	if err := uc.Execute(c.Request().Context(), req.GetBackupName()); err != nil {
+	// v1 exposes no async form: the job runs detached from the request — a
+	// client disconnect must not kill a half-done delete — and the handler
+	// answers with the outcome it settles on.
+	job.Run(context.Background())
+
+	status, err := job.Wait(c.Request().Context())
+	if err != nil {
+		// The request context died while waiting; the delete itself keeps
+		// running to completion in the background.
+		return err
+	}
+	if status.State == jobstate.DeleteStateFail {
 		resp.Code = backuppb.ResponseCode_Fail
-		resp.Msg = err.Error()
+		resp.Msg = status.ErrorMessage
 		return writeResponse(c, "delete backup fail", resp)
 	}
 
