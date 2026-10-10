@@ -181,7 +181,7 @@ func TestRenderDelete(t *testing.T) {
 		// still converge on the terminal snapshot.
 		tracker.SetListingDone()
 		for i := 0; i < 100; i++ {
-			tracker.IncDeleted()
+			tracker.AddDeleted(1)
 		}
 		tracker.SetSuccess()
 

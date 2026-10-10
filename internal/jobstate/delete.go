@@ -126,11 +126,14 @@ func (t *DeleteTracker) AddDiscovered(n int64) {
 	t.task.discovered += n
 }
 
-func (t *DeleteTracker) IncDeleted() {
+// AddDeleted records n completed deletions — 1 on the per-key path, the
+// batch size on the batch path. Its signature matches DeleteWithCallback's
+// onDeleted hook, so the tracker passes as the callback directly.
+func (t *DeleteTracker) AddDeleted(n int) {
 	t.task.mu.Lock()
 	defer t.task.mu.Unlock()
 
-	t.task.deleted++
+	t.task.deleted += int64(n)
 }
 
 func (t *DeleteTracker) SetListingDone() {

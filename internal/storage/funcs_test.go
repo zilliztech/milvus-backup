@@ -3,6 +3,7 @@ package storage
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"iter"
 	"sync"
@@ -177,7 +178,7 @@ func TestDeleteWithCallback(t *testing.T) {
 		}
 
 		var deleted atomic.Int64
-		err := DeleteWithCallback(context.Background(), cli, "a/b", func() { deleted.Add(1) })
+		err := DeleteWithCallback(context.Background(), cli, "a/b", func(n int) { deleted.Add(int64(n)) })
 		assert.NoError(t, err)
 		assert.Equal(t, int64(len(objs)), deleted.Load())
 	})
@@ -193,9 +194,117 @@ func TestDeleteWithCallback(t *testing.T) {
 			Return(assert.AnError)
 
 		var deleted atomic.Int64
-		err := DeleteWithCallback(context.Background(), cli, "a/b", func() { deleted.Add(1) })
+		err := DeleteWithCallback(context.Background(), cli, "a/b", func(n int) { deleted.Add(int64(n)) })
 		assert.Error(t, err)
 		assert.Equal(t, int64(0), deleted.Load())
+	})
+}
+
+// mockBatchClient is a MockClient with a batchDeleter implementation bolted
+// on, standing in for *MinioClient: DeleteObjects records every batch it
+// receives and answers with deleteObjectsFn when set.
+type mockBatchClient struct {
+	*MockClient
+
+	batchSize       int
+	deleteObjectsFn func(ctx context.Context, keys []string) error
+
+	mu      sync.Mutex
+	batches [][]string
+}
+
+var _ batchDeleter = (*mockBatchClient)(nil)
+
+func newMockBatchClient(t *testing.T, batchSize int) *mockBatchClient {
+	return &mockBatchClient{MockClient: NewMockClient(t), batchSize: batchSize}
+}
+
+func (m *mockBatchClient) DeleteObjects(ctx context.Context, keys []string) error {
+	m.mu.Lock()
+	m.batches = append(m.batches, append([]string(nil), keys...))
+	m.mu.Unlock()
+	if m.deleteObjectsFn != nil {
+		return m.deleteObjectsFn(ctx, keys)
+	}
+	return nil
+}
+
+func (m *mockBatchClient) DeleteObjectsBatchSize() int { return m.batchSize }
+
+func (m *mockBatchClient) recordedBatches() [][]string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return append([][]string(nil), m.batches...)
+}
+
+func TestDeleteWithCallbackBatch(t *testing.T) {
+	objs := []ObjectAttr{
+		{Key: "a/b/c", Length: 1},
+		{Key: "a/b/d", Length: 2},
+		{Key: "a/b/e", Length: 3},
+	}
+
+	t.Run("BatchPathDeletesWithoutPerKeyCalls", func(t *testing.T) {
+		cli := newMockBatchClient(t, 2)
+		cli.EXPECT().
+			NewObjectIter(mock.Anything, "a/b", true).
+			Return(NewMockObjectIterator(objs))
+		// No DeleteObject expectation: a per-key call fails the mock.
+
+		var deleted atomic.Int64
+		err := DeleteWithCallback(context.Background(), cli, "a/b", func(n int) { deleted.Add(int64(n)) })
+		assert.NoError(t, err)
+		assert.Equal(t, int64(len(objs)), deleted.Load())
+		// Batch size 2 over 3 keys: one full batch and one remainder.
+		assert.ElementsMatch(t, [][]string{{"a/b/c", "a/b/d"}, {"a/b/e"}}, cli.recordedBatches())
+	})
+
+	t.Run("BatchPathToleratesNilCallback", func(t *testing.T) {
+		cli := newMockBatchClient(t, 1000)
+		cli.EXPECT().
+			NewObjectIter(mock.Anything, "a/b", true).
+			Return(NewMockObjectIterator(objs))
+
+		err := DeletePrefix(context.Background(), cli, "a/b")
+		assert.NoError(t, err)
+		assert.Len(t, cli.recordedBatches(), 1)
+	})
+
+	t.Run("NotImplementedDegradesToPerKey", func(t *testing.T) {
+		cli := newMockBatchClient(t, 1000)
+		cli.deleteObjectsFn = func(context.Context, []string) error {
+			return fmt.Errorf("%w: %w", errBatchDeleteUnsupported, assert.AnError)
+		}
+		// The fallback re-lists the prefix, so the sequence must be
+		// rangeable twice.
+		cli.EXPECT().
+			NewObjectIter(mock.Anything, "a/b", true).
+			Return(NewMockObjectIterator(objs)).Twice()
+		for _, obj := range objs {
+			cli.EXPECT().
+				DeleteObject(mock.Anything, obj.Key).
+				Return(nil)
+		}
+
+		var deleted atomic.Int64
+		err := DeleteWithCallback(context.Background(), cli, "a/b", func(n int) { deleted.Add(int64(n)) })
+		assert.NoError(t, err)
+		assert.Equal(t, int64(len(objs)), deleted.Load())
+	})
+
+	t.Run("BatchErrorDoesNotDegrade", func(t *testing.T) {
+		cli := newMockBatchClient(t, 1000)
+		cli.deleteObjectsFn = func(context.Context, []string) error {
+			return assert.AnError
+		}
+		cli.EXPECT().
+			NewObjectIter(mock.Anything, "a/b", true).
+			Return(NewMockObjectIterator(objs))
+		// No DeleteObject expectation: a genuine batch failure must not
+		// silently retry per-key.
+
+		err := DeleteWithCallback(context.Background(), cli, "a/b", nil)
+		assert.Error(t, err)
 	})
 }
 

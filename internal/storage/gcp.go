@@ -19,6 +19,25 @@ const (
 	_xGoogPrefix = "X-Goog-"
 )
 
+var _ Client = (*gcpClient)(nil)
+var _ minioBacked = (*gcpClient)(nil)
+
+// gcpClient wraps the minio-backed GCS client to lock its method set to
+// exactly Client: embedding the interface (not *MinioClient) promotes only
+// Client's methods, so DeleteObjects never surfaces and the batchDeleter
+// probe in DeleteWithCallback never selects the multi-object delete path for
+// GCS, whose XML API has no such request. minio-go's own GCS detection keys
+// off the endpoint host, which a custom endpoint defeats, so the guarantee
+// has to come from the type.
+type gcpClient struct {
+	Client
+}
+
+// minioCfg re-declares the minioBacked capability the embedding hides, so a
+// gcp to gcp server-side copy still resolves its source bucket through
+// CopyObject's capability probe.
+func (g *gcpClient) minioCfg() Config { return g.Config() }
+
 // gcpTransport wraps http.Transport, add an auth header to support GCP native auth
 type gcpTransport struct {
 	tokenSrc     oauth2.TokenSource
@@ -85,7 +104,7 @@ func (t *gcpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 }
 
 // newGCPClient returns a minio.Client which is compatible for GCS
-func newGCPClient(cfg Config) (*MinioClient, error) {
+func newGCPClient(cfg Config) (*gcpClient, error) {
 	if cfg.Endpoint == "" {
 		cfg.Endpoint = _gcpEndpoint
 	}
@@ -124,5 +143,10 @@ func newGCPClient(cfg Config) (*MinioClient, error) {
 		return nil, fmt.Errorf("storage: gcp unsupported credential type: %s", cfg.Credential.Type)
 	}
 
-	return newInternalMinio(cfg, &opts)
+	cli, err := newInternalMinio(cfg, &opts)
+	if err != nil {
+		return nil, err
+	}
+
+	return &gcpClient{Client: cli}, nil
 }
