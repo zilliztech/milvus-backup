@@ -13,13 +13,13 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
-// renderMigrate draws the upload progress bar for the migrate job registered
-// under taskID, reconciling it against store snapshots until done delivers
-// the Execute result, then settles the bar and answers with that result.
-// Every update written to the bar is an absolute value from one snapshot, so
-// a dropped or doubled tick cannot skew it. A job that settles before the
-// first poll shows CopyStarted gets no bar at all.
-func renderMigrate(ctx context.Context, p *mpb.Progress, store *jobstate.Store, taskID string, interval time.Duration, done <-chan error) error {
+// renderMigrate draws one progress bar for the migrate job registered under
+// taskID and reconciles it against store snapshots until the job settles,
+// then answers with the terminal status. Every update written to the bar is
+// an absolute value from one snapshot, so a dropped or doubled tick cannot
+// skew it. A job that settles before the copy starts gets no bar at all, and
+// renderMigrate answers immediately.
+func renderMigrate(ctx context.Context, p *mpb.Progress, store *jobstate.Store, taskID string, interval time.Duration) (jobstate.MigrateStatus, error) {
 	var latest atomic.Value // jobstate.MigrateStatus, read by the decorators
 
 	var bar *mpb.Bar
@@ -32,30 +32,32 @@ func renderMigrate(ctx context.Context, p *mpb.Progress, store *jobstate.Store, 
 			if bar != nil {
 				bar.Abort(true)
 			}
-			return fmt.Errorf("jobview: read migrate task %s: %w", taskID, err)
+			return jobstate.MigrateStatus{}, fmt.Errorf("jobview: read migrate task %s: %w", taskID, err)
 		}
 		latest.Store(status)
 
-		if status.CopyStarted {
-			if bar == nil {
-				bar = newMigrateBar(p, &latest)
-			}
+		if status.Terminal() && bar == nil {
+			return status, nil
+		}
+		if status.CopyStarted && bar == nil {
+			bar = newMigrateBar(p, &latest)
+		}
+		if status.Terminal() {
+			settleMigrateBar(bar, status)
+			bar.Wait()
+			return status, nil
+		}
+
+		if bar != nil {
 			reconcileMigrateBar(bar, status)
 		}
 
 		select {
-		case err := <-done:
-			if bar == nil {
-				return err
-			}
-			settleMigrateBar(bar, err)
-			bar.Wait()
-			return err
 		case <-ctx.Done():
 			if bar != nil {
 				bar.Abort(true)
 			}
-			return ctx.Err()
+			return jobstate.MigrateStatus{}, ctx.Err()
 		case <-ticker.C:
 		}
 	}
@@ -107,8 +109,8 @@ func reconcileMigrateBar(bar *mpb.Bar, status jobstate.MigrateStatus) {
 // settleMigrateBar lands the bar on the outcome: success completes it at 100%
 // regardless of the approximate denominator, failure drops it so the error
 // line that follows is what the user reads.
-func settleMigrateBar(bar *mpb.Bar, err error) {
-	if err != nil {
+func settleMigrateBar(bar *mpb.Bar, status jobstate.MigrateStatus) {
+	if status.State == jobstate.MigrateStateFail {
 		bar.Abort(true)
 		return
 	}

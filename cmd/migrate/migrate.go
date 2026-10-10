@@ -3,6 +3,7 @@ package migrate
 import (
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"time"
 
@@ -10,8 +11,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/vbauerster/mpb/v8/cwriter"
 
+	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/cmd/root"
-	"github.com/zilliztech/milvus-backup/core/migrate"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/progressbar"
@@ -39,40 +40,36 @@ func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
 
 	store := jobstate.Default()
 	taskID := uuid.NewString()
-	task, err := migrate.NewTask(taskID, o.backupName, o.clusterID, params)
+	job, err := app.NewMigrateJob(ctx, params, store, app.MigrateRequest{
+		TaskID:     taskID,
+		BackupName: o.backupName,
+		ClusterID:  o.clusterID,
+	})
 	if err != nil {
-		return err
-	}
-
-	if err := task.Prepare(ctx); err != nil {
-		return err
+		return fmt.Errorf("cmd: create migrate job: %w", err)
 	}
 
 	// The CLI exposes no async form: the job runs in the background and the
 	// command waits on it. On a terminal it renders upload progress from
 	// job-store snapshots; piped output keeps the old plain behavior, so
 	// scripts and CI logs never see bar frames.
-	done := make(chan error, 1)
-	go func() {
-		done <- task.Execute(ctx)
-	}()
+	job.Run(context.Background())
 
+	var status jobstate.MigrateStatus
 	if cwriter.IsTerminal(int(os.Stdout.Fd())) {
 		p := progressbar.Progress()
-		err = renderMigrate(ctx, p, store, taskID, 200*time.Millisecond, done)
+		status, err = renderMigrate(ctx, p, store, taskID, 200*time.Millisecond)
 		// mpb buffers intercepted writes and the bar's last frame until the
 		// container shuts down, so the Wait must precede any plain output.
 		p.Wait()
 	} else {
-		err = <-done
+		status, err = job.Wait(ctx)
 	}
 	if err != nil {
-		return err
+		return fmt.Errorf("cmd: wait migrate job: %w", err)
 	}
-
-	status, err := store.GetMigrateTask(taskID)
-	if err != nil {
-		return err
+	if status.State == jobstate.MigrateStateFail {
+		return fmt.Errorf("cmd: migrate backup: %s", status.ErrorMessage)
 	}
 
 	cmd.Printf("Successfully triggered migration with backup name: %s target cluster: %s \n", o.backupName, o.clusterID)

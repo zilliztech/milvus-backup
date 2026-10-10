@@ -98,81 +98,81 @@ func TestRenderMigrate(t *testing.T) {
 	t.Run("SuccessSettlesFromSnapshots", func(t *testing.T) {
 		store := jobstate.NewStore()
 		tracker := store.AddMigrateTask("t1", 1<<20)
+		tracker.SetRunning()
 		tracker.SetCopyStart()
-		tracker.IncCopied(1 << 20)
-		tracker.SetCopyDone()
 
-		done := make(chan error, 1)
-		result := make(chan error, 1)
+		p := newProgress(t)
+		type outcome struct {
+			status jobstate.MigrateStatus
+			err    error
+		}
+		done := make(chan outcome, 1)
 		go func() {
-			p := mpb.New(mpb.WithOutput(io.Discard))
-			defer p.Shutdown()
-			result <- renderMigrate(context.Background(), p, store, "t1", time.Millisecond, done)
+			status, err := renderMigrate(context.Background(), p, store, "t1", time.Millisecond)
+			done <- outcome{status, err}
 		}()
 
-		done <- nil
+		// Drive the job through the copy to success; the renderer polls at
+		// 1ms, so it observes whichever of these states it lands on and must
+		// still converge on the terminal snapshot.
+		tracker.IncCopied(1 << 20)
+		tracker.SetCopyDone()
+		tracker.SetJobID("job-42")
+		tracker.SetSuccess()
 
 		select {
-		case err := <-result:
-			assert.NoError(t, err)
+		case got := <-done:
+			require.NoError(t, got.err)
+			assert.Equal(t, jobstate.MigrateStateSuccess, got.status.State)
+			assert.Equal(t, int64(1<<20), got.status.CopiedSize)
+			assert.Equal(t, "job-42", got.status.MigrateJobID)
 		case <-time.After(10 * time.Second):
 			t.Fatal("renderMigrate did not settle")
 		}
 	})
 
-	t.Run("FailurePropagatesAndAborts", func(t *testing.T) {
+	t.Run("FailureCarriesMessage", func(t *testing.T) {
 		store := jobstate.NewStore()
 		tracker := store.AddMigrateTask("t2", 1<<20)
-		tracker.SetCopyStart()
+		tracker.SetRunning()
+		tracker.SetFail(errors.New("boom"))
 
-		done := make(chan error, 1)
-		result := make(chan error, 1)
-		go func() {
-			p := mpb.New(mpb.WithOutput(io.Discard))
-			defer p.Shutdown()
-			result <- renderMigrate(context.Background(), p, store, "t2", time.Millisecond, done)
-		}()
-
-		done <- errors.New("boom")
-
-		select {
-		case err := <-result:
-			assert.EqualError(t, err, "boom")
-		case <-time.After(10 * time.Second):
-			t.Fatal("renderMigrate did not settle")
-		}
+		status, err := renderMigrate(context.Background(), newProgress(t), store, "t2", time.Millisecond)
+		require.NoError(t, err)
+		assert.Equal(t, jobstate.MigrateStateFail, status.State)
+		assert.Equal(t, "boom", status.ErrorMessage)
 	})
 
 	t.Run("NoBarBeforeCopyStart", func(t *testing.T) {
 		store := jobstate.NewStore()
-		store.AddMigrateTask("t3", 1<<20)
-
-		done := make(chan error, 1)
-		done <- errors.New("boom")
+		tracker := store.AddMigrateTask("t3", 1<<20)
+		tracker.SetRunning()
+		tracker.SetFail(errors.New("boom"))
 
 		// The job failed before the copy started, so no bar is ever created;
-		// the renderer just answers with the Execute result.
-		err := renderMigrate(context.Background(), newProgress(t), store, "t3", time.Millisecond, done)
-		assert.EqualError(t, err, "boom")
+		// the renderer just answers with the terminal status.
+		status, err := renderMigrate(context.Background(), newProgress(t), store, "t3", time.Millisecond)
+		require.NoError(t, err)
+		assert.Equal(t, jobstate.MigrateStateFail, status.State)
 	})
 
 	t.Run("UnknownTaskID", func(t *testing.T) {
 		store := jobstate.NewStore()
-		done := make(chan error, 1)
 
-		err := renderMigrate(context.Background(), newProgress(t), store, "nope", time.Millisecond, done)
+		_, err := renderMigrate(context.Background(), newProgress(t), store, "nope", time.Millisecond)
 		assert.ErrorIs(t, err, jobstate.ErrTaskNotFound)
 	})
 
 	t.Run("ContextCancelAborts", func(t *testing.T) {
 		store := jobstate.NewStore()
 		tracker := store.AddMigrateTask("t4", 1<<20)
+		tracker.SetRunning()
 		tracker.SetCopyStart()
 
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel()
 
-		err := renderMigrate(ctx, newProgress(t), store, "t4", time.Millisecond, make(chan error))
+		_, err := renderMigrate(ctx, newProgress(t), store, "t4", time.Millisecond)
 		assert.ErrorIs(t, err, context.Canceled)
 	})
 }
@@ -186,18 +186,28 @@ func TestRenderMigrateEmitsFrames(t *testing.T) {
 
 	store := jobstate.NewStore()
 	tracker := store.AddMigrateTask("frames", 104857600)
+	tracker.SetRunning()
 	tracker.SetCopyStart()
 
-	done := make(chan error, 1)
+	result := make(chan error, 1)
 	go func() {
-		for i := 0; i < 20; i++ {
-			tracker.IncCopied(5 << 20)
-			time.Sleep(50 * time.Millisecond)
-		}
-		done <- nil
+		_, err := renderMigrate(context.Background(), p, store, "frames", 20*time.Millisecond)
+		result <- err
 	}()
 
-	require.NoError(t, renderMigrate(context.Background(), p, store, "frames", 20*time.Millisecond, done))
+	for i := 0; i < 20; i++ {
+		tracker.IncCopied(5 << 20)
+		time.Sleep(50 * time.Millisecond)
+	}
+	tracker.SetCopyDone()
+	tracker.SetSuccess()
+
+	select {
+	case err := <-result:
+		require.NoError(t, err)
+	case <-time.After(10 * time.Second):
+		t.Fatal("renderMigrate did not settle")
+	}
 
 	// The render goroutine keeps writing to buf until the container shuts
 	// down, so Shutdown (not defer) must precede any read of buf.
