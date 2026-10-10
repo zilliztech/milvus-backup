@@ -15,7 +15,7 @@ var Default = sync.OnceValue(NewStore)
 func NewStore() *Store {
 	return &Store{
 		restoreTask:        make(map[string]*RestoreTask),
-		migrateTask:        make(map[string]*MigrateTask),
+		migrateTask:        make(map[string]*migrateTask),
 		backupTask:         make(map[string]*BackupTask),
 		backupNameBackupID: make(map[string]string),
 		deleteTask:         make(map[string]*deleteTask),
@@ -29,8 +29,8 @@ type Store struct {
 	// restoreID -> RestoreTask
 	restoreTask map[string]*RestoreTask
 
-	// migrateID -> MigrateTask
-	migrateTask map[string]*MigrateTask
+	// migrateID -> migrateTask
+	migrateTask map[string]*migrateTask
 
 	// backupID -> BackupTask
 	backupTask map[string]*BackupTask
@@ -65,35 +65,6 @@ func (m *Store) GetRestoreTask(taskID string) (RestoreTaskView, error) {
 	defer m.mu.RUnlock()
 
 	task, ok := m.restoreTask[taskID]
-	if !ok {
-		return nil, ErrTaskNotFound
-	}
-
-	return task, nil
-}
-
-func (m *Store) AddMigrateTask(taskID string, totalSize int64) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.migrateTask[taskID] = newMigrateTask(taskID, totalSize)
-}
-
-func (m *Store) UpdateMigrateTask(taskID string, opts ...MigrateTaskOpt) {
-	m.mu.RLock()
-	task := m.migrateTask[taskID]
-	m.mu.RUnlock()
-
-	for _, opt := range opts {
-		opt(task)
-	}
-}
-
-func (m *Store) GetMigrateTask(taskID string) (*MigrateTask, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	task, ok := m.migrateTask[taskID]
 	if !ok {
 		return nil, ErrTaskNotFound
 	}
