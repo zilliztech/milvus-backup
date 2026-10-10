@@ -5,11 +5,26 @@ import (
 	"time"
 )
 
+// MigrateState is the lifecycle of one migrate job. It is jobstate's own enum
+// rather than anything from the wire format: transports convert at the edge,
+// so this package stays free of pb types.
+type MigrateState uint32
+
+const (
+	MigrateStateInitial MigrateState = iota
+	MigrateStateRunning
+	MigrateStateSuccess
+	MigrateStateFail
+)
+
 // MigrateStatus is a point-in-time snapshot of one migrate job, copied out
 // under the lock and handed over by value. Readers get dead data: no shared
 // locks with the writer, no interface to mock in tests.
 type MigrateStatus struct {
 	ID string
+
+	State        MigrateState
+	ErrorMessage string
 
 	// TotalSize is the backup size recorded in backupinfo. It excludes
 	// partition-level L0 segments (partition id == -1) and the meta files,
@@ -20,9 +35,20 @@ type MigrateStatus struct {
 
 	CopyStarted bool
 	CopyDone    bool
-	StartTime   time.Time
+
+	// StartTime is when the copy started, not when the job registered: the
+	// volume application ahead of the copy is not upload time. EndTime is
+	// when the job settled.
+	StartTime time.Time
+	EndTime   time.Time
 
 	MigrateJobID string
+}
+
+// Terminal reports whether the job has settled and the status will not
+// change anymore. Transports polling for an outcome wait on this.
+func (s MigrateStatus) Terminal() bool {
+	return s.State == MigrateStateSuccess || s.State == MigrateStateFail
 }
 
 type migrateTask struct {
@@ -30,18 +56,23 @@ type migrateTask struct {
 
 	id string
 
+	state        MigrateState
+	errorMessage string
+
 	totalSize  int64
 	copiedSize int64
 
 	copyStarted bool
 	copyDone    bool
-	startTime   time.Time
+
+	startTime time.Time
+	endTime   time.Time
 
 	migrateJobID string
 }
 
 func newMigrateTask(id string, totalSize int64) *migrateTask {
-	return &migrateTask{id: id, totalSize: totalSize}
+	return &migrateTask{id: id, state: MigrateStateInitial, totalSize: totalSize}
 }
 
 func (t *migrateTask) snapshot() MigrateStatus {
@@ -50,11 +81,14 @@ func (t *migrateTask) snapshot() MigrateStatus {
 
 	return MigrateStatus{
 		ID:           t.id,
+		State:        t.state,
+		ErrorMessage: t.errorMessage,
 		TotalSize:    t.totalSize,
 		CopiedSize:   t.copiedSize,
 		CopyStarted:  t.copyStarted,
 		CopyDone:     t.copyDone,
 		StartTime:    t.startTime,
+		EndTime:      t.endTime,
 		MigrateJobID: t.migrateJobID,
 	}
 }
@@ -65,6 +99,13 @@ func (t *migrateTask) snapshot() MigrateStatus {
 // only hands out a tracker for a task it just registered.
 type MigrateTracker struct {
 	task *migrateTask
+}
+
+func (t *MigrateTracker) SetRunning() {
+	t.task.mu.Lock()
+	defer t.task.mu.Unlock()
+
+	t.task.state = MigrateStateRunning
 }
 
 func (t *MigrateTracker) SetCopyStart() {
@@ -94,6 +135,23 @@ func (t *MigrateTracker) SetJobID(jobID string) {
 	defer t.task.mu.Unlock()
 
 	t.task.migrateJobID = jobID
+}
+
+func (t *MigrateTracker) SetFail(err error) {
+	t.task.mu.Lock()
+	defer t.task.mu.Unlock()
+
+	t.task.state = MigrateStateFail
+	t.task.errorMessage = err.Error()
+	t.task.endTime = time.Now()
+}
+
+func (t *MigrateTracker) SetSuccess() {
+	t.task.mu.Lock()
+	defer t.task.mu.Unlock()
+
+	t.task.state = MigrateStateSuccess
+	t.task.endTime = time.Now()
 }
 
 // Snapshot reads the tracked task's current state. The tracker is the write

@@ -1,11 +1,62 @@
 package jobstate
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestMigrateTask_Lifecycle(t *testing.T) {
+	store := NewStore()
+	tracker := store.AddMigrateTask("task-1", 1<<30)
+
+	status, err := store.GetMigrateTask("task-1")
+	require.NoError(t, err)
+	assert.Equal(t, MigrateStateInitial, status.State)
+	assert.False(t, status.Terminal())
+	assert.True(t, status.EndTime.IsZero())
+
+	tracker.SetRunning()
+
+	status, err = store.GetMigrateTask("task-1")
+	require.NoError(t, err)
+	assert.Equal(t, MigrateStateRunning, status.State)
+	assert.False(t, status.Terminal())
+}
+
+func TestMigrateTask_Settle(t *testing.T) {
+	t.Run("FailRecordsMessageAndEndTime", func(t *testing.T) {
+		store := NewStore()
+		tracker := store.AddMigrateTask("task-1", 1<<30)
+		tracker.SetRunning()
+
+		tracker.SetFail(errors.New("boom"))
+
+		status, err := store.GetMigrateTask("task-1")
+		require.NoError(t, err)
+		assert.Equal(t, MigrateStateFail, status.State)
+		assert.Equal(t, "boom", status.ErrorMessage)
+		assert.False(t, status.EndTime.IsZero())
+		assert.True(t, status.Terminal())
+	})
+
+	t.Run("SuccessRecordsEndTime", func(t *testing.T) {
+		store := NewStore()
+		tracker := store.AddMigrateTask("task-1", 1<<30)
+		tracker.SetRunning()
+
+		tracker.SetSuccess()
+
+		status, err := store.GetMigrateTask("task-1")
+		require.NoError(t, err)
+		assert.Equal(t, MigrateStateSuccess, status.State)
+		assert.Empty(t, status.ErrorMessage)
+		assert.False(t, status.EndTime.IsZero())
+		assert.True(t, status.Terminal())
+	})
+}
 
 func TestMigrateTask_TrackerWritesLandInSnapshot(t *testing.T) {
 	store := NewStore()

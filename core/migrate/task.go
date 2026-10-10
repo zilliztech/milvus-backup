@@ -15,9 +15,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/client/cloud"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/storage"
-	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 )
 
 var (
@@ -177,15 +175,17 @@ func newVolumeStorage(ctx context.Context, vol *volume) (storage.Client, error) 
 	return cli, nil
 }
 
+// Task executes one migrate run: it uploads one backup directory to the
+// cloud staging volume and triggers the cloud-side migrate job. It is not
+// the job: admission, registration, and the lifecycle states live one layer
+// up in app.MigrateJob, which drives Execute and records how it settles. The
+// tracker writes here are progress facts only.
 type Task struct {
 	logger *zap.Logger
-
-	taskID string
 
 	cloudCli  cloud.Client
 	clusterID string
 
-	store   *jobstate.Store
 	tracker *jobstate.MigrateTracker
 
 	backupDir     string
@@ -195,46 +195,35 @@ type Task struct {
 	copySem *semaphore.Weighted
 }
 
-func NewTask(taskID, backupName, clusterID string, params *cfg.Config) (*Task, error) {
-	logger := log.With(zap.String("task_id", taskID))
-	cloudCli := cloud.NewClient(params.Cloud.Endpoint.Val, params.Cloud.APIKey.Val)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	backupStorage, err := storage.NewBackupStorage(ctx, params)
-	if err != nil {
-		return nil, fmt.Errorf("migrate: new backup storage %w", err)
-	}
-	backupDir := mpath.BackupDir(params.Backup.Storage.RootPath.Val, backupName)
-
-	return &Task{
-		logger: logger,
-
-		taskID: taskID,
-
-		cloudCli:  cloudCli,
-		clusterID: clusterID,
-		store:     jobstate.Default(),
-
-		backupDir:     backupDir,
-		backupStorage: backupStorage,
-
-		// use taskID as volume prefix
-		volume:  newVolume(clusterID, taskID, cloudCli),
-		copySem: semaphore.NewWeighted(int64(params.Transfer.Concurrency.Val)),
-	}, nil
+// TaskArgs carries the dependencies one migrate run needs. The caller
+// (app.MigrateJob) has already proved the backup meta is readable and
+// registered the job, so the tracker arrives minted.
+type TaskArgs struct {
+	TaskID        string
+	ClusterID     string
+	CloudCli      cloud.Client
+	BackupStorage storage.Client
+	BackupDir     string
+	Tracker       *jobstate.MigrateTracker
+	Concurrency   int
 }
 
-func (t *Task) Prepare(ctx context.Context) error {
-	t.logger.Info("try to read backup meta info")
-	backupInfo, err := meta.Read(ctx, t.backupStorage, t.backupDir)
-	if err != nil {
-		return fmt.Errorf("migrate: read backup meta info %w", err)
+func NewTask(args TaskArgs) *Task {
+	return &Task{
+		logger: log.With(zap.String("task_id", args.TaskID)),
+
+		cloudCli:  args.CloudCli,
+		clusterID: args.ClusterID,
+
+		tracker: args.Tracker,
+
+		backupDir:     args.BackupDir,
+		backupStorage: args.BackupStorage,
+
+		// use taskID as volume prefix
+		volume:  newVolume(args.ClusterID, args.TaskID, args.CloudCli),
+		copySem: semaphore.NewWeighted(int64(args.Concurrency)),
 	}
-
-	t.tracker = t.store.AddMigrateTask(t.taskID, backupInfo.GetSize())
-
-	return nil
 }
 
 func (t *Task) copyToCloud(ctx context.Context) error {
@@ -313,7 +302,6 @@ func (t *Task) Execute(ctx context.Context) error {
 
 	t.tracker.SetCopyStart()
 	if err := t.copyToCloud(ctx); err != nil {
-		t.tracker.SetCopyDone()
 		return fmt.Errorf("migrate: copy to cloud %w", err)
 	}
 	t.tracker.SetCopyDone()
