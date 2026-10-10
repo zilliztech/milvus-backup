@@ -30,7 +30,7 @@ func ListPrefixFlat(ctx context.Context, cli Client, prefix string, recursive bo
 	var sizes []int64
 	for attr, err := range cli.NewObjectIter(ctx, prefix, recursive) {
 		if err != nil {
-			return nil, nil, fmt.Errorf("storage: list prefix flat %w", err)
+			return nil, nil, fmt.Errorf("storage: list prefix flat: %w", err)
 		}
 		keys = append(keys, attr.Key)
 		sizes = append(sizes, attr.Length)
@@ -47,7 +47,7 @@ func ListPrefixFlat(ctx context.Context, cli Client, prefix string, recursive bo
 func ExpectedDestObjects(ctx context.Context, src Client, srcPrefix, destPrefix string) (map[string]int64, error) {
 	keys, sizes, err := ListPrefixFlat(ctx, src, srcPrefix, true)
 	if err != nil {
-		return nil, fmt.Errorf("storage: expected dest objects list prefix %w", err)
+		return nil, fmt.Errorf("storage: expected dest objects list src prefix: %w", err)
 	}
 
 	expected := make(map[string]int64, len(keys))
@@ -71,7 +71,7 @@ func DeletePrefix(ctx context.Context, cli Client, prefix string) error {
 // workers, so it must be goroutine-safe; a nil onDeleted deletes silently.
 func DeleteWithCallback(ctx context.Context, cli Client, prefix string, onDeleted func()) error {
 	if prefix == "" {
-		return fmt.Errorf("storage: delete prefix empty prefix")
+		return fmt.Errorf("storage: delete prefix: prefix is empty")
 	}
 
 	// Derive a cancellable context so in-flight deletions can be stopped when
@@ -86,11 +86,11 @@ func DeleteWithCallback(ctx context.Context, cli Client, prefix string, onDelete
 	var loopErr error
 	for attr, err := range cli.NewObjectIter(ctx, prefix, true) {
 		if err != nil {
-			loopErr = fmt.Errorf("storage: delete prefix iter object %w", err)
+			loopErr = fmt.Errorf("storage: delete prefix iter object: %w", err)
 			break
 		}
 		if !strings.HasPrefix(attr.Key, prefix) {
-			loopErr = fmt.Errorf("storage: delete prefix key %s not in prefix %s", attr.Key, prefix)
+			loopErr = fmt.Errorf("storage: delete prefix key %s not under prefix %s", attr.Key, prefix)
 			break
 		}
 
@@ -117,7 +117,7 @@ func DeleteWithCallback(ctx context.Context, cli Client, prefix string, onDelete
 		return loopErr
 	}
 	if waitErr != nil {
-		return fmt.Errorf("storage: delete prefix %w", waitErr)
+		return fmt.Errorf("storage: delete prefix: %w", waitErr)
 	}
 
 	return nil
@@ -126,7 +126,7 @@ func DeleteWithCallback(ctx context.Context, cli Client, prefix string, onDelete
 func Exist(ctx context.Context, cli Client, prefix string) (bool, error) {
 	for _, err := range cli.NewObjectIter(ctx, prefix, false) {
 		if err != nil {
-			return false, fmt.Errorf("storage: exist list prefix %w", err)
+			return false, fmt.Errorf("storage: exist list prefix: %w", err)
 		}
 		// One yielded object is enough to prove existence; returning here
 		// stops the listing through the sequence itself.
@@ -138,7 +138,7 @@ func Exist(ctx context.Context, cli Client, prefix string) (bool, error) {
 func CreateBucketIfNotExist(ctx context.Context, cli Client, prefix string) error {
 	exist, err := cli.BucketExist(ctx, prefix)
 	if err != nil {
-		return fmt.Errorf("storage: create bucket if not exist %w", err)
+		return fmt.Errorf("storage: create bucket if not exist: %w", err)
 	}
 
 	if exist {
@@ -146,7 +146,7 @@ func CreateBucketIfNotExist(ctx context.Context, cli Client, prefix string) erro
 	}
 
 	if err := cli.CreateBucket(ctx); err != nil {
-		return fmt.Errorf("storage: create bucket if not exist %w", err)
+		return fmt.Errorf("storage: create bucket if not exist: %w", err)
 	}
 
 	return nil
@@ -155,13 +155,13 @@ func CreateBucketIfNotExist(ctx context.Context, cli Client, prefix string) erro
 func Read(ctx context.Context, cli Client, key string) ([]byte, error) {
 	obj, err := cli.GetObject(ctx, key)
 	if err != nil {
-		return nil, fmt.Errorf("storage: read to byte slice get object %w", err)
+		return nil, fmt.Errorf("storage: read to byte slice get object: %w", err)
 	}
 	defer obj.Body.Close()
 
 	byts, err := io.ReadAll(obj.Body)
 	if err != nil {
-		return nil, fmt.Errorf("storage: read to byte slice read all %w", err)
+		return nil, fmt.Errorf("storage: read to byte slice read all: %w", err)
 	}
 
 	return byts, nil
@@ -170,7 +170,7 @@ func Read(ctx context.Context, cli Client, key string) ([]byte, error) {
 func Write(ctx context.Context, cli Client, key string, body []byte) error {
 	i := UploadObjectInput{Key: key, Body: bytes.NewReader(body), Size: int64(len(body))}
 	if err := cli.UploadObject(ctx, i); err != nil {
-		return fmt.Errorf("storage: write from byte slice upload object %w", err)
+		return fmt.Errorf("storage: write from byte slice upload object: %w", err)
 	}
 
 	return nil

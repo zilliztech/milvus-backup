@@ -50,7 +50,7 @@ func (c *CopyPrefixTask) copy(ctx context.Context, src ObjectAttr) error {
 	attr := CopyAttr{Src: src, DestKey: destKey}
 
 	if err := c.copier.copy(ctx, attr); err != nil {
-		return fmt.Errorf("storage: copy prefix %w", err)
+		return fmt.Errorf("storage: copy prefix: %w", err)
 	}
 
 	return nil
@@ -70,7 +70,7 @@ func (c *CopyPrefixTask) Execute(ctx context.Context) error {
 	var loopErr error
 	for attr, err := range c.opt.Src.NewObjectIter(ctx, c.opt.SrcPrefix, true) {
 		if err != nil {
-			loopErr = fmt.Errorf("storage: copy prefix iter object %w", err)
+			loopErr = fmt.Errorf("storage: copy prefix iter object: %w", err)
 			break
 		}
 		if attr.IsEmpty() && strings.HasSuffix(attr.Key, "/") {
@@ -78,14 +78,14 @@ func (c *CopyPrefixTask) Execute(ctx context.Context) error {
 		}
 
 		if err := c.opt.Sem.Acquire(ctx, 1); err != nil {
-			loopErr = fmt.Errorf("storage: copy prefix acquire semaphore %w", err)
+			loopErr = fmt.Errorf("storage: copy prefix acquire semaphore: %w", err)
 			break
 		}
 		g.Go(func() error {
 			defer c.opt.Sem.Release(1)
 
 			if err := c.copy(subCtx, attr); err != nil {
-				return fmt.Errorf("storage: copy prefix %w", err)
+				return fmt.Errorf("storage: copy prefix: %w", err)
 			}
 
 			return nil
@@ -103,7 +103,7 @@ func (c *CopyPrefixTask) Execute(ctx context.Context) error {
 		return loopErr
 	}
 	if waitErr != nil {
-		return fmt.Errorf("storage: copy prefix %w", waitErr)
+		return fmt.Errorf("storage: copy prefix: %w", waitErr)
 	}
 
 	return nil
@@ -151,14 +151,14 @@ func (c *CopyObjectsTask) Execute(ctx context.Context) error {
 	var loopErr error
 	for _, attr := range c.opt.Attrs {
 		if err := c.opt.Sem.Acquire(ctx, 1); err != nil {
-			loopErr = fmt.Errorf("storage: copy objects acquire semaphore %w", err)
+			loopErr = fmt.Errorf("storage: copy objects acquire semaphore: %w", err)
 			break
 		}
 		g.Go(func() error {
 			defer c.opt.Sem.Release(1)
 
 			if err := c.copier.copy(subCtx, attr); err != nil {
-				return fmt.Errorf("storage: copy objects %w", err)
+				return fmt.Errorf("storage: copy objects: %w", err)
 			}
 
 			return nil
@@ -176,7 +176,7 @@ func (c *CopyObjectsTask) Execute(ctx context.Context) error {
 		return loopErr
 	}
 	if waitErr != nil {
-		return fmt.Errorf("storage: copy objects %w", waitErr)
+		return fmt.Errorf("storage: copy objects: %w", waitErr)
 	}
 
 	return nil

@@ -25,7 +25,7 @@ func newTencentClient(cfg Config) (*MinioClient, error) {
 	case Static:
 		opts.Creds = minioCred.NewStaticV4(cfg.Credential.AK, cfg.Credential.SK, cfg.Credential.Token)
 	default:
-		return nil, fmt.Errorf("storage: tencent unsupported credential type %v", cfg.Credential.Type)
+		return nil, fmt.Errorf("storage: tencent unsupported credential type: %s", cfg.Credential.Type)
 	}
 
 	return newInternalMinio(cfg, &opts)

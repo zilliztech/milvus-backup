@@ -51,7 +51,7 @@ func newMinioClient(storeCfg Config) (*MinioClient, error) {
 	case MinioCredProvider:
 		opts.Creds = credentials.New(storeCfg.Credential.MinioCredProvider)
 	default:
-		return nil, fmt.Errorf("storage: minio unsupported credential type %s", storeCfg.Credential.Type.String())
+		return nil, fmt.Errorf("storage: minio unsupported credential type: %s", storeCfg.Credential.Type.String())
 	}
 
 	return newInternalMinio(storeCfg, &opts)
@@ -89,7 +89,7 @@ func (m *MinioClient) Config() Config {
 func (m *MinioClient) CopyObject(ctx context.Context, i CopyObjectInput) error {
 	srcCli, ok := i.SrcCli.(*MinioClient)
 	if !ok {
-		return fmt.Errorf("storage: minio copy object only support minio client")
+		return fmt.Errorf("storage: minio copy object only supports a minio source client")
 	}
 
 	// gcp does not support multipart copy
@@ -116,7 +116,7 @@ func (m *MinioClient) copyObject(ctx context.Context, srcCli *MinioClient, i Cop
 	return retry.Do(ctx, func() error {
 		info, err := m.cli.CopyObject(ctx, dst, src)
 		if err != nil {
-			return fmt.Errorf("storage: %s copy from %s / %s  to %s / %s %w", m.cfg.Provider, srcCli.cfg.Bucket, i.SrcAttr.Key, m.cfg.Bucket, i.DestKey, err)
+			return fmt.Errorf("storage: %s copy from %s / %s to %s / %s: %w", m.cfg.Provider, srcCli.cfg.Bucket, i.SrcAttr.Key, m.cfg.Bucket, i.DestKey, err)
 		}
 
 		// S3 documents that a failed CopyObject can still answer 200 OK with an
@@ -173,7 +173,7 @@ func (m *MinioClient) copyPart(ctx context.Context, i copyPartInput) (minio.Comp
 			i.Part.Size,
 			nil)
 		if err != nil {
-			return fmt.Errorf("storage: %s copy part %w", m.cfg.Provider, err)
+			return fmt.Errorf("storage: %s copy part: %w", m.cfg.Provider, err)
 		}
 
 		return nil
@@ -196,7 +196,7 @@ func (m *MinioClient) abortMultipartUpload(ctx context.Context, destKey, uploadI
 
 	err := retry.Do(abortCtx, func() error {
 		if err := m.core.AbortMultipartUpload(abortCtx, m.cfg.Bucket, destKey, uploadID); err != nil {
-			return fmt.Errorf("storage: %s abort multipart upload %w", m.cfg.Provider, err)
+			return fmt.Errorf("storage: %s abort multipart upload: %w", m.cfg.Provider, err)
 		}
 		return nil
 	}, retry.Attempts(_abortAttempts))
@@ -215,12 +215,12 @@ func (a sortableCompletedParts) Less(i, j int) bool { return a[i].PartNumber < a
 func (m *MinioClient) multiPartCopy(ctx context.Context, srcCli *MinioClient, i CopyObjectInput) error {
 	parts, err := splitIntoParts(i.SrcAttr.Length)
 	if err != nil {
-		return fmt.Errorf("storage: %s split into parts %w", m.cfg.Provider, err)
+		return fmt.Errorf("storage: %s split into parts: %w", m.cfg.Provider, err)
 	}
 
 	uploadID, err := m.core.NewMultipartUpload(ctx, m.cfg.Bucket, i.DestKey, minio.PutObjectOptions{})
 	if err != nil {
-		return fmt.Errorf("storage: %s new multipart upload %w", m.cfg.Provider, err)
+		return fmt.Errorf("storage: %s new multipart upload: %w", m.cfg.Provider, err)
 	}
 
 	// do not use if err := ...; err != nil { return err } because we need to abort the multipart upload when error
@@ -240,7 +240,7 @@ func (m *MinioClient) multiPartCopy(ctx context.Context, srcCli *MinioClient, i 
 			input := newCopyPartInput(srcCli, i.SrcAttr.Key, i.DestKey, uploadID, p)
 			completePart, err := m.copyPart(subCtx, input)
 			if err != nil {
-				return fmt.Errorf("storage: %s copy part %w", m.cfg.Provider, err)
+				return fmt.Errorf("storage: %s copy part: %w", m.cfg.Provider, err)
 			}
 			mu.Lock()
 			completedParts = append(completedParts, completePart)
@@ -252,13 +252,13 @@ func (m *MinioClient) multiPartCopy(ctx context.Context, srcCli *MinioClient, i 
 
 	err = g.Wait()
 	if err != nil {
-		return fmt.Errorf("storage: %s wait for copy part %w", m.cfg.Provider, err)
+		return fmt.Errorf("storage: %s wait for copy part: %w", m.cfg.Provider, err)
 	}
 
 	sort.Sort(sortableCompletedParts(completedParts))
 	_, err = m.core.CompleteMultipartUpload(ctx, m.cfg.Bucket, i.DestKey, uploadID, completedParts, minio.PutObjectOptions{})
 	if err != nil {
-		return fmt.Errorf("storage: %s complete multipart upload %w", m.cfg.Provider, err)
+		return fmt.Errorf("storage: %s complete multipart upload: %w", m.cfg.Provider, err)
 	}
 
 	return nil
@@ -267,7 +267,7 @@ func (m *MinioClient) multiPartCopy(ctx context.Context, srcCli *MinioClient, i 
 func (m *MinioClient) HeadObject(ctx context.Context, key string) (ObjectAttr, error) {
 	attr, err := m.cli.StatObject(ctx, m.cfg.Bucket, key, minio.StatObjectOptions{})
 	if err != nil {
-		return ObjectAttr{}, fmt.Errorf("storage: %s head object %w", m.cfg.Provider, err)
+		return ObjectAttr{}, fmt.Errorf("storage: %s head object: %w", m.cfg.Provider, err)
 	}
 
 	return ObjectAttr{Key: attr.Key, Length: attr.Size}, nil
@@ -276,12 +276,12 @@ func (m *MinioClient) HeadObject(ctx context.Context, key string) (ObjectAttr, e
 func (m *MinioClient) GetObject(ctx context.Context, key string) (*Object, error) {
 	obj, err := m.cli.GetObject(ctx, m.cfg.Bucket, key, minio.GetObjectOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("storage: %s get object %w", m.cfg.Provider, err)
+		return nil, fmt.Errorf("storage: %s get object: %w", m.cfg.Provider, err)
 	}
 
 	attr, err := obj.Stat()
 	if err != nil {
-		return nil, fmt.Errorf("storage: %s get object attr %w", m.cfg.Provider, err)
+		return nil, fmt.Errorf("storage: %s get object attr: %w", m.cfg.Provider, err)
 	}
 
 	return &Object{Length: attr.Size, Body: obj}, nil
@@ -293,7 +293,7 @@ func (m *MinioClient) UploadObject(ctx context.Context, i UploadObjectInput) err
 		size = i.Size
 	}
 	if _, err := m.cli.PutObject(ctx, m.cfg.Bucket, i.Key, i.Body, size, minio.PutObjectOptions{}); err != nil {
-		return fmt.Errorf("storage: %s upload object %w", m.cfg.Provider, err)
+		return fmt.Errorf("storage: %s upload object: %w", m.cfg.Provider, err)
 	}
 
 	return nil
@@ -315,7 +315,7 @@ func (m *MinioClient) DeleteObject(ctx context.Context, key string) error {
 			if isDeleteSuccessful(err) {
 				return nil
 			}
-			return fmt.Errorf("storage: %s delete object %w", m.cfg.Provider, err)
+			return fmt.Errorf("storage: %s delete object: %w", m.cfg.Provider, err)
 		}
 
 		return nil
@@ -342,7 +342,7 @@ func (m *MinioClient) NewObjectIter(ctx context.Context, prefix string, recursiv
 
 		for item := range objCh {
 			if item.Err != nil {
-				yield(ObjectAttr{}, fmt.Errorf("storage: %s list prefix %w", m.cfg.Provider, item.Err))
+				yield(ObjectAttr{}, fmt.Errorf("storage: %s list prefix: %w", m.cfg.Provider, item.Err))
 				return
 			}
 			if !yield(ObjectAttr{Key: item.Key, Length: item.Size}, nil) {
@@ -375,7 +375,7 @@ func (m *MinioClient) BucketExist(ctx context.Context, prefix string) (bool, err
 		if minio.ToErrorResponse(obj.Err).Code == "NoSuchBucket" {
 			return false, nil
 		}
-		return false, fmt.Errorf("storage: %s list objects %w", m.cfg.Provider, obj.Err)
+		return false, fmt.Errorf("storage: %s list objects: %w", m.cfg.Provider, obj.Err)
 	}
 
 	return true, nil
@@ -383,7 +383,7 @@ func (m *MinioClient) BucketExist(ctx context.Context, prefix string) (bool, err
 
 func (m *MinioClient) CreateBucket(ctx context.Context) error {
 	if err := m.cli.MakeBucket(ctx, m.cfg.Bucket, minio.MakeBucketOptions{}); err != nil {
-		return fmt.Errorf("storage: %s create bucket %w", m.cfg.Provider, err)
+		return fmt.Errorf("storage: %s create bucket: %w", m.cfg.Provider, err)
 	}
 
 	return nil
@@ -397,11 +397,11 @@ type part struct {
 
 func splitIntoParts(totalSize int64) ([]part, error) {
 	if totalSize <= _minPartSize {
-		return nil, fmt.Errorf("storage: total size %d is less than min part size %d", totalSize, _minPartSize)
+		return nil, fmt.Errorf("storage: total size %d is not greater than min part size %d", totalSize, _minPartSize)
 	}
 
 	if totalSize > _maxMultiCopySize {
-		return nil, fmt.Errorf("storage: total size %d is greater than max part size %d", totalSize, _maxMultiCopySize)
+		return nil, fmt.Errorf("storage: total size %d is greater than max copy size %d", totalSize, _maxMultiCopySize)
 	}
 
 	ceilDiv := func(a, b int64) int64 { return (a + b - 1) / b }

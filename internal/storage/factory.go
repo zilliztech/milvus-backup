@@ -109,10 +109,10 @@ func NewBackupStorage(ctx context.Context, c *cfg.Config) (Client, error) {
 
 	cli, err := NewClient(ctx, conf)
 	if err != nil {
-		return nil, fmt.Errorf("create backup storage client: %w", err)
+		return nil, fmt.Errorf("storage: create backup storage client: %w", err)
 	}
 	if err := CreateBucketIfNotExist(ctx, cli, ""); err != nil {
-		return nil, fmt.Errorf("create backup storage client: %w", err)
+		return nil, fmt.Errorf("storage: create backup storage client: %w", err)
 	}
 
 	return cli, nil

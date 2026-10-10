@@ -38,7 +38,7 @@ func (gcm *GCPNativeClient) UploadObject(ctx context.Context, i UploadObjectInpu
 	}()
 
 	if _, err := io.Copy(wc, i.Body); err != nil {
-		return fmt.Errorf("storage: gcp native upload object %w", err)
+		return fmt.Errorf("storage: gcp native upload object: %w", err)
 	}
 
 	return nil
@@ -47,7 +47,7 @@ func (gcm *GCPNativeClient) UploadObject(ctx context.Context, i UploadObjectInpu
 func (gcm *GCPNativeClient) CopyObject(ctx context.Context, i CopyObjectInput) error {
 	srcCli, ok := i.SrcCli.(*GCPNativeClient)
 	if !ok {
-		return fmt.Errorf("storage: gcp native copy object only support gcp native client")
+		return fmt.Errorf("storage: gcp native copy object only supports a gcp native source client")
 	}
 
 	srcObj := gcm.client.Bucket(srcCli.cfg.Bucket).Object(i.SrcAttr.Key)
@@ -64,7 +64,7 @@ func (gcm *GCPNativeClient) HeadObject(ctx context.Context, key string) (ObjectA
 	obj := gcm.client.Bucket(gcm.cfg.Bucket).Object(key)
 	attrs, err := obj.Attrs(ctx)
 	if err != nil {
-		return ObjectAttr{}, fmt.Errorf("storage: gcp native head object %w", err)
+		return ObjectAttr{}, fmt.Errorf("storage: gcp native head object: %w", err)
 	}
 
 	return ObjectAttr{Key: key, Length: attrs.Size}, nil
@@ -73,7 +73,7 @@ func (gcm *GCPNativeClient) HeadObject(ctx context.Context, key string) (ObjectA
 func (gcm *GCPNativeClient) GetObject(ctx context.Context, key string) (*Object, error) {
 	reader, err := gcm.client.Bucket(gcm.cfg.Bucket).Object(key).NewReader(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("storage: gcp native get object %w", err)
+		return nil, fmt.Errorf("storage: gcp native get object: %w", err)
 	}
 
 	return &Object{Length: reader.Attrs.Size, Body: reader}, nil
@@ -82,7 +82,7 @@ func (gcm *GCPNativeClient) GetObject(ctx context.Context, key string) (*Object,
 func (gcm *GCPNativeClient) DeleteObject(ctx context.Context, key string) error {
 	return retry.Do(ctx, func() error {
 		if err := gcm.client.Bucket(gcm.cfg.Bucket).Object(key).Delete(ctx); err != nil {
-			return fmt.Errorf("storage: gcp native delete object %w", err)
+			return fmt.Errorf("storage: gcp native delete object: %w", err)
 		}
 		return nil
 	})
@@ -109,7 +109,7 @@ func (gcm *GCPNativeClient) NewObjectIter(ctx context.Context, prefix string, re
 				if errors.Is(err, iterator.Done) {
 					return
 				}
-				yield(ObjectAttr{}, fmt.Errorf("storage: gcp native list prefix %w", err))
+				yield(ObjectAttr{}, fmt.Errorf("storage: gcp native list prefix: %w", err))
 				return
 			}
 			if !yield(ObjectAttr{Key: next.Name, Length: next.Size}, nil) {
@@ -126,7 +126,7 @@ func (gcm *GCPNativeClient) BucketExist(ctx context.Context, _ string) (bool, er
 		if errors.Is(err, storage.ErrBucketNotExist) {
 			return false, nil
 		}
-		return false, fmt.Errorf("storage: gcp native get bucket attrs %w", err)
+		return false, fmt.Errorf("storage: gcp native get bucket attrs: %w", err)
 	}
 
 	return true, nil
@@ -134,7 +134,7 @@ func (gcm *GCPNativeClient) BucketExist(ctx context.Context, _ string) (bool, er
 
 func (gcm *GCPNativeClient) CreateBucket(ctx context.Context) error {
 	if err := gcm.client.Bucket(gcm.cfg.Bucket).Create(ctx, gcm.projectID, nil); err != nil {
-		return fmt.Errorf("storage: gcp native create bucket %w", err)
+		return fmt.Errorf("storage: gcp native create bucket: %w", err)
 	}
 	return nil
 }
@@ -175,10 +175,10 @@ func isStandardGCSEndpoint(endpoint string) bool {
 
 func newGCPNativeClient(ctx context.Context, cfg Config) (*GCPNativeClient, error) {
 	// This client only knows how to read a service account key file. Say so
-	// here: without the check the missing path surfaces as a bare "unable to
-	// read credentials file: open :" from the read below.
+	// here: without the check a missing path surfaces as a bare
+	// "storage: gcp native read credentials file: open :" from the read below.
 	if cfg.Credential.Type != GCPCredJSON {
-		return nil, fmt.Errorf("storage: gcpnative needs a service account credentials file, got credential type %s",
+		return nil, fmt.Errorf("storage: gcp native needs a service account credentials file, got credential type %s",
 			cfg.Credential.Type)
 	}
 
@@ -200,18 +200,18 @@ func newGCPNativeClient(ctx context.Context, cfg Config) (*GCPNativeClient, erro
 	// Read the credentials file
 	jsonData, err := os.ReadFile(cfg.Credential.GCPCredJSON)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read credentials file: %w", err)
+		return nil, fmt.Errorf("storage: gcp native read credentials file: %w", err)
 	}
 
 	// Only service account keys are supported, getProjectID below requires the
 	// project_id field that only they carry.
 	creds, err := google.CredentialsFromJSONWithType(ctx, jsonData, google.ServiceAccount, storage.ScopeReadWrite)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create credentials from JSON: %w", err)
+		return nil, fmt.Errorf("storage: gcp native create credentials from JSON: %w", err)
 	}
 	projectID, err := getProjectID(jsonData)
 	if err != nil {
-		return nil, fmt.Errorf("storage get project id: %w", err)
+		return nil, fmt.Errorf("storage: gcp native get project id: %w", err)
 	}
 	opts = append(opts, option.WithCredentials(creds))
 
@@ -226,12 +226,12 @@ func newGCPNativeClient(ctx context.Context, cfg Config) (*GCPNativeClient, erro
 func getProjectID(byts []byte) (string, error) {
 	var data map[string]any
 	if err := json.Unmarshal(byts, &data); err != nil {
-		return "", fmt.Errorf("storage: parse gcp credential json file :%w", err)
+		return "", fmt.Errorf("storage: parse gcp credential json file: %w", err)
 	}
 
 	propertyValue, ok := data["project_id"]
 	if !ok {
-		return "", fmt.Errorf("storage: gcp native get project id, project_id not found in credentials file")
+		return "", fmt.Errorf("storage: gcp native get project id: project_id not found in credentials file")
 	}
 
 	projectID := fmt.Sprintf("%v", propertyValue)

@@ -27,12 +27,12 @@ func (c *HwcCredentialProvider) RetrieveWithCredContext(_ *minioCred.CredContext
 func (c *HwcCredentialProvider) Retrieve() (minioCred.Value, error) {
 	cred, err := retrieveTempCredential(c.iamClient)
 	if err != nil {
-		return minioCred.Value{}, fmt.Errorf("storage: hwc retrieve temporary credential %w", err)
+		return minioCred.Value{}, fmt.Errorf("storage: hwc retrieve temporary credential: %w", err)
 	}
 
 	ti, err := time.Parse(time.RFC3339Nano, cred.ExpiresAt)
 	if err != nil {
-		return minioCred.Value{}, fmt.Errorf("storage: hwc retrieve temporary credential parse expireTime time %w", err)
+		return minioCred.Value{}, fmt.Errorf("storage: hwc parse temporary credential expire time: %w", err)
 	}
 
 	c.expireTime = ti
@@ -53,27 +53,27 @@ func (c *HwcCredentialProvider) IsExpired() bool {
 func newHwcCredProvider(cfg Config) (minioCred.Provider, error) {
 	iamCred, err := provider.BasicCredentialEnvProvider().GetCredentials()
 	if err != nil {
-		return nil, fmt.Errorf("storage: new hwc iam credential  %w", err)
+		return nil, fmt.Errorf("storage: new hwc iam credential: %w", err)
 	}
 	region, err := hwcRegion.SafeValueOf(cfg.Region)
 	if err != nil {
-		return nil, fmt.Errorf("storage: new hwc get region %w", err)
+		return nil, fmt.Errorf("storage: new hwc get region: %w", err)
 	}
 
 	hcClient, err := iam.IamClientBuilder().WithCredential(iamCred).WithRegion(region).SafeBuild()
 	if err != nil {
-		return nil, fmt.Errorf("storage: new hwc hcClient %w", err)
+		return nil, fmt.Errorf("storage: new hwc iam client: %w", err)
 	}
 	iamClient := iam.NewIamClient(hcClient)
 
 	cred, err := retrieveTempCredential(iamClient)
 	if err != nil {
-		return nil, fmt.Errorf("storage: hwc create temporary credential %w", err)
+		return nil, fmt.Errorf("storage: hwc create temporary credential: %w", err)
 	}
 
 	t, err := time.Parse(time.RFC3339Nano, cred.ExpiresAt)
 	if err != nil {
-		return nil, fmt.Errorf("storage: hwc create temporary parse expireTime time %w", err)
+		return nil, fmt.Errorf("storage: hwc parse temporary credential expire time: %w", err)
 	}
 
 	return &HwcCredentialProvider{iamClient: iamClient, expireTime: t}, nil
@@ -98,7 +98,7 @@ func retrieveTempCredential(iamClient *iam.IamClient) (*model.Credential, error)
 
 	resp, err := iamClient.CreateTemporaryAccessKeyByToken(req)
 	if err != nil {
-		return nil, fmt.Errorf("storage: hwc retrieve temporary credential %w", err)
+		return nil, fmt.Errorf("storage: hwc retrieve temporary credential: %w", err)
 	}
 
 	if resp.Credential == nil {
@@ -114,13 +114,13 @@ func NewHwcClient(cfg Config) (*MinioClient, error) {
 	case IAM:
 		hwcProvider, err := newHwcCredProvider(cfg)
 		if err != nil {
-			return nil, fmt.Errorf("storage: new hwc iam provider %w", err)
+			return nil, fmt.Errorf("storage: new hwc iam provider: %w", err)
 		}
 		opts.Creds = minioCred.New(hwcProvider)
 	case Static:
 		opts.Creds = minioCred.NewStaticV4(cfg.Credential.AK, cfg.Credential.SK, cfg.Credential.Token)
 	default:
-		return nil, fmt.Errorf("storage: new hwc client unsupported credential type %s", cfg.Credential.Type)
+		return nil, fmt.Errorf("storage: hwc unsupported credential type: %s", cfg.Credential.Type)
 	}
 
 	return newInternalMinio(cfg, &opts)
