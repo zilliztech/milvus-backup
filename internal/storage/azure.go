@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"iter"
+	"net/http"
 	"sort"
 	"strings"
 	"sync"
@@ -20,6 +21,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/container"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/sas"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob/service"
+	"github.com/samber/lo"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
@@ -28,6 +30,7 @@ import (
 )
 
 var _ Client = (*AzureClient)(nil)
+var _ batchDeleter = (*AzureClient)(nil)
 
 func newAzureClient(cfg Config) (*AzureClient, error) {
 	// backwards compatible, don't know why we kept the "blob" in the code instead of letting it be input externally.
@@ -395,6 +398,79 @@ func (a *AzureClient) DeleteObject(ctx context.Context, key string) error {
 	}
 
 	return nil
+}
+
+// Azure Blob Batch takes at most 256 sub-requests per call.
+const _azureDeleteObjectsBatchSize = 256
+
+func (a *AzureClient) DeleteObjectsBatchSize() int { return _azureDeleteObjectsBatchSize }
+
+// DeleteObjects deletes a batch of keys with one Blob Batch request
+// (POST ?restype=container&comp=batch). A key already gone counts as
+// deleted, so a per-key failure inside the 202 response is retried as the
+// whole batch without the already-deleted keys failing the retry.
+func (a *AzureClient) DeleteObjects(ctx context.Context, keys []string) error {
+	return retry.Do(ctx, func() error {
+		err := a.deleteObjects(ctx, keys)
+		if isAzureBatchDeleteUnsupported(err) {
+			// A backend without Blob Batch (an emulator on an old API
+			// version) will never learn it, so skip the retries and tell
+			// DeleteWithCallback to degrade to per-key deletion.
+			return retry.Unrecoverable(fmt.Errorf("%w: %w", errBatchDeleteUnsupported, err))
+		}
+		return err
+	})
+}
+
+func (a *AzureClient) deleteObjects(ctx context.Context, keys []string) error {
+	containerCli := a.cli.ServiceClient().NewContainerClient(a.cfg.Bucket)
+	bb, err := containerCli.NewBatchBuilder()
+	if err != nil {
+		return fmt.Errorf("storage: azure new batch builder: %w", err)
+	}
+	for _, key := range keys {
+		if err := bb.Delete(key, nil); err != nil {
+			return fmt.Errorf("storage: azure add delete sub-request for %s: %w", key, err)
+		}
+	}
+
+	resp, err := containerCli.SubmitBatch(ctx, bb, nil)
+	if err != nil {
+		return fmt.Errorf("storage: azure submit batch: %w", err)
+	}
+
+	var errs []error
+	for _, item := range resp.Responses {
+		if item.Error == nil || isBlobNotFound(item.Error) {
+			continue
+		}
+		errs = append(errs, fmt.Errorf("storage: azure delete object %s: %w", lo.FromPtr(item.BlobName), item.Error))
+	}
+
+	return errors.Join(errs...)
+}
+
+// isBlobNotFound reports whether err is a BlobNotFound rejection, from either
+// a single DeleteBlob or one sub-response of a Blob Batch.
+func isBlobNotFound(err error) bool {
+	var azErr *azcore.ResponseError
+	if errors.As(err, &azErr) {
+		return azErr.ErrorCode == string(bloberror.BlobNotFound)
+	}
+	return false
+}
+
+// isAzureBatchDeleteUnsupported reports whether err is a NotImplemented
+// rejection of the Blob Batch request itself, the answer an Azure-compatible
+// endpoint without Blob Batch gives. Per-key failures decoded from a 202
+// response never reach here: SubmitBatch returns them on the response, not
+// as the error.
+func isAzureBatchDeleteUnsupported(err error) bool {
+	var azErr *azcore.ResponseError
+	if errors.As(err, &azErr) {
+		return azErr.StatusCode == http.StatusNotImplemented
+	}
+	return false
 }
 
 func (a *AzureClient) BucketExist(ctx context.Context, _ string) (bool, error) {
