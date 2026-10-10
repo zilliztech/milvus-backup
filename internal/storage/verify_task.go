@@ -54,7 +54,7 @@ func (t *VerifyPrefixTask) Execute(ctx context.Context) error {
 
 	for attr, err := range t.opt.Cli.NewObjectIter(ctx, t.opt.Prefix, true) {
 		if err != nil {
-			return fmt.Errorf("storage: verify prefix iter object %w", err)
+			return fmt.Errorf("storage: verify prefix iter object: %w", err)
 		}
 
 		want, ok := t.opt.Expected[attr.Key]

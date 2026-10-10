@@ -39,30 +39,30 @@ func newAzureClient(cfg Config) (*AzureClient, error) {
 	case IAM:
 		cred, err := azidentity.NewDefaultAzureCredential(nil)
 		if err != nil {
-			return nil, fmt.Errorf("storage: new azure default azure credential %w", err)
+			return nil, fmt.Errorf("storage: new azure default credential: %w", err)
 		}
 		cli, err := azblob.NewClient(ep, cred, nil)
 		if err != nil {
-			return nil, fmt.Errorf("storage: new azure client %w", err)
+			return nil, fmt.Errorf("storage: new azure client: %w", err)
 		}
 		sasCli, err := service.NewClient(ep, cred, nil)
 		if err != nil {
-			return nil, fmt.Errorf("storage: new azure service client %w", err)
+			return nil, fmt.Errorf("storage: new azure service client: %w", err)
 		}
 
 		return &AzureClient{cfg: cfg, cli: cli, sasCli: sasCli, logger: logger}, nil
 	case Static:
 		cred, err := azblob.NewSharedKeyCredential(cfg.Credential.AK, cfg.Credential.SK)
 		if err != nil {
-			return nil, fmt.Errorf("storage: new azure shared key credential %w", err)
+			return nil, fmt.Errorf("storage: new azure shared key credential: %w", err)
 		}
 		cli, err := azblob.NewClientWithSharedKeyCredential(ep, cred, nil)
 		if err != nil {
-			return nil, fmt.Errorf("storage: new azure client %w", err)
+			return nil, fmt.Errorf("storage: new azure client: %w", err)
 		}
 		sasCli, err := service.NewClientWithSharedKeyCredential(ep, cred, nil)
 		if err != nil {
-			return nil, fmt.Errorf("storage: new azure service client %w", err)
+			return nil, fmt.Errorf("storage: new azure service client: %w", err)
 		}
 		return &AzureClient{cfg: cfg, cli: cli, sasCli: sasCli, logger: logger}, nil
 	default:
@@ -93,7 +93,7 @@ func (a *AzureClient) getSAS(ctx context.Context, srcCli *AzureClient) (*sas.Que
 func (a *AzureClient) getSASBySharedKeyCredential(srcCli *AzureClient) (*sas.QueryParameters, error) {
 	credential, err := azblob.NewSharedKeyCredential(srcCli.cfg.Credential.AK, srcCli.cfg.Credential.SK)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create shared key credential: %w", err)
+		return nil, fmt.Errorf("storage: azure create shared key credential: %w", err)
 	}
 
 	sasQueryParams, err := sas.AccountSignatureValues{
@@ -104,7 +104,7 @@ func (a *AzureClient) getSASBySharedKeyCredential(srcCli *AzureClient) (*sas.Que
 	}.SignWithSharedKey(credential)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to sign SAS with shared key: %w", err)
+		return nil, fmt.Errorf("storage: azure sign sas with shared key: %w", err)
 	}
 
 	return &sasQueryParams, nil
@@ -120,7 +120,7 @@ func (a *AzureClient) getSASByUserDelegation(ctx context.Context, srcCli *AzureC
 	}
 	udc, err := srcCli.sasCli.GetUserDelegationCredential(ctx, info, nil)
 	if err != nil {
-		return nil, fmt.Errorf("storage: azure get user delegation credential %w", err)
+		return nil, fmt.Errorf("storage: azure get user delegation credential: %w", err)
 	}
 	// Create Blob Signature Values with desired permissions and sign with user delegation credential
 	sasQueryParams, err := sas.BlobSignatureValues{
@@ -131,7 +131,7 @@ func (a *AzureClient) getSASByUserDelegation(ctx context.Context, srcCli *AzureC
 		ContainerName: srcCli.cfg.Bucket,
 	}.SignWithUserDelegation(udc)
 	if err != nil {
-		return nil, fmt.Errorf("storage: azure sign with user delegation %w", err)
+		return nil, fmt.Errorf("storage: azure sign with user delegation: %w", err)
 	}
 	return &sasQueryParams, nil
 }
@@ -187,18 +187,23 @@ func (a *AzureClient) copyObject(ctx context.Context, srcCli *AzureClient, i Cop
 		abortErr := func() error {
 			blobProperties, err := blobCli.BlobClient().GetProperties(ctx, nil)
 			if err != nil {
-				return fmt.Errorf("storage: azure get properties %w", err)
+				return fmt.Errorf("storage: azure get properties: %w", err)
 			}
 			if blobProperties.CopyID != nil {
 				if _, err = blobCli.AbortCopyFromURL(ctx, *blobProperties.CopyID, nil); err != nil {
-					return fmt.Errorf("storage: azure abort copy from url %w", err)
+					return fmt.Errorf("storage: azure abort copy from url: %w", err)
 				}
 			}
 			return nil
 		}()
 
 		if _, err := blobCli.CopyFromURL(ctx, srcURL, nil); err != nil {
-			return fmt.Errorf("storage: azure copy from url %w abort previous %w", err, abortErr)
+			// abortErr is nil when the blob had no previous copy to abort, and
+			// a nil %w renders as "%!w(<nil>)", so wrap it only when set.
+			if abortErr != nil {
+				return fmt.Errorf("storage: azure copy from url: %w, abort previous copy: %w", err, abortErr)
+			}
+			return fmt.Errorf("storage: azure copy from url: %w", err)
 		}
 
 		return nil
@@ -213,7 +218,7 @@ type azureBlockInfo struct {
 func (a *AzureClient) multiPartCopy(ctx context.Context, srcCli *AzureClient, i CopyObjectInput) error {
 	parts, err := splitIntoParts(i.SrcAttr.Length)
 	if err != nil {
-		return fmt.Errorf("storage: azure split into parts %w", err)
+		return fmt.Errorf("storage: azure split into parts: %w", err)
 	}
 
 	// Generate SAS token for source URL
@@ -221,7 +226,7 @@ func (a *AzureClient) multiPartCopy(ctx context.Context, srcCli *AzureClient, i 
 	srcBaseURL := fmt.Sprintf("https://%s.blob.%s/%s/%s", srcCli.cfg.Credential.AzureAccountName, endpoint, srcCli.cfg.Bucket, i.SrcAttr.Key)
 	srcSAS, err := a.getSAS(ctx, srcCli)
 	if err != nil {
-		return fmt.Errorf("storage: azure get sas %w", err)
+		return fmt.Errorf("storage: azure get sas: %w", err)
 	}
 	srcURL := srcBaseURL + "?" + srcSAS.Encode()
 
@@ -249,7 +254,7 @@ func (a *AzureClient) multiPartCopy(ctx context.Context, srcCli *AzureClient, i 
 					Range: azblob.HTTPRange{Offset: p.Offset, Count: p.Size},
 				})
 				if err != nil {
-					return fmt.Errorf("storage: azure stage block from url %w", err)
+					return fmt.Errorf("storage: azure stage block from url: %w", err)
 				}
 				return nil
 			})
@@ -266,7 +271,7 @@ func (a *AzureClient) multiPartCopy(ctx context.Context, srcCli *AzureClient, i 
 	}
 
 	if err := g.Wait(); err != nil {
-		return fmt.Errorf("storage: azure wait for stage block %w", err)
+		return fmt.Errorf("storage: azure wait for stage block: %w", err)
 	}
 
 	// Sort block IDs by index to maintain order
@@ -282,7 +287,7 @@ func (a *AzureClient) multiPartCopy(ctx context.Context, srcCli *AzureClient, i 
 	// Commit all blocks
 	_, err = blobCli.CommitBlockList(ctx, blockIDs, nil)
 	if err != nil {
-		return fmt.Errorf("storage: azure commit block list %w", err)
+		return fmt.Errorf("storage: azure commit block list: %w", err)
 	}
 
 	return nil
@@ -292,7 +297,7 @@ func (a *AzureClient) HeadObject(ctx context.Context, key string) (ObjectAttr, e
 	resp, err := a.cli.ServiceClient().NewContainerClient(a.cfg.Bucket).NewBlobClient(key).
 		GetProperties(ctx, nil)
 	if err != nil {
-		return ObjectAttr{}, fmt.Errorf("storage: azure get properties %w", err)
+		return ObjectAttr{}, fmt.Errorf("storage: azure get properties: %w", err)
 	}
 
 	return ObjectAttr{Key: key, Length: *resp.ContentLength}, nil
@@ -302,7 +307,7 @@ func (a *AzureClient) GetObject(ctx context.Context, key string) (*Object, error
 	blobCli := a.cli.ServiceClient().NewContainerClient(a.cfg.Bucket).NewBlockBlobClient(key)
 	resp, err := blobCli.DownloadStream(ctx, nil)
 	if err != nil {
-		return nil, fmt.Errorf("storage: azure download stream %w", err)
+		return nil, fmt.Errorf("storage: azure download stream: %w", err)
 	}
 
 	return &Object{
@@ -315,7 +320,7 @@ func (a *AzureClient) GetObject(ctx context.Context, key string) (*Object, error
 
 func (a *AzureClient) UploadObject(ctx context.Context, i UploadObjectInput) error {
 	if _, err := a.cli.UploadStream(ctx, a.cfg.Bucket, i.Key, i.Body, nil); err != nil {
-		return fmt.Errorf("storage: azure upload stream %w", err)
+		return fmt.Errorf("storage: azure upload stream: %w", err)
 	}
 
 	return nil
@@ -339,7 +344,7 @@ func iteratePager[T any](ctx context.Context, yield func(ObjectAttr, error) bool
 
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			yield(ObjectAttr{}, fmt.Errorf("storage: azure list prefix %w", err))
+			yield(ObjectAttr{}, fmt.Errorf("storage: azure list prefix: %w", err))
 			return
 		}
 
@@ -386,7 +391,7 @@ func (a *AzureClient) NewObjectIter(ctx context.Context, prefix string, recursiv
 
 func (a *AzureClient) DeleteObject(ctx context.Context, key string) error {
 	if _, err := a.cli.DeleteBlob(ctx, a.cfg.Bucket, key, nil); err != nil {
-		return fmt.Errorf("storage: azure delete blob %w", err)
+		return fmt.Errorf("storage: azure delete blob: %w", err)
 	}
 
 	return nil
@@ -400,7 +405,7 @@ func (a *AzureClient) BucketExist(ctx context.Context, _ string) (bool, error) {
 		var azErr *azcore.ResponseError
 		ok := errors.As(err, &azErr)
 		if !ok {
-			return false, fmt.Errorf("storage: azure get container properties %w", err)
+			return false, fmt.Errorf("storage: azure get container properties: %w", err)
 		}
 
 		if azErr.ErrorCode == string(bloberror.ContainerNotFound) {
@@ -414,7 +419,7 @@ func (a *AzureClient) BucketExist(ctx context.Context, _ string) (bool, error) {
 func (a *AzureClient) CreateBucket(ctx context.Context) error {
 	_, err := a.cli.ServiceClient().NewContainerClient(a.cfg.Bucket).Create(ctx, &azblob.CreateContainerOptions{})
 	if err != nil {
-		return fmt.Errorf("storage: azure create container %w", err)
+		return fmt.Errorf("storage: azure create container: %w", err)
 	}
 
 	return nil

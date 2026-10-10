@@ -66,7 +66,7 @@ func (dc *directCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
 		i := CopyObjectInput{SrcCli: dc.src, SrcAttr: copyAttr.Src, DestKey: copyAttr.DestKey}
 
 		if err := dc.dest.CopyObject(ctx, i); err != nil {
-			return fmt.Errorf("storage: direct copier copy object %w", err)
+			return fmt.Errorf("storage: direct copier copy object: %w", err)
 		}
 
 		return nil
@@ -96,7 +96,7 @@ func (sc *streamingCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
 	return retry.Do(ctx, func() error {
 		obj, err := sc.src.GetObject(ctx, copyAttr.Src.Key)
 		if err != nil {
-			return fmt.Errorf("storage: streaming copier get object %w", err)
+			return fmt.Errorf("storage: streaming copier get object: %w", err)
 		}
 		defer obj.Body.Close()
 
@@ -107,7 +107,7 @@ func (sc *streamingCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
 
 		i := UploadObjectInput{Body: body, Key: copyAttr.DestKey, Size: copyAttr.Src.Length}
 		if err := sc.dest.UploadObject(ctx, i); err != nil {
-			return fmt.Errorf("storage: streaming copier upload object %w", err)
+			return fmt.Errorf("storage: streaming copier upload object: %w", err)
 		}
 
 		return nil

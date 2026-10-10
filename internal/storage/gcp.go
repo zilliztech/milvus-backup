@@ -32,7 +32,7 @@ func newGCPTrans(secure bool) (*gcpTransport, error) {
 	// in fact never return err
 	backend, err := minio.DefaultTransport(secure)
 	if err != nil {
-		return nil, fmt.Errorf("storage: create gcp http transport %w", err)
+		return nil, fmt.Errorf("storage: create gcp http transport: %w", err)
 	}
 	return &gcpTransport{tokenSrc: tokenSrc, backend: backend}, nil
 }
@@ -44,7 +44,7 @@ func newGCPTransWithToken(secure bool, token string) (*gcpTransport, error) {
 	// in fact never return err
 	backend, err := minio.DefaultTransport(secure)
 	if err != nil {
-		return nil, fmt.Errorf("storage: create default transport %w", err)
+		return nil, fmt.Errorf("storage: create gcp http transport: %w", err)
 	}
 	return &gcpTransport{tokenSrc: tokenSrc, backend: backend}, nil
 }
@@ -53,7 +53,7 @@ func newGCPTransWithToken(secure bool, token string) (*gcpTransport, error) {
 func newGCPTransWithTokenSrc(secure bool, tokenSrc oauth2.TokenSource) (*gcpTransport, error) {
 	backend, err := minio.DefaultTransport(secure)
 	if err != nil {
-		return nil, fmt.Errorf("storage: create default transport %w", err)
+		return nil, fmt.Errorf("storage: create gcp http transport: %w", err)
 	}
 	return &gcpTransport{tokenSrc: tokenSrc, backend: backend}, nil
 }
@@ -75,7 +75,7 @@ func (t *gcpTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	} else {
 		newToken, err := t.tokenSrc.Token()
 		if err != nil {
-			return nil, fmt.Errorf("storage: get gcp token %w", err)
+			return nil, fmt.Errorf("storage: get gcp token: %w", err)
 		}
 		req.Header.Set("Authorization", "Bearer "+newToken.AccessToken)
 		t.currentToken.Store(newToken)
@@ -95,7 +95,7 @@ func newGCPClient(cfg Config) (*MinioClient, error) {
 	case IAM:
 		trans, err := newGCPTrans(opts.Secure)
 		if err != nil {
-			return nil, fmt.Errorf("storage: create gcp http transport %w", err)
+			return nil, fmt.Errorf("storage: create gcp http transport: %w", err)
 		}
 		opts.Transport = trans
 		opts.Creds = credentials.NewStaticV2("", "", "")
@@ -121,7 +121,7 @@ func newGCPClient(cfg Config) (*MinioClient, error) {
 		opts.Transport = trans
 		opts.Creds = credentials.NewStaticV2("", "", "")
 	default:
-		return nil, fmt.Errorf("storage: gcp unsupported credential type %v", cfg.Credential.Type)
+		return nil, fmt.Errorf("storage: gcp unsupported credential type: %s", cfg.Credential.Type)
 	}
 
 	return newInternalMinio(cfg, &opts)
