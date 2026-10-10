@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -370,7 +371,7 @@ func TestCopyObjectEmbeddedError(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	err = cli.copyObject(context.Background(), src, CopyObjectInput{
+	err = cli.copyObject(context.Background(), src.cfg, CopyObjectInput{
 		SrcCli:  src,
 		SrcAttr: ObjectAttr{Key: "src-key", Length: 1},
 		DestKey: "dest-key",
@@ -423,10 +424,136 @@ func TestCopyObjectValidETag(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	err = cli.copyObject(context.Background(), src, CopyObjectInput{
+	err = cli.copyObject(context.Background(), src.cfg, CopyObjectInput{
 		SrcCli:  src,
 		SrcAttr: ObjectAttr{Key: "src-key", Length: 1},
 		DestKey: "dest-key",
 	})
 	require.NoError(t, err)
+}
+
+func TestDeleteObjects(t *testing.T) {
+	var deleteReqCount atomic.Int32
+	cli, err := newInternalMinio(Config{
+		Provider: "s3",
+		Endpoint: "example.com",
+		UseSSL:   true,
+		Bucket:   "test-bucket",
+		Credential: Credential{
+			Type: Static,
+			AK:   "ak",
+			SK:   "sk",
+		},
+	}, &minio.Options{
+		Secure: true,
+		Creds:  credentials.NewStaticV4("ak", "sk", ""),
+		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			if _, ok := r.URL.Query()["location"]; ok {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/xml"}},
+					Body:       io.NopCloser(strings.NewReader(`<LocationConstraint xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></LocationConstraint>`)),
+					Request:    r,
+				}, nil
+			}
+
+			if _, ok := r.URL.Query()["delete"]; !ok {
+				return nil, errors.New("unexpected request")
+			}
+			deleteReqCount.Add(1)
+
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/xml"}},
+				Body: io.NopCloser(strings.NewReader(`<?xml version="1.0" encoding="UTF-8"?>
+<DeleteResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <Deleted><Key>a/b/c</Key></Deleted>
+  <Deleted><Key>a/b/d</Key></Deleted>
+</DeleteResult>`)),
+				Request: r,
+			}, nil
+		}),
+	})
+	require.NoError(t, err)
+
+	err = cli.DeleteObjects(context.Background(), []string{"a/b/c", "a/b/d"})
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, deleteReqCount.Load(), "one batch is one DeleteObjects request")
+}
+
+// TestDeleteObjectsNotImplemented pins the degrade contract: a backend
+// answering 501 to the multi-object delete request gets the error wrapped
+// with errBatchDeleteUnsupported, and the request is not retried.
+func TestDeleteObjectsNotImplemented(t *testing.T) {
+	var deleteReqCount atomic.Int32
+	cli, err := newInternalMinio(Config{
+		Provider: "s3",
+		Endpoint: "example.com",
+		UseSSL:   true,
+		Bucket:   "test-bucket",
+		Credential: Credential{
+			Type: Static,
+			AK:   "ak",
+			SK:   "sk",
+		},
+	}, &minio.Options{
+		Secure: true,
+		Creds:  credentials.NewStaticV4("ak", "sk", ""),
+		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			if _, ok := r.URL.Query()["location"]; ok {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/xml"}},
+					Body:       io.NopCloser(strings.NewReader(`<LocationConstraint xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></LocationConstraint>`)),
+					Request:    r,
+				}, nil
+			}
+
+			deleteReqCount.Add(1)
+			return &http.Response{
+				StatusCode: http.StatusNotImplemented,
+				Header:     http.Header{"Content-Type": []string{"application/xml"}},
+				Body: io.NopCloser(strings.NewReader(`<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+  <Code>NotImplemented</Code>
+  <Message>This gateway does not support multi-object delete.</Message>
+</Error>`)),
+				Request: r,
+			}, nil
+		}),
+	})
+	require.NoError(t, err)
+
+	err = cli.DeleteObjects(context.Background(), []string{"a/b/c", "a/b/d"})
+	assert.ErrorIs(t, err, errBatchDeleteUnsupported)
+	assert.EqualValues(t, 1, deleteReqCount.Load(), "NotImplemented must not be retried")
+}
+
+func TestIsBatchDeleteUnsupported(t *testing.T) {
+	t.Run("StatusNotImplemented", func(t *testing.T) {
+		err := minio.ErrorResponse{Code: "NotImplemented", StatusCode: http.StatusNotImplemented}
+		assert.True(t, isBatchDeleteUnsupported(err))
+	})
+
+	t.Run("CodeOnlyNotImplemented", func(t *testing.T) {
+		err := minio.ErrorResponse{Code: "NotImplemented"}
+		assert.True(t, isBatchDeleteUnsupported(err))
+	})
+
+	t.Run("Wrapped", func(t *testing.T) {
+		err := errors.Join(fmt.Errorf("storage: s3 delete object a/b/c %w",
+			minio.ErrorResponse{Code: "NotImplemented", StatusCode: http.StatusNotImplemented}))
+		assert.True(t, isBatchDeleteUnsupported(err))
+	})
+
+	t.Run("PerKeyFailureIsNotUnsupported", func(t *testing.T) {
+		// Per-key failures decoded from a 200 response carry a Code but no
+		// StatusCode, so an AccessDenied key must not read as "unsupported".
+		err := minio.ErrorResponse{Code: "AccessDenied"}
+		assert.False(t, isBatchDeleteUnsupported(err))
+	})
+
+	t.Run("PlainError", func(t *testing.T) {
+		assert.False(t, isBatchDeleteUnsupported(assert.AnError))
+	})
 }

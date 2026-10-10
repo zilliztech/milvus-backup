@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"iter"
 	"net/http"
@@ -40,6 +41,7 @@ const (
 )
 
 var _ Client = (*MinioClient)(nil)
+var _ batchDeleter = (*MinioClient)(nil)
 
 func newMinioClient(storeCfg Config) (*MinioClient, error) {
 	opts := minio.Options{Secure: storeCfg.UseSSL, Region: storeCfg.Region}
@@ -86,21 +88,34 @@ func (m *MinioClient) Config() Config {
 	return m.cfg
 }
 
+// minioBacked is the capability CopyObject probes in the copy source: a
+// client served by minio-go, exposing the config a server-side copy needs
+// (source bucket, provider). *MinioClient satisfies it directly; the GCP
+// wrapper re-declares it by hand because embedding the Client interface
+// hides every method outside Client's own set.
+type minioBacked interface {
+	Client
+	minioCfg() Config
+}
+
+func (m *MinioClient) minioCfg() Config { return m.cfg }
+
 func (m *MinioClient) CopyObject(ctx context.Context, i CopyObjectInput) error {
-	srcCli, ok := i.SrcCli.(*MinioClient)
+	srcCli, ok := i.SrcCli.(minioBacked)
 	if !ok {
 		return fmt.Errorf("storage: minio copy object only supports a minio source client")
 	}
+	srcCfg := srcCli.minioCfg()
 
 	// gcp does not support multipart copy
 	threshold := m.multipartCopyThreshold()
-	if i.SrcAttr.Length >= threshold && srcCli.cfg.Provider != cfg.ProviderGCP {
+	if i.SrcAttr.Length >= threshold && srcCfg.Provider != cfg.ProviderGCP {
 		m.logger.Debug("copy object by multipart", zap.String("src_key", i.SrcAttr.Key), zap.String("dest_key", i.DestKey))
-		return m.multiPartCopy(ctx, srcCli, i)
+		return m.multiPartCopy(ctx, srcCfg, i)
 	}
 
 	m.logger.Debug("copy object by single part", zap.String("src_key", i.SrcAttr.Key), zap.String("dest_key", i.DestKey))
-	return m.copyObject(ctx, srcCli, i)
+	return m.copyObject(ctx, srcCfg, i)
 }
 
 func (m *MinioClient) multipartCopyThreshold() int64 {
@@ -110,13 +125,13 @@ func (m *MinioClient) multipartCopyThreshold() int64 {
 	return 500 * _MiB
 }
 
-func (m *MinioClient) copyObject(ctx context.Context, srcCli *MinioClient, i CopyObjectInput) error {
+func (m *MinioClient) copyObject(ctx context.Context, srcCfg Config, i CopyObjectInput) error {
 	dst := minio.CopyDestOptions{Bucket: m.cfg.Bucket, Object: i.DestKey}
-	src := minio.CopySrcOptions{Bucket: srcCli.cfg.Bucket, Object: i.SrcAttr.Key}
+	src := minio.CopySrcOptions{Bucket: srcCfg.Bucket, Object: i.SrcAttr.Key}
 	return retry.Do(ctx, func() error {
 		info, err := m.cli.CopyObject(ctx, dst, src)
 		if err != nil {
-			return fmt.Errorf("storage: %s copy from %s / %s to %s / %s: %w", m.cfg.Provider, srcCli.cfg.Bucket, i.SrcAttr.Key, m.cfg.Bucket, i.DestKey, err)
+			return fmt.Errorf("storage: %s copy from %s / %s to %s / %s: %w", m.cfg.Provider, srcCfg.Bucket, i.SrcAttr.Key, m.cfg.Bucket, i.DestKey, err)
 		}
 
 		// S3 documents that a failed CopyObject can still answer 200 OK with an
@@ -127,7 +142,7 @@ func (m *MinioClient) copyObject(ctx context.Context, srcCli *MinioClient, i Cop
 		if info.ETag == "" {
 			return fmt.Errorf("storage: %s copy from %s / %s to %s / %s got empty etag, "+
 				"the copy likely failed with an embedded error", m.cfg.Provider,
-				srcCli.cfg.Bucket, i.SrcAttr.Key, m.cfg.Bucket, i.DestKey)
+				srcCfg.Bucket, i.SrcAttr.Key, m.cfg.Bucket, i.DestKey)
 		}
 
 		return nil
@@ -144,9 +159,9 @@ type copyPartInput struct {
 	Part part
 }
 
-func newCopyPartInput(srcCli *MinioClient, srcKey, destKey, uploadID string, part part) copyPartInput {
+func newCopyPartInput(srcCfg Config, srcKey, destKey, uploadID string, part part) copyPartInput {
 	return copyPartInput{
-		SrcBucket: srcCli.cfg.Bucket,
+		SrcBucket: srcCfg.Bucket,
 		SrcKey:    srcKey,
 
 		DestKey:  destKey,
@@ -212,7 +227,7 @@ func (a sortableCompletedParts) Len() int           { return len(a) }
 func (a sortableCompletedParts) Swap(i, j int)      { a[i], a[j] = a[j], a[i] }
 func (a sortableCompletedParts) Less(i, j int) bool { return a[i].PartNumber < a[j].PartNumber }
 
-func (m *MinioClient) multiPartCopy(ctx context.Context, srcCli *MinioClient, i CopyObjectInput) error {
+func (m *MinioClient) multiPartCopy(ctx context.Context, srcCfg Config, i CopyObjectInput) error {
 	parts, err := splitIntoParts(i.SrcAttr.Length)
 	if err != nil {
 		return fmt.Errorf("storage: %s split into parts: %w", m.cfg.Provider, err)
@@ -237,7 +252,7 @@ func (m *MinioClient) multiPartCopy(ctx context.Context, srcCli *MinioClient, i 
 	g.SetLimit(_maxCopyPartParallelism)
 	for _, p := range parts {
 		g.Go(func() error {
-			input := newCopyPartInput(srcCli, i.SrcAttr.Key, i.DestKey, uploadID, p)
+			input := newCopyPartInput(srcCfg, i.SrcAttr.Key, i.DestKey, uploadID, p)
 			completePart, err := m.copyPart(subCtx, input)
 			if err != nil {
 				return fmt.Errorf("storage: %s copy part: %w", m.cfg.Provider, err)
@@ -320,6 +335,58 @@ func (m *MinioClient) DeleteObject(ctx context.Context, key string) error {
 
 		return nil
 	})
+}
+
+// S3 DeleteObjects takes at most 1000 keys per request; minio-go chunks to
+// the same ceiling, so one DeleteObjects call is one request.
+const _deleteObjectsBatchSize = 1000
+
+func (m *MinioClient) DeleteObjectsBatchSize() int { return _deleteObjectsBatchSize }
+
+// DeleteObjects deletes a batch of keys with one S3 DeleteObjects request,
+// via minio-go's RemoveObjects. A request-level failure (the whole batch
+// rejected) and per-key failures inside a 200 response both arrive on
+// minio-go's error channel and are joined into the returned error.
+func (m *MinioClient) DeleteObjects(ctx context.Context, keys []string) error {
+	return retry.Do(ctx, func() error {
+		err := m.deleteObjects(ctx, keys)
+		if isBatchDeleteUnsupported(err) {
+			// A gateway without multi-object delete will never learn it, so
+			// skip the retries and tell DeleteWithCallback to degrade to
+			// per-key deletion for the rest of the run.
+			return retry.Unrecoverable(fmt.Errorf("%w: %w", errBatchDeleteUnsupported, err))
+		}
+		return err
+	})
+}
+
+func (m *MinioClient) deleteObjects(ctx context.Context, keys []string) error {
+	// Buffered and closed up front: minio-go's reader goroutine can never
+	// block on a sender that already returned.
+	objectsCh := make(chan minio.ObjectInfo, len(keys))
+	for _, key := range keys {
+		objectsCh <- minio.ObjectInfo{Key: key}
+	}
+	close(objectsCh)
+
+	var errs []error
+	for removeErr := range m.cli.RemoveObjects(ctx, m.cfg.Bucket, objectsCh, minio.RemoveObjectsOptions{}) {
+		errs = append(errs, fmt.Errorf("storage: %s delete object %s: %w", m.cfg.Provider, removeErr.ObjectName, removeErr.Err))
+	}
+
+	return errors.Join(errs...)
+}
+
+// isBatchDeleteUnsupported reports whether err is a NotImplemented rejection
+// of the multi-object delete request itself. Per-key failures decoded from a
+// 200 response carry only a Code and Message, no StatusCode, so they do not
+// trip the StatusCode check.
+func isBatchDeleteUnsupported(err error) bool {
+	var resp minio.ErrorResponse
+	if errors.As(err, &resp) {
+		return resp.StatusCode == http.StatusNotImplemented || resp.Code == "NotImplemented"
+	}
+	return false
 }
 
 // NewObjectIter lists objects in the bucket under prefix. minio-go's

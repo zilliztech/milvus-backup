@@ -16,8 +16,8 @@ func TestDeleteTask_TrackerWritesLandInSnapshot(t *testing.T) {
 
 	tracker.SetRunning()
 	tracker.AddDiscovered(10)
-	tracker.IncDeleted()
-	tracker.IncDeleted()
+	tracker.AddDeleted(1)
+	tracker.AddDeleted(1)
 
 	status, err := store.GetDeleteTask("task-1")
 	require.NoError(t, err)

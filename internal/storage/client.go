@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"io"
 	"iter"
 
@@ -174,4 +175,28 @@ type Client interface {
 	BucketExist(ctx context.Context, prefix string) (bool, error)
 	// CreateBucket create a bucket.
 	CreateBucket(ctx context.Context) error
+}
+
+// errBatchDeleteUnsupported marks a DeleteObjects rejection that retrying
+// cannot fix — the backend answered NotImplemented — so DeleteWithCallback
+// degrades to per-key deletion instead of failing the run.
+var errBatchDeleteUnsupported = errors.New("storage: batch delete unsupported by the backend")
+
+// batchDeleter is an optional Client capability: a multi-object delete that
+// removes a batch of keys in one request, like S3 DeleteObjects.
+// DeleteWithCallback probes for it with a type assertion; clients without it
+// take the per-key fan-out path. Clients embedding the Client interface (the
+// GCP wrapper) do not promote these methods, which is exactly what keeps the
+// probe from selecting a batch API the backend does not have.
+type batchDeleter interface {
+	// DeleteObjects deletes keys in one request. The caller never passes more
+	// than DeleteObjectsBatchSize keys. A request-level rejection the backend
+	// cannot fix by retrying (NotImplemented) must wrap
+	// errBatchDeleteUnsupported so the caller degrades instead of retrying.
+	DeleteObjects(ctx context.Context, keys []string) error
+
+	// DeleteObjectsBatchSize is the maximum number of keys one DeleteObjects
+	// call accepts: 1000 for S3 DeleteObjects. Backends with a different
+	// ceiling (Azure Blob Batch allows 256) report their own.
+	DeleteObjectsBatchSize() int
 }

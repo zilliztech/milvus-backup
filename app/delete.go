@@ -102,7 +102,7 @@ func (j *DeleteJob) run(ctx context.Context) {
 		return nil
 	})
 	g.Go(func() error {
-		return storage.DeleteWithCallback(ctx, j.cli, j.backupDir, j.tracker.IncDeleted)
+		return storage.DeleteWithCallback(ctx, j.cli, j.backupDir, j.tracker.AddDeleted)
 	})
 
 	if err := g.Wait(); err != nil {

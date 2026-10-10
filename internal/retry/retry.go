@@ -67,6 +67,11 @@ type unrecoverableError struct {
 	error
 }
 
+// Unwrap keeps the wrapped error reachable: Do returns the wrapper as-is,
+// and without this a caller's errors.Is on a sentinel inside it (e.g.
+// storage's batch-delete unsupported marker) would see nothing.
+func (e unrecoverableError) Unwrap() error { return e.error }
+
 // Unrecoverable method wrap an error to unrecoverableError. This will make retry
 // quick return.
 func Unrecoverable(err error) error {

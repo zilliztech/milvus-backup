@@ -14,6 +14,7 @@ package retry
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -82,6 +83,19 @@ func TestUnRecoveryError(t *testing.T) {
 		assert.Error(t, err)
 		assert.Equal(t, 1, attempts)
 	})
+}
+
+func TestUnrecoverableUnwrapsSentinel(t *testing.T) {
+	sentinel := errors.New("some error")
+
+	err := Do(context.Background(), func() error {
+		return Unrecoverable(fmt.Errorf("wrapped: %w", sentinel))
+	}, Attempts(3))
+
+	// Do returns the unrecoverable wrapper as-is; errors.Is must still reach
+	// the sentinel inside it, or callers cannot match on what failed.
+	assert.ErrorIs(t, err, sentinel)
+	assert.True(t, IsUnRecoverable(err))
 }
 
 func TestExponentialBackoff(t *testing.T) {
