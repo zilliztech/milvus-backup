@@ -185,7 +185,8 @@ type Task struct {
 	cloudCli  cloud.Client
 	clusterID string
 
-	store *jobstate.Store
+	store   *jobstate.Store
+	tracker *jobstate.MigrateTracker
 
 	backupDir     string
 	backupStorage storage.Client
@@ -231,7 +232,7 @@ func (t *Task) Prepare(ctx context.Context) error {
 		return fmt.Errorf("migrate: read backup meta info %w", err)
 	}
 
-	t.store.AddMigrateTask(t.taskID, backupInfo.GetSize())
+	t.tracker = t.store.AddMigrateTask(t.taskID, backupInfo.GetSize())
 
 	return nil
 }
@@ -253,8 +254,8 @@ func (t *Task) copyToCloud(ctx context.Context) error {
 		DestPrefix: destPrefix,
 		Sem:        t.copySem,
 
-		TraceFn: func(size int64, cost time.Duration) {
-			t.store.UpdateMigrateTask(t.taskID, jobstate.IncMigrateCopiedSize(size, cost))
+		TraceFn: func(size int64, _ time.Duration) {
+			t.tracker.IncCopied(size)
 		},
 
 		Streaming: true,
@@ -300,7 +301,7 @@ func (t *Task) startMigrate(ctx context.Context) error {
 		return fmt.Errorf("migrate: start migrate %w", err)
 	}
 	t.logger.Info("trigger migrate job done", zap.String("job_id", jobID))
-	t.store.UpdateMigrateTask(t.taskID, jobstate.SetMigrateJobID(jobID))
+	t.tracker.SetJobID(jobID)
 
 	return nil
 }
@@ -310,12 +311,12 @@ func (t *Task) Execute(ctx context.Context) error {
 		return fmt.Errorf("migrate: apply volume %w", err)
 	}
 
-	t.store.UpdateMigrateTask(t.taskID, jobstate.SetMigrateCopyStart())
+	t.tracker.SetCopyStart()
 	if err := t.copyToCloud(ctx); err != nil {
-		t.store.UpdateMigrateTask(t.taskID, jobstate.SetMigrateCopyComplete())
+		t.tracker.SetCopyDone()
 		return fmt.Errorf("migrate: copy to cloud %w", err)
 	}
-	t.store.UpdateMigrateTask(t.taskID, jobstate.SetMigrateCopyComplete())
+	t.tracker.SetCopyDone()
 
 	if err := t.startMigrate(ctx); err != nil {
 		return fmt.Errorf("migrate: start migrate %w", err)
