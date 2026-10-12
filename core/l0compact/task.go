@@ -10,6 +10,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/core/tasklet"
 	"github.com/zilliztech/milvus-backup/internal/l0compact"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
@@ -46,6 +47,8 @@ func NewTask(cli storage.Client, srcDir, dstDir string, opts ...Option) *Task {
 	}
 	return t
 }
+
+var _ tasklet.Tasklet = (*Task)(nil)
 
 // Execute reads the source meta, folds every collection's L0 segments into its
 // data-segment deltalogs, drops the L0 segments, and writes the new meta.

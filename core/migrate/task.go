@@ -11,6 +11,7 @@ import (
 	"golang.org/x/oauth2"
 	"golang.org/x/sync/semaphore"
 
+	"github.com/zilliztech/milvus-backup/core/tasklet"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/cloud"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
@@ -294,6 +295,8 @@ func (t *Task) startMigrate(ctx context.Context) error {
 
 	return nil
 }
+
+var _ tasklet.Tasklet = (*Task)(nil)
 
 func (t *Task) Execute(ctx context.Context) error {
 	if err := t.volume.apply(ctx); err != nil {
