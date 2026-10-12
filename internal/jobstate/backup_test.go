@@ -1,75 +1,102 @@
 package jobstate
 
 import (
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/zilliztech/milvus-backup/internal/collref"
 )
 
-func TestBackupCollTask_Progress(t *testing.T) {
-	t.Run("FixedProgress", func(t *testing.T) {
-		task := &backupCollTask{stateCode: _backupCollStatusPending}
-		assert.Equal(t, int32(1), task.Progress())
+func TestBackupTracker(t *testing.T) {
+	t.Run("WritesLandInTheSnapshot", func(t *testing.T) {
+		store := NewStore()
+		tracker, err := store.AddBackupTask("task-1", "backup1")
+		require.NoError(t, err)
 
-		task = &backupCollTask{stateCode: _backupCollStatusDDLExecuting}
-		assert.Equal(t, int32(5), task.Progress())
+		tracker.SetDatabaseExecuting()
+		assert.Equal(t, BackupStateDatabaseExecuting, tracker.Snapshot().State)
 
-		task = &backupCollTask{stateCode: _backupCollStatusDDLDone}
-		assert.Equal(t, int32(10), task.Progress())
+		collRef := collref.New("db1", "coll1")
+		colls := tracker.StartCollectionPhase([]collref.Name{collRef})
+		coll := colls[collRef]
+		coll.SetDMLExecuting(100)
+		coll.AddCopiedSize(40)
 
-		task = &backupCollTask{stateCode: _backupCollStatusDMLPrepare}
-		assert.Equal(t, int32(15), task.Progress())
+		status := tracker.Snapshot()
+		assert.Equal(t, BackupStateCollectionExecuting, status.State)
+		assert.Equal(t, "task-1", status.ID)
+		assert.Equal(t, "backup1", status.Name)
+		assert.False(t, status.StartTime.IsZero())
+		assert.False(t, status.Terminal())
 
-		task = &backupCollTask{stateCode: _backupCollStatusDMLDone}
-		assert.Equal(t, int32(100), task.Progress())
+		collStatus := status.Colls[collRef]
+		assert.Equal(t, BackupCollStateDMLExecuting, collStatus.State)
+		assert.Equal(t, int64(100), collStatus.TotalSize)
+		assert.Equal(t, int64(40), collStatus.CopiedSize)
 
-		task = &backupCollTask{stateCode: _backupCollStatusSuccess}
-		assert.Equal(t, int32(100), task.Progress())
-
-		task = &backupCollTask{stateCode: _backupCollStatusFailed}
-		assert.Equal(t, int32(0), task.Progress())
+		// The store reads back the same state the tracker's snapshot shows.
+		stored, err := store.GetBackupTask("task-1")
+		require.NoError(t, err)
+		assert.Equal(t, status, stored)
 	})
 
-	t.Run("MappedProgress", func(t *testing.T) {
-		task := &backupCollTask{stateCode: _backupCollStatusDMLExecuting, totalSize: 100, backupSize: 0}
-		assert.Equal(t, int32(15), task.Progress())
+	t.Run("SnapshotIsDeadData", func(t *testing.T) {
+		store := NewStore()
+		tracker, err := store.AddBackupTask("task-1", "backup1")
+		require.NoError(t, err)
 
-		task = &backupCollTask{stateCode: _backupCollStatusDMLExecuting, totalSize: 100, backupSize: 50}
-		assert.Equal(t, int32(57), task.Progress())
+		collRef := collref.New("db1", "coll1")
+		colls := tracker.StartCollectionPhase([]collref.Name{collRef})
 
-		task = &backupCollTask{stateCode: _backupCollStatusDMLExecuting, totalSize: 100, backupSize: 100}
-		assert.Equal(t, int32(100), task.Progress())
+		before := tracker.Snapshot()
+		colls[collRef].SetDMLExecuting(100)
+		colls[collRef].AddCopiedSize(40)
 
-		// total size is 0, so we just return 15
-		task = &backupCollTask{stateCode: _backupCollStatusDMLExecuting, totalSize: 0, backupSize: 100}
-		assert.Equal(t, int32(15), task.Progress())
-	})
-}
-
-func TestBackupTask_Progress(t *testing.T) {
-	t.Run("Success", func(t *testing.T) {
-		task := &BackupTask{stateCode: _backupTaskStateSuccess}
-		assert.Equal(t, int32(100), task.Progress())
+		// The snapshot taken before the writes still shows the old state:
+		// readers hold a copy, not a view into the task.
+		assert.Equal(t, BackupCollStatePending, before.Colls[collRef].State)
+		assert.Zero(t, before.Colls[collRef].CopiedSize)
 	})
 
-	t.Run("DatabaseExecuting", func(t *testing.T) {
-		task := &BackupTask{stateCode: _backupTaskSateDatabaseExecuting}
-		assert.Equal(t, int32(5), task.Progress())
+	t.Run("SettleRecordsMessageAndEndTime", func(t *testing.T) {
+		store := NewStore()
+		tracker, err := store.AddBackupTask("task-1", "backup1")
+		require.NoError(t, err)
+
+		tracker.SetFail(errors.New("boom"))
+
+		status := tracker.Snapshot()
+		assert.Equal(t, BackupStateFail, status.State)
+		assert.Equal(t, "boom", status.ErrorMessage)
+		assert.False(t, status.EndTime.IsZero())
+		assert.True(t, status.Terminal())
 	})
 
-	t.Run("CollectionExecuting", func(t *testing.T) {
-		task := &BackupTask{stateCode: _backupTaskStateCollectionExecuting, collTask: map[collref.Name]*backupCollTask{
-			collref.New("db1", "coll1"): {
-				stateCode:  _backupCollStatusDMLExecuting,
-				totalSize:  100,
-				backupSize: 50,
-			},
-			collref.New("db1", "coll2"): {stateCode: _backupCollStatusSuccess},
-		}}
+	t.Run("FailedJobDoesNotBlockRetry", func(t *testing.T) {
+		store := NewStore()
+		tracker, err := store.AddBackupTask("task-1", "backup1")
+		require.NoError(t, err)
+		tracker.SetFail(errors.New("boom"))
 
-		progress := task.Progress()
-		assert.Equal(t, int32(79), progress)
+		_, err = store.AddBackupTask("task-2", "backup1")
+		assert.NoError(t, err)
+	})
+
+	t.Run("SettledCollRecordsEndTime", func(t *testing.T) {
+		store := NewStore()
+		tracker, err := store.AddBackupTask("task-1", "backup1")
+		require.NoError(t, err)
+
+		collRef := collref.New("db1", "coll1")
+		colls := tracker.StartCollectionPhase([]collref.Name{collRef})
+		colls[collRef].SetFail(errors.New("copy boom"))
+
+		coll := tracker.Snapshot().Colls[collRef]
+		assert.Equal(t, BackupCollStateFail, coll.State)
+		assert.Equal(t, "copy boom", coll.ErrorMessage)
+		assert.False(t, coll.EndTime.IsZero())
 	})
 }

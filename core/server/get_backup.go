@@ -25,7 +25,7 @@ type getBackupUC interface {
 // getBackupTaskUC is the job-half counterpart of getBackupUC, the slice of
 // app.GetBackupTask the handler needs.
 type getBackupTaskUC interface {
-	Execute(ctx context.Context, req app.GetBackupTaskRequest) (jobstate.BackupTaskView, error)
+	Execute(ctx context.Context, req app.GetBackupTaskRequest) (jobstate.BackupStatus, error)
 }
 
 // Get backup Get backup interface
@@ -97,19 +97,21 @@ func (s *Server) handleGetBackup(c *echo.Context) error {
 	// name through it; an unknown ID has nothing to fall back to. A name only
 	// probes for a job — most backups outlive their creating process, so a
 	// miss is the common case, not an error.
-	var task jobstate.BackupTaskView
+	var task *jobstate.BackupStatus
 	if id != "" {
-		task, err = taskUC.Execute(ctx, app.GetBackupTaskRequest{ID: id})
+		status, err := taskUC.Execute(ctx, app.GetBackupTaskRequest{ID: id})
 		if err != nil {
 			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = err.Error()
 			return writeResponse(c, "get backup fail", resp)
 		}
-		name = task.Name()
+		task = &status
+		name = status.Name
 	} else {
-		task, err = taskUC.Execute(ctx, app.GetBackupTaskRequest{Name: name})
+		status, err := taskUC.Execute(ctx, app.GetBackupTaskRequest{Name: name})
 		switch {
 		case err == nil:
+			task = &status
 		case errors.Is(err, jobstate.ErrTaskNotFound):
 			task = nil
 		default:
@@ -139,7 +141,7 @@ func (s *Server) handleGetBackup(c *echo.Context) error {
 	switch {
 	case metaInfo != nil:
 		// The artifact is the answer; the job, when known, overlays progress.
-	case task != nil && task.StateCode() == backuppb.BackupTaskStateCode_BACKUP_SUCCESS:
+	case task != nil && task.State == jobstate.BackupStateSuccess:
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = "server: backup task " + name + " reports success but its meta is missing"
 		return writeResponse(c, "get backup fail", resp)

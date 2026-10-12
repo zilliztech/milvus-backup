@@ -765,6 +765,7 @@ paths:
       description: |-
         Create a backup with the given name and collections
         Storage preflight failures return HTTP 200 with code 503 (Storage_Not_Ready), without registering a task. The caller may retry the same request.
+        A backup name whose artifact directory already exists fails with code Fail, also without registering a task.
       parameters:
       - description: request_id
         in: header

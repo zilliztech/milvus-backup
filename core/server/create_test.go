@@ -19,20 +19,25 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/filter"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
-// stubBackupJob stands in for *app.BackupJob: a canned Run error, and a ran
-// channel so async tests can wait for the handler's goroutine.
+// stubBackupJob stands in for *app.BackupJob: a canned settlement status, and
+// a ran channel so async tests can observe the release. A stub without a
+// status settles Initial, which the sync handler does not read as failure.
 type stubBackupJob struct {
-	runErr error
+	status jobstate.BackupStatus
 	ran    chan struct{}
 }
 
-func (j stubBackupJob) Run(context.Context) error {
+func (j stubBackupJob) Run(context.Context) {
 	if j.ran != nil {
 		close(j.ran)
 	}
-	return j.runErr
+}
+
+func (j stubBackupJob) Wait(context.Context) (jobstate.BackupStatus, error) {
+	return j.status, nil
 }
 
 // stubCreateFactory stands in for the job factory: the params and request it
@@ -51,7 +56,7 @@ type stubCreateFactory struct {
 // happens before any job runs.
 func withCreateBackup(stub *stubCreateFactory) Option {
 	return func(c *config) {
-		c.newBackupJob = func(_ context.Context, params *cfg.Config, req app.CreateBackupRequest) (backupJob, error) {
+		c.newBackupJob = func(_ context.Context, params *cfg.Config, req app.CreateBackupRequest) (app.AsyncJob[jobstate.BackupStatus], error) {
 			stub.params = params
 			stub.req = req
 			stub.calls++
@@ -149,8 +154,11 @@ func TestHandleCreateBackup(t *testing.T) {
 		assert.Zero(t, stub.calls)
 	})
 
-	t.Run("SyncMapsRunErrorToFail", func(t *testing.T) {
-		stub := &stubCreateFactory{job: stubBackupJob{runErr: errors.New("bucket unavailable")}}
+	t.Run("SyncMapsFailStateToFail", func(t *testing.T) {
+		stub := &stubCreateFactory{job: stubBackupJob{status: jobstate.BackupStatus{
+			State:        jobstate.BackupStateFail,
+			ErrorMessage: "bucket unavailable",
+		}}}
 		s := newListTestServer(t, withCreateBackup(stub))
 
 		resp := postBackup(t, s, `{"backup_name":"backup1"}`, "rid-1")

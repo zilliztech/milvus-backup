@@ -14,9 +14,8 @@ import (
 // has its name in core/tasklet; this file deliberately mints no second word
 // for the same shape.
 //
-// Jobs that still run synchronously (BackupJob, RestoreJob,
-// RestoreSecondaryJob) migrate to AsyncJob as their release-into-background
-// form lands.
+// Jobs that still run synchronously (RestoreJob, RestoreSecondaryJob)
+// migrate to AsyncJob as their release-into-background form lands.
 type AsyncJob[Status any] interface {
 	// Run releases the job into the background and answers nothing: once
 	// released there is nobody on the call path left to act on an error, so
@@ -39,3 +38,4 @@ type AsyncJob[Status any] interface {
 
 var _ AsyncJob[jobstate.DeleteStatus] = (*DeleteJob)(nil)
 var _ AsyncJob[jobstate.MigrateStatus] = (*MigrateJob)(nil)
+var _ AsyncJob[jobstate.BackupStatus] = (*BackupJob)(nil)

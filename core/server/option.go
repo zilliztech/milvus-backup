@@ -77,7 +77,7 @@ func newDefaultConfig() *config {
 		newGetBackupTask: func() (getBackupTaskUC, error) {
 			return app.NewGetBackupTask(jobstate.Default()), nil
 		},
-		newBackupJob: func(ctx context.Context, params *cfg.Config, req app.CreateBackupRequest) (backupJob, error) {
+		newBackupJob: func(ctx context.Context, params *cfg.Config, req app.CreateBackupRequest) (app.AsyncJob[jobstate.BackupStatus], error) {
 			return app.NewBackupJob(ctx, params, jobstate.Default(), req)
 		},
 		newRestoreJob: func(ctx context.Context, params *cfg.Config, req app.RestoreRequest) (restoreJob, error) {

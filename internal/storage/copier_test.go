@@ -5,7 +5,6 @@ import (
 	"context"
 	"io"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -14,9 +13,8 @@ import (
 
 func TestTrackReader_Read(t *testing.T) {
 	t.Run("ReadGTZero", func(t *testing.T) {
-		tr := newTrackReader(bytes.NewReader([]byte("hello")), func(size int64, cost time.Duration) {
+		tr := newTrackReader(bytes.NewReader([]byte("hello")), func(size int64) {
 			assert.Equal(t, int64(5), size)
-			assert.True(t, cost > 0)
 		})
 
 		buf := make([]byte, 10)
@@ -26,7 +24,7 @@ func TestTrackReader_Read(t *testing.T) {
 	})
 
 	t.Run("ReadZero", func(t *testing.T) {
-		tr := newTrackReader(bytes.NewReader([]byte("hello")), func(size int64, cost time.Duration) {
+		tr := newTrackReader(bytes.NewReader([]byte("hello")), func(size int64) {
 			assert.Fail(t, "should not be called")
 		})
 
@@ -88,7 +86,7 @@ func TestDirectCopier_Copy(t *testing.T) {
 
 		var traced bool
 		rp := &directCopier{src: src, dest: dest, logger: zap.NewNop(), opt: copierOpt{
-			traceFn: func(size int64, cost time.Duration) {
+			traceFn: func(size int64) {
 				traced = true
 				assert.Equal(t, int64(5), size)
 			},
@@ -109,7 +107,7 @@ func TestDirectCopier_Copy(t *testing.T) {
 
 		var traced bool
 		rp := &directCopier{src: src, dest: dest, logger: zap.NewNop(), opt: copierOpt{
-			traceFn: func(size int64, cost time.Duration) {
+			traceFn: func(size int64) {
 				traced = true
 			},
 		}}

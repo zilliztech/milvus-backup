@@ -40,7 +40,10 @@ type TaskArgs struct {
 
 	Params *cfg.Config
 
-	Store *jobstate.Store
+	// Tracker is the job's handle on its own state in the job store. The job
+	// minted it at registration and hands it down; nothing in the tree goes
+	// through the store map again.
+	Tracker *jobstate.BackupTracker
 }
 
 type Option struct {
@@ -90,7 +93,7 @@ type Task struct {
 
 	gcCtrl gcCtrl
 
-	store *jobstate.Store
+	tracker *jobstate.BackupTracker
 
 	rpcChannelName string
 
@@ -113,7 +116,10 @@ func newGCCtrl(taskID string, pauseGC bool, grpc milvus.Grpc, manage milvus.Mana
 	return newClusterGCCtrl(taskID, manage)
 }
 
-func NewTask(args TaskArgs) (*Task, error) {
+// NewTask builds the backup run. Registration is not part of it: the job
+// registers at admission and hands the tracker in, so a task object that was
+// never registered cannot exist.
+func NewTask(args TaskArgs) *Task {
 	logger := log.L().With(zap.String("task_id", args.TaskID))
 
 	streaming := storage.UseStreaming(args.Params.Transfer.Mode.Val,
@@ -123,10 +129,6 @@ func NewTask(args TaskArgs) (*Task, error) {
 		zap.Bool("streaming", streaming))
 
 	mb := newMetaBuilder(args.TaskID, args.Option.BackupName)
-	err := args.Store.AddBackupTask(args.TaskID, args.Option.BackupName)
-	if err != nil {
-		return nil, fmt.Errorf("backup: add backup task to manager: %w", err)
-	}
 
 	throttling := concurrencyThrottling{
 		CollSem: semaphore.NewWeighted(int64(args.Params.Backup.Concurrency.Collections.Val)),
@@ -157,10 +159,10 @@ func NewTask(args TaskArgs) (*Task, error) {
 
 		metaBuilder: mb,
 
-		store: args.Store,
+		tracker: args.Tracker,
 
 		rpcChannelName: args.Params.Milvus.Replicate.RPCChannelName.Val,
-	}, nil
+	}
 }
 
 func (t *Task) initClients(ctx context.Context) error {
@@ -223,28 +225,16 @@ func (t *Task) closeClients() {
 
 var _ tasklet.Tasklet = (*Task)(nil)
 
-func (t *Task) Execute(ctx context.Context) (err error) {
+// Execute runs the backup. The outcome is only the answer: recording it as
+// the job's terminal state is the job's business, not the task's.
+func (t *Task) Execute(ctx context.Context) error {
 	defer t.closeClients()
-	defer func() {
-		if err != nil {
-			t.store.UpdateBackupTask(t.taskID, jobstate.SetBackupFail(err))
-		}
-	}()
 
-	if err = t.initClients(ctx); err != nil {
+	if err := t.initClients(ctx); err != nil {
 		return err
 	}
 
-	if err = t.prepare(ctx); err != nil {
-		return err
-	}
-
-	if err = t.privateExecute(ctx); err != nil {
-		return err
-	}
-
-	t.store.UpdateBackupTask(t.taskID, jobstate.SetBackupSuccess())
-	return nil
+	return t.privateExecute(ctx)
 }
 
 func (t *Task) privateExecute(ctx context.Context) error {
@@ -360,7 +350,7 @@ func (t *Task) resolveFormat() (string, error) {
 // plans go through this factory, so one flush orchestration runs whichever
 // artifact the format asks for.
 func (t *Task) newDataTask(format string) dataTaskFactory {
-	return func(collRef collref.Name, args collTaskArgs) tasklet.Tasklet {
+	return func(collRef collref.Name, tracker *jobstate.BackupCollTracker, args collTaskArgs) tasklet.Tasklet {
 		if format == meta.FormatSnapshot {
 			// The plan's flush is what makes the boundary fresh: a snapshot admits only
 			// the segments below its channel seek positions, so without one it would
@@ -371,10 +361,10 @@ func (t *Task) newDataTask(format string) dataTaskFactory {
 			// semaphore bounds how many exports are in flight: a job starts its timeout
 			// when DataCoord accepts it, so anything queued beyond what
 			// dataCoord.snapshot.exportMaxConcurrentJobs can run burns that budget.
-			return newCollSnapshotTask(collRef, t.snapshotName(), t.snapshotTarget, args)
+			return newCollSnapshotTask(collRef, tracker, t.snapshotName(), t.snapshotTarget, args)
 		}
 
-		return newCollDMLTask(collRef, args)
+		return newCollDMLTask(collRef, tracker, args)
 	}
 }
 
@@ -382,18 +372,6 @@ func (t *Task) newDataTask(format string) dataTaskFactory {
 // names allow a leading digit and snapshot names do not, hence the prefix; the backup
 // name itself is already restricted to letters, digits and underscores.
 func (t *Task) snapshotName() string { return "mbk_" + t.option.BackupName }
-
-func (t *Task) prepare(ctx context.Context) error {
-	exist, err := storage.Exist(ctx, t.backupStorage, t.backupDir)
-	if err != nil {
-		return fmt.Errorf("backup: check whether exist backup with name: %s", t.option.BackupName)
-	}
-	if exist {
-		return fmt.Errorf("backup: backup with name %s already exist", t.option.BackupName)
-	}
-
-	return nil
-}
 
 func (t *Task) listDBAndNames(ctx context.Context) ([]string, []collref.Name, error) {
 	f := t.option.Filter
@@ -521,7 +499,7 @@ func nameStrings(collRefs []collref.Name) []string {
 
 func (t *Task) backupDatabase(ctx context.Context, dbNames []string) error {
 	t.logger.Info("start backup databases", zap.Int("count", len(dbNames)))
-	t.store.UpdateBackupTask(t.taskID, jobstate.SetBackupDatabaseExecuting())
+	t.tracker.SetDatabaseExecuting()
 
 	for _, dbName := range dbNames {
 		dbTask := newDatabaseTask(t.taskID, dbName, t.grpc, t.manage, t.metaBuilder)
@@ -545,7 +523,6 @@ func (t *Task) newCollTaskArgs() collTaskArgs {
 		BackupDir:      t.backupDir,
 		Throttling:     t.throttling,
 		MetaBuilder:    t.metaBuilder,
-		Store:          t.store,
 		Grpc:           t.grpc,
 		Restful:        t.restful,
 		gcCtrl:         t.gcCtrl,
@@ -555,10 +532,9 @@ func (t *Task) newCollTaskArgs() collTaskArgs {
 func (t *Task) backupCollection(ctx context.Context, collRefs []collref.Name) error {
 	t.logger.Info("start backup collections", zap.Int("count", len(collRefs)))
 
-	t.store.UpdateBackupTask(t.taskID, jobstate.AddBackupCollTasks(collRefs))
-	t.store.UpdateBackupTask(t.taskID, jobstate.SetBackupCollectionExecuting())
+	collTrackers := t.tracker.StartCollectionPhase(collRefs)
 
-	plan, err := t.selectPlan(collRefs, t.option.Strategy, t.resolvedFormat)
+	plan, err := t.selectPlan(collRefs, collTrackers, t.option.Strategy, t.resolvedFormat)
 	if err != nil {
 		return fmt.Errorf("backup: select plan: %w", err)
 	}
@@ -575,7 +551,7 @@ func (t *Task) backupCollection(ctx context.Context, collRefs []collref.Name) er
 // picks the flush orchestration, the format picks what artifact its data step
 // produces. The plans themselves know nothing about the format — they receive
 // the factory that does.
-func (t *Task) selectPlan(collRefs []collref.Name, strategy Strategy, format string) (tasklet.Tasklet, error) {
+func (t *Task) selectPlan(collRefs []collref.Name, collTrackers map[collref.Name]*jobstate.BackupCollTracker, strategy Strategy, format string) (tasklet.Tasklet, error) {
 	args := t.newCollTaskArgs()
 	newData := t.newDataTask(format)
 
@@ -583,22 +559,22 @@ func (t *Task) selectPlan(collRefs []collref.Name, strategy Strategy, format str
 	case StrategyAuto:
 		if t.grpc.HasFeature(milvus.FlushAll) {
 			t.logger.Info("use bulk flush plan")
-			return newBulkFlushPlan(collRefs, args, newData), nil
+			return newBulkFlushPlan(collRefs, collTrackers, args, newData), nil
 		}
 		t.logger.Info("use serial flush plan")
-		return newSerialFlushPlan(collRefs, args, newData), nil
+		return newSerialFlushPlan(collRefs, collTrackers, args, newData), nil
 	case StrategyMetaOnly:
 		t.logger.Info("use meta only plan")
-		return newMetaOnlyPlan(collRefs, args), nil
+		return newMetaOnlyPlan(collRefs, collTrackers, args), nil
 	case StrategySkipFlush:
 		t.logger.Info("use skip flush plan")
-		return newSkipFlushPlan(collRefs, args, newData), nil
+		return newSkipFlushPlan(collRefs, collTrackers, args, newData), nil
 	case StrategyBulkFlush:
 		t.logger.Info("use bulk flush plan")
-		return newBulkFlushPlan(collRefs, args, newData), nil
+		return newBulkFlushPlan(collRefs, collTrackers, args, newData), nil
 	case StrategySerialFlush:
 		t.logger.Info("use serial flush plan")
-		return newSerialFlushPlan(collRefs, args, newData), nil
+		return newSerialFlushPlan(collRefs, collTrackers, args, newData), nil
 	default:
 		return nil, fmt.Errorf("backup: unsupported strategy: %s", strategy)
 	}

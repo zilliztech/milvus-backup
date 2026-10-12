@@ -147,3 +147,60 @@ func TestBase64DecodeMsgPosition(t *testing.T) {
 	assert.Equal(t, position.Timestamp, decodePos.Timestamp)
 	assert.Equal(t, position.MsgGroup, decodePos.MsgGroup)
 }
+
+// The progress mapping is the v1 wire's historical contract; these cases pin
+// the numbers the old view interface used to compute.
+func TestBackupStateToPB(t *testing.T) {
+	assert.Equal(t, backuppb.BackupTaskStateCode_BACKUP_INITIAL, backupStateToPB(jobstate.BackupStateInitial))
+	assert.Equal(t, backuppb.BackupTaskStateCode_BACKUP_EXECUTING, backupStateToPB(jobstate.BackupStateDatabaseExecuting))
+	assert.Equal(t, backuppb.BackupTaskStateCode_BACKUP_EXECUTING, backupStateToPB(jobstate.BackupStateCollectionExecuting))
+	assert.Equal(t, backuppb.BackupTaskStateCode_BACKUP_SUCCESS, backupStateToPB(jobstate.BackupStateSuccess))
+	assert.Equal(t, backuppb.BackupTaskStateCode_BACKUP_FAIL, backupStateToPB(jobstate.BackupStateFail))
+}
+
+func TestBackupCollProgress(t *testing.T) {
+	t.Run("FixedProgress", func(t *testing.T) {
+		assert.Equal(t, int32(1), backupCollProgress(jobstate.BackupCollStatus{State: jobstate.BackupCollStatePending}))
+		assert.Equal(t, int32(5), backupCollProgress(jobstate.BackupCollStatus{State: jobstate.BackupCollStateDDLExecuting}))
+		assert.Equal(t, int32(10), backupCollProgress(jobstate.BackupCollStatus{State: jobstate.BackupCollStateDDLDone}))
+		assert.Equal(t, int32(15), backupCollProgress(jobstate.BackupCollStatus{State: jobstate.BackupCollStateDMLPrepare}))
+		assert.Equal(t, int32(100), backupCollProgress(jobstate.BackupCollStatus{State: jobstate.BackupCollStateDMLDone}))
+		assert.Equal(t, int32(100), backupCollProgress(jobstate.BackupCollStatus{State: jobstate.BackupCollStateSuccess}))
+		assert.Equal(t, int32(0), backupCollProgress(jobstate.BackupCollStatus{State: jobstate.BackupCollStateFail}))
+	})
+
+	t.Run("MappedProgress", func(t *testing.T) {
+		assert.Equal(t, int32(15), backupCollProgress(jobstate.BackupCollStatus{
+			State: jobstate.BackupCollStateDMLExecuting, TotalSize: 100, CopiedSize: 0}))
+		assert.Equal(t, int32(57), backupCollProgress(jobstate.BackupCollStatus{
+			State: jobstate.BackupCollStateDMLExecuting, TotalSize: 100, CopiedSize: 50}))
+		assert.Equal(t, int32(100), backupCollProgress(jobstate.BackupCollStatus{
+			State: jobstate.BackupCollStateDMLExecuting, TotalSize: 100, CopiedSize: 100}))
+		// total size is 0, so we just return 15
+		assert.Equal(t, int32(15), backupCollProgress(jobstate.BackupCollStatus{
+			State: jobstate.BackupCollStateDMLExecuting, TotalSize: 0, CopiedSize: 100}))
+	})
+}
+
+func TestBackupProgress(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		assert.Equal(t, int32(100), backupProgress(&jobstate.BackupStatus{State: jobstate.BackupStateSuccess}))
+	})
+
+	t.Run("DatabaseExecuting", func(t *testing.T) {
+		assert.Equal(t, int32(5), backupProgress(&jobstate.BackupStatus{State: jobstate.BackupStateDatabaseExecuting}))
+	})
+
+	t.Run("CollectionExecuting", func(t *testing.T) {
+		status := &jobstate.BackupStatus{
+			State: jobstate.BackupStateCollectionExecuting,
+			Colls: map[collref.Name]jobstate.BackupCollStatus{
+				collref.New("db1", "coll1"): {
+					State: jobstate.BackupCollStateDMLExecuting, TotalSize: 100, CopiedSize: 50},
+				collref.New("db1", "coll2"): {State: jobstate.BackupCollStateSuccess},
+			},
+		}
+
+		assert.Equal(t, int32(79), backupProgress(status))
+	})
+}

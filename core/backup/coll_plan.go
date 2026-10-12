@@ -73,8 +73,6 @@ type collTaskArgs struct {
 
 	MetaBuilder *metaBuilder
 
-	Store *jobstate.Store
-
 	Grpc    milvus.Grpc
 	Restful milvus.Restful
 
@@ -84,7 +82,7 @@ type collTaskArgs struct {
 // dataTaskFactory builds the per-collection data task for the resolved format.
 // The plans call it instead of constructing a DML task themselves, so one flush
 // orchestration runs whichever artifact the format calls for.
-type dataTaskFactory func(collRef collref.Name, args collTaskArgs) tasklet.Tasklet
+type dataTaskFactory func(collRef collref.Name, tracker *jobstate.BackupCollTracker, args collTaskArgs) tasklet.Tasklet
 
 type collTask func(ctx context.Context) error
 
@@ -113,12 +111,13 @@ func concurrentExecCollTask(ctx context.Context, collSem *semaphore.Weighted, ta
 	return nil
 }
 
-func newDDLTasks(collRefs []collref.Name, args collTaskArgs) []collTask {
+func newDDLTasks(collRefs []collref.Name, collTrackers map[collref.Name]*jobstate.BackupCollTracker, args collTaskArgs) []collTask {
 	ddlTasks := make([]collTask, 0, len(collRefs))
 	for _, collRef := range collRefs {
+		tracker := collTrackers[collRef]
 		task := func(ctx context.Context) error {
-			if err := newCollDDLTask(collRef, args).Execute(ctx); err != nil {
-				args.Store.UpdateBackupTask(args.TaskID, jobstate.SetBackupCollFail(collRef, err))
+			if err := newCollDDLTask(collRef, tracker, args).Execute(ctx); err != nil {
+				tracker.SetFail(err)
 				return fmt.Errorf("backup: execute ddl task %w", err)
 			}
 
@@ -130,16 +129,17 @@ func newDDLTasks(collRefs []collref.Name, args collTaskArgs) []collTask {
 	return ddlTasks
 }
 
-func newDMLTasks(collRefs []collref.Name, args collTaskArgs, newData dataTaskFactory) []collTask {
+func newDMLTasks(collRefs []collref.Name, collTrackers map[collref.Name]*jobstate.BackupCollTracker, args collTaskArgs, newData dataTaskFactory) []collTask {
 	dmlTasks := make([]collTask, 0, len(collRefs))
 	for _, collRef := range collRefs {
+		tracker := collTrackers[collRef]
 		task := func(ctx context.Context) error {
-			if err := newData(collRef, args).Execute(ctx); err != nil {
-				args.Store.UpdateBackupTask(args.TaskID, jobstate.SetBackupCollFail(collRef, err))
+			if err := newData(collRef, tracker, args).Execute(ctx); err != nil {
+				tracker.SetFail(err)
 				return fmt.Errorf("backup: execute data task %w", err)
 			}
 
-			args.Store.UpdateBackupTask(args.TaskID, jobstate.SetBackupCollSuccess(collRef))
+			tracker.SetSuccess()
 
 			return nil
 		}
@@ -150,17 +150,18 @@ func newDMLTasks(collRefs []collref.Name, args collTaskArgs, newData dataTaskFac
 }
 
 type metaOnlyPlan struct {
-	collRefs []collref.Name
+	collRefs     []collref.Name
+	collTrackers map[collref.Name]*jobstate.BackupCollTracker
 
 	args collTaskArgs
 }
 
-func newMetaOnlyPlan(collRefs []collref.Name, args collTaskArgs) *metaOnlyPlan {
-	return &metaOnlyPlan{collRefs: collRefs, args: args}
+func newMetaOnlyPlan(collRefs []collref.Name, collTrackers map[collref.Name]*jobstate.BackupCollTracker, args collTaskArgs) *metaOnlyPlan {
+	return &metaOnlyPlan{collRefs: collRefs, collTrackers: collTrackers, args: args}
 }
 
 func (m *metaOnlyPlan) Execute(ctx context.Context) error {
-	ddlTasks := newDDLTasks(m.collRefs, m.args)
+	ddlTasks := newDDLTasks(m.collRefs, m.collTrackers, m.args)
 	if err := concurrentExecCollTask(ctx, m.args.Throttling.CollSem, ddlTasks); err != nil {
 		return fmt.Errorf("backup: concurrent execute ddl task %w", err)
 	}
@@ -169,7 +170,8 @@ func (m *metaOnlyPlan) Execute(ctx context.Context) error {
 }
 
 type skipFlushPlan struct {
-	collRefs []collref.Name
+	collRefs     []collref.Name
+	collTrackers map[collref.Name]*jobstate.BackupCollTracker
 
 	args collTaskArgs
 
@@ -178,12 +180,13 @@ type skipFlushPlan struct {
 	logger *zap.Logger
 }
 
-func newSkipFlushPlan(collRefs []collref.Name, args collTaskArgs, newData dataTaskFactory) *skipFlushPlan {
+func newSkipFlushPlan(collRefs []collref.Name, collTrackers map[collref.Name]*jobstate.BackupCollTracker, args collTaskArgs, newData dataTaskFactory) *skipFlushPlan {
 	return &skipFlushPlan{
-		collRefs: collRefs,
-		args:     args,
-		newData:  newData,
-		logger:   log.With(zap.String("task_id", args.TaskID)),
+		collRefs:     collRefs,
+		collTrackers: collTrackers,
+		args:         args,
+		newData:      newData,
+		logger:       log.With(zap.String("task_id", args.TaskID)),
 	}
 }
 
@@ -191,13 +194,13 @@ func (sf *skipFlushPlan) Execute(ctx context.Context) error {
 	sf.logger.Info("use skip flush plan")
 
 	// backup DDL
-	ddlTasks := newDDLTasks(sf.collRefs, sf.args)
+	ddlTasks := newDDLTasks(sf.collRefs, sf.collTrackers, sf.args)
 	if err := concurrentExecCollTask(ctx, sf.args.Throttling.CollSem, ddlTasks); err != nil {
 		return fmt.Errorf("backup: execute ddl task %w", err)
 	}
 
 	// backup DML
-	dmlTasks := newDMLTasks(sf.collRefs, sf.args, sf.newData)
+	dmlTasks := newDMLTasks(sf.collRefs, sf.collTrackers, sf.args, sf.newData)
 	if err := concurrentExecCollTask(ctx, sf.args.Throttling.CollSem, dmlTasks); err != nil {
 		return fmt.Errorf("backup: execute dml task %w", err)
 	}
@@ -206,7 +209,8 @@ func (sf *skipFlushPlan) Execute(ctx context.Context) error {
 }
 
 type serialFlushPlan struct {
-	collRefs []collref.Name
+	collRefs     []collref.Name
+	collTrackers map[collref.Name]*jobstate.BackupCollTracker
 
 	args collTaskArgs
 
@@ -215,12 +219,13 @@ type serialFlushPlan struct {
 	logger *zap.Logger
 }
 
-func newSerialFlushPlan(collRefs []collref.Name, args collTaskArgs, newData dataTaskFactory) *serialFlushPlan {
+func newSerialFlushPlan(collRefs []collref.Name, collTrackers map[collref.Name]*jobstate.BackupCollTracker, args collTaskArgs, newData dataTaskFactory) *serialFlushPlan {
 	return &serialFlushPlan{
-		collRefs: collRefs,
-		args:     args,
-		newData:  newData,
-		logger:   log.With(zap.String("task_id", args.TaskID)),
+		collRefs:     collRefs,
+		collTrackers: collTrackers,
+		args:         args,
+		newData:      newData,
+		logger:       log.With(zap.String("task_id", args.TaskID)),
 	}
 }
 
@@ -252,7 +257,7 @@ func (sf *serialFlushPlan) flushAndBackupPOS(ctx context.Context, collRef collre
 }
 
 func (sf *serialFlushPlan) executeDDLTask(ctx context.Context) error {
-	ddlTasks := newDDLTasks(sf.collRefs, sf.args)
+	ddlTasks := newDDLTasks(sf.collRefs, sf.collTrackers, sf.args)
 
 	if err := concurrentExecCollTask(ctx, sf.args.Throttling.CollSem, ddlTasks); err != nil {
 		return fmt.Errorf("backup: concurrent execute ddl task %w", err)
@@ -264,18 +269,19 @@ func (sf *serialFlushPlan) executeDDLTask(ctx context.Context) error {
 func (sf *serialFlushPlan) executeDMLTask(ctx context.Context) error {
 	dmlTasks := make([]collTask, 0, len(sf.collRefs))
 	for _, collRef := range sf.collRefs {
+		tracker := sf.collTrackers[collRef]
 		task := func(ctx context.Context) error {
 			if err := sf.flushAndBackupPOS(ctx, collRef); err != nil {
-				sf.args.Store.UpdateBackupTask(sf.args.TaskID, jobstate.SetBackupCollFail(collRef, err))
+				tracker.SetFail(err)
 				return fmt.Errorf("backup: flush and backup pos %w", err)
 			}
 
-			if err := sf.newData(collRef, sf.args).Execute(ctx); err != nil {
-				sf.args.Store.UpdateBackupTask(sf.args.TaskID, jobstate.SetBackupCollFail(collRef, err))
+			if err := sf.newData(collRef, tracker, sf.args).Execute(ctx); err != nil {
+				tracker.SetFail(err)
 				return fmt.Errorf("backup: execute data task %w", err)
 			}
 
-			sf.args.Store.UpdateBackupTask(sf.args.TaskID, jobstate.SetBackupCollSuccess(collRef))
+			tracker.SetSuccess()
 			return nil
 		}
 
@@ -302,7 +308,8 @@ func (sf *serialFlushPlan) Execute(ctx context.Context) error {
 }
 
 type bulkFlushPlan struct {
-	collRefs []collref.Name
+	collRefs     []collref.Name
+	collTrackers map[collref.Name]*jobstate.BackupCollTracker
 
 	args collTaskArgs
 
@@ -311,12 +318,12 @@ type bulkFlushPlan struct {
 	logger *zap.Logger
 }
 
-func newBulkFlushPlan(collRefs []collref.Name, args collTaskArgs, newData dataTaskFactory) *bulkFlushPlan {
-	return &bulkFlushPlan{collRefs: collRefs, args: args, newData: newData, logger: log.With(zap.String("task_id", args.TaskID))}
+func newBulkFlushPlan(collRefs []collref.Name, collTrackers map[collref.Name]*jobstate.BackupCollTracker, args collTaskArgs, newData dataTaskFactory) *bulkFlushPlan {
+	return &bulkFlushPlan{collRefs: collRefs, collTrackers: collTrackers, args: args, newData: newData, logger: log.With(zap.String("task_id", args.TaskID))}
 }
 
 func (bf *bulkFlushPlan) Execute(ctx context.Context) error {
-	ddlTasks := newDDLTasks(bf.collRefs, bf.args)
+	ddlTasks := newDDLTasks(bf.collRefs, bf.collTrackers, bf.args)
 	if err := concurrentExecCollTask(ctx, bf.args.Throttling.CollSem, ddlTasks); err != nil {
 		return fmt.Errorf("backup: execute ddl task %w", err)
 	}
@@ -325,7 +332,7 @@ func (bf *bulkFlushPlan) Execute(ctx context.Context) error {
 		return fmt.Errorf("backup: flush all and backup ts %w", err)
 	}
 
-	dmlTasks := newDMLTasks(bf.collRefs, bf.args, bf.newData)
+	dmlTasks := newDMLTasks(bf.collRefs, bf.collTrackers, bf.args, bf.newData)
 	if err := concurrentExecCollTask(ctx, bf.args.Throttling.CollSem, dmlTasks); err != nil {
 		return fmt.Errorf("backup: execute dml task %w", err)
 	}

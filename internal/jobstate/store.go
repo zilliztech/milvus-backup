@@ -4,8 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"sync"
-
-	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 )
 
 var ErrTaskNotFound = errors.New("task not found")
@@ -16,7 +14,7 @@ func NewStore() *Store {
 	return &Store{
 		restoreTask:        make(map[string]*RestoreTask),
 		migrateTask:        make(map[string]*migrateTask),
-		backupTask:         make(map[string]*BackupTask),
+		backupTask:         make(map[string]*backupTask),
 		backupNameBackupID: make(map[string]string),
 		deleteTask:         make(map[string]*deleteTask),
 		deleteNameDeleteID: make(map[string]string),
@@ -32,8 +30,8 @@ type Store struct {
 	// migrateID -> migrateTask
 	migrateTask map[string]*migrateTask
 
-	// backupID -> BackupTask
-	backupTask map[string]*BackupTask
+	// backupID -> backupTask
+	backupTask map[string]*backupTask
 	// backupName -> backupID
 	backupNameBackupID map[string]string
 
@@ -72,71 +70,55 @@ func (m *Store) GetRestoreTask(taskID string) (RestoreTaskView, error) {
 	return task, nil
 }
 
-func (m *Store) AddBackupTask(taskID, backupName string) error {
+// AddBackupTask registers one backup job and returns its tracker. A backup
+// name with a live job is refused, so two jobs cannot write one artifact
+// directory concurrently; a failed job does not block a retry. A succeeded
+// one does: the name is taken by its artifact for as long as this process
+// remembers it.
+func (m *Store) AddBackupTask(taskID, backupName string) (*BackupTracker, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	existID, ok := m.backupNameBackupID[backupName]
-	if !ok {
-		m.backupTask[taskID] = newBackupTask(taskID, backupName)
-		m.backupNameBackupID[backupName] = taskID
-		return nil
+	if existID, ok := m.backupNameBackupID[backupName]; ok {
+		if exist := m.backupTask[existID]; exist != nil && exist.snapshot().State != BackupStateFail {
+			return nil, fmt.Errorf("%s (existing task %s)", backupName, existID)
+		}
 	}
 
-	task := m.backupTask[existID]
-	if task == nil {
-		m.backupTask[taskID] = newBackupTask(taskID, backupName)
-		m.backupNameBackupID[backupName] = taskID
-		return nil
-	}
-
-	switch task.StateCode() {
-	case backuppb.BackupTaskStateCode_BACKUP_FAIL,
-		backuppb.BackupTaskStateCode_BACKUP_TIMEOUT:
-	default:
-		return fmt.Errorf("%s (existing task %s)", backupName, existID)
-	}
-
-	m.backupTask[taskID] = newBackupTask(taskID, backupName)
+	task := newBackupTask(taskID, backupName)
+	m.backupTask[taskID] = task
 	m.backupNameBackupID[backupName] = taskID
-	return nil
+
+	return &BackupTracker{task: task}, nil
 }
 
-func (m *Store) UpdateBackupTask(taskID string, opts ...BackupTaskOpt) {
-	m.mu.RLock()
-	task := m.backupTask[taskID]
-	m.mu.RUnlock()
-
-	for _, opt := range opts {
-		opt(task)
-	}
-}
-
-func (m *Store) GetBackupTask(taskID string) (BackupTaskView, error) {
+// GetBackupTask reads a snapshot of one backup job.
+func (m *Store) GetBackupTask(taskID string) (BackupStatus, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	task, ok := m.backupTask[taskID]
 	if !ok {
-		return nil, ErrTaskNotFound
+		return BackupStatus{}, ErrTaskNotFound
 	}
 
-	return task, nil
+	return task.snapshot(), nil
 }
 
-func (m *Store) GetBackupTaskByName(backupName string) (BackupTaskView, error) {
+// GetBackupTaskByName reads a snapshot of the job behind one backup name.
+func (m *Store) GetBackupTaskByName(backupName string) (BackupStatus, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	taskID, ok := m.backupNameBackupID[backupName]
 	if !ok {
-		return nil, ErrTaskNotFound
+		return BackupStatus{}, ErrTaskNotFound
 	}
 
 	task, ok := m.backupTask[taskID]
 	if !ok {
-		return nil, ErrTaskNotFound
+		return BackupStatus{}, ErrTaskNotFound
 	}
 
-	return task, nil
+	return task.snapshot(), nil
 }

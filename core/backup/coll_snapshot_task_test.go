@@ -19,8 +19,9 @@ import (
 
 func newTestCollSnapshotTask(t *testing.T, collRef collref.Name, grpc milvus.Grpc) (*collSnapshotTask, *metaBuilder) {
 	mgr := jobstate.NewStore()
-	require.NoError(t, mgr.AddBackupTask("task-1", "mybackup"))
-	mgr.UpdateBackupTask("task-1", jobstate.AddBackupCollTasks([]collref.Name{collRef}))
+	tracker, err := mgr.AddBackupTask("task-1", "mybackup")
+	require.NoError(t, err)
+	colls := tracker.StartCollectionPhase([]collref.Name{collRef})
 
 	builder := newMetaBuilder("task-1", "mybackup")
 	builder.addCollection(collRef, &backuppb.CollectionBackupInfo{CollectionId: 1, CollectionName: collRef.CollName()})
@@ -32,7 +33,7 @@ func newTestCollSnapshotTask(t *testing.T, collRef collref.Name, grpc milvus.Grp
 		target:       snapshotTarget{Path: "s3://backup-bucket/backup/mybackup/bundle", Dir: "bundle"},
 		pollInterval: time.Millisecond,
 		grpc:         grpc,
-		store:        mgr,
+		tracker:      colls[collRef],
 		metaBuilder:  builder,
 		logger:       zap.NewNop(),
 	}

@@ -21,7 +21,7 @@ const docTemplate = `{
     "paths": {
         "/create": {
             "post": {
-                "description": "Create a backup with the given name and collections\nStorage preflight failures return HTTP 200 with code 503 (Storage_Not_Ready), without registering a task. The caller may retry the same request.",
+                "description": "Create a backup with the given name and collections\nStorage preflight failures return HTTP 200 with code 503 (Storage_Not_Ready), without registering a task. The caller may retry the same request.\nA backup name whose artifact directory already exists fails with code Fail, also without registering a task.",
                 "consumes": [
                     "application/json"
                 ],
