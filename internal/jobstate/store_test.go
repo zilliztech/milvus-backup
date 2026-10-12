@@ -10,9 +10,10 @@ func TestMgr_AddBackupTask_DuplicateName(t *testing.T) {
 	mgr := NewStore()
 
 	// first create should succeed
-	assert.NoError(t, mgr.AddBackupTask("task1", "backupA"))
+	_, err := mgr.AddBackupTask("task1", "backupA")
+	assert.NoError(t, err)
 
 	// second create with same backup name should fail by default (existing task is still running)
-	err := mgr.AddBackupTask("task2", "backupA")
+	_, err = mgr.AddBackupTask("task2", "backupA")
 	assert.Error(t, err)
 }

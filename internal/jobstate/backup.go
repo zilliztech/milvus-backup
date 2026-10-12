@@ -9,140 +9,147 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/collref"
 )
 
-type BackupTaskOpt func(task *BackupTask)
+// BackupTracker is the write side of one backup job, minted by
+// AddBackupTask and held for the job's whole run — the backup counterpart of
+// DeleteTracker. It holds the task pointer directly, so a write can never
+// land on an unknown id: the store only hands out a tracker for a task it
+// just registered. The embedded task is also the read side: its methods are
+// the BackupTaskView the get APIs consume, so one handle serves the job's
+// Wait and the task tree's progress writes alike.
+type BackupTracker struct {
+	*BackupTask
+}
 
-func setBackupState(state backupTaskState) BackupTaskOpt {
-	return func(task *BackupTask) {
-		task.mu.Lock()
-		defer task.mu.Unlock()
+var _ BackupTaskView = (*BackupTracker)(nil)
 
-		task.stateCode = state
+// SetFail settles the job as failed. Only the job's own goroutine may call
+// it: the terminal state is the settlement of the job, so it is written by
+// whoever observes the task answer, in one place.
+func (t *BackupTracker) SetFail(err error) {
+	task := t.BackupTask
+	task.mu.Lock()
+	defer task.mu.Unlock()
+
+	task.stateCode = _backupTaskStateFail
+	task.endTime = time.Now()
+	task.errorMessage = err.Error()
+}
+
+// SetSuccess settles the job as successful, under the same single-writer
+// rule as SetFail.
+func (t *BackupTracker) SetSuccess() {
+	task := t.BackupTask
+	task.mu.Lock()
+	defer task.mu.Unlock()
+
+	task.stateCode = _backupTaskStateSuccess
+	task.endTime = time.Now()
+}
+
+func (t *BackupTracker) SetDatabaseExecuting() {
+	t.setTaskState(_backupTaskSateDatabaseExecuting)
+}
+
+func (t *BackupTracker) SetCollectionExecuting() {
+	t.setTaskState(_backupTaskStateCollectionExecuting)
+}
+
+func (t *BackupTracker) setTaskState(state backupTaskState) {
+	task := t.BackupTask
+	task.mu.Lock()
+	defer task.mu.Unlock()
+
+	task.stateCode = state
+}
+
+// AddCollTasks registers the collections the backup covers. It runs before
+// any collection work starts, so every later coll-level write finds its
+// task.
+func (t *BackupTracker) AddCollTasks(collRefs []collref.Name) {
+	task := t.BackupTask
+	task.mu.Lock()
+	defer task.mu.Unlock()
+
+	for _, collRef := range collRefs {
+		task.collTask[collRef] = newBackupCollTask(collRef)
 	}
 }
 
-func SetBackupDatabaseExecuting() BackupTaskOpt {
-	return setBackupState(_backupTaskSateDatabaseExecuting)
-}
+// coll returns the coll task for collRef. A write for a collection that was
+// never registered is a wiring bug in the caller, not a state to record, so
+// it panics naming the collection instead of silently losing progress.
+func (t *BackupTracker) coll(collRef collref.Name) *backupCollTask {
+	t.mu.RLock()
+	collTask := t.collTask[collRef]
+	t.mu.RUnlock()
 
-func SetBackupCollectionExecuting() BackupTaskOpt {
-	return setBackupState(_backupTaskStateCollectionExecuting)
-}
-
-func SetBackupFail(err error) BackupTaskOpt {
-	return func(task *BackupTask) {
-		task.mu.Lock()
-		defer task.mu.Unlock()
-
-		task.stateCode = _backupTaskStateFail
-		task.endTime = time.Now()
-		task.errorMessage = err.Error()
+	if collTask == nil {
+		panic(fmt.Sprintf("jobstate: coll task %s not registered", collRef))
 	}
+	return collTask
 }
 
-func SetBackupSuccess() BackupTaskOpt {
-	return func(task *BackupTask) {
-		task.mu.Lock()
-		defer task.mu.Unlock()
-
-		task.stateCode = _backupTaskStateSuccess
-		task.endTime = time.Now()
-	}
+func (t *BackupTracker) SetCollDDLExecuting(collRef collref.Name) {
+	t.setCollState(collRef, _backupCollStatusDDLExecuting)
 }
 
-func AddBackupCollTasks(collRefs []collref.Name) BackupTaskOpt {
-	return func(task *BackupTask) {
-		task.mu.Lock()
-		defer task.mu.Unlock()
-
-		for _, collRef := range collRefs {
-			task.collTask[collRef] = newBackupCollTask(collRef)
-		}
-	}
+func (t *BackupTracker) SetCollDDLDone(collRef collref.Name) {
+	t.setCollState(collRef, _backupCollStatusDDLDone)
 }
 
-func setBackupCollState(collRef collref.Name, state backupCollStatus) BackupTaskOpt {
-	return func(task *BackupTask) {
-		task.mu.RLock()
-		defer task.mu.RUnlock()
-		collTask := task.collTask[collRef]
-
-		collTask.mu.Lock()
-		defer collTask.mu.Unlock()
-
-		collTask.stateCode = state
-	}
+func (t *BackupTracker) SetCollDMLPrepare(collRef collref.Name) {
+	t.setCollState(collRef, _backupCollStatusDMLPrepare)
 }
 
-func SetBackupCollDDLExecuting(collRef collref.Name) BackupTaskOpt {
-	return setBackupCollState(collRef, _backupCollStatusDDLExecuting)
+func (t *BackupTracker) SetCollDMLDone(collRef collref.Name) {
+	t.setCollState(collRef, _backupCollStatusDMLDone)
 }
 
-func SetBackupCollDDLDone(collRef collref.Name) BackupTaskOpt {
-	return setBackupCollState(collRef, _backupCollStatusDDLDone)
+func (t *BackupTracker) setCollState(collRef collref.Name, state backupCollStatus) {
+	collTask := t.coll(collRef)
+	collTask.mu.Lock()
+	defer collTask.mu.Unlock()
+
+	collTask.stateCode = state
 }
 
-func SetBackupCollDMLPrepare(collRef collref.Name) BackupTaskOpt {
-	return setBackupCollState(collRef, _backupCollStatusDMLPrepare)
+func (t *BackupTracker) SetCollDMLExecuting(collRef collref.Name, totalSize int64) {
+	collTask := t.coll(collRef)
+	collTask.mu.Lock()
+	defer collTask.mu.Unlock()
+
+	collTask.stateCode = _backupCollStatusDMLExecuting
+	collTask.totalSize = totalSize
 }
 
-func SetBackupCollDMLExecuting(collRef collref.Name, totalSize int64) BackupTaskOpt {
-	return func(task *BackupTask) {
-		task.mu.RLock()
-		defer task.mu.RUnlock()
-		collTask := task.collTask[collRef]
+func (t *BackupTracker) SetCollFail(collRef collref.Name, err error) {
+	collTask := t.coll(collRef)
+	collTask.mu.Lock()
+	defer collTask.mu.Unlock()
 
-		collTask.mu.Lock()
-		defer collTask.mu.Unlock()
-
-		collTask.stateCode = _backupCollStatusDMLExecuting
-		collTask.totalSize = totalSize
-	}
+	collTask.stateCode = _backupCollStatusFailed
+	collTask.endTime = time.Now()
+	collTask.errorMessage = err.Error()
 }
 
-func SetBackupCollDMLDone(collRef collref.Name) BackupTaskOpt {
-	return setBackupCollState(collRef, _backupCollStatusDMLDone)
+func (t *BackupTracker) SetCollSuccess(collRef collref.Name) {
+	collTask := t.coll(collRef)
+	collTask.mu.Lock()
+	defer collTask.mu.Unlock()
+
+	collTask.stateCode = _backupCollStatusSuccess
+	collTask.endTime = time.Now()
 }
 
-func SetBackupCollFail(collRef collref.Name, err error) BackupTaskOpt {
-	return func(task *BackupTask) {
-		task.mu.RLock()
-		defer task.mu.RUnlock()
-		collTask := task.collTask[collRef]
+// AddCollCopiedSize records n copied bytes for one collection. Its name
+// takes the verb, not the field: callers pass a delta, the tracker owns the
+// accumulation.
+func (t *BackupTracker) AddCollCopiedSize(collRef collref.Name, size int64) {
+	collTask := t.coll(collRef)
+	collTask.mu.Lock()
+	defer collTask.mu.Unlock()
 
-		collTask.mu.Lock()
-		defer collTask.mu.Unlock()
-
-		collTask.stateCode = _backupCollStatusFailed
-		collTask.endTime = time.Now()
-		collTask.errorMessage = err.Error()
-	}
-}
-
-func SetBackupCollSuccess(collRef collref.Name) BackupTaskOpt {
-	return func(task *BackupTask) {
-		task.mu.RLock()
-		defer task.mu.RUnlock()
-		collTask := task.collTask[collRef]
-
-		collTask.mu.Lock()
-		defer collTask.mu.Unlock()
-
-		collTask.stateCode = _backupCollStatusSuccess
-		collTask.endTime = time.Now()
-	}
-}
-
-func IncBackupCollCopiedSize(collRef collref.Name, size int64, _ time.Duration) BackupTaskOpt {
-	return func(task *BackupTask) {
-		task.mu.RLock()
-		defer task.mu.RUnlock()
-		collTask := task.collTask[collRef]
-
-		collTask.mu.Lock()
-		defer collTask.mu.Unlock()
-
-		collTask.backupSize += size
-	}
+	collTask.backupSize += size
 }
 
 // BackupTaskView is read-only view of backup task.

@@ -73,7 +73,8 @@ type collTaskArgs struct {
 
 	MetaBuilder *metaBuilder
 
-	Store *jobstate.Store
+	// Tracker is the job's state handle; progress writes go through it.
+	Tracker *jobstate.BackupTracker
 
 	Grpc    milvus.Grpc
 	Restful milvus.Restful
@@ -118,7 +119,7 @@ func newDDLTasks(collRefs []collref.Name, args collTaskArgs) []collTask {
 	for _, collRef := range collRefs {
 		task := func(ctx context.Context) error {
 			if err := newCollDDLTask(collRef, args).Execute(ctx); err != nil {
-				args.Store.UpdateBackupTask(args.TaskID, jobstate.SetBackupCollFail(collRef, err))
+				args.Tracker.SetCollFail(collRef, err)
 				return fmt.Errorf("backup: execute ddl task %w", err)
 			}
 
@@ -135,11 +136,11 @@ func newDMLTasks(collRefs []collref.Name, args collTaskArgs, newData dataTaskFac
 	for _, collRef := range collRefs {
 		task := func(ctx context.Context) error {
 			if err := newData(collRef, args).Execute(ctx); err != nil {
-				args.Store.UpdateBackupTask(args.TaskID, jobstate.SetBackupCollFail(collRef, err))
+				args.Tracker.SetCollFail(collRef, err)
 				return fmt.Errorf("backup: execute data task %w", err)
 			}
 
-			args.Store.UpdateBackupTask(args.TaskID, jobstate.SetBackupCollSuccess(collRef))
+			args.Tracker.SetCollSuccess(collRef)
 
 			return nil
 		}
@@ -266,16 +267,16 @@ func (sf *serialFlushPlan) executeDMLTask(ctx context.Context) error {
 	for _, collRef := range sf.collRefs {
 		task := func(ctx context.Context) error {
 			if err := sf.flushAndBackupPOS(ctx, collRef); err != nil {
-				sf.args.Store.UpdateBackupTask(sf.args.TaskID, jobstate.SetBackupCollFail(collRef, err))
+				sf.args.Tracker.SetCollFail(collRef, err)
 				return fmt.Errorf("backup: flush and backup pos %w", err)
 			}
 
 			if err := sf.newData(collRef, sf.args).Execute(ctx); err != nil {
-				sf.args.Store.UpdateBackupTask(sf.args.TaskID, jobstate.SetBackupCollFail(collRef, err))
+				sf.args.Tracker.SetCollFail(collRef, err)
 				return fmt.Errorf("backup: execute data task %w", err)
 			}
 
-			sf.args.Store.UpdateBackupTask(sf.args.TaskID, jobstate.SetBackupCollSuccess(collRef))
+			sf.args.Tracker.SetCollSuccess(collRef)
 			return nil
 		}
 

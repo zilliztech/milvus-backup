@@ -40,7 +40,10 @@ type TaskArgs struct {
 
 	Params *cfg.Config
 
-	Store *jobstate.Store
+	// Tracker is the write-and-read handle for this job's state in the job
+	// store. The job minted it at registration and hands it down; nothing in
+	// the tree goes through the store map again.
+	Tracker *jobstate.BackupTracker
 }
 
 type Option struct {
@@ -90,7 +93,7 @@ type Task struct {
 
 	gcCtrl gcCtrl
 
-	store *jobstate.Store
+	tracker *jobstate.BackupTracker
 
 	rpcChannelName string
 
@@ -113,7 +116,10 @@ func newGCCtrl(taskID string, pauseGC bool, grpc milvus.Grpc, manage milvus.Mana
 	return newClusterGCCtrl(taskID, manage)
 }
 
-func NewTask(args TaskArgs) (*Task, error) {
+// NewTask builds the backup run. Registration is not part of it: the job
+// registers at admission and hands the tracker in, so a task object that was
+// never registered cannot exist.
+func NewTask(args TaskArgs) *Task {
 	logger := log.L().With(zap.String("task_id", args.TaskID))
 
 	streaming := storage.UseStreaming(args.Params.Transfer.Mode.Val,
@@ -123,10 +129,6 @@ func NewTask(args TaskArgs) (*Task, error) {
 		zap.Bool("streaming", streaming))
 
 	mb := newMetaBuilder(args.TaskID, args.Option.BackupName)
-	err := args.Store.AddBackupTask(args.TaskID, args.Option.BackupName)
-	if err != nil {
-		return nil, fmt.Errorf("backup: add backup task to manager: %w", err)
-	}
 
 	throttling := concurrencyThrottling{
 		CollSem: semaphore.NewWeighted(int64(args.Params.Backup.Concurrency.Collections.Val)),
@@ -157,10 +159,10 @@ func NewTask(args TaskArgs) (*Task, error) {
 
 		metaBuilder: mb,
 
-		store: args.Store,
+		tracker: args.Tracker,
 
 		rpcChannelName: args.Params.Milvus.Replicate.RPCChannelName.Val,
-	}, nil
+	}
 }
 
 func (t *Task) initClients(ctx context.Context) error {
@@ -223,23 +225,19 @@ func (t *Task) closeClients() {
 
 var _ tasklet.Tasklet = (*Task)(nil)
 
-func (t *Task) Execute(ctx context.Context) (err error) {
+// Execute the backup. The outcome is only the answer: recording it as the
+// job's terminal state is the job's business, not the task's.
+func (t *Task) Execute(ctx context.Context) error {
 	defer t.closeClients()
-	defer func() {
-		if err != nil {
-			t.store.UpdateBackupTask(t.taskID, jobstate.SetBackupFail(err))
-		}
-	}()
 
-	if err = t.initClients(ctx); err != nil {
+	if err := t.initClients(ctx); err != nil {
 		return err
 	}
 
-	if err = t.privateExecute(ctx); err != nil {
+	if err := t.privateExecute(ctx); err != nil {
 		return err
 	}
 
-	t.store.UpdateBackupTask(t.taskID, jobstate.SetBackupSuccess())
 	return nil
 }
 
@@ -505,7 +503,7 @@ func nameStrings(collRefs []collref.Name) []string {
 
 func (t *Task) backupDatabase(ctx context.Context, dbNames []string) error {
 	t.logger.Info("start backup databases", zap.Int("count", len(dbNames)))
-	t.store.UpdateBackupTask(t.taskID, jobstate.SetBackupDatabaseExecuting())
+	t.tracker.SetDatabaseExecuting()
 
 	for _, dbName := range dbNames {
 		dbTask := newDatabaseTask(t.taskID, dbName, t.grpc, t.manage, t.metaBuilder)
@@ -529,7 +527,7 @@ func (t *Task) newCollTaskArgs() collTaskArgs {
 		BackupDir:      t.backupDir,
 		Throttling:     t.throttling,
 		MetaBuilder:    t.metaBuilder,
-		Store:          t.store,
+		Tracker:        t.tracker,
 		Grpc:           t.grpc,
 		Restful:        t.restful,
 		gcCtrl:         t.gcCtrl,
@@ -539,8 +537,8 @@ func (t *Task) newCollTaskArgs() collTaskArgs {
 func (t *Task) backupCollection(ctx context.Context, collRefs []collref.Name) error {
 	t.logger.Info("start backup collections", zap.Int("count", len(collRefs)))
 
-	t.store.UpdateBackupTask(t.taskID, jobstate.AddBackupCollTasks(collRefs))
-	t.store.UpdateBackupTask(t.taskID, jobstate.SetBackupCollectionExecuting())
+	t.tracker.AddCollTasks(collRefs)
+	t.tracker.SetCollectionExecuting()
 
 	plan, err := t.selectPlan(collRefs, t.option.Strategy, t.resolvedFormat)
 	if err != nil {

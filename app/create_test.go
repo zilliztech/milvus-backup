@@ -193,36 +193,29 @@ func TestNewBackupJobPreflight(t *testing.T) {
 	})
 }
 
-// stubBackupTask stands in for the backup run. It follows the real task's
-// contract of recording its own terminal state in the store before it
-// answers, so the job's lifecycle runs end to end.
-type stubBackupTask struct {
-	store  *jobstate.Store
-	taskID string
-	err    error
-}
+// stubBackupTask stands in for the backup run. The job owns the settlement,
+// so the stub is a plain tasklet: whatever it answers is what the job
+// records, which is exactly the property under test.
+type stubBackupTask struct{ err error }
 
-func (s stubBackupTask) Execute(context.Context) error {
-	if s.err != nil {
-		s.store.UpdateBackupTask(s.taskID, jobstate.SetBackupFail(s.err))
-		return s.err
-	}
-	s.store.UpdateBackupTask(s.taskID, jobstate.SetBackupSuccess())
-	return nil
-}
+func (s stubBackupTask) Execute(context.Context) error { return s.err }
+
+// panicTask answers nothing; it dies on the job's stack.
+type panicTask struct{}
+
+func (panicTask) Execute(context.Context) error { panic("cluster on fire") }
 
 func newStubBackupJob(t *testing.T, store *jobstate.Store, taskID string, task tasklet.Tasklet) *BackupJob {
 	t.Helper()
-	require.NoError(t, store.AddBackupTask(taskID, "backup1"))
-	view, err := store.GetBackupTask(taskID)
+	tracker, err := store.AddBackupTask(taskID, "backup1")
 	require.NoError(t, err)
-	return &BackupJob{task: task, view: view, done: make(chan struct{})}
+	return &BackupJob{task: task, tracker: tracker, done: make(chan struct{})}
 }
 
 func TestBackupJobRun(t *testing.T) {
 	t.Run("SuccessSettlesTheView", func(t *testing.T) {
 		store := jobstate.NewStore()
-		job := newStubBackupJob(t, store, "task-1", stubBackupTask{store: store, taskID: "task-1"})
+		job := newStubBackupJob(t, store, "task-1", stubBackupTask{})
 
 		// Run is fire-and-forget; the outcome is read back through Wait.
 		job.Run(context.Background())
@@ -238,7 +231,7 @@ func TestBackupJobRun(t *testing.T) {
 
 	t.Run("FailureLandsInTheView", func(t *testing.T) {
 		store := jobstate.NewStore()
-		job := newStubBackupJob(t, store, "task-1", stubBackupTask{store: store, taskID: "task-1", err: errors.New("boom")})
+		job := newStubBackupJob(t, store, "task-1", stubBackupTask{err: errors.New("boom")})
 
 		job.Run(context.Background())
 		view, err := job.Wait(context.Background())
@@ -247,12 +240,27 @@ func TestBackupJobRun(t *testing.T) {
 		assert.Equal(t, "boom", view.ErrorMessage())
 		assert.False(t, view.EndTime().IsZero())
 	})
+
+	t.Run("PanicSettlesAsFail", func(t *testing.T) {
+		store := jobstate.NewStore()
+		job := newStubBackupJob(t, store, "task-1", panicTask{})
+
+		job.Run(context.Background())
+		view, err := job.Wait(context.Background())
+		require.NoError(t, err)
+		assert.Equal(t, backuppb.BackupTaskStateCode_BACKUP_FAIL, view.StateCode())
+		assert.Contains(t, view.ErrorMessage(), "task panic")
+
+		stored, err := store.GetBackupTask("task-1")
+		require.NoError(t, err)
+		assert.Equal(t, backuppb.BackupTaskStateCode_BACKUP_FAIL, stored.StateCode())
+	})
 }
 
 func TestBackupJobWait(t *testing.T) {
 	t.Run("StopsWhenContextCanceled", func(t *testing.T) {
 		store := jobstate.NewStore()
-		job := newStubBackupJob(t, store, "task-1", stubBackupTask{store: store, taskID: "task-1"})
+		job := newStubBackupJob(t, store, "task-1", stubBackupTask{})
 
 		// The job never runs, so only the context can release the wait.
 		ctx, cancel := context.WithCancel(context.Background())

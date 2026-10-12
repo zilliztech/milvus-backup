@@ -13,7 +13,8 @@ import (
 func TestGetBackupTaskExecute(t *testing.T) {
 	t.Run("ByName", func(t *testing.T) {
 		mgr := jobstate.NewStore()
-		require.NoError(t, mgr.AddBackupTask("task-1", "backup1"))
+		_, err := mgr.AddBackupTask("task-1", "backup1")
+		require.NoError(t, err)
 
 		uc := NewGetBackupTask(mgr)
 		task, err := uc.Execute(context.Background(), GetBackupTaskRequest{Name: "backup1"})
@@ -25,7 +26,8 @@ func TestGetBackupTaskExecute(t *testing.T) {
 
 	t.Run("ByID", func(t *testing.T) {
 		mgr := jobstate.NewStore()
-		require.NoError(t, mgr.AddBackupTask("task-1", "backup1"))
+		_, err := mgr.AddBackupTask("task-1", "backup1")
+		require.NoError(t, err)
 
 		uc := NewGetBackupTask(mgr)
 		task, err := uc.Execute(context.Background(), GetBackupTaskRequest{ID: "task-1"})
@@ -36,8 +38,10 @@ func TestGetBackupTaskExecute(t *testing.T) {
 
 	t.Run("IDWinsOverName", func(t *testing.T) {
 		mgr := jobstate.NewStore()
-		require.NoError(t, mgr.AddBackupTask("task-1", "backup1"))
-		require.NoError(t, mgr.AddBackupTask("task-2", "backup2"))
+		_, err := mgr.AddBackupTask("task-1", "backup1")
+		require.NoError(t, err)
+		_, err = mgr.AddBackupTask("task-2", "backup2")
+		require.NoError(t, err)
 
 		uc := NewGetBackupTask(mgr)
 		task, err := uc.Execute(context.Background(), GetBackupTaskRequest{ID: "task-1", Name: "backup2"})

@@ -72,44 +72,29 @@ func (m *Store) GetRestoreTask(taskID string) (RestoreTaskView, error) {
 	return task, nil
 }
 
-func (m *Store) AddBackupTask(taskID, backupName string) error {
+// AddBackupTask registers one backup job and returns its tracker. A backup
+// name with a live job is refused, so two jobs cannot write one artifact
+// directory concurrently; a failed job does not block a retry.
+func (m *Store) AddBackupTask(taskID, backupName string) (*BackupTracker, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	existID, ok := m.backupNameBackupID[backupName]
-	if !ok {
-		m.backupTask[taskID] = newBackupTask(taskID, backupName)
-		m.backupNameBackupID[backupName] = taskID
-		return nil
+	if existID, ok := m.backupNameBackupID[backupName]; ok {
+		if exist := m.backupTask[existID]; exist != nil {
+			switch exist.StateCode() {
+			case backuppb.BackupTaskStateCode_BACKUP_FAIL,
+				backuppb.BackupTaskStateCode_BACKUP_TIMEOUT:
+			default:
+				return nil, fmt.Errorf("%s (existing task %s)", backupName, existID)
+			}
+		}
 	}
 
-	task := m.backupTask[existID]
-	if task == nil {
-		m.backupTask[taskID] = newBackupTask(taskID, backupName)
-		m.backupNameBackupID[backupName] = taskID
-		return nil
-	}
-
-	switch task.StateCode() {
-	case backuppb.BackupTaskStateCode_BACKUP_FAIL,
-		backuppb.BackupTaskStateCode_BACKUP_TIMEOUT:
-	default:
-		return fmt.Errorf("%s (existing task %s)", backupName, existID)
-	}
-
-	m.backupTask[taskID] = newBackupTask(taskID, backupName)
+	task := newBackupTask(taskID, backupName)
+	m.backupTask[taskID] = task
 	m.backupNameBackupID[backupName] = taskID
-	return nil
-}
 
-func (m *Store) UpdateBackupTask(taskID string, opts ...BackupTaskOpt) {
-	m.mu.RLock()
-	task := m.backupTask[taskID]
-	m.mu.RUnlock()
-
-	for _, opt := range opts {
-		opt(task)
-	}
+	return &BackupTracker{task}, nil
 }
 
 func (m *Store) GetBackupTask(taskID string) (BackupTaskView, error) {

@@ -39,7 +39,10 @@ type BackupJob struct {
 	// tests stub the run and exercise the job's lifecycle without a cluster
 	// behind the backup.
 	task tasklet.Tasklet
-	view jobstate.BackupTaskView
+
+	// tracker is the job's handle on its own state: the job writes its
+	// terminal state through it and Wait reads the settlement from it.
+	tracker *jobstate.BackupTracker
 
 	// done closes when the run settles. Wait selects on it, so the caller
 	// learns the outcome without polling the job store.
@@ -56,20 +59,35 @@ func (j *BackupJob) Run(ctx context.Context) {
 	go j.run(ctx)
 }
 
-// run is the job's whole body. The task settles its own terminal state: it
-// records Success or Fail in the job store before it answers, so a backup
-// that dies mid-copy does not leave its snapshot looking like it is still
-// running.
+// execute runs the task body, turning a panic into an error. The echo server
+// already grants request handlers the same policy via middleware.Recover: a
+// job is as long-lived a resident as a handler, so one job's bug must not
+// kill the process. Panics in worker goroutines the task spawns are not on
+// this stack and stay process-fatal.
+func (j *BackupJob) execute(ctx context.Context) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("task panic: %v", r)
+		}
+	}()
+	return j.task.Execute(ctx)
+}
+
+// run is the job's whole body. The job owns the terminal state: whatever the
+// task answers, the settlement is recorded here, so a backup that dies
+// mid-copy does not leave its snapshot looking like it is still running.
 func (j *BackupJob) run(ctx context.Context) {
 	defer close(j.done)
 
 	start := time.Now()
-	if err := j.task.Execute(ctx); err != nil {
-		log.Error("create backup fail", zap.String("backup_name", j.view.Name()), zap.Error(err))
+	if err := j.execute(ctx); err != nil {
+		j.tracker.SetFail(err)
+		log.Error("create backup fail", zap.String("backup_name", j.tracker.Name()), zap.Error(err))
 		return
 	}
 
-	log.Info("create backup done", zap.String("backup_name", j.view.Name()), zap.Duration("cost", time.Since(start)))
+	j.tracker.SetSuccess()
+	log.Info("create backup done", zap.String("backup_name", j.tracker.Name()), zap.Duration("cost", time.Since(start)))
 }
 
 // Wait blocks until a Run settles and answers with the job's view in the job
@@ -81,7 +99,7 @@ func (j *BackupJob) Wait(ctx context.Context) (jobstate.BackupTaskView, error) {
 	case <-ctx.Done():
 		return nil, ctx.Err()
 	case <-j.done:
-		return j.view, nil
+		return j.tracker, nil
 	}
 }
 
@@ -132,25 +150,25 @@ func newBackupJob(ctx context.Context, params *cfg.Config, store *jobstate.Store
 		return nil, err
 	}
 
-	task, err := backup.NewTask(backup.TaskArgs{
+	// Registration is the last admission step, and its answer is the job's
+	// whole state handle: a duplicate live name fails here, and the tracker
+	// the store mints is both the tree's progress writer and Wait's reader.
+	tracker, err := store.AddBackupTask(req.TaskID, req.Option.BackupName)
+	if err != nil {
+		return nil, fmt.Errorf("app: register backup job: %w", err)
+	}
+
+	task := backup.NewTask(backup.TaskArgs{
 		TaskID:        req.TaskID,
 		Option:        req.Option,
 		MilvusStorage: milvusStorage,
 		BackupStorage: backupStorage,
 		BackupDir:     backupDir,
 		Params:        params,
-		Store:         store,
+		Tracker:       tracker,
 	})
-	if err != nil {
-		return nil, fmt.Errorf("app: new backup task: %w", err)
-	}
 
-	view, err := store.GetBackupTask(req.TaskID)
-	if err != nil {
-		return nil, fmt.Errorf("app: fetch registered backup task: %w", err)
-	}
-
-	return &BackupJob{task: task, view: view, done: make(chan struct{})}, nil
+	return &BackupJob{task: task, tracker: tracker, done: make(chan struct{})}, nil
 }
 
 func preflightSourceStorage(ctx context.Context, params *cfg.Config, milvusStorage storage.Client, strategy backup.Strategy) error {

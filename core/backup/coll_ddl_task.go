@@ -26,7 +26,7 @@ type collDDLTask struct {
 
 	grpc milvus.Grpc
 
-	store       *jobstate.Store
+	tracker     *jobstate.BackupTracker
 	metaBuilder *metaBuilder
 
 	logger *zap.Logger
@@ -39,7 +39,7 @@ func newCollDDLTask(collRef collref.Name, args collTaskArgs) *collDDLTask {
 		taskID:      args.TaskID,
 		collRef:     collRef,
 		grpc:        args.Grpc,
-		store:       args.Store,
+		tracker:     args.Tracker,
 		metaBuilder: args.MetaBuilder,
 		logger:      logger,
 	}
@@ -256,7 +256,7 @@ func (ddlt *collDDLTask) backupPartitionDDL(ctx context.Context, collID int64, c
 func (ddlt *collDDLTask) Execute(ctx context.Context) error {
 	ddlt.logger.Info("start to backup ddl of collection")
 
-	ddlt.store.UpdateBackupTask(ddlt.taskID, jobstate.SetBackupCollDDLExecuting(ddlt.collRef))
+	ddlt.tracker.SetCollDDLExecuting(ddlt.collRef)
 
 	descResp, err := ddlt.grpc.DescribeCollection(ctx, ddlt.collRef.DBName(), ddlt.collRef.CollName())
 	if err != nil {
@@ -301,7 +301,7 @@ func (ddlt *collDDLTask) Execute(ctx context.Context) error {
 	}
 
 	ddlt.metaBuilder.addCollection(ddlt.collRef, collBackup)
-	ddlt.store.UpdateBackupTask(ddlt.taskID, jobstate.SetBackupCollDDLDone(ddlt.collRef))
+	ddlt.tracker.SetCollDDLDone(ddlt.collRef)
 
 	ddlt.logger.Info("backup ddl of collection done")
 
