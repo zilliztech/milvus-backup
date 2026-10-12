@@ -168,8 +168,16 @@ func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
 		return fmt.Errorf("create: new backup job: %w", err)
 	}
 
-	if err := job.Run(ctx); err != nil {
-		return fmt.Errorf("create: run backup job: %w", err)
+	// The CLI exposes no async form: the job runs detached and the command
+	// waits on it.
+	job.Run(ctx)
+
+	status, err := job.Wait(ctx)
+	if err != nil {
+		return fmt.Errorf("create: wait backup job: %w", err)
+	}
+	if status.State == jobstate.BackupStateFail {
+		return fmt.Errorf("create: run backup job: %s", status.ErrorMessage)
 	}
 
 	cmd.Println("create backup success")

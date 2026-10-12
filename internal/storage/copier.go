@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"time"
 
 	"go.uber.org/zap"
 
@@ -21,24 +20,24 @@ type copierOpt struct {
 	traceFn TraceFn
 }
 
-type TraceFn func(size int64, cost time.Duration)
+// TraceFn reports copied bytes. The size is all a consumer needs: progress
+// state accumulates sizes, and renderers derive speed from their own ticks.
+type TraceFn func(size int64)
 
 type trackReader struct {
 	inner io.Reader
 
-	lastRead time.Time
-	traceFn  TraceFn
+	traceFn TraceFn
 }
 
 func newTrackReader(inner io.Reader, traceFn TraceFn) *trackReader {
-	return &trackReader{inner: inner, traceFn: traceFn, lastRead: time.Now()}
+	return &trackReader{inner: inner, traceFn: traceFn}
 }
 
 func (t *trackReader) Read(p []byte) (int, error) {
 	n, err := t.inner.Read(p)
 	if n > 0 {
-		t.traceFn(int64(n), time.Since(t.lastRead))
-		t.lastRead = time.Now()
+		t.traceFn(int64(n))
 	}
 	return n, err
 }
@@ -61,7 +60,6 @@ type directCopier struct {
 func (dc *directCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
 	dc.logger.Debug("copy object", zap.String("src", copyAttr.Src.Key), zap.String("dest", copyAttr.DestKey))
 
-	start := time.Now()
 	err := retry.Do(ctx, func() error {
 		i := CopyObjectInput{SrcCli: dc.src, SrcAttr: copyAttr.Src, DestKey: copyAttr.DestKey}
 
@@ -73,7 +71,7 @@ func (dc *directCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
 	})
 
 	if err == nil && dc.opt.traceFn != nil {
-		dc.opt.traceFn(copyAttr.Src.Length, time.Since(start))
+		dc.opt.traceFn(copyAttr.Src.Length)
 	}
 
 	return err

@@ -30,13 +30,13 @@ type collSnapshotTask struct {
 
 	grpc milvus.Grpc
 
-	store       *jobstate.Store
+	tracker     *jobstate.BackupCollTracker
 	metaBuilder *metaBuilder
 
 	logger *zap.Logger
 }
 
-func newCollSnapshotTask(collRef collref.Name, snapshotName string, target snapshotTarget, args collTaskArgs) *collSnapshotTask {
+func newCollSnapshotTask(collRef collref.Name, tracker *jobstate.BackupCollTracker, snapshotName string, target snapshotTarget, args collTaskArgs) *collSnapshotTask {
 	logger := log.L().With(
 		zap.String("task_id", args.TaskID),
 		zap.String("coll", collRef.String()),
@@ -49,7 +49,7 @@ func newCollSnapshotTask(collRef collref.Name, snapshotName string, target snaps
 		target:       target,
 		pollInterval: _snapshotPollInterval,
 		grpc:         args.Grpc,
-		store:        args.Store,
+		tracker:      tracker,
 		metaBuilder:  args.MetaBuilder,
 		logger:       logger,
 	}
@@ -59,7 +59,7 @@ func newCollSnapshotTask(collRef collref.Name, snapshotName string, target snaps
 // directory, and records where the bundle landed. No bytes move through this process.
 func (st *collSnapshotTask) Execute(ctx context.Context) error {
 	st.logger.Info("start to backup collection with snapshot")
-	st.store.UpdateBackupTask(st.taskID, jobstate.SetBackupCollDMLPrepare(st.collRef))
+	st.tracker.SetDMLPrepare()
 
 	// Compaction protection is left off: the snapshot holds its files against GC for
 	// as long as it exists, and it exists only for this export.
@@ -109,7 +109,7 @@ func (st *collSnapshotTask) Execute(ctx context.Context) error {
 		return fmt.Errorf("backup: add snapshot meta: %w", err)
 	}
 
-	st.store.UpdateBackupTask(st.taskID, jobstate.SetBackupCollDMLDone(st.collRef))
+	st.tracker.SetDMLDone()
 	st.logger.Info("backup collection with snapshot done",
 		zap.String("metadata_path", metadataPath),
 		zap.Int64("total_files", info.GetTotalFiles()),
@@ -136,10 +136,10 @@ func (st *collSnapshotTask) waitExport(ctx context.Context, jobID int64) (*milvu
 
 		if total := info.GetTotalFiles(); total != reportedTotal {
 			reportedTotal = total
-			st.store.UpdateBackupTask(st.taskID, jobstate.SetBackupCollDMLExecuting(st.collRef, total))
+			st.tracker.SetDMLExecuting(total)
 		}
 		if done := info.GetCopiedFiles(); done > copied {
-			st.store.UpdateBackupTask(st.taskID, jobstate.IncBackupCollCopiedSize(st.collRef, done-copied, 0))
+			st.tracker.AddCopiedSize(done - copied)
 			copied = done
 		}
 

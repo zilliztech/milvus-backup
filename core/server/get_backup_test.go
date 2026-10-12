@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -37,18 +36,22 @@ func (s *stubGetBackup) Execute(_ context.Context, name string) (*backuppb.Backu
 }
 
 // stubGetBackupTask is the job-half counterpart of stubGetBackup, standing
-// in for app.GetBackupTask.
+// in for app.GetBackupTask. A nil status answers err, like the store does
+// for a job that was never registered.
 type stubGetBackupTask struct {
-	req   app.GetBackupTaskRequest
-	view  jobstate.BackupTaskView
-	err   error
-	calls int
+	req    app.GetBackupTaskRequest
+	status *jobstate.BackupStatus
+	err    error
+	calls  int
 }
 
-func (s *stubGetBackupTask) Execute(_ context.Context, req app.GetBackupTaskRequest) (jobstate.BackupTaskView, error) {
+func (s *stubGetBackupTask) Execute(_ context.Context, req app.GetBackupTaskRequest) (jobstate.BackupStatus, error) {
 	s.req = req
 	s.calls++
-	return s.view, s.err
+	if s.status == nil {
+		return jobstate.BackupStatus{}, s.err
+	}
+	return *s.status, nil
 }
 
 // withGetBackup wires the stub as the artifact usecase. newErr simulates the
@@ -93,18 +96,6 @@ func newLoadedTestServer(t *testing.T, opts ...Option) *Server {
 	return s
 }
 
-// expectBriefRender teaches the mock job view the calls
-// pbconv.NewBackupInfoBrief makes when it renders a task half.
-func expectBriefRender(task *jobstate.MockBackupTaskView, id, name string, state backuppb.BackupTaskStateCode) {
-	task.EXPECT().Name().Return(name)
-	task.EXPECT().ID().Return(id)
-	task.EXPECT().StateCode().Return(state)
-	task.EXPECT().ErrorMessage().Return("")
-	task.EXPECT().StartTime().Return(time.Now())
-	task.EXPECT().EndTime().Return(time.Now())
-	task.EXPECT().Progress().Return(int32(100))
-}
-
 func getBackup(t *testing.T, s *Server, query, requestID string) backuppb.BackupInfoResponse {
 	t.Helper()
 
@@ -123,11 +114,10 @@ func getBackup(t *testing.T, s *Server, query, requestID string) backuppb.Backup
 
 func TestHandleGetBackup(t *testing.T) {
 	t.Run("MergesArtifactAndJob", func(t *testing.T) {
-		task := jobstate.NewMockBackupTaskView(t)
-		expectBriefRender(task, "task-1", "backup1", backuppb.BackupTaskStateCode_BACKUP_SUCCESS)
+		task := &jobstate.BackupStatus{ID: "task-1", Name: "backup1", State: jobstate.BackupStateSuccess}
 
 		backup := &stubGetBackup{info: &backuppb.BackupInfo{Name: "backup1", Size: 100}, size: 42}
-		taskStub := &stubGetBackupTask{view: task}
+		taskStub := &stubGetBackupTask{status: task}
 		s := newListTestServer(t, withGetBackup(backup, nil), withGetBackupTask(taskStub, nil))
 
 		resp := getBackup(t, s, "?backup_name=backup1", "")
@@ -181,13 +171,10 @@ func TestHandleGetBackup(t *testing.T) {
 	})
 
 	t.Run("InFlightJobWithoutArtifact", func(t *testing.T) {
-		task := jobstate.NewMockBackupTaskView(t)
-		// The same StateCode expectation serves both the handler's
-		// success check and the brief rendering.
-		expectBriefRender(task, "task-1", "backup1", backuppb.BackupTaskStateCode_BACKUP_EXECUTING)
+		task := &jobstate.BackupStatus{ID: "task-1", Name: "backup1", State: jobstate.BackupStateCollectionExecuting}
 
 		backup := &stubGetBackup{err: app.ErrBackupNotFound}
-		s := newListTestServer(t, withGetBackup(backup, nil), withGetBackupTask(&stubGetBackupTask{view: task}, nil))
+		s := newListTestServer(t, withGetBackup(backup, nil), withGetBackupTask(&stubGetBackupTask{status: task}, nil))
 
 		resp := getBackup(t, s, "?backup_name=backup1", "")
 
@@ -200,11 +187,10 @@ func TestHandleGetBackup(t *testing.T) {
 	})
 
 	t.Run("SuccessJobWithoutArtifactFails", func(t *testing.T) {
-		task := jobstate.NewMockBackupTaskView(t)
-		task.EXPECT().StateCode().Return(backuppb.BackupTaskStateCode_BACKUP_SUCCESS)
+		task := &jobstate.BackupStatus{ID: "task-1", Name: "backup1", State: jobstate.BackupStateSuccess}
 
 		backup := &stubGetBackup{err: app.ErrBackupNotFound}
-		s := newListTestServer(t, withGetBackup(backup, nil), withGetBackupTask(&stubGetBackupTask{view: task}, nil))
+		s := newListTestServer(t, withGetBackup(backup, nil), withGetBackupTask(&stubGetBackupTask{status: task}, nil))
 
 		resp := getBackup(t, s, "?backup_name=backup1", "")
 
@@ -224,11 +210,10 @@ func TestHandleGetBackup(t *testing.T) {
 	})
 
 	t.Run("IDResolvesBackupNameThroughJob", func(t *testing.T) {
-		task := jobstate.NewMockBackupTaskView(t)
-		expectBriefRender(task, "task-1", "backup1", backuppb.BackupTaskStateCode_BACKUP_SUCCESS)
+		task := &jobstate.BackupStatus{ID: "task-1", Name: "backup1", State: jobstate.BackupStateSuccess}
 
 		backup := &stubGetBackup{info: &backuppb.BackupInfo{Name: "backup1"}}
-		taskStub := &stubGetBackupTask{view: task}
+		taskStub := &stubGetBackupTask{status: task}
 		s := newListTestServer(t, withGetBackup(backup, nil), withGetBackupTask(taskStub, nil))
 
 		resp := getBackup(t, s, "?backup_id=task-1", "")

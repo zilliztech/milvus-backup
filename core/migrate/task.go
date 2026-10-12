@@ -244,7 +244,7 @@ func (t *Task) copyToCloud(ctx context.Context) error {
 		DestPrefix: destPrefix,
 		Sem:        t.copySem,
 
-		TraceFn: func(size int64, _ time.Duration) {
+		TraceFn: func(size int64) {
 			t.tracker.IncCopied(size)
 		},
 

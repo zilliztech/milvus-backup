@@ -31,26 +31,26 @@ type GetBackupTaskRequest struct {
 	ID   string
 }
 
-// Execute returns the job state store's view of the selected job. An unknown
-// selector is jobstate.ErrTaskNotFound, not a silent success. The task
-// manager's own view type travels unchanged, as in GetRestore: an app-defined
+// Execute returns the job state store's snapshot of the selected job. An
+// unknown selector is jobstate.ErrTaskNotFound, not a silent success. The
+// store's snapshot type travels unchanged, as in GetRestore: an app-defined
 // struct would only rename it.
-func (uc *GetBackupTask) Execute(ctx context.Context, req GetBackupTaskRequest) (jobstate.BackupTaskView, error) {
+func (uc *GetBackupTask) Execute(ctx context.Context, req GetBackupTaskRequest) (jobstate.BackupStatus, error) {
 	if req.Name == "" && req.ID == "" {
-		return nil, fmt.Errorf("app: empty backup name and backup id")
+		return jobstate.BackupStatus{}, fmt.Errorf("app: empty backup name and backup id")
 	}
 
 	if req.ID != "" {
 		task, err := uc.store.GetBackupTask(req.ID)
 		if err != nil {
-			return nil, fmt.Errorf("app: get backup task %w", err)
+			return jobstate.BackupStatus{}, fmt.Errorf("app: get backup task %w", err)
 		}
 		return task, nil
 	}
 
 	task, err := uc.store.GetBackupTaskByName(req.Name)
 	if err != nil {
-		return nil, fmt.Errorf("app: get backup task %w", err)
+		return jobstate.BackupStatus{}, fmt.Errorf("app: get backup task %w", err)
 	}
 	return task, nil
 }

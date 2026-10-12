@@ -1,186 +1,86 @@
 package jobstate
 
 import (
-	"fmt"
 	"sync"
 	"time"
 
-	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 )
 
-type BackupTaskOpt func(task *BackupTask)
-
-func setBackupState(state backupTaskState) BackupTaskOpt {
-	return func(task *BackupTask) {
-		task.mu.Lock()
-		defer task.mu.Unlock()
-
-		task.stateCode = state
-	}
-}
-
-func SetBackupDatabaseExecuting() BackupTaskOpt {
-	return setBackupState(_backupTaskSateDatabaseExecuting)
-}
-
-func SetBackupCollectionExecuting() BackupTaskOpt {
-	return setBackupState(_backupTaskStateCollectionExecuting)
-}
-
-func SetBackupFail(err error) BackupTaskOpt {
-	return func(task *BackupTask) {
-		task.mu.Lock()
-		defer task.mu.Unlock()
-
-		task.stateCode = _backupTaskStateFail
-		task.endTime = time.Now()
-		task.errorMessage = err.Error()
-	}
-}
-
-func SetBackupSuccess() BackupTaskOpt {
-	return func(task *BackupTask) {
-		task.mu.Lock()
-		defer task.mu.Unlock()
-
-		task.stateCode = _backupTaskStateSuccess
-		task.endTime = time.Now()
-	}
-}
-
-func AddBackupCollTasks(collRefs []collref.Name) BackupTaskOpt {
-	return func(task *BackupTask) {
-		task.mu.Lock()
-		defer task.mu.Unlock()
-
-		for _, collRef := range collRefs {
-			task.collTask[collRef] = newBackupCollTask(collRef)
-		}
-	}
-}
-
-func setBackupCollState(collRef collref.Name, state backupCollStatus) BackupTaskOpt {
-	return func(task *BackupTask) {
-		task.mu.RLock()
-		defer task.mu.RUnlock()
-		collTask := task.collTask[collRef]
-
-		collTask.mu.Lock()
-		defer collTask.mu.Unlock()
-
-		collTask.stateCode = state
-	}
-}
-
-func SetBackupCollDDLExecuting(collRef collref.Name) BackupTaskOpt {
-	return setBackupCollState(collRef, _backupCollStatusDDLExecuting)
-}
-
-func SetBackupCollDDLDone(collRef collref.Name) BackupTaskOpt {
-	return setBackupCollState(collRef, _backupCollStatusDDLDone)
-}
-
-func SetBackupCollDMLPrepare(collRef collref.Name) BackupTaskOpt {
-	return setBackupCollState(collRef, _backupCollStatusDMLPrepare)
-}
-
-func SetBackupCollDMLExecuting(collRef collref.Name, totalSize int64) BackupTaskOpt {
-	return func(task *BackupTask) {
-		task.mu.RLock()
-		defer task.mu.RUnlock()
-		collTask := task.collTask[collRef]
-
-		collTask.mu.Lock()
-		defer collTask.mu.Unlock()
-
-		collTask.stateCode = _backupCollStatusDMLExecuting
-		collTask.totalSize = totalSize
-	}
-}
-
-func SetBackupCollDMLDone(collRef collref.Name) BackupTaskOpt {
-	return setBackupCollState(collRef, _backupCollStatusDMLDone)
-}
-
-func SetBackupCollFail(collRef collref.Name, err error) BackupTaskOpt {
-	return func(task *BackupTask) {
-		task.mu.RLock()
-		defer task.mu.RUnlock()
-		collTask := task.collTask[collRef]
-
-		collTask.mu.Lock()
-		defer collTask.mu.Unlock()
-
-		collTask.stateCode = _backupCollStatusFailed
-		collTask.endTime = time.Now()
-		collTask.errorMessage = err.Error()
-	}
-}
-
-func SetBackupCollSuccess(collRef collref.Name) BackupTaskOpt {
-	return func(task *BackupTask) {
-		task.mu.RLock()
-		defer task.mu.RUnlock()
-		collTask := task.collTask[collRef]
-
-		collTask.mu.Lock()
-		defer collTask.mu.Unlock()
-
-		collTask.stateCode = _backupCollStatusSuccess
-		collTask.endTime = time.Now()
-	}
-}
-
-func IncBackupCollCopiedSize(collRef collref.Name, size int64, _ time.Duration) BackupTaskOpt {
-	return func(task *BackupTask) {
-		task.mu.RLock()
-		defer task.mu.RUnlock()
-		collTask := task.collTask[collRef]
-
-		collTask.mu.Lock()
-		defer collTask.mu.Unlock()
-
-		collTask.backupSize += size
-	}
-}
-
-// BackupTaskView is read-only view of backup task.
-type BackupTaskView interface {
-	ID() string
-	Name() string
-
-	StateCode() backuppb.BackupTaskStateCode
-	ErrorMessage() string
-
-	StartTime() time.Time
-	EndTime() time.Time
-
-	Progress() int32
-	TotalSize() int64
-
-	CollTasks() map[collref.Name]BackupCollTaskView
-}
-
-var _ BackupTaskView = (*BackupTask)(nil)
-
-type backupTaskState uint32
+// BackupState is the lifecycle of one backup job. It is jobstate's own enum
+// rather than anything from the wire format: transports convert at the edge,
+// so this package stays free of pb types. The two executing phases are the
+// job's real stages — database meta first, then collection data — not a
+// rendering distinction.
+type BackupState uint32
 
 const (
-	_backupTaskStateInitial backupTaskState = iota
-	_backupTaskSateDatabaseExecuting
-	_backupTaskStateCollectionExecuting
-	_backupTaskStateSuccess
-	_backupTaskStateFail
+	BackupStateInitial BackupState = iota
+	BackupStateDatabaseExecuting
+	BackupStateCollectionExecuting
+	BackupStateSuccess
+	BackupStateFail
 )
 
-type BackupTask struct {
+// BackupCollState is the lifecycle of one collection inside a backup job:
+// pending, then schema (DDL), then data (DML), then settled.
+type BackupCollState uint32
+
+const (
+	BackupCollStatePending BackupCollState = iota
+	BackupCollStateDDLExecuting
+	BackupCollStateDDLDone
+	BackupCollStateDMLPrepare
+	BackupCollStateDMLExecuting
+	BackupCollStateDMLDone
+	BackupCollStateSuccess
+	BackupCollStateFail
+)
+
+// BackupStatus is a point-in-time snapshot of one backup job, copied out
+// under the lock and handed over by value. Readers get dead data: no shared
+// locks with the writer, no interface to mock in tests.
+type BackupStatus struct {
+	ID   string
+	Name string
+
+	State        BackupState
+	ErrorMessage string
+
+	StartTime time.Time
+	EndTime   time.Time
+
+	// Colls holds one entry per collection the job covers, registered when
+	// the collection phase starts. The map is this snapshot's own copy.
+	Colls map[collref.Name]BackupCollStatus
+}
+
+// Terminal reports whether the job has settled and the status will not
+// change anymore. Transports polling for an outcome wait on this.
+func (s BackupStatus) Terminal() bool {
+	return s.State == BackupStateSuccess || s.State == BackupStateFail
+}
+
+// BackupCollStatus is the snapshot of one collection's slice of a backup
+// job. TotalSize is the bytes the collection has to copy, CopiedSize the
+// bytes already copied; progress renderers derive ratios from the two.
+type BackupCollStatus struct {
+	State        BackupCollState
+	ErrorMessage string
+
+	TotalSize  int64
+	CopiedSize int64
+
+	EndTime time.Time
+}
+
+type backupTask struct {
 	mu sync.RWMutex
 
 	id   string
 	name string
 
-	stateCode    backupTaskState
+	state        BackupState
 	errorMessage string
 
 	startTime time.Time
@@ -189,260 +89,182 @@ type BackupTask struct {
 	collTask map[collref.Name]*backupCollTask
 }
 
-func newBackupTask(id, name string) *BackupTask {
-	return &BackupTask{
+func newBackupTask(id, name string) *backupTask {
+	return &backupTask{
 		id:        id,
 		name:      name,
-		stateCode: _backupTaskStateInitial,
+		state:     BackupStateInitial,
 		startTime: time.Now(),
 		collTask:  make(map[collref.Name]*backupCollTask),
 	}
 }
 
-func (b *BackupTask) ID() string {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
+func (t *backupTask) snapshot() BackupStatus {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 
-	return b.id
-}
-
-func (b *BackupTask) Name() string {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-
-	return b.name
-}
-
-func (b *BackupTask) StateCode() backuppb.BackupTaskStateCode {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-
-	switch b.stateCode {
-	case _backupTaskStateInitial:
-		return backuppb.BackupTaskStateCode_BACKUP_INITIAL
-	case _backupTaskSateDatabaseExecuting, _backupTaskStateCollectionExecuting:
-		return backuppb.BackupTaskStateCode_BACKUP_EXECUTING
-	case _backupTaskStateSuccess:
-		return backuppb.BackupTaskStateCode_BACKUP_SUCCESS
-	case _backupTaskStateFail:
-		return backuppb.BackupTaskStateCode_BACKUP_FAIL
-	default:
-		panic(fmt.Sprintf("unknown backup task state: %d", b.stateCode))
-	}
-}
-
-func (b *BackupTask) ErrorMessage() string {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-
-	return b.errorMessage
-}
-
-func (b *BackupTask) StartTime() time.Time {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-
-	return b.startTime
-}
-
-func (b *BackupTask) EndTime() time.Time {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-
-	return b.endTime
-}
-
-func (b *BackupTask) Progress() int32 {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-
-	switch b.stateCode {
-	case _backupTaskStateInitial:
-		return 1
-	case _backupTaskSateDatabaseExecuting:
-		return 5
-	case _backupTaskStateCollectionExecuting:
-		// map [0, 100] to [5, 100]
-		var totalProgress int32
-		for _, task := range b.collTask {
-			totalProgress += task.Progress()
-		}
-
-		return int32(float64(totalProgress)/float64(len(b.collTask))*0.95) + 5
-
-	case _backupTaskStateSuccess:
-		return 100
-	case _backupTaskStateFail:
-		return 0
-	default:
-		panic(fmt.Sprintf("unknown backup task state: %d", b.stateCode))
-	}
-}
-
-func (b *BackupTask) totalSize() int64 {
-	var size int64
-	for _, task := range b.collTask {
-		size += task.TotalSize()
+	colls := make(map[collref.Name]BackupCollStatus, len(t.collTask))
+	for collRef, collTask := range t.collTask {
+		colls[collRef] = collTask.snapshot()
 	}
 
-	return size
-}
-
-func (b *BackupTask) TotalSize() int64 {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-
-	return b.totalSize()
-}
-
-func (b *BackupTask) CollTasks() map[collref.Name]BackupCollTaskView {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-
-	// copy and return a new map, to avoid concurrent modification
-	tasks := make(map[collref.Name]BackupCollTaskView, len(b.collTask))
-	for collRef, task := range b.collTask {
-		tasks[collRef] = task
+	return BackupStatus{
+		ID:           t.id,
+		Name:         t.name,
+		State:        t.state,
+		ErrorMessage: t.errorMessage,
+		StartTime:    t.startTime,
+		EndTime:      t.endTime,
+		Colls:        colls,
 	}
-
-	return tasks
 }
-
-var _ BackupCollTaskView = (*backupCollTask)(nil)
-
-// fsm
-type backupCollStatus uint32
-
-const (
-	_backupCollStatusPending backupCollStatus = iota
-	_backupCollStatusDDLExecuting
-	_backupCollStatusDDLDone
-	_backupCollStatusDMLPrepare
-	_backupCollStatusDMLExecuting
-	_backupCollStatusDMLDone
-	_backupCollStatusSuccess
-	_backupCollStatusFailed
-)
 
 type backupCollTask struct {
 	mu sync.RWMutex
 
-	id string
-
-	collRef collref.Name
-
-	stateCode    backupCollStatus
+	state        BackupCollState
 	errorMessage string
 
 	totalSize  int64
-	backupSize int64
+	copiedSize int64
 
-	startTime time.Time
-	endTime   time.Time
+	endTime time.Time
 }
 
-func newBackupCollTask(collRef collref.Name) *backupCollTask {
-	return &backupCollTask{collRef: collRef, stateCode: _backupCollStatusPending}
-}
+func (t *backupCollTask) snapshot() BackupCollStatus {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
 
-func (b *backupCollTask) ID() string {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-
-	return b.id
-}
-
-func (b *backupCollTask) StateCode() backuppb.BackupTaskStateCode {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-
-	switch b.stateCode {
-	case _backupCollStatusPending:
-		return backuppb.BackupTaskStateCode_BACKUP_INITIAL
-	case _backupCollStatusDDLExecuting,
-		_backupCollStatusDDLDone,
-		_backupCollStatusDMLPrepare,
-		_backupCollStatusDMLExecuting,
-		_backupCollStatusDMLDone:
-		return backuppb.BackupTaskStateCode_BACKUP_EXECUTING
-	case _backupCollStatusSuccess:
-		return backuppb.BackupTaskStateCode_BACKUP_SUCCESS
-	case _backupCollStatusFailed:
-		return backuppb.BackupTaskStateCode_BACKUP_FAIL
-	default:
-		panic(fmt.Sprintf("unknown backup coll %s task state: %d", b.collRef.String(), b.stateCode))
+	return BackupCollStatus{
+		State:        t.state,
+		ErrorMessage: t.errorMessage,
+		TotalSize:    t.totalSize,
+		CopiedSize:   t.copiedSize,
+		EndTime:      t.endTime,
 	}
 }
 
-func (b *backupCollTask) ErrorMessage() string {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-
-	return b.errorMessage
+// BackupTracker is the write side of one backup job, minted by AddBackupTask
+// and held by the job for its whole run. It holds the task pointer directly,
+// so a write can never land on an unknown id: the store only hands out a
+// tracker for a task it just registered.
+type BackupTracker struct {
+	task *backupTask
 }
 
-func (b *backupCollTask) StartTime() time.Time {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
+func (t *BackupTracker) setState(state BackupState) {
+	t.task.mu.Lock()
+	defer t.task.mu.Unlock()
 
-	return b.startTime
+	t.task.state = state
 }
 
-func (b *backupCollTask) EndTime() time.Time {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-
-	return b.endTime
+func (t *BackupTracker) SetDatabaseExecuting() {
+	t.setState(BackupStateDatabaseExecuting)
 }
 
-func (b *backupCollTask) Progress() int32 {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
+// StartCollectionPhase opens the collection phase: every covered collection
+// is registered as Pending and minted its own write handle, and the job
+// flips to executing collections. Holding a handle is what being registered
+// means — a collection-level write carries no key, so it cannot miss.
+func (t *BackupTracker) StartCollectionPhase(collRefs []collref.Name) map[collref.Name]*BackupCollTracker {
+	t.task.mu.Lock()
+	defer t.task.mu.Unlock()
 
-	switch b.stateCode {
-	case _backupCollStatusPending:
-		return 1
-	case _backupCollStatusDDLExecuting:
-		return 5
-	case _backupCollStatusDDLDone:
-		return 10
-	case _backupCollStatusDMLPrepare:
-		return 15
-	case _backupCollStatusDMLExecuting:
-		// if total size is 0, it means there is no data should be backup, so we just return 15
-		if b.totalSize == 0 {
-			return 15
-		}
-		// the range is [15, 100], so we need to map [0, 100] to [15, 100]
-		progress := float64(b.backupSize) / float64(b.totalSize) * 100
-		mapped := int32(progress*0.85) + 15
-		return mapped
-	case _backupCollStatusSuccess, _backupCollStatusDMLDone:
-		return 100
-	case _backupCollStatusFailed:
-		return 0
-	default:
-		panic(fmt.Sprintf("unknown backup coll %s task state: %d", b.collRef.String(), b.stateCode))
+	trackers := make(map[collref.Name]*BackupCollTracker, len(collRefs))
+	for _, collRef := range collRefs {
+		collTask := &backupCollTask{state: BackupCollStatePending}
+		t.task.collTask[collRef] = collTask
+		trackers[collRef] = &BackupCollTracker{task: collTask}
 	}
+	t.task.state = BackupStateCollectionExecuting
+
+	return trackers
 }
 
-func (b *backupCollTask) TotalSize() int64 {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
+// SetFail settles the job as failed. Only the job's own goroutine may call
+// it: the terminal state is the settlement of the job, so it is written by
+// whoever observes the task answer, in one place.
+func (t *BackupTracker) SetFail(err error) {
+	t.task.mu.Lock()
+	defer t.task.mu.Unlock()
 
-	return b.totalSize
+	t.task.state = BackupStateFail
+	t.task.errorMessage = err.Error()
+	t.task.endTime = time.Now()
 }
 
-// BackupCollTaskView is read-only view of backup coll task.
-type BackupCollTaskView interface {
-	ID() string
+// SetSuccess settles the job as successful, under the same single-writer rule
+// as SetFail.
+func (t *BackupTracker) SetSuccess() {
+	t.task.mu.Lock()
+	defer t.task.mu.Unlock()
 
-	StateCode() backuppb.BackupTaskStateCode
-	ErrorMessage() string
+	t.task.state = BackupStateSuccess
+	t.task.endTime = time.Now()
+}
 
-	StartTime() time.Time
-	EndTime() time.Time
+// Snapshot reads the tracked task's current state. The tracker is the write
+// handle, but the job that holds it is also the one answering Wait, so it
+// reads through here instead of round-tripping the store map.
+func (t *BackupTracker) Snapshot() BackupStatus {
+	return t.task.snapshot()
+}
 
-	Progress() int32
-	TotalSize() int64
+// BackupCollTracker is the write handle for one collection's slice of a
+// backup job, minted by StartCollectionPhase. It holds the coll task
+// pointer directly, the same way the job tracker holds the task: a write
+// needs no collection key, and a write for a collection the job does not
+// cover cannot be expressed at all.
+type BackupCollTracker struct {
+	task *backupCollTask
+}
+
+func (t *BackupCollTracker) setState(state BackupCollState) {
+	t.task.mu.Lock()
+	defer t.task.mu.Unlock()
+
+	t.task.state = state
+}
+
+func (t *BackupCollTracker) SetDDLExecuting() { t.setState(BackupCollStateDDLExecuting) }
+
+func (t *BackupCollTracker) SetDDLDone() { t.setState(BackupCollStateDDLDone) }
+
+func (t *BackupCollTracker) SetDMLPrepare() { t.setState(BackupCollStateDMLPrepare) }
+
+func (t *BackupCollTracker) SetDMLExecuting(totalSize int64) {
+	t.task.mu.Lock()
+	defer t.task.mu.Unlock()
+
+	t.task.state = BackupCollStateDMLExecuting
+	t.task.totalSize = totalSize
+}
+
+func (t *BackupCollTracker) SetDMLDone() { t.setState(BackupCollStateDMLDone) }
+
+func (t *BackupCollTracker) SetFail(err error) {
+	t.task.mu.Lock()
+	defer t.task.mu.Unlock()
+
+	t.task.state = BackupCollStateFail
+	t.task.errorMessage = err.Error()
+	t.task.endTime = time.Now()
+}
+
+func (t *BackupCollTracker) SetSuccess() {
+	t.task.mu.Lock()
+	defer t.task.mu.Unlock()
+
+	t.task.state = BackupCollStateSuccess
+	t.task.endTime = time.Now()
+}
+
+// AddCopiedSize records n copied bytes. Its name takes the verb, not the
+// field: callers pass a delta, the tracker owns the accumulation.
+func (t *BackupCollTracker) AddCopiedSize(size int64) {
+	t.task.mu.Lock()
+	defer t.task.mu.Unlock()
+
+	t.task.copiedSize += size
 }

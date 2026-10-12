@@ -3,7 +3,6 @@ package backup
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
@@ -42,13 +41,13 @@ type collDMLTask struct {
 
 	gcCtrl gcCtrl
 
-	store       *jobstate.Store
+	tracker     *jobstate.BackupCollTracker
 	metaBuilder *metaBuilder
 
 	logger *zap.Logger
 }
 
-func newCollDMLTask(collRef collref.Name, args collTaskArgs) *collDMLTask {
+func newCollDMLTask(collRef collref.Name, tracker *jobstate.BackupCollTracker, args collTaskArgs) *collDMLTask {
 	logger := log.L().With(zap.String("task_id", args.TaskID), zap.String("coll", collRef.String()))
 	return &collDMLTask{
 		taskID: args.TaskID,
@@ -68,7 +67,7 @@ func newCollDMLTask(collRef collref.Name, args collTaskArgs) *collDMLTask {
 		grpc:    args.Grpc,
 		restful: args.Restful,
 
-		store:       args.Store,
+		tracker:     tracker,
 		metaBuilder: args.MetaBuilder,
 
 		gcCtrl: args.gcCtrl,
@@ -342,7 +341,7 @@ func (dmlt *collDMLTask) getSegmentInfoByAPI(ctx context.Context, seg *milvuspb.
 func (dmlt *collDMLTask) Execute(ctx context.Context) error {
 	dmlt.logger.Info("start to backup dml of collection")
 
-	dmlt.store.UpdateBackupTask(dmlt.taskID, jobstate.SetBackupCollDMLPrepare(dmlt.collRef))
+	dmlt.tracker.SetDMLPrepare()
 
 	describe, err := dmlt.grpc.DescribeCollection(ctx, dmlt.collRef.DBName(), dmlt.collRef.CollName())
 	if err != nil {
@@ -361,7 +360,7 @@ func (dmlt *collDMLTask) Execute(ctx context.Context) error {
 	}
 
 	size := lo.SumBy(segments, func(seg *backuppb.SegmentBackupInfo) int64 { return seg.GetSize() })
-	dmlt.store.UpdateBackupTask(dmlt.taskID, jobstate.SetBackupCollDMLExecuting(dmlt.collRef, size))
+	dmlt.tracker.SetDMLExecuting(size)
 
 	if err := dmlt.backupSegmentsData(ctx, segments); err != nil {
 		return fmt.Errorf("backup: backup segments %w", err)
@@ -371,7 +370,7 @@ func (dmlt *collDMLTask) Execute(ctx context.Context) error {
 		return fmt.Errorf("backup: verify segments %w", err)
 	}
 
-	dmlt.store.UpdateBackupTask(dmlt.taskID, jobstate.SetBackupCollDMLDone(dmlt.collRef))
+	dmlt.tracker.SetDMLDone()
 
 	return nil
 }
@@ -531,8 +530,8 @@ func (dmlt *collDMLTask) backupSegmentData(ctx context.Context, seg *backuppb.Se
 		Attrs:     attrs,
 		Streaming: dmlt.streaming,
 		Sem:       dmlt.throttling.CopySem,
-		TraceFn: func(size int64, cost time.Duration) {
-			dmlt.store.UpdateBackupTask(dmlt.taskID, jobstate.IncBackupCollCopiedSize(dmlt.collRef, size, cost))
+		TraceFn: func(size int64) {
+			dmlt.tracker.AddCopiedSize(size)
 		},
 	}
 	cpTask := storage.NewCopyObjectsTask(opt)

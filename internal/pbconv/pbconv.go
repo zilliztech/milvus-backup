@@ -97,17 +97,22 @@ func Base64DecodeMsgPosition(position string) (*msgpb.MsgPosition, error) {
 	return &msgPosition, nil
 }
 
-func NewBackupInfoBrief(task jobstate.BackupTaskView, backup *backuppb.BackupInfo, metaSize int64) *backuppb.BackupInfoBrief {
+// NewBackupInfoBrief merges the two halves of the v1 get_backup answer: the
+// job snapshot overlays progress, the persisted artifact carries everything
+// else. The wire's state code and progress percent are renderings of the
+// jobstate snapshot, computed here — the state package knows nothing about
+// the pb enums.
+func NewBackupInfoBrief(task *jobstate.BackupStatus, backup *backuppb.BackupInfo, metaSize int64) *backuppb.BackupInfoBrief {
 	brief := &backuppb.BackupInfoBrief{MetaSize: metaSize}
 
 	if task != nil {
-		brief.Name = task.Name()
-		brief.Id = task.ID()
-		brief.StateCode = task.StateCode()
-		brief.ErrorMessage = task.ErrorMessage()
-		brief.StartTime = task.StartTime().Unix()
-		brief.EndTime = task.EndTime().Unix()
-		brief.Progress = task.Progress()
+		brief.Name = task.Name
+		brief.Id = task.ID
+		brief.StateCode = backupStateToPB(task.State)
+		brief.ErrorMessage = task.ErrorMessage
+		brief.StartTime = task.StartTime.Unix()
+		brief.EndTime = task.EndTime.Unix()
+		brief.Progress = backupProgress(task)
 	}
 
 	if backup != nil {
@@ -122,6 +127,79 @@ func NewBackupInfoBrief(task jobstate.BackupTaskView, backup *backuppb.BackupInf
 	}
 
 	return brief
+}
+
+// backupStateToPB renders the job's state as the v1 wire code. The pb enum is
+// coarser than the job's: both executing phases read as EXECUTING.
+func backupStateToPB(state jobstate.BackupState) backuppb.BackupTaskStateCode {
+	switch state {
+	case jobstate.BackupStateInitial:
+		return backuppb.BackupTaskStateCode_BACKUP_INITIAL
+	case jobstate.BackupStateDatabaseExecuting, jobstate.BackupStateCollectionExecuting:
+		return backuppb.BackupTaskStateCode_BACKUP_EXECUTING
+	case jobstate.BackupStateSuccess:
+		return backuppb.BackupTaskStateCode_BACKUP_SUCCESS
+	case jobstate.BackupStateFail:
+		return backuppb.BackupTaskStateCode_BACKUP_FAIL
+	default:
+		return backuppb.BackupTaskStateCode_BACKUP_INITIAL
+	}
+}
+
+// backupProgress renders the job's percent on the v1 wire. The mapping is the
+// historical contract: registration reports 1, the database phase 5, the
+// collection phase averages its collections and maps them onto [5, 100].
+func backupProgress(task *jobstate.BackupStatus) int32 {
+	switch task.State {
+	case jobstate.BackupStateInitial:
+		return 1
+	case jobstate.BackupStateDatabaseExecuting:
+		return 5
+	case jobstate.BackupStateCollectionExecuting:
+		// map [0, 100] to [5, 100]
+		var totalProgress int32
+		for _, coll := range task.Colls {
+			totalProgress += backupCollProgress(coll)
+		}
+
+		return int32(float64(totalProgress)/float64(len(task.Colls))*0.95) + 5
+	case jobstate.BackupStateSuccess:
+		return 100
+	case jobstate.BackupStateFail:
+		return 0
+	default:
+		return 0
+	}
+}
+
+// backupCollProgress renders one collection's percent. Schema work covers
+// [1, 15], the data copy maps its copied ratio onto [15, 100].
+func backupCollProgress(coll jobstate.BackupCollStatus) int32 {
+	switch coll.State {
+	case jobstate.BackupCollStatePending:
+		return 1
+	case jobstate.BackupCollStateDDLExecuting:
+		return 5
+	case jobstate.BackupCollStateDDLDone:
+		return 10
+	case jobstate.BackupCollStateDMLPrepare:
+		return 15
+	case jobstate.BackupCollStateDMLExecuting:
+		// if total size is 0, it means there is no data should be backup, so we just return 15
+		if coll.TotalSize == 0 {
+			return 15
+		}
+		// the range is [15, 100], so we need to map [0, 100] to [15, 100]
+		progress := float64(coll.CopiedSize) / float64(coll.TotalSize) * 100
+		mapped := int32(progress*0.85) + 15
+		return mapped
+	case jobstate.BackupCollStateSuccess, jobstate.BackupCollStateDMLDone:
+		return 100
+	case jobstate.BackupCollStateFail:
+		return 0
+	default:
+		return 0
+	}
 }
 
 func newCollBackupBrief(colls []*backuppb.CollectionBackupInfo) []*backuppb.CollectionBackupInfoBrief {
