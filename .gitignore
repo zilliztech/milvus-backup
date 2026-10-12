@@ -12,3 +12,8 @@ dist/
 
 # Claude Code
 CLAUDE.local.md
+
+# AI coding agent state
+.claude/
+.codex/
+.zcode/
