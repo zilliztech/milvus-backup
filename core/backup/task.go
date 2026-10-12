@@ -221,6 +221,8 @@ func (t *Task) closeClients() {
 	}
 }
 
+var _ tasklet.Tasklet = (*Task)(nil)
+
 func (t *Task) Execute(ctx context.Context) (err error) {
 	defer t.closeClients()
 	defer func() {

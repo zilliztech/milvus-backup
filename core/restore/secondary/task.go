@@ -20,6 +20,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/restore/conv"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/core/tasklet"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
@@ -104,6 +105,8 @@ func (t *Task) closeClients() {
 		}
 	}
 }
+
+var _ tasklet.Tasklet = (*Task)(nil)
 
 func (t *Task) Execute(ctx context.Context) error {
 	// Check before any client is created or any DDL is broadcast, so a backup
