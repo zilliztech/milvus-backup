@@ -235,10 +235,6 @@ func (t *Task) Execute(ctx context.Context) (err error) {
 		return err
 	}
 
-	if err = t.prepare(ctx); err != nil {
-		return err
-	}
-
 	if err = t.privateExecute(ctx); err != nil {
 		return err
 	}
@@ -382,18 +378,6 @@ func (t *Task) newDataTask(format string) dataTaskFactory {
 // names allow a leading digit and snapshot names do not, hence the prefix; the backup
 // name itself is already restricted to letters, digits and underscores.
 func (t *Task) snapshotName() string { return "mbk_" + t.option.BackupName }
-
-func (t *Task) prepare(ctx context.Context) error {
-	exist, err := storage.Exist(ctx, t.backupStorage, t.backupDir)
-	if err != nil {
-		return fmt.Errorf("backup: check whether exist backup with name: %s", t.option.BackupName)
-	}
-	if exist {
-		return fmt.Errorf("backup: backup with name %s already exist", t.option.BackupName)
-	}
-
-	return nil
-}
 
 func (t *Task) listDBAndNames(ctx context.Context) ([]string, []collref.Name, error) {
 	f := t.option.Filter

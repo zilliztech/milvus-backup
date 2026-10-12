@@ -12,26 +12,31 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zilliztech/milvus-backup/core/backup"
+	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/core/tasklet"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/storage"
+	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 )
 
-// expectClientConfigs teaches both mock clients the config probe NewTask does
-// to resolve the transfer mode.
-func expectClientConfigs(t *testing.T, milvusStorage, backupStorage *storage.MockClient) {
+// expectClientConfigs teaches both mock clients everything a clean admission
+// runs: the config probe NewTask does to resolve the transfer mode, the source
+// list preflight, and the artifact dir preflight finding the dir free.
+func expectClientConfigs(t *testing.T, milvusStorage, backupStorage *storage.MockClient, backupDir string) {
 	t.Helper()
 
 	milvusStorage.EXPECT().Config().Return(storage.Config{})
 	milvusStorage.EXPECT().NewObjectIter(mock.Anything, mock.Anything, true).Return(storage.NewMockObjectIterator(nil)).Once()
 	backupStorage.EXPECT().Config().Return(storage.Config{})
+	backupStorage.EXPECT().NewObjectIter(mock.Anything, backupDir, false).Return(storage.NewMockObjectIterator(nil)).Once()
 }
 
 func TestNewBackupJob(t *testing.T) {
 	t.Run("RegistersJobInTheTaskManager", func(t *testing.T) {
 		milvusStorage := storage.NewMockClient(t)
 		backupStorage := storage.NewMockClient(t)
-		expectClientConfigs(t, milvusStorage, backupStorage)
+		expectClientConfigs(t, milvusStorage, backupStorage, mpath.BackupDir(cfg.New().Backup.Storage.RootPath.Val, "backup1"))
 		store := jobstate.NewStore()
 
 		job, err := newBackupJob(context.Background(), cfg.New(), store, milvusStorage, backupStorage,
@@ -47,8 +52,8 @@ func TestNewBackupJob(t *testing.T) {
 	t.Run("RefusesSecondLiveJobWithSameName", func(t *testing.T) {
 		milvusStorage := storage.NewMockClient(t)
 		backupStorage := storage.NewMockClient(t)
-		expectClientConfigs(t, milvusStorage, backupStorage)
-		expectClientConfigs(t, milvusStorage, backupStorage)
+		expectClientConfigs(t, milvusStorage, backupStorage, mpath.BackupDir(cfg.New().Backup.Storage.RootPath.Val, "backup1"))
+		expectClientConfigs(t, milvusStorage, backupStorage, mpath.BackupDir(cfg.New().Backup.Storage.RootPath.Val, "backup1"))
 		store := jobstate.NewStore()
 
 		_, err := newBackupJob(context.Background(), cfg.New(), store, milvusStorage, backupStorage,
@@ -60,6 +65,54 @@ func TestNewBackupJob(t *testing.T) {
 
 		assert.Nil(t, job)
 		assert.ErrorContains(t, err, "existing task")
+	})
+
+	t.Run("RefusesExistingBackupDir", func(t *testing.T) {
+		milvusStorage := storage.NewMockClient(t)
+		backupStorage := storage.NewMockClient(t)
+		params := cfg.New()
+		milvusStorage.EXPECT().NewObjectIter(mock.Anything, mock.Anything, true).Return(storage.NewMockObjectIterator(nil)).Once()
+		backupDir := mpath.BackupDir(params.Backup.Storage.RootPath.Val, "backup1")
+		backupStorage.EXPECT().NewObjectIter(mock.Anything, backupDir, false).
+			Return(storage.NewMockObjectIterator([]storage.ObjectAttr{{Key: backupDir + "meta"}})).Once()
+
+		store := jobstate.NewStore()
+		job, err := newBackupJob(context.Background(), params, store, milvusStorage, backupStorage,
+			CreateBackupRequest{TaskID: "task-1", Option: backup.Option{BackupName: "backup1"}})
+
+		// A taken name is a conflict, not an unreachable storage: the caller
+		// gets a plain failure, and no job is left registered.
+		assert.Nil(t, job)
+		assert.ErrorContains(t, err, "backup with name backup1 already exist")
+		assert.NotErrorIs(t, err, ErrStorageNotReady)
+		_, err = store.GetBackupTask("task-1")
+		assert.ErrorIs(t, err, jobstate.ErrTaskNotFound)
+		_, err = store.GetBackupTaskByName("backup1")
+		assert.ErrorIs(t, err, jobstate.ErrTaskNotFound)
+	})
+
+	t.Run("BackupDirListFailureIsStorageNotReady", func(t *testing.T) {
+		milvusStorage := storage.NewMockClient(t)
+		backupStorage := storage.NewMockClient(t)
+		params := cfg.New()
+		milvusStorage.EXPECT().NewObjectIter(mock.Anything, mock.Anything, true).Return(storage.NewMockObjectIterator(nil)).Once()
+		backupDir := mpath.BackupDir(params.Backup.Storage.RootPath.Val, "backup1")
+		denied := errors.New("put denied")
+		backupStorage.EXPECT().NewObjectIter(mock.Anything, backupDir, false).Return(errorSeq(denied)).Once()
+		backupStorage.EXPECT().Config().Return(storage.Config{Bucket: "dest-bucket"})
+
+		store := jobstate.NewStore()
+		job, err := newBackupJob(context.Background(), params, store, milvusStorage, backupStorage,
+			CreateBackupRequest{TaskID: "task-1", Option: backup.Option{BackupName: "backup1"}})
+
+		// The dir check is storage admission like the source preflight: the
+		// caller may retry the same request once storage recovers.
+		assert.Nil(t, job)
+		assert.ErrorIs(t, err, ErrStorageNotReady)
+		assert.ErrorIs(t, err, denied)
+		assert.ErrorContains(t, err, backupDir)
+		_, err = store.GetBackupTask("task-1")
+		assert.ErrorIs(t, err, jobstate.ErrTaskNotFound)
 	})
 }
 
@@ -90,6 +143,8 @@ func TestNewBackupJobPreflight(t *testing.T) {
 		source.EXPECT().NewObjectIter(mock.Anything, "instance/insert_log/", true).
 			Return(storage.NewMockObjectIterator([]storage.ObjectAttr{{Key: "first"}})).Once()
 		dest.EXPECT().Config().Return(storage.Config{})
+		dest.EXPECT().NewObjectIter(mock.Anything, mpath.BackupDir(params.Backup.Storage.RootPath.Val, "retry_backup"), false).
+			Return(storage.NewMockObjectIterator(nil)).Once()
 		job, err = newBackupJob(context.Background(), params, store, source, dest, req)
 		require.NoError(t, err)
 		assert.NotNil(t, job)
@@ -103,6 +158,8 @@ func TestNewBackupJobPreflight(t *testing.T) {
 		dest := storage.NewMockClient(t)
 		source.EXPECT().Config().Return(storage.Config{})
 		dest.EXPECT().Config().Return(storage.Config{})
+		dest.EXPECT().NewObjectIter(mock.Anything, mpath.BackupDir(cfg.New().Backup.Storage.RootPath.Val, "meta_backup"), false).
+			Return(storage.NewMockObjectIterator(nil)).Once()
 		job, err := newBackupJob(context.Background(), cfg.New(), jobstate.NewStore(), source, dest,
 			CreateBackupRequest{TaskID: "meta", Option: backup.Option{BackupName: "meta_backup", Strategy: backup.StrategyMetaOnly}})
 		assert.NoError(t, err)
@@ -133,6 +190,76 @@ func TestNewBackupJobPreflight(t *testing.T) {
 		assert.ErrorIs(t, err, context.Canceled)
 		_, err = store.GetBackupTask("cancel")
 		assert.ErrorIs(t, err, jobstate.ErrTaskNotFound)
+	})
+}
+
+// stubBackupTask stands in for the backup run. It follows the real task's
+// contract of recording its own terminal state in the store before it
+// answers, so the job's lifecycle runs end to end.
+type stubBackupTask struct {
+	store  *jobstate.Store
+	taskID string
+	err    error
+}
+
+func (s stubBackupTask) Execute(context.Context) error {
+	if s.err != nil {
+		s.store.UpdateBackupTask(s.taskID, jobstate.SetBackupFail(s.err))
+		return s.err
+	}
+	s.store.UpdateBackupTask(s.taskID, jobstate.SetBackupSuccess())
+	return nil
+}
+
+func newStubBackupJob(t *testing.T, store *jobstate.Store, taskID string, task tasklet.Tasklet) *BackupJob {
+	t.Helper()
+	require.NoError(t, store.AddBackupTask(taskID, "backup1"))
+	view, err := store.GetBackupTask(taskID)
+	require.NoError(t, err)
+	return &BackupJob{task: task, view: view, done: make(chan struct{})}
+}
+
+func TestBackupJobRun(t *testing.T) {
+	t.Run("SuccessSettlesTheView", func(t *testing.T) {
+		store := jobstate.NewStore()
+		job := newStubBackupJob(t, store, "task-1", stubBackupTask{store: store, taskID: "task-1"})
+
+		// Run is fire-and-forget; the outcome is read back through Wait.
+		job.Run(context.Background())
+		view, err := job.Wait(context.Background())
+		require.NoError(t, err)
+		assert.Equal(t, backuppb.BackupTaskStateCode_BACKUP_SUCCESS, view.StateCode())
+
+		// The store sees the same settlement the Wait answered with.
+		stored, err := store.GetBackupTask("task-1")
+		require.NoError(t, err)
+		assert.Equal(t, backuppb.BackupTaskStateCode_BACKUP_SUCCESS, stored.StateCode())
+	})
+
+	t.Run("FailureLandsInTheView", func(t *testing.T) {
+		store := jobstate.NewStore()
+		job := newStubBackupJob(t, store, "task-1", stubBackupTask{store: store, taskID: "task-1", err: errors.New("boom")})
+
+		job.Run(context.Background())
+		view, err := job.Wait(context.Background())
+		require.NoError(t, err)
+		assert.Equal(t, backuppb.BackupTaskStateCode_BACKUP_FAIL, view.StateCode())
+		assert.Equal(t, "boom", view.ErrorMessage())
+		assert.False(t, view.EndTime().IsZero())
+	})
+}
+
+func TestBackupJobWait(t *testing.T) {
+	t.Run("StopsWhenContextCanceled", func(t *testing.T) {
+		store := jobstate.NewStore()
+		job := newStubBackupJob(t, store, "task-1", stubBackupTask{store: store, taskID: "task-1"})
+
+		// The job never runs, so only the context can release the wait.
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		_, err := job.Wait(ctx)
+		assert.ErrorIs(t, err, context.Canceled)
 	})
 }
 

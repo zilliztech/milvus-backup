@@ -18,21 +18,47 @@ import (
 	"github.com/zilliztech/milvus-backup/core/backup"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
-// stubBackupJob stands in for *app.BackupJob: a canned Run error, and a ran
-// channel so async tests can wait for the handler's goroutine.
-type stubBackupJob struct {
-	runErr error
-	ran    chan struct{}
+// stubBackupView is a canned settlement: the state and message a stub job
+// answers Wait with. Only the pieces the handler reads are real.
+type stubBackupView struct {
+	state backuppb.BackupTaskStateCode
+	msg   string
 }
 
-func (j stubBackupJob) Run(context.Context) error {
+func (v stubBackupView) ID() string                                              { return "stub" }
+func (v stubBackupView) Name() string                                            { return "stub" }
+func (v stubBackupView) StateCode() backuppb.BackupTaskStateCode                 { return v.state }
+func (v stubBackupView) ErrorMessage() string                                    { return v.msg }
+func (v stubBackupView) StartTime() time.Time                                    { return time.Time{} }
+func (v stubBackupView) EndTime() time.Time                                      { return time.Time{} }
+func (v stubBackupView) Progress() int32                                         { return 0 }
+func (v stubBackupView) TotalSize() int64                                        { return 0 }
+func (v stubBackupView) CollTasks() map[collref.Name]jobstate.BackupCollTaskView { return nil }
+
+// stubBackupJob stands in for *app.BackupJob: a canned settlement view, and a
+// ran channel so async tests can observe the release. A stub without a view
+// settles SUCCESS, the outcome the happy-path tests need.
+type stubBackupJob struct {
+	view jobstate.BackupTaskView
+	ran  chan struct{}
+}
+
+func (j stubBackupJob) Run(context.Context) {
 	if j.ran != nil {
 		close(j.ran)
 	}
-	return j.runErr
+}
+
+func (j stubBackupJob) Wait(context.Context) (jobstate.BackupTaskView, error) {
+	if j.view != nil {
+		return j.view, nil
+	}
+	return stubBackupView{state: backuppb.BackupTaskStateCode_BACKUP_SUCCESS}, nil
 }
 
 // stubCreateFactory stands in for the job factory: the params and request it
@@ -149,8 +175,11 @@ func TestHandleCreateBackup(t *testing.T) {
 		assert.Zero(t, stub.calls)
 	})
 
-	t.Run("SyncMapsRunErrorToFail", func(t *testing.T) {
-		stub := &stubCreateFactory{job: stubBackupJob{runErr: errors.New("bucket unavailable")}}
+	t.Run("SyncMapsFailStateToFail", func(t *testing.T) {
+		stub := &stubCreateFactory{job: stubBackupJob{view: stubBackupView{
+			state: backuppb.BackupTaskStateCode_BACKUP_FAIL,
+			msg:   "bucket unavailable",
+		}}}
 		s := newListTestServer(t, withCreateBackup(stub))
 
 		resp := postBackup(t, s, `{"backup_name":"backup1"}`, "rid-1")

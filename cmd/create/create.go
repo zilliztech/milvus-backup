@@ -13,6 +13,7 @@ import (
 	"github.com/zilliztech/milvus-backup/cmd/flags"
 	"github.com/zilliztech/milvus-backup/cmd/root"
 	"github.com/zilliztech/milvus-backup/core/backup"
+	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
@@ -168,8 +169,16 @@ func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
 		return fmt.Errorf("create: new backup job: %w", err)
 	}
 
-	if err := job.Run(ctx); err != nil {
-		return fmt.Errorf("create: run backup job: %w", err)
+	// The CLI exposes no async form: the job runs detached and the command
+	// waits on it.
+	job.Run(ctx)
+
+	view, err := job.Wait(ctx)
+	if err != nil {
+		return fmt.Errorf("create: wait backup job: %w", err)
+	}
+	if view.StateCode() == backuppb.BackupTaskStateCode_BACKUP_FAIL {
+		return fmt.Errorf("create: run backup job: %s", view.ErrorMessage())
 	}
 
 	cmd.Println("create backup success")

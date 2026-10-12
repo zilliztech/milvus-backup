@@ -18,6 +18,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
@@ -25,9 +26,10 @@ import (
 // defines it: app returns a concrete type, and this narrow interface is what
 // handler tests stub out.
 type backupJob interface {
-	// Run executes the job; where its goroutine goes is this server's
-	// deployment decision, selected by the request's async flag.
-	Run(ctx context.Context) error
+	// Run releases the job into the background.
+	Run(ctx context.Context)
+	// Wait answers with the outcome the job records when it settles.
+	Wait(ctx context.Context) (jobstate.BackupTaskView, error)
 }
 
 // backupJobFactory builds and registers the job for one create request.
@@ -39,6 +41,7 @@ type backupJobFactory func(ctx context.Context, params *cfg.Config, req app.Crea
 // @Summary Create backup interface
 // @Description Create a backup with the given name and collections
 // @Description Storage preflight failures return HTTP 200 with code 503 (Storage_Not_Ready), without registering a task. The caller may retry the same request.
+// @Description A backup name whose artifact directory already exists fails with code Fail, also without registering a task.
 // @Tags Backup
 // @Accept application/json
 // @Produce application/json
@@ -113,12 +116,13 @@ func createBackupErrorCode(err error) backuppb.ResponseCode {
 	return backuppb.ResponseCode_Fail
 }
 
-// runCreateBackupSync runs the job on the request path. The v1 success
-// response carries only code and msg — whatever a v1 response needs, this
-// handler assembles itself, and this one needs nothing. The historical
-// handler additionally read the persisted meta after a successful run and
-// answered Fail when that read failed, but the read only fed a payload the
-// response then discarded, so it is gone together with the payload.
+// runCreateBackupSync registers the job, releases it into the background and
+// waits for it to settle on the request path. The v1 success response carries
+// only code and msg — whatever a v1 response needs, this handler assembles
+// itself, and this one needs nothing. The historical handler additionally
+// read the persisted meta after a successful run and answered Fail when that
+// read failed, but the read only fed a payload the response then discarded,
+// so it is gone together with the payload.
 func runCreateBackupSync(ctx context.Context, newJob backupJobFactory, params *cfg.Config, requestID string, req app.CreateBackupRequest) *backuppb.BackupInfoResponse {
 	job, err := newJob(ctx, params, req)
 	if err != nil {
@@ -129,20 +133,35 @@ func runCreateBackupSync(ctx context.Context, newJob backupJobFactory, params *c
 		}
 	}
 
-	if err := job.Run(ctx); err != nil {
+	// The job runs detached from the request — a client disconnect must not
+	// kill a half-done backup — and the handler answers with the outcome it
+	// settles on.
+	job.Run(context.Background())
+
+	view, err := job.Wait(ctx)
+	if err != nil {
+		// The request context died while waiting; the backup itself keeps
+		// running to completion in the background.
 		return &backuppb.BackupInfoResponse{
 			RequestId: requestID,
-			Code:      createBackupErrorCode(err),
+			Code:      backuppb.ResponseCode_Fail,
 			Msg:       err.Error(),
+		}
+	}
+	if view.StateCode() == backuppb.BackupTaskStateCode_BACKUP_FAIL {
+		return &backuppb.BackupInfoResponse{
+			RequestId: requestID,
+			Code:      backuppb.ResponseCode_Fail,
+			Msg:       view.ErrorMessage(),
 		}
 	}
 
 	return &backuppb.BackupInfoResponse{Code: backuppb.ResponseCode_Success, Msg: "success"}
 }
 
-// runCreateBackupAsync registers the job and returns immediately; running it
-// in the background is this server's deployment concern, the flag only
-// selects it.
+// runCreateBackupAsync registers the job and returns immediately; Run is what
+// releases the job into the background, the flag only selects not waiting for
+// it.
 func runCreateBackupAsync(ctx context.Context, newJob backupJobFactory, params *cfg.Config, requestID string, req app.CreateBackupRequest) *backuppb.BackupInfoResponse {
 	resp := &backuppb.BackupInfoResponse{RequestId: requestID}
 
@@ -153,11 +172,7 @@ func runCreateBackupAsync(ctx context.Context, newJob backupJobFactory, params *
 		return resp
 	}
 
-	go func() {
-		if err := job.Run(context.Background()); err != nil {
-			log.Error("create backup task execute fail", zap.String("backupId", requestID), zap.Error(err))
-		}
-	}()
+	job.Run(context.Background())
 
 	resp.Code = backuppb.ResponseCode_Success
 	resp.Msg = "create backup is executing asynchronously"

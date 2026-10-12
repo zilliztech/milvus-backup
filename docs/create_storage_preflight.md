@@ -31,6 +31,14 @@ same backup name and request ID. Callers must check the response body rather
 than treating HTTP 200 alone as acceptance. Use bounded retries with backoff;
 persistent configuration or permission errors also fail this check.
 
+After the source check passes, admission also lists the artifact directory
+`<backup.storage.rootPath>/<backup_name>/`. A listing failure answers the same
+`Storage_Not_Ready` code, with the backup storage's provider, endpoint, bucket
+and the directory in the message. A directory that already holds a backup is a
+plain failure (`code` `1`, `Fail`) — the name is taken, retrying cannot succeed
+until a different name or a cleaned directory is used. Neither outcome
+registers a task.
+
 This change does not remove existing tasks or make requests idempotent after a
 task has been accepted. It checks List access at admission time; it does not
 prove Get/Put/Copy permissions or guarantee that permissions remain available
