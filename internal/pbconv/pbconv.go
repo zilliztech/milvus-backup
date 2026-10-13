@@ -179,9 +179,10 @@ func backupProgress(task *jobstate.BackupStatus) int32 {
 
 // backupCollProgress renders one collection's percent out of its two halves.
 // A failure on either half zeroes it. The data half is the bulk of the work,
-// so when it exists it drives the percent: pending reads as 10, prepare as
-// 15, the copy maps its copied ratio onto [15, 100]. A collection with no
-// data half at all — meta_only — is read from its schema half alone.
+// so when it exists it drives the percent: pending reads as 10, flushing as
+// 12, prepare as 15, the copy maps its copied ratio onto [15, 100]. A
+// collection with no data half at all — meta_only — is read from its schema
+// half alone.
 func backupCollProgress(coll jobstate.BackupCollStatus) int32 {
 	if coll.DDL != nil && coll.DDL.State == jobstate.BackupCollDDLStateFail {
 		return 0
@@ -194,6 +195,8 @@ func backupCollProgress(coll jobstate.BackupCollStatus) int32 {
 		switch coll.DML.State {
 		case jobstate.BackupCollDMLStatePending:
 			return 10
+		case jobstate.BackupCollDMLStateFlushing:
+			return 12
 		case jobstate.BackupCollDMLStatePrepare:
 			return 15
 		case jobstate.BackupCollDMLStateExecuting:

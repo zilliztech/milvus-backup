@@ -16,7 +16,13 @@ import (
 )
 
 const (
-	_snapshotPollInterval = 3 * time.Second
+	// The poll interval is also the granularity of the progress the job
+	// store reports: the counters only move when the export job is polled.
+	// At 3s a small collection's export completes inside one poll and its
+	// copying state never lives long enough for a progress renderer to
+	// sample it; 1s keeps even small exports visible for a frame or two,
+	// and the state query is a cheap unary RPC.
+	_snapshotPollInterval = 1 * time.Second
 )
 
 type collSnapshotTask struct {

@@ -34,16 +34,31 @@ const (
 	BackupCollDDLStateFail
 )
 
-// BackupCollDMLState is the lifecycle of one collection's data half: prepare
-// (segment listing, snapshot creation), then the copy itself, then settled.
+// BackupCollDMLState is the lifecycle of one collection's data half: an
+// optional flush, then prepare (segment listing, snapshot creation), then
+// the copy itself, then settled.
 type BackupCollDMLState uint32
 
 const (
 	BackupCollDMLStatePending BackupCollDMLState = iota
+	BackupCollDMLStateFlushing
 	BackupCollDMLStatePrepare
 	BackupCollDMLStateExecuting
 	BackupCollDMLStateSuccess
 	BackupCollDMLStateFail
+)
+
+// BackupUnit is what a collection's TotalSize and CopiedSize count. The
+// binlog format copies files through this process and reports bytes; the
+// snapshot format asks Milvus to export and reports the export job's file
+// count, whose total grows as the export discovers files. Renderers pick
+// the display unit and the approximate marker from this, not from the
+// numbers.
+type BackupUnit uint32
+
+const (
+	BackupUnitBytes BackupUnit = iota
+	BackupUnitFiles
 )
 
 // BackupStatus is a point-in-time snapshot of one backup job, copied out
@@ -58,6 +73,11 @@ type BackupStatus struct {
 
 	StartTime time.Time
 	EndTime   time.Time
+
+	// Unit is what every collection's TotalSize and CopiedSize count, fixed
+	// when the collection phase opens: the format is a job-level resolution,
+	// so the unit is uniform across collections.
+	Unit BackupUnit
 
 	// Colls holds one entry per collection the job covers. A collection
 	// appears the first time one of its tasks creates a tracker, so a job
@@ -90,16 +110,18 @@ type BackupCollDDLStatus struct {
 }
 
 // BackupCollDMLStatus is the snapshot of the data half. TotalSize is what
-// the collection has to copy, CopiedSize what is already copied; progress
-// renderers derive ratios from the two.
+// the collection has to copy, CopiedSize what is already copied, in the
+// job's Unit. StartTime is when the copy phase began; progress renderers
+// derive the copy rate from the three.
 type BackupCollDMLStatus struct {
 	State        BackupCollDMLState
 	ErrorMessage string
 
+	StartTime time.Time
+	EndTime   time.Time
+
 	TotalSize  int64
 	CopiedSize int64
-
-	EndTime time.Time
 }
 
 type backupTask struct {
@@ -113,6 +135,8 @@ type backupTask struct {
 
 	startTime time.Time
 	endTime   time.Time
+
+	unit BackupUnit
 
 	collTask map[collref.Name]*backupCollTask
 }
@@ -143,6 +167,7 @@ func (t *backupTask) snapshot() BackupStatus {
 		ErrorMessage: t.errorMessage,
 		StartTime:    t.startTime,
 		EndTime:      t.endTime,
+		Unit:         t.unit,
 		Colls:        colls,
 	}
 }
@@ -175,9 +200,10 @@ func (t *backupCollTask) snapshot() BackupCollStatus {
 		dml = &BackupCollDMLStatus{
 			State:        t.dml.state,
 			ErrorMessage: t.dml.errorMessage,
+			StartTime:    t.dml.startTime,
+			EndTime:      t.dml.endTime,
 			TotalSize:    t.dml.totalSize,
 			CopiedSize:   t.dml.copiedSize,
-			EndTime:      t.dml.endTime,
 		}
 	}
 
@@ -195,10 +221,11 @@ type backupCollDMLTask struct {
 	state        BackupCollDMLState
 	errorMessage string
 
+	startTime time.Time
+	endTime   time.Time
+
 	totalSize  int64
 	copiedSize int64
-
-	endTime time.Time
 }
 
 // BackupTracker is the write side of one backup job, minted by AddBackupTask
@@ -223,9 +250,14 @@ func (t *BackupTracker) SetDatabaseExecuting() {
 // SetCollectionExecuting opens the collection phase. Unlike the database
 // phase it registers nothing: collections appear as their tasks create
 // trackers, so a reader sees the phase start before the first collection
-// shows up.
-func (t *BackupTracker) SetCollectionExecuting() {
-	t.setState(BackupStateCollectionExecuting)
+// shows up. The unit declares what the collections' size counters will
+// count, and is fixed for the whole phase.
+func (t *BackupTracker) SetCollectionExecuting(unit BackupUnit) {
+	t.task.mu.Lock()
+	defer t.task.mu.Unlock()
+
+	t.task.state = BackupStateCollectionExecuting
+	t.task.unit = unit
 }
 
 // collNode returns the collection's node, creating it on first use: a
@@ -353,10 +385,19 @@ func (t *BackupCollDMLTracker) setState(state BackupCollDMLState) {
 
 func (t *BackupCollDMLTracker) SetPrepare() { t.setState(BackupCollDMLStatePrepare) }
 
+func (t *BackupCollDMLTracker) SetFlushing() { t.setState(BackupCollDMLStateFlushing) }
+
+// SetExecuting opens the copy phase with its total. The snapshot format
+// reports its total repeatedly as the export job discovers files, so the
+// start time sticks to the first call: the copy rate a renderer derives
+// from it covers the whole phase, not the latest report.
 func (t *BackupCollDMLTracker) SetExecuting(totalSize int64) {
 	t.coll.mu.Lock()
 	defer t.coll.mu.Unlock()
 
+	if t.coll.dml.startTime.IsZero() {
+		t.coll.dml.startTime = time.Now()
+	}
 	t.coll.dml.state = BackupCollDMLStateExecuting
 	t.coll.dml.totalSize = totalSize
 }
