@@ -25,6 +25,7 @@ Milvus.Storage.Address	minio.local
 Milvus.Storage.Port	9001
 Milvus.Storage.Region	us-west-2
 Milvus.Storage.UseSSL	true
+Milvus.Storage.CACertPath	
 Milvus.Storage.AccountName	
 Milvus.Storage.SourceSASToken	
 Milvus.Storage.BucketName	milvus-bucket
@@ -44,6 +45,7 @@ Backup.Storage.Address	minio.local
 Backup.Storage.Port	9001
 Backup.Storage.Region	us-west-2
 Backup.Storage.UseSSL	true
+Backup.Storage.CACertPath	
 Backup.Storage.AccountName	
 Backup.Storage.SourceSASToken	
 Backup.Storage.BucketName	milvus-bucket

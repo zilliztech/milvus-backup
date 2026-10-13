@@ -11,6 +11,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/textproto"
+	"path/filepath"
 	"strconv"
 	"sync/atomic"
 	"testing"
@@ -312,5 +313,38 @@ func TestIsBlobNotFound(t *testing.T) {
 
 	t.Run("PlainError", func(t *testing.T) {
 		assert.False(t, isBlobNotFound(assert.AnError))
+	})
+}
+
+// The azure service URL is always https, so a private CA can only enter
+// through the pipeline transport; these lock that wiring via the loud
+// failure paths of the CA file.
+func TestNewAzureClientCACert(t *testing.T) {
+	cred := Credential{Type: Static, AK: "account", SK: base64.StdEncoding.EncodeToString([]byte("account-key")), AzureAccountName: "account"}
+
+	t.Run("MissingFile", func(t *testing.T) {
+		cfg := Config{
+			Provider:   "azure",
+			Endpoint:   "blob.core.windows.net",
+			CACertPath: filepath.Join(t.TempDir(), "no-such-ca.pem"),
+			Credential: cred,
+		}
+
+		cli, err := newAzureClient(cfg)
+		assert.ErrorContains(t, err, "read ca cert")
+		assert.Nil(t, cli)
+	})
+
+	t.Run("ValidCA", func(t *testing.T) {
+		cfg := Config{
+			Provider:   "azure",
+			Endpoint:   "blob.core.windows.net",
+			CACertPath: writeTestCA(t),
+			Credential: cred,
+		}
+
+		cli, err := newAzureClient(cfg)
+		require.NoError(t, err)
+		assert.NotNil(t, cli)
 	})
 }

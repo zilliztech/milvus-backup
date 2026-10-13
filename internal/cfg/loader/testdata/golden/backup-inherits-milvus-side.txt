@@ -25,6 +25,7 @@ Milvus.Storage.Address	s3.amazonaws.com
 Milvus.Storage.Port	443
 Milvus.Storage.Region	
 Milvus.Storage.UseSSL	true
+Milvus.Storage.CACertPath	
 Milvus.Storage.AccountName	
 Milvus.Storage.SourceSASToken	
 Milvus.Storage.BucketName	a-bucket
@@ -44,6 +45,7 @@ Backup.Storage.Address	s3.amazonaws.com
 Backup.Storage.Port	443
 Backup.Storage.Region	
 Backup.Storage.UseSSL	true
+Backup.Storage.CACertPath	
 Backup.Storage.AccountName	
 Backup.Storage.SourceSASToken	
 Backup.Storage.BucketName	backup-bucket

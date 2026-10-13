@@ -38,17 +38,33 @@ func newAzureClient(cfg Config) (*AzureClient, error) {
 	endpoint := strings.TrimSuffix(cfg.Endpoint, ":443")
 	ep := fmt.Sprintf("https://%s.blob.%s", cfg.Credential.AzureAccountName, endpoint)
 	logger := log.L().With(zap.String("provider", cfg.Provider), zap.String("endpoint", endpoint))
+
+	// Both clients must carry the transport: sasCli mints the SAS tokens the
+	// copy path uses, so a connection it can make but cli cannot is useless.
+	var blobOpts *azblob.ClientOptions
+	var svcOpts *service.ClientOptions
+	if cfg.CACertPath != "" {
+		tr, err := tlsTransport(cfg.CACertPath)
+		if err != nil {
+			return nil, err
+		}
+		// azcore's Transporter wants a Do method, so the transport rides in
+		// an http.Client the way the SDK's own default transport does.
+		blobOpts = &azblob.ClientOptions{ClientOptions: azcore.ClientOptions{Transport: &http.Client{Transport: tr}}}
+		svcOpts = &service.ClientOptions{ClientOptions: azcore.ClientOptions{Transport: &http.Client{Transport: tr}}}
+	}
+
 	switch cfg.Credential.Type {
 	case IAM:
 		cred, err := azidentity.NewDefaultAzureCredential(nil)
 		if err != nil {
 			return nil, fmt.Errorf("storage: new azure default credential: %w", err)
 		}
-		cli, err := azblob.NewClient(ep, cred, nil)
+		cli, err := azblob.NewClient(ep, cred, blobOpts)
 		if err != nil {
 			return nil, fmt.Errorf("storage: new azure client: %w", err)
 		}
-		sasCli, err := service.NewClient(ep, cred, nil)
+		sasCli, err := service.NewClient(ep, cred, svcOpts)
 		if err != nil {
 			return nil, fmt.Errorf("storage: new azure service client: %w", err)
 		}
@@ -59,11 +75,11 @@ func newAzureClient(cfg Config) (*AzureClient, error) {
 		if err != nil {
 			return nil, fmt.Errorf("storage: new azure shared key credential: %w", err)
 		}
-		cli, err := azblob.NewClientWithSharedKeyCredential(ep, cred, nil)
+		cli, err := azblob.NewClientWithSharedKeyCredential(ep, cred, blobOpts)
 		if err != nil {
 			return nil, fmt.Errorf("storage: new azure client: %w", err)
 		}
-		sasCli, err := service.NewClientWithSharedKeyCredential(ep, cred, nil)
+		sasCli, err := service.NewClientWithSharedKeyCredential(ep, cred, svcOpts)
 		if err != nil {
 			return nil, fmt.Errorf("storage: new azure service client: %w", err)
 		}

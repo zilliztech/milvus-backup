@@ -46,6 +46,11 @@ type Config struct {
 	UseSSL   bool
 	Region   string
 
+	// CACertPath is the path to a file of PEM-encoded CA certificates used to
+	// verify Endpoint's TLS certificate, for stores presenting a certificate
+	// signed outside the system pool. Empty means the system pool only.
+	CACertPath string
+
 	// MilvusEndpoint is the endpoint the Milvus server itself uses to reach
 	// this storage, when it differs from Endpoint: a container port mapping, a
 	// private link, or an internal DNS name gives one store two endpoints.

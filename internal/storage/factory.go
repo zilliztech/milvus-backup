@@ -59,6 +59,7 @@ func storageConfig(s *cfg.StorageConfig, multipartCopyThresholdMiB int64) Config
 		Provider:                  s.Provider.Val,
 		Endpoint:                  net.JoinHostPort(s.Address.Val, strconv.Itoa(s.Port.Val)),
 		UseSSL:                    s.UseSSL.Val,
+		CACertPath:                s.CACertPath.Val,
 		Region:                    s.Region.Val,
 		MilvusEndpoint:            milvusEndpoint(s),
 		Credential:                newCredential(s),

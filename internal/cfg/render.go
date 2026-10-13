@@ -100,6 +100,19 @@ func (c *StorageConfig) inapplicableKeys() []string {
 	if c.Provider.Val != ProviderLocal {
 		skip = append(skip, c.LocalPath.Keys...)
 	}
+	// caCertPath reaches the S3-compatible and azure clients only, and needs
+	// TLS on the S3-compatible ones: mirroring validate.go, which would
+	// reject the emitted key on reload. The azure case mirrors validate.go
+	// too: its service URL is always https, so useSSL never gates the key.
+	switch c.Provider.Val {
+	case ProviderGCP, ProviderGCPNative, ProviderLocal:
+		skip = append(skip, c.CACertPath.Keys...)
+	case ProviderAzure:
+	default:
+		if !c.UseSSL.Val {
+			skip = append(skip, c.CACertPath.Keys...)
+		}
+	}
 	for _, cred := range []*param.Value[string]{
 		&c.Auth.AccessKeyID, &c.Auth.SecretAccessKey, &c.Auth.SessionToken,
 		&c.Auth.AccountKey, &c.Auth.CredentialsFile, &c.Auth.Endpoint,

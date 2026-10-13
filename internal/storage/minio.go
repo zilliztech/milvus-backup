@@ -60,6 +60,16 @@ func newMinioClient(storeCfg Config) (*MinioClient, error) {
 }
 
 func newInternalMinio(storeCfg Config, opts *minio.Options) (*MinioClient, error) {
+	if storeCfg.CACertPath != "" {
+		// minio-go's TLS configuration is reachable only through the
+		// transport, so trusting a private CA means supplying one.
+		tr, err := tlsTransport(storeCfg.CACertPath)
+		if err != nil {
+			return nil, err
+		}
+		opts.Transport = tr
+	}
+
 	cli, err := minio.New(storeCfg.Endpoint, opts)
 	if err != nil {
 		return nil, fmt.Errorf("storage: create %s client: %w", storeCfg.Provider, err)
