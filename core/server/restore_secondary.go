@@ -42,7 +42,7 @@ func (s *Server) handleRestoreSecondary(c *echo.Context) error {
 
 	resp := s.restoreSecondary(c.Request().Context(), &request)
 
-	return writeResponse(c, "restore secondary fail", resp)
+	return writeResponse(c, resp)
 }
 
 // restoreSecondary keeps the v1 contract of this endpoint: the request id is
@@ -91,6 +91,9 @@ func (s *Server) restoreSecondary(ctx context.Context, request *backuppb.Restore
 	}
 
 	if err := job.Run(ctx); err != nil {
+		// The sync path settles the failure here, mirroring the async
+		// goroutine's log — writeResponse no longer logs on the way out.
+		log.Error("restore backup task execute fail", zap.String("request_id", request.GetRequestId()), zap.Error(err))
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
 		return resp

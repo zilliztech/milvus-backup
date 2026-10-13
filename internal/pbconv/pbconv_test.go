@@ -159,26 +159,49 @@ func TestBackupStateToPB(t *testing.T) {
 }
 
 func TestBackupCollProgress(t *testing.T) {
-	t.Run("FixedProgress", func(t *testing.T) {
-		assert.Equal(t, int32(1), backupCollProgress(jobstate.BackupCollStatus{State: jobstate.BackupCollStatePending}))
-		assert.Equal(t, int32(5), backupCollProgress(jobstate.BackupCollStatus{State: jobstate.BackupCollStateDDLExecuting}))
-		assert.Equal(t, int32(10), backupCollProgress(jobstate.BackupCollStatus{State: jobstate.BackupCollStateDDLDone}))
-		assert.Equal(t, int32(15), backupCollProgress(jobstate.BackupCollStatus{State: jobstate.BackupCollStateDMLPrepare}))
-		assert.Equal(t, int32(100), backupCollProgress(jobstate.BackupCollStatus{State: jobstate.BackupCollStateDMLDone}))
-		assert.Equal(t, int32(100), backupCollProgress(jobstate.BackupCollStatus{State: jobstate.BackupCollStateSuccess}))
-		assert.Equal(t, int32(0), backupCollProgress(jobstate.BackupCollStatus{State: jobstate.BackupCollStateFail}))
+	t.Run("DDLHalfOnly", func(t *testing.T) {
+		// A meta_only collection has no data half: the schema half is the
+		// whole story, and its success reads as done.
+		assert.Equal(t, int32(1), backupCollProgress(jobstate.BackupCollStatus{
+			DDL: &jobstate.BackupCollDDLStatus{State: jobstate.BackupCollDDLStatePending}}))
+		assert.Equal(t, int32(5), backupCollProgress(jobstate.BackupCollStatus{
+			DDL: &jobstate.BackupCollDDLStatus{State: jobstate.BackupCollDDLStateExecuting}}))
+		assert.Equal(t, int32(100), backupCollProgress(jobstate.BackupCollStatus{
+			DDL: &jobstate.BackupCollDDLStatus{State: jobstate.BackupCollDDLStateSuccess}}))
+		assert.Equal(t, int32(0), backupCollProgress(jobstate.BackupCollStatus{
+			DDL: &jobstate.BackupCollDDLStatus{State: jobstate.BackupCollDDLStateFail}}))
+	})
+
+	t.Run("DMLHalfDrives", func(t *testing.T) {
+		assert.Equal(t, int32(10), backupCollProgress(jobstate.BackupCollStatus{
+			DML: &jobstate.BackupCollDMLStatus{State: jobstate.BackupCollDMLStatePending}}))
+		assert.Equal(t, int32(15), backupCollProgress(jobstate.BackupCollStatus{
+			DML: &jobstate.BackupCollDMLStatus{State: jobstate.BackupCollDMLStatePrepare}}))
+		assert.Equal(t, int32(100), backupCollProgress(jobstate.BackupCollStatus{
+			DML: &jobstate.BackupCollDMLStatus{State: jobstate.BackupCollDMLStateSuccess}}))
+		assert.Equal(t, int32(0), backupCollProgress(jobstate.BackupCollStatus{
+			DML: &jobstate.BackupCollDMLStatus{State: jobstate.BackupCollDMLStateFail}}))
+	})
+
+	t.Run("FailOnEitherHalfZeroes", func(t *testing.T) {
+		assert.Equal(t, int32(0), backupCollProgress(jobstate.BackupCollStatus{
+			DDL: &jobstate.BackupCollDDLStatus{State: jobstate.BackupCollDDLStateFail},
+			DML: &jobstate.BackupCollDMLStatus{State: jobstate.BackupCollDMLStatePending}}))
+		assert.Equal(t, int32(0), backupCollProgress(jobstate.BackupCollStatus{
+			DDL: &jobstate.BackupCollDDLStatus{State: jobstate.BackupCollDDLStateSuccess},
+			DML: &jobstate.BackupCollDMLStatus{State: jobstate.BackupCollDMLStateFail}}))
 	})
 
 	t.Run("MappedProgress", func(t *testing.T) {
 		assert.Equal(t, int32(15), backupCollProgress(jobstate.BackupCollStatus{
-			State: jobstate.BackupCollStateDMLExecuting, TotalSize: 100, CopiedSize: 0}))
+			DML: &jobstate.BackupCollDMLStatus{State: jobstate.BackupCollDMLStateExecuting, TotalSize: 100, CopiedSize: 0}}))
 		assert.Equal(t, int32(57), backupCollProgress(jobstate.BackupCollStatus{
-			State: jobstate.BackupCollStateDMLExecuting, TotalSize: 100, CopiedSize: 50}))
+			DML: &jobstate.BackupCollDMLStatus{State: jobstate.BackupCollDMLStateExecuting, TotalSize: 100, CopiedSize: 50}}))
 		assert.Equal(t, int32(100), backupCollProgress(jobstate.BackupCollStatus{
-			State: jobstate.BackupCollStateDMLExecuting, TotalSize: 100, CopiedSize: 100}))
+			DML: &jobstate.BackupCollDMLStatus{State: jobstate.BackupCollDMLStateExecuting, TotalSize: 100, CopiedSize: 100}}))
 		// total size is 0, so we just return 15
 		assert.Equal(t, int32(15), backupCollProgress(jobstate.BackupCollStatus{
-			State: jobstate.BackupCollStateDMLExecuting, TotalSize: 0, CopiedSize: 100}))
+			DML: &jobstate.BackupCollDMLStatus{State: jobstate.BackupCollDMLStateExecuting, TotalSize: 0, CopiedSize: 100}}))
 	})
 }
 
@@ -196,11 +219,17 @@ func TestBackupProgress(t *testing.T) {
 			State: jobstate.BackupStateCollectionExecuting,
 			Colls: map[collref.Name]jobstate.BackupCollStatus{
 				collref.New("db1", "coll1"): {
-					State: jobstate.BackupCollStateDMLExecuting, TotalSize: 100, CopiedSize: 50},
-				collref.New("db1", "coll2"): {State: jobstate.BackupCollStateSuccess},
+					DML: &jobstate.BackupCollDMLStatus{State: jobstate.BackupCollDMLStateExecuting, TotalSize: 100, CopiedSize: 50}},
+				collref.New("db1", "coll2"): {
+					DML: &jobstate.BackupCollDMLStatus{State: jobstate.BackupCollDMLStateSuccess}},
 			},
 		}
 
 		assert.Equal(t, int32(79), backupProgress(status))
+	})
+
+	t.Run("CollectionExecutingWithoutCollections", func(t *testing.T) {
+		status := &jobstate.BackupStatus{State: jobstate.BackupStateCollectionExecuting}
+		assert.Equal(t, int32(5), backupProgress(status))
 	})
 }

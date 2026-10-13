@@ -59,7 +59,7 @@ func (s *Server) handleRestoreBackup(c *echo.Context) error {
 	// from it, exactly as this endpoint always has.
 	resp := s.restore(context.Background(), &request)
 
-	return writeResponse(c, "restore backup fail", resp)
+	return writeResponse(c, resp)
 }
 
 // restore keeps the v1 contract of this endpoint: request id and task id are
@@ -116,6 +116,9 @@ func (s *Server) restore(ctx context.Context, request *backuppb.RestoreBackupReq
 	}
 
 	if err := job.Run(ctx); err != nil {
+		// The sync path settles the failure here, mirroring the async
+		// goroutine's log — writeResponse no longer logs on the way out.
+		log.Error("restore backup task execute fail", zap.String("backupId", request.GetId()), zap.Error(err))
 		return &backuppb.RestoreBackupResponse{Code: backuppb.ResponseCode_Fail, Msg: err.Error()}
 	}
 

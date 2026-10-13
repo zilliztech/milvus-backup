@@ -30,13 +30,13 @@ type collSnapshotTask struct {
 
 	grpc milvus.Grpc
 
-	tracker     *jobstate.BackupCollTracker
+	tracker     *jobstate.BackupCollDMLTracker
 	metaBuilder *metaBuilder
 
 	logger *zap.Logger
 }
 
-func newCollSnapshotTask(collRef collref.Name, tracker *jobstate.BackupCollTracker, snapshotName string, target snapshotTarget, args collTaskArgs) *collSnapshotTask {
+func newCollSnapshotTask(collRef collref.Name, snapshotName string, target snapshotTarget, args collTaskArgs) *collSnapshotTask {
 	logger := log.L().With(
 		zap.String("task_id", args.TaskID),
 		zap.String("coll", collRef.String()),
@@ -49,7 +49,7 @@ func newCollSnapshotTask(collRef collref.Name, tracker *jobstate.BackupCollTrack
 		target:       target,
 		pollInterval: _snapshotPollInterval,
 		grpc:         args.Grpc,
-		tracker:      tracker,
+		tracker:      args.tracker.NewCollDMLTracker(collRef),
 		metaBuilder:  args.MetaBuilder,
 		logger:       logger,
 	}
@@ -57,10 +57,22 @@ func newCollSnapshotTask(collRef collref.Name, tracker *jobstate.BackupCollTrack
 
 // Execute freezes the collection into a snapshot, has Milvus copy it into the backup
 // directory, and records where the bundle landed. No bytes move through this process.
+// It is the job's data-half task for the snapshot format, so the data-half
+// state settles here.
 func (st *collSnapshotTask) Execute(ctx context.Context) error {
 	st.logger.Info("start to backup collection with snapshot")
-	st.tracker.SetDMLPrepare()
+	st.tracker.SetPrepare()
 
+	if err := st.execute(ctx); err != nil {
+		st.tracker.SetFail(err)
+		return err
+	}
+
+	st.tracker.SetSuccess()
+	return nil
+}
+
+func (st *collSnapshotTask) execute(ctx context.Context) error {
 	// Compaction protection is left off: the snapshot holds its files against GC for
 	// as long as it exists, and it exists only for this export.
 	if err := st.grpc.CreateSnapshot(ctx, st.collRef.DBName(), st.collRef.CollName(), st.snapshotName, 0); err != nil {
@@ -105,11 +117,8 @@ func (st *collSnapshotTask) Execute(ctx context.Context) error {
 		TotalFiles:   info.GetTotalFiles(),
 		TotalBytes:   info.GetTotalBytes(),
 	}
-	if err := st.metaBuilder.addSnapshot(st.collRef, snapshotBackup, uint64(desc.GetCreateTs())); err != nil {
-		return fmt.Errorf("backup: add snapshot meta: %w", err)
-	}
+	st.metaBuilder.addSnapshot(st.collRef, snapshotBackup, uint64(desc.GetCreateTs()))
 
-	st.tracker.SetDMLDone()
 	st.logger.Info("backup collection with snapshot done",
 		zap.String("metadata_path", metadataPath),
 		zap.Int64("total_files", info.GetTotalFiles()),
@@ -136,7 +145,7 @@ func (st *collSnapshotTask) waitExport(ctx context.Context, jobID int64) (*milvu
 
 		if total := info.GetTotalFiles(); total != reportedTotal {
 			reportedTotal = total
-			st.tracker.SetDMLExecuting(total)
+			st.tracker.SetExecuting(total)
 		}
 		if done := info.GetCopiedFiles(); done > copied {
 			st.tracker.AddCopiedSize(done - copied)

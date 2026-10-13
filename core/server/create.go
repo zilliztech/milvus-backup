@@ -49,7 +49,7 @@ func (s *Server) handleCreateBackup(c *echo.Context) error {
 	log.Info("receive create backup request", zap.Any("request", &requestBody))
 	resp := s.createBackup(c.Request().Context(), &requestBody)
 	log.Info("response create backup response", zap.Any("resp", resp))
-	return writeResponse(c, "create backup fail", resp)
+	return writeResponse(c, resp)
 }
 
 // createBackup maps the v1 request onto the backup job and the outcome onto
@@ -93,10 +93,24 @@ func (s *Server) createBackup(ctx context.Context, request *backuppb.CreateBacku
 		return resp
 	}
 
-	if request.GetAsync() {
-		return runCreateBackupAsync(ctx, s.config.newBackupJob, params, request.GetRequestId(), req)
+	job, err := s.config.newBackupJob(ctx, params, req)
+	if err != nil {
+		// Admission refused the request before any job existed, so this log
+		// is the failure's only settlement — a registered job that fails
+		// later logs at its own settlement instead.
+		log.Error("create backup fail",
+			zap.String("request_id", request.GetRequestId()),
+			zap.String("backup_name", req.Option.BackupName),
+			zap.Error(err))
+		resp.Code = createBackupErrorCode(err)
+		resp.Msg = err.Error()
+		return resp
 	}
-	return runCreateBackupSync(ctx, s.config.newBackupJob, params, request.GetRequestId(), req)
+
+	if request.GetAsync() {
+		return runCreateBackupAsync(job, request.GetRequestId())
+	}
+	return runCreateBackupSync(ctx, job, request.GetRequestId())
 }
 
 func createBackupErrorCode(err error) backuppb.ResponseCode {
@@ -106,23 +120,14 @@ func createBackupErrorCode(err error) backuppb.ResponseCode {
 	return backuppb.ResponseCode_Fail
 }
 
-// runCreateBackupSync registers the job, releases it into the background and
-// waits for it to settle on the request path. The v1 success response carries
-// only code and msg — whatever a v1 response needs, this handler assembles
-// itself, and this one needs nothing. The historical handler additionally
-// read the persisted meta after a successful run and answered Fail when that
-// read failed, but the read only fed a payload the response then discarded,
-// so it is gone together with the payload.
-func runCreateBackupSync(ctx context.Context, newJob backupJobFactory, params *cfg.Config, requestID string, req app.CreateBackupRequest) *backuppb.BackupInfoResponse {
-	job, err := newJob(ctx, params, req)
-	if err != nil {
-		return &backuppb.BackupInfoResponse{
-			RequestId: requestID,
-			Code:      createBackupErrorCode(err),
-			Msg:       err.Error(),
-		}
-	}
-
+// runCreateBackupSync releases the job into the background and waits for it
+// to settle on the request path. The v1 success response carries only code
+// and msg — whatever a v1 response needs, this handler assembles itself, and
+// this one needs nothing. The historical handler additionally read the
+// persisted meta after a successful run and answered Fail when that read
+// failed, but the read only fed a payload the response then discarded, so it
+// is gone together with the payload.
+func runCreateBackupSync(ctx context.Context, job app.AsyncJob[jobstate.BackupStatus], requestID string) *backuppb.BackupInfoResponse {
 	// The job runs detached from the request — a client disconnect must not
 	// kill a half-done backup — and the handler answers with the outcome it
 	// settles on.
@@ -149,24 +154,16 @@ func runCreateBackupSync(ctx context.Context, newJob backupJobFactory, params *c
 	return &backuppb.BackupInfoResponse{Code: backuppb.ResponseCode_Success, Msg: "success"}
 }
 
-// runCreateBackupAsync registers the job and returns immediately; Run is what
-// releases the job into the background, the flag only selects not waiting for
-// it.
-func runCreateBackupAsync(ctx context.Context, newJob backupJobFactory, params *cfg.Config, requestID string, req app.CreateBackupRequest) *backuppb.BackupInfoResponse {
-	resp := &backuppb.BackupInfoResponse{RequestId: requestID}
-
-	job, err := newJob(ctx, params, req)
-	if err != nil {
-		resp.Code = createBackupErrorCode(err)
-		resp.Msg = err.Error()
-		return resp
-	}
-
+// runCreateBackupAsync releases the job and returns immediately; Run is what
+// releases it into the background, the flag only selects not waiting for it.
+func runCreateBackupAsync(job app.AsyncJob[jobstate.BackupStatus], requestID string) *backuppb.BackupInfoResponse {
 	job.Run(context.Background())
 
-	resp.Code = backuppb.ResponseCode_Success
-	resp.Msg = "create backup is executing asynchronously"
-	return resp
+	return &backuppb.BackupInfoResponse{
+		RequestId: requestID,
+		Code:      backuppb.ResponseCode_Success,
+		Msg:       "create backup is executing asynchronously",
+	}
 }
 
 // toCreateBackupRequest renders the v1 pb request into the usecase request.

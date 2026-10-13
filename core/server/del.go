@@ -5,11 +5,13 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v5"
+	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
+	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
 // deleteJob is the slice of app.DeleteJob the handler needs. The consumer
@@ -47,15 +49,22 @@ func (s *Server) handleDeleteBackup(c *echo.Context) error {
 	if len(backupName) == 0 {
 		resp.Code = backuppb.ResponseCode_Parameter_Error
 		resp.Msg = "backup name is required"
-		return writeResponse(c, "delete backup fail", resp)
+		return writeResponse(c, resp)
 	}
 
 	job, err := s.config.newDeleteJob(c.Request().Context(), s.params,
 		app.DeleteBackupRequest{TaskID: requestID, BackupName: backupName})
 	if err != nil {
+		// Admission refused the request before any job existed, so this log
+		// is the failure's only settlement — a registered job that fails
+		// later logs at its own settlement instead.
+		log.Error("delete backup fail",
+			zap.String("request_id", requestID),
+			zap.String("backup_name", backupName),
+			zap.Error(err))
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
-		return writeResponse(c, "delete backup fail", resp)
+		return writeResponse(c, resp)
 	}
 
 	// v1 exposes no async form: the job runs detached from the request — a
@@ -72,11 +81,11 @@ func (s *Server) handleDeleteBackup(c *echo.Context) error {
 	if status.State == jobstate.DeleteStateFail {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = status.ErrorMessage
-		return writeResponse(c, "delete backup fail", resp)
+		return writeResponse(c, resp)
 	}
 
 	resp.Code = backuppb.ResponseCode_Success
 	resp.Msg = "success"
 
-	return writeResponse(c, "delete backup fail", resp)
+	return writeResponse(c, resp)
 }

@@ -156,6 +156,11 @@ func backupProgress(task *jobstate.BackupStatus) int32 {
 	case jobstate.BackupStateDatabaseExecuting:
 		return 5
 	case jobstate.BackupStateCollectionExecuting:
+		// A job that covers no collection has nothing to average.
+		if len(task.Colls) == 0 {
+			return 5
+		}
+
 		// map [0, 100] to [5, 100]
 		var totalProgress int32
 		for _, coll := range task.Colls {
@@ -172,34 +177,50 @@ func backupProgress(task *jobstate.BackupStatus) int32 {
 	}
 }
 
-// backupCollProgress renders one collection's percent. Schema work covers
-// [1, 15], the data copy maps its copied ratio onto [15, 100].
+// backupCollProgress renders one collection's percent out of its two halves.
+// A failure on either half zeroes it. The data half is the bulk of the work,
+// so when it exists it drives the percent: pending reads as 10, prepare as
+// 15, the copy maps its copied ratio onto [15, 100]. A collection with no
+// data half at all — meta_only — is read from its schema half alone.
 func backupCollProgress(coll jobstate.BackupCollStatus) int32 {
-	switch coll.State {
-	case jobstate.BackupCollStatePending:
-		return 1
-	case jobstate.BackupCollStateDDLExecuting:
-		return 5
-	case jobstate.BackupCollStateDDLDone:
-		return 10
-	case jobstate.BackupCollStateDMLPrepare:
-		return 15
-	case jobstate.BackupCollStateDMLExecuting:
-		// if total size is 0, it means there is no data should be backup, so we just return 15
-		if coll.TotalSize == 0 {
-			return 15
-		}
-		// the range is [15, 100], so we need to map [0, 100] to [15, 100]
-		progress := float64(coll.CopiedSize) / float64(coll.TotalSize) * 100
-		mapped := int32(progress*0.85) + 15
-		return mapped
-	case jobstate.BackupCollStateSuccess, jobstate.BackupCollStateDMLDone:
-		return 100
-	case jobstate.BackupCollStateFail:
-		return 0
-	default:
+	if coll.DDL != nil && coll.DDL.State == jobstate.BackupCollDDLStateFail {
 		return 0
 	}
+	if coll.DML != nil && coll.DML.State == jobstate.BackupCollDMLStateFail {
+		return 0
+	}
+
+	if coll.DML != nil {
+		switch coll.DML.State {
+		case jobstate.BackupCollDMLStatePending:
+			return 10
+		case jobstate.BackupCollDMLStatePrepare:
+			return 15
+		case jobstate.BackupCollDMLStateExecuting:
+			// if total size is 0, it means there is no data should be backup, so we just return 15
+			if coll.DML.TotalSize == 0 {
+				return 15
+			}
+			// the range is [15, 100], so we need to map [0, 100] to [15, 100]
+			progress := float64(coll.DML.CopiedSize) / float64(coll.DML.TotalSize) * 100
+			return int32(progress*0.85) + 15
+		case jobstate.BackupCollDMLStateSuccess:
+			return 100
+		}
+	}
+
+	if coll.DDL != nil {
+		switch coll.DDL.State {
+		case jobstate.BackupCollDDLStatePending:
+			return 1
+		case jobstate.BackupCollDDLStateExecuting:
+			return 5
+		case jobstate.BackupCollDDLStateSuccess:
+			return 100
+		}
+	}
+
+	return 1
 }
 
 func newCollBackupBrief(colls []*backuppb.CollectionBackupInfo) []*backuppb.CollectionBackupInfoBrief {

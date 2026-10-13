@@ -131,7 +131,8 @@ func NewTask(args TaskArgs) *Task {
 	mb := newMetaBuilder(args.TaskID, args.Option.BackupName)
 
 	throttling := concurrencyThrottling{
-		CollSem: semaphore.NewWeighted(int64(args.Params.Backup.Concurrency.Collections.Val)),
+		DDLSem:  semaphore.NewWeighted(int64(args.Params.Backup.Concurrency.Collections.Val)),
+		DMLSem:  semaphore.NewWeighted(int64(args.Params.Backup.Concurrency.Collections.Val)),
 		SegSem:  semaphore.NewWeighted(int64(args.Params.Backup.Concurrency.Segments.Val)),
 		CopySem: semaphore.NewWeighted(int64(args.Params.Transfer.Concurrency.Val)),
 	}
@@ -350,21 +351,21 @@ func (t *Task) resolveFormat() (string, error) {
 // plans go through this factory, so one flush orchestration runs whichever
 // artifact the format asks for.
 func (t *Task) newDataTask(format string) dataTaskFactory {
-	return func(collRef collref.Name, tracker *jobstate.BackupCollTracker, args collTaskArgs) tasklet.Tasklet {
+	return func(collRef collref.Name, args collTaskArgs) tasklet.Tasklet {
 		if format == meta.FormatSnapshot {
 			// The plan's flush is what makes the boundary fresh: a snapshot admits only
 			// the segments below its channel seek positions, so without one it would
 			// hold whatever the last automatic flush left behind.
 			//
 			// Each collection creates its snapshot immediately before the export that
-			// pins it, so no snapshot sits unpinned waiting its turn. The collection
+			// pins it, so no snapshot sits unpinned waiting its turn. The DML
 			// semaphore bounds how many exports are in flight: a job starts its timeout
 			// when DataCoord accepts it, so anything queued beyond what
 			// dataCoord.snapshot.exportMaxConcurrentJobs can run burns that budget.
-			return newCollSnapshotTask(collRef, tracker, t.snapshotName(), t.snapshotTarget, args)
+			return newCollSnapshotTask(collRef, t.snapshotName(), t.snapshotTarget, args)
 		}
 
-		return newCollDMLTask(collRef, tracker, args)
+		return newCollDMLTask(collRef, args)
 	}
 }
 
@@ -516,6 +517,7 @@ func (t *Task) backupDatabase(ctx context.Context, dbNames []string) error {
 func (t *Task) newCollTaskArgs() collTaskArgs {
 	return collTaskArgs{
 		TaskID:         t.taskID,
+		tracker:        t.tracker,
 		MilvusStorage:  t.milvusStorage,
 		MilvusRootPath: t.milvusRootPath,
 		Streaming:      t.streaming,
@@ -531,10 +533,9 @@ func (t *Task) newCollTaskArgs() collTaskArgs {
 
 func (t *Task) backupCollection(ctx context.Context, collRefs []collref.Name) error {
 	t.logger.Info("start backup collections", zap.Int("count", len(collRefs)))
+	t.tracker.SetCollectionExecuting()
 
-	collTrackers := t.tracker.StartCollectionPhase(collRefs)
-
-	plan, err := t.selectPlan(collRefs, collTrackers, t.option.Strategy, t.resolvedFormat)
+	plan, err := t.selectPlan(collRefs, t.option.Strategy, t.resolvedFormat)
 	if err != nil {
 		return fmt.Errorf("backup: select plan: %w", err)
 	}
@@ -551,7 +552,7 @@ func (t *Task) backupCollection(ctx context.Context, collRefs []collref.Name) er
 // picks the flush orchestration, the format picks what artifact its data step
 // produces. The plans themselves know nothing about the format — they receive
 // the factory that does.
-func (t *Task) selectPlan(collRefs []collref.Name, collTrackers map[collref.Name]*jobstate.BackupCollTracker, strategy Strategy, format string) (tasklet.Tasklet, error) {
+func (t *Task) selectPlan(collRefs []collref.Name, strategy Strategy, format string) (tasklet.Tasklet, error) {
 	args := t.newCollTaskArgs()
 	newData := t.newDataTask(format)
 
@@ -559,22 +560,22 @@ func (t *Task) selectPlan(collRefs []collref.Name, collTrackers map[collref.Name
 	case StrategyAuto:
 		if t.grpc.HasFeature(milvus.FlushAll) {
 			t.logger.Info("use bulk flush plan")
-			return newBulkFlushPlan(collRefs, collTrackers, args, newData), nil
+			return newBulkFlushPlan(collRefs, args, newData), nil
 		}
 		t.logger.Info("use serial flush plan")
-		return newSerialFlushPlan(collRefs, collTrackers, args, newData), nil
+		return newSerialFlushPlan(collRefs, args, newData), nil
 	case StrategyMetaOnly:
 		t.logger.Info("use meta only plan")
-		return newMetaOnlyPlan(collRefs, collTrackers, args), nil
+		return newMetaOnlyPlan(collRefs, args), nil
 	case StrategySkipFlush:
 		t.logger.Info("use skip flush plan")
-		return newSkipFlushPlan(collRefs, collTrackers, args, newData), nil
+		return newSkipFlushPlan(collRefs, args, newData), nil
 	case StrategyBulkFlush:
 		t.logger.Info("use bulk flush plan")
-		return newBulkFlushPlan(collRefs, collTrackers, args, newData), nil
+		return newBulkFlushPlan(collRefs, args, newData), nil
 	case StrategySerialFlush:
 		t.logger.Info("use serial flush plan")
-		return newSerialFlushPlan(collRefs, collTrackers, args, newData), nil
+		return newSerialFlushPlan(collRefs, args, newData), nil
 	default:
 		return nil, fmt.Errorf("backup: unsupported strategy: %s", strategy)
 	}
