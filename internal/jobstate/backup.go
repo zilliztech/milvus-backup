@@ -22,19 +22,28 @@ const (
 	BackupStateFail
 )
 
-// BackupCollState is the lifecycle of one collection inside a backup job:
-// pending, then schema (DDL), then data (DML), then settled.
-type BackupCollState uint32
+// BackupCollDDLState is the lifecycle of one collection's schema half:
+// describe, indexes and partitions. It settles on its own, independently of
+// the data half — the two share no ordering inside a backup job.
+type BackupCollDDLState uint32
 
 const (
-	BackupCollStatePending BackupCollState = iota
-	BackupCollStateDDLExecuting
-	BackupCollStateDDLDone
-	BackupCollStateDMLPrepare
-	BackupCollStateDMLExecuting
-	BackupCollStateDMLDone
-	BackupCollStateSuccess
-	BackupCollStateFail
+	BackupCollDDLStatePending BackupCollDDLState = iota
+	BackupCollDDLStateExecuting
+	BackupCollDDLStateSuccess
+	BackupCollDDLStateFail
+)
+
+// BackupCollDMLState is the lifecycle of one collection's data half: prepare
+// (segment listing, snapshot creation), then the copy itself, then settled.
+type BackupCollDMLState uint32
+
+const (
+	BackupCollDMLStatePending BackupCollDMLState = iota
+	BackupCollDMLStatePrepare
+	BackupCollDMLStateExecuting
+	BackupCollDMLStateSuccess
+	BackupCollDMLStateFail
 )
 
 // BackupStatus is a point-in-time snapshot of one backup job, copied out
@@ -50,8 +59,10 @@ type BackupStatus struct {
 	StartTime time.Time
 	EndTime   time.Time
 
-	// Colls holds one entry per collection the job covers, registered when
-	// the collection phase starts. The map is this snapshot's own copy.
+	// Colls holds one entry per collection the job covers. A collection
+	// appears the first time one of its tasks creates a tracker, so a job
+	// that never runs a data task — meta_only — has entries with no DML
+	// half at all. The map is this snapshot's own copy.
 	Colls map[collref.Name]BackupCollStatus
 }
 
@@ -62,10 +73,27 @@ func (s BackupStatus) Terminal() bool {
 }
 
 // BackupCollStatus is the snapshot of one collection's slice of a backup
-// job. TotalSize is the bytes the collection has to copy, CopiedSize the
-// bytes already copied; progress renderers derive ratios from the two.
+// job: two independent halves. A nil half means no task of that kind ever
+// registered for the collection — for the DML half that is how a meta_only
+// job reads, which is a different thing from a data task that has not started.
 type BackupCollStatus struct {
-	State        BackupCollState
+	DDL *BackupCollDDLStatus
+	DML *BackupCollDMLStatus
+}
+
+// BackupCollDDLStatus is the snapshot of the schema half.
+type BackupCollDDLStatus struct {
+	State        BackupCollDDLState
+	ErrorMessage string
+
+	EndTime time.Time
+}
+
+// BackupCollDMLStatus is the snapshot of the data half. TotalSize is what
+// the collection has to copy, CopiedSize what is already copied; progress
+// renderers derive ratios from the two.
+type BackupCollDMLStatus struct {
+	State        BackupCollDMLState
 	ErrorMessage string
 
 	TotalSize  int64
@@ -119,29 +147,58 @@ func (t *backupTask) snapshot() BackupStatus {
 	}
 }
 
+// backupCollTask is one collection's node in the job. The two halves are
+// created independently and guarded by the node's own lock; lock order is
+// task first, then node, and a half never locks the task.
 type backupCollTask struct {
 	mu sync.RWMutex
 
-	state        BackupCollState
-	errorMessage string
-
-	totalSize  int64
-	copiedSize int64
-
-	endTime time.Time
+	ddl *backupCollDDLTask
+	dml *backupCollDMLTask
 }
 
 func (t *backupCollTask) snapshot() BackupCollStatus {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	return BackupCollStatus{
-		State:        t.state,
-		ErrorMessage: t.errorMessage,
-		TotalSize:    t.totalSize,
-		CopiedSize:   t.copiedSize,
-		EndTime:      t.endTime,
+	var ddl *BackupCollDDLStatus
+	if t.ddl != nil {
+		ddl = &BackupCollDDLStatus{
+			State:        t.ddl.state,
+			ErrorMessage: t.ddl.errorMessage,
+			EndTime:      t.ddl.endTime,
+		}
 	}
+
+	var dml *BackupCollDMLStatus
+	if t.dml != nil {
+		dml = &BackupCollDMLStatus{
+			State:        t.dml.state,
+			ErrorMessage: t.dml.errorMessage,
+			TotalSize:    t.dml.totalSize,
+			CopiedSize:   t.dml.copiedSize,
+			EndTime:      t.dml.endTime,
+		}
+	}
+
+	return BackupCollStatus{DDL: ddl, DML: dml}
+}
+
+type backupCollDDLTask struct {
+	state        BackupCollDDLState
+	errorMessage string
+
+	endTime time.Time
+}
+
+type backupCollDMLTask struct {
+	state        BackupCollDMLState
+	errorMessage string
+
+	totalSize  int64
+	copiedSize int64
+
+	endTime time.Time
 }
 
 // BackupTracker is the write side of one backup job, minted by AddBackupTask
@@ -163,23 +220,59 @@ func (t *BackupTracker) SetDatabaseExecuting() {
 	t.setState(BackupStateDatabaseExecuting)
 }
 
-// StartCollectionPhase opens the collection phase: every covered collection
-// is registered as Pending and minted its own write handle, and the job
-// flips to executing collections. Holding a handle is what being registered
-// means — a collection-level write carries no key, so it cannot miss.
-func (t *BackupTracker) StartCollectionPhase(collRefs []collref.Name) map[collref.Name]*BackupCollTracker {
+// SetCollectionExecuting opens the collection phase. Unlike the database
+// phase it registers nothing: collections appear as their tasks create
+// trackers, so a reader sees the phase start before the first collection
+// shows up.
+func (t *BackupTracker) SetCollectionExecuting() {
+	t.setState(BackupStateCollectionExecuting)
+}
+
+// collNode returns the collection's node, creating it on first use: a
+// collection is registered exactly by having a task create one of its halves.
+func (t *BackupTracker) collNode(collRef collref.Name) *backupCollTask {
 	t.task.mu.Lock()
 	defer t.task.mu.Unlock()
 
-	trackers := make(map[collref.Name]*BackupCollTracker, len(collRefs))
-	for _, collRef := range collRefs {
-		collTask := &backupCollTask{state: BackupCollStatePending}
-		t.task.collTask[collRef] = collTask
-		trackers[collRef] = &BackupCollTracker{task: collTask}
+	node, ok := t.task.collTask[collRef]
+	if !ok {
+		node = &backupCollTask{}
+		t.task.collTask[collRef] = node
 	}
-	t.task.state = BackupStateCollectionExecuting
 
-	return trackers
+	return node
+}
+
+// NewCollDDLTracker hands the schema-half write handle for one collection,
+// registering the half on first call: two handles to one collection write the
+// same node, which is what lets a plan and its data task settle the same half
+// from different places.
+func (t *BackupTracker) NewCollDDLTracker(collRef collref.Name) *BackupCollDDLTracker {
+	node := t.collNode(collRef)
+
+	node.mu.Lock()
+	defer node.mu.Unlock()
+
+	if node.ddl == nil {
+		node.ddl = &backupCollDDLTask{state: BackupCollDDLStatePending}
+	}
+
+	return &BackupCollDDLTracker{coll: node}
+}
+
+// NewCollDMLTracker hands the data-half write handle for one collection,
+// under the same rules as NewCollDDLTracker.
+func (t *BackupTracker) NewCollDMLTracker(collRef collref.Name) *BackupCollDMLTracker {
+	node := t.collNode(collRef)
+
+	node.mu.Lock()
+	defer node.mu.Unlock()
+
+	if node.dml == nil {
+		node.dml = &backupCollDMLTask{state: BackupCollDMLStatePending}
+	}
+
+	return &BackupCollDMLTracker{coll: node}
 }
 
 // SetFail settles the job as failed. Only the job's own goroutine may call
@@ -211,60 +304,85 @@ func (t *BackupTracker) Snapshot() BackupStatus {
 	return t.task.snapshot()
 }
 
-// BackupCollTracker is the write handle for one collection's slice of a
-// backup job, minted by StartCollectionPhase. It holds the coll task
-// pointer directly, the same way the job tracker holds the task: a write
-// needs no collection key, and a write for a collection the job does not
-// cover cannot be expressed at all.
-type BackupCollTracker struct {
-	task *backupCollTask
+// BackupCollDDLTracker is the write handle for one collection's schema half,
+// created by NewCollDDLTracker. It holds the coll node pointer directly: a
+// write needs no collection key, and a write for a collection the job does
+// not cover cannot be expressed at all.
+type BackupCollDDLTracker struct {
+	coll *backupCollTask
 }
 
-func (t *BackupCollTracker) setState(state BackupCollState) {
-	t.task.mu.Lock()
-	defer t.task.mu.Unlock()
+func (t *BackupCollDDLTracker) setState(state BackupCollDDLState) {
+	t.coll.mu.Lock()
+	defer t.coll.mu.Unlock()
 
-	t.task.state = state
+	t.coll.ddl.state = state
 }
 
-func (t *BackupCollTracker) SetDDLExecuting() { t.setState(BackupCollStateDDLExecuting) }
+func (t *BackupCollDDLTracker) SetExecuting() { t.setState(BackupCollDDLStateExecuting) }
 
-func (t *BackupCollTracker) SetDDLDone() { t.setState(BackupCollStateDDLDone) }
+func (t *BackupCollDDLTracker) SetFail(err error) {
+	t.coll.mu.Lock()
+	defer t.coll.mu.Unlock()
 
-func (t *BackupCollTracker) SetDMLPrepare() { t.setState(BackupCollStateDMLPrepare) }
-
-func (t *BackupCollTracker) SetDMLExecuting(totalSize int64) {
-	t.task.mu.Lock()
-	defer t.task.mu.Unlock()
-
-	t.task.state = BackupCollStateDMLExecuting
-	t.task.totalSize = totalSize
+	t.coll.ddl.state = BackupCollDDLStateFail
+	t.coll.ddl.errorMessage = err.Error()
+	t.coll.ddl.endTime = time.Now()
 }
 
-func (t *BackupCollTracker) SetDMLDone() { t.setState(BackupCollStateDMLDone) }
+func (t *BackupCollDDLTracker) SetSuccess() {
+	t.coll.mu.Lock()
+	defer t.coll.mu.Unlock()
 
-func (t *BackupCollTracker) SetFail(err error) {
-	t.task.mu.Lock()
-	defer t.task.mu.Unlock()
-
-	t.task.state = BackupCollStateFail
-	t.task.errorMessage = err.Error()
-	t.task.endTime = time.Now()
+	t.coll.ddl.state = BackupCollDDLStateSuccess
+	t.coll.ddl.endTime = time.Now()
 }
 
-func (t *BackupCollTracker) SetSuccess() {
-	t.task.mu.Lock()
-	defer t.task.mu.Unlock()
+// BackupCollDMLTracker is the write handle for one collection's data half,
+// created by NewCollDMLTracker under the same rules as the schema half.
+type BackupCollDMLTracker struct {
+	coll *backupCollTask
+}
 
-	t.task.state = BackupCollStateSuccess
-	t.task.endTime = time.Now()
+func (t *BackupCollDMLTracker) setState(state BackupCollDMLState) {
+	t.coll.mu.Lock()
+	defer t.coll.mu.Unlock()
+
+	t.coll.dml.state = state
+}
+
+func (t *BackupCollDMLTracker) SetPrepare() { t.setState(BackupCollDMLStatePrepare) }
+
+func (t *BackupCollDMLTracker) SetExecuting(totalSize int64) {
+	t.coll.mu.Lock()
+	defer t.coll.mu.Unlock()
+
+	t.coll.dml.state = BackupCollDMLStateExecuting
+	t.coll.dml.totalSize = totalSize
+}
+
+func (t *BackupCollDMLTracker) SetFail(err error) {
+	t.coll.mu.Lock()
+	defer t.coll.mu.Unlock()
+
+	t.coll.dml.state = BackupCollDMLStateFail
+	t.coll.dml.errorMessage = err.Error()
+	t.coll.dml.endTime = time.Now()
+}
+
+func (t *BackupCollDMLTracker) SetSuccess() {
+	t.coll.mu.Lock()
+	defer t.coll.mu.Unlock()
+
+	t.coll.dml.state = BackupCollDMLStateSuccess
+	t.coll.dml.endTime = time.Now()
 }
 
 // AddCopiedSize records n copied bytes. Its name takes the verb, not the
 // field: callers pass a delta, the tracker owns the accumulation.
-func (t *BackupCollTracker) AddCopiedSize(size int64) {
-	t.task.mu.Lock()
-	defer t.task.mu.Unlock()
+func (t *BackupCollDMLTracker) AddCopiedSize(size int64) {
+	t.coll.mu.Lock()
+	defer t.coll.mu.Unlock()
 
-	t.task.copiedSize += size
+	t.coll.dml.copiedSize += size
 }

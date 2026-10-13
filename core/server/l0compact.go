@@ -54,7 +54,7 @@ func (r l0APIResponse) GetCode() backuppb.ResponseCode { return r.Code }
 func (r l0APIResponse) GetMsg() string                 { return r.Msg }
 
 func writeL0Response(c *echo.Context, code backuppb.ResponseCode, msg string, data any) error {
-	return writeResponse(c, "l0 request fail", l0APIResponse{
+	return writeResponse(c, l0APIResponse{
 		RequestID: c.Request().Header.Get("request_id"), Code: code, Msg: msg, Data: data,
 	})
 }

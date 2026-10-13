@@ -41,13 +41,13 @@ type collDMLTask struct {
 
 	gcCtrl gcCtrl
 
-	tracker     *jobstate.BackupCollTracker
+	tracker     *jobstate.BackupCollDMLTracker
 	metaBuilder *metaBuilder
 
 	logger *zap.Logger
 }
 
-func newCollDMLTask(collRef collref.Name, tracker *jobstate.BackupCollTracker, args collTaskArgs) *collDMLTask {
+func newCollDMLTask(collRef collref.Name, args collTaskArgs) *collDMLTask {
 	logger := log.L().With(zap.String("task_id", args.TaskID), zap.String("coll", collRef.String()))
 	return &collDMLTask{
 		taskID: args.TaskID,
@@ -67,7 +67,7 @@ func newCollDMLTask(collRef collref.Name, tracker *jobstate.BackupCollTracker, a
 		grpc:    args.Grpc,
 		restful: args.Restful,
 
-		tracker:     tracker,
+		tracker:     args.tracker.NewCollDMLTracker(collRef),
 		metaBuilder: args.MetaBuilder,
 
 		gcCtrl: args.gcCtrl,
@@ -338,11 +338,25 @@ func (dmlt *collDMLTask) getSegmentInfoByAPI(ctx context.Context, seg *milvuspb.
 	return bakSeg, nil
 }
 
+// Execute backs up the collection's data: segment listing into the meta, then
+// the binlog copy and its verification. The state half settles here — the
+// task that did the work records its own outcome.
 func (dmlt *collDMLTask) Execute(ctx context.Context) error {
 	dmlt.logger.Info("start to backup dml of collection")
+	dmlt.tracker.SetPrepare()
 
-	dmlt.tracker.SetDMLPrepare()
+	if err := dmlt.execute(ctx); err != nil {
+		dmlt.tracker.SetFail(err)
+		return err
+	}
 
+	dmlt.tracker.SetSuccess()
+	dmlt.logger.Info("backup dml of collection done")
+
+	return nil
+}
+
+func (dmlt *collDMLTask) execute(ctx context.Context) error {
 	describe, err := dmlt.grpc.DescribeCollection(ctx, dmlt.collRef.DBName(), dmlt.collRef.CollName())
 	if err != nil {
 		return fmt.Errorf("backup: describe collection %w", err)
@@ -355,12 +369,10 @@ func (dmlt *collDMLTask) Execute(ctx context.Context) error {
 		return fmt.Errorf("backup: get segments %w", err)
 	}
 
-	if err := dmlt.metaBuilder.addSegments(segments); err != nil {
-		return fmt.Errorf("backup: add segments meta: %w", err)
-	}
+	dmlt.metaBuilder.addSegments(segments)
 
 	size := lo.SumBy(segments, func(seg *backuppb.SegmentBackupInfo) int64 { return seg.GetSize() })
-	dmlt.tracker.SetDMLExecuting(size)
+	dmlt.tracker.SetExecuting(size)
 
 	if err := dmlt.backupSegmentsData(ctx, segments); err != nil {
 		return fmt.Errorf("backup: backup segments %w", err)
@@ -369,8 +381,6 @@ func (dmlt *collDMLTask) Execute(ctx context.Context) error {
 	if err := dmlt.verifySegmentsData(ctx, describe.CollectionID, segments); err != nil {
 		return fmt.Errorf("backup: verify segments %w", err)
 	}
-
-	dmlt.tracker.SetDMLDone()
 
 	return nil
 }

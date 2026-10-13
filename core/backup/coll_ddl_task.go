@@ -26,22 +26,20 @@ type collDDLTask struct {
 
 	grpc milvus.Grpc
 
-	tracker     *jobstate.BackupCollTracker
+	tracker     *jobstate.BackupCollDDLTracker
 	metaBuilder *metaBuilder
 
 	logger *zap.Logger
 }
 
-func newCollDDLTask(collRef collref.Name, tracker *jobstate.BackupCollTracker, args collTaskArgs) *collDDLTask {
-	logger := log.L().With(zap.String("task_id", args.TaskID), zap.String("coll", collRef.String()))
-
+func newCollDDLTask(collRef collref.Name, args collTaskArgs) *collDDLTask {
 	return &collDDLTask{
 		taskID:      args.TaskID,
 		collRef:     collRef,
 		grpc:        args.Grpc,
-		tracker:     tracker,
+		tracker:     args.tracker.NewCollDDLTracker(collRef),
 		metaBuilder: args.MetaBuilder,
-		logger:      logger,
+		logger:      log.L().With(zap.String("task_id", args.TaskID), zap.String("coll", collRef.String())),
 	}
 }
 
@@ -255,9 +253,21 @@ func (ddlt *collDDLTask) backupPartitionDDL(ctx context.Context, collID int64, c
 // The segment info is not collected here, will be collect later in DML task.
 func (ddlt *collDDLTask) Execute(ctx context.Context) error {
 	ddlt.logger.Info("start to backup ddl of collection")
+	ddlt.tracker.SetExecuting()
 
-	ddlt.tracker.SetDDLExecuting()
+	if err := ddlt.execute(ctx); err != nil {
+		ddlt.tracker.SetFail(err)
+		return err
+	}
 
+	ddlt.tracker.SetSuccess()
+
+	ddlt.logger.Info("backup ddl of collection done")
+
+	return nil
+}
+
+func (ddlt *collDDLTask) execute(ctx context.Context) error {
 	descResp, err := ddlt.grpc.DescribeCollection(ctx, ddlt.collRef.DBName(), ddlt.collRef.CollName())
 	if err != nil {
 		return fmt.Errorf("backup: describe collection %w", err)
@@ -301,9 +311,6 @@ func (ddlt *collDDLTask) Execute(ctx context.Context) error {
 	}
 
 	ddlt.metaBuilder.addCollection(ddlt.collRef, collBackup)
-	ddlt.tracker.SetDDLDone()
-
-	ddlt.logger.Info("backup ddl of collection done")
 
 	return nil
 }

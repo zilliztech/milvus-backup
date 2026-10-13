@@ -27,11 +27,32 @@ type metaBuilder struct {
 	nameToCollID      map[collref.Name]int64
 	collectionBackups map[int64]*backuppb.CollectionBackupInfo       // coll id - > collection backup info
 	partitionBackups  map[partitionKey]*backuppb.PartitionBackupInfo // coll id -> part id - > partition backup info
+
+	// pendings hold the data-side writes that arrived before their
+	// collection's DDL did: DDL and DML tasks run independently, so a
+	// segment list, a POS record or a snapshot bundle can show up while
+	// the collection entry is not there yet. addCollection drains its own
+	// collection's pendings as it registers; anything still pending at
+	// build time means a collection's DDL never landed, which is a bug.
+	pendingSegments map[int64][]*backuppb.SegmentBackupInfo // coll id -> segments
+	pendingPOS      map[collref.Name]posRecord
+	pendingSnapshot map[collref.Name]snapshotRecord
 }
 
 type partitionKey struct {
 	collectionID int64
 	partitionID  int64
+}
+
+type posRecord struct {
+	channelCP    map[string]string
+	maxChannelTS uint64
+	sealTime     uint64
+}
+
+type snapshotRecord struct {
+	snapshot   *backuppb.SnapshotBackupInfo
+	snapshotTs uint64
 }
 
 func newMetaBuilder(taskID, backupName string) *metaBuilder {
@@ -42,6 +63,10 @@ func newMetaBuilder(taskID, backupName string) *metaBuilder {
 		nameToCollID:      make(map[collref.Name]int64),
 		collectionBackups: make(map[int64]*backuppb.CollectionBackupInfo),
 		partitionBackups:  make(map[partitionKey]*backuppb.PartitionBackupInfo),
+
+		pendingSegments: make(map[int64][]*backuppb.SegmentBackupInfo),
+		pendingPOS:      make(map[collref.Name]posRecord),
+		pendingSnapshot: make(map[collref.Name]snapshotRecord),
 	}
 }
 
@@ -80,6 +105,42 @@ func (builder *metaBuilder) addCollection(collRef collref.Name, collectionBackup
 		key := partitionKey{collectionID: collectionBackup.GetCollectionId(), partitionID: partition.GetPartitionId()}
 		builder.partitionBackups[key] = partition
 	}
+
+	builder.drainPendings(collRef, collectionBackup)
+}
+
+// drainPendings applies the data-side writes that beat this collection's DDL
+// to the now-registered entry. The lock is the caller's.
+func (builder *metaBuilder) drainPendings(collRef collref.Name, collectionBackup *backuppb.CollectionBackupInfo) {
+	collID := collectionBackup.GetCollectionId()
+
+	for _, segment := range builder.pendingSegments[collID] {
+		builder.attachSegment(segment)
+	}
+	delete(builder.pendingSegments, collID)
+
+	if pos, ok := builder.pendingPOS[collRef]; ok {
+		setCollPOS(collectionBackup, pos)
+		delete(builder.pendingPOS, collRef)
+	}
+
+	if snapshot, ok := builder.pendingSnapshot[collRef]; ok {
+		setCollSnapshot(collectionBackup, snapshot)
+		delete(builder.pendingSnapshot, collRef)
+	}
+}
+
+// checkDrained refuses to build meta while data-side writes are still
+// unclaimed. Every covered collection runs a DDL task, so a leftover means a
+// DDL failed while the job went on — building anyway would silently drop
+// data from the meta.
+func (builder *metaBuilder) checkDrained() error {
+	if len(builder.pendingSegments) != 0 || len(builder.pendingPOS) != 0 || len(builder.pendingSnapshot) != 0 {
+		return fmt.Errorf("backup: %d segment lists, %d pos records, %d snapshot bundles never claimed by a collection",
+			len(builder.pendingSegments), len(builder.pendingPOS), len(builder.pendingSnapshot))
+	}
+
+	return nil
 }
 
 // setFormat records which format the backup is being written in. Empty, the default,
@@ -94,73 +155,91 @@ func (builder *metaBuilder) setFormat(format string) {
 // addSnapshot attaches a collection's exported bundle. snapshotTs is the snapshot's
 // own boundary as Milvus reports it, which is what backup_timestamp means for this
 // format — the flush response the binlog path reads it from has no counterpart here.
-func (builder *metaBuilder) addSnapshot(collRef collref.Name, snapshot *backuppb.SnapshotBackupInfo, snapshotTs uint64) error {
+// A bundle that arrives before its collection's DDL waits in the pendings.
+func (builder *metaBuilder) addSnapshot(collRef collref.Name, snapshot *backuppb.SnapshotBackupInfo, snapshotTs uint64) {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
 
 	collID := builder.nameToCollID[collRef]
 	collBackup, ok := builder.collectionBackups[collID]
 	if !ok {
-		return fmt.Errorf("backup: collection backup not found for %s, collection_id: %d", collRef, collID)
+		builder.pendingSnapshot[collRef] = snapshotRecord{snapshot: snapshot, snapshotTs: snapshotTs}
+		return
 	}
 
-	collBackup.SnapshotBackup = snapshot
-	collBackup.BackupTimestamp = snapshotTs
-	collBackup.Size = snapshot.GetTotalBytes()
-
-	return nil
+	setCollSnapshot(collBackup, snapshotRecord{snapshot: snapshot, snapshotTs: snapshotTs})
 }
 
-func (builder *metaBuilder) addPOS(collRef collref.Name, channelCP map[string]string, maxChannelTS uint64, sealTime uint64) error {
+func setCollSnapshot(collBackup *backuppb.CollectionBackupInfo, record snapshotRecord) {
+	collBackup.SnapshotBackup = record.snapshot
+	collBackup.BackupTimestamp = record.snapshotTs
+	collBackup.Size = record.snapshot.GetTotalBytes()
+}
+
+func (builder *metaBuilder) addPOS(collRef collref.Name, channelCP map[string]string, maxChannelTS uint64, sealTime uint64) {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
+
+	record := posRecord{channelCP: channelCP, maxChannelTS: maxChannelTS, sealTime: sealTime}
 
 	collID := builder.nameToCollID[collRef]
 	collBackup, ok := builder.collectionBackups[collID]
 	if !ok {
-		return fmt.Errorf("backup: collection backup not found for %s, collection_id: %d", collRef, collID)
+		builder.pendingPOS[collRef] = record
+		return
 	}
 
-	collBackup.ChannelCheckpoints = channelCP
-	collBackup.BackupTimestamp = maxChannelTS
-	collBackup.BackupPhysicalTimestamp = sealTime
-
-	return nil
+	setCollPOS(collBackup, record)
 }
 
-func (builder *metaBuilder) addSegments(segments []*backuppb.SegmentBackupInfo) error {
+func setCollPOS(collBackup *backuppb.CollectionBackupInfo, record posRecord) {
+	collBackup.ChannelCheckpoints = record.channelCP
+	collBackup.BackupTimestamp = record.maxChannelTS
+	collBackup.BackupPhysicalTimestamp = record.sealTime
+}
+
+func (builder *metaBuilder) addSegments(segments []*backuppb.SegmentBackupInfo) {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
 
 	for _, segment := range segments {
-		collBackup, ok := builder.collectionBackups[segment.GetCollectionId()]
-		if !ok {
-			return fmt.Errorf("backup: collection backup not found for segment %d, collection_id: %d",
-				segment.GetSegmentId(), segment.GetCollectionId())
+		if _, ok := builder.collectionBackups[segment.GetCollectionId()]; !ok {
+			builder.pendingSegments[segment.GetCollectionId()] = append(builder.pendingSegments[segment.GetCollectionId()], segment)
+			continue
 		}
 
-		builder.data.Size += segment.GetSize()
-		collBackup.Size += segment.GetSize()
+		builder.attachSegment(segment)
+	}
+}
 
-		if segment.GetIsL0() && segment.GetPartitionId() == _allPartitionID {
-			collBackup.L0Segments = append(collBackup.L0Segments, segment)
-		} else {
-			key := partitionKey{collectionID: segment.GetCollectionId(), partitionID: segment.GetPartitionId()}
-			partBackup, ok := builder.partitionBackups[key]
-			if !ok {
-				log.Warn("partition not found, may be milvus bug, see milvus#47145 and milvus#47154",
-					zap.Int64("collection_id", segment.GetCollectionId()),
-					zap.Int64("partition_id", segment.GetPartitionId()),
-					zap.Int64("segment_id", segment.GetSegmentId()))
+// attachSegment hangs the segment on the collection/partition tree and
+// accounts its size. The lock is the caller's, and the collection entry must
+// exist: callers either checked or drained. A segment whose partition the
+// collection does not know is dropped with a warning instead — that is the
+// milvus#47145/#47154 case, not an ordering problem.
+func (builder *metaBuilder) attachSegment(segment *backuppb.SegmentBackupInfo) {
+	collBackup := builder.collectionBackups[segment.GetCollectionId()]
 
-				continue
-			}
-			partBackup.SegmentBackups = append(partBackup.SegmentBackups, segment)
-			partBackup.Size += segment.GetSize()
-		}
+	builder.data.Size += segment.GetSize()
+	collBackup.Size += segment.GetSize()
+
+	if segment.GetIsL0() && segment.GetPartitionId() == _allPartitionID {
+		collBackup.L0Segments = append(collBackup.L0Segments, segment)
+		return
 	}
 
-	return nil
+	key := partitionKey{collectionID: segment.GetCollectionId(), partitionID: segment.GetPartitionId()}
+	partBackup, ok := builder.partitionBackups[key]
+	if !ok {
+		log.Warn("partition not found, may be milvus bug, see milvus#47145 and milvus#47154",
+			zap.Int64("collection_id", segment.GetCollectionId()),
+			zap.Int64("partition_id", segment.GetPartitionId()),
+			zap.Int64("segment_id", segment.GetSegmentId()))
+
+		return
+	}
+	partBackup.SegmentBackups = append(partBackup.SegmentBackups, segment)
+	partBackup.Size += segment.GetSize()
 }
 
 // backupCollectionIDs returns the collection ids that have been captured by
@@ -327,6 +406,10 @@ func (builder *metaBuilder) buildBackupMeta() ([]byte, error) {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
 
+	if err := builder.checkDrained(); err != nil {
+		return nil, err
+	}
+
 	info := &backuppb.BackupInfo{
 		Id:              builder.data.GetId(),
 		Name:            builder.data.GetName(),
@@ -348,6 +431,10 @@ func (builder *metaBuilder) buildFullMeta() ([]byte, error) {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
 
+	if err := builder.checkDrained(); err != nil {
+		return nil, err
+	}
+
 	data, err := json.Marshal(builder.data)
 	if err != nil {
 		return nil, fmt.Errorf("backup: build full meta: %w", err)
@@ -359,6 +446,10 @@ func (builder *metaBuilder) buildFullMeta() ([]byte, error) {
 func (builder *metaBuilder) buildCollectionMeta() ([]byte, error) {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
+
+	if err := builder.checkDrained(); err != nil {
+		return nil, err
+	}
 
 	// Shallow-copy each collection, keep partition metadata but strip all segment data.
 	// Segments are stored separately in segment_meta.json and full_meta.json.
@@ -389,6 +480,10 @@ func (builder *metaBuilder) buildPartitionMeta() ([]byte, error) {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
 
+	if err := builder.checkDrained(); err != nil {
+		return nil, err
+	}
+
 	// Shallow-copy each partition and strip nested segment data.
 	partitions := make([]*backuppb.PartitionBackupInfo, 0)
 	for _, coll := range builder.data.GetCollectionBackups() {
@@ -411,6 +506,10 @@ func (builder *metaBuilder) buildPartitionMeta() ([]byte, error) {
 func (builder *metaBuilder) buildSegmentMeta() ([]byte, error) {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
+
+	if err := builder.checkDrained(); err != nil {
+		return nil, err
+	}
 
 	segments := make([]*backuppb.SegmentBackupInfo, 0)
 	for _, collection := range builder.data.GetCollectionBackups() {

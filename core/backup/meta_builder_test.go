@@ -66,39 +66,69 @@ func newTestMetaBuilder(t *testing.T) *metaBuilder {
 			},
 		},
 	}
-	assert.NoError(t, builder.addSegments(append(segments, l0Segments...)))
+	builder.addSegments(append(segments, l0Segments...))
 
 	return builder
 }
 
 func TestAddSegments(t *testing.T) {
-	t.Run("UnknownCollectionID", func(t *testing.T) {
+	t.Run("BeforeCollectionAreDrained", func(t *testing.T) {
 		builder := newMetaBuilder("task1", "backup1")
 
-		segments := []*backuppb.SegmentBackupInfo{
-			{
-				SegmentId:    100,
-				CollectionId: 999,
-				PartitionId:  10,
-				Size:         4096,
-			},
-		}
+		// The data side of a collection can land before its schema side:
+		// the segments wait in the pendings, and addCollection claims them
+		// as it registers the collection.
+		builder.addSegments([]*backuppb.SegmentBackupInfo{
+			{SegmentId: 100, CollectionId: 1, PartitionId: 10, Size: 4096},
+		})
 
-		err := builder.addSegments(segments)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "backup: collection backup not found")
-		assert.Contains(t, err.Error(), "999")
+		collRef := collref.New("db1", "coll1")
+		builder.addCollection(collRef, &backuppb.CollectionBackupInfo{
+			CollectionId: 1, DbName: "db1", CollectionName: "coll1",
+			PartitionBackups: []*backuppb.PartitionBackupInfo{{PartitionId: 10, CollectionId: 1}},
+		})
+
+		coll := builder.data.GetCollectionBackups()[0]
+		assert.EqualValues(t, 4096, coll.GetSize())
+		assert.EqualValues(t, 4096, builder.data.GetSize())
+		require.Len(t, coll.GetPartitionBackups(), 1)
+		require.Len(t, coll.GetPartitionBackups()[0].GetSegmentBackups(), 1)
+		assert.Equal(t, int64(100), coll.GetPartitionBackups()[0].GetSegmentBackups()[0].GetSegmentId())
+
+		_, err := builder.buildSegmentMeta()
+		assert.NoError(t, err)
+	})
+
+	t.Run("UnclaimedFailsTheBuild", func(t *testing.T) {
+		builder := newMetaBuilder("task1", "backup1")
+		builder.addSegments([]*backuppb.SegmentBackupInfo{
+			{SegmentId: 100, CollectionId: 999, PartitionId: 10, Size: 4096},
+		})
+
+		// Segments no collection ever claims mean a DDL failed while the job
+		// went on; the build refuses instead of silently dropping them.
+		_, err := builder.buildSegmentMeta()
+		assert.ErrorContains(t, err, "never claimed")
 	})
 }
 
 func TestAddPOS(t *testing.T) {
-	t.Run("UnknownNamespace", func(t *testing.T) {
+	t.Run("BeforeCollectionIsDrained", func(t *testing.T) {
 		builder := newMetaBuilder("task1", "backup1")
 
-		collRef := collref.New("db_unknown", "coll_unknown")
-		err := builder.addPOS(collRef, map[string]string{"ch1": "cp1"}, 100, 200)
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "backup: collection backup not found")
+		// The serial plan's flush can record the POS before the collection's
+		// DDL lands; addCollection applies it on arrival.
+		collRef := collref.New("db1", "coll1")
+		builder.addPOS(collRef, map[string]string{"ch1": "cp1"}, 100, 200)
+
+		builder.addCollection(collRef, &backuppb.CollectionBackupInfo{
+			CollectionId: 1, DbName: "db1", CollectionName: "coll1",
+		})
+
+		coll := builder.data.GetCollectionBackups()[0]
+		assert.Equal(t, map[string]string{"ch1": "cp1"}, coll.GetChannelCheckpoints())
+		assert.EqualValues(t, 100, coll.GetBackupTimestamp())
+		assert.EqualValues(t, 200, coll.GetBackupPhysicalTimestamp())
 	})
 }
 
@@ -372,7 +402,7 @@ func TestAddSnapshot(t *testing.T) {
 		TotalFiles:   3,
 		TotalBytes:   4096,
 	}
-	require.NoError(t, builder.addSnapshot(collRef, snapshot, 456))
+	builder.addSnapshot(collRef, snapshot, 456)
 
 	coll := builder.data.GetCollectionBackups()[0]
 	assert.Equal(t, "snapshots/1/metadata/2.json", coll.GetSnapshotBackup().GetMetadataPath())
@@ -381,8 +411,19 @@ func TestAddSnapshot(t *testing.T) {
 	assert.EqualValues(t, 4096, coll.GetSize())
 	assert.EqualValues(t, 456, coll.GetBackupTimestamp())
 
-	t.Run("UnknownNamespace", func(t *testing.T) {
-		assert.Error(t, builder.addSnapshot(collref.New("db1", "nope"), snapshot, 456))
+	t.Run("BeforeCollectionIsDrained", func(t *testing.T) {
+		other := newMetaBuilder("task1", "backup1")
+		otherRef := collref.New("db1", "late")
+
+		// The export can finish before the collection's DDL lands; the bundle
+		// waits in the pendings and addCollection applies it.
+		other.addSnapshot(otherRef, snapshot, 789)
+		other.addCollection(otherRef, &backuppb.CollectionBackupInfo{CollectionId: 2, CollectionName: "late"})
+
+		coll := other.data.GetCollectionBackups()[0]
+		assert.Equal(t, "snapshots/1/metadata/2.json", coll.GetSnapshotBackup().GetMetadataPath())
+		assert.EqualValues(t, 4096, coll.GetSize())
+		assert.EqualValues(t, 789, coll.GetBackupTimestamp())
 	})
 }
 

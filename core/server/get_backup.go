@@ -60,7 +60,7 @@ func (s *Server) handleGetBackup(c *echo.Context) error {
 	if name == "" && id == "" {
 		resp.Code = backuppb.ResponseCode_Parameter_Error
 		resp.Msg = "server: empty backup name and backup id, please set a backup name or id"
-		return writeResponse(c, "get backup fail", resp)
+		return writeResponse(c, resp)
 	}
 
 	ctx := c.Request().Context()
@@ -69,7 +69,7 @@ func (s *Server) handleGetBackup(c *echo.Context) error {
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
-		return writeResponse(c, "get backup fail", resp)
+		return writeResponse(c, resp)
 	}
 	// The v1 path parameter asks for a different backup location for this
 	// call. That is a config override, not a selector: fork the loaded config
@@ -83,14 +83,14 @@ func (s *Server) handleGetBackup(c *echo.Context) error {
 		if err != nil {
 			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = err.Error()
-			return writeResponse(c, "get backup fail", resp)
+			return writeResponse(c, resp)
 		}
 	}
 	backupUC, err := s.config.newGetBackup(ctx, params)
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
-		return writeResponse(c, "get backup fail", resp)
+		return writeResponse(c, resp)
 	}
 
 	// The job half. An ID selects the job directly and resolves the backup
@@ -103,7 +103,7 @@ func (s *Server) handleGetBackup(c *echo.Context) error {
 		if err != nil {
 			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = err.Error()
-			return writeResponse(c, "get backup fail", resp)
+			return writeResponse(c, resp)
 		}
 		task = &status
 		name = status.Name
@@ -117,7 +117,7 @@ func (s *Server) handleGetBackup(c *echo.Context) error {
 		default:
 			resp.Code = backuppb.ResponseCode_Fail
 			resp.Msg = err.Error()
-			return writeResponse(c, "get backup fail", resp)
+			return writeResponse(c, resp)
 		}
 	}
 
@@ -131,7 +131,7 @@ func (s *Server) handleGetBackup(c *echo.Context) error {
 	default:
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
-		return writeResponse(c, "get backup fail", resp)
+		return writeResponse(c, resp)
 	}
 
 	// The merge: the artifact is the source of truth, the job overlays
@@ -144,14 +144,14 @@ func (s *Server) handleGetBackup(c *echo.Context) error {
 	case task != nil && task.State == jobstate.BackupStateSuccess:
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = "server: backup task " + name + " reports success but its meta is missing"
-		return writeResponse(c, "get backup fail", resp)
+		return writeResponse(c, resp)
 	case task != nil:
 		// An in-flight or failed job that has persisted nothing yet: the
 		// job view alone is the answer.
 	default:
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = "server: backup " + name + " not found"
-		return writeResponse(c, "get backup fail", resp)
+		return writeResponse(c, resp)
 	}
 
 	resp.Code = backuppb.ResponseCode_Success
@@ -159,5 +159,5 @@ func (s *Server) handleGetBackup(c *echo.Context) error {
 	resp.Data = pbconv.NewBackupInfoBrief(task, metaInfo, metaSize)
 
 	log.Info("response get backup response", zap.Any("resp", resp))
-	return writeResponse(c, "get backup fail", resp)
+	return writeResponse(c, resp)
 }

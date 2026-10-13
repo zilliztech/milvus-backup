@@ -42,26 +42,26 @@ func (s *Server) handleGetRestore(c *echo.Context) error {
 	if id == "" {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = "empty restore id"
-		return writeResponse(c, "get restore fail", resp)
+		return writeResponse(c, resp)
 	}
 
 	uc, err := s.config.newGetRestore()
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
-		return writeResponse(c, "get restore fail", resp)
+		return writeResponse(c, resp)
 	}
 
 	view, err := uc.Execute(c.Request().Context(), id)
 	if err != nil {
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
-		return writeResponse(c, "get restore fail", resp)
+		return writeResponse(c, resp)
 	}
 
 	resp.Code = backuppb.ResponseCode_Success
 	resp.Msg = "success"
 	resp.Data = pbconv.RestoreTaskViewToResp(view)
 	log.Info("End to GetRestoreStateRequest", zap.Any("resp", resp))
-	return writeResponse(c, "get restore fail", resp)
+	return writeResponse(c, resp)
 }

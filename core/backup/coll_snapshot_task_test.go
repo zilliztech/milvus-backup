@@ -17,11 +17,10 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
-func newTestCollSnapshotTask(t *testing.T, collRef collref.Name, grpc milvus.Grpc) (*collSnapshotTask, *metaBuilder) {
+func newTestCollSnapshotTask(t *testing.T, collRef collref.Name, grpc milvus.Grpc) (*collSnapshotTask, *metaBuilder, *jobstate.BackupTracker) {
 	mgr := jobstate.NewStore()
 	tracker, err := mgr.AddBackupTask("task-1", "mybackup")
 	require.NoError(t, err)
-	colls := tracker.StartCollectionPhase([]collref.Name{collRef})
 
 	builder := newMetaBuilder("task-1", "mybackup")
 	builder.addCollection(collRef, &backuppb.CollectionBackupInfo{CollectionId: 1, CollectionName: collRef.CollName()})
@@ -33,12 +32,12 @@ func newTestCollSnapshotTask(t *testing.T, collRef collref.Name, grpc milvus.Grp
 		target:       snapshotTarget{Path: "s3://backup-bucket/backup/mybackup/bundle", Dir: "bundle"},
 		pollInterval: time.Millisecond,
 		grpc:         grpc,
-		tracker:      colls[collRef],
+		tracker:      tracker.NewCollDMLTracker(collRef),
 		metaBuilder:  builder,
 		logger:       zap.NewNop(),
 	}
 
-	return task, builder
+	return task, builder, tracker
 }
 
 func TestCollSnapshotTask_Execute(t *testing.T) {
@@ -72,7 +71,7 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 			}, nil).Once()
 		cli.EXPECT().DropSnapshot(mock.Anything, "db1", "coll1", "mbk_mybackup").Return(nil).Once()
 
-		task, builder := newTestCollSnapshotTask(t, collRef, cli)
+		task, builder, tracker := newTestCollSnapshotTask(t, collRef, cli)
 		require.NoError(t, task.Execute(context.Background()))
 
 		coll := builder.data.GetCollectionBackups()[0]
@@ -83,6 +82,13 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 		// snapshot's own boundary rather than a flush response.
 		assert.EqualValues(t, 4096, coll.GetSize())
 		assert.EqualValues(t, 456, coll.GetBackupTimestamp())
+
+		// The data half settles on the task itself.
+		dml := tracker.Snapshot().Colls[collRef].DML
+		require.NotNil(t, dml)
+		assert.Equal(t, jobstate.BackupCollDMLStateSuccess, dml.State)
+		assert.Equal(t, int64(10), dml.TotalSize)
+		assert.Equal(t, int64(10), dml.CopiedSize)
 	})
 
 	// A failed job is reported through the info, and the snapshot still has to go.
@@ -99,10 +105,15 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 			}, nil)
 		cli.EXPECT().DropSnapshot(mock.Anything, "db1", "coll1", "mbk_mybackup").Return(nil).Once()
 
-		task, builder := newTestCollSnapshotTask(t, collRef, cli)
+		task, builder, tracker := newTestCollSnapshotTask(t, collRef, cli)
 		err := task.Execute(context.Background())
 		assert.ErrorContains(t, err, "copy failed")
 		assert.Nil(t, builder.data.GetCollectionBackups()[0].GetSnapshotBackup())
+
+		dml := tracker.Snapshot().Colls[collRef].DML
+		require.NotNil(t, dml)
+		assert.Equal(t, jobstate.BackupCollDMLStateFail, dml.State)
+		assert.Contains(t, dml.ErrorMessage, "copy failed")
 	})
 
 	// A bundle written somewhere other than the target cannot be recorded as a path
@@ -120,7 +131,7 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 			}, nil)
 		cli.EXPECT().DropSnapshot(mock.Anything, "db1", "coll1", "mbk_mybackup").Return(nil).Once()
 
-		task, _ := newTestCollSnapshotTask(t, collRef, cli)
+		task, _, _ := newTestCollSnapshotTask(t, collRef, cli)
 		assert.Error(t, task.Execute(context.Background()))
 	})
 }

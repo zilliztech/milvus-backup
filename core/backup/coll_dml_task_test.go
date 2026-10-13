@@ -2,16 +2,20 @@ package backup
 
 import (
 	"context"
+	"errors"
 	"sort"
 	"testing"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
+	"github.com/zilliztech/milvus-backup/internal/collref"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 )
@@ -244,5 +248,57 @@ func TestCollDMLTask_verifySegmentsData(t *testing.T) {
 		err := dmlt.verifySegmentsData(context.Background(), collID, []*backuppb.SegmentBackupInfo{seg})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "verify insert logs")
+	})
+}
+
+func TestCollDMLTask_Execute(t *testing.T) {
+	collRef := collref.New("db1", "coll1")
+
+	newArgs := func(t *testing.T, cli milvus.Grpc, backupStorage storage.Client) (collTaskArgs, *jobstate.BackupTracker) {
+		mgr := jobstate.NewStore()
+		tracker, err := mgr.AddBackupTask("task-1", "mybackup")
+		require.NoError(t, err)
+
+		return collTaskArgs{
+			TaskID:        "task-1",
+			tracker:       tracker,
+			MetaBuilder:   newMetaBuilder("task-1", "mybackup"),
+			Grpc:          cli,
+			BackupStorage: backupStorage,
+			BackupDir:     "bak",
+			gcCtrl:        &emptyGCCtrl{},
+		}, tracker
+	}
+
+	t.Run("SettlesSuccess", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().DescribeCollection(mock.Anything, "db1", "coll1").
+			Return(&milvuspb.DescribeCollectionResponse{CollectionID: 1}, nil)
+		cli.EXPECT().GetPersistentSegmentInfo(mock.Anything, "db1", "coll1").Return(nil, nil)
+
+		// No segments means nothing to copy, and the verify step short-circuits
+		// on an empty expectation set without listing.
+		args, tracker := newArgs(t, cli, storage.NewMockClient(t))
+		require.NoError(t, newCollDMLTask(collRef, args).Execute(context.Background()))
+
+		dml := tracker.Snapshot().Colls[collRef].DML
+		require.NotNil(t, dml)
+		assert.Equal(t, jobstate.BackupCollDMLStateSuccess, dml.State)
+		assert.Zero(t, dml.TotalSize)
+		assert.False(t, dml.EndTime.IsZero())
+	})
+
+	t.Run("SettlesFail", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().DescribeCollection(mock.Anything, "db1", "coll1").Return(nil, errors.New("boom"))
+
+		args, tracker := newArgs(t, cli, storage.NewMockClient(t))
+		err := newCollDMLTask(collRef, args).Execute(context.Background())
+		assert.ErrorContains(t, err, "boom")
+
+		dml := tracker.Snapshot().Colls[collRef].DML
+		require.NotNil(t, dml)
+		assert.Equal(t, jobstate.BackupCollDMLStateFail, dml.State)
+		assert.Contains(t, dml.ErrorMessage, "boom")
 	})
 }
