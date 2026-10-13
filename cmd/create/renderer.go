@@ -262,7 +262,9 @@ func newBackupCollBar(p *mpb.Progress, name collref.Name, latest *atomic.Value) 
 		backupCollFiller(name, snapshot),
 		mpb.PrependDecorators(
 			decor.Name(fitName(name.String(), 20)),
-			decor.Any(func(decor.Statistics) string { return backupCollStageLabel(backupCollStageOf(backupCollOf(snapshot(), name))) }),
+			decor.Any(func(decor.Statistics) string {
+				return backupCollStageLabel(backupCollStageOf(backupCollOf(snapshot(), name)))
+			}),
 		),
 		mpb.AppendDecorators(
 			decor.Any(func(decor.Statistics) string {
