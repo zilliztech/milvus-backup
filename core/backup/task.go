@@ -533,7 +533,14 @@ func (t *Task) newCollTaskArgs() collTaskArgs {
 
 func (t *Task) backupCollection(ctx context.Context, collRefs []collref.Name) error {
 	t.logger.Info("start backup collections", zap.Int("count", len(collRefs)))
-	t.tracker.SetCollectionExecuting()
+
+	// The binlog format copies through this process and counts bytes; the
+	// snapshot format watches a Milvus export job and counts its files.
+	unit := jobstate.BackupUnitBytes
+	if t.resolvedFormat == meta.FormatSnapshot {
+		unit = jobstate.BackupUnitFiles
+	}
+	t.tracker.SetCollectionExecuting(unit)
 
 	plan, err := t.selectPlan(collRefs, t.option.Strategy, t.resolvedFormat)
 	if err != nil {

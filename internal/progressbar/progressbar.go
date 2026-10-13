@@ -13,7 +13,10 @@ import (
 
 var Stdout = newStdoutWriter()
 var Progress = sync.OnceValue(func() *mpb.Progress {
-	progress := mpb.New(mpb.WithWidth(64))
+	// 80 is mpb's own default and the safe terminal width; the per-collection
+	// backup bars need the room for their copy stats — at 64 mpb trims the
+	// speed and ETA decorators off the line.
+	progress := mpb.New(mpb.WithWidth(80))
 	Stdout.setProgress(progress)
 	return progress
 })

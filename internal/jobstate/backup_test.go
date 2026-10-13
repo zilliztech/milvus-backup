@@ -19,7 +19,7 @@ func TestBackupTracker(t *testing.T) {
 		tracker.SetDatabaseExecuting()
 		assert.Equal(t, BackupStateDatabaseExecuting, tracker.Snapshot().State)
 
-		tracker.SetCollectionExecuting()
+		tracker.SetCollectionExecuting(BackupUnitBytes)
 		collRef := collref.New("db1", "coll1")
 		coll := tracker.NewCollDMLTracker(collRef)
 		coll.SetExecuting(100)
@@ -166,5 +166,47 @@ func TestBackupTracker(t *testing.T) {
 		require.NotNil(t, coll.DDL)
 		assert.Equal(t, BackupCollDDLStateSuccess, coll.DDL.State)
 		assert.Nil(t, coll.DML)
+	})
+
+	t.Run("UnitLandsInTheSnapshot", func(t *testing.T) {
+		store := NewStore()
+		tracker, err := store.AddBackupTask("task-1", "backup1")
+		require.NoError(t, err)
+
+		tracker.SetCollectionExecuting(BackupUnitFiles)
+
+		assert.Equal(t, BackupUnitFiles, tracker.Snapshot().Unit)
+	})
+
+	t.Run("CopyStartSticksToFirstReport", func(t *testing.T) {
+		store := NewStore()
+		tracker, err := store.AddBackupTask("task-1", "backup1")
+		require.NoError(t, err)
+
+		collRef := collref.New("db1", "coll1")
+		dml := tracker.NewCollDMLTracker(collRef)
+
+		assert.True(t, tracker.Snapshot().Colls[collRef].DML.StartTime.IsZero())
+
+		// The snapshot format reports its total repeatedly as the export job
+		// discovers files; the start time must stay on the first report.
+		dml.SetExecuting(100)
+		first := tracker.Snapshot().Colls[collRef].DML.StartTime
+		dml.SetExecuting(200)
+
+		got := tracker.Snapshot().Colls[collRef].DML
+		assert.Equal(t, first, got.StartTime)
+		assert.Equal(t, int64(200), got.TotalSize)
+	})
+
+	t.Run("FlushingState", func(t *testing.T) {
+		store := NewStore()
+		tracker, err := store.AddBackupTask("task-1", "backup1")
+		require.NoError(t, err)
+
+		collRef := collref.New("db1", "coll1")
+		tracker.NewCollDMLTracker(collRef).SetFlushing()
+
+		assert.Equal(t, BackupCollDMLStateFlushing, tracker.Snapshot().Colls[collRef].DML.State)
 	})
 }

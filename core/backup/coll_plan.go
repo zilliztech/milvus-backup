@@ -251,7 +251,9 @@ func newSerialDMLTask(collRef collref.Name, data tasklet.Tasklet, args collTaskA
 }
 
 func (t *serialDMLTask) Execute(ctx context.Context) error {
-	t.tracker.SetPrepare()
+	// The flush is the visible long pole of this plan; the data task flips
+	// the half to prepare itself once it starts.
+	t.tracker.SetFlushing()
 
 	if err := t.flushAndBackupPOS(ctx); err != nil {
 		t.tracker.SetFail(err)
@@ -304,7 +306,7 @@ func (bf *bulkFlushPlan) Execute(ctx context.Context) error {
 	// The flush seals the boundary the data tasks enumerate segments from, so
 	// it must settle first; the DDL tasks have no such constraint and run
 	// alongside it.
-	wave1 := append(newDDLTasks(bf.collRefs, bf.args), &flushAllTask{args: bf.args, logger: bf.logger})
+	wave1 := append(newDDLTasks(bf.collRefs, bf.args), &flushAllTask{collRefs: bf.collRefs, args: bf.args, logger: bf.logger})
 	if err := concurrentExecCollTask(ctx, bf.args.Throttling.DDLSem, wave1); err != nil {
 		return fmt.Errorf("backup: execute ddl and flush %w", err)
 	}
@@ -320,11 +322,20 @@ func (bf *bulkFlushPlan) Execute(ctx context.Context) error {
 // flushAllTask adapts the cluster-wide flush to a tasklet so it shares the
 // DDL semaphore with the schema tasks of its wave.
 type flushAllTask struct {
+	collRefs []collref.Name
+
 	args   collTaskArgs
 	logger *zap.Logger
 }
 
 func (t *flushAllTask) Execute(ctx context.Context) error {
+	// FlushAll seals the whole cluster in one call, so every collection is
+	// flushing at once. The wave-2 data tasks mint their handles on these
+	// same halves and flip them past flushing as they start.
+	for _, collRef := range t.collRefs {
+		t.args.tracker.NewCollDMLTracker(collRef).SetFlushing()
+	}
+
 	return flushAllAndRecord(ctx, t.args, t.logger)
 }
 

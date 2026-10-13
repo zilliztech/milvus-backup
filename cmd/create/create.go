@@ -3,11 +3,13 @@ package create
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
+	"github.com/vbauerster/mpb/v8/cwriter"
 
 	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/cmd/flags"
@@ -16,6 +18,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
+	"github.com/zilliztech/milvus-backup/internal/progressbar"
 )
 
 // removedFlags are the create flags dropped in 0.6, after 0.5 accepted them with
@@ -160,8 +163,10 @@ func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
 		cmd.Println(summary)
 	}
 
-	job, err := app.NewBackupJob(ctx, params, jobstate.Default(), app.CreateBackupRequest{
-		TaskID: uuid.NewString(),
+	store := jobstate.Default()
+	taskID := uuid.NewString()
+	job, err := app.NewBackupJob(ctx, params, store, app.CreateBackupRequest{
+		TaskID: taskID,
 		Option: opt,
 	})
 	if err != nil {
@@ -169,10 +174,21 @@ func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
 	}
 
 	// The CLI exposes no async form: the job runs detached and the command
-	// waits on it.
+	// waits on it. On a terminal it renders progress from job-store
+	// snapshots; piped output keeps the old plain behavior, so scripts and
+	// CI logs never see bar frames.
 	job.Run(ctx)
 
-	status, err := job.Wait(ctx)
+	var status jobstate.BackupStatus
+	if cwriter.IsTerminal(int(os.Stdout.Fd())) {
+		p := progressbar.Progress()
+		status, err = renderBackup(ctx, p, store, taskID, 200*time.Millisecond, params.Backup.Concurrency.Collections.Val)
+		// mpb buffers intercepted writes and the bars' last frames until the
+		// container shuts down, so the Wait must precede any plain output.
+		p.Wait()
+	} else {
+		status, err = job.Wait(ctx)
+	}
 	if err != nil {
 		return fmt.Errorf("create: wait backup job: %w", err)
 	}
