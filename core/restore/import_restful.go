@@ -89,7 +89,11 @@ func (p *restfulImportPlanner) planTasks(partitionName string, groups []dirGroup
 }
 
 func (p *restfulImportPlanner) newTask(partitionName string, g dirGroup, dirs []partitionDir) *importViaRESTFulTask {
-	return &importViaRESTFulTask{
+	return &importViaRESTFulTask{importer: p.newImporter(partitionName, g, dirs)}
+}
+
+func (p *restfulImportPlanner) newImporter(partitionName string, g dirGroup, dirs []partitionDir) *restfulImporter {
+	return &restfulImporter{
 		taskID:        p.taskID,
 		target:        p.target,
 		partitionName: partitionName,
@@ -115,10 +119,36 @@ func (p *restfulImportPlanner) newTask(partitionName string, g dirGroup, dirs []
 }
 
 // importViaRESTFulTask imports a set of dirs through the v2 restful bulk
-// insert API: the api takes every dir pair in one request. The task is
-// self-contained: it stages its data where Milvus can read it, submits the
-// import, waits for the job to finish, and removes its own temp files.
+// insert API and waits for the job to complete: the plain, single-phase shape
+// of a restful import. The task is a thin shell — the import mechanism lives
+// on the restfulImporter it drives, so a sibling task can drive the same
+// device through a different flow.
 type importViaRESTFulTask struct {
+	importer *restfulImporter
+}
+
+func (rt *importViaRESTFulTask) Execute(ctx context.Context) error {
+	defer rt.importer.cleanup(ctx)
+
+	if err := rt.importer.stage(ctx); err != nil {
+		return err
+	}
+
+	jobID, err := rt.importer.submit(ctx)
+	if err != nil {
+		return err
+	}
+
+	return rt.importer.waitCompleted(ctx, jobID)
+}
+
+// restfulImporter is the mechanism of a restful bulk insert import: it stages
+// a set of dirs where Milvus can read them, submits the import job, polls it
+// to a terminal state, and removes the staged copies. It is a device, not a
+// flow — each task type holds one and calls the steps in its own order, so
+// Milvus protocol details (option keys, terminal states) stay here and out of
+// the task shells.
+type restfulImporter struct {
 	taskID        string
 	target        collref.Name
 	partitionName string
@@ -148,117 +178,104 @@ type importViaRESTFulTask struct {
 	logger     *zap.Logger
 }
 
-func (rt *importViaRESTFulTask) Execute(ctx context.Context) error {
-	defer rt.clearTempFiles(ctx)
-
-	if err := rt.copyAndRewriteDir(ctx); err != nil {
-		return err
-	}
-
-	jobID, err := rt.sendImportReq(ctx)
-	if err != nil {
-		return err
-	}
-
-	return rt.waitImport(ctx, jobID)
-}
-
-// copyAndRewriteDir stages the dirs into the target's storage and rewrites
-// them to point at the copies. Without a staging task the dirs already sit in
-// the shared bucket and are handed over as-is.
-func (rt *importViaRESTFulTask) copyAndRewriteDir(ctx context.Context) error {
-	if rt.staging == nil {
+// stage copies the dirs into the target's storage and rewrites them to point
+// at the copies. Without a staging task the dirs already sit in the shared
+// bucket and are handed over as-is.
+func (im *restfulImporter) stage(ctx context.Context) error {
+	if im.staging == nil {
 		return nil
 	}
 
-	copied, err := rt.staging.Execute(ctx, rt.dirs)
+	copied, err := im.staging.Execute(ctx, im.dirs)
 	if err != nil {
 		return fmt.Errorf("restore: import task copy files: %w", err)
 	}
-	rt.dirs = copied
+	im.dirs = copied
 
 	return nil
 }
 
-func (rt *importViaRESTFulTask) sendImportReq(ctx context.Context) (string, error) {
-	rt.logger.Info("start bulk insert via restful",
-		zap.Int("batch_num", len(rt.dirs)), zap.String("partition", rt.partitionName))
-	paths := lo.Map(rt.dirs, func(dir partitionDir, _ int) []string { return rt.toPaths(dir) })
+// submit sends the import request and records the job in the job state store.
+func (im *restfulImporter) submit(ctx context.Context) (string, error) {
+	im.logger.Info("start bulk insert via restful",
+		zap.Int("batch_num", len(im.dirs)), zap.String("partition", im.partitionName))
+	paths := lo.Map(im.dirs, func(dir partitionDir, _ int) []string { return im.toPaths(dir) })
 	in := milvus.BulkInsertV2Input{
-		DB:             rt.target.DBName(),
-		CollectionName: rt.target.CollName(),
-		PartitionName:  rt.partitionName,
+		DB:             im.target.DBName(),
+		CollectionName: im.target.CollName(),
+		PartitionName:  im.partitionName,
 		Paths:          paths,
-		BackupTS:       rt.timestamp,
-		IsL0:           rt.isL0,
-		StorageVersion: rt.storageVersion,
-		EZK:            rt.ezk,
+		BackupTS:       im.timestamp,
+		IsL0:           im.isL0,
+		StorageVersion: im.storageVersion,
+		EZK:            im.ezk,
 	}
 
-	jobID, err := rt.restfulCli.BulkInsert(ctx, in)
+	jobID, err := im.restfulCli.BulkInsert(ctx, in)
 	if err != nil {
 		return "", fmt.Errorf("restore: failed to bulk insert via restful: %w", err)
 	}
-	rt.logger.Info("create bulk insert via restful success", zap.String("job_id", jobID))
+	im.logger.Info("create bulk insert via restful success", zap.String("job_id", jobID))
 
-	size := lo.SumBy(rt.dirs, func(dir partitionDir) int64 { return dir.size })
-	rt.store.UpdateRestoreTask(rt.taskID, jobstate.AddRestoreImportJob(rt.target, jobID, size))
+	size := lo.SumBy(im.dirs, func(dir partitionDir) int64 { return dir.size })
+	im.store.UpdateRestoreTask(im.taskID, jobstate.AddRestoreImportJob(im.target, jobID, size))
 
 	return jobID, nil
 }
 
-func (rt *importViaRESTFulTask) waitImport(ctx context.Context, jobID string) error {
+// waitCompleted polls the job until it completes.
+func (im *restfulImporter) waitCompleted(ctx context.Context, jobID string) error {
 	state := func(ctx context.Context) (importJobState, error) {
-		resp, err := rt.restfulCli.GetBulkInsertState(ctx, rt.target.DBName(), jobID)
+		resp, err := im.restfulCli.GetBulkInsertState(ctx, im.target.DBName(), jobID)
 		if err != nil {
 			return importJobState{}, err
 		}
 
-		rt.logger.Info("bulk insert task state", zap.String("job_id", jobID),
+		im.logger.Info("bulk insert task state", zap.String("job_id", jobID),
 			zap.String("state", resp.Data.State),
 			zap.Int("progress", resp.Data.Progress))
 		switch resp.Data.State {
 		case string(milvus.ImportStateFailed):
 			return importJobState{failedReason: resp.Data.Reason}, nil
 		case string(milvus.ImportStateCompleted):
-			rt.store.UpdateRestoreTask(rt.taskID, jobstate.UpdateRestoreImportJob(rt.target, jobID, 100))
+			im.store.UpdateRestoreTask(im.taskID, jobstate.UpdateRestoreImportJob(im.target, jobID, 100))
 			return importJobState{completed: true}, nil
 		default:
 			return importJobState{progress: resp.Data.Progress}, nil
 		}
 	}
 
-	return waitImportJob(ctx, rt.logger, rt.store, rt.taskID, rt.target, jobID, state)
+	return waitImportJob(ctx, im.logger, im.store, im.taskID, im.target, jobID, state)
 }
 
 // toPaths builds the [insertLogDir, deltaLogDir] argument for the restful bulk
 // insert API, mapping each directory through the target storage's path
 // convention (absolute paths under localPath for a local target).
-func (rt *importViaRESTFulTask) toPaths(dir partitionDir) []string {
+func (im *restfulImporter) toPaths(dir partitionDir) []string {
 	paths := make([]string, 0, 2)
 	if dir.insertLogDir != "" {
-		paths = append(paths, importPath(rt.milvusStorage, rt.milvusLocalPath, dir.insertLogDir))
+		paths = append(paths, importPath(im.milvusStorage, im.milvusLocalPath, dir.insertLogDir))
 	}
 	if dir.deltaLogDir != "" {
-		paths = append(paths, importPath(rt.milvusStorage, rt.milvusLocalPath, dir.deltaLogDir))
+		paths = append(paths, importPath(im.milvusStorage, im.milvusLocalPath, dir.deltaLogDir))
 	}
 	return paths
 }
 
-// clearTempFiles removes the staged copy once the import is over, succeeded or
-// not: the import has either consumed the data or never will. A copy that
-// failed midway is safe too, whatever was copied sits under the same temp dir.
-func (rt *importViaRESTFulTask) clearTempFiles(ctx context.Context) {
-	if rt.staging == nil {
+// cleanup removes the staged copy once the import is over, succeeded or not:
+// the import has either consumed the data or never will. A copy that failed
+// midway is safe too, whatever was copied sits under the same temp dir.
+func (im *restfulImporter) cleanup(ctx context.Context) {
+	if im.staging == nil {
 		return
 	}
-	if rt.keepTempFiles {
-		rt.logger.Info("skip clean temporary files")
+	if im.keepTempFiles {
+		im.logger.Info("skip clean temporary files")
 		return
 	}
 
-	rt.logger.Info("delete temporary file", zap.String("dir", rt.staging.tempDir))
-	if err := storage.DeletePrefix(ctx, rt.milvusStorage, destKey(rt.milvusStorage, rt.milvusRootPath, rt.staging.tempDir)); err != nil {
-		rt.logger.Warn("clean temporary restore files failed", zap.Error(err))
+	im.logger.Info("delete temporary file", zap.String("dir", im.staging.tempDir))
+	if err := storage.DeletePrefix(ctx, im.milvusStorage, destKey(im.milvusStorage, im.milvusRootPath, im.staging.tempDir)); err != nil {
+		im.logger.Warn("clean temporary restore files failed", zap.Error(err))
 	}
 }
