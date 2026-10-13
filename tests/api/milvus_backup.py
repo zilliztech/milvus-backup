@@ -167,6 +167,17 @@ class MilvusBackupClient(Requests):
         return response.json()
 
     def restore_backup(self, payload):
+        # use_v2_restore only ever meant something on a binlog backup, and the
+        # tool now refuses it elsewhere. A snapshot-capable server takes every
+        # backup in the snapshot format, so drop the flag there to keep the old
+        # [True, False] parametrization running against it.
+        if payload.get("useV2Restore") is not None:
+            backup = self.get_backup(payload.get("backup_name"))
+            if backup.get("data", {}).get("format") == "snapshot":
+                payload.pop("useV2Restore")
+                log.info(
+                    f"drop useV2Restore: backup {payload.get('backup_name')} is in the snapshot format"
+                )
         url = f"{self.endpoint}/restore"
         response = self.post(url, headers=self.update_headers(), data=payload)
         return response.json()

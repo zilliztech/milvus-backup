@@ -1,6 +1,7 @@
 package restore
 
 import (
+	"bytes"
 	"io"
 	"testing"
 
@@ -8,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zilliztech/milvus-backup/cmd/root"
+	"github.com/zilliztech/milvus-backup/core/restore"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 )
 
@@ -38,6 +40,56 @@ func TestNewCmd_RemovedFlags(t *testing.T) {
 			assert.Equal(t, tt.want, err.Error())
 		})
 	}
+}
+
+// The deprecated --use_v2_restore still parses: an old command line gets the
+// deprecation notice and runs, instead of being rejected.
+func TestNewCmd_DeprecatedUseV2Restore(t *testing.T) {
+	cmd := NewCmd(&root.Options{})
+	cmd.SetArgs([]string{"--use_v2_restore"})
+	// Cobra routes the pflag deprecation notice through its out writer.
+	outBuf := &bytes.Buffer{}
+	cmd.SetOut(outBuf)
+	cmd.SetErr(io.Discard)
+
+	err := cmd.Execute()
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "backup name is required")
+	assert.Contains(t, outBuf.String(), "--use_v2_restore has been deprecated")
+}
+
+func TestOptions_toOption(t *testing.T) {
+	t.Run("StrategyAsGiven", func(t *testing.T) {
+		var o options
+		o.strategy = "per_seg"
+		option, err := o.toOption()
+		require.NoError(t, err)
+		assert.Equal(t, restore.StrategyPerSeg, option.Strategy)
+	})
+
+	t.Run("DeprecatedBoolMapsToMergedSeg", func(t *testing.T) {
+		var o options
+		o.useV2Restore = true
+		option, err := o.toOption()
+		require.NoError(t, err)
+		assert.Equal(t, restore.StrategyMergedSeg, option.Strategy)
+	})
+
+	t.Run("ExplicitStrategyWinsOverDeprecatedBool", func(t *testing.T) {
+		var o options
+		o.strategy = "per_seg"
+		o.useV2Restore = true
+		option, err := o.toOption()
+		require.NoError(t, err)
+		assert.Equal(t, restore.StrategyPerSeg, option.Strategy)
+	})
+
+	t.Run("NeitherSetIsAuto", func(t *testing.T) {
+		var o options
+		option, err := o.toOption()
+		require.NoError(t, err)
+		assert.Equal(t, restore.StrategyAuto, option.Strategy)
+	})
 }
 
 func TestOptions_validate(t *testing.T) {

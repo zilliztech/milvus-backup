@@ -122,8 +122,10 @@ type Option struct {
 	SkipParams           SkipParams
 
 	// data related options
-	MetaOnly           bool
-	UseV2Restore       bool
+	MetaOnly bool
+	// Strategy pins the data path the restore takes. The zero value auto
+	// resolves it against the backup's format and the target's capabilities.
+	Strategy           Strategy
 	TruncateBinlogByTs bool
 
 	RestoreRBAC bool
@@ -260,7 +262,9 @@ func checkSnapshotSupport(plan *Plan, opt *Option) error {
 }
 
 // snapshotIgnoredOptions names the options the snapshot path does not read: Milvus restores
-// the bundle's own indexes either way, and there is no import job to pick an api for.
+// the bundle's own indexes either way, and there is no import job to pick an api for. A
+// strategy pin that mismatches the snapshot format is not ignored but refused, at plan
+// selection.
 func snapshotIgnoredOptions(opt *Option) []string {
 	var ignored []string
 	if opt.DropExistIndex {
@@ -271,9 +275,6 @@ func snapshotIgnoredOptions(opt *Option) []string {
 	}
 	if opt.UseAutoIndex {
 		ignored = append(ignored, "use_auto_index")
-	}
-	if opt.UseV2Restore {
-		ignored = append(ignored, "use_v2_restore")
 	}
 
 	return ignored
@@ -490,6 +491,14 @@ func (t *Task) privateExecute(ctx context.Context) error {
 
 	dbTasks, collTargets := t.newDBAndCollTasks(t.args.Backup)
 
+	// Selecting the plan before anything touches the target keeps a strategy
+	// pin that mismatches the backup a pure validation failure, with no RBAC
+	// or database side effects behind it.
+	plan, err := t.selectPlan(collTargets)
+	if err != nil {
+		return fmt.Errorf("restore: select plan: %w", err)
+	}
+
 	if err := t.restoreRBAC(ctx); err != nil {
 		return fmt.Errorf("restore: restore rbac %w", err)
 	}
@@ -506,7 +515,7 @@ func (t *Task) privateExecute(ctx context.Context) error {
 		return fmt.Errorf("restore: check collection exist %w", err)
 	}
 
-	if err := t.selectPlan(collTargets).Execute(ctx); err != nil {
+	if err := plan.Execute(ctx); err != nil {
 		return fmt.Errorf("restore: run collection plan %w", err)
 	}
 

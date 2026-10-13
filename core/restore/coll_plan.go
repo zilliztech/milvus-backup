@@ -2,6 +2,7 @@ package restore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"go.uber.org/zap"
@@ -25,6 +26,24 @@ type collTarget struct {
 	collOverride CollOverride
 }
 
+// Strategy pins the data path a restore takes. Every value names both the
+// backup format it applies to and the path it selects, so no value is
+// ambiguous across formats: per_seg and merged_seg are binlog strategies,
+// restore_snap and import_snap are snapshot ones. What carries the data in
+// the first place is the backup's format, the other axis the task resolves
+// at start.
+//
+//go:generate stringer -type=Strategy
+type Strategy int
+
+const (
+	StrategyAuto Strategy = iota
+	StrategyPerSeg
+	StrategyMergedSeg
+	StrategyRestoreSnap
+	StrategyImportSnap
+)
+
 // collPlan restores every planned collection one way: from snapshot bundles
 // through Milvus's restore api, or from binlog through the v1 grpc or v2
 // restful import api. The task picks one plan per restore. The plans differ in
@@ -35,22 +54,68 @@ type collPlan interface {
 	Execute(ctx context.Context) error
 }
 
-// selectPlan resolves the backup's format and the restore option into the one
-// plan that runs. It is the restore counterpart of the backup task's plan
-// selection: there the flush strategy picks the orchestration, here the data
-// path picks it.
-func (t *Task) selectPlan(targets []collTarget) collPlan {
-	switch {
-	case t.format == meta.FormatSnapshot:
-		t.logger.Info("use restore snap plan")
-		return newRestoreSnapPlan(t, targets)
-	case t.args.Option.UseV2Restore:
-		t.logger.Info("use binlog restful plan")
-		return newBinlogRESTFulPlan(t, targets)
-	default:
+// selectPlan composes the two option axes into the plan that runs: the
+// backup's format narrows which strategies exist, and the strategy pin — or
+// auto, resolved against the target's capabilities — picks among what remains.
+// A pin outside the format's set is a loud error, not a silent fallback. It is
+// the restore counterpart of the backup task's plan selection: there the flush
+// strategy picks the orchestration, here the data path picks it.
+func (t *Task) selectPlan(targets []collTarget) (collPlan, error) {
+	switch strategy := t.args.Option.Strategy; strategy {
+	case StrategyAuto:
+		if t.format == meta.FormatSnapshot {
+			// importSnapPlan has not landed, so a snapshot backup rides the
+			// restore api regardless of the target's import support.
+			t.logger.Info("use restore snap plan")
+			return newRestoreSnapPlan(t, targets), nil
+		}
+		if t.grpc.HasFeature(milvus.ImportV2) {
+			t.logger.Info("use binlog restful plan")
+			return newBinlogRESTFulPlan(t, targets), nil
+		}
 		t.logger.Info("use binlog grpc plan")
-		return newBinlogGRPCPlan(t, targets)
+		return newBinlogGRPCPlan(t, targets), nil
+	case StrategyPerSeg:
+		if t.format != meta.FormatBinlog {
+			return nil, wrongFormat("per_seg", meta.FormatBinlog, t.format)
+		}
+		t.logger.Info("use binlog grpc plan")
+		return newBinlogGRPCPlan(t, targets), nil
+	case StrategyMergedSeg:
+		if t.format != meta.FormatBinlog {
+			return nil, wrongFormat("merged_seg", meta.FormatBinlog, t.format)
+		}
+		t.logger.Info("use binlog restful plan")
+		return newBinlogRESTFulPlan(t, targets), nil
+	case StrategyRestoreSnap:
+		if t.format != meta.FormatSnapshot {
+			return nil, wrongFormat("restore_snap", meta.FormatSnapshot, t.format)
+		}
+		t.logger.Info("use restore snap plan")
+		return newRestoreSnapPlan(t, targets), nil
+	case StrategyImportSnap:
+		if t.format != meta.FormatSnapshot {
+			return nil, wrongFormat("import_snap", meta.FormatSnapshot, t.format)
+		}
+		return nil, errors.New("restore: strategy import_snap is not implemented yet")
+	default:
+		return nil, fmt.Errorf("restore: unsupported strategy: %s", strategy)
 	}
+}
+
+// wrongFormat rejects a strategy pin aimed at the other backup format.
+func wrongFormat(strategy, want, got string) error {
+	return fmt.Errorf("restore: strategy %s restores %s backups, but this backup was taken in the %s format", strategy, formatWord(want), formatWord(got))
+}
+
+// formatWord names a format for humans: the binlog format is the empty string,
+// which reads badly in an error message.
+func formatWord(format string) string {
+	if format == meta.FormatBinlog {
+		return "binlog"
+	}
+
+	return format
 }
 
 // collPlanTask restores one collection inside a plan.

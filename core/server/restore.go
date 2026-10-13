@@ -213,6 +213,12 @@ func validateRestoreRequest(request *backuppb.RestoreBackupRequest) error {
 		return errors.New("drop_exist_collection and skip_create_collection cannot be true at the same time")
 	}
 
+	if request.GetStrategy() != "" {
+		if _, err := restore.ParseStrategy(request.GetStrategy()); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -225,11 +231,16 @@ func newRestoreRequest(request *backuppb.RestoreBackupRequest) (*app.RestoreRequ
 		return nil, fmt.Errorf("server: create restore plan: %w", err)
 	}
 
+	option, err := newOptionFromRequest(request)
+	if err != nil {
+		return nil, fmt.Errorf("server: create restore option: %w", err)
+	}
+
 	return &app.RestoreRequest{
 		TaskID:     request.GetId(),
 		BackupName: request.GetBackupName(),
 		Plan:       plan,
-		Option:     newOptionFromRequest(request),
+		Option:     option,
 	}, nil
 }
 
@@ -242,7 +253,12 @@ func newSkipParamsFromRequest(request *backuppb.RestoreBackupRequest) restore.Sk
 	}
 }
 
-func newOptionFromRequest(request *backuppb.RestoreBackupRequest) *restore.Option {
+func newOptionFromRequest(request *backuppb.RestoreBackupRequest) (*restore.Option, error) {
+	strategy, err := toRestoreStrategy(request)
+	if err != nil {
+		return nil, err
+	}
+
 	return &restore.Option{
 		DropExistIndex:       request.GetDropExistIndex(),
 		RebuildIndex:         request.GetRestoreIndex(),
@@ -252,11 +268,27 @@ func newOptionFromRequest(request *backuppb.RestoreBackupRequest) *restore.Optio
 		MaxShardNum:          request.GetMaxShardNum(),
 		SkipParams:           newSkipParamsFromRequest(request),
 		MetaOnly:             request.GetMetaOnly(),
-		UseV2Restore:         request.GetUseV2Restore(),
+		Strategy:             strategy,
 		TruncateBinlogByTs:   request.GetTruncateBinlogByTs(),
 		RestoreRBAC:          request.GetRbac(),
 		EZKMapping:           request.GetEzkMapping(),
+	}, nil
+}
+
+// toRestoreStrategy resolves the request's strategy pin, with the deprecated
+// use_v2_restore bool as the fallback: an explicit strategy wins over it, and
+// without either the restore selects a plan on its own.
+func toRestoreStrategy(request *backuppb.RestoreBackupRequest) (restore.Strategy, error) {
+	if request.GetStrategy() != "" {
+		return restore.ParseStrategy(request.GetStrategy())
 	}
+
+	if request.GetUseV2Restore() {
+		log.Warn("use_v2_restore option is deprecated, pls use strategy=merged_seg instead")
+		return restore.StrategyMergedSeg, nil
+	}
+
+	return restore.StrategyAuto, nil
 }
 
 func newPlanFromRequest(request *backuppb.RestoreBackupRequest) (*restore.Plan, error) {

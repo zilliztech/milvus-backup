@@ -77,6 +77,8 @@ milvus-backup restore -n my_backup -r db1.coll1:db2.coll1 --filter db2.coll1
 
 Filtering on the pre-rename name matches nothing and restores nothing.
 
+How a restore moves the data is picked by `--strategy`, whose values name both the backup format and the path: `per_seg` and `merged_seg` for binlog backups (one import job per segment vs. segments merged into fewer jobs), `restore_snap` for snapshot backups (Milvus's own restore api), and `import_snap` for snapshot backups through the v2 import api (not implemented yet). The default `auto` resolves on its own — a binlog backup takes the merged path when the target supports the v2 import api (Milvus 2.5+) and the per-segment path otherwise; see [multi-segment merged restore](docs/user_guide/mul_seg_restore.md). The old `--use_v2_restore` flag is deprecated: `true` still selects the merged path, and an explicit `--strategy` wins when both are given.
+
 ## Compatibility
 
 Use the [latest release](https://github.com/zilliztech/milvus-backup/releases) whenever possible. The latest version supports backups from Milvus 2.2 and later, and restores to Milvus 2.5 and later.
