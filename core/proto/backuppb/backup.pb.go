@@ -2460,18 +2460,21 @@ type RestoreBackupRequest struct {
 	// target max shard number
 	MaxShardNum int32 `protobuf:"varint,19,opt,name=maxShardNum,proto3" json:"maxShardNum,omitempty"`
 	// if key is set, will skip the params in restore process
-	SkipParams   *SkipParams `protobuf:"bytes,20,opt,name=skipParams,proto3" json:"skipParams,omitempty"`
-	UseV2Restore bool        `protobuf:"varint,21,opt,name=useV2Restore,proto3" json:"useV2Restore,omitempty"`
+	SkipParams *SkipParams `protobuf:"bytes,20,opt,name=skipParams,proto3" json:"skipParams,omitempty"`
+	// Deprecated: set strategy=merged_seg instead
+	UseV2Restore bool `protobuf:"varint,21,opt,name=useV2Restore,proto3" json:"useV2Restore,omitempty"` // Deprecated: Do not use.
 	// if true, truncate binlog by timestamp, for cdc
 	TruncateBinlogByTs bool `protobuf:"varint,22,opt,name=truncateBinlogByTs,proto3" json:"truncateBinlogByTs,omitempty"`
 	// determine which database and collections to restore after rename
 	DbCollectionsAfterRename *_struct.Value `protobuf:"bytes,23,opt,name=db_collections_after_rename,json=dbCollectionsAfterRename,proto3" json:"db_collections_after_rename,omitempty"`
 	RestorePlan              *RestorePlan   `protobuf:"bytes,24,opt,name=restorePlan,proto3" json:"restorePlan,omitempty"`
 	// map of old ezk to new ezk, used to replace encryption keys during restore
-	EzkMapping           map[string]string `protobuf:"bytes,25,rep,name=ezkMapping,proto3" json:"ezkMapping,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
-	XXX_NoUnkeyedLiteral struct{}          `json:"-"`
-	XXX_unrecognized     []byte            `json:"-"`
-	XXX_sizecache        int32             `json:"-"`
+	EzkMapping map[string]string `protobuf:"bytes,25,rep,name=ezkMapping,proto3" json:"ezkMapping,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
+	// strategy for restore, one of [per_seg, merged_seg, restore_snap, import_snap], if not set will auto select
+	Strategy             string   `protobuf:"bytes,26,opt,name=strategy,proto3" json:"strategy,omitempty"`
+	XXX_NoUnkeyedLiteral struct{} `json:"-"`
+	XXX_unrecognized     []byte   `json:"-"`
+	XXX_sizecache        int32    `json:"-"`
 }
 
 func (m *RestoreBackupRequest) Reset()         { *m = RestoreBackupRequest{} }
@@ -2652,6 +2655,13 @@ func (m *RestoreBackupRequest) GetTruncateBinlogByTs() bool {
 		return m.TruncateBinlogByTs
 	}
 	return false
+}
+
+func (m *RestoreBackupRequest) GetStrategy() string {
+	if m != nil {
+		return m.Strategy
+	}
+	return ""
 }
 
 func (m *RestoreBackupRequest) GetDbCollectionsAfterRename() *_struct.Value {

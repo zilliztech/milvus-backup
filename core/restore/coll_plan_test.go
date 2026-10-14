@@ -4,40 +4,104 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 )
 
-// The plan is picked by the backup's format and the restore option: a snapshot
-// backup goes to Milvus's restore api, a binlog backup goes through the grpc or
-// restful import api.
+// newSelectPlanTask builds a task whose plan selection sees the given format
+// and strategy pin, with no grpc client behind it: a case that reaches the
+// client without setting one up fails the mock's unknown-call panic, which is
+// the assertion that auto on a snapshot backup never probes the target.
+func newSelectPlanTask(format string, strategy Strategy) *Task {
+	task := newTestTask()
+	task.format = format
+	task.args.Option = &Option{Strategy: strategy}
+	return task
+}
+
+// The plan is picked by the backup's format and the strategy: the format
+// narrows which strategies exist, auto resolves a binlog backup against the
+// target's v2 import support, and a pin outside the format's set is a loud
+// error rather than a silent fallback.
 func TestTask_selectPlan(t *testing.T) {
-	t.Run("BinlogGRPC", func(t *testing.T) {
-		task := newTestTask()
-		task.format = meta.FormatBinlog
-		task.args.Option = &Option{}
-
-		assert.IsType(t, &binlogGRPCPlan{}, task.selectPlan(nil))
-	})
-
-	t.Run("BinlogRESTFul", func(t *testing.T) {
-		task := newTestTask()
-		task.format = meta.FormatBinlog
-		task.args.Option = &Option{UseV2Restore: true}
-
+	t.Run("BinlogAutoUsesV2WhenSupported", func(t *testing.T) {
+		task := newSelectPlanTask(meta.FormatBinlog, StrategyAuto)
 		grpcCli := milvus.NewMockGrpc(t)
-		grpcCli.EXPECT().HasFeature(milvus.MultiL0InOneJob).Return(true).Once()
+		grpcCli.EXPECT().HasFeature(milvus.ImportV2).Return(true)
+		grpcCli.EXPECT().HasFeature(milvus.MultiL0InOneJob).Return(false).Maybe()
 		task.grpc = grpcCli
 
-		assert.IsType(t, &binlogRESTFulPlan{}, task.selectPlan(nil))
+		plan, err := task.selectPlan(nil)
+		require.NoError(t, err)
+		assert.IsType(t, &binlogRESTFulPlan{}, plan)
 	})
 
-	t.Run("RestoreSnap", func(t *testing.T) {
-		task := newTestTask()
-		task.format = meta.FormatSnapshot
-		task.args.Option = &Option{}
+	t.Run("BinlogAutoFallsBackToGrpc", func(t *testing.T) {
+		task := newSelectPlanTask(meta.FormatBinlog, StrategyAuto)
+		grpcCli := milvus.NewMockGrpc(t)
+		grpcCli.EXPECT().HasFeature(milvus.ImportV2).Return(false)
+		task.grpc = grpcCli
 
-		assert.IsType(t, &restoreSnapPlan{}, task.selectPlan(nil))
+		plan, err := task.selectPlan(nil)
+		require.NoError(t, err)
+		assert.IsType(t, &binlogGRPCPlan{}, plan)
+	})
+
+	t.Run("BinlogPerSeg", func(t *testing.T) {
+		task := newSelectPlanTask(meta.FormatBinlog, StrategyPerSeg)
+
+		plan, err := task.selectPlan(nil)
+		require.NoError(t, err)
+		assert.IsType(t, &binlogGRPCPlan{}, plan)
+	})
+
+	t.Run("BinlogMergedSeg", func(t *testing.T) {
+		task := newSelectPlanTask(meta.FormatBinlog, StrategyMergedSeg)
+		grpcCli := milvus.NewMockGrpc(t)
+		grpcCli.EXPECT().HasFeature(milvus.MultiL0InOneJob).Return(false).Maybe()
+		task.grpc = grpcCli
+
+		plan, err := task.selectPlan(nil)
+		require.NoError(t, err)
+		assert.IsType(t, &binlogRESTFulPlan{}, plan)
+	})
+
+	t.Run("BinlogRejectsSnapshotStrategies", func(t *testing.T) {
+		for _, strategy := range []Strategy{StrategyRestoreSnap, StrategyImportSnap} {
+			_, err := newSelectPlanTask(meta.FormatBinlog, strategy).selectPlan(nil)
+			assert.ErrorContains(t, err, "snapshot")
+		}
+	})
+
+	t.Run("SnapshotAutoUsesRestoreApi", func(t *testing.T) {
+		task := newSelectPlanTask(meta.FormatSnapshot, StrategyAuto)
+
+		plan, err := task.selectPlan(nil)
+		require.NoError(t, err)
+		assert.IsType(t, &restoreSnapPlan{}, plan)
+	})
+
+	t.Run("SnapshotRestoreSnap", func(t *testing.T) {
+		task := newSelectPlanTask(meta.FormatSnapshot, StrategyRestoreSnap)
+
+		plan, err := task.selectPlan(nil)
+		require.NoError(t, err)
+		assert.IsType(t, &restoreSnapPlan{}, plan)
+	})
+
+	t.Run("SnapshotImportSnapNotImplemented", func(t *testing.T) {
+		task := newSelectPlanTask(meta.FormatSnapshot, StrategyImportSnap)
+
+		_, err := task.selectPlan(nil)
+		assert.ErrorContains(t, err, "not implemented")
+	})
+
+	t.Run("SnapshotRejectsBinlogStrategies", func(t *testing.T) {
+		for _, strategy := range []Strategy{StrategyPerSeg, StrategyMergedSeg} {
+			_, err := newSelectPlanTask(meta.FormatSnapshot, strategy).selectPlan(nil)
+			assert.ErrorContains(t, err, "binlog")
+		}
 	})
 }

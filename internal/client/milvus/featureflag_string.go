@@ -17,6 +17,7 @@ func _() {
 	_ = x[FuncRuntimeCheck-64]
 	_ = x[ReplicateMessage-128]
 	_ = x[Snapshot-256]
+	_ = x[ImportV2-512]
 }
 
 const (
@@ -28,6 +29,7 @@ const (
 	_FeatureFlag_name_5 = "FuncRuntimeCheck"
 	_FeatureFlag_name_6 = "ReplicateMessage"
 	_FeatureFlag_name_7 = "Snapshot"
+	_FeatureFlag_name_8 = "ImportV2"
 )
 
 var (
@@ -53,6 +55,8 @@ func (i FeatureFlag) String() string {
 		return _FeatureFlag_name_6
 	case i == 256:
 		return _FeatureFlag_name_7
+	case i == 512:
+		return _FeatureFlag_name_8
 	default:
 		return "FeatureFlag(" + strconv.FormatInt(int64(i), 10) + ")"
 	}

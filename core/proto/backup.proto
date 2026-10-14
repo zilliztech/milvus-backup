@@ -410,7 +410,8 @@ message RestoreBackupRequest {
   int32 maxShardNum = 19;
   // if key is set, will skip the params in restore process
   SkipParams skipParams = 20;
-  bool useV2Restore = 21;
+  // Deprecated: set strategy=merged_seg instead
+  bool useV2Restore = 21 [deprecated=true];
   // if true, truncate binlog by timestamp, for cdc
   bool truncateBinlogByTs = 22;
   // determine which database and collections to restore after rename
@@ -419,6 +420,8 @@ message RestoreBackupRequest {
   RestorePlan restorePlan = 24;
   // map of old ezk to new ezk, used to replace encryption keys during restore
   map<string, string> ezkMapping = 25;
+  // strategy for restore, one of [per_seg, merged_seg, restore_snap, import_snap], if not set will auto select
+  string strategy = 26;
 }
 
 message RestorePlan {

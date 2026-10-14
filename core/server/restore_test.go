@@ -55,6 +55,57 @@ func TestValidateRestoreRequest(t *testing.T) {
 		request := &backuppb.RestoreBackupRequest{BackupName: "backup", CollectionSuffix: "invalid-suffix"}
 		assert.Error(t, validateRestoreRequest(request))
 	})
+
+	t.Run("InvalidStrategy", func(t *testing.T) {
+		request := &backuppb.RestoreBackupRequest{BackupName: "backup", Strategy: "invalid"}
+		assert.Error(t, validateRestoreRequest(request))
+	})
+
+	t.Run("ValidStrategy", func(t *testing.T) {
+		request := &backuppb.RestoreBackupRequest{BackupName: "backup", Strategy: "merged_seg"}
+		assert.NoError(t, validateRestoreRequest(request))
+	})
+}
+
+// The deprecated use_v2_restore bool survives as a fallback for old callers:
+// true maps to merged_seg, and an explicit strategy wins over it. The bool
+// arrives inside the request's JSON body in production, so the tests set it
+// the same way, which also keeps the deprecated field's name out of this code.
+func TestToRestoreStrategy(t *testing.T) {
+	newRequest := func(t *testing.T, body string) *backuppb.RestoreBackupRequest {
+		t.Helper()
+
+		var request backuppb.RestoreBackupRequest
+		require.NoError(t, json.Unmarshal([]byte(body), &request))
+		return &request
+	}
+
+	t.Run("ExplicitStrategyWins", func(t *testing.T) {
+		request := newRequest(t, `{"strategy": "per_seg", "useV2Restore": true}`)
+		strategy, err := toRestoreStrategy(request)
+		assert.NoError(t, err)
+		assert.Equal(t, restore.StrategyPerSeg, strategy)
+	})
+
+	t.Run("DeprecatedBoolMapsToMergedSeg", func(t *testing.T) {
+		request := newRequest(t, `{"useV2Restore": true}`)
+		strategy, err := toRestoreStrategy(request)
+		assert.NoError(t, err)
+		assert.Equal(t, restore.StrategyMergedSeg, strategy)
+	})
+
+	t.Run("NeitherSetIsAuto", func(t *testing.T) {
+		request := newRequest(t, `{}`)
+		strategy, err := toRestoreStrategy(request)
+		assert.NoError(t, err)
+		assert.Equal(t, restore.StrategyAuto, strategy)
+	})
+
+	t.Run("InvalidStrategy", func(t *testing.T) {
+		request := newRequest(t, `{"strategy": "invalid"}`)
+		_, err := toRestoreStrategy(request)
+		assert.Error(t, err)
+	})
 }
 
 func TestNewTableMapperFromCollRename(t *testing.T) {

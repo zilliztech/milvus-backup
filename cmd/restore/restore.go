@@ -44,6 +44,7 @@ type options struct {
 	dropExistIndex       bool
 	skipCreateCollection bool
 	rbac                 bool
+	strategy             string
 	useV2Restore         bool
 }
 
@@ -59,6 +60,10 @@ func (o *options) validate() error {
 
 	if o.dropExistCollection && o.skipCreateCollection {
 		return errors.New("drop_exist_collection and skip_create_collection cannot be true at the same time")
+	}
+
+	if _, err := restore.ParseStrategy(o.strategy); err != nil {
+		return fmt.Errorf("invalid strategy %s, only support %s", o.strategy, strings.Join(restore.SupportStrategy(), ","))
 	}
 
 	return nil
@@ -81,12 +86,32 @@ func (o *options) addFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVarP(&o.dropExistIndex, "drop_exist_index", "", false, "if true, drop existing index of target collection before create")
 	cmd.Flags().BoolVarP(&o.skipCreateCollection, "skip_create_collection", "", false, "if true, will skip collection, use when collection exist, restore index or data")
 	cmd.Flags().BoolVarP(&o.rbac, "rbac", "", false, "whether restore RBAC meta")
+	cmd.Flags().StringVarP(&o.strategy, "strategy", "", "", "restore strategy, one of [per_seg, merged_seg, restore_snap, import_snap], if not set will auto select")
+
+	// The deprecated bool of the pre-strategy days keeps working so an old
+	// command line restores exactly what it used to: cobra answers every use
+	// with the deprecation notice, and toOption maps true onto merged_seg.
 	cmd.Flags().BoolVarP(&o.useV2Restore, "use_v2_restore", "", false, "if true, use multi-segment merged restore")
+	// The flag was registered a line ago, so it cannot be missing.
+	_ = cmd.Flags().MarkDeprecated("use_v2_restore", "use --strategy=merged_seg instead")
 
 	flags.AddRemoved(cmd, removedFlags)
 }
 
-func (o *options) toOption() *restore.Option {
+// toOption parses the flags into the transport-neutral request option. The
+// strategy is already validated in validate().
+func (o *options) toOption() (*restore.Option, error) {
+	strategy, err := restore.ParseStrategy(o.strategy)
+	if err != nil {
+		return nil, err
+	}
+
+	// The deprecated bool is the fallback for old command lines: true maps to
+	// merged_seg, and an explicit --strategy wins over it.
+	if o.useV2Restore && o.strategy == "" {
+		strategy = restore.StrategyMergedSeg
+	}
+
 	return &restore.Option{
 		DropExistIndex:       o.dropExistIndex,
 		RebuildIndex:         o.rebuildIndex,
@@ -94,9 +119,9 @@ func (o *options) toOption() *restore.Option {
 		DropExistCollection:  o.dropExistCollection,
 		SkipCreateCollection: o.skipCreateCollection,
 		MetaOnly:             o.metaOnly,
-		UseV2Restore:         o.useV2Restore,
+		Strategy:             strategy,
 		RestoreRBAC:          o.rbac,
-	}
+	}, nil
 }
 
 func (o *options) toTaskFilter() (filter.Filter, error) {
@@ -160,11 +185,16 @@ func (o *options) toRequest() (app.RestoreRequest, error) {
 		return app.RestoreRequest{}, err
 	}
 
+	option, err := o.toOption()
+	if err != nil {
+		return app.RestoreRequest{}, err
+	}
+
 	return app.RestoreRequest{
 		TaskID:     uuid.NewString(),
 		BackupName: o.backupName,
 		Plan:       plan,
-		Option:     o.toOption(),
+		Option:     option,
 	}, nil
 }
 

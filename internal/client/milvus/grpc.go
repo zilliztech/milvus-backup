@@ -53,6 +53,7 @@ const (
 	FuncRuntimeCheck
 	ReplicateMessage
 	Snapshot
+	ImportV2
 )
 
 type featureTuple struct {
@@ -90,6 +91,9 @@ var _featureTuples = []featureTuple{
 	// Snapshot landed on the 3.0 line. The 2.6 branch carries no snapshot code at all, and no
 	// 2.6.x tag exposes the RPCs, so this is a clean major-line boundary rather than a patch one.
 	{Constraints: lo.Must(semver.NewConstraint(">= 3.0.0-0")), Flag: Snapshot},
+	// ImportV2 is the v2 import jobs api (/v2/vectordb/jobs/import), which shipped with the
+	// RESTful v2 api in 2.5.0.
+	{Constraints: lo.Must(semver.NewConstraint(">= 2.5.0-0")), Flag: ImportV2},
 }
 
 func defaultDialOpt() []grpc.DialOption {
