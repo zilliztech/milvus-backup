@@ -1030,6 +1030,13 @@ const docTemplate = `{
                     "description": "if bucket_name and path is set. will override bucket/path in config.",
                     "type": "string"
                 },
+                "peers": {
+                    "description": "REST endpoints of the peer clusters that replicate this target, e.g. http://10.0.0.2:19530; when set, every import job is committed two-phase so its mirror commits on every peer",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
                 "rbac": {
                     "description": "whether restore RBAC",
                     "type": "boolean"
@@ -1061,6 +1068,10 @@ const docTemplate = `{
                         }
                     ]
                 },
+                "strategy": {
+                    "description": "strategy for restore, one of [per_seg, merged_seg, restore_snap, import_snap], if not set will auto select",
+                    "type": "string"
+                },
                 "truncateBinlogByTs": {
                     "description": "if true, truncate binlog by timestamp, for cdc",
                     "type": "boolean"
@@ -1070,6 +1081,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "useV2Restore": {
+                    "description": "Deprecated: set strategy=merged_seg instead",
                     "type": "boolean"
                 }
             }

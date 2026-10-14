@@ -14,6 +14,12 @@ Pass the replicas' REST endpoints with the `--peers` flag (comma-separated or re
 milvus-backup restore -n my_backup --peers http://10.0.0.2:19530,http://10.0.0.3:19530
 ```
 
+The RESTful API takes the same option as the `peers` string array of `POST /api/v1/restore`:
+
+```json
+{"backup_name": "my_backup", "peers": ["http://10.0.0.2:19530", "http://10.0.0.3:19530"]}
+```
+
 On a replicating 3.0+ target a restore *without* `--peers` is refused up front, because the server no longer accepts plain auto-commit import jobs there; the same check runs when `--strategy per_seg` is combined with `--peers`, since the per-segment path imports through the v1 grpc api, which has no two-phase commit.
 
 > **Note**: Two-phase commit requires Milvus 3.0 or newer on the restore target and on every peer.
