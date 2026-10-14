@@ -185,69 +185,159 @@ func TestCollDMLTask_verifySegmentsData(t *testing.T) {
 	const (
 		backupDir = "bak"
 		collID    = int64(1)
-		partID    = int64(2)
-		segID     = int64(3)
-		groupID   = int64(3)
 		fieldID   = int64(100)
 	)
 
-	seg := &backuppb.SegmentBackupInfo{
-		CollectionId: collID,
-		PartitionId:  partID,
-		SegmentId:    segID,
-		GroupId:      groupID,
-		Binlogs: []*backuppb.FieldBinlog{
-			{FieldID: fieldID, Binlogs: []*backuppb.Binlog{
-				{LogId: 10, LogPath: "milvus/insert_log/1/2/3/100/10", LogSize: 5},
-			}},
-		},
-		Deltalogs: []*backuppb.FieldBinlog{
-			{Binlogs: []*backuppb.Binlog{
-				{LogId: 20, LogPath: "milvus/delta_log/1/2/3/20", LogSize: 7},
-			}},
-		},
+	newSeg := func(partID, segID, insertLogID, deltaLogID int64) *backuppb.SegmentBackupInfo {
+		return &backuppb.SegmentBackupInfo{
+			CollectionId: collID,
+			PartitionId:  partID,
+			SegmentId:    segID,
+			GroupId:      segID,
+			Binlogs: []*backuppb.FieldBinlog{
+				{FieldID: fieldID, Binlogs: []*backuppb.Binlog{
+					{LogId: insertLogID, LogSize: 5},
+				}},
+			},
+			Deltalogs: []*backuppb.FieldBinlog{
+				{Binlogs: []*backuppb.Binlog{
+					{LogId: deltaLogID, LogSize: 7},
+				}},
+			},
+		}
+	}
+	insertKey := func(seg *backuppb.SegmentBackupInfo, logID int64) string {
+		return mpath.Join(
+			mpath.BackupInsertLogDir(backupDir, mpath.CollectionID(collID), mpath.PartitionID(seg.GetPartitionId()), mpath.SegmentID(seg.GetSegmentId()), mpath.GroupID(seg.GetGroupId())),
+			mpath.FieldID(fieldID), mpath.LogID(logID))
+	}
+	deltaKey := func(seg *backuppb.SegmentBackupInfo, logID int64) string {
+		return mpath.Join(
+			mpath.BackupDeltaLogDir(backupDir, mpath.CollectionID(collID), mpath.PartitionID(seg.GetPartitionId()), mpath.SegmentID(seg.GetSegmentId()), mpath.GroupID(seg.GetGroupId())),
+			mpath.LogID(logID))
+	}
+	insertPart := func(partID int64) string {
+		return mpath.BackupInsertLogDir(backupDir, mpath.CollectionID(collID), mpath.PartitionID(partID))
+	}
+	deltaPart := func(partID int64) string {
+		return mpath.BackupDeltaLogDir(backupDir, mpath.CollectionID(collID), mpath.PartitionID(partID))
 	}
 
-	insertKey := mpath.Join(
-		mpath.BackupInsertLogDir(backupDir, mpath.CollectionID(collID), mpath.PartitionID(partID), mpath.SegmentID(segID), mpath.GroupID(groupID)),
-		mpath.FieldID(fieldID), mpath.LogID(10))
-	deltaKey := mpath.Join(
-		mpath.BackupDeltaLogDir(backupDir, mpath.CollectionID(collID), mpath.PartitionID(partID), mpath.SegmentID(segID), mpath.GroupID(groupID)),
-		mpath.LogID(20))
+	segA := newSeg(2, 3, 10, 20)
+	segB := newSeg(4, 5, 11, 21)
 
-	insertColl := mpath.BackupInsertLogDir(backupDir, mpath.CollectionID(collID))
-	deltaColl := mpath.BackupDeltaLogDir(backupDir, mpath.CollectionID(collID))
-
-	t.Run("AllPresent", func(t *testing.T) {
-		st := storage.NewMockClient(t)
-		st.EXPECT().
-			NewObjectIter(mock.Anything, insertColl, true).
-			Return(storage.NewMockObjectIterator([]storage.ObjectAttr{{Key: insertKey, Length: 5}})).Once()
-		st.EXPECT().
-			NewObjectIter(mock.Anything, deltaColl, true).
-			Return(storage.NewMockObjectIterator([]storage.ObjectAttr{{Key: deltaKey, Length: 7}})).Once()
-
+	newTask := func(st storage.Client) *collDMLTask {
 		dmlt := newTestCollDMLTask()
 		dmlt.backupStorage = st
 		dmlt.backupDir = backupDir
+		return dmlt
+	}
 
-		err := dmlt.verifySegmentsData(context.Background(), collID, []*backuppb.SegmentBackupInfo{seg})
+	t.Run("AllPresent", func(t *testing.T) {
+		st := storage.NewMockClient(t)
+		st.EXPECT().NewObjectIter(mock.Anything, insertPart(2), true).
+			Return(storage.NewMockObjectIterator([]storage.ObjectAttr{{Key: insertKey(segA, 10), Length: 5}})).Once()
+		st.EXPECT().NewObjectIter(mock.Anything, deltaPart(2), true).
+			Return(storage.NewMockObjectIterator([]storage.ObjectAttr{{Key: deltaKey(segA, 20), Length: 7}})).Once()
+
+		err := newTask(st).verifySegmentsData(context.Background(), collID, []*backuppb.SegmentBackupInfo{segA})
+		assert.NoError(t, err)
+	})
+
+	t.Run("ListsEachPartitionNotCollection", func(t *testing.T) {
+		st := storage.NewMockClient(t)
+		// the collection dir itself must never be listed
+		st.EXPECT().NewObjectIter(mock.Anything, insertPart(2), true).
+			Return(storage.NewMockObjectIterator([]storage.ObjectAttr{{Key: insertKey(segA, 10), Length: 5}})).Once()
+		st.EXPECT().NewObjectIter(mock.Anything, insertPart(4), true).
+			Return(storage.NewMockObjectIterator([]storage.ObjectAttr{{Key: insertKey(segB, 11), Length: 5}})).Once()
+		st.EXPECT().NewObjectIter(mock.Anything, deltaPart(2), true).
+			Return(storage.NewMockObjectIterator([]storage.ObjectAttr{{Key: deltaKey(segA, 20), Length: 7}})).Once()
+		st.EXPECT().NewObjectIter(mock.Anything, deltaPart(4), true).
+			Return(storage.NewMockObjectIterator([]storage.ObjectAttr{{Key: deltaKey(segB, 21), Length: 7}})).Once()
+
+		err := newTask(st).verifySegmentsData(context.Background(), collID, []*backuppb.SegmentBackupInfo{segA, segB})
 		assert.NoError(t, err)
 	})
 
 	t.Run("InsertMissing", func(t *testing.T) {
 		st := storage.NewMockClient(t)
-		st.EXPECT().
-			NewObjectIter(mock.Anything, insertColl, true).
+		st.EXPECT().NewObjectIter(mock.Anything, insertPart(2), true).
 			Return(storage.NewMockObjectIterator(nil)).Once()
 
-		dmlt := newTestCollDMLTask()
-		dmlt.backupStorage = st
-		dmlt.backupDir = backupDir
-
-		err := dmlt.verifySegmentsData(context.Background(), collID, []*backuppb.SegmentBackupInfo{seg})
+		err := newTask(st).verifySegmentsData(context.Background(), collID, []*backuppb.SegmentBackupInfo{segA})
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "verify insert logs")
+	})
+
+	t.Run("MissingInOnePartition", func(t *testing.T) {
+		st := storage.NewMockClient(t)
+		st.EXPECT().NewObjectIter(mock.Anything, insertPart(2), true).
+			Return(storage.NewMockObjectIterator([]storage.ObjectAttr{{Key: insertKey(segA, 10), Length: 5}})).Maybe()
+		st.EXPECT().NewObjectIter(mock.Anything, insertPart(4), true).
+			Return(storage.NewMockObjectIterator(nil)).Once()
+
+		err := newTask(st).verifySegmentsData(context.Background(), collID, []*backuppb.SegmentBackupInfo{segA, segB})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "verify insert logs")
+		assert.Contains(t, err.Error(), insertPart(4)) // the failing partition prefix is in the error
+	})
+
+	t.Run("DeltaSizeMismatch", func(t *testing.T) {
+		st := storage.NewMockClient(t)
+		st.EXPECT().NewObjectIter(mock.Anything, insertPart(2), true).
+			Return(storage.NewMockObjectIterator([]storage.ObjectAttr{{Key: insertKey(segA, 10), Length: 5}})).Once()
+		st.EXPECT().NewObjectIter(mock.Anything, deltaPart(2), true).
+			Return(storage.NewMockObjectIterator([]storage.ObjectAttr{{Key: deltaKey(segA, 20), Length: 1}})).Once()
+
+		err := newTask(st).verifySegmentsData(context.Background(), collID, []*backuppb.SegmentBackupInfo{segA})
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "verify delta logs")
+	})
+
+	t.Run("NoSegments", func(t *testing.T) {
+		st := storage.NewMockClient(t) // no list expected
+
+		err := newTask(st).verifySegmentsData(context.Background(), collID, nil)
+		assert.NoError(t, err)
+	})
+}
+
+func TestGroupByChildPrefix(t *testing.T) {
+	dir := "bak/binlogs/insert_log/1/"
+
+	t.Run("GroupByFirstLevel", func(t *testing.T) {
+		groups := groupByChildPrefix(dir, map[string]int64{
+			dir + "2/3/3/100/10": 1,
+			dir + "2/4/4/100/11": 2,
+			dir + "-1/0/5/12":    3,
+		})
+		assert.Equal(t, map[string]map[string]int64{
+			dir + "2/": {
+				dir + "2/3/3/100/10": 1,
+				dir + "2/4/4/100/11": 2,
+			},
+			dir + "-1/": {
+				dir + "-1/0/5/12": 3,
+			},
+		}, groups)
+	})
+
+	t.Run("FallbackToDir", func(t *testing.T) {
+		groups := groupByChildPrefix(dir, map[string]int64{
+			dir + "file":             1, // no sub dir below dir
+			"other/insert_log/1/2/x": 2, // not under dir
+		})
+		assert.Equal(t, map[string]map[string]int64{
+			dir: {
+				dir + "file":             1,
+				"other/insert_log/1/2/x": 2,
+			},
+		}, groups)
+	})
+
+	t.Run("Empty", func(t *testing.T) {
+		assert.Empty(t, groupByChildPrefix(dir, nil))
 	})
 }
 
