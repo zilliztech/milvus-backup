@@ -45,11 +45,23 @@ type restfulImportPlanner struct {
 	multiL0InOneJob bool
 
 	restfulCli milvus.Restful
-	store      *jobstate.Store
-	logger     *zap.Logger
+	// peers talk to the peer clusters that mirror the target's import jobs over
+	// the replication stream; when non-empty, every task commits two-phase on
+	// the target and all peers. Empty for a target without peers.
+	peers []importPeer
+
+	store  *jobstate.Store
+	logger *zap.Logger
 }
 
-func newRestfulImportPlanner(dt *collDMLTask, multiL0InOneJob bool) *restfulImportPlanner {
+// importPeer pairs a peer cluster's restful client with the address it was
+// dialed with, so a failure can name the peer.
+type importPeer struct {
+	addr string
+	cli  milvus.Restful
+}
+
+func newRestfulImportPlanner(dt *collDMLTask, multiL0InOneJob bool, peers []importPeer) *restfulImportPlanner {
 	return &restfulImportPlanner{
 		taskID: dt.taskID,
 		target: dt.target,
@@ -67,6 +79,7 @@ func newRestfulImportPlanner(dt *collDMLTask, multiL0InOneJob bool) *restfulImpo
 		multiL0InOneJob:     multiL0InOneJob,
 
 		restfulCli: dt.restfulCli,
+		peers:      peers,
 		store:      dt.store,
 		logger:     dt.logger,
 	}
@@ -88,8 +101,12 @@ func (p *restfulImportPlanner) planTasks(partitionName string, groups []dirGroup
 	return tasks
 }
 
-func (p *restfulImportPlanner) newTask(partitionName string, g dirGroup, dirs []partitionDir) *importViaRESTFulTask {
-	return &importViaRESTFulTask{importer: p.newImporter(partitionName, g, dirs)}
+func (p *restfulImportPlanner) newTask(partitionName string, g dirGroup, dirs []partitionDir) tasklet.Tasklet {
+	importer := p.newImporter(partitionName, g, dirs)
+	if len(p.peers) != 0 {
+		return &importViaRESTFul2PCTask{importer: importer, peers: p.peers}
+	}
+	return &importViaRESTFulTask{importer: importer}
 }
 
 func (p *restfulImportPlanner) newImporter(partitionName string, g dirGroup, dirs []partitionDir) *restfulImporter {
@@ -197,8 +214,19 @@ func (im *restfulImporter) stage(ctx context.Context) error {
 
 // submit sends the import request and records the job in the job state store.
 func (im *restfulImporter) submit(ctx context.Context) (string, error) {
+	return im.createJob(ctx, false)
+}
+
+// submit2PC sends the import request with auto_commit=false: the job stops at
+// Uncommitted and becomes visible only when someone commits it.
+func (im *restfulImporter) submit2PC(ctx context.Context) (string, error) {
+	return im.createJob(ctx, true)
+}
+
+func (im *restfulImporter) createJob(ctx context.Context, manualCommit bool) (string, error) {
 	im.logger.Info("start bulk insert via restful",
-		zap.Int("batch_num", len(im.dirs)), zap.String("partition", im.partitionName))
+		zap.Int("batch_num", len(im.dirs)), zap.String("partition", im.partitionName),
+		zap.Bool("manual_commit", manualCommit))
 	paths := lo.Map(im.dirs, func(dir partitionDir, _ int) []string { return im.toPaths(dir) })
 	in := milvus.BulkInsertV2Input{
 		DB:             im.target.DBName(),
@@ -209,6 +237,7 @@ func (im *restfulImporter) submit(ctx context.Context) (string, error) {
 		IsL0:           im.isL0,
 		StorageVersion: im.storageVersion,
 		EZK:            im.ezk,
+		ManualCommit:   manualCommit,
 	}
 
 	jobID, err := im.restfulCli.BulkInsert(ctx, in)
@@ -246,6 +275,52 @@ func (im *restfulImporter) waitCompleted(ctx context.Context, jobID string) erro
 	}
 
 	return waitImportJob(ctx, im.logger, im.store, im.taskID, im.target, jobID, state)
+}
+
+// waitUncommitted polls the job until it holds at Uncommitted — the terminal a
+// two-phase job is waited to before anyone commits it. Progress stays short of
+// 100: the data is not visible yet.
+func (im *restfulImporter) waitUncommitted(ctx context.Context, jobID string) error {
+	state := func(ctx context.Context) (importJobState, error) {
+		resp, err := im.restfulCli.GetBulkInsertState(ctx, im.target.DBName(), jobID)
+		if err != nil {
+			return importJobState{}, err
+		}
+
+		im.logger.Info("bulk insert task state", zap.String("job_id", jobID),
+			zap.String("state", resp.Data.State),
+			zap.Int("progress", resp.Data.Progress))
+		switch resp.Data.State {
+		case string(milvus.ImportStateFailed):
+			return importJobState{failedReason: resp.Data.Reason}, nil
+		case string(milvus.ImportStateUncommitted):
+			return importJobState{completed: true}, nil
+		default:
+			return importJobState{progress: resp.Data.Progress}, nil
+		}
+	}
+
+	return waitImportJob(ctx, im.logger, im.store, im.taskID, im.target, jobID, state)
+}
+
+// commit makes the job's data visible. Milvus commits idempotently, so a
+// retried task can call it on a job that is already committing.
+func (im *restfulImporter) commit(ctx context.Context, jobID string) error {
+	im.logger.Info("commit import job", zap.String("job_id", jobID))
+	if err := im.restfulCli.CommitImport(ctx, im.target.DBName(), jobID); err != nil {
+		return fmt.Errorf("restore: commit import job %s: %w", jobID, err)
+	}
+
+	return nil
+}
+
+// abort rolls the job back, dropping whatever it staged. It only works before
+// the commit; the two-phase task calls it when the flow fails ahead of one.
+func (im *restfulImporter) abort(ctx context.Context, jobID string) {
+	im.logger.Info("abort import job", zap.String("job_id", jobID))
+	if err := im.restfulCli.AbortImport(ctx, im.target.DBName(), jobID); err != nil {
+		im.logger.Warn("abort import job failed", zap.String("job_id", jobID), zap.Error(err))
+	}
 }
 
 // toPaths builds the [insertLogDir, deltaLogDir] argument for the restful bulk

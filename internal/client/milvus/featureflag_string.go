@@ -18,6 +18,7 @@ func _() {
 	_ = x[ReplicateMessage-128]
 	_ = x[Snapshot-256]
 	_ = x[ImportV2-512]
+	_ = x[Import2PC-1024]
 }
 
 const (
@@ -30,6 +31,7 @@ const (
 	_FeatureFlag_name_6 = "ReplicateMessage"
 	_FeatureFlag_name_7 = "Snapshot"
 	_FeatureFlag_name_8 = "ImportV2"
+	_FeatureFlag_name_9 = "Import2PC"
 )
 
 var (
@@ -57,6 +59,8 @@ func (i FeatureFlag) String() string {
 		return _FeatureFlag_name_7
 	case i == 512:
 		return _FeatureFlag_name_8
+	case i == 1024:
+		return _FeatureFlag_name_9
 	default:
 		return "FeatureFlag(" + strconv.FormatInt(int64(i), 10) + ")"
 	}

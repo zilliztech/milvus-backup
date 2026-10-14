@@ -35,10 +35,17 @@ type BulkInsertV2Input struct {
 	IsL0           bool
 	StorageVersion int64
 	EZK            string
+	// ManualCommit submits the job with auto_commit=false: it stops at
+	// Uncommitted and waits for an explicit CommitImport.
+	ManualCommit bool
 }
 
 func (in *BulkInsertV2Input) opts() map[string]string {
 	opts := map[string]string{"skip_disk_quota_check": "true"}
+
+	if in.ManualCommit {
+		opts["auto_commit"] = "false"
+	}
 
 	if in.BackupTS > 0 {
 		opts["end_ts"] = strconv.FormatUint(in.BackupTS, 10)
@@ -98,6 +105,13 @@ type GetProgressReq struct {
 	JobId  string `json:"jobId"`
 }
 
+// importJobResp is the envelope of the commit and abort endpoints: both carry
+// an empty data object and report the outcome in the code.
+type importJobResp struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+}
+
 type createImportResp struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
@@ -150,6 +164,10 @@ type Restful interface {
 	BulkInsert(ctx context.Context, input BulkInsertV2Input) (string, error)
 	GetBulkInsertState(ctx context.Context, db, jobID string) (*GetProcessResp, error)
 	GetSegmentInfo(ctx context.Context, db string, collID, segID int64) (*SegmentInfo, error)
+	// CommitImport and AbortImport drive the two-phase commit of an import job
+	// created with auto_commit=false. Both take effect per job.
+	CommitImport(ctx context.Context, db, jobID string) error
+	AbortImport(ctx context.Context, db, jobID string) error
 }
 
 var _ Restful = (*RestfulClient)(nil)
@@ -214,6 +232,49 @@ func (r *RestfulClient) GetBulkInsertState(ctx context.Context, dbName, jobID st
 	}
 
 	return &getResp, nil
+}
+
+// CommitImport commits an import job that is holding at Uncommitted, making its
+// data visible. Committing is idempotent — Committing and Completed jobs answer
+// success — so transport-level failures are retried. A non-zero code is a
+// definitive refusal (the job is in a state that cannot be committed) and is
+// returned without retrying.
+func (r *RestfulClient) CommitImport(ctx context.Context, dbName, jobID string) error {
+	return r.postImportJobAction(ctx, "/v2/vectordb/jobs/import/commit", dbName, jobID)
+}
+
+// AbortImport rolls back an import job that has not been committed, dropping
+// whatever it staged. Aborting a job that already failed is accepted; aborting
+// a committed one is refused, and the caller is expected to know the difference
+// — abort only runs on the not-yet-committed path.
+func (r *RestfulClient) AbortImport(ctx context.Context, dbName, jobID string) error {
+	return r.postImportJobAction(ctx, "/v2/vectordb/jobs/import/abort", dbName, jobID)
+}
+
+func (r *RestfulClient) postImportJobAction(ctx context.Context, path, dbName, jobID string) error {
+	actionReq := &GetProgressReq{DBName: dbName, JobId: jobID}
+
+	return retry.Do(ctx, func() error {
+		var actionResp importJobResp
+		resp, err := r.cli.R().
+			SetContext(ctx).
+			SetBody(actionReq).
+			SetSuccessResult(&actionResp).
+			Post(path)
+		if err != nil {
+			return fmt.Errorf("client: post %s via restful: %w", path, err)
+		}
+		log.Info("post import job action via restful",
+			zap.String("path", path), zap.String("job_id", jobID), zap.Any("resp", actionResp))
+		if resp.IsErrorState() {
+			return fmt.Errorf("client: post %s via restful: %v", path, resp)
+		}
+		if actionResp.Code != 0 {
+			return retry.Unrecoverable(fmt.Errorf("client: post %s via restful: %v", path, actionResp))
+		}
+
+		return nil
+	})
 }
 
 func (r *RestfulClient) GetSegmentInfo(ctx context.Context, db string, collID, segID int64) (*SegmentInfo, error) {

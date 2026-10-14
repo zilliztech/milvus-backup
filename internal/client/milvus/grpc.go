@@ -54,6 +54,7 @@ const (
 	ReplicateMessage
 	Snapshot
 	ImportV2
+	Import2PC
 )
 
 type featureTuple struct {
@@ -94,6 +95,12 @@ var _featureTuples = []featureTuple{
 	// ImportV2 is the v2 import jobs api (/v2/vectordb/jobs/import), which shipped with the
 	// RESTful v2 api in 2.5.0.
 	{Constraints: lo.Must(semver.NewConstraint(">= 2.5.0-0")), Flag: ImportV2},
+	// Import2PC is the two-phase commit of import jobs: the auto_commit option on create
+	// plus the import/commit and import/abort endpoints. The server tags its knob
+	// (dataCoord.import.enableInReplicatingCluster) as 2.7.0, but master was renumbered
+	// to 3.0 before any 2.7 release existed — no 2.7 build ever shipped, so the real
+	// floor is 3.0.
+	{Constraints: lo.Must(semver.NewConstraint(">= 3.0.0-0")), Flag: Import2PC},
 }
 
 func defaultDialOpt() []grpc.DialOption {
