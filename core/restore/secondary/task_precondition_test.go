@@ -18,19 +18,31 @@ package secondary
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
+	"net"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
+	"github.com/milvus-io/milvus/pkg/v3/streaming/util/message"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
 func taskWithBackup(cli milvus.Grpc, colls ...*backuppb.CollectionBackupInfo) *Task {
@@ -126,7 +138,7 @@ func cfgWith(clusterID string, pchannels ...string) *commonpb.ReplicateConfigura
 
 func infoAt(tick uint64) *milvuspb.GetReplicateInfoResponse {
 	return &milvuspb.GetReplicateInfoResponse{
-		Checkpoint: &commonpb.ReplicateCheckpoint{TimeTick: tick},
+		Checkpoint: &commonpb.ReplicateCheckpoint{ClusterId: "src", TimeTick: tick},
 	}
 }
 
@@ -142,56 +154,83 @@ func taskForTarget(cli milvus.Grpc) *Task {
 	}
 }
 
-func TestCheckTargetNotRestored(t *testing.T) {
-	t.Run("a newly deployed secondary reports zero on every pchannel", func(t *testing.T) {
+func TestCheckTargetReady(t *testing.T) {
+	t.Run("FreshSecondary", func(t *testing.T) {
 		cli := milvus.NewMockGrpc(t)
 		cli.EXPECT().GetReplicateConfiguration(mock.Anything).
-			Return(cfgWith("tgt", "tgt-rootcoord-dml_0", "tgt-rootcoord-dml_1"), nil)
-		cli.EXPECT().GetReplicateInfo(mock.Anything, "src", "tgt-rootcoord-dml_0").Return(infoAt(0), nil)
-		cli.EXPECT().GetReplicateInfo(mock.Anything, "src", "tgt-rootcoord-dml_1").Return(infoAt(0), nil)
-		assert.NoError(t, taskForTarget(cli).checkTargetNotRestored(context.Background()))
+			Return(cfgWith("tgt", "tgt-rootcoord-dml_0", "tgt-rootcoord-dml_1"), nil).Once()
+		cli.EXPECT().GetReplicateInfo(mock.Anything, "src", "tgt-rootcoord-dml_0").Return(infoAt(0), nil).Once()
+		cli.EXPECT().GetReplicateInfo(mock.Anything, "src", "tgt-rootcoord-dml_1").Return(infoAt(0), nil).Once()
+		assert.NoError(t, taskForTarget(cli).checkTargetReady(context.Background()))
 	})
 
-	// The case that is otherwise invisible: the collections were dropped, so
-	// nothing is listed, but the checkpoint of the restore that created them
-	// is still there.
-	t.Run("a target that was restored before is refused, naming the pchannel", func(t *testing.T) {
+	// The second channel must be checked even when the first has not advanced.
+	for _, tick := range []uint64{1, 468522223459106838} {
+		name := "PartialRestore"
+		if tick > 1 {
+			name = "CDCAlreadyAdvanced"
+		}
+		t.Run(name, func(t *testing.T) {
+			cli := milvus.NewMockGrpc(t)
+			cli.EXPECT().GetReplicateConfiguration(mock.Anything).
+				Return(cfgWith("tgt", "tgt-rootcoord-dml_0", "tgt-rootcoord-dml_1"), nil).Once()
+			cli.EXPECT().GetReplicateInfo(mock.Anything, "src", "tgt-rootcoord-dml_0").Return(infoAt(0), nil).Once()
+			cli.EXPECT().GetReplicateInfo(mock.Anything, "src", "tgt-rootcoord-dml_1").Return(infoAt(tick), nil).Once()
+			err := taskForTarget(cli).checkTargetReady(context.Background())
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "tgt-rootcoord-dml_1")
+			assert.Contains(t, err.Error(), "CDC")
+			assert.Contains(t, err.Error(), "new secondary")
+		})
+	}
+
+	t.Run("ConfigurationReadFailure", func(t *testing.T) {
 		cli := milvus.NewMockGrpc(t)
-		cli.EXPECT().GetReplicateConfiguration(mock.Anything).
-			Return(cfgWith("tgt", "tgt-rootcoord-dml_0", "tgt-rootcoord-dml_1"), nil)
-		cli.EXPECT().GetReplicateInfo(mock.Anything, "src", "tgt-rootcoord-dml_0").Return(infoAt(0), nil)
-		cli.EXPECT().GetReplicateInfo(mock.Anything, "src", "tgt-rootcoord-dml_1").
-			Return(infoAt(468522223459106838), nil)
-		err := taskForTarget(cli).checkTargetNotRestored(context.Background())
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "tgt-rootcoord-dml_1")
-		assert.Contains(t, err.Error(), "restored before")
-		assert.Contains(t, err.Error(), "new secondary")
+		cli.EXPECT().GetReplicateConfiguration(mock.Anything).Return(nil, context.DeadlineExceeded).Once()
+		err := taskForTarget(cli).checkTargetReady(context.Background())
+		assert.ErrorIs(t, err, context.DeadlineExceeded)
 	})
 
-	t.Run("a cluster with no replication configuration is not refused", func(t *testing.T) {
-		cli := milvus.NewMockGrpc(t)
-		cli.EXPECT().GetReplicateConfiguration(mock.Anything).
-			Return(nil, errors.New("deadline exceeded"))
-		assert.NoError(t, taskForTarget(cli).checkTargetNotRestored(context.Background()))
-	})
+	for _, tc := range []struct {
+		name   string
+		config *commonpb.ReplicateConfiguration
+	}{
+		{"NoConfiguration", nil},
+		{"TargetMissing", cfgWith("someone-else", "other-rootcoord-dml_0")},
+		{"NoTargetChannels", cfgWith("tgt")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cli := milvus.NewMockGrpc(t)
+			cli.EXPECT().GetReplicateConfiguration(mock.Anything).Return(tc.config, nil).Once()
+			err := taskForTarget(cli).checkTargetReady(context.Background())
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "tgt")
+		})
+	}
 
-	t.Run("a configuration that does not list the target is not refused", func(t *testing.T) {
-		cli := milvus.NewMockGrpc(t)
-		cli.EXPECT().GetReplicateConfiguration(mock.Anything).Return(cfgWith("someone-else"), nil)
-		assert.NoError(t, taskForTarget(cli).checkTargetNotRestored(context.Background()))
-	})
-
-	t.Run("a checkpoint that cannot be read is reported", func(t *testing.T) {
-		cli := milvus.NewMockGrpc(t)
-		cli.EXPECT().GetReplicateConfiguration(mock.Anything).
-			Return(cfgWith("tgt", "tgt-rootcoord-dml_0"), nil)
-		cli.EXPECT().GetReplicateInfo(mock.Anything, "src", "tgt-rootcoord-dml_0").
-			Return(nil, errors.New("connection refused"))
-		err := taskForTarget(cli).checkTargetNotRestored(context.Background())
-		assert.Error(t, err)
-		assert.Contains(t, err.Error(), "connection refused")
-	})
+	for _, tc := range []struct {
+		name     string
+		response *milvuspb.GetReplicateInfoResponse
+		err      error
+	}{
+		{"CheckpointReadFailure", nil, context.DeadlineExceeded},
+		{"NilResponse", nil, nil},
+		{"MissingCheckpoint", &milvuspb.GetReplicateInfoResponse{}, nil},
+		{"WrongSource", &milvuspb.GetReplicateInfoResponse{Checkpoint: &commonpb.ReplicateCheckpoint{ClusterId: "other"}}, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cli := milvus.NewMockGrpc(t)
+			cli.EXPECT().GetReplicateConfiguration(mock.Anything).
+				Return(cfgWith("tgt", "tgt-rootcoord-dml_0"), nil).Once()
+			cli.EXPECT().GetReplicateInfo(mock.Anything, "src", "tgt-rootcoord-dml_0").Return(tc.response, tc.err).Once()
+			err := taskForTarget(cli).checkTargetReady(context.Background())
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "tgt-rootcoord-dml_0")
+			if tc.err != nil {
+				assert.ErrorIs(t, err, tc.err)
+			}
+		})
+	}
 }
 
 func TestCheckBackupHasFullMeta(t *testing.T) {
@@ -301,4 +340,127 @@ func TestWaitCollCreated(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "connection refused")
 	})
+}
+
+// Exercise Execute through the real gRPC client so preflight failures must
+// reach the caller and task status before any restore stream is created.
+func TestExecuteSecondaryPreflight(t *testing.T) {
+	flush := message.NewFlushAllMessageBuilderV2().
+		WithHeader(&message.FlushAllMessageHeader{}).
+		WithBody(&message.FlushAllMessageBody{}).
+		WithBroadcast([]string{"src-rootcoord-dml_0_vcchan"}).MustBuildBroadcast().WithBroadcastID(1).SplitIntoMutableMessage()[0].
+		WithTimeTick(100).WithLastConfirmed(milvus.NewFakeMessageID(100)).
+		IntoImmutableMessage(milvus.NewFakeMessageID(100)).IntoImmutableMessageProto()
+	flushBytes, err := proto.Marshal(flush)
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		name       string
+		configErr  error
+		checkpoint *commonpb.ReplicateCheckpoint
+		want       string
+	}{
+		{name: "FreshSecondary", checkpoint: &commonpb.ReplicateCheckpoint{ClusterId: "src"}},
+		{name: "CDCAlreadyAdvanced", checkpoint: &commonpb.ReplicateCheckpoint{ClusterId: "src", TimeTick: 468522223459106838}, want: "CDC"},
+		{name: "ConfigurationReadFailure", configErr: status.Error(codes.PermissionDenied, "cannot inspect replication"), want: "cannot inspect replication"},
+		{name: "MissingCheckpoint", want: "no replicate checkpoint"},
+		{name: "WrongSource", checkpoint: &commonpb.ReplicateCheckpoint{ClusterId: "other"}, want: "source cluster"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := &preflightServer{configErr: tc.configErr, checkpoint: tc.checkpoint}
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			grpcServer := grpc.NewServer()
+			milvuspb.RegisterMilvusServiceServer(grpcServer, srv)
+			t.Cleanup(grpcServer.Stop)
+			go grpcServer.Serve(listener)
+
+			params := cfg.New()
+			params.Milvus.Grpc.Address.Val = "127.0.0.1"
+			params.Milvus.Grpc.Port.Val = listener.Addr().(*net.TCPAddr).Port
+			params.Milvus.Grpc.TLSMode.Val = cfg.TLSDisabled
+			store := jobstate.NewStore()
+			task, err := NewTask(TaskArgs{
+				TaskID: "restore", SourceClusterID: "src", TargetClusterID: "tgt", Params: params, Store: store,
+				Backup: &backuppb.BackupInfo{
+					ControlChannelName:   "src-rootcoord-dml_0_vcchan",
+					PhysicalChannelNames: []string{"src-rootcoord-dml_0"},
+					FlushAllMsgsBase64:   map[string]string{"src-rootcoord-dml_0": base64.StdEncoding.EncodeToString(flushBytes)},
+					DatabaseBackups:      []*backuppb.DatabaseBackupInfo{{DbId: 1, DbName: "default"}},
+				},
+			})
+			require.NoError(t, err)
+			ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+			defer cancel()
+			err = task.Execute(ctx)
+			if tc.want == "" {
+				require.NoError(t, err)
+				view, err := store.GetRestoreTask("restore")
+				require.NoError(t, err)
+				assert.Equal(t, backuppb.RestoreTaskStateCode_SUCCESS, view.StateCode())
+				srv.mu.Lock()
+				defer srv.mu.Unlock()
+				assert.Equal(t, []uint64{1, 2, 100}, srv.ticks, "DDL and RBAC must precede the backed-up FlushAll")
+				assert.True(t, proto.Equal(flush, srv.lastMessage), "FlushAll must retain the backup's time tick and message ID")
+				return
+			}
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), tc.want)
+			assert.Nil(t, task.streamCli, "preflight must finish before opening restore streams")
+			assert.Zero(t, srv.streams.Load())
+			view, err := store.GetRestoreTask("restore")
+			require.NoError(t, err)
+			assert.Equal(t, backuppb.RestoreTaskStateCode_FAIL, view.StateCode())
+			assert.Contains(t, view.ErrorMessage(), tc.want)
+		})
+	}
+}
+
+type preflightServer struct {
+	milvuspb.UnimplementedMilvusServiceServer
+	configErr   error
+	checkpoint  *commonpb.ReplicateCheckpoint
+	streams     atomic.Int32
+	mu          sync.Mutex
+	ticks       []uint64
+	lastMessage *commonpb.ImmutableMessage
+}
+
+func (s *preflightServer) Connect(context.Context, *milvuspb.ConnectRequest) (*milvuspb.ConnectResponse, error) {
+	return &milvuspb.ConnectResponse{Status: &commonpb.Status{}, ServerInfo: &commonpb.ServerInfo{BuildTags: "2.6.17"}}, nil
+}
+
+func (s *preflightServer) GetReplicateConfiguration(context.Context, *milvuspb.GetReplicateConfigurationRequest) (*milvuspb.GetReplicateConfigurationResponse, error) {
+	return &milvuspb.GetReplicateConfigurationResponse{Status: &commonpb.Status{}, Configuration: cfgWith("tgt", "tgt-rootcoord-dml_0")}, s.configErr
+}
+
+func (s *preflightServer) GetReplicateInfo(context.Context, *milvuspb.GetReplicateInfoRequest) (*milvuspb.GetReplicateInfoResponse, error) {
+	return &milvuspb.GetReplicateInfoResponse{Checkpoint: s.checkpoint}, nil
+}
+
+func (s *preflightServer) CreateReplicateStream(stream milvuspb.MilvusService_CreateReplicateStreamServer) error {
+	s.streams.Add(1)
+	for {
+		req, err := stream.Recv()
+		if err != nil {
+			return err
+		}
+		msg := req.GetReplicateMessage().GetMessage()
+		tick, err := milvus.GetTT(msg)
+		if err != nil {
+			return err
+		}
+		s.mu.Lock()
+		s.ticks = append(s.ticks, tick)
+		s.lastMessage = msg
+		s.mu.Unlock()
+		if err := stream.Send(&milvuspb.ReplicateResponse{Response: &milvuspb.ReplicateResponse_ReplicateConfirmedMessageInfo{
+			ReplicateConfirmedMessageInfo: &milvuspb.ReplicateConfirmedMessageInfo{ConfirmedTimeTick: tick},
+		}}); err != nil {
+			return err
+		}
+	}
+}
+
+func (s *preflightServer) BackupRBAC(context.Context, *milvuspb.BackupRBACMetaRequest) (*milvuspb.BackupRBACMetaResponse, error) {
+	return &milvuspb.BackupRBACMetaResponse{Status: &commonpb.Status{}}, nil
 }
