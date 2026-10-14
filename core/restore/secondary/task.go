@@ -89,9 +89,6 @@ func (t *Task) initClients() error {
 	}
 	t.restful = restfulCli
 
-	pchs := t.args.Backup.GetPhysicalChannelNames()
-	t.streamCli = milvus.NewStreamClient(t.args.SourceClusterID, t.args.TaskID, pchs, t.grpc)
-
 	return nil
 }
 
@@ -129,7 +126,7 @@ func (t *Task) Execute(ctx context.Context) error {
 		return err
 	}
 
-	if err := t.checkTargetNotRestored(ctx); err != nil {
+	if err := t.checkTargetReady(ctx); err != nil {
 		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreFail(err))
 		return err
 	}
@@ -138,6 +135,9 @@ func (t *Task) Execute(ctx context.Context) error {
 		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreFail(err))
 		return err
 	}
+
+	pchs := t.args.Backup.GetPhysicalChannelNames()
+	t.streamCli = milvus.NewStreamClient(t.args.SourceClusterID, t.args.TaskID, pchs, t.grpc)
 
 	if err := t.runDBTasks(ctx); err != nil {
 		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreFail(err))
@@ -208,43 +208,24 @@ func (t *Task) checkBackupHasFullMeta() error {
 		b.GetName(), strings.Join(missing, ", "))
 }
 
-// checkTargetNotRestored refuses to restore into a target that has already been
-// restored.
-//
-// The replicate checkpoint is what says so. A newly deployed secondary reports
-// zero on every pchannel; a restore ends by forwarding the backup's flush-all
-// messages, which carry the source's own time ticks and leave the checkpoint
-// there. Nothing an operator does brings it back to zero -- re-applying the
-// same replicate configuration does not, and neither does restarting the
-// target or dropping its collections.
-//
-// This matters most for the case that is otherwise invisible. Dropping the
-// target's collections hides them but keeps their ids reserved until the
-// collections are reclaimed, and a replayed create for a reserved id is
-// skipped without an error, so the restore would report success having created
-// nothing. That target still carries the checkpoint of the restore that put
-// the collections there, which is what this catches.
-func (t *Task) checkTargetNotRestored(ctx context.Context) error {
-	cfg, err := t.grpc.GetReplicateConfiguration(ctx)
+// checkTargetReady requires a zero checkpoint from the expected source on every
+// target channel. CDC and previous restores both advance these checkpoints.
+// This is a preflight check; CDC must remain stopped until the restore finishes.
+func (t *Task) checkTargetReady(ctx context.Context) error {
+	config, err := t.grpc.GetReplicateConfiguration(ctx)
 	if err != nil {
-		// A cluster with no replication cannot have been restored into as a
-		// secondary, and the restore fails on its own if it is not one.
-		t.logger.Info("cannot read the target's replicate configuration, skipping the check",
-			zap.Error(err))
-		return nil
+		return fmt.Errorf("secondary: read target replicate configuration: %w", err)
 	}
 
 	var pchannels []string
-	for _, cluster := range cfg.GetClusters() {
+	for _, cluster := range config.GetClusters() {
 		if cluster.GetClusterId() == t.args.TargetClusterID {
 			pchannels = cluster.GetPchannels()
 			break
 		}
 	}
 	if len(pchannels) == 0 {
-		t.logger.Info("the target reports no pchannels of its own, skipping the check",
-			zap.String("targetClusterID", t.args.TargetClusterID))
-		return nil
+		return fmt.Errorf("secondary: target %q has no pchannels in its replicate configuration; configure the target as a secondary before restoring", t.args.TargetClusterID)
 	}
 
 	for _, pchannel := range pchannels {
@@ -252,24 +233,21 @@ func (t *Task) checkTargetNotRestored(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("secondary: read the replicate checkpoint of %s: %w", pchannel, err)
 		}
-		tick := resp.GetCheckpoint().GetTimeTick()
-		if tick == 0 {
-			continue
+		checkpoint := resp.GetCheckpoint()
+		if checkpoint == nil {
+			return fmt.Errorf("secondary: target channel %s has no replicate checkpoint; verify that the target is configured as a secondary", pchannel)
 		}
-		return fmt.Errorf("secondary: %s already has a replicate checkpoint (%s is at time tick "+
-			"%d), so this target has been restored before. A secondary restore runs once, "+
-			"against a newly deployed secondary: the messages it injects are time-ticked from "+
-			"1, and a secondary only ever moves its checkpoint forward, so everything this "+
-			"restore sends would be discarded. Nothing returns a used target to that state -- "+
-			"re-applying the same replicate configuration does not clear the checkpoint, "+
-			"restarting the target does not, and dropping its collections only hides them "+
-			"while their ids stay reserved. To bootstrap again, deploy a new secondary and "+
-			"restore into that",
-			t.args.TargetClusterID, pchannel, tick)
+		if checkpoint.GetClusterId() != t.args.SourceClusterID {
+			return fmt.Errorf("secondary: target channel %s has source cluster %q, expected %q", pchannel, checkpoint.GetClusterId(), t.args.SourceClusterID)
+		}
+		if tick := checkpoint.GetTimeTick(); tick != 0 {
+			return fmt.Errorf("secondary: target %q already has a replicate checkpoint (%s is at time tick %d); "+
+				"CDC or an earlier restore has advanced it. Restore messages start at time tick 1 and may be discarded. "+
+				"Deploy a new secondary and keep CDC stopped until restore completes", t.args.TargetClusterID, pchannel, tick)
+		}
 	}
 
-	t.logger.Info("the target has no replicate checkpoint, as a newly deployed secondary should",
-		zap.Int("pchannels", len(pchannels)))
+	t.logger.Info("all target replicate checkpoints are at zero", zap.Int("pchannels", len(pchannels)))
 	return nil
 }
 
