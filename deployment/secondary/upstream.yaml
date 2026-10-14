@@ -1,5 +1,11 @@
 etcd:
   rootPath: backup-test-upstream
+mq:
+  # The upstream's CDC role runs as a separate process sharing this config, and
+  # rocksmq (the standalone default WAL) lives inside the standalone process —
+  # any other role refuses to start with it. Woodpecker keeps the WAL readable
+  # by both.
+  type: woodpecker
 msgChannel:
   chanNamePrefix:
     cluster: backup-test-upstream
@@ -13,3 +19,10 @@ dataNode:
     insertBufSize: 4096
 rootCoord:
   dmlChannelNum: 16
+dataCoord:
+  import:
+    # Let this cluster accept import jobs while it is a replication source
+    # (2.7+; inert on older images, which never read the key). With the toggle
+    # on, the server takes only two-phase (auto_commit=false) import jobs, which
+    # is what the restore --peer flow submits.
+    enableInReplicatingCluster: true

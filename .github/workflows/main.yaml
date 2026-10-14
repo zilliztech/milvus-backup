@@ -952,6 +952,7 @@ jobs:
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.prepare_image_tag }}) && echo $tag
           yq -i ".services.upstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
           yq -i ".services.downstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          yq -i ".services.upstream-cdc.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
           mkdir -p volumes/etcd volumes/minio volumes/upstream volumes/downstream volumes/upstream-runtime volumes/downstream-runtime
           sudo chmod -R 777 volumes
           sudo docker compose -f docker-compose.yml up -d --wait
@@ -1002,6 +1003,7 @@ jobs:
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.run_image_tag }}) && echo $tag
           yq -i ".services.upstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
           yq -i ".services.downstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          yq -i ".services.upstream-cdc.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
           sudo docker compose -f docker-compose.yml up -d --wait
           sudo docker compose -f docker-compose.yml ps -a
 
@@ -1087,6 +1089,55 @@ jobs:
             --upstream-uri upstream-standalone:19530 \
             --downstream-uri downstream-standalone:19530
 
+      # Two-phase import restore: restore the backup back into the upstream
+      # (now a replication source) with --peers aimed at the downstream, so
+      # every import job holds at Uncommitted until its mirror shows up on the
+      # peer and is then committed on both ends. Master-only: the commit
+      # endpoint and the enableInReplicatingCluster toggle exist on 2.7+ alone.
+      - name: Restore into upstream with two-phase commit
+        if: ${{ matrix.scenario == 'same-version-master' }}
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          yq -i '.milvus.grpc.port = 19530' configs/backup.yaml
+          ./milvus-backup restore -n my_backup --suffix _2pc --peers http://127.0.0.1:19500
+
+      - name: Verify two-phase restore on both ends
+        if: ${{ matrix.scenario == 'same-version-master' }}
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python - <<'EOF'
+          import time
+          from pymilvus import connections, Collection
+
+          names = ['hello_milvus_2pc', 'hello_milvus2_2pc',
+                   'hello_milvus_dynamic_2pc', 'hello_milvus_added_2pc']
+
+          def counts(uri, alias):
+              connections.connect(alias, uri=uri)
+              try:
+                  return {name: Collection(name, using=alias).num_entities for name in names}
+              finally:
+                  connections.disconnect(alias)
+
+          local = counts('http://127.0.0.1:19530', 'local')
+          print('upstream counts:', local)
+          assert all(n > 0 for n in local.values()), local
+
+          # The replicated commit lands on the downstream mirror asynchronously,
+          # so the peer's counts converge with some lag.
+          peer = {}
+          for attempt in range(30):
+              peer = counts('http://127.0.0.1:19500', 'peer')
+              if peer == local:
+                  break
+              print(f'attempt {attempt}: downstream {peer} != upstream {local}, waiting')
+              time.sleep(10)
+          print('downstream counts:', peer)
+          assert peer == local, (peer, local)
+          EOF
+
       - name: Verify data on downstream
         timeout-minutes: 5
         shell: bash
@@ -1108,6 +1159,7 @@ jobs:
         run: |
           mkdir -p /tmp/ci_logs
           sudo docker compose -f docker-compose.yml logs upstream-standalone > /tmp/ci_logs/upstream.log 2>&1 || true
+          sudo docker compose -f docker-compose.yml logs upstream-cdc > /tmp/ci_logs/upstream-cdc.log 2>&1 || true
           sudo docker compose -f docker-compose.yml logs downstream-standalone > /tmp/ci_logs/downstream.log 2>&1 || true
           sudo docker compose -f docker-compose.yml logs etcd > /tmp/ci_logs/etcd.log 2>&1 || true
           sudo docker compose -f docker-compose.yml logs minio > /tmp/ci_logs/minio.log 2>&1 || true

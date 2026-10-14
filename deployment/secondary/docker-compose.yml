@@ -67,6 +67,27 @@ services:
       - "etcd"
       - "minio"
 
+  # The upstream cluster's CDC component. Replication is source-push: this role
+  # reads the source's own WAL and streams it to the targets, and `milvus run
+  # standalone` does not include it, so it runs as a separate process sharing
+  # the upstream's config (same etcd rootPath and channel prefix = same cluster
+  # identity). The downstream is passive and needs nothing.
+  upstream-cdc:
+    container_name: upstream-cdc
+    image: milvusdb/milvus:master-latest
+    command: ["milvus", "run", "cdc"]
+    security_opt:
+    - seccomp:unconfined
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+    volumes:
+      - ./upstream.yaml:/milvus/configs/user.yaml
+    depends_on:
+      - "etcd"
+      - "minio"
+      - "upstream-standalone"
+
   downstream-standalone:
     container_name: downstream-standalone
     image: milvusdb/milvus:master-latest

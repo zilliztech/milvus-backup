@@ -104,4 +104,28 @@ func TestTask_selectPlan(t *testing.T) {
 			assert.ErrorContains(t, err, "binlog")
 		}
 	})
+
+	// A peer commit exists only on the restful import api, so auto resolves to
+	// it directly — the preflight has already established the target is new
+	// enough — and a per_seg pin is refused rather than silently losing the
+	// two-phase commit.
+	t.Run("BinlogAutoWithPeerUsesRestful", func(t *testing.T) {
+		task := newSelectPlanTask(meta.FormatBinlog, StrategyAuto)
+		task.args.Option.PeerEndpoints = []string{"http://peer:19530"}
+		grpcCli := milvus.NewMockGrpc(t)
+		grpcCli.EXPECT().HasFeature(milvus.MultiL0InOneJob).Return(false).Maybe()
+		task.grpc = grpcCli
+
+		plan, err := task.selectPlan(nil)
+		require.NoError(t, err)
+		assert.IsType(t, &binlogRESTFulPlan{}, plan)
+	})
+
+	t.Run("BinlogPerSegWithPeerFails", func(t *testing.T) {
+		task := newSelectPlanTask(meta.FormatBinlog, StrategyPerSeg)
+		task.args.Option.PeerEndpoints = []string{"http://peer:19530"}
+
+		_, err := task.selectPlan(nil)
+		assert.ErrorContains(t, err, "--peers")
+	})
 }

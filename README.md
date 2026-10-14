@@ -83,6 +83,8 @@ How a restore moves the data is picked by `--strategy`, whose values name both t
 
 Use `restore secondary` to bootstrap a fresh secondary. Keep CDC stopped until restore succeeds. See the [secondary restore guide](docs/user_guide/secondary_restore.md) for backup and restore commands.
 
+Restoring into a cluster that replicates to other clusters (CDC) needs the import jobs committed two-phase, or the target and its replicas diverge. Pass the replicas' REST endpoints with `--peers`, e.g. `milvus-backup restore -n my_backup --peers http://10.0.0.2:19530,http://10.0.0.3:19530`: every import job is then held uncommitted until its mirror appears on every peer, committed on the restore target, and the replicated commit commits the mirrors (a replication target refuses client-side commits). This needs a Milvus 3.0 or newer target with `dataCoord.import.enableInReplicatingCluster=true`; on a replicating target of that version a restore without `--peers` is refused up front, because the server no longer accepts plain auto-commit import jobs. See [two-phase commit restore](docs/user_guide/two_phase_commit_restore.md) for how it works and the prerequisites.
+
 ## Compatibility
 
 Use the [latest release](https://github.com/zilliztech/milvus-backup/releases) whenever possible. The latest version supports backups from Milvus 2.2 and later, and restores to Milvus 2.5 and later.

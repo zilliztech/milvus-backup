@@ -128,6 +128,13 @@ type Option struct {
 	Strategy           Strategy
 	TruncateBinlogByTs bool
 
+	// PeerEndpoints are the REST endpoints of the peer clusters that mirror the
+	// target's import jobs over the replication stream. When set, every import
+	// job is committed two-phase: held at Uncommitted until every peer's mirror
+	// is there too, then committed on the target and all peers. Empty for a
+	// plain restore.
+	PeerEndpoints []string
+
 	RestoreRBAC bool
 
 	// EZKMapping maps old encryption keys to new ones.
@@ -168,6 +175,9 @@ type Task struct {
 
 	grpc    milvus.Grpc
 	restful milvus.Restful
+	// peers talk to the peer clusters given with the peers option; empty when
+	// the restore commits single-phase.
+	peers []importPeer
 
 	copySem       *semaphore.Weighted
 	bulkInsertSem *semaphore.Weighted
@@ -247,6 +257,9 @@ func checkSnapshotSupport(plan *Plan, opt *Option) error {
 	}
 	if len(opt.EZKMapping) != 0 {
 		unsupported = append(unsupported, "ezk_mapping")
+	}
+	if len(opt.PeerEndpoints) != 0 {
+		unsupported = append(unsupported, "peers")
 	}
 	// A description override is applied with an AlterCollection after the restore
 	// completes, so it stays available. A shard_num override is checked per collection
@@ -450,6 +463,18 @@ func (t *Task) initClients() error {
 	}
 	t.restful = restfulCli
 
+	for _, endpoint := range t.args.Option.PeerEndpoints {
+		// A peer shares the target's credentials — a replication pair
+		// practically always does — and differs only in the REST endpoint.
+		peerCfg := t.args.Params.Milvus
+		peerCfg.Rest.Endpoint.Val = endpoint
+		peerCli, err := milvus.NewRestful(&peerCfg)
+		if err != nil {
+			return fmt.Errorf("restore: create peer restful client for %s: %w", endpoint, err)
+		}
+		t.peers = append(t.peers, importPeer{addr: endpoint, cli: peerCli})
+	}
+
 	return nil
 }
 
@@ -489,6 +514,14 @@ func (t *Task) privateExecute(ctx context.Context) error {
 		return fmt.Errorf("restore: a snapshot format backup needs a milvus 3.0 or newer server")
 	}
 
+	// Binlog restores import through jobs, which is where the two-phase commit
+	// contract lives; the snapshot path runs no import job at all.
+	if t.format == meta.FormatBinlog {
+		if err := t.checkImport2PCSetup(ctx); err != nil {
+			return err
+		}
+	}
+
 	dbTasks, collTargets := t.newDBAndCollTasks(t.args.Backup)
 
 	// Selecting the plan before anything touches the target keeps a strategy
@@ -517,6 +550,54 @@ func (t *Task) privateExecute(ctx context.Context) error {
 
 	if err := plan.Execute(ctx); err != nil {
 		return fmt.Errorf("restore: run collection plan %w", err)
+	}
+
+	return nil
+}
+
+// checkImport2PCSetup validates the peer option against what the target
+// cluster is. Two-phase commit exists only on servers new enough to have it,
+// and means something only when the target's import jobs are mirrored to a
+// peer by replication; every mismatch fails here, before any DDL runs, rather
+// than as one rejected import job per collection.
+func (t *Task) checkImport2PCSetup(ctx context.Context) error {
+	peerSet := len(t.args.Option.PeerEndpoints) != 0
+	has2PC := t.grpc.HasFeature(milvus.Import2PC)
+
+	if peerSet && !has2PC {
+		return fmt.Errorf("restore: --peers asks for two-phase committed imports, which need a " +
+			"Milvus 3.0 or newer target; this server is older")
+	}
+	if !peerSet && !has2PC {
+		// An older server has neither the commit endpoint nor the rejection of
+		// auto-commit imports in a replication topology, so nothing applies.
+		return nil
+	}
+
+	repCfg, err := t.grpc.GetReplicateConfiguration(ctx)
+	if err != nil {
+		if peerSet {
+			return fmt.Errorf("restore: read the target's replication configuration to validate --peers: %w", err)
+		}
+		t.logger.Warn("cannot read the target's replication configuration, skipping the two-phase commit check",
+			zap.Error(err))
+		return nil
+	}
+	// The same shape the server itself checks: a topology edge, or more than
+	// one known cluster.
+	replicating := repCfg != nil &&
+		(len(repCfg.GetCrossClusterTopology()) > 0 || len(repCfg.GetClusters()) > 1)
+
+	if peerSet && !replicating {
+		return fmt.Errorf("restore: --peers is set (%s) but the target is not part of a replication "+
+			"topology, so no cluster will ever mirror its import jobs for the peers to commit; "+
+			"drop --peers, or set up replication first", strings.Join(t.args.Option.PeerEndpoints, ","))
+	}
+	if !peerSet && replicating {
+		return fmt.Errorf("restore: the target is part of a replication topology, where Milvus " +
+			"rejects auto-commit import jobs; pass --peers with the replication peers' REST " +
+			"endpoints so imports commit two-phase on all ends (the target also needs " +
+			"dataCoord.import.enableInReplicatingCluster=true to accept import jobs at all)")
 	}
 
 	return nil

@@ -61,6 +61,11 @@ type collPlan interface {
 // the restore counterpart of the backup task's plan selection: there the flush
 // strategy picks the orchestration, here the data path picks it.
 func (t *Task) selectPlan(targets []collTarget) (collPlan, error) {
+	// A peer commit rides the restful import api: the v1 grpc import has no
+	// two-phase commit at all. Auto resolves to the restful plan directly — the
+	// preflight has already established the target is new enough.
+	peerSet := len(t.args.Option.PeerEndpoints) != 0
+
 	switch strategy := t.args.Option.Strategy; strategy {
 	case StrategyAuto:
 		if t.format == meta.FormatSnapshot {
@@ -68,6 +73,10 @@ func (t *Task) selectPlan(targets []collTarget) (collPlan, error) {
 			// restore api regardless of the target's import support.
 			t.logger.Info("use restore snap plan")
 			return newRestoreSnapPlan(t, targets), nil
+		}
+		if peerSet {
+			t.logger.Info("use binlog restful plan with two-phase commit")
+			return newBinlogRESTFulPlan(t, targets), nil
 		}
 		if t.grpc.HasFeature(milvus.ImportV2) {
 			t.logger.Info("use binlog restful plan")
@@ -78,6 +87,10 @@ func (t *Task) selectPlan(targets []collTarget) (collPlan, error) {
 	case StrategyPerSeg:
 		if t.format != meta.FormatBinlog {
 			return nil, wrongFormat("per_seg", meta.FormatBinlog, t.format)
+		}
+		if peerSet {
+			return nil, errors.New("restore: --peers needs the restful import api for its two-phase " +
+				"commit, but the per_seg strategy imports through the v1 grpc api; use merged_seg or auto")
 		}
 		t.logger.Info("use binlog grpc plan")
 		return newBinlogGRPCPlan(t, targets), nil
@@ -277,7 +290,7 @@ func newBinlogRESTFulPlan(t *Task, targets []collTarget) *binlogRESTFulPlan {
 		ddl := newCollDDLTask(t.args.TaskID, t.args.Option, tgt.collOverride, tgt.collBackup, tgt.target, t.grpc)
 
 		dml := newCollDMLTask(t.newCollDMLTaskArgs(tgt))
-		dml.importer = newRestfulImportPlanner(dml, multiL0InOneJob)
+		dml.importer = newRestfulImportPlanner(dml, multiL0InOneJob, t.peers)
 
 		tasks = append(tasks, newBinlogCollPlanTask(t.args.Store, t.args.TaskID, tgt.target, ddl, dml))
 	}

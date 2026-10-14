@@ -111,6 +111,10 @@ func (r *completedRestful) GetSegmentInfo(context.Context, string, int64, int64)
 	return nil, nil
 }
 
+func (r *completedRestful) CommitImport(context.Context, string, string) error { return nil }
+
+func (r *completedRestful) AbortImport(context.Context, string, string) error { return nil }
+
 // countingRestful reports Completed at once and calls onCall when a job's wait
 // first asks about it.
 type countingRestful struct {
@@ -133,6 +137,10 @@ func (r *countingRestful) GetBulkInsertState(context.Context, string, string) (*
 func (r *countingRestful) GetSegmentInfo(context.Context, string, int64, int64) (*milvus.SegmentInfo, error) {
 	return nil, nil
 }
+
+func (r *countingRestful) CommitImport(context.Context, string, string) error { return nil }
+
+func (r *countingRestful) AbortImport(context.Context, string, string) error { return nil }
 
 type sequencedRestful struct {
 	mu     sync.Mutex
@@ -158,6 +166,10 @@ func (r *sequencedRestful) GetBulkInsertState(context.Context, string, string) (
 func (r *sequencedRestful) GetSegmentInfo(context.Context, string, int64, int64) (*milvus.SegmentInfo, error) {
 	return nil, nil
 }
+
+func (r *sequencedRestful) CommitImport(context.Context, string, string) error { return nil }
+
+func (r *sequencedRestful) AbortImport(context.Context, string, string) error { return nil }
 
 type perJobSequencedRestful struct {
 	mu    sync.Mutex
@@ -189,6 +201,10 @@ func (r *perJobSequencedRestful) GetBulkInsertState(_ context.Context, _, jobID 
 func (r *perJobSequencedRestful) GetSegmentInfo(context.Context, string, int64, int64) (*milvus.SegmentInfo, error) {
 	return nil, nil
 }
+
+func (r *perJobSequencedRestful) CommitImport(context.Context, string, string) error { return nil }
+
+func (r *perJobSequencedRestful) AbortImport(context.Context, string, string) error { return nil }
 
 func newTestVChannels() []string {
 	return []string{
