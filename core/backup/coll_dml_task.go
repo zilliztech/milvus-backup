@@ -29,6 +29,13 @@ const _allPartitionID = -1
 // bounds how many collections verify at once.
 const _verifyConcurrency = 4
 
+// _maxVerifyGroupKeys is the max number of keys verified by a single prefix
+// list, roughly two list pages. A larger group is split by whole path levels
+// below its prefix until it fits, so no one list has to cover a large
+// directory subtree on gateways that walk every sub dir before returning the
+// first page.
+const _maxVerifyGroupKeys = 2000
+
 type collDMLTask struct {
 	taskID string
 
@@ -395,14 +402,13 @@ func (dmlt *collDMLTask) execute(ctx context.Context) error {
 
 // verifySegmentsData verifies that every copied binlog exists in the backup
 // storage with a matching size. The destination keys all live under the
-// collection-level insert_log and delta_log dirs. Instead of one recursive list
-// of the whole collection dir, the keys are grouped by the first path level
-// below it (the partition dir) and each group is verified with its own
-// recursive list. Some S3-compatible gateways backed by a hierarchical
-// storage build a recursive (no delimiter) list response by walking every
-// sub dir before returning the first page, so one list of a large collection
-// dir can exceed the client response header timeout, while partition sized
-// lists stay fast. Splitting the list also lets the groups run in parallel.
+// collection-level insert_log and delta_log dirs, verified by recursive lists
+// split by whole path levels until each covers at most _maxVerifyGroupKeys
+// keys. Some S3-compatible gateways backed by a hierarchical storage build a
+// recursive (no delimiter) list response by walking every sub dir before
+// returning the first page, so one list of a large collection dir can exceed
+// the client response header timeout, while bounded lists stay fast. Splitting
+// the list also lets the groups run in parallel.
 func (dmlt *collDMLTask) verifySegmentsData(ctx context.Context, collID int64, segments []*backuppb.SegmentBackupInfo) error {
 	insertExpected := make(map[string]int64)
 	deltaExpected := make(map[string]int64)
@@ -437,11 +443,12 @@ func (dmlt *collDMLTask) verifySegmentsData(ctx context.Context, collID int64, s
 	return nil
 }
 
-// verifyByChildPrefix splits expected by the first path level below dir and
-// runs one VerifyPrefixTask per group, at most _verifyConcurrency at a time.
+// verifyByChildPrefix splits expected by whole path levels below dir until
+// each group fits _maxVerifyGroupKeys, and runs one VerifyPrefixTask per leaf
+// group, at most _verifyConcurrency at a time.
 func (dmlt *collDMLTask) verifyByChildPrefix(ctx context.Context, dir string, expected map[string]int64) error {
-	groups := groupByChildPrefix(dir, expected)
-	prefixes := slices.Sorted(maps.Keys(groups))
+	leaves := splitByPrefix(dir, expected)
+	prefixes := slices.Sorted(maps.Keys(leaves))
 
 	g, subCtx := errgroup.WithContext(ctx)
 	g.SetLimit(_verifyConcurrency)
@@ -450,7 +457,7 @@ func (dmlt *collDMLTask) verifyByChildPrefix(ctx context.Context, dir string, ex
 			task := storage.NewVerifyPrefixTask(storage.VerifyPrefixOpt{
 				Cli:      dmlt.backupStorage,
 				Prefix:   prefix,
-				Expected: groups[prefix],
+				Expected: leaves[prefix],
 			})
 			if err := task.Execute(subCtx); err != nil {
 				return fmt.Errorf("prefix %s: %w", prefix, err)
@@ -462,11 +469,11 @@ func (dmlt *collDMLTask) verifyByChildPrefix(ctx context.Context, dir string, ex
 	return g.Wait()
 }
 
-// groupByChildPrefix groups expected keys by dir + the first path element
+// splitByNextLevel groups expected keys by dir + the first path element
 // after dir (e.g. ".../insert_log/{coll}/" -> ".../insert_log/{coll}/{part}/").
 // Keys that are not under dir, or have no sub dir below it, are grouped under
 // dir itself, so they are still verified by a list of the whole dir.
-func groupByChildPrefix(dir string, expected map[string]int64) map[string]map[string]int64 {
+func splitByNextLevel(dir string, expected map[string]int64) map[string]map[string]int64 {
 	groups := make(map[string]map[string]int64)
 	for key, size := range expected {
 		prefix := dir
@@ -483,6 +490,37 @@ func groupByChildPrefix(dir string, expected map[string]int64) map[string]map[st
 	}
 
 	return groups
+}
+
+// splitByPrefix splits expected into disjoint groups, each small enough for
+// one prefix list: a group of at most _maxVerifyGroupKeys keys stays whole,
+// a larger one is split by its next path level and each child recurses. A
+// group that cannot be split — its keys sit directly under the prefix or
+// outside it — stays whole even above the bound, and one paged list covers
+// it: a flat set of files walks a single dir on a hierarchical backend. The
+// split only looks at the key strings, so it needs no knowledge of the
+// storage layout.
+func splitByPrefix(dir string, expected map[string]int64) map[string]map[string]int64 {
+	if len(expected) <= _maxVerifyGroupKeys {
+		return map[string]map[string]int64{dir: expected}
+	}
+
+	groups := splitByNextLevel(dir, expected)
+	if len(groups) == 1 {
+		if _, ok := groups[dir]; ok {
+			// every key sits under dir itself or outside it: splitting again
+			// would recurse on the same input, so the group stays whole.
+			return groups
+		}
+	}
+
+	leaves := make(map[string]map[string]int64)
+	for prefix, keys := range groups {
+		for leaf, leafKeys := range splitByPrefix(prefix, keys) {
+			leaves[leaf] = leafKeys
+		}
+	}
+	return leaves
 }
 
 func (dmlt *collDMLTask) backupSegmentsData(ctx context.Context, segments []*backuppb.SegmentBackupInfo) error {
