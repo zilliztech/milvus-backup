@@ -3,6 +3,7 @@ package restore
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"time"
@@ -231,7 +232,7 @@ func (ct *collSnapshotTask) applySkipParams(ctx context.Context) error {
 func presentKeys[K interface{ GetKey() string }](kvs []K, keys []string) []string {
 	present := make([]string, 0, len(keys))
 	for _, kv := range kvs {
-		if lo.Contains(keys, kv.GetKey()) {
+		if slices.Contains(keys, kv.GetKey()) {
 			present = append(present, kv.GetKey())
 		}
 	}
