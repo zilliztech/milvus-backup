@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -478,8 +479,7 @@ func (dmlt *collDMLTask) nonL0SegBatches(ctx context.Context, segs []*backuppb.S
 
 		// because the restful api has a limitation on the number of segments in one request,
 		// we need to chunk the segments into multiple batches
-		chunkedSegs := lo.Chunk(segs, _bulkInsertRestfulAPIChunkSize)
-		for _, chunk := range chunkedSegs {
+		for chunk := range slices.Chunk(segs, _bulkInsertRestfulAPIChunkSize) {
 			dirs := make([]partitionDir, 0, len(chunk))
 			for _, seg := range chunk {
 				opts := []mpath.Option{
@@ -517,8 +517,7 @@ func (dmlt *collDMLTask) l0SegBatches(l0Segs []*backuppb.SegmentBackupInfo) ([]b
 			return nil, fmt.Errorf("restore_collection: get vch %s ts: %w", key.vch, err)
 		}
 
-		chunkedSegs := lo.Chunk(segs, _bulkInsertRestfulAPIChunkSize)
-		for _, chunk := range chunkedSegs {
+		for chunk := range slices.Chunk(segs, _bulkInsertRestfulAPIChunkSize) {
 			dirs := make([]partitionDir, 0, len(chunk))
 			for _, seg := range chunk {
 				opts := []mpath.Option{

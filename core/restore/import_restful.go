@@ -3,6 +3,7 @@ package restore
 import (
 	"context"
 	"fmt"
+	"slices"
 
 	"github.com/samber/lo"
 	"go.uber.org/zap"
@@ -94,7 +95,7 @@ func (p *restfulImportPlanner) planTasks(partitionName string, groups []dirGroup
 		if g.isL0 && !p.multiL0InOneJob {
 			chunkSize = 1
 		}
-		for _, dirs := range lo.Chunk(g.dirs, chunkSize) {
+		for dirs := range slices.Chunk(g.dirs, chunkSize) {
 			tasks = append(tasks, p.newTask(partitionName, g, dirs))
 		}
 	}

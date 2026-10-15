@@ -2,9 +2,9 @@ package create
 
 import (
 	"fmt"
+	"maps"
+	"slices"
 	"strings"
-
-	"github.com/samber/lo"
 
 	"github.com/zilliztech/milvus-backup/core/backup"
 )
@@ -41,7 +41,7 @@ var _presets = map[string]preset{
 	"clone":     {rbac: true},
 }
 
-func SupportPurpose() []string { return lo.Keys(_presets) }
+func SupportPurpose() []string { return slices.Sorted(maps.Keys(_presets)) }
 
 // expandPreset applies the preset named name to opt: every knob the preset pins
 // takes the preset value, overriding whatever the caller passed, and every knob

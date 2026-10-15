@@ -3,9 +3,9 @@ package backup
 import (
 	"errors"
 	"fmt"
+	"maps"
+	"slices"
 	"time"
-
-	"github.com/samber/lo"
 
 	"github.com/zilliztech/milvus-backup/internal/validate"
 )
@@ -46,7 +46,7 @@ var _strategyMap = map[string]Strategy{
 	"serial_flush": StrategySerialFlush,
 }
 
-func SupportStrategy() []string { return lo.Keys(_strategyMap) }
+func SupportStrategy() []string { return slices.Sorted(maps.Keys(_strategyMap)) }
 
 func ParseStrategy(strategy string) (Strategy, error) {
 	if strategy == "" {
@@ -70,7 +70,7 @@ var _formatMap = map[string]Format{
 	"snapshot": FormatSnapshot,
 }
 
-func SupportFormat() []string { return lo.Keys(_formatMap) }
+func SupportFormat() []string { return slices.Sorted(maps.Keys(_formatMap)) }
 
 func ParseFormat(format string) (Format, error) {
 	if format == "" {

@@ -3,8 +3,8 @@ package restore
 import (
 	"errors"
 	"fmt"
-
-	"github.com/samber/lo"
+	"maps"
+	"slices"
 )
 
 var _strategyMap = map[string]Strategy{
@@ -14,7 +14,7 @@ var _strategyMap = map[string]Strategy{
 	"import_snap":  StrategyImportSnap,
 }
 
-func SupportStrategy() []string { return lo.Keys(_strategyMap) }
+func SupportStrategy() []string { return slices.Sorted(maps.Keys(_strategyMap)) }
 
 func ParseStrategy(strategy string) (Strategy, error) {
 	if strategy == "" {

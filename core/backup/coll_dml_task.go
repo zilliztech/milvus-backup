@@ -3,7 +3,8 @@ package backup
 import (
 	"context"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
@@ -440,8 +441,7 @@ func (dmlt *collDMLTask) verifySegmentsData(ctx context.Context, collID int64, s
 // runs one VerifyPrefixTask per group, at most _verifyConcurrency at a time.
 func (dmlt *collDMLTask) verifyByChildPrefix(ctx context.Context, dir string, expected map[string]int64) error {
 	groups := groupByChildPrefix(dir, expected)
-	prefixes := lo.Keys(groups)
-	sort.Strings(prefixes)
+	prefixes := slices.Sorted(maps.Keys(groups))
 
 	g, subCtx := errgroup.WithContext(ctx)
 	g.SetLimit(_verifyConcurrency)
