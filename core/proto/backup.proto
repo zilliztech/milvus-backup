@@ -422,6 +422,8 @@ message RestoreBackupRequest {
   map<string, string> ezkMapping = 25;
   // strategy for restore, one of [per_seg, merged_seg, restore_snap, import_snap], if not set will auto select
   string strategy = 26;
+  // REST endpoints of the peer clusters that replicate this target, e.g. http://10.0.0.2:19530; when set, every import job is committed two-phase so its mirror commits on every peer
+  repeated string peers = 27;
 }
 
 message RestorePlan {

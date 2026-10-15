@@ -544,6 +544,13 @@ definitions:
         description: if bucket_name and path is set. will override bucket/path in
           config.
         type: string
+      peers:
+        description: REST endpoints of the peer clusters that replicate this target,
+          e.g. http://10.0.0.2:19530; when set, every import job is committed two-phase
+          so its mirror commits on every peer
+        items:
+          type: string
+        type: array
       rbac:
         description: whether restore RBAC
         type: boolean
@@ -566,6 +573,10 @@ definitions:
         allOf:
         - $ref: '#/definitions/backuppb.SkipParams'
         description: if key is set, will skip the params in restore process
+      strategy:
+        description: strategy for restore, one of [per_seg, merged_seg, restore_snap,
+          import_snap], if not set will auto select
+        type: string
       truncateBinlogByTs:
         description: if true, truncate binlog by timestamp, for cdc
         type: boolean
@@ -573,6 +584,7 @@ definitions:
         description: if true use autoindex when restore vector index
         type: boolean
       useV2Restore:
+        description: 'Deprecated: set strategy=merged_seg instead'
         type: boolean
     type: object
   backuppb.RestoreBackupResponse:

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/google/uuid"
@@ -219,6 +220,13 @@ func validateRestoreRequest(request *backuppb.RestoreBackupRequest) error {
 		}
 	}
 
+	for _, peer := range request.GetPeers() {
+		u, err := url.Parse(peer)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			return fmt.Errorf("invalid peer %q, expect an http(s) url like http://10.0.0.2:19530", peer)
+		}
+	}
+
 	return nil
 }
 
@@ -272,6 +280,7 @@ func newOptionFromRequest(request *backuppb.RestoreBackupRequest) (*restore.Opti
 		TruncateBinlogByTs:   request.GetTruncateBinlogByTs(),
 		RestoreRBAC:          request.GetRbac(),
 		EZKMapping:           request.GetEzkMapping(),
+		PeerEndpoints:        request.GetPeers(),
 	}, nil
 }
 

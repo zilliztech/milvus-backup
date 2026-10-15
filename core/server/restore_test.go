@@ -65,6 +65,16 @@ func TestValidateRestoreRequest(t *testing.T) {
 		request := &backuppb.RestoreBackupRequest{BackupName: "backup", Strategy: "merged_seg"}
 		assert.NoError(t, validateRestoreRequest(request))
 	})
+
+	t.Run("ValidPeers", func(t *testing.T) {
+		request := &backuppb.RestoreBackupRequest{BackupName: "backup", Peers: []string{"http://10.0.0.2:19530", "http://10.0.0.3:19530"}}
+		assert.NoError(t, validateRestoreRequest(request))
+	})
+
+	t.Run("InvalidPeer", func(t *testing.T) {
+		request := &backuppb.RestoreBackupRequest{BackupName: "backup", Peers: []string{"10.0.0.2:19530"}}
+		assert.Error(t, validateRestoreRequest(request))
+	})
 }
 
 // The deprecated use_v2_restore bool survives as a fallback for old callers:
@@ -583,6 +593,28 @@ func TestHandleRestoreBackup(t *testing.T) {
 		resp := restoreBackup(t, s, `{"backup_name":"backup1","requestId":"rid-1"}`, "")
 
 		assert.Equal(t, "rid-1", resp.GetRequestId())
+	})
+
+	t.Run("PeersReachTheOption", func(t *testing.T) {
+		job := &stubRestoreJob{}
+		stub := &stubRestoreFactory{job: job}
+		s := newListTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{view: newStubRestoreView(t)}, nil))
+
+		resp := restoreBackup(t, s, `{"backup_name":"backup1","peers":["http://10.0.0.2:19530","http://10.0.0.3:19530"]}`, "rid-1")
+
+		assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
+		assert.Equal(t, []string{"http://10.0.0.2:19530", "http://10.0.0.3:19530"}, stub.req.Option.PeerEndpoints)
+	})
+
+	t.Run("RejectsInvalidPeerWithoutBuildingAJob", func(t *testing.T) {
+		stub := &stubRestoreFactory{}
+		s := newListTestServer(t, withRestoreBackup(stub))
+
+		resp := restoreBackup(t, s, `{"backup_name":"backup1","peers":["10.0.0.2:19530"]}`, "rid-1")
+
+		assert.Equal(t, backuppb.ResponseCode_Parameter_Error, resp.GetCode())
+		assert.Contains(t, resp.GetMsg(), "invalid peer")
+		assert.Zero(t, stub.calls)
 	})
 
 	t.Run("BucketNameForksConfig", func(t *testing.T) {

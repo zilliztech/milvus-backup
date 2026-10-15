@@ -2471,7 +2471,9 @@ type RestoreBackupRequest struct {
 	// map of old ezk to new ezk, used to replace encryption keys during restore
 	EzkMapping map[string]string `protobuf:"bytes,25,rep,name=ezkMapping,proto3" json:"ezkMapping,omitempty" protobuf_key:"bytes,1,opt,name=key,proto3" protobuf_val:"bytes,2,opt,name=value,proto3"`
 	// strategy for restore, one of [per_seg, merged_seg, restore_snap, import_snap], if not set will auto select
-	Strategy             string   `protobuf:"bytes,26,opt,name=strategy,proto3" json:"strategy,omitempty"`
+	Strategy string `protobuf:"bytes,26,opt,name=strategy,proto3" json:"strategy,omitempty"`
+	// REST endpoints of the peer clusters that replicate this target, e.g. http://10.0.0.2:19530; when set, every import job is committed two-phase so its mirror commits on every peer
+	Peers                []string `protobuf:"bytes,27,rep,name=peers,proto3" json:"peers,omitempty"`
 	XXX_NoUnkeyedLiteral struct{} `json:"-"`
 	XXX_unrecognized     []byte   `json:"-"`
 	XXX_sizecache        int32    `json:"-"`
@@ -2662,6 +2664,13 @@ func (m *RestoreBackupRequest) GetStrategy() string {
 		return m.Strategy
 	}
 	return ""
+}
+
+func (m *RestoreBackupRequest) GetPeers() []string {
+	if m != nil {
+		return m.Peers
+	}
+	return nil
 }
 
 func (m *RestoreBackupRequest) GetDbCollectionsAfterRename() *_struct.Value {
