@@ -3,6 +3,8 @@ package backup
 import (
 	"context"
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
@@ -20,6 +22,11 @@ import (
 )
 
 const _allPartitionID = -1
+
+// _verifyConcurrency is the max number of partition prefixes verified at the
+// same time within one collection. The collection level semaphore already
+// bounds how many collections verify at once.
+const _verifyConcurrency = 4
 
 type collDMLTask struct {
 	taskID string
@@ -387,8 +394,14 @@ func (dmlt *collDMLTask) execute(ctx context.Context) error {
 
 // verifySegmentsData verifies that every copied binlog exists in the backup
 // storage with a matching size. The destination keys all live under the
-// collection-level insert_log and delta_log dirs, so two recursive lists cover
-// the whole collection instead of issuing a HeadObject per binlog.
+// collection-level insert_log and delta_log dirs. Instead of one recursive list
+// of the whole collection dir, the keys are grouped by the first path level
+// below it (the partition dir) and each group is verified with its own
+// recursive list. Some S3-compatible gateways backed by a hierarchical
+// storage build a recursive (no delimiter) list response by walking every
+// sub dir before returning the first page, so one list of a large collection
+// dir can exceed the client response header timeout, while partition sized
+// lists stay fast. Splitting the list also lets the groups run in parallel.
 func (dmlt *collDMLTask) verifySegmentsData(ctx context.Context, collID int64, segments []*backuppb.SegmentBackupInfo) error {
 	insertExpected := make(map[string]int64)
 	deltaExpected := make(map[string]int64)
@@ -411,26 +424,65 @@ func (dmlt *collDMLTask) verifySegmentsData(ctx context.Context, collID int64, s
 	}
 
 	insertDir := mpath.BackupInsertLogDir(dmlt.backupDir, mpath.CollectionID(collID))
-	insertVerify := storage.NewVerifyPrefixTask(storage.VerifyPrefixOpt{
-		Cli:      dmlt.backupStorage,
-		Prefix:   insertDir,
-		Expected: insertExpected,
-	})
-	if err := insertVerify.Execute(ctx); err != nil {
+	if err := dmlt.verifyByChildPrefix(ctx, insertDir, insertExpected); err != nil {
 		return fmt.Errorf("backup: verify insert logs %w", err)
 	}
 
 	deltaDir := mpath.BackupDeltaLogDir(dmlt.backupDir, mpath.CollectionID(collID))
-	deltaVerify := storage.NewVerifyPrefixTask(storage.VerifyPrefixOpt{
-		Cli:      dmlt.backupStorage,
-		Prefix:   deltaDir,
-		Expected: deltaExpected,
-	})
-	if err := deltaVerify.Execute(ctx); err != nil {
+	if err := dmlt.verifyByChildPrefix(ctx, deltaDir, deltaExpected); err != nil {
 		return fmt.Errorf("backup: verify delta logs %w", err)
 	}
 
 	return nil
+}
+
+// verifyByChildPrefix splits expected by the first path level below dir and
+// runs one VerifyPrefixTask per group, at most _verifyConcurrency at a time.
+func (dmlt *collDMLTask) verifyByChildPrefix(ctx context.Context, dir string, expected map[string]int64) error {
+	groups := groupByChildPrefix(dir, expected)
+	prefixes := lo.Keys(groups)
+	sort.Strings(prefixes)
+
+	g, subCtx := errgroup.WithContext(ctx)
+	g.SetLimit(_verifyConcurrency)
+	for _, prefix := range prefixes {
+		g.Go(func() error {
+			task := storage.NewVerifyPrefixTask(storage.VerifyPrefixOpt{
+				Cli:      dmlt.backupStorage,
+				Prefix:   prefix,
+				Expected: groups[prefix],
+			})
+			if err := task.Execute(subCtx); err != nil {
+				return fmt.Errorf("prefix %s: %w", prefix, err)
+			}
+			return nil
+		})
+	}
+
+	return g.Wait()
+}
+
+// groupByChildPrefix groups expected keys by dir + the first path element
+// after dir (e.g. ".../insert_log/{coll}/" -> ".../insert_log/{coll}/{part}/").
+// Keys that are not under dir, or have no sub dir below it, are grouped under
+// dir itself, so they are still verified by a list of the whole dir.
+func groupByChildPrefix(dir string, expected map[string]int64) map[string]map[string]int64 {
+	groups := make(map[string]map[string]int64)
+	for key, size := range expected {
+		prefix := dir
+		if rest, ok := strings.CutPrefix(key, dir); ok {
+			if idx := strings.Index(rest, "/"); idx > 0 {
+				prefix = dir + rest[:idx+1]
+			}
+		}
+
+		if _, ok := groups[prefix]; !ok {
+			groups[prefix] = make(map[string]int64)
+		}
+		groups[prefix][key] = size
+	}
+
+	return groups
 }
 
 func (dmlt *collDMLTask) backupSegmentsData(ctx context.Context, segments []*backuppb.SegmentBackupInfo) error {
