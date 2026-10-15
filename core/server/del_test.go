@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zilliztech/milvus-backup/app"
+	"github.com/zilliztech/milvus-backup/core/apiv1"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
@@ -41,7 +42,7 @@ func withDeleteJob(newErr error, status jobstate.DeleteStatus) Option {
 	}
 }
 
-func delBackup(t *testing.T, s *Server, query string, requestID string) backuppb.DeleteBackupResponse {
+func delBackup(t *testing.T, s *Server, query string, requestID string) apiv1.DeleteBackupResponse {
 	t.Helper()
 
 	w := httptest.NewRecorder()
@@ -51,7 +52,7 @@ func delBackup(t *testing.T, s *Server, query string, requestID string) backuppb
 	}
 	s.engine.ServeHTTP(w, req)
 
-	var resp backuppb.DeleteBackupResponse
+	var resp apiv1.DeleteBackupResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 	return resp

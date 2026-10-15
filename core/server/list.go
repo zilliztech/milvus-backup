@@ -8,6 +8,7 @@ import (
 	"github.com/samber/lo"
 
 	"github.com/zilliztech/milvus-backup/app"
+	"github.com/zilliztech/milvus-backup/core/apiv1"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 )
 
@@ -25,16 +26,13 @@ type listBackupsUC interface {
 // @Produce application/json
 // @Param request_id header string false "request_id"
 // @Param collection_name query string false "collection_name"
-// @Success 200 {object} backuppb.ListBackupsResponse
+// @Success 200 {object} apiv1.ListBackupsResponse
 // @Router /list [get]
 func (s *Server) handleListBackups(c *echo.Context) error {
-	req := backuppb.ListBackupsRequest{
-		RequestId:      c.Request().Header.Get("request_id"),
-		CollectionName: c.QueryParam("collection_name"),
-	}
+	requestID := c.Request().Header.Get("request_id")
 
-	resp := &backuppb.ListBackupsResponse{RequestId: req.GetRequestId()}
-	if len(req.GetCollectionName()) > 0 {
+	resp := &apiv1.ListBackupsResponse{RequestId: requestID}
+	if collectionName := c.QueryParam("collection_name"); len(collectionName) > 0 {
 		resp.Code = backuppb.ResponseCode_Parameter_Error
 		resp.Msg = "collection_name is deprecated"
 		return c.JSON(http.StatusOK, resp)
@@ -55,8 +53,8 @@ func (s *Server) handleListBackups(c *echo.Context) error {
 	}
 
 	resp.Code = backuppb.ResponseCode_Success
-	resp.Data = lo.Map(summaries, func(s app.BackupSummary, _ int) *backuppb.BackupSummary {
-		return &backuppb.BackupSummary{
+	resp.Data = lo.Map(summaries, func(s app.BackupSummary, _ int) *apiv1.BackupSummary {
+		return &apiv1.BackupSummary{
 			Id:            s.ID,
 			Name:          s.Name,
 			Size:          s.Size,

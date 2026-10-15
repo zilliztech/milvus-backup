@@ -8,6 +8,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/app"
+	"github.com/zilliztech/milvus-backup/core/apiv1"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
@@ -36,7 +37,7 @@ type deleteJobFactory func(ctx context.Context, params *cfg.Config, req app.Dele
 // @Produce application/json
 // @Param request_id header string false "request_id"
 // @Param backup_name query string true "backup_name"
-// @Success 200 {object} backuppb.DeleteBackupResponse
+// @Success 200 {object} apiv1.DeleteBackupResponse
 // @Router /delete [delete]
 func (s *Server) handleDeleteBackup(c *echo.Context) error {
 	requestID := c.Request().Header.Get("request_id")
@@ -44,7 +45,7 @@ func (s *Server) handleDeleteBackup(c *echo.Context) error {
 		requestID = uuid.NewString()
 	}
 
-	resp := &backuppb.DeleteBackupResponse{RequestId: requestID}
+	resp := &apiv1.DeleteBackupResponse{RequestId: requestID}
 	backupName := c.QueryParam("backup_name")
 	if len(backupName) == 0 {
 		resp.Code = backuppb.ResponseCode_Parameter_Error

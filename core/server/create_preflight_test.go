@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zilliztech/milvus-backup/core/apiv1"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
@@ -57,7 +58,7 @@ func preflightTestServer(t *testing.T, source http.HandlerFunc) (*Server, string
 	return s, dest
 }
 
-func callCreate(ctx context.Context, t *testing.T, s *Server, req *backuppb.CreateBackupRequest) *backuppb.BackupInfoResponse {
+func callCreate(ctx context.Context, t *testing.T, s *Server, req *apiv1.CreateBackupRequest) *apiv1.BackupInfoResponse {
 	t.Helper()
 	body, err := json.Marshal(req)
 	require.NoError(t, err)
@@ -67,13 +68,13 @@ func callCreate(ctx context.Context, t *testing.T, s *Server, req *backuppb.Crea
 	w := httptest.NewRecorder()
 	s.engine.ServeHTTP(w, r)
 	assert.Equal(t, http.StatusOK, w.Code)
-	var resp backuppb.BackupInfoResponse
+	var resp apiv1.BackupInfoResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 	assert.Equal(t, req.RequestId, resp.RequestId)
 	return &resp
 }
 
-func requireNoBackupTask(t *testing.T, req *backuppb.CreateBackupRequest, dest string) {
+func requireNoBackupTask(t *testing.T, req *apiv1.CreateBackupRequest, dest string) {
 	t.Helper()
 	_, err := jobstate.Default().GetBackupTask(req.RequestId)
 	assert.ErrorIs(t, err, jobstate.ErrTaskNotFound)
@@ -104,7 +105,7 @@ func TestCreateStoragePreflightRetry(t *testing.T) {
 				// Empty prefixes must pass preflight.
 				fmt.Fprint(w, `<ListBucketResult><Name>source-bucket</Name><IsTruncated>false</IsTruncated></ListBucketResult>`)
 			})
-			req := &backuppb.CreateBackupRequest{
+			req := &apiv1.CreateBackupRequest{
 				RequestId: uuid.NewString(), BackupName: "preflight_" + strings.ReplaceAll(uuid.NewString(), "-", ""), Async: async,
 				BackupRootPath: dest + "/override", // Must not change the source prefix.
 			}
@@ -137,7 +138,7 @@ func TestCreateStoragePreflightCancellation(t *testing.T) {
 	s, dest := preflightTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 		<-r.Context().Done()
 	})
-	req := &backuppb.CreateBackupRequest{RequestId: uuid.NewString(), BackupName: "cancel_" + strings.ReplaceAll(uuid.NewString(), "-", ""), Async: true}
+	req := &apiv1.CreateBackupRequest{RequestId: uuid.NewString(), BackupName: "cancel_" + strings.ReplaceAll(uuid.NewString(), "-", ""), Async: true}
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 	resp := callCreate(ctx, t, s, req)
@@ -154,9 +155,9 @@ func TestCreateStoragePreflightMetaOnly(t *testing.T) {
 				calls.Add(1)
 				w.WriteHeader(http.StatusForbidden)
 			})
-			req := &backuppb.CreateBackupRequest{RequestId: uuid.NewString(), BackupName: "meta_" + strings.ReplaceAll(uuid.NewString(), "-", ""), Async: true}
+			req := &apiv1.CreateBackupRequest{RequestId: uuid.NewString(), BackupName: "meta_" + strings.ReplaceAll(uuid.NewString(), "-", ""), Async: true}
 			if strategy == "legacy" {
-				req.MetaOnly = true
+				req.MetaOnly = true //nolint:staticcheck // SA1019: deprecated field under test
 			} else {
 				req.Strategy = strategy
 			}

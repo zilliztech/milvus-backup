@@ -9,10 +9,10 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/app"
+	"github.com/zilliztech/milvus-backup/core/apiv1"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/pbconv"
 )
 
 // getBackupUC is the slice of app.GetBackup the handler needs. The consumer
@@ -36,7 +36,7 @@ type getBackupTaskUC interface {
 // @Param request_id header string false "request_id"
 // @Param backup_name query string false "backup_name"
 // @Param backup_id query string false "backup_id"
-// @Success 200 {object} backuppb.BackupInfoResponse
+// @Success 200 {object} apiv1.BackupInfoResponse
 // @Router /get_backup [get]
 //
 // handleGetBackup serves the v1 contract, which merges the two resource
@@ -56,7 +56,7 @@ func (s *Server) handleGetBackup(c *echo.Context) error {
 	log.Info("receive get backup request",
 		zap.String("backup_name", name), zap.String("backup_id", id), zap.String("path", path))
 
-	resp := &backuppb.BackupInfoResponse{RequestId: requestID}
+	resp := &apiv1.BackupInfoResponse{RequestId: requestID}
 	if name == "" && id == "" {
 		resp.Code = backuppb.ResponseCode_Parameter_Error
 		resp.Msg = "server: empty backup name and backup id, please set a backup name or id"
@@ -156,7 +156,7 @@ func (s *Server) handleGetBackup(c *echo.Context) error {
 
 	resp.Code = backuppb.ResponseCode_Success
 	resp.Msg = "success"
-	resp.Data = pbconv.NewBackupInfoBrief(task, metaInfo, metaSize)
+	resp.Data = apiv1.NewBackupInfoBrief(task, metaInfo, metaSize)
 
 	log.Info("response get backup response", zap.Any("resp", resp))
 	return writeResponse(c, resp)

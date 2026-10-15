@@ -10,8 +10,8 @@ import (
 	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/cmd/flags"
 	"github.com/zilliztech/milvus-backup/cmd/root"
+	"github.com/zilliztech/milvus-backup/core/apiv1"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
-	"github.com/zilliztech/milvus-backup/internal/pbconv"
 )
 
 // removedFlags are the get flags dropped in 0.6.
@@ -51,7 +51,7 @@ func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
 		return fmt.Errorf("cmd: get backup %w", err)
 	}
 
-	brief := pbconv.NewBackupInfoBrief(nil, info, metaSize)
+	brief := apiv1.NewBackupInfoBrief(nil, info, metaSize)
 	output, err := json.MarshalIndent(brief, "", "    ")
 	if err != nil {
 		return fmt.Errorf("fail to marshal backup info: %w", err)

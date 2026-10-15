@@ -5,7 +5,6 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 )
 
@@ -49,16 +48,19 @@ func inferFilterRuleType(rule string) (int, error) {
 	return 0, fmt.Errorf("filter: invalid filter rule: %s", rule)
 }
 
-func FromPB(filter map[string]*backuppb.CollFilter) (Filter, error) {
+// FromDBColls builds the filter from a plain database-to-collections map,
+// the shape the transports normalize their filter fields into. The single
+// entry ["*"] selects every collection of the database.
+func FromDBColls(filter map[string][]string) (Filter, error) {
 	dbCollFilter := make(map[string]CollFilter)
-	for dbName, f := range filter {
-		if len(f.GetColls()) == 1 && f.GetColls()[0] == "*" {
+	for dbName, colls := range filter {
+		if len(colls) == 1 && colls[0] == "*" {
 			dbCollFilter[dbName] = CollFilter{AllowAll: true}
 			continue
 		}
 
-		dbCollFilter[dbName] = CollFilter{CollName: make(map[string]struct{}, len(f.GetColls()))}
-		for _, coll := range f.GetColls() {
+		dbCollFilter[dbName] = CollFilter{CollName: make(map[string]struct{}, len(colls))}
+		for _, coll := range colls {
 			dbCollFilter[dbName].CollName[coll] = struct{}{}
 		}
 	}

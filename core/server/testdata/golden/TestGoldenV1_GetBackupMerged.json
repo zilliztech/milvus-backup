@@ -1,0 +1,41 @@
+{
+  "requestId": "rid-1",
+  "msg": "success",
+  "data": {
+    "id": "task-1",
+    "state_code": 2,
+    "start_time": 1,
+    "end_time": 2,
+    "progress": 100,
+    "name": "backup1",
+    "backup_timestamp": 1700000000000,
+    "collection_backups": [
+      {
+        "id": "c-1",
+        "collection_id": 448344929307584300,
+        "db_name": "db1",
+        "collection_name": "coll1",
+        "shards_num": 2,
+        "backup_timestamp": 1700000000000,
+        "size": 0,
+        "has_index": false,
+        "load_state": "LoadStateLoaded",
+        "backup_physical_timestamp": 1700000000,
+        "channel_checkpoints": {
+          "ch-0": "checkpoint"
+        },
+        "properties": [
+          {
+            "key": "mmap.enabled",
+            "value": "true"
+          }
+        ]
+      }
+    ],
+    "size": 100,
+    "milvus_version": "2.4.0",
+    "meta_size": 42,
+    "format": "binlog"
+  }
+}
+
