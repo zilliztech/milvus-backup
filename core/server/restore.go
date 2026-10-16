@@ -14,15 +14,14 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/app"
+	"github.com/zilliztech/milvus-backup/core/apiv1"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore"
-	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
-	"github.com/zilliztech/milvus-backup/internal/pbconv"
 	"github.com/zilliztech/milvus-backup/internal/validate"
 )
 
@@ -47,11 +46,11 @@ type restoreJobFactory func(ctx context.Context, params *cfg.Config, req app.Res
 // @Accept application/json
 // @Produce application/json
 // @Param request_id header string false "request_id"
-// @Param object body backuppb.RestoreBackupRequest   true  "RestoreBackupRequest JSON"
-// @Success 200 {object} backuppb.RestoreBackupResponse
+// @Param object body apiv1.RestoreBackupRequest   true  "RestoreBackupRequest JSON"
+// @Success 200 {object} apiv1.RestoreBackupResponse
 // @Router /restore [post]
 func (s *Server) handleRestoreBackup(c *echo.Context) error {
-	var request backuppb.RestoreBackupRequest
+	var request apiv1.RestoreBackupRequest
 	if err := json.NewDecoder(c.Request().Body).Decode(&request); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]any{"error": fmt.Sprintf("invalid request body: %s", err)})
 	}
@@ -67,15 +66,15 @@ func (s *Server) handleRestoreBackup(c *echo.Context) error {
 // defaulted on the request, every failure before the task exists responds
 // without a request id, and the async flag makes the server run the job in
 // its own goroutine.
-func (s *Server) restore(ctx context.Context, request *backuppb.RestoreBackupRequest) *backuppb.RestoreBackupResponse {
+func (s *Server) restore(ctx context.Context, request *apiv1.RestoreBackupRequest) *apiv1.RestoreBackupResponse {
 	completeRestoreRequest(request)
 	if err := validateRestoreRequest(request); err != nil {
-		return &backuppb.RestoreBackupResponse{Code: backuppb.ResponseCode_Parameter_Error, Msg: err.Error()}
+		return &apiv1.RestoreBackupResponse{Code: backuppb.ResponseCode_Parameter_Error, Msg: err.Error()}
 	}
 
 	req, err := newRestoreRequest(request)
 	if err != nil {
-		return &backuppb.RestoreBackupResponse{Code: backuppb.ResponseCode_Fail, Msg: err.Error()}
+		return &apiv1.RestoreBackupResponse{Code: backuppb.ResponseCode_Fail, Msg: err.Error()}
 	}
 
 	// The v1 bucket_name and path fields ask for a different backup location
@@ -85,11 +84,11 @@ func (s *Server) restore(ctx context.Context, request *backuppb.RestoreBackupReq
 	// milvus.storage, and the server's own config is never mutated.
 	params := s.params
 	overrides := make(map[string]string)
-	if bucket := request.GetBucketName(); bucket != "" {
+	if bucket := request.BucketName; bucket != "" {
 		log.Info("use bucket name from request", zap.String("bucketName", bucket))
 		overrides["backup.storage.bucketName"] = bucket
 	}
-	if path := request.GetPath(); path != "" {
+	if path := request.Path; path != "" {
 		log.Info("use path from request", zap.String("path", path))
 		overrides["backup.storage.rootPath"] = path
 	}
@@ -97,7 +96,7 @@ func (s *Server) restore(ctx context.Context, request *backuppb.RestoreBackupReq
 		var err error
 		params, err = params.Fork(overrides)
 		if err != nil {
-			return &backuppb.RestoreBackupResponse{Code: backuppb.ResponseCode_Fail, Msg: err.Error()}
+			return &apiv1.RestoreBackupResponse{Code: backuppb.ResponseCode_Fail, Msg: err.Error()}
 		}
 	}
 
@@ -109,61 +108,61 @@ func (s *Server) restore(ctx context.Context, request *backuppb.RestoreBackupReq
 		if errors.Is(err, app.ErrBackupNotFound) {
 			code = backuppb.ResponseCode_Parameter_Error
 		}
-		return &backuppb.RestoreBackupResponse{Code: code, Msg: err.Error()}
+		return &apiv1.RestoreBackupResponse{Code: code, Msg: err.Error()}
 	}
 
-	if request.GetAsync() {
+	if request.Async {
 		return s.restoreAsync(job, request)
 	}
 
 	if err := job.Run(ctx); err != nil {
 		// The sync path settles the failure here, mirroring the async
 		// goroutine's log — writeResponse no longer logs on the way out.
-		log.Error("restore backup task execute fail", zap.String("backupId", request.GetId()), zap.Error(err))
-		return &backuppb.RestoreBackupResponse{Code: backuppb.ResponseCode_Fail, Msg: err.Error()}
+		log.Error("restore backup task execute fail", zap.String("backupId", request.ID), zap.Error(err))
+		return &apiv1.RestoreBackupResponse{Code: backuppb.ResponseCode_Fail, Msg: err.Error()}
 	}
 
-	view, err := s.restoreTaskView(ctx, request.GetId())
+	view, err := s.restoreTaskView(ctx, request.ID)
 	if err != nil {
-		resp := &backuppb.RestoreBackupResponse{RequestId: request.GetRequestId()}
+		resp := &apiv1.RestoreBackupResponse{RequestId: request.RequestId}
 		resp.Code = backuppb.ResponseCode_Fail
-		log.Error("get restore task fail", zap.String("taskId", request.GetId()), zap.Error(err))
+		log.Error("get restore task fail", zap.String("taskId", request.ID), zap.Error(err))
 		resp.Msg = err.Error()
 		return resp
 	}
 
-	return &backuppb.RestoreBackupResponse{
-		RequestId: request.GetRequestId(),
+	return &apiv1.RestoreBackupResponse{
+		RequestId: request.RequestId,
 		Code:      backuppb.ResponseCode_Success,
 		Msg:       "success",
-		Data:      pbconv.RestoreTaskViewToResp(view),
+		Data:      apiv1.NewRestoreTaskResp(view),
 	}
 }
 
 // restoreAsync launches the job in the server's own goroutine — async is a
 // deployment concern of the HTTP server, not of the job — then reports the
 // freshly registered job's view.
-func (s *Server) restoreAsync(job restoreJob, request *backuppb.RestoreBackupRequest) *backuppb.RestoreBackupResponse {
+func (s *Server) restoreAsync(job restoreJob, request *apiv1.RestoreBackupRequest) *apiv1.RestoreBackupResponse {
 	go func() {
 		if err := job.Run(context.Background()); err != nil {
-			log.Error("restore backup task execute fail", zap.String("backupId", request.GetId()), zap.Error(err))
+			log.Error("restore backup task execute fail", zap.String("backupId", request.ID), zap.Error(err))
 		}
 	}()
 
-	view, err := s.restoreTaskView(context.Background(), request.GetId())
+	view, err := s.restoreTaskView(context.Background(), request.ID)
 	if err != nil {
-		resp := &backuppb.RestoreBackupResponse{RequestId: request.GetRequestId()}
+		resp := &apiv1.RestoreBackupResponse{RequestId: request.RequestId}
 		resp.Code = backuppb.ResponseCode_Fail
-		log.Error("get restore task fail", zap.String("taskId", request.GetId()), zap.Error(err))
+		log.Error("get restore task fail", zap.String("taskId", request.ID), zap.Error(err))
 		resp.Msg = err.Error()
 		return resp
 	}
 
-	return &backuppb.RestoreBackupResponse{
-		RequestId: request.GetRequestId(),
+	return &apiv1.RestoreBackupResponse{
+		RequestId: request.RequestId,
 		Code:      backuppb.ResponseCode_Success,
 		Msg:       "restore backup is executing asynchronously",
-		Data:      pbconv.RestoreTaskViewToResp(view),
+		Data:      apiv1.NewRestoreTaskResp(view),
 	}
 }
 
@@ -180,47 +179,47 @@ func (s *Server) restoreTaskView(ctx context.Context, taskID string) (jobstate.R
 }
 
 // completeRestoreRequest defaults the request id and the restore task id.
-func completeRestoreRequest(request *backuppb.RestoreBackupRequest) {
-	if len(request.GetRequestId()) == 0 {
+func completeRestoreRequest(request *apiv1.RestoreBackupRequest) {
+	if len(request.RequestId) == 0 {
 		request.RequestId = uuid.NewString()
 	}
 
-	if len(request.GetId()) == 0 {
+	if len(request.ID) == 0 {
 		taskID := "restore_" + fmt.Sprint(time.Now().UTC().Format("2006_01_02_15_04_05_")) + fmt.Sprint(time.Now().Nanosecond())
-		request.Id = taskID
+		request.ID = taskID
 	}
 }
 
-func validateRestoreRequest(request *backuppb.RestoreBackupRequest) error {
-	if len(request.GetBackupName()) == 0 {
+func validateRestoreRequest(request *apiv1.RestoreBackupRequest) error {
+	if len(request.BackupName) == 0 {
 		return errors.New("backup name is required")
 	}
 
-	if request.GetRestorePlan() != nil && len(request.GetCollectionSuffix()) != 0 {
+	if request.RestorePlan != nil && len(request.CollectionSuffix) != 0 {
 		return errors.New("restore plan and collection suffix cannot be set at the same time")
 	}
 
-	if request.GetRestorePlan() != nil && len(request.GetCollectionRenames()) != 0 {
+	if request.RestorePlan != nil && len(request.CollectionRenames) != 0 {
 		return errors.New("restore plan and collection renames cannot be set at the same time")
 	}
 
-	if len(request.GetCollectionSuffix()) != 0 {
-		if has := validate.HasSpecialChar(request.GetCollectionSuffix()); has {
+	if len(request.CollectionSuffix) != 0 {
+		if has := validate.HasSpecialChar(request.CollectionSuffix); has {
 			return errors.New("only alphanumeric characters and underscores are allowed in collection suffix")
 		}
 	}
 
-	if request.GetDropExistCollection() && request.GetSkipCreateCollection() {
+	if request.DropExistCollection && request.SkipCreateCollection {
 		return errors.New("drop_exist_collection and skip_create_collection cannot be true at the same time")
 	}
 
-	if request.GetStrategy() != "" {
-		if _, err := restore.ParseStrategy(request.GetStrategy()); err != nil {
+	if request.Strategy != "" {
+		if _, err := restore.ParseStrategy(request.Strategy); err != nil {
 			return err
 		}
 	}
 
-	for _, peer := range request.GetPeers() {
+	for _, peer := range request.Peers {
 		u, err := url.Parse(peer)
 		if err != nil || u.Scheme == "" || u.Host == "" {
 			return fmt.Errorf("invalid peer %q, expect an http(s) url like http://10.0.0.2:19530", peer)
@@ -230,10 +229,10 @@ func validateRestoreRequest(request *backuppb.RestoreBackupRequest) error {
 	return nil
 }
 
-// newRestoreRequest translates the v1 pb grammar into the restore request:
-// the plan and the option are built here because they are parse products of
-// pb-only fields, including the deprecated db_collections.
-func newRestoreRequest(request *backuppb.RestoreBackupRequest) (*app.RestoreRequest, error) {
+// newRestoreRequest translates the v1 grammar into the restore request: the
+// plan and the option are built here because they are parse products of
+// wire-only fields, including the deprecated db_collections.
+func newRestoreRequest(request *apiv1.RestoreBackupRequest) (*app.RestoreRequest, error) {
 	plan, err := newPlanFromRequest(request)
 	if err != nil {
 		return nil, fmt.Errorf("server: create restore plan: %w", err)
@@ -245,54 +244,59 @@ func newRestoreRequest(request *backuppb.RestoreBackupRequest) (*app.RestoreRequ
 	}
 
 	return &app.RestoreRequest{
-		TaskID:     request.GetId(),
-		BackupName: request.GetBackupName(),
+		TaskID:     request.ID,
+		BackupName: request.BackupName,
 		Plan:       plan,
 		Option:     option,
 	}, nil
 }
 
-func newSkipParamsFromRequest(request *backuppb.RestoreBackupRequest) restore.SkipParams {
+func newSkipParamsFromRequest(request *apiv1.RestoreBackupRequest) restore.SkipParams {
+	skip := request.SkipParams
+	if skip == nil {
+		return restore.SkipParams{}
+	}
+
 	return restore.SkipParams{
-		CollectionProperties: request.GetSkipParams().GetCollectionProperties(),
-		FieldIndexParams:     request.GetSkipParams().GetFieldIndexParams(),
-		FieldTypeParams:      request.GetSkipParams().GetFieldTypeParams(),
-		IndexParams:          request.GetSkipParams().GetIndexParams(),
+		CollectionProperties: skip.CollectionProperties,
+		FieldIndexParams:     skip.FieldIndexParams,
+		FieldTypeParams:      skip.FieldTypeParams,
+		IndexParams:          skip.IndexParams,
 	}
 }
 
-func newOptionFromRequest(request *backuppb.RestoreBackupRequest) (*restore.Option, error) {
+func newOptionFromRequest(request *apiv1.RestoreBackupRequest) (*restore.Option, error) {
 	strategy, err := toRestoreStrategy(request)
 	if err != nil {
 		return nil, err
 	}
 
 	return &restore.Option{
-		DropExistIndex:       request.GetDropExistIndex(),
-		RebuildIndex:         request.GetRestoreIndex(),
-		UseAutoIndex:         request.GetUseAutoIndex(),
-		DropExistCollection:  request.GetDropExistCollection(),
-		SkipCreateCollection: request.GetSkipCreateCollection(),
-		MaxShardNum:          request.GetMaxShardNum(),
+		DropExistIndex:       request.DropExistIndex,
+		RebuildIndex:         request.RestoreIndex,
+		UseAutoIndex:         request.UseAutoIndex,
+		DropExistCollection:  request.DropExistCollection,
+		SkipCreateCollection: request.SkipCreateCollection,
+		MaxShardNum:          request.MaxShardNum,
 		SkipParams:           newSkipParamsFromRequest(request),
-		MetaOnly:             request.GetMetaOnly(),
+		MetaOnly:             request.MetaOnly,
 		Strategy:             strategy,
-		TruncateBinlogByTs:   request.GetTruncateBinlogByTs(),
-		RestoreRBAC:          request.GetRbac(),
-		EZKMapping:           request.GetEzkMapping(),
-		PeerEndpoints:        request.GetPeers(),
+		TruncateBinlogByTs:   request.TruncateBinlogByTs,
+		RestoreRBAC:          request.Rbac,
+		EZKMapping:           request.EzkMapping,
+		PeerEndpoints:        request.Peers,
 	}, nil
 }
 
 // toRestoreStrategy resolves the request's strategy pin, with the deprecated
 // use_v2_restore bool as the fallback: an explicit strategy wins over it, and
 // without either the restore selects a plan on its own.
-func toRestoreStrategy(request *backuppb.RestoreBackupRequest) (restore.Strategy, error) {
-	if request.GetStrategy() != "" {
-		return restore.ParseStrategy(request.GetStrategy())
+func toRestoreStrategy(request *apiv1.RestoreBackupRequest) (restore.Strategy, error) {
+	if request.Strategy != "" {
+		return restore.ParseStrategy(request.Strategy)
 	}
 
-	if request.GetUseV2Restore() {
+	if request.UseV2Restore { //nolint:staticcheck // SA1019: deprecated field for backward compatibility
 		log.Warn("use_v2_restore option is deprecated, pls use strategy=merged_seg instead")
 		return restore.StrategyMergedSeg, nil
 	}
@@ -300,13 +304,13 @@ func toRestoreStrategy(request *backuppb.RestoreBackupRequest) (restore.Strategy
 	return restore.StrategyAuto, nil
 }
 
-func newPlanFromRequest(request *backuppb.RestoreBackupRequest) (*restore.Plan, error) {
+func newPlanFromRequest(request *apiv1.RestoreBackupRequest) (*restore.Plan, error) {
 	backupFilter, err := newBackupFilter(request)
 	if err != nil {
 		return nil, fmt.Errorf("restore: create backup filter: %w", err)
 	}
 
-	dbMapper, err := newDBMapper(request.GetRestorePlan())
+	dbMapper, err := newDBMapper(request.RestorePlan)
 	if err != nil {
 		return nil, fmt.Errorf("restore: create db mapper: %w", err)
 	}
@@ -324,7 +328,7 @@ func newPlanFromRequest(request *backuppb.RestoreBackupRequest) (*restore.Plan, 
 		BackupFilter:  backupFilter,
 		DBMapper:      dbMapper,
 		CollMapper:    collMapper,
-		CollOverrides: newCollOverridesFromPlan(request.GetRestorePlan()),
+		CollOverrides: newCollOverridesFromPlan(request.RestorePlan),
 		TaskFilter:    taskFilter,
 	}, nil
 }
@@ -369,20 +373,20 @@ func newTableMapperFromCollRename(collRename map[string]string) (*restore.TableM
 	return &restore.TableMapper{DBWildcard: dbWildcard, NameMapping: nameMapping}, nil
 }
 
-func newCollMapperFromPlan(plan *backuppb.RestorePlan) (restore.CollMapper, error) {
+func newCollMapperFromPlan(plan *apiv1.RestorePlan) (restore.CollMapper, error) {
 	nameMapping := make(map[string][]collref.Name)
 	for _, mapping := range plan.Mapping {
-		if mapping.GetSource() == "" {
+		if mapping.Source == "" {
 			return nil, fmt.Errorf("restore: source database name is empty")
 		}
 
-		if mapping.GetTarget() == "" {
+		if mapping.Target == "" {
 			return nil, fmt.Errorf("restore: target database name is empty")
 		}
 
 		for _, collMapping := range mapping.Colls {
-			oldName := collref.New(mapping.GetSource(), collMapping.GetSource())
-			newName := collref.New(mapping.GetTarget(), collMapping.GetTarget())
+			oldName := collref.New(mapping.Source, collMapping.Source)
+			newName := collref.New(mapping.Target, collMapping.Target)
 			nameMapping[oldName.String()] = append(nameMapping[oldName.String()], newName)
 		}
 	}
@@ -390,68 +394,68 @@ func newCollMapperFromPlan(plan *backuppb.RestorePlan) (restore.CollMapper, erro
 	return &restore.TableMapper{NameMapping: nameMapping}, nil
 }
 
-func newCollMapper(request *backuppb.RestoreBackupRequest) (restore.CollMapper, error) {
-	if request.GetRestorePlan() != nil {
-		return newCollMapperFromPlan(request.GetRestorePlan())
+func newCollMapper(request *apiv1.RestoreBackupRequest) (restore.CollMapper, error) {
+	if request.RestorePlan != nil {
+		return newCollMapperFromPlan(request.RestorePlan)
 	}
 
-	if len(request.GetCollectionRenames()) != 0 {
-		mapper, err := newTableMapperFromCollRename(request.GetCollectionRenames())
+	if len(request.CollectionRenames) != 0 {
+		mapper, err := newTableMapperFromCollRename(request.CollectionRenames)
 		if err != nil {
 			return nil, fmt.Errorf("restore: create map renamer %w", err)
 		}
 		return mapper, nil
 	}
 
-	if len(request.GetCollectionSuffix()) != 0 {
-		mapper := restore.NewSuffixMapper(request.GetCollectionSuffix())
+	if len(request.CollectionSuffix) != 0 {
+		mapper := restore.NewSuffixMapper(request.CollectionSuffix)
 		return mapper, nil
 	}
 
 	return restore.NewDefaultCollMapper(), nil
 }
 
-func newDBMapper(plan *backuppb.RestorePlan) (map[string][]restore.DBMapping, error) {
+func newDBMapper(plan *apiv1.RestorePlan) (map[string][]restore.DBMapping, error) {
 	if plan == nil {
 		return nil, nil
 	}
 
 	dbMapper := make(map[string][]restore.DBMapping)
 	for _, mapping := range plan.Mapping {
-		if mapping.GetSource() == "" {
+		if mapping.Source == "" {
 			return nil, fmt.Errorf("restore: source database name is empty")
 		}
 
-		if mapping.GetTarget() == "" {
+		if mapping.Target == "" {
 			return nil, fmt.Errorf("restore: target database name is empty")
 		}
 
-		mapper := restore.DBMapping{Target: mapping.GetTarget(), WithProp: mapping.GetWithProp()}
-		dbMapper[mapping.GetSource()] = append(dbMapper[mapping.GetSource()], mapper)
+		mapper := restore.DBMapping{Target: mapping.Target, WithProp: mapping.WithProp}
+		dbMapper[mapping.Source] = append(dbMapper[mapping.Source], mapper)
 	}
 
 	return dbMapper, nil
 }
 
-func newCollOverridesFromPlan(plan *backuppb.RestorePlan) map[string]restore.CollOverride {
+func newCollOverridesFromPlan(plan *apiv1.RestorePlan) map[string]restore.CollOverride {
 	if plan == nil {
 		return nil
 	}
 
 	overrides := make(map[string]restore.CollOverride)
-	for _, mapping := range plan.GetMapping() {
-		for _, collMapping := range mapping.GetColls() {
-			o := collMapping.GetOverride()
+	for _, mapping := range plan.Mapping {
+		for _, collMapping := range mapping.Colls {
+			o := collMapping.Override
 			if o == nil {
 				continue
 			}
-			if o.GetShardNum() == 0 && o.GetDescription() == "" {
+			if o.ShardNum == 0 && o.Description == "" {
 				continue
 			}
-			target := collref.New(mapping.GetTarget(), collMapping.GetTarget())
+			target := collref.New(mapping.Target, collMapping.Target)
 			overrides[target.String()] = restore.CollOverride{
-				ShardNum:    o.GetShardNum(),
-				Description: o.GetDescription(),
+				ShardNum:    o.ShardNum,
+				Description: o.Description,
 			}
 		}
 	}
@@ -506,33 +510,39 @@ func newFilterFromCollectionNames(collectionNames []string) (filter.Filter, erro
 	return filter.Filter{DBCollFilter: collFilter}, nil
 }
 
-func newBackupFilter(request *backuppb.RestoreBackupRequest) (filter.Filter, error) {
+func newBackupFilter(request *apiv1.RestoreBackupRequest) (filter.Filter, error) {
 	// from db collection
-	dbCollectionsStr := utils.GetDBCollections(request.GetDbCollections())
+	dbCollectionsStr, err := dbCollectionsJSON(request.DbCollections)
+	if err != nil {
+		return filter.Filter{}, err
+	}
 	if dbCollectionsStr != "" {
 		return newFilterFromDBCollections(dbCollectionsStr)
 	}
 
 	// from collection names
-	if len(request.GetCollectionNames()) != 0 {
-		return newFilterFromCollectionNames(request.GetCollectionNames())
+	if len(request.CollectionNames) != 0 {
+		return newFilterFromCollectionNames(request.CollectionNames)
 	}
 
 	return filter.Filter{}, nil
 }
 
-func newFilterFromPlan(plan *backuppb.RestorePlan) (filter.Filter, error) {
-	return filter.FromPB(plan.GetFilter())
+func newFilterFromPlan(plan *apiv1.RestorePlan) (filter.Filter, error) {
+	return filterFromWire(plan.Filter)
 }
 
-func newTaskFilter(request *backuppb.RestoreBackupRequest) (filter.Filter, error) {
+func newTaskFilter(request *apiv1.RestoreBackupRequest) (filter.Filter, error) {
 	// from restore plan
-	if request.GetRestorePlan() != nil {
-		return newFilterFromPlan(request.GetRestorePlan())
+	if request.RestorePlan != nil {
+		return newFilterFromPlan(request.RestorePlan)
 	}
 
 	// from db collection
-	dbCollectionsStr := utils.GetDBCollections(request.GetDbCollectionsAfterRename())
+	dbCollectionsStr, err := dbCollectionsJSON(request.DbCollectionsAfterRename)
+	if err != nil {
+		return filter.Filter{}, err
+	}
 	if dbCollectionsStr != "" {
 		return newFilterFromDBCollections(dbCollectionsStr)
 	}

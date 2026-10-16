@@ -1,0 +1,18 @@
+{
+  "requestId": "rid-1",
+  "data": [
+    {
+      "id": "a",
+      "name": "backup1",
+      "size": 100,
+      "milvus_version": "2.4.0"
+    },
+    {
+      "id": "b",
+      "name": "backup2",
+      "size": 200,
+      "milvus_version": "2.5.0"
+    }
+  ]
+}
+

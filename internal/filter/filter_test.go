@@ -5,7 +5,6 @@ import (
 
 	"github.com/stretchr/testify/assert"
 
-	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 )
 
@@ -35,13 +34,13 @@ func Test_inferFilterRuleType(t *testing.T) {
 	})
 }
 
-func TestFromPB(t *testing.T) {
-	pb := map[string]*backuppb.CollFilter{
-		"db1": {Colls: []string{"*"}},
-		"db2": {Colls: []string{"coll1", "coll2"}},
+func TestFromDBColls(t *testing.T) {
+	pb := map[string][]string{
+		"db1": {"*"},
+		"db2": {"coll1", "coll2"},
 	}
 
-	f, err := FromPB(pb)
+	f, err := FromDBColls(pb)
 	assert.NoError(t, err)
 	assert.Equal(t, map[string]CollFilter{
 		"db1": {AllowAll: true},

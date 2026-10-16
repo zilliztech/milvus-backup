@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -12,9 +13,9 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/app"
+	"github.com/zilliztech/milvus-backup/core/apiv1"
 	"github.com/zilliztech/milvus-backup/core/backup"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
-	"github.com/zilliztech/milvus-backup/core/utils"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
@@ -36,11 +37,11 @@ type backupJobFactory func(ctx context.Context, params *cfg.Config, req app.Crea
 // @Accept application/json
 // @Produce application/json
 // @Param request_id header string false "request_id"
-// @Param object body backuppb.CreateBackupRequest   true  "CreateBackupRequest JSON"
-// @Success 200 {object} backuppb.BackupInfoResponse
+// @Param object body apiv1.CreateBackupRequest   true  "CreateBackupRequest JSON"
+// @Success 200 {object} apiv1.BackupInfoResponse
 // @Router /create [post]
 func (s *Server) handleCreateBackup(c *echo.Context) error {
-	var requestBody backuppb.CreateBackupRequest
+	var requestBody apiv1.CreateBackupRequest
 	if err := json.NewDecoder(c.Request().Body).Decode(&requestBody); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]any{"error": "Invalid request body"})
 	}
@@ -53,17 +54,17 @@ func (s *Server) handleCreateBackup(c *echo.Context) error {
 }
 
 // createBackup maps the v1 request onto the backup job and the outcome onto
-// the v1 wire shape. Binding, request_id defaulting, the deprecated pb fields,
+// the v1 wire shape. Binding, request_id defaulting, the deprecated fields,
 // name validation and the error-to-code mapping stay here; the action itself
 // lives in app.NewBackupJob.
-func (s *Server) createBackup(ctx context.Context, request *backuppb.CreateBackupRequest) *backuppb.BackupInfoResponse {
-	if request.GetRequestId() == "" {
+func (s *Server) createBackup(ctx context.Context, request *apiv1.CreateBackupRequest) *apiv1.BackupInfoResponse {
+	if request.RequestId == "" {
 		request.RequestId = uuid.NewString()
 	}
 
-	resp := &backuppb.BackupInfoResponse{RequestId: request.GetRequestId()}
+	resp := &apiv1.BackupInfoResponse{RequestId: request.RequestId}
 
-	if err := backup.ValidateName(request.GetBackupName()); err != nil {
+	if err := backup.ValidateName(request.BackupName); err != nil {
 		resp.Code = backuppb.ResponseCode_Parameter_Error
 		resp.Msg = err.Error()
 		return resp
@@ -75,7 +76,7 @@ func (s *Server) createBackup(ctx context.Context, request *backuppb.CreateBacku
 	// reload-equivalent, so unset backup.storage leaves still cascade from
 	// milvus.storage, and the server's own config is never mutated.
 	params := s.params
-	if root := request.GetBackupRootPath(); root != "" {
+	if root := request.BackupRootPath; root != "" {
 		log.Info("use backup root from request", zap.String("backup_root", root))
 		var err error
 		params, err = params.Fork(map[string]string{"backup.storage.rootPath": root})
@@ -99,7 +100,7 @@ func (s *Server) createBackup(ctx context.Context, request *backuppb.CreateBacku
 		// is the failure's only settlement — a registered job that fails
 		// later logs at its own settlement instead.
 		log.Error("create backup fail",
-			zap.String("request_id", request.GetRequestId()),
+			zap.String("request_id", request.RequestId),
 			zap.String("backup_name", req.Option.BackupName),
 			zap.Error(err))
 		resp.Code = createBackupErrorCode(err)
@@ -107,10 +108,10 @@ func (s *Server) createBackup(ctx context.Context, request *backuppb.CreateBacku
 		return resp
 	}
 
-	if request.GetAsync() {
-		return runCreateBackupAsync(job, request.GetRequestId())
+	if request.Async {
+		return runCreateBackupAsync(job, request.RequestId)
 	}
-	return runCreateBackupSync(ctx, job, request.GetRequestId())
+	return runCreateBackupSync(ctx, job, request.RequestId)
 }
 
 func createBackupErrorCode(err error) backuppb.ResponseCode {
@@ -127,7 +128,7 @@ func createBackupErrorCode(err error) backuppb.ResponseCode {
 // persisted meta after a successful run and answered Fail when that read
 // failed, but the read only fed a payload the response then discarded, so it
 // is gone together with the payload.
-func runCreateBackupSync(ctx context.Context, job app.AsyncJob[jobstate.BackupStatus], requestID string) *backuppb.BackupInfoResponse {
+func runCreateBackupSync(ctx context.Context, job app.AsyncJob[jobstate.BackupStatus], requestID string) *apiv1.BackupInfoResponse {
 	// The job runs detached from the request — a client disconnect must not
 	// kill a half-done backup — and the handler answers with the outcome it
 	// settles on.
@@ -137,40 +138,40 @@ func runCreateBackupSync(ctx context.Context, job app.AsyncJob[jobstate.BackupSt
 	if err != nil {
 		// The request context died while waiting; the backup itself keeps
 		// running to completion in the background.
-		return &backuppb.BackupInfoResponse{
+		return &apiv1.BackupInfoResponse{
 			RequestId: requestID,
 			Code:      backuppb.ResponseCode_Fail,
 			Msg:       err.Error(),
 		}
 	}
 	if status.State == jobstate.BackupStateFail {
-		return &backuppb.BackupInfoResponse{
+		return &apiv1.BackupInfoResponse{
 			RequestId: requestID,
 			Code:      backuppb.ResponseCode_Fail,
 			Msg:       status.ErrorMessage,
 		}
 	}
 
-	return &backuppb.BackupInfoResponse{Code: backuppb.ResponseCode_Success, Msg: "success"}
+	return &apiv1.BackupInfoResponse{Code: backuppb.ResponseCode_Success, Msg: "success"}
 }
 
 // runCreateBackupAsync releases the job and returns immediately; Run is what
 // releases it into the background, the flag only selects not waiting for it.
-func runCreateBackupAsync(job app.AsyncJob[jobstate.BackupStatus], requestID string) *backuppb.BackupInfoResponse {
+func runCreateBackupAsync(job app.AsyncJob[jobstate.BackupStatus], requestID string) *apiv1.BackupInfoResponse {
 	job.Run(context.Background())
 
-	return &backuppb.BackupInfoResponse{
+	return &apiv1.BackupInfoResponse{
 		RequestId: requestID,
 		Code:      backuppb.ResponseCode_Success,
 		Msg:       "create backup is executing asynchronously",
 	}
 }
 
-// toCreateBackupRequest renders the v1 pb request into the usecase request.
-// The deprecated pb fields (db_collections, collection_names, force,
-// meta_only) keep their old meaning here: accepting or rejecting them is a
-// transport decision.
-func (s *Server) toCreateBackupRequest(request *backuppb.CreateBackupRequest) (app.CreateBackupRequest, error) {
+// toCreateBackupRequest renders the v1 request into the usecase request. The
+// deprecated fields (db_collections, collection_names, force, meta_only)
+// keep their old meaning here: accepting or rejecting them is a transport
+// decision.
+func (s *Server) toCreateBackupRequest(request *apiv1.CreateBackupRequest) (app.CreateBackupRequest, error) {
 	f, err := toFilter(request)
 	if err != nil {
 		return app.CreateBackupRequest{}, fmt.Errorf("server: build filter: %w", err)
@@ -186,41 +187,64 @@ func (s *Server) toCreateBackupRequest(request *backuppb.CreateBackupRequest) (a
 		return app.CreateBackupRequest{}, fmt.Errorf("server: build format: %w", err)
 	}
 
-	manageAddr := ""
-	if request.GetGcPauseAddress() != "" {
-		manageAddr = request.GetGcPauseAddress()
-	}
+	manageAddr := request.GcPauseAddress
 
 	return app.CreateBackupRequest{
-		TaskID: request.GetRequestId(),
+		TaskID: request.RequestId,
 		Option: backup.Option{
-			BackupName:       request.GetBackupName(),
-			PauseGC:          request.GetGcPauseEnable() || s.params.Backup.PauseGC.Val,
+			BackupName:       request.BackupName,
+			PauseGC:          request.GcPauseEnable || s.params.Backup.PauseGC.Val,
 			ManageAddr:       manageAddr,
 			Strategy:         strategy,
 			Format:           format,
-			BackupRBAC:       request.GetRbac(),
-			BackupIndexExtra: request.GetWithIndexExtra(),
+			BackupRBAC:       request.Rbac,
+			BackupIndexExtra: request.WithIndexExtra,
 			Filter:           f,
 		},
 	}, nil
 }
 
-func toFilter(request *backuppb.CreateBackupRequest) (filter.Filter, error) {
-	if request.GetFilter() != nil {
-		return pbFilterToFilter(request.GetFilter())
+func toFilter(request *apiv1.CreateBackupRequest) (filter.Filter, error) {
+	if request.Filter != nil {
+		return filterFromWire(request.Filter)
 	}
 
-	dbCollectionsStr := utils.GetDBCollections(request.GetDbCollections()) //nolint:staticcheck // SA1019: deprecated field for backward compatibility
+	dbCollectionsStr, err := dbCollectionsJSON(request.DbCollections) //nolint:staticcheck // SA1019: deprecated field for backward compatibility
+	if err != nil {
+		return filter.Filter{}, err
+	}
 	if len(dbCollectionsStr) > 0 {
 		return dbCollectionsToFilter(dbCollectionsStr)
 	}
 
-	if len(request.GetCollectionNames()) > 0 { //nolint:staticcheck // SA1019: deprecated field for backward compatibility
-		return collectionNamesToFilter(request.GetCollectionNames()) //nolint:staticcheck // SA1019: deprecated field for backward compatibility
+	if len(request.CollectionNames) > 0 { //nolint:staticcheck // SA1019: deprecated field for backward compatibility
+		return collectionNamesToFilter(request.CollectionNames) //nolint:staticcheck // SA1019: deprecated field for backward compatibility
 	}
 
 	return filter.Filter{}, nil
+}
+
+// dbCollectionsJSON renders the deprecated db_collections family into the
+// JSON-object string the filter builder parses. The wire has always accepted
+// two shapes — a JSON string holding the object, or the object itself — and
+// the pb field normalized both through the well-known-types wrapper. A value
+// that is neither shape surfaces where the filter is built, not as a bind
+// error, the way the pb field behaved.
+func dbCollectionsJSON(raw apiv1.JSON) (string, error) {
+	trimmed := bytes.TrimSpace([]byte(raw))
+	if len(trimmed) == 0 {
+		return "", nil
+	}
+
+	if trimmed[0] == '"' {
+		var s string
+		if err := json.Unmarshal(trimmed, &s); err != nil {
+			return "", fmt.Errorf("server: db_collections is not a json string: %w", err)
+		}
+		return s, nil
+	}
+
+	return string(trimmed), nil
 }
 
 func dbCollectionsToFilter(dbCollectionsStr string) (filter.Filter, error) {
@@ -262,26 +286,31 @@ func collectionNamesToFilter(collectionNames []string) (filter.Filter, error) {
 	return filter.Filter{DBCollFilter: dbCollFilter}, nil
 }
 
-func pbFilterToFilter(pbFilter map[string]*backuppb.CollFilter) (filter.Filter, error) {
-	f, err := filter.FromPB(pbFilter)
+func filterFromWire(wire map[string]apiv1.CollFilter) (filter.Filter, error) {
+	colls := make(map[string][]string, len(wire))
+	for dbName, f := range wire {
+		colls[dbName] = f.Colls
+	}
+
+	f, err := filter.FromDBColls(colls)
 	if err != nil {
-		return filter.Filter{}, fmt.Errorf("server: build filter from pb: %w", err)
+		return filter.Filter{}, fmt.Errorf("server: build filter from wire: %w", err)
 	}
 
 	return f, nil
 }
 
-func toStrategy(request *backuppb.CreateBackupRequest) (backup.Strategy, error) {
-	if request.GetStrategy() != "" {
-		return backup.ParseStrategy(request.GetStrategy())
+func toStrategy(request *apiv1.CreateBackupRequest) (backup.Strategy, error) {
+	if request.Strategy != "" {
+		return backup.ParseStrategy(request.Strategy)
 	}
 
-	if request.GetForce() { //nolint:staticcheck // SA1019: deprecated field for backward compatibility
+	if request.Force { //nolint:staticcheck // SA1019: deprecated field for backward compatibility
 		log.Warn("force option is deprecated, pls use strategy=skip_flush instead")
 		return backup.StrategySkipFlush, nil
 	}
 
-	if request.GetMetaOnly() { //nolint:staticcheck // SA1019: deprecated field for backward compatibility
+	if request.MetaOnly { //nolint:staticcheck // SA1019: deprecated field for backward compatibility
 		log.Warn("meta_only option is deprecated, pls use strategy=meta_only instead")
 		return backup.StrategyMetaOnly, nil
 	}
@@ -289,9 +318,9 @@ func toStrategy(request *backuppb.CreateBackupRequest) (backup.Strategy, error) 
 	return backup.StrategyAuto, nil
 }
 
-func toFormat(request *backuppb.CreateBackupRequest) (backup.Format, error) {
-	if request.GetFormat() != "" {
-		return backup.ParseFormat(request.GetFormat())
+func toFormat(request *apiv1.CreateBackupRequest) (backup.Format, error) {
+	if request.Format != "" {
+		return backup.ParseFormat(request.Format)
 	}
 
 	return backup.FormatAuto, nil

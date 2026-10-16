@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zilliztech/milvus-backup/core/apiv1"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
@@ -43,7 +44,7 @@ func withGetRestore(stub *stubGetRestore, newErr error) Option {
 	}
 }
 
-func getRestore(t *testing.T, s *Server, query, requestID string) backuppb.RestoreBackupResponse {
+func getRestore(t *testing.T, s *Server, query, requestID string) apiv1.RestoreBackupResponse {
 	t.Helper()
 
 	w := httptest.NewRecorder()
@@ -53,7 +54,7 @@ func getRestore(t *testing.T, s *Server, query, requestID string) backuppb.Resto
 	}
 	s.engine.ServeHTTP(w, req)
 
-	var resp backuppb.RestoreBackupResponse
+	var resp apiv1.RestoreBackupResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 	return resp
@@ -86,12 +87,12 @@ func TestHandleGetRestore(t *testing.T) {
 
 		assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
 		assert.Equal(t, "success", resp.GetMsg())
-		data := resp.GetData()
+		data := resp.Data
 		require.NotNil(t, data)
-		assert.Equal(t, "task-1", data.GetId())
-		assert.Equal(t, backuppb.RestoreTaskStateCode_EXECUTING, data.GetStateCode())
-		assert.Equal(t, "coll1 fail", data.GetErrorMessage())
-		assert.Equal(t, int32(42), data.GetProgress())
+		assert.Equal(t, "task-1", data.Id)
+		assert.Equal(t, backuppb.RestoreTaskStateCode_EXECUTING, data.StateCode)
+		assert.Equal(t, "coll1 fail", data.ErrorMessage)
+		assert.Equal(t, int32(42), data.Progress)
 		assert.Equal(t, 1, stub.calls)
 		assert.Equal(t, "task-1", stub.id)
 	})

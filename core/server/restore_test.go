@@ -14,9 +14,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/zilliztech/milvus-backup/app"
+	"github.com/zilliztech/milvus-backup/core/apiv1"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
@@ -27,52 +27,52 @@ import (
 
 func TestValidateRestoreRequest(t *testing.T) {
 	t.Run("Valid", func(t *testing.T) {
-		request := &backuppb.RestoreBackupRequest{BackupName: "backup"}
+		request := &apiv1.RestoreBackupRequest{BackupName: "backup"}
 		assert.NoError(t, validateRestoreRequest(request))
 	})
 
 	t.Run("BackupNameEmpty", func(t *testing.T) {
-		request := &backuppb.RestoreBackupRequest{}
+		request := &apiv1.RestoreBackupRequest{}
 		assert.Error(t, validateRestoreRequest(request))
 	})
 
 	t.Run("DropAndNotCreate", func(t *testing.T) {
-		request := &backuppb.RestoreBackupRequest{BackupName: "backup", DropExistCollection: true, SkipCreateCollection: true}
+		request := &apiv1.RestoreBackupRequest{BackupName: "backup", DropExistCollection: true, SkipCreateCollection: true}
 		assert.Error(t, validateRestoreRequest(request))
 	})
 
 	t.Run("RestorePlanAndCollectionSuffix", func(t *testing.T) {
-		request := &backuppb.RestoreBackupRequest{BackupName: "backup", RestorePlan: &backuppb.RestorePlan{}, CollectionSuffix: "_suffix"}
+		request := &apiv1.RestoreBackupRequest{BackupName: "backup", RestorePlan: &apiv1.RestorePlan{}, CollectionSuffix: "_suffix"}
 		assert.Error(t, validateRestoreRequest(request))
 	})
 
 	t.Run("RestorePlanAndCollectionRenames", func(t *testing.T) {
-		request := &backuppb.RestoreBackupRequest{BackupName: "backup", RestorePlan: &backuppb.RestorePlan{}, CollectionRenames: map[string]string{"db1.coll1": "db2.coll2"}}
+		request := &apiv1.RestoreBackupRequest{BackupName: "backup", RestorePlan: &apiv1.RestorePlan{}, CollectionRenames: map[string]string{"db1.coll1": "db2.coll2"}}
 		assert.Error(t, validateRestoreRequest(request))
 	})
 
 	t.Run("InvalidCollectionSuffix", func(t *testing.T) {
-		request := &backuppb.RestoreBackupRequest{BackupName: "backup", CollectionSuffix: "invalid-suffix"}
+		request := &apiv1.RestoreBackupRequest{BackupName: "backup", CollectionSuffix: "invalid-suffix"}
 		assert.Error(t, validateRestoreRequest(request))
 	})
 
 	t.Run("InvalidStrategy", func(t *testing.T) {
-		request := &backuppb.RestoreBackupRequest{BackupName: "backup", Strategy: "invalid"}
+		request := &apiv1.RestoreBackupRequest{BackupName: "backup", Strategy: "invalid"}
 		assert.Error(t, validateRestoreRequest(request))
 	})
 
 	t.Run("ValidStrategy", func(t *testing.T) {
-		request := &backuppb.RestoreBackupRequest{BackupName: "backup", Strategy: "merged_seg"}
+		request := &apiv1.RestoreBackupRequest{BackupName: "backup", Strategy: "merged_seg"}
 		assert.NoError(t, validateRestoreRequest(request))
 	})
 
 	t.Run("ValidPeers", func(t *testing.T) {
-		request := &backuppb.RestoreBackupRequest{BackupName: "backup", Peers: []string{"http://10.0.0.2:19530", "http://10.0.0.3:19530"}}
+		request := &apiv1.RestoreBackupRequest{BackupName: "backup", Peers: []string{"http://10.0.0.2:19530", "http://10.0.0.3:19530"}}
 		assert.NoError(t, validateRestoreRequest(request))
 	})
 
 	t.Run("InvalidPeer", func(t *testing.T) {
-		request := &backuppb.RestoreBackupRequest{BackupName: "backup", Peers: []string{"10.0.0.2:19530"}}
+		request := &apiv1.RestoreBackupRequest{BackupName: "backup", Peers: []string{"10.0.0.2:19530"}}
 		assert.Error(t, validateRestoreRequest(request))
 	})
 }
@@ -82,10 +82,10 @@ func TestValidateRestoreRequest(t *testing.T) {
 // arrives inside the request's JSON body in production, so the tests set it
 // the same way, which also keeps the deprecated field's name out of this code.
 func TestToRestoreStrategy(t *testing.T) {
-	newRequest := func(t *testing.T, body string) *backuppb.RestoreBackupRequest {
+	newRequest := func(t *testing.T, body string) *apiv1.RestoreBackupRequest {
 		t.Helper()
 
-		var request backuppb.RestoreBackupRequest
+		var request apiv1.RestoreBackupRequest
 		require.NoError(t, json.Unmarshal([]byte(body), &request))
 		return &request
 	}
@@ -138,11 +138,11 @@ func TestNewTableMapperFromCollRename(t *testing.T) {
 }
 
 func TestNewCollMapperFromPlan(t *testing.T) {
-	plan := &backuppb.RestorePlan{Mapping: []*backuppb.RestoreMapping{
+	plan := &apiv1.RestorePlan{Mapping: []*apiv1.RestoreMapping{
 		{
 			Source: "db1",
 			Target: "db2",
-			Colls: []*backuppb.RestoreCollectionMapping{
+			Colls: []*apiv1.RestoreCollectionMapping{
 				{Source: "coll1", Target: "coll2"},
 				{Source: "coll2", Target: "coll3"},
 			},
@@ -150,7 +150,7 @@ func TestNewCollMapperFromPlan(t *testing.T) {
 		{
 			Source: "db1",
 			Target: "db3",
-			Colls: []*backuppb.RestoreCollectionMapping{
+			Colls: []*apiv1.RestoreCollectionMapping{
 				{Source: "coll1", Target: "coll2"},
 				{Source: "coll2", Target: "coll3"},
 			},
@@ -175,12 +175,12 @@ func TestNewCollMapperFromPlan(t *testing.T) {
 
 func TestNewCollMapper(t *testing.T) {
 	t.Run("FromPlan", func(t *testing.T) {
-		request := &backuppb.RestoreBackupRequest{RestorePlan: &backuppb.RestorePlan{
-			Mapping: []*backuppb.RestoreMapping{
+		request := &apiv1.RestoreBackupRequest{RestorePlan: &apiv1.RestorePlan{
+			Mapping: []*apiv1.RestoreMapping{
 				{
 					Source: "db1",
 					Target: "db2",
-					Colls: []*backuppb.RestoreCollectionMapping{
+					Colls: []*apiv1.RestoreCollectionMapping{
 						{Source: "coll1", Target: "coll2"},
 					},
 				},
@@ -193,7 +193,7 @@ func TestNewCollMapper(t *testing.T) {
 	})
 
 	t.Run("FromCollRename", func(t *testing.T) {
-		request := &backuppb.RestoreBackupRequest{CollectionRenames: map[string]string{
+		request := &apiv1.RestoreBackupRequest{CollectionRenames: map[string]string{
 			"db1.coll1": "db2.coll2",
 		}}
 		mapper, err := newCollMapper(request)
@@ -203,7 +203,7 @@ func TestNewCollMapper(t *testing.T) {
 	})
 
 	t.Run("FromCollSuffix", func(t *testing.T) {
-		request := &backuppb.RestoreBackupRequest{CollectionSuffix: "_suffix"}
+		request := &apiv1.RestoreBackupRequest{CollectionSuffix: "_suffix"}
 		mapper, err := newCollMapper(request)
 		assert.NoError(t, err)
 		target := mapper.TargetNames(collref.New("db1", "coll1"))
@@ -213,7 +213,7 @@ func TestNewCollMapper(t *testing.T) {
 
 func TestNewDBMapper(t *testing.T) {
 	t.Run("FromPlan", func(t *testing.T) {
-		plan := &backuppb.RestorePlan{Mapping: []*backuppb.RestoreMapping{{
+		plan := &apiv1.RestorePlan{Mapping: []*apiv1.RestoreMapping{{
 			Source: "db1",
 			Target: "db2",
 		}, {
@@ -232,7 +232,7 @@ func TestNewDBMapper(t *testing.T) {
 	})
 
 	t.Run("Empty", func(t *testing.T) {
-		plan := &backuppb.RestorePlan{}
+		plan := &apiv1.RestorePlan{}
 		mapper, err := newDBMapper(plan)
 		assert.NoError(t, err)
 		assert.Empty(t, mapper)
@@ -260,12 +260,11 @@ func TestNewFilterFromCollectionNames(t *testing.T) {
 
 func TestNewBackupFilter(t *testing.T) {
 	t.Run("FromDBCollections", func(t *testing.T) {
-		request := &backuppb.RestoreBackupRequest{
+		request := &apiv1.RestoreBackupRequest{
 			// CollectionNames will be ignored
 			CollectionNames: []string{"coll1", "db2.coll2"},
-			DbCollections: &structpb.Value{
-				Kind: &structpb.Value_StringValue{StringValue: `{"db1":[],"db2":["coll1","coll2"], "": ["coll3"]}`},
-			}}
+			DbCollections:   apiv1.JSON(`{"db1":[],"db2":["coll1","coll2"], "": ["coll3"]}`),
+		}
 		f, err := newBackupFilter(request)
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]filter.CollFilter{
@@ -276,7 +275,7 @@ func TestNewBackupFilter(t *testing.T) {
 	})
 
 	t.Run("FromCollectionNames", func(t *testing.T) {
-		request := &backuppb.RestoreBackupRequest{CollectionNames: []string{"coll1", "db2.coll2"}}
+		request := &apiv1.RestoreBackupRequest{CollectionNames: []string{"coll1", "db2.coll2"}}
 		f, err := newBackupFilter(request)
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]filter.CollFilter{
@@ -286,7 +285,7 @@ func TestNewBackupFilter(t *testing.T) {
 	})
 
 	t.Run("Empty", func(t *testing.T) {
-		request := &backuppb.RestoreBackupRequest{}
+		request := &apiv1.RestoreBackupRequest{}
 		f, err := newBackupFilter(request)
 		assert.NoError(t, err)
 		assert.Empty(t, f.DBCollFilter)
@@ -294,7 +293,7 @@ func TestNewBackupFilter(t *testing.T) {
 }
 
 func TestNewFilterFromPlan(t *testing.T) {
-	plan := &backuppb.RestorePlan{Filter: map[string]*backuppb.CollFilter{
+	plan := &apiv1.RestorePlan{Filter: map[string]apiv1.CollFilter{
 		"db1": {Colls: []string{"coll1", "coll2"}},
 		"db2": {Colls: []string{"coll3", "coll4"}},
 	}}
@@ -308,13 +307,11 @@ func TestNewFilterFromPlan(t *testing.T) {
 
 func TestNewTaskFilter(t *testing.T) {
 	t.Run("FromPlan", func(t *testing.T) {
-		request := &backuppb.RestoreBackupRequest{
+		request := &apiv1.RestoreBackupRequest{
 			// dbCollectionsAfterRename will be ignored
-			DbCollectionsAfterRename: &structpb.Value{
-				Kind: &structpb.Value_StringValue{StringValue: `{"db1":[],"db2":["coll1","coll2"], "": ["coll3"]}`},
-			},
-			RestorePlan: &backuppb.RestorePlan{
-				Filter: map[string]*backuppb.CollFilter{
+			DbCollectionsAfterRename: apiv1.JSON(`{"db1":[],"db2":["coll1","coll2"], "": ["coll3"]}`),
+			RestorePlan: &apiv1.RestorePlan{
+				Filter: map[string]apiv1.CollFilter{
 					"db1": {Colls: []string{"coll1", "coll2"}},
 					"db2": {Colls: []string{"coll3", "coll4"}},
 				},
@@ -328,9 +325,8 @@ func TestNewTaskFilter(t *testing.T) {
 	})
 
 	t.Run("FromDBCollections", func(t *testing.T) {
-		request := &backuppb.RestoreBackupRequest{DbCollectionsAfterRename: &structpb.Value{
-			Kind: &structpb.Value_StringValue{StringValue: `{"db1":[],"db2":["coll1","coll2"], "": ["coll3"]}`},
-		}}
+		request := &apiv1.RestoreBackupRequest{DbCollectionsAfterRename: apiv1.JSON(
+			`{"db1":[],"db2":["coll1","coll2"], "": ["coll3"]}`)}
 		f, err := newTaskFilter(request)
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]filter.CollFilter{
@@ -341,7 +337,7 @@ func TestNewTaskFilter(t *testing.T) {
 	})
 
 	t.Run("Empty", func(t *testing.T) {
-		request := &backuppb.RestoreBackupRequest{}
+		request := &apiv1.RestoreBackupRequest{}
 		f, err := newTaskFilter(request)
 		assert.NoError(t, err)
 		assert.Empty(t, f.DBCollFilter)
@@ -355,11 +351,11 @@ func TestNewCollOverridesFromPlan(t *testing.T) {
 	})
 
 	t.Run("NoOverrides", func(t *testing.T) {
-		plan := &backuppb.RestorePlan{
-			Mapping: []*backuppb.RestoreMapping{{
+		plan := &apiv1.RestorePlan{
+			Mapping: []*apiv1.RestoreMapping{{
 				Source: "db1",
 				Target: "db2",
-				Colls: []*backuppb.RestoreCollectionMapping{
+				Colls: []*apiv1.RestoreCollectionMapping{
 					{Source: "coll1", Target: "coll2"},
 				},
 			}},
@@ -369,15 +365,15 @@ func TestNewCollOverridesFromPlan(t *testing.T) {
 	})
 
 	t.Run("WithShardNumOverride", func(t *testing.T) {
-		plan := &backuppb.RestorePlan{
-			Mapping: []*backuppb.RestoreMapping{{
+		plan := &apiv1.RestorePlan{
+			Mapping: []*apiv1.RestoreMapping{{
 				Source: "db1",
 				Target: "db2",
-				Colls: []*backuppb.RestoreCollectionMapping{
+				Colls: []*apiv1.RestoreCollectionMapping{
 					{
 						Source:   "coll1",
 						Target:   "coll2",
-						Override: &backuppb.RestoreCollectionOverride{ShardNum: 4},
+						Override: &apiv1.RestoreCollectionOverride{ShardNum: 4},
 					},
 				},
 			}},
@@ -389,15 +385,15 @@ func TestNewCollOverridesFromPlan(t *testing.T) {
 	})
 
 	t.Run("WithDescriptionOverride", func(t *testing.T) {
-		plan := &backuppb.RestorePlan{
-			Mapping: []*backuppb.RestoreMapping{{
+		plan := &apiv1.RestorePlan{
+			Mapping: []*apiv1.RestoreMapping{{
 				Source: "db1",
 				Target: "db2",
-				Colls: []*backuppb.RestoreCollectionMapping{
+				Colls: []*apiv1.RestoreCollectionMapping{
 					{
 						Source:   "coll1",
 						Target:   "coll2",
-						Override: &backuppb.RestoreCollectionOverride{Description: "new desc"},
+						Override: &apiv1.RestoreCollectionOverride{Description: "new desc"},
 					},
 				},
 			}},
@@ -408,15 +404,15 @@ func TestNewCollOverridesFromPlan(t *testing.T) {
 	})
 
 	t.Run("WithBothOverrides", func(t *testing.T) {
-		plan := &backuppb.RestorePlan{
-			Mapping: []*backuppb.RestoreMapping{{
+		plan := &apiv1.RestorePlan{
+			Mapping: []*apiv1.RestoreMapping{{
 				Source: "db1",
 				Target: "db2",
-				Colls: []*backuppb.RestoreCollectionMapping{
+				Colls: []*apiv1.RestoreCollectionMapping{
 					{
 						Source:   "coll1",
 						Target:   "coll2",
-						Override: &backuppb.RestoreCollectionOverride{ShardNum: 2, Description: "desc"},
+						Override: &apiv1.RestoreCollectionOverride{ShardNum: 2, Description: "desc"},
 					},
 					{
 						Source: "coll3",
@@ -434,15 +430,15 @@ func TestNewCollOverridesFromPlan(t *testing.T) {
 	})
 
 	t.Run("EmptyOverrideSkipped", func(t *testing.T) {
-		plan := &backuppb.RestorePlan{
-			Mapping: []*backuppb.RestoreMapping{{
+		plan := &apiv1.RestorePlan{
+			Mapping: []*apiv1.RestoreMapping{{
 				Source: "db1",
 				Target: "db2",
-				Colls: []*backuppb.RestoreCollectionMapping{
+				Colls: []*apiv1.RestoreCollectionMapping{
 					{
 						Source:   "coll1",
 						Target:   "coll2",
-						Override: &backuppb.RestoreCollectionOverride{},
+						Override: &apiv1.RestoreCollectionOverride{},
 					},
 				},
 			}},
@@ -511,7 +507,7 @@ func newStubRestoreView(t *testing.T) *jobstate.MockRestoreTaskView {
 	return view
 }
 
-func restoreBackup(t *testing.T, s *Server, body string, requestID string) backuppb.RestoreBackupResponse {
+func restoreBackup(t *testing.T, s *Server, body string, requestID string) apiv1.RestoreBackupResponse {
 	t.Helper()
 
 	w := httptest.NewRecorder()
@@ -521,7 +517,7 @@ func restoreBackup(t *testing.T, s *Server, body string, requestID string) backu
 	}
 	s.engine.ServeHTTP(w, req)
 
-	var resp backuppb.RestoreBackupResponse
+	var resp apiv1.RestoreBackupResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 	return resp
@@ -538,7 +534,7 @@ func TestHandleRestoreBackup(t *testing.T) {
 
 		assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
 		assert.Equal(t, "success", resp.GetMsg())
-		assert.Equal(t, "task-1", resp.GetData().GetId())
+		assert.Equal(t, "task-1", resp.Data.Id)
 		assert.Equal(t, 1, stub.calls)
 		assert.Equal(t, int32(1), job.calls.Load())
 		// The view is read through the get-restore usecase, for the same
@@ -716,7 +712,7 @@ func TestHandleRestoreBackup(t *testing.T) {
 
 		assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
 		assert.Equal(t, "restore backup is executing asynchronously", resp.GetMsg())
-		assert.Equal(t, "task-1", resp.GetData().GetId())
+		assert.Equal(t, "task-1", resp.Data.Id)
 		assert.Eventually(t, func() bool { return job.calls.Load() == 1 }, time.Second, 10*time.Millisecond)
 	})
 }
@@ -748,7 +744,7 @@ func withRestoreSecondary(stub *stubRestoreSecondaryFactory) Option {
 	}
 }
 
-func restoreSecondary(t *testing.T, s *Server, body string, requestID string) backuppb.RestoreBackupResponse {
+func restoreSecondary(t *testing.T, s *Server, body string, requestID string) apiv1.RestoreBackupResponse {
 	t.Helper()
 
 	w := httptest.NewRecorder()
@@ -758,7 +754,7 @@ func restoreSecondary(t *testing.T, s *Server, body string, requestID string) ba
 	}
 	s.engine.ServeHTTP(w, req)
 
-	var resp backuppb.RestoreBackupResponse
+	var resp apiv1.RestoreBackupResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 	return resp
@@ -775,7 +771,7 @@ func TestHandleRestoreSecondary(t *testing.T) {
 
 		assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
 		assert.Equal(t, "success", resp.GetMsg())
-		assert.Equal(t, "task-1", resp.GetData().GetId())
+		assert.Equal(t, "task-1", resp.Data.Id)
 		assert.Equal(t, 1, stub.calls)
 		assert.Equal(t, int32(1), job.calls.Load())
 		// The request id doubles as the restore task id.

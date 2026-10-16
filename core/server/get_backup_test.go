@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zilliztech/milvus-backup/app"
+	"github.com/zilliztech/milvus-backup/core/apiv1"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
@@ -96,7 +97,7 @@ func newLoadedTestServer(t *testing.T, opts ...Option) *Server {
 	return s
 }
 
-func getBackup(t *testing.T, s *Server, query, requestID string) backuppb.BackupInfoResponse {
+func getBackup(t *testing.T, s *Server, query, requestID string) apiv1.BackupInfoResponse {
 	t.Helper()
 
 	w := httptest.NewRecorder()
@@ -106,7 +107,7 @@ func getBackup(t *testing.T, s *Server, query, requestID string) backuppb.Backup
 	}
 	s.engine.ServeHTTP(w, req)
 
-	var resp backuppb.BackupInfoResponse
+	var resp apiv1.BackupInfoResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 	return resp
@@ -124,13 +125,13 @@ func TestHandleGetBackup(t *testing.T) {
 
 		assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
 		assert.Equal(t, "success", resp.GetMsg())
-		brief := resp.GetData()
+		brief := resp.Data
 		require.NotNil(t, brief)
-		assert.Equal(t, "backup1", brief.GetName())
-		assert.Equal(t, "task-1", brief.GetId())
-		assert.Equal(t, int64(100), brief.GetSize())
-		assert.Equal(t, int64(42), brief.GetMetaSize())
-		assert.Equal(t, backuppb.BackupTaskStateCode_BACKUP_SUCCESS, brief.GetStateCode())
+		assert.Equal(t, "backup1", brief.Name)
+		assert.Equal(t, "task-1", brief.Id)
+		assert.Equal(t, int64(100), brief.Size)
+		assert.Equal(t, int64(42), brief.MetaSize)
+		assert.Equal(t, backuppb.BackupTaskStateCode_BACKUP_SUCCESS, brief.StateCode)
 
 		assert.Equal(t, "backup1", backup.name)
 		assert.Equal(t, app.GetBackupTaskRequest{Name: "backup1"}, taskStub.req)
@@ -162,10 +163,10 @@ func TestHandleGetBackup(t *testing.T) {
 		resp := getBackup(t, s, "?backup_name=backup1", "")
 
 		assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
-		brief := resp.GetData()
+		brief := resp.Data
 		require.NotNil(t, brief)
-		assert.Equal(t, "backup1", brief.GetName())
-		assert.Equal(t, int64(100), brief.GetSize())
+		assert.Equal(t, "backup1", brief.Name)
+		assert.Equal(t, int64(100), brief.Size)
 		// No path parameter: the config travels to the usecase untouched.
 		assert.Same(t, s.params, backup.params)
 	})
@@ -179,11 +180,11 @@ func TestHandleGetBackup(t *testing.T) {
 		resp := getBackup(t, s, "?backup_name=backup1", "")
 
 		assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
-		brief := resp.GetData()
+		brief := resp.Data
 		require.NotNil(t, brief)
-		assert.Equal(t, "backup1", brief.GetName())
-		assert.Equal(t, backuppb.BackupTaskStateCode_BACKUP_EXECUTING, brief.GetStateCode())
-		assert.Zero(t, brief.GetSize())
+		assert.Equal(t, "backup1", brief.Name)
+		assert.Equal(t, backuppb.BackupTaskStateCode_BACKUP_EXECUTING, brief.StateCode)
+		assert.Zero(t, brief.Size)
 	})
 
 	t.Run("SuccessJobWithoutArtifactFails", func(t *testing.T) {

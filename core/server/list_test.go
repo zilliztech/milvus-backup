@@ -13,6 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/zilliztech/milvus-backup/app"
+	"github.com/zilliztech/milvus-backup/core/apiv1"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 )
@@ -58,14 +59,14 @@ func silenceEngine(s *Server) {
 	s.engine.Logger = slog.New(slog.DiscardHandler)
 }
 
-func getList(t *testing.T, s *Server, query string) backuppb.ListBackupsResponse {
+func getList(t *testing.T, s *Server, query string) apiv1.ListBackupsResponse {
 	t.Helper()
 
 	w := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/list"+query, nil)
 	s.engine.ServeHTTP(w, req)
 
-	var resp backuppb.ListBackupsResponse
+	var resp apiv1.ListBackupsResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 	return resp
@@ -82,11 +83,11 @@ func TestHandleListBackups(t *testing.T) {
 		resp := getList(t, s, "")
 
 		assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
-		expected := []*backuppb.BackupSummary{
+		expected := []*apiv1.BackupSummary{
 			{Id: "a", Name: "backup1", Size: 100, MilvusVersion: "1.0.0"},
 			{Id: "b", Name: "backup2", Size: 200, MilvusVersion: "2.0.0"},
 		}
-		assert.Equal(t, expected, resp.GetData())
+		assert.Equal(t, expected, resp.Data)
 		assert.Equal(t, 1, stub.calls)
 	})
 
@@ -98,7 +99,7 @@ func TestHandleListBackups(t *testing.T) {
 		req.Header.Set("request_id", "rid-1")
 		s.engine.ServeHTTP(w, req)
 
-		var resp backuppb.ListBackupsResponse
+		var resp apiv1.ListBackupsResponse
 		require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 		assert.Equal(t, "rid-1", resp.GetRequestId())
 	})

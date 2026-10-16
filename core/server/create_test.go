@@ -12,9 +12,9 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/types/known/structpb"
 
 	"github.com/zilliztech/milvus-backup/app"
+	"github.com/zilliztech/milvus-backup/core/apiv1"
 	"github.com/zilliztech/milvus-backup/core/backup"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
@@ -68,7 +68,7 @@ func withCreateBackup(stub *stubCreateFactory) Option {
 	}
 }
 
-func postBackup(t *testing.T, s *Server, body, requestID string) backuppb.BackupInfoResponse {
+func postBackup(t *testing.T, s *Server, body, requestID string) apiv1.BackupInfoResponse {
 	t.Helper()
 
 	w := httptest.NewRecorder()
@@ -79,7 +79,7 @@ func postBackup(t *testing.T, s *Server, body, requestID string) backuppb.Backup
 	}
 	s.engine.ServeHTTP(w, req)
 
-	var resp backuppb.BackupInfoResponse
+	var resp apiv1.BackupInfoResponse
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
 
 	return resp
@@ -110,7 +110,7 @@ func TestHandleCreateBackup(t *testing.T) {
 		resp := postBackup(t, s, `{"backup_name":"backup1"}`, "rid-1")
 
 		assert.Empty(t, resp.GetRequestId())
-		assert.Nil(t, resp.GetData())
+		assert.Nil(t, resp.Data)
 	})
 
 	t.Run("GeneratesRequestIdWhenMissing", func(t *testing.T) {
@@ -233,7 +233,7 @@ func TestToCreateBackupRequest(t *testing.T) {
 	t.Run("MapsOptionFields", func(t *testing.T) {
 		s := newListTestServer(t, withCreateBackup(&stubCreateFactory{}))
 
-		req, err := s.toCreateBackupRequest(&backuppb.CreateBackupRequest{
+		req, err := s.toCreateBackupRequest(&apiv1.CreateBackupRequest{
 			BackupName:     "backup1",
 			RequestId:      "rid-1",
 			Rbac:           true,
@@ -255,10 +255,20 @@ func TestToCreateBackupRequest(t *testing.T) {
 		assert.Equal(t, "http://manage", req.Option.ManageAddr)
 	})
 
+	// The deprecated fields are wire vocabulary, so these requests arrive as
+	// JSON bodies, the way production sends them.
+	newWireRequest := func(t *testing.T, body string) *apiv1.CreateBackupRequest {
+		t.Helper()
+
+		var request apiv1.CreateBackupRequest
+		require.NoError(t, json.Unmarshal([]byte(body), &request))
+		return &request
+	}
+
 	t.Run("DeprecatedForceMapsToSkipFlush", func(t *testing.T) {
 		s := newListTestServer(t, withCreateBackup(&stubCreateFactory{}))
 
-		req, err := s.toCreateBackupRequest(&backuppb.CreateBackupRequest{Force: true})
+		req, err := s.toCreateBackupRequest(newWireRequest(t, `{"force":true}`))
 
 		require.NoError(t, err)
 		assert.Equal(t, backup.StrategySkipFlush, req.Option.Strategy)
@@ -267,7 +277,7 @@ func TestToCreateBackupRequest(t *testing.T) {
 	t.Run("DeprecatedMetaOnlyMapsToMetaOnly", func(t *testing.T) {
 		s := newListTestServer(t, withCreateBackup(&stubCreateFactory{}))
 
-		req, err := s.toCreateBackupRequest(&backuppb.CreateBackupRequest{MetaOnly: true})
+		req, err := s.toCreateBackupRequest(newWireRequest(t, `{"meta_only":true}`))
 
 		require.NoError(t, err)
 		assert.Equal(t, backup.StrategyMetaOnly, req.Option.Strategy)
@@ -276,7 +286,7 @@ func TestToCreateBackupRequest(t *testing.T) {
 	t.Run("ExplicitStrategyWinsOverDeprecatedFields", func(t *testing.T) {
 		s := newListTestServer(t, withCreateBackup(&stubCreateFactory{}))
 
-		req, err := s.toCreateBackupRequest(&backuppb.CreateBackupRequest{Strategy: "meta_only", Force: true})
+		req, err := s.toCreateBackupRequest(newWireRequest(t, `{"strategy":"meta_only","force":true}`))
 
 		require.NoError(t, err)
 		assert.Equal(t, backup.StrategyMetaOnly, req.Option.Strategy)
@@ -285,7 +295,7 @@ func TestToCreateBackupRequest(t *testing.T) {
 
 func TestCreateBackupToFilter(t *testing.T) {
 	t.Run("FromFilter", func(t *testing.T) {
-		f, err := toFilter(&backuppb.CreateBackupRequest{Filter: map[string]*backuppb.CollFilter{
+		f, err := toFilter(&apiv1.CreateBackupRequest{Filter: map[string]apiv1.CollFilter{
 			"db1": {Colls: []string{"*"}},
 			"db2": {Colls: []string{"coll1", "coll2"}},
 		}})
@@ -297,9 +307,11 @@ func TestCreateBackupToFilter(t *testing.T) {
 	})
 
 	t.Run("FromDBCollections", func(t *testing.T) {
-		f, err := toFilter(&backuppb.CreateBackupRequest{DbCollections: &structpb.Value{
-			Kind: &structpb.Value_StringValue{StringValue: `{"db1":["coll1","coll2"],"db2":["coll3","coll4"],"db3":[]}`},
-		}})
+		// The object wire shape, bound the way the endpoint binds it.
+		var request apiv1.CreateBackupRequest
+		require.NoError(t, json.Unmarshal(
+			[]byte(`{"db_collections":{"db1":["coll1","coll2"],"db2":["coll3","coll4"],"db3":[]}}`), &request))
+		f, err := toFilter(&request)
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]filter.CollFilter{
 			"db1": {CollName: map[string]struct{}{"coll1": {}, "coll2": {}}},
@@ -309,7 +321,9 @@ func TestCreateBackupToFilter(t *testing.T) {
 	})
 
 	t.Run("FromCollectionNames", func(t *testing.T) {
-		f, err := toFilter(&backuppb.CreateBackupRequest{CollectionNames: []string{"coll1", "db2.coll2"}})
+		var request apiv1.CreateBackupRequest
+		require.NoError(t, json.Unmarshal([]byte(`{"collection_names":["coll1","db2.coll2"]}`), &request))
+		f, err := toFilter(&request)
 		assert.NoError(t, err)
 		assert.Equal(t, map[string]filter.CollFilter{
 			"default": {CollName: map[string]struct{}{"coll1": {}}},
@@ -318,7 +332,7 @@ func TestCreateBackupToFilter(t *testing.T) {
 	})
 
 	t.Run("EmptyRequestFiltersNothing", func(t *testing.T) {
-		f, err := toFilter(&backuppb.CreateBackupRequest{})
+		f, err := toFilter(&apiv1.CreateBackupRequest{})
 		assert.NoError(t, err)
 		assert.Nil(t, f.DBCollFilter)
 	})
@@ -343,4 +357,30 @@ func TestCreateBackupCollectionNamesToFilter(t *testing.T) {
 		"db1":     {CollName: map[string]struct{}{"coll2": {}}},
 		"db2":     {CollName: map[string]struct{}{"coll3": {}}},
 	}, f.DBCollFilter)
+}
+
+// The deprecated db_collections field has always accepted two wire shapes: a
+// JSON string holding the JSON object, or the object itself. Both must keep
+// building the same filter through the real bind path.
+func TestCreateBackupDbCollectionsWireForms(t *testing.T) {
+	for name, body := range map[string]string{
+		"StringForm": `{"backup_name":"backup1","db_collections":"{\"db1\":[],\"db2\":[\"c1\"]}"}`,
+		"ObjectForm": `{"backup_name":"backup1","db_collections":{"db1":[],"db2":["c1"]}}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			stub := &stubCreateFactory{}
+			s := newListTestServer(t, withCreateBackup(stub))
+
+			w := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/create", strings.NewReader(body))
+			req.Header.Set("Content-Type", "application/json")
+			s.engine.ServeHTTP(w, req)
+			require.Equal(t, http.StatusOK, w.Code, w.Body.String())
+
+			assert.Equal(t, map[string]filter.CollFilter{
+				"db1": {AllowAll: true},
+				"db2": {CollName: map[string]struct{}{"c1": {}}},
+			}, stub.req.Option.Filter.DBCollFilter)
+		})
+	}
 }
