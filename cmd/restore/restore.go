@@ -95,7 +95,7 @@ func (o *options) addFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVarP(&o.dropExistIndex, "drop_exist_index", "", false, "if true, drop existing index of target collection before create")
 	cmd.Flags().BoolVarP(&o.skipCreateCollection, "skip_create_collection", "", false, "if true, will skip collection, use when collection exist, restore index or data")
 	cmd.Flags().BoolVarP(&o.rbac, "rbac", "", false, "whether restore RBAC meta")
-	cmd.Flags().StringVarP(&o.strategy, "strategy", "", "", "restore strategy, one of [per_seg, merged_seg, restore_snap, import_snap], if not set will auto select")
+	cmd.Flags().StringVarP(&o.strategy, "strategy", "", "", "restore strategy, one of [auto, per_seg, merged_seg, restore_snap, import_snap], if not set will auto select")
 	cmd.Flags().StringSliceVarP(&o.peers, "peers", "", nil, "REST endpoints of the peer clusters that replicate this target, comma-separated or repeated, e.g. --peers http://10.0.0.2:19530,http://10.0.0.3:19530. Every import job is then committed two-phase: held uncommitted until its mirror shows up on every peer, then committed on this cluster; the commit replicates and commits the mirrors")
 
 	// The deprecated bool of the pre-strategy days keeps working so an old

@@ -215,8 +215,9 @@ type RestoreBackupRequest struct {
 	RestorePlan *RestorePlan `json:"restorePlan,omitempty"`
 	// Map of old ezk to new ezk, replacing encryption keys during restore.
 	EzkMapping map[string]string `json:"ezkMapping,omitempty"`
-	// Strategy for restore, one of [per_seg, merged_seg, restore_snap,
-	// import_snap]; auto selects when unset.
+	// Strategy for restore, one of [auto, per_seg, merged_seg, restore_snap,
+	// import_snap]; auto, like leaving the field unset, lets the restore pick
+	// the plan against the backup's format.
 	Strategy string `json:"strategy,omitempty"`
 	// REST endpoints of the peer clusters that replicate this target, e.g.
 	// http://10.0.0.2:19530; when set, every import job is committed

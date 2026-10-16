@@ -13,6 +13,12 @@ func TestParseStrategy(t *testing.T) {
 		assert.Equal(t, StrategyAuto, s)
 	})
 
+	t.Run("AutoLiteral", func(t *testing.T) {
+		s, err := ParseStrategy("auto")
+		assert.NoError(t, err)
+		assert.Equal(t, StrategyAuto, s)
+	})
+
 	t.Run("SnapshotIsAFormat", func(t *testing.T) {
 		_, err := ParseStrategy("snapshot")
 		assert.Error(t, err)

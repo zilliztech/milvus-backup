@@ -12,7 +12,7 @@ In internal testing, we've observed up to 10x performance improvements when usin
 
 ## How to use
 
-Merged restore is selected with the `strategy` option, whose value names both the backup format it applies to and the path it takes: `per_seg` (binlog, one import job per segment), `merged_seg` (binlog, segments merged into fewer jobs), `restore_snap` (snapshot, Milvus's own restore api), and `import_snap` (snapshot, v2 import job — not implemented yet). When no strategy is set, the restore picks one on its own: a binlog backup takes the merged path when the target Milvus supports the v2 import api, and falls back to the per-segment path otherwise; a snapshot backup takes the restore api.
+Merged restore is selected with the `strategy` option, whose value names both the backup format it applies to and the path it takes: `per_seg` (binlog, one import job per segment), `merged_seg` (binlog, segments merged into fewer jobs), `restore_snap` (snapshot, Milvus's own restore api), and `import_snap` (snapshot, v2 import job — not implemented yet). `auto`, like leaving the strategy unset, lets the restore pick one on its own: a binlog backup takes the merged path when the target Milvus supports the v2 import api, and falls back to the per-segment path otherwise; a snapshot backup takes the restore api.
 
 ### command line
 
