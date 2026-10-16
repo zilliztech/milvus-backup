@@ -303,24 +303,34 @@ func newBulkFlushPlan(collRefs []collref.Name, args collTaskArgs, newData dataTa
 }
 
 func (bf *bulkFlushPlan) Execute(ctx context.Context) error {
-	// The flush seals the boundary the data tasks enumerate segments from, so
-	// it must settle first; the DDL tasks have no such constraint and run
-	// alongside it.
-	wave1 := append(newDDLTasks(bf.collRefs, bf.args), &flushAllTask{collRefs: bf.collRefs, args: bf.args, logger: bf.logger})
-	if err := concurrentExecCollTask(ctx, bf.args.Throttling.DDLSem, wave1); err != nil {
-		return fmt.Errorf("backup: execute ddl and flush %w", err)
-	}
-
-	dmlTasks := newDMLTasks(bf.collRefs, bf.args, bf.newData)
-	if err := concurrentExecCollTask(ctx, bf.args.Throttling.DMLSem, dmlTasks); err != nil {
-		return fmt.Errorf("backup: execute dml tasks %w", err)
+	// The dependency graph has exactly one edge: the data tasks enumerate
+	// segments from the boundary the flush seals, so they chain after it. The
+	// DDL tasks read nothing the flush produces and produce nothing the data
+	// tasks read — the meta builder's pendings absorb their reordering — so
+	// they race both, bounded by their own semaphore. The flush itself is one
+	// cluster-wide RPC that moves no bytes; it takes no semaphore.
+	g, subCtx := errgroup.WithContext(ctx)
+	g.Go(func() error {
+		return concurrentExecCollTask(subCtx, bf.args.Throttling.DDLSem, newDDLTasks(bf.collRefs, bf.args))
+	})
+	g.Go(func() error {
+		flush := &flushAllTask{collRefs: bf.collRefs, args: bf.args, logger: bf.logger}
+		if err := flush.Execute(subCtx); err != nil {
+			return err
+		}
+		return concurrentExecCollTask(subCtx, bf.args.Throttling.DMLSem, newDMLTasks(bf.collRefs, bf.args, bf.newData))
+	})
+	if err := g.Wait(); err != nil {
+		return fmt.Errorf("backup: execute collection tasks %w", err)
 	}
 
 	return nil
 }
 
-// flushAllTask adapts the cluster-wide flush to a tasklet so it shares the
-// DDL semaphore with the schema tasks of its wave.
+// flushAllTask is the bulk plan's cluster-wide flush, the head of the data
+// branch: it marks every collection flushing, then seals the whole cluster in
+// one call. The data tasks chained after it mint their handles on these same
+// halves and flip them past flushing as they start.
 type flushAllTask struct {
 	collRefs []collref.Name
 
@@ -329,9 +339,6 @@ type flushAllTask struct {
 }
 
 func (t *flushAllTask) Execute(ctx context.Context) error {
-	// FlushAll seals the whole cluster in one call, so every collection is
-	// flushing at once. The wave-2 data tasks mint their handles on these
-	// same halves and flip them past flushing as they start.
 	for _, collRef := range t.collRefs {
 		t.args.tracker.NewCollDMLTracker(collRef).SetFlushing()
 	}
