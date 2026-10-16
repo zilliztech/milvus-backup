@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/samber/lo"
 	"github.com/vbauerster/mpb/v8"
 	"github.com/vbauerster/mpb/v8/decor"
 
@@ -69,7 +70,7 @@ func newDeleteBar(p *mpb.Progress, name string, latest *atomic.Value) *mpb.Bar {
 		return latest.Load().(jobstate.DeleteStatus)
 	}
 
-	return p.MustAdd(0,
+	return lo.Must(p.Add(0,
 		deleteFiller(snapshot),
 		mpb.PrependDecorators(
 			decor.Name(name+"  "),
@@ -81,7 +82,7 @@ func newDeleteBar(p *mpb.Progress, name string, latest *atomic.Value) *mpb.Bar {
 			decor.Any(func(decor.Statistics) string { return deleteETA(snapshot()) }),
 		),
 		mpb.BarRemoveOnComplete(),
-	)
+	))
 }
 
 // deleteFiller draws no bar graphic while the lister is still running: the

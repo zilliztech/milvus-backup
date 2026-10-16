@@ -20,10 +20,19 @@ func NewMockMilvusServiceClient(t interface {
 	mock.TestingT
 	Cleanup(func())
 }) *MockMilvusServiceClient {
+	if helper, ok := t.(interface{ Helper() }); ok {
+		helper.Helper()
+	}
+
 	mock := &MockMilvusServiceClient{}
 	mock.Mock.Test(t)
 
-	t.Cleanup(func() { mock.AssertExpectations(t) })
+	t.Cleanup(func() {
+		if helper, ok := t.(interface{ Helper() }); ok {
+			helper.Helper()
+		}
+		mock.AssertExpectations(t)
+	})
 
 	return mock
 }
@@ -1531,6 +1540,89 @@ func (_c *MockMilvusServiceClient_CalcDistance_Call) Return(calcDistanceResults 
 }
 
 func (_c *MockMilvusServiceClient_CalcDistance_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.CalcDistanceRequest, opts ...grpc.CallOption) (*milvuspb.CalcDistanceResults, error)) *MockMilvusServiceClient_CalcDistance_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// CancelRequests provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) CancelRequests(ctx context.Context, in *milvuspb.CancelRequestsRequest, opts ...grpc.CallOption) (*milvuspb.CancelRequestsResponse, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for CancelRequests")
+	}
+
+	var r0 *milvuspb.CancelRequestsResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.CancelRequestsRequest, ...grpc.CallOption) (*milvuspb.CancelRequestsResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.CancelRequestsRequest, ...grpc.CallOption) *milvuspb.CancelRequestsResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.CancelRequestsResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.CancelRequestsRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_CancelRequests_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'CancelRequests'
+type MockMilvusServiceClient_CancelRequests_Call struct {
+	*mock.Call
+}
+
+// CancelRequests is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.CancelRequestsRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) CancelRequests(ctx any, in any, opts ...any) *MockMilvusServiceClient_CancelRequests_Call {
+	return &MockMilvusServiceClient_CancelRequests_Call{Call: _e.mock.On("CancelRequests",
+		append([]any{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_CancelRequests_Call) Run(run func(ctx context.Context, in *milvuspb.CancelRequestsRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_CancelRequests_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.CancelRequestsRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.CancelRequestsRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_CancelRequests_Call) Return(cancelRequestsResponse *milvuspb.CancelRequestsResponse, err error) *MockMilvusServiceClient_CancelRequests_Call {
+	_c.Call.Return(cancelRequestsResponse, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_CancelRequests_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.CancelRequestsRequest, opts ...grpc.CallOption) (*milvuspb.CancelRequestsResponse, error)) *MockMilvusServiceClient_CancelRequests_Call {
 	_c.Call.Return(run)
 	return _c
 }
@@ -9078,6 +9170,89 @@ func (_c *MockMilvusServiceClient_ListRowPolicies_Call) Return(listRowPoliciesRe
 }
 
 func (_c *MockMilvusServiceClient_ListRowPolicies_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.ListRowPoliciesRequest, opts ...grpc.CallOption) (*milvuspb.ListRowPoliciesResponse, error)) *MockMilvusServiceClient_ListRowPolicies_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ListRunningRequests provides a mock function for the type MockMilvusServiceClient
+func (_mock *MockMilvusServiceClient) ListRunningRequests(ctx context.Context, in *milvuspb.ListRunningRequestsRequest, opts ...grpc.CallOption) (*milvuspb.ListRunningRequestsResponse, error) {
+	var tmpRet mock.Arguments
+	if len(opts) > 0 {
+		tmpRet = _mock.Called(ctx, in, opts)
+	} else {
+		tmpRet = _mock.Called(ctx, in)
+	}
+	ret := tmpRet
+
+	if len(ret) == 0 {
+		panic("no return value specified for ListRunningRequests")
+	}
+
+	var r0 *milvuspb.ListRunningRequestsResponse
+	var r1 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.ListRunningRequestsRequest, ...grpc.CallOption) (*milvuspb.ListRunningRequestsResponse, error)); ok {
+		return returnFunc(ctx, in, opts...)
+	}
+	if returnFunc, ok := ret.Get(0).(func(context.Context, *milvuspb.ListRunningRequestsRequest, ...grpc.CallOption) *milvuspb.ListRunningRequestsResponse); ok {
+		r0 = returnFunc(ctx, in, opts...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*milvuspb.ListRunningRequestsResponse)
+		}
+	}
+	if returnFunc, ok := ret.Get(1).(func(context.Context, *milvuspb.ListRunningRequestsRequest, ...grpc.CallOption) error); ok {
+		r1 = returnFunc(ctx, in, opts...)
+	} else {
+		r1 = ret.Error(1)
+	}
+	return r0, r1
+}
+
+// MockMilvusServiceClient_ListRunningRequests_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ListRunningRequests'
+type MockMilvusServiceClient_ListRunningRequests_Call struct {
+	*mock.Call
+}
+
+// ListRunningRequests is a helper method to define mock.On call
+//   - ctx context.Context
+//   - in *milvuspb.ListRunningRequestsRequest
+//   - opts ...grpc.CallOption
+func (_e *MockMilvusServiceClient_Expecter) ListRunningRequests(ctx any, in any, opts ...any) *MockMilvusServiceClient_ListRunningRequests_Call {
+	return &MockMilvusServiceClient_ListRunningRequests_Call{Call: _e.mock.On("ListRunningRequests",
+		append([]any{ctx, in}, opts...)...)}
+}
+
+func (_c *MockMilvusServiceClient_ListRunningRequests_Call) Run(run func(ctx context.Context, in *milvuspb.ListRunningRequestsRequest, opts ...grpc.CallOption)) *MockMilvusServiceClient_ListRunningRequests_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 *milvuspb.ListRunningRequestsRequest
+		if args[1] != nil {
+			arg1 = args[1].(*milvuspb.ListRunningRequestsRequest)
+		}
+		var arg2 []grpc.CallOption
+		var variadicArgs []grpc.CallOption
+		if len(args) > 2 {
+			variadicArgs = args[2].([]grpc.CallOption)
+		}
+		arg2 = variadicArgs
+		run(
+			arg0,
+			arg1,
+			arg2...,
+		)
+	})
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_ListRunningRequests_Call) Return(listRunningRequestsResponse *milvuspb.ListRunningRequestsResponse, err error) *MockMilvusServiceClient_ListRunningRequests_Call {
+	_c.Call.Return(listRunningRequestsResponse, err)
+	return _c
+}
+
+func (_c *MockMilvusServiceClient_ListRunningRequests_Call) RunAndReturn(run func(ctx context.Context, in *milvuspb.ListRunningRequestsRequest, opts ...grpc.CallOption) (*milvuspb.ListRunningRequestsResponse, error)) *MockMilvusServiceClient_ListRunningRequests_Call {
 	_c.Call.Return(run)
 	return _c
 }

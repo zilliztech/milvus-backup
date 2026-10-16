@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/samber/lo"
 	"github.com/vbauerster/mpb/v8"
 	"github.com/vbauerster/mpb/v8/decor"
 
@@ -138,7 +139,7 @@ func newBackupTotalBar(p *mpb.Progress, latest *atomic.Value) *mpb.Bar {
 		return latest.Load().(jobstate.BackupStatus)
 	}
 
-	return p.MustAdd(0,
+	return lo.Must(p.Add(0,
 		backupTotalFiller(snapshot),
 		mpb.PrependDecorators(
 			decor.Any(func(decor.Statistics) string { return backupStage(snapshot()) }),
@@ -147,7 +148,7 @@ func newBackupTotalBar(p *mpb.Progress, latest *atomic.Value) *mpb.Bar {
 			decor.Any(func(decor.Statistics) string { return backupTotalCounters(snapshot()) }, decor.WC{C: decor.DextraSpace}),
 		),
 		mpb.BarRemoveOnComplete(),
-	)
+	))
 }
 
 // backupTotalFiller draws no bar graphic before the collection phase: there
@@ -258,7 +259,7 @@ func newBackupCollBar(p *mpb.Progress, name collref.Name, latest *atomic.Value) 
 		return latest.Load().(jobstate.BackupStatus)
 	}
 
-	return p.MustAdd(0,
+	return lo.Must(p.Add(0,
 		backupCollFiller(name, snapshot),
 		mpb.PrependDecorators(
 			decor.Name(fitName(name.String(), 20)),
@@ -272,7 +273,7 @@ func newBackupCollBar(p *mpb.Progress, name collref.Name, latest *atomic.Value) 
 			}, decor.WC{C: decor.DextraSpace}),
 		),
 		mpb.BarRemoveOnComplete(),
-	)
+	))
 }
 
 // backupCollFiller draws no bar graphic until the collection's copy phase
