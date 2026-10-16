@@ -57,32 +57,7 @@ func PrepareBundleStaged(
 	}
 	snapshot.Layout = layout
 
-	manifestDir, metadataPath := GetSnapshotPaths(rootPath, collectionID, snapshotID)
-	manifestPaths := make([]string, 0, len(snapshot.Segments))
-	var manifestBytes int64
-	for _, segment := range snapshot.Segments {
-		manifestPath := GetSegmentManifestPath(manifestDir, segment.GetSegmentId())
-		manifestData, err := MarshalSegmentManifest(segment)
-		if err != nil {
-			return "", 0, merr.WrapErrServiceInternalErr(err, "failed to marshal segment manifest")
-		}
-		if err := store.Write(ctx, manifestPath, manifestData); err != nil {
-			return "", 0, merr.Wrap(err, "failed to write segment manifest object")
-		}
-		manifestBytes += int64(len(manifestData))
-		manifestPaths = append(manifestPaths, manifestPath)
-	}
-
-	storagev2Manifests := make([]*datapb.StorageV2SegmentManifest, 0)
-	for _, segment := range snapshot.Segments {
-		if segment.GetManifestPath() != "" {
-			storagev2Manifests = append(storagev2Manifests, &datapb.StorageV2SegmentManifest{
-				SegmentId: segment.GetSegmentId(),
-				Manifest:  segment.GetManifestPath(),
-			})
-		}
-	}
-	metadataData, err := marshalSnapshotMetadata(snapshot, manifestPaths, storagev2Manifests)
+	metadataPath, metadataData, manifestBytes, err := writeBundleManifests(ctx, store, snapshot, rootPath)
 	if err != nil {
 		return "", 0, err
 	}
@@ -106,6 +81,105 @@ func PrepareBundleStaged(
 	}
 
 	return metadataPath, manifestBytes + int64(len(metadataData)), nil
+}
+
+// SaveBundle writes every segment manifest and publishes the metadata JSON
+// directly. This is how the server persists a referenced snapshot; an export
+// bundle goes through PrepareBundleStaged and CommitBundleMetadata instead, so
+// a half-written export is never visible under the published path.
+func SaveBundle(
+	ctx context.Context,
+	store Store,
+	snapshot *SnapshotData,
+	rootPath string,
+	layout datapb.SnapshotLayout,
+) (string, int64, error) {
+	if snapshot == nil {
+		return "", 0, merr.WrapErrServiceInternalMsg("snapshot cannot be nil")
+	}
+	if snapshot.SnapshotInfo == nil {
+		return "", 0, merr.WrapErrDataIntegrityMsg("snapshot info cannot be nil")
+	}
+	collectionID := snapshot.SnapshotInfo.GetCollectionId()
+	if collectionID <= 0 {
+		return "", 0, merr.WrapErrServiceInternalMsg("invalid collection ID: %d", collectionID)
+	}
+	if snapshot.Collection == nil {
+		return "", 0, merr.WrapErrDataIntegrityMsg("collection description cannot be nil")
+	}
+	snapshotID := snapshot.SnapshotInfo.GetId()
+	if snapshotID <= 0 {
+		return "", 0, merr.WrapErrServiceInternalMsg("invalid snapshot ID: %d", snapshotID)
+	}
+	if layout == datapb.SnapshotLayout_SnapshotLayoutUnknown {
+		layout = datapb.SnapshotLayout_SnapshotLayoutReferenced
+	}
+	snapshot.Layout = layout
+
+	metadataPath, metadataData, manifestBytes, err := writeBundleManifests(ctx, store, snapshot, rootPath)
+	if err != nil {
+		return "", 0, err
+	}
+
+	// Metadata is the publication marker for a complete snapshot. Recheck the
+	// caller context after manifest writes so a canceled operation does not
+	// publish a partially prepared snapshot.
+	if err := ctx.Err(); err != nil {
+		return "", 0, err
+	}
+	if err := store.Write(ctx, metadataPath, metadataData); err != nil {
+		return "", 0, merr.Wrap(err, "failed to write snapshot metadata object")
+	}
+	return metadataPath, manifestBytes + int64(len(metadataData)), nil
+}
+
+// writeBundleManifests writes every segment manifest to its final location and
+// marshals the metadata JSON.
+func writeBundleManifests(
+	ctx context.Context,
+	store Store,
+	snapshot *SnapshotData,
+	rootPath string,
+) (string, []byte, int64, error) {
+	// The bundle carries the source snapshot's format version, capped at what
+	// this build supports: a version this build cannot write fails the version
+	// gate on read long before the copy starts.
+	formatVersion := snapshot.FormatVersion
+	if formatVersion <= 0 || formatVersion > SnapshotFormatVersion {
+		formatVersion = SnapshotFormatVersion
+	}
+	snapshot.FormatVersion = formatVersion
+
+	manifestDir, metadataPath := GetSnapshotPaths(rootPath, snapshot.SnapshotInfo.GetCollectionId(), snapshot.SnapshotInfo.GetId())
+	manifestPaths := make([]string, 0, len(snapshot.Segments))
+	var manifestBytes int64
+	for _, segment := range snapshot.Segments {
+		manifestPath := GetSegmentManifestPath(manifestDir, segment.GetSegmentId())
+		manifestData, err := MarshalSegmentManifest(segment, formatVersion)
+		if err != nil {
+			return "", nil, 0, merr.WrapErrServiceInternalErr(err, "failed to marshal segment manifest")
+		}
+		if err := store.Write(ctx, manifestPath, manifestData); err != nil {
+			return "", nil, 0, merr.Wrap(err, "failed to write segment manifest object")
+		}
+		manifestBytes += int64(len(manifestData))
+		manifestPaths = append(manifestPaths, manifestPath)
+	}
+
+	storagev2Manifests := make([]*datapb.StorageV2SegmentManifest, 0)
+	for _, segment := range snapshot.Segments {
+		if segment.GetManifestPath() != "" {
+			storagev2Manifests = append(storagev2Manifests, &datapb.StorageV2SegmentManifest{
+				SegmentId: segment.GetSegmentId(),
+				Manifest:  segment.GetManifestPath(),
+			})
+		}
+	}
+	metadataData, err := marshalSnapshotMetadata(snapshot, manifestPaths, storagev2Manifests)
+	if err != nil {
+		return "", nil, 0, err
+	}
+	return metadataPath, metadataData, manifestBytes, nil
 }
 
 // CommitBundleMetadata publishes the staged metadata idempotently. A write
@@ -163,14 +237,9 @@ func CommitBundleMetadata(
 	return 0, merr.Wrap(readErr, "failed to verify published snapshot metadata object")
 }
 
-// RemoveStagedMetadata deletes the staging object left after a publish.
-func RemoveStagedMetadata(ctx context.Context, store Store, rootPath string) error {
-	return store.Remove(ctx, GetSnapshotStagingMetadataPath(rootPath))
-}
-
 func marshalSnapshotMetadata(snapshot *SnapshotData, manifestPaths []string, storagev2Manifests []*datapb.StorageV2SegmentManifest) ([]byte, error) {
 	metadata := &datapb.SnapshotMetadata{
-		FormatVersion:         int32(SnapshotFormatVersion),
+		FormatVersion:         int32(snapshot.FormatVersion),
 		SnapshotInfo:          snapshot.SnapshotInfo,
 		Collection:            snapshot.Collection,
 		Indexes:               snapshot.Indexes,
@@ -268,6 +337,7 @@ func LoadSnapshotData(ctx context.Context, store Store, metadataPath string, inc
 		Collection:    metadata.GetCollection(),
 		Segments:      segments,
 		Indexes:       metadata.GetIndexes(),
+		FormatVersion: int(metadata.GetFormatVersion()),
 		MetadataPath:  metadataPath,
 		ManifestPaths: append([]string(nil), metadata.GetManifestList()...),
 		SegmentIDs:    metadata.GetSegmentIds(),

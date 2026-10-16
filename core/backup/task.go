@@ -261,15 +261,14 @@ func (t *Task) privateExecute(ctx context.Context) error {
 	}
 
 	if t.resolvedFormat == meta.FormatSnapshot {
-		target, err := newSnapshotTarget(ctx, t.milvusStorage.Config(), t.backupStorage.Config(), t.backupDir)
+		target, err := newSnapshotTarget(t.milvusStorage.Config(), t.backupStorage.Config(), t.backupDir)
 		if err != nil {
 			return fmt.Errorf("backup: build snapshot target: %w", err)
 		}
 		t.snapshotTarget = target
 		t.logger.Info("use snapshot format",
-			zap.String("target_path", target.Path),
-			zap.Bool("external_spec_set", target.ExternalSpec != ""),
-			zap.Bool("source_sas_set", target.SourceSASSet))
+			zap.String("bundle_dir", target.dir),
+			zap.String("bundle_uri", target.rootURI))
 	}
 
 	dbNames, collections, err := t.listDBAndNames(ctx)
@@ -337,11 +336,6 @@ func (t *Task) resolveFormat() (string, error) {
 			return meta.FormatBinlog, nil
 		}
 		return "", fmt.Errorf("backup: the snapshot format needs a milvus 3.0 or newer server")
-	}
-
-	if !storage.SnapshotSameService(t.milvusStorage.Config(), t.backupStorage.Config()) {
-		return "", fmt.Errorf("backup: the snapshot format copies data inside one storage service, but the milvus storage (%s) and the backup storage (%s) are not the same one; put the backup storage on the same service as the milvus storage",
-			storage.SnapshotStoreDescription(t.milvusStorage.Config()), storage.SnapshotStoreDescription(t.backupStorage.Config()))
 	}
 
 	return meta.FormatSnapshot, nil

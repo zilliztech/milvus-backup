@@ -92,7 +92,7 @@ func TestPrepareAndCommitBundleRoundTrip(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, written, republished)
 
-	require.NoError(t, RemoveStagedMetadata(ctx, store, "bundle"))
+	require.NoError(t, store.Remove(ctx, GetSnapshotStagingMetadataPath("bundle")))
 	assert.NotContains(t, store.objects, GetSnapshotStagingMetadataPath("bundle"))
 	// The published metadata outlives its staging object.
 	assert.Contains(t, store.objects, metadataPath)
@@ -153,4 +153,34 @@ func TestLoadSnapshotDataMissingMetadata(t *testing.T) {
 	_, err := LoadSnapshotData(context.Background(), newMapStore(), "bundle/snapshots/457/metadata/123.json", false)
 	require.Error(t, err)
 	assert.ErrorIs(t, err, ErrObjectNotFound)
+}
+
+// A bundle never upgrades the source snapshot's format version: a v4 source
+// writes a v4 bundle, which both v4 and v5 servers restore.
+func TestPrepareBundleKeepsSourceFormatVersion(t *testing.T) {
+	ctx := context.Background()
+	store := newMapStore()
+	source := rewriteTestSnapshot(t)
+	source.FormatVersion = 4
+	exported, err := RewriteSnapshotWithMapping(
+		source,
+		rewriteTestMappings(),
+		"bundle",
+		"bundle/snapshots/457/metadata/123.json",
+	)
+	require.NoError(t, err)
+
+	metadataPath, _, err := PrepareBundleStaged(
+		ctx, store, exported, "bundle",
+		datapb.SnapshotLayout_SnapshotLayoutSelfContained,
+		GetSnapshotStagingMetadataPath("bundle"),
+	)
+	require.NoError(t, err)
+	_, err = CommitBundleMetadata(ctx, store, GetSnapshotStagingMetadataPath("bundle"), metadataPath, "bundle/snapshots/457/metadata/123.json")
+	require.NoError(t, err)
+
+	snapshot, err := LoadSnapshotData(ctx, store, metadataPath, true)
+	require.NoError(t, err)
+	assert.Equal(t, 4, snapshot.FormatVersion)
+	require.Len(t, snapshot.Segments, 2)
 }

@@ -3,9 +3,13 @@ package backup
 import (
 	"context"
 	"fmt"
-	"time"
+	"path"
+	"strings"
 
-	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
+	"github.com/google/uuid"
+	"golang.org/x/sync/semaphore"
+
+	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
@@ -13,16 +17,9 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
-)
-
-const (
-	// The poll interval is also the granularity of the progress the job
-	// store reports: the counters only move when the export job is polled.
-	// At 3s a small collection's export completes inside one poll and its
-	// copying state never lives long enough for a progress renderer to
-	// sample it; 1s keeps even small exports visible for a frame or two,
-	// and the state query is a cheap unary RPC.
-	_snapshotPollInterval = 1 * time.Second
+	"github.com/zilliztech/milvus-backup/internal/snapshotbundle"
+	"github.com/zilliztech/milvus-backup/internal/storage"
+	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 )
 
 type collSnapshotTask struct {
@@ -32,39 +29,60 @@ type collSnapshotTask struct {
 	snapshotName string
 	target       snapshotTarget
 
-	pollInterval time.Duration
+	milvusStorage  storage.Client
+	milvusRootPath string
+	backupStore    bundleStore
 
-	grpc milvus.Grpc
+	// exportNamespace isolates everything this task writes under the bundle
+	// root, one random namespace per collection export — the same shape the
+	// server's export flow gives each job.
+	exportNamespace string
+	exportDir       string
+	exportRootURI   string
+
+	streaming bool
+	copySem   *semaphore.Weighted
 
 	tracker     *jobstate.BackupCollDMLTracker
 	metaBuilder *metaBuilder
+
+	grpc milvus.Grpc
 
 	logger *zap.Logger
 }
 
 func newCollSnapshotTask(collRef collref.Name, snapshotName string, target snapshotTarget, args collTaskArgs) *collSnapshotTask {
-	logger := log.L().With(
-		zap.String("task_id", args.TaskID),
-		zap.String("coll", collRef.String()),
-		zap.String("snapshot_name", snapshotName))
+	return newCollSnapshotTaskWithNamespace(collRef, snapshotName, target, args, uuid.NewString())
+}
 
+func newCollSnapshotTaskWithNamespace(collRef collref.Name, snapshotName string, target snapshotTarget, args collTaskArgs, namespace string) *collSnapshotTask {
 	return &collSnapshotTask{
-		taskID:       args.TaskID,
-		collRef:      collRef,
-		snapshotName: snapshotName,
-		target:       target,
-		pollInterval: _snapshotPollInterval,
-		grpc:         args.Grpc,
-		tracker:      args.tracker.NewCollDMLTracker(collRef),
-		metaBuilder:  args.MetaBuilder,
-		logger:       logger,
+		taskID:          args.TaskID,
+		collRef:         collRef,
+		snapshotName:    snapshotName,
+		target:          target,
+		milvusStorage:   args.MilvusStorage,
+		milvusRootPath:  args.MilvusRootPath,
+		backupStore:     bundleStore{cli: args.BackupStorage},
+		exportNamespace: namespace,
+		exportDir:       snapshotbundle.NamespaceBundleRoot(target.dir, namespace),
+		exportRootURI:   target.rootURI + "/" + snapshotbundle.ExportNamespaceSubPath + "/" + namespace,
+		streaming:       args.Streaming,
+		copySem:         args.Throttling.CopySem,
+		tracker:         args.tracker.NewCollDMLTracker(collRef),
+		metaBuilder:     args.MetaBuilder,
+		grpc:            args.Grpc,
+		logger: log.L().With(
+			zap.String("task_id", args.TaskID),
+			zap.String("coll", collRef.String()),
+			zap.String("snapshot_name", snapshotName)),
 	}
 }
 
-// Execute freezes the collection into a snapshot, has Milvus copy it into the backup
-// directory, and records where the bundle landed. No bytes move through this process.
-// It is the job's data-half task for the snapshot format, so the data-half
-// state settles here.
+// Execute freezes the collection into a snapshot, copies its files into the
+// backup directory through backup's own storage clients, and records where the
+// bundle landed. It is the job's data-half task for the snapshot format, so
+// the data-half state settles here.
 func (st *collSnapshotTask) Execute(ctx context.Context) error {
 	st.logger.Info("start to backup collection with snapshot")
 	st.tracker.SetPrepare()
@@ -89,94 +107,92 @@ func (st *collSnapshotTask) execute(ctx context.Context) error {
 	st.logger.Info("snapshot created")
 	defer st.dropSnapshot(ctx)
 
-	// The snapshot's own boundary, read before the export so a failed export still
-	// leaves nothing behind to interpret.
+	// The snapshot's own boundary, read before the copy so a failed copy still
+	// leaves nothing behind to interpret. S3Location points at the snapshot's
+	// metadata JSON in the milvus bucket, which names every file the snapshot
+	// references.
 	desc, err := st.grpc.DescribeSnapshot(ctx, st.collRef.DBName(), st.collRef.CollName(), st.snapshotName)
 	if err != nil {
 		return fmt.Errorf("backup: describe snapshot: %w", err)
 	}
 
-	jobID, err := st.grpc.ExportSnapshot(ctx, milvus.ExportSnapshotInput{
-		DB:             st.collRef.DBName(),
-		CollectionName: st.collRef.CollName(),
-		SnapshotName:   st.snapshotName,
-		TargetPath:     st.target.Path,
-		ExternalSpec:   st.target.ExternalSpec,
-	})
+	snapshot, err := snapshotbundle.LoadSnapshotData(
+		ctx,
+		bundleStore{cli: st.milvusStorage},
+		desc.GetS3Location(),
+		true,
+	)
 	if err != nil {
-		return fmt.Errorf("backup: export snapshot: %w", err)
+		return fmt.Errorf("backup: load snapshot data: %w", err)
 	}
-	st.logger.Info("snapshot export job accepted", zap.Int64("job_id", jobID))
+	st.logger.Info("snapshot data loaded",
+		zap.Int("segment_count", len(snapshot.Segments)),
+		zap.Int("index_count", len(snapshot.Indexes)))
 
-	info, err := st.waitExport(ctx, jobID)
+	files, err := st.enumerateBundleFiles(ctx, snapshot)
 	if err != nil {
-		return err
+		return fmt.Errorf("backup: enumerate snapshot files: %w", err)
+	}
+	st.tracker.SetExecuting(files.totalBytes)
+
+	opt := storage.CopyObjectsOpt{
+		Src:       st.milvusStorage,
+		Dest:      st.backupStore.cli,
+		Attrs:     files.attrs,
+		Streaming: st.streaming,
+		Sem:       st.copySem,
+		TraceFn:   st.tracker.AddCopiedSize,
+	}
+	if err := storage.NewCopyObjectsTask(opt).Execute(ctx); err != nil {
+		return fmt.Errorf("backup: copy snapshot files: %w", err)
 	}
 
-	metadataPath, err := st.target.metadataPath(info.GetSnapshotMetadataUri())
+	_, metadataPath, err := st.writeBundle(ctx, snapshot, files)
 	if err != nil {
 		return err
 	}
 
 	snapshotBackup := &backuppb.SnapshotBackupInfo{
 		MetadataPath: metadataPath,
-		TotalFiles:   info.GetTotalFiles(),
-		TotalBytes:   info.GetTotalBytes(),
+		TotalFiles:   int64(len(files.attrs)),
+		TotalBytes:   files.totalBytes,
 	}
 	st.metaBuilder.addSnapshot(st.collRef, snapshotBackup, uint64(desc.GetCreateTs()))
 
 	st.logger.Info("backup collection with snapshot done",
 		zap.String("metadata_path", metadataPath),
-		zap.Int64("total_files", info.GetTotalFiles()),
-		zap.Int64("total_bytes", info.GetTotalBytes()))
+		zap.Int64("total_files", snapshotBackup.GetTotalFiles()),
+		zap.Int64("total_bytes", snapshotBackup.GetTotalBytes()))
 
 	return nil
 }
 
-// waitExport polls the export job until it is done. A job that failed comes back
-// through the info rather than as an error from the state query, so both are checked.
-func (st *collSnapshotTask) waitExport(ctx context.Context, jobID int64) (*milvuspb.ExportSnapshotInfo, error) {
-	ticker := time.NewTicker(st.pollInterval)
-	defer ticker.Stop()
+// writeBundle rewrites the snapshot's path references into the bundle and
+// publishes the bundle metadata. The bundle root URI is the identity restore
+// resolves the recorded path against, so it is embedded as the bundle's own
+// location.
+func (st *collSnapshotTask) writeBundle(ctx context.Context, snapshot *snapshotbundle.SnapshotData, files *bundleFileSet) (string, string, error) {
+	_, metadataKey := snapshotbundle.GetSnapshotPaths(
+		st.exportDir, snapshot.SnapshotInfo.GetCollectionId(), snapshot.SnapshotInfo.GetId())
+	metadataPath := path.Join(mpath.BundleDirName, strings.TrimPrefix(metadataKey, st.target.dir+"/"))
+	metadataURI := st.exportRootURI + "/" + strings.TrimPrefix(metadataPath, mpath.BundleDirName+"/")
 
-	// The job reports files, not bytes: total_bytes is only known once the bundle is
-	// published. Progress is a ratio either way, and nothing outside the job state store
-	// reads these as a size.
-	var reportedTotal, copied int64
-	for {
-		info, err := st.grpc.GetExportSnapshotState(ctx, jobID)
-		if err != nil {
-			return nil, fmt.Errorf("backup: get export snapshot state: %w", err)
-		}
-
-		if total := info.GetTotalFiles(); total != reportedTotal {
-			reportedTotal = total
-			st.tracker.SetExecuting(total)
-		}
-		if done := info.GetCopiedFiles(); done > copied {
-			st.tracker.AddCopiedSize(done - copied)
-			copied = done
-		}
-
-		switch info.GetState() {
-		case milvuspb.ExportSnapshotState_ExportSnapshotCompleted:
-			return info, nil
-		case milvuspb.ExportSnapshotState_ExportSnapshotFailed:
-			return nil, fmt.Errorf("backup: snapshot export job %d failed: %s", jobID, info.GetReason())
-		}
-
-		st.logger.Debug("waiting for snapshot export",
-			zap.Int64("job_id", jobID),
-			zap.Int32("progress", info.GetProgress()),
-			zap.Int64("copied_files", info.GetCopiedFiles()),
-			zap.Int64("total_files", info.GetTotalFiles()))
-
-		select {
-		case <-ctx.Done():
-			return nil, fmt.Errorf("backup: wait snapshot export job %d: %w", jobID, ctx.Err())
-		case <-ticker.C:
-		}
+	exported, err := snapshotbundle.RewriteSnapshotWithMapping(snapshot, files.mapping, st.exportDir, metadataURI)
+	if err != nil {
+		return "", "", fmt.Errorf("backup: rewrite snapshot paths: %w", err)
 	}
+
+	_, _, err = snapshotbundle.SaveBundle(
+		ctx,
+		st.backupStore,
+		exported,
+		st.exportDir,
+		datapb.SnapshotLayout_SnapshotLayoutSelfContained,
+	)
+	if err != nil {
+		return "", "", fmt.Errorf("backup: write bundle metadata: %w", err)
+	}
+	return metadataURI, metadataPath, nil
 }
 
 // dropSnapshot releases the snapshot once the bundle is written. The bundle is
@@ -188,8 +204,7 @@ func (st *collSnapshotTask) dropSnapshot(ctx context.Context) {
 	ctx = context.WithoutCancel(ctx)
 
 	if err := st.grpc.DropSnapshot(ctx, st.collRef.DBName(), st.collRef.CollName(), st.snapshotName); err != nil {
-		// Nothing else can clean this up: the export job that pinned it is gone, and the
-		// backup meta does not record snapshot names.
+		// Nothing else can clean this up: the backup meta does not record snapshot names.
 		st.logger.Error("could not drop snapshot, it holds its collection's files against gc until removed by hand",
 			zap.String("snapshot_name", st.snapshotName),
 			zap.Error(err))

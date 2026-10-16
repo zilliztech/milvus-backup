@@ -252,14 +252,13 @@ func TestTask_resolveFormat(t *testing.T) {
 			want:   meta.FormatBinlog,
 		},
 		{
-			// The snapshot copy runs inside one storage service, and the binlog
-			// format does not cover a 3.0 server — so a cross-service target
-			// leaves auto with no working format, and it says so.
-			name:      "AutoRefusedAcrossServices",
+			// Backup streams the snapshot files through its own clients, so a
+			// backup storage on another service is no longer a reason to refuse.
+			name:      "AutoPicksSnapshotAcrossServices",
 			format:    FormatAuto,
 			snapshot:  true,
 			backupCfg: crossService,
-			wantError: "are not the same one",
+			want:      meta.FormatSnapshot,
 		},
 		{
 			name:      "SnapshotPinnedOn3_0",
@@ -274,11 +273,11 @@ func TestTask_resolveFormat(t *testing.T) {
 			wantError: "snapshot format needs a milvus 3.0 or newer server",
 		},
 		{
-			name:      "SnapshotRefusedAcrossServices",
+			name:      "SnapshotAcceptedAcrossServices",
 			format:    FormatSnapshot,
 			snapshot:  true,
 			backupCfg: crossService,
-			wantError: "put the backup storage on the same service",
+			want:      meta.FormatSnapshot,
 		},
 		{
 			name:     "BinlogAcceptedOn3_0",
@@ -300,23 +299,14 @@ func TestTask_resolveFormat(t *testing.T) {
 				mockGrpc.EXPECT().HasFeature(milvus.Snapshot).Return(tt.snapshot).Once()
 			}
 
-			backupCfg := tt.backupCfg
-			if backupCfg.Provider == "" {
-				backupCfg = sameService
-			}
-			milvusStorage := storage.NewMockClient(t)
-			backupStorage := storage.NewMockClient(t)
-			if tt.format != FormatBinlog && tt.snapshot {
-				milvusStorage.EXPECT().Config().Return(sameService)
-				backupStorage.EXPECT().Config().Return(backupCfg)
-			}
-
+			// resolveFormat itself no longer reads the storage configs: the
+			// snapshot target is built later, when the backup executes.
 			task := &Task{
 				logger:        zap.NewNop(),
 				grpc:          mockGrpc,
 				option:        Option{Format: tt.format},
-				milvusStorage: milvusStorage,
-				backupStorage: backupStorage,
+				milvusStorage: storage.NewMockClient(t),
+				backupStorage: storage.NewMockClient(t),
 			}
 
 			got, err := task.resolveFormat()

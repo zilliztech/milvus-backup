@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/hamba/avro/v2"
+	"github.com/iskorotkov/avro/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/protobuf/encoding/protojson"
@@ -85,7 +85,7 @@ func TestSegmentManifestRoundTrip(t *testing.T) {
 	restored := ManifestEntryToSegment(entry)
 	assert.True(t, proto.Equal(segment, restored))
 
-	data, err := MarshalSegmentManifest(segment)
+	data, err := MarshalSegmentManifest(segment, SnapshotFormatVersion)
 	require.NoError(t, err)
 	parsed, err := ParseSegmentManifest(data, SnapshotFormatVersion)
 	require.NoError(t, err)
@@ -124,7 +124,7 @@ func TestParseSegmentManifestEverySchemaVersion(t *testing.T) {
 			fieldBinlog(101, 1, "insert-log"),
 		},
 	}
-	for _, version := range []int{0, 1, 2, 3, 4} {
+	for _, version := range []int{0, 1, 2, 3, 4, 5} {
 		t.Run(fmt.Sprintf("Version%d", version), func(t *testing.T) {
 			schema, err := ManifestSchemaByVersion(version)
 			require.NoError(t, err)
