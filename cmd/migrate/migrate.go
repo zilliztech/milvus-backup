@@ -9,7 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
-	"github.com/vbauerster/mpb/v8/cwriter"
+	"golang.org/x/term"
 
 	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/cmd/root"
@@ -56,7 +56,7 @@ func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
 	job.Run(context.Background())
 
 	var status jobstate.MigrateStatus
-	if cwriter.IsTerminal(int(os.Stdout.Fd())) {
+	if term.IsTerminal(int(os.Stdout.Fd())) {
 		p := progressbar.Progress()
 		status, err = renderMigrate(ctx, p, store, taskID, 200*time.Millisecond)
 		// mpb buffers intercepted writes and the bar's last frame until the

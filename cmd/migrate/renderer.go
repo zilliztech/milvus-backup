@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/samber/lo"
 	"github.com/vbauerster/mpb/v8"
 	"github.com/vbauerster/mpb/v8/decor"
 
@@ -70,7 +71,7 @@ func newMigrateBar(p *mpb.Progress, latest *atomic.Value) *mpb.Bar {
 		return latest.Load().(jobstate.MigrateStatus)
 	}
 
-	return p.MustAdd(0,
+	return lo.Must(p.Add(0,
 		mpb.BarStyle().Rbound("|").Build(),
 		mpb.PrependDecorators(
 			decor.Name("Uploading  "),
@@ -79,7 +80,7 @@ func newMigrateBar(p *mpb.Progress, latest *atomic.Value) *mpb.Bar {
 			decor.Any(func(decor.Statistics) string { return migrateStatsLine(snapshot()) }, decor.WC{C: decor.DextraSpace}),
 		),
 		mpb.BarRemoveOnComplete(),
-	)
+	))
 }
 
 // migrateStatsLine renders the right side of the bar as one decorator:
