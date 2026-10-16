@@ -175,7 +175,7 @@ func (st *collSnapshotTask) writeBundle(ctx context.Context, snapshot *snapshotb
 	_, metadataKey := snapshotbundle.GetSnapshotPaths(
 		st.exportDir, snapshot.SnapshotInfo.GetCollectionId(), snapshot.SnapshotInfo.GetId())
 	metadataPath := path.Join(mpath.BundleDirName, strings.TrimPrefix(metadataKey, st.target.dir+"/"))
-	metadataURI := st.exportRootURI + "/" + strings.TrimPrefix(metadataPath, mpath.BundleDirName+"/")
+	metadataURI := st.exportRootURI + "/" + strings.TrimPrefix(metadataKey, st.exportDir+"/")
 
 	exported, err := snapshotbundle.RewriteSnapshotWithMapping(snapshot, files.mapping, st.exportDir, metadataURI)
 	if err != nil {
