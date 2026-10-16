@@ -155,6 +155,12 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 			filepath.Join(f.exportDir, "snapshots", "1", "metadata", "2.json"), true)
 		require.NoError(t, err)
 		assert.Equal(t, datapb.SnapshotLayout_SnapshotLayoutSelfContained, snapshot.Layout)
+		// The bundle's self-location must name the real metadata object: the
+		// export root URI already carries exports/<namespace>, so the relative
+		// key past it is snapshots/... only.
+		assert.Equal(t,
+			f.exportRootURI+"/snapshots/1/metadata/2.json",
+			snapshot.SnapshotInfo.GetS3Location())
 		require.Len(t, snapshot.Segments, 1)
 		assert.Equal(t,
 			filepath.Join(f.exportDir, "files", "insert_log", "db1", "coll1", "1001", "101", "1.parquet"),
