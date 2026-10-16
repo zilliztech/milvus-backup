@@ -700,7 +700,7 @@ const docTemplate = `{
                     ]
                 },
                 "strategy": {
-                    "description": "Strategy for restore, one of [per_seg, merged_seg, restore_snap,\nimport_snap]; auto selects when unset.",
+                    "description": "Strategy for restore, one of [auto, per_seg, merged_seg, restore_snap,\nimport_snap]; auto, like leaving the field unset, lets the restore pick\nthe plan against the backup's format.",
                     "type": "string"
                 },
                 "truncateBinlogByTs": {

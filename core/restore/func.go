@@ -8,6 +8,10 @@ import (
 )
 
 var _strategyMap = map[string]Strategy{
+	// "auto" spells out what the empty string already means: callers that
+	// always set the field, such as a request template shared by binlog and
+	// snapshot backups, can name the value explicitly.
+	"auto":         StrategyAuto,
 	"per_seg":      StrategyPerSeg,
 	"merged_seg":   StrategyMergedSeg,
 	"restore_snap": StrategyRestoreSnap,

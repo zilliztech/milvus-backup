@@ -97,6 +97,13 @@ func TestToRestoreStrategy(t *testing.T) {
 		assert.Equal(t, restore.StrategyPerSeg, strategy)
 	})
 
+	t.Run("ExplicitAutoWinsOverDeprecatedBool", func(t *testing.T) {
+		request := newRequest(t, `{"strategy": "auto", "useV2Restore": true}`)
+		strategy, err := toRestoreStrategy(request)
+		assert.NoError(t, err)
+		assert.Equal(t, restore.StrategyAuto, strategy)
+	})
+
 	t.Run("DeprecatedBoolMapsToMergedSeg", func(t *testing.T) {
 		request := newRequest(t, `{"useV2Restore": true}`)
 		strategy, err := toRestoreStrategy(request)
