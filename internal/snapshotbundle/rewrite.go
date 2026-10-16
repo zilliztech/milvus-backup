@@ -26,6 +26,11 @@ type SnapshotData struct {
 	Segments     []*datapb.SegmentDescription
 	Indexes      []*indexpb.IndexInfo
 
+	// FormatVersion is the format version the source metadata declared. The
+	// bundle copy keeps it, so a bundle never asks its restore target for a
+	// newer server than the snapshot came from.
+	FormatVersion int
+
 	MetadataPath  string
 	ManifestPaths []string
 	SegmentIDs    []int64
@@ -61,11 +66,12 @@ func RewriteSnapshotWithMapping(
 	// The export writes a self-contained snapshot. Clone the source metadata
 	// before rewriting paths so the in-memory referenced snapshot stays intact.
 	exported := &SnapshotData{
-		SnapshotInfo: proto.Clone(snapshot.SnapshotInfo).(*datapb.SnapshotInfo),
-		Collection:   proto.Clone(snapshot.Collection).(*datapb.CollectionDescription),
-		SegmentIDs:   append([]int64(nil), snapshot.SegmentIDs...),
-		BuildIDs:     append([]int64(nil), snapshot.BuildIDs...),
-		Layout:       datapb.SnapshotLayout_SnapshotLayoutSelfContained,
+		SnapshotInfo:  proto.Clone(snapshot.SnapshotInfo).(*datapb.SnapshotInfo),
+		Collection:    proto.Clone(snapshot.Collection).(*datapb.CollectionDescription),
+		SegmentIDs:    append([]int64(nil), snapshot.SegmentIDs...),
+		BuildIDs:      append([]int64(nil), snapshot.BuildIDs...),
+		Layout:        datapb.SnapshotLayout_SnapshotLayoutSelfContained,
+		FormatVersion: snapshot.FormatVersion,
 	}
 	// Pin IDs are cluster-local lifecycle state. A portable bundle must not
 	// retain the source cluster's active pin records.

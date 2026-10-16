@@ -10,8 +10,9 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/hamba/avro/v2"
+	"github.com/iskorotkov/avro/v2"
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/msgpb"
@@ -22,7 +23,7 @@ import (
 
 const (
 	// SnapshotFormatVersion is the current snapshot metadata and manifest format.
-	SnapshotFormatVersion = 4
+	SnapshotFormatVersion = 5
 )
 
 var (
@@ -41,11 +42,15 @@ var (
 	manifestSchemaV4Once sync.Once
 	manifestSchemaV4     avro.Schema
 	errManifestSchemaV4  error
+
+	manifestSchemaV5Once sync.Once
+	manifestSchemaV5     avro.Schema
+	errManifestSchemaV5  error
 )
 
 // ManifestSchema returns the current Avro schema for snapshot segment manifests.
 func ManifestSchema() (avro.Schema, error) {
-	return ManifestSchemaV4()
+	return ManifestSchemaV5()
 }
 
 // ManifestSchemaV1 returns the Avro schema used by legacy snapshot manifests.
@@ -72,12 +77,20 @@ func ManifestSchemaV3() (avro.Schema, error) {
 	return manifestSchemaV3, errManifestSchemaV3
 }
 
-// ManifestSchemaV4 returns the Avro schema used by current snapshot manifests.
+// ManifestSchemaV4 returns the Avro schema used by version 4 snapshot manifests.
 func ManifestSchemaV4() (avro.Schema, error) {
 	manifestSchemaV4Once.Do(func() {
 		manifestSchemaV4, errManifestSchemaV4 = avro.Parse(AvroSchemaV4())
 	})
 	return manifestSchemaV4, errManifestSchemaV4
+}
+
+// ManifestSchemaV5 returns the Avro schema used by current snapshot manifests.
+func ManifestSchemaV5() (avro.Schema, error) {
+	manifestSchemaV5Once.Do(func() {
+		manifestSchemaV5, errManifestSchemaV5 = avro.Parse(AvroSchemaV5())
+	})
+	return manifestSchemaV5, errManifestSchemaV5
 }
 
 // ManifestSchemaByVersion returns the Avro schema for a snapshot format version.
@@ -91,6 +104,8 @@ func ManifestSchemaByVersion(version int) (avro.Schema, error) {
 		return ManifestSchemaV3()
 	case 4:
 		return ManifestSchemaV4()
+	case 5:
+		return ManifestSchemaV5()
 	default:
 		return nil, merr.WrapErrServiceInternalMsg("unsupported manifest schema version: %d", version)
 	}
@@ -151,6 +166,13 @@ type ManifestEntry struct {
 	StorageVersion    int64                   `avro:"storage_version"`
 	IsSorted          bool                    `avro:"is_sorted"`
 	CommitTimestamp   int64                   `avro:"commit_timestamp"`
+	ManifestHasIndex  bool                    `avro:"manifest_has_index"`
+
+	// manifestHasIndexPresent is derived from the snapshot format version and
+	// is intentionally not serialized. Version 5 always sets it; older records
+	// leave it false so their missing marker remains distinguishable from an
+	// explicit false value.
+	manifestHasIndexPresent bool
 }
 
 // AvroFieldBinlog represents datapb.FieldBinlog in Avro-compatible format.
@@ -238,9 +260,11 @@ type AvroJSONKeyIndexEntry struct {
 	Stats   *AvroJSONKeyStats `avro:"stats"`
 }
 
-// MarshalSegmentManifest serializes a segment description as a snapshot manifest.
-func MarshalSegmentManifest(segment *datapb.SegmentDescription) ([]byte, error) {
-	avroSchema, err := ManifestSchema()
+// MarshalSegmentManifest serializes a segment description as a snapshot
+// manifest under the given format version's schema. Fields the schema does not
+// carry are dropped.
+func MarshalSegmentManifest(segment *datapb.SegmentDescription, formatVersion int) ([]byte, error) {
+	avroSchema, err := ManifestSchemaByVersion(formatVersion)
 	if err != nil {
 		return nil, merr.WrapErrServiceInternalErr(err, "failed to get manifest schema")
 	}
@@ -261,6 +285,7 @@ func ParseSegmentManifest(data []byte, formatVersion int) (*datapb.SegmentDescri
 	if err := avro.Unmarshal(avroSchema, data, &record); err != nil {
 		return nil, merr.WrapErrServiceInternalErr(err, "failed to parse avro data")
 	}
+	record.manifestHasIndexPresent = formatVersion >= 5
 	return ManifestEntryToSegment(record), nil
 }
 
@@ -309,6 +334,9 @@ func SegmentToManifestEntry(segment *datapb.SegmentDescription) ManifestEntry {
 		StorageVersion:    segment.GetStorageVersion(),
 		IsSorted:          segment.GetIsSorted(),
 		CommitTimestamp:   int64(segment.GetCommitTimestamp()),
+		ManifestHasIndex:  segment.GetManifestHasIndex(),
+
+		manifestHasIndexPresent: segment.ManifestHasIndex != nil,
 	}
 }
 
@@ -325,6 +353,9 @@ func ManifestEntryToSegment(record ManifestEntry) *datapb.SegmentDescription {
 		StorageVersion:  record.StorageVersion,
 		IsSorted:        record.IsSorted,
 		CommitTimestamp: uint64(record.CommitTimestamp),
+	}
+	if record.manifestHasIndexPresent {
+		segment.ManifestHasIndex = proto.Bool(record.ManifestHasIndex)
 	}
 
 	for _, binlogFile := range record.BinlogFiles {
@@ -802,5 +833,16 @@ func AvroSchemaV4() string {
 								{"name": "format", "type": "string", "default": ""},
 								{
 									"name": "binlogs",`,
+		1)
+}
+
+// AvroSchemaV5 adds the sticky manifest index marker. Version 4 remains
+// unchanged so snapshots written before the marker can still be decoded as
+// v4 records, where the field is simply absent.
+func AvroSchemaV5() string {
+	return strings.Replace(AvroSchemaV4(),
+		`{"name": "commit_timestamp", "type": "long", "default": 0},`,
+		`{"name": "commit_timestamp", "type": "long", "default": 0},
+				{"name": "manifest_has_index", "type": "boolean", "default": false},`,
 		1)
 }

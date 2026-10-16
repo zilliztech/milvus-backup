@@ -23,6 +23,10 @@ const (
 	// ExportedSnapshotFilesPath is the directory under a bundle root that holds
 	// the copied data files, relocated out of the metadata subtree.
 	ExportedSnapshotFilesPath = "files"
+	// ExportNamespaceSubPath is the per-export namespace directory under a
+	// bundle root: each export writes into exports/<namespace>/ so concurrent
+	// or retried exports of one backup never share writable state.
+	ExportNamespaceSubPath = "exports"
 )
 
 // GetSnapshotPaths returns the manifest directory and metadata path for one
@@ -44,6 +48,14 @@ func GetSegmentManifestPath(manifestDir string, segmentID int64) string {
 // writes before committing the final metadata JSON.
 func GetSnapshotStagingMetadataPath(rootPath string) string {
 	return path.Join(rootPath, SnapshotStagingSubPath, "metadata.json")
+}
+
+// NamespaceBundleRoot returns the per-export namespace under a bundle root,
+// mirroring the server's export flow: everything one export writes — data
+// files, manifests, the metadata JSON, and its private staging object — lives
+// inside this namespace.
+func NamespaceBundleRoot(rootPath, namespace string) string {
+	return path.Join(rootPath, ExportNamespaceSubPath, namespace)
 }
 
 // GetBundleDataRoot returns the directory under a bundle root where exported
