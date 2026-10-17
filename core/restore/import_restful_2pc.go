@@ -159,7 +159,7 @@ func (rt *importViaRESTFul2PCTask) waitPeerCommitted(ctx context.Context, peer i
 	for {
 		resp, err := peer.cli.GetBulkInsertState(ctx, db, jobID)
 		if err != nil {
-			return fmt.Errorf("restore: get the mirrored import job %s on peer %s: %w", jobID, peer.addr, err)
+			return fmt.Errorf("restore: get the mirrored import job %s on peer %s after the local commit: %w", jobID, peer.addr, err)
 		}
 
 		rt.importer.logger.Info("peer mirrored bulk insert task state",
