@@ -169,7 +169,7 @@ func (rt *importViaRESTFul2PCTask) waitSecondaryCommitted(ctx context.Context, s
 	for {
 		resp, err := secondary.cli.GetBulkInsertState(ctx, db, jobID)
 		if err != nil {
-			return fmt.Errorf("restore: get the mirrored import job %s on secondary %s: %w", jobID, secondary.addr, err)
+			return fmt.Errorf("restore: get the mirrored import job %s on secondary %s after the local commit: %w", jobID, secondary.addr, err)
 		}
 
 		rt.importer.args.logger.Info("secondary mirrored bulk insert task state",
