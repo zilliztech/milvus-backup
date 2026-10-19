@@ -35,6 +35,10 @@ func newTestCollSnapshotTask(t *testing.T, grpcCli milvus.Grpc, dropExist bool) 
 		},
 	}
 
+	// Registration is the plan's job at build time; constructing the task
+	// directly does it by hand.
+	mgr.UpdateRestoreTask("task-1", jobstate.AddRestoreCollTask(target, collBackup.GetSize()))
+
 	task := newCollSnapshotTask(collSnapshotTaskArgs{
 		taskID:     "task-1",
 		collBackup: collBackup,
@@ -76,7 +80,10 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 			}, nil).Once()
 
 		task := newTestCollSnapshotTask(t, cli, false)
-		require.NoError(t, task.Execute(context.Background()))
+		// Execute is the bare flow now; the state transitions are the plan shell's
+		// job, so run through it the way a plan does.
+		shell := newCollPlanTask(task.store, "task-1", task.target, task.collBackup.GetSize(), task.Execute)
+		require.NoError(t, shell(context.Background()))
 
 		view, err := task.store.GetRestoreTask("task-1")
 		require.NoError(t, err)

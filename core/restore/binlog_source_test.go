@@ -14,10 +14,6 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
-func newTestCollDMLTask() *collDMLTask {
-	return &collDMLTask{logger: zap.NewNop(), option: &Option{}}
-}
-
 // newTestStorageClient builds a storage client of the given provider without
 // touching any backend: constructing a client never connects.
 func newTestStorageClient(t *testing.T, provider string) storage.Client {
@@ -48,11 +44,9 @@ func segs10() []*backuppb.SegmentBackupInfo {
 }
 
 func TestL0DirGroups(t *testing.T) {
-	ct := newTestCollDMLTask()
-	ct.collBackup = &backuppb.CollectionBackupInfo{CollectionId: 1}
-	ct.backupDir = "backup/"
+	src := newBinlogSource(&backuppb.CollectionBackupInfo{CollectionId: 1}, &Option{}, "backup/", nil, zap.NewNop())
 
-	groups, err := ct.l0DirGroups(segs10())
+	groups, err := src.l0DirGroups(segs10())
 	require.NoError(t, err)
 
 	// one group per (vchannel, storage version) pair, 5 dirs each
@@ -68,11 +62,17 @@ func TestL0DirGroups(t *testing.T) {
 }
 
 func TestNotL0DirGroups(t *testing.T) {
+	newSource := func(t *testing.T, option *Option) *binlogSource {
+		return newBinlogSource(
+			&backuppb.CollectionBackupInfo{CollectionId: 1},
+			option,
+			"backup/",
+			newTestStorageClient(t, cfg.ProviderLocal),
+			zap.NewNop())
+	}
+
 	t.Run("WithGroupID", func(t *testing.T) {
-		ct := newTestCollDMLTask()
-		ct.collBackup = &backuppb.CollectionBackupInfo{CollectionId: 1}
-		ct.backupDir = "backup/"
-		ct.backupStorage = newTestStorageClient(t, cfg.ProviderLocal)
+		src := newSource(t, &Option{})
 
 		part := &backuppb.PartitionBackupInfo{PartitionId: 1, PartitionName: "p1", Size: 10}
 		for _, seg := range segs10() {
@@ -80,7 +80,7 @@ func TestNotL0DirGroups(t *testing.T) {
 			part.SegmentBackups = append(part.SegmentBackups, seg)
 		}
 
-		groups, err := ct.notL0DirGroups(context.Background(), part)
+		groups, err := src.notL0DirGroups(context.Background(), part)
 		require.NoError(t, err)
 
 		// one group per (vchannel, storage version) pair, 5 dirs each; no
@@ -98,17 +98,14 @@ func TestNotL0DirGroups(t *testing.T) {
 	})
 
 	t.Run("WithoutGroupID", func(t *testing.T) {
-		ct := newTestCollDMLTask()
-		ct.collBackup = &backuppb.CollectionBackupInfo{CollectionId: 1}
-		ct.backupDir = "backup/"
-		ct.backupStorage = newTestStorageClient(t, cfg.ProviderLocal)
+		src := newSource(t, &Option{})
 
 		// an old backup without group ids: the whole partition is one dir
 		// group with default request parameters
 		part := &backuppb.PartitionBackupInfo{PartitionId: 1, PartitionName: "p1", Size: 10}
 		part.SegmentBackups = segs10()
 
-		groups, err := ct.notL0DirGroups(context.Background(), part)
+		groups, err := src.notL0DirGroups(context.Background(), part)
 		require.NoError(t, err)
 
 		require.Len(t, groups, 1)
@@ -120,13 +117,12 @@ func TestNotL0DirGroups(t *testing.T) {
 	})
 
 	t.Run("WithoutGroupIDTruncateByTsRejected", func(t *testing.T) {
-		ct := newTestCollDMLTask()
-		ct.option.TruncateBinlogByTs = true
+		src := newSource(t, &Option{TruncateBinlogByTs: true})
 
 		part := &backuppb.PartitionBackupInfo{PartitionId: 1}
 		part.SegmentBackups = segs10()
 
-		_, err := ct.notL0DirGroups(context.Background(), part)
+		_, err := src.notL0DirGroups(context.Background(), part)
 		assert.ErrorContains(t, err, "truncate binlog by ts is not supported")
 	})
 }
