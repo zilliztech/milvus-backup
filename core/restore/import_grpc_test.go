@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"testing/synctest"
 
@@ -23,10 +24,7 @@ import (
 
 func TestGRPCImportPlannerPlanTasks(t *testing.T) {
 	// planning only assembles tasks, so no client is touched
-	p := &grpcImportPlanner{
-		newStaging: func() *copyTask { return nil },
-		logger:     zap.NewNop(),
-	}
+	p := &grpcImportPlanner{args: importTaskArgs{logger: zap.NewNop()}}
 
 	dirs := func(n int) []partitionDir {
 		ds := make([]partitionDir, 0, n)
@@ -63,7 +61,7 @@ func TestGRPCImportPlannerPlanTasks(t *testing.T) {
 
 func TestToGrpcPaths(t *testing.T) {
 	// a non-local target keeps the bucket-relative paths as-is
-	task := &importViaGRPCTask{milvusStorage: newTestStorageClient(t, cfg.ProviderMinio)}
+	task := &importViaGRPCTask{args: importTaskArgs{milvusStorage: newTestStorageClient(t, cfg.ProviderMinio)}}
 
 	// normal
 	dir := partitionDir{insertLogDir: "insert", deltaLogDir: "delta"}
@@ -78,17 +76,18 @@ func TestToGrpcPaths(t *testing.T) {
 	assert.Equal(t, []string{"delta"}, task.toGrpcPaths(dir))
 
 	// a local target resolves import paths against the path Milvus sees
-	task = &importViaGRPCTask{
+	task = &importViaGRPCTask{args: importTaskArgs{
 		milvusStorage:   newTestStorageClient(t, cfg.ProviderLocal),
 		milvusLocalPath: "/var/lib/milvus/data",
-	}
+	}}
 	dir = partitionDir{insertLogDir: "insert", deltaLogDir: "delta"}
 	assert.Equal(t, []string{"/var/lib/milvus/data/insert", "/var/lib/milvus/data/delta"}, task.toGrpcPaths(dir))
 }
 
 // newLocalGRPCTask builds a grpc import task backed by the local filesystem:
 // the backup and the target each get their own temp dir, and the task stages
-// its dir into the target before importing.
+// its dir into the target before importing. It returns the glob the staged
+// copy lands under, since the task mints its temp dir at run time.
 func newLocalGRPCTask(t *testing.T, keepTempFiles bool) (*importViaGRPCTask, string, string) {
 	backupRoot := t.TempDir()
 	milvusRoot := t.TempDir()
@@ -105,30 +104,26 @@ func newLocalGRPCTask(t *testing.T, keepTempFiles bool) (*importViaGRPCTask, str
 	mgr.AddRestoreTask("task1")
 	mgr.UpdateRestoreTask("task1", jobstate.AddRestoreCollTask(target, 5))
 
-	staging := &copyTask{
-		src:            backupCli,
-		dest:           milvusCli,
-		backupDir:      backupRoot + "/",
-		tempDir:        "restore-temp-task1-db-coll-abc/",
-		sem:            semaphore.NewWeighted(4),
-		milvusRootPath: milvusRoot,
-		logger:         zap.NewNop(),
-	}
-
 	task := &importViaGRPCTask{
-		taskID:          "task1",
-		target:          target,
-		partitionName:   "p1",
-		dir:             partitionDir{insertLogDir: srcDir, size: 5},
-		staging:         staging,
-		keepTempFiles:   keepTempFiles,
-		milvusStorage:   milvusCli,
-		milvusRootPath:  milvusRoot,
-		milvusLocalPath: milvusRoot,
-		store:           mgr,
-		logger:          zap.NewNop(),
+		args: importTaskArgs{
+			taskID:          "task1",
+			target:          target,
+			staging:         true,
+			backupDir:       backupRoot + "/",
+			backupStorage:   backupCli,
+			copySem:         semaphore.NewWeighted(4),
+			keepTempFiles:   keepTempFiles,
+			milvusStorage:   milvusCli,
+			milvusRootPath:  milvusRoot,
+			milvusLocalPath: milvusRoot,
+			store:           mgr,
+			logger:          zap.NewNop(),
+		},
+		partitionName: "p1",
+		dir:           partitionDir{insertLogDir: srcDir, size: 5},
 	}
-	return task, backupRoot, milvusRoot
+	stagedGlob := filepath.Join(milvusRoot, "restore-temp-task1-db-coll-*", "backup/binlog/insert_log/1/2/3/file1")
+	return task, backupRoot, stagedGlob
 }
 
 // TestImportViaGRPCTaskExecute runs a task end to end against the local
@@ -137,7 +132,7 @@ func newLocalGRPCTask(t *testing.T, keepTempFiles bool) (*importViaGRPCTask, str
 func TestImportViaGRPCTaskExecute(t *testing.T) {
 	t.Run("CopyImportAndCleanup", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			task, backupRoot, milvusRoot := newLocalGRPCTask(t, false)
+			task, backupRoot, stagedGlob := newLocalGRPCTask(t, false)
 
 			var gotPaths []string
 			grpcCli := milvus.NewMockGrpc(t)
@@ -146,19 +141,21 @@ func TestImportViaGRPCTaskExecute(t *testing.T) {
 				Return(int64(42), nil).Once()
 			grpcCli.EXPECT().GetBulkInsertState(mock.Anything, int64(42)).
 				Return(&milvuspb.GetImportStateResponse{State: commonpb.ImportState_ImportCompleted}, nil).Once()
-			task.grpcCli = grpcCli
+			task.args.grpcCli = grpcCli
 
 			require.NoError(t, task.Execute(t.Context()))
 
 			// the import saw the staged copy under the target's local path
-			want := filepath.Join(milvusRoot, "restore-temp-task1-db-coll-abc/backup/binlog/insert_log/1/2/3") + "/"
-			assert.Equal(t, []string{want, ""}, gotPaths)
+			require.Len(t, gotPaths, 2)
+			assert.True(t, strings.HasPrefix(gotPaths[0], task.args.milvusLocalPath+"/restore-temp-task1-db-coll-"))
+			assert.True(t, strings.HasSuffix(gotPaths[0], "/backup/binlog/insert_log/1/2/3/"))
+			assert.Equal(t, "", gotPaths[1])
 
 			// the task removed its temp files once the import was done. LocalClient
 			// deletes objects only, so the empty dir hierarchy may remain.
-			copied := filepath.Join(milvusRoot, "restore-temp-task1-db-coll-abc/backup/binlog/insert_log/1/2/3/file1")
-			_, err := os.Stat(copied)
-			assert.True(t, os.IsNotExist(err), "temp files should be removed, stat err: %v", err)
+			copied, err := filepath.Glob(stagedGlob)
+			require.NoError(t, err)
+			assert.Empty(t, copied, "temp files should be removed")
 
 			// the backup itself is untouched
 			_, err = os.Stat(filepath.Join(backupRoot, "backup/binlog/insert_log/1/2/3/file1"))
@@ -168,19 +165,19 @@ func TestImportViaGRPCTaskExecute(t *testing.T) {
 
 	t.Run("KeepTempFiles", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			task, _, milvusRoot := newLocalGRPCTask(t, true)
+			task, _, stagedGlob := newLocalGRPCTask(t, true)
 
 			grpcCli := milvus.NewMockGrpc(t)
 			grpcCli.EXPECT().BulkInsert(mock.Anything, mock.Anything).Return(int64(42), nil).Once()
 			grpcCli.EXPECT().GetBulkInsertState(mock.Anything, int64(42)).
 				Return(&milvuspb.GetImportStateResponse{State: commonpb.ImportState_ImportCompleted}, nil).Once()
-			task.grpcCli = grpcCli
+			task.args.grpcCli = grpcCli
 
 			require.NoError(t, task.Execute(t.Context()))
 
-			copied := filepath.Join(milvusRoot, "restore-temp-task1-db-coll-abc/backup/binlog/insert_log/1/2/3/file1")
-			_, err := os.Stat(copied)
-			assert.NoError(t, err, "temp files should be kept")
+			copied, err := filepath.Glob(stagedGlob)
+			require.NoError(t, err)
+			assert.Len(t, copied, 1, "temp files should be kept")
 		})
 	})
 
@@ -188,7 +185,7 @@ func TestImportViaGRPCTaskExecute(t *testing.T) {
 	// consume it, and the old code leaked it.
 	t.Run("ImportFailedStillCleansUp", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
-			task, _, milvusRoot := newLocalGRPCTask(t, false)
+			task, _, stagedGlob := newLocalGRPCTask(t, false)
 
 			grpcCli := milvus.NewMockGrpc(t)
 			grpcCli.EXPECT().BulkInsert(mock.Anything, mock.Anything).Return(int64(42), nil).Once()
@@ -197,14 +194,14 @@ func TestImportViaGRPCTaskExecute(t *testing.T) {
 					State: commonpb.ImportState_ImportFailed,
 					Infos: []*commonpb.KeyValuePair{{Key: "failed_reason", Value: "boom"}},
 				}, nil).Once()
-			task.grpcCli = grpcCli
+			task.args.grpcCli = grpcCli
 
 			err := task.Execute(t.Context())
 			assert.ErrorContains(t, err, "boom")
 
-			copied := filepath.Join(milvusRoot, "restore-temp-task1-db-coll-abc/backup/binlog/insert_log/1/2/3/file1")
-			_, statErr := os.Stat(copied)
-			assert.True(t, os.IsNotExist(statErr), "temp files should be removed, stat err: %v", statErr)
+			copied, err := filepath.Glob(stagedGlob)
+			require.NoError(t, err)
+			assert.Empty(t, copied, "temp files should be removed")
 		})
 	})
 }

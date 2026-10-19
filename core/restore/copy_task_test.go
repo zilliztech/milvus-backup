@@ -1,6 +1,7 @@
 package restore
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -27,9 +28,9 @@ func TestDestKey(t *testing.T) {
 	assert.Equal(t, "", destKey(local, "/data", ""))
 }
 
-// newCopyTestCollTask builds a collDMLTask whose backup and milvus storage
-// differ only in bucket, so each case picks the copy-or-not wiring it wants.
-func newCopyTestCollTask(t *testing.T, backupBucket, milvusBucket string, streaming bool) *collDMLTask {
+// newCopyTestArgs builds import task args whose backup and milvus storage
+// differ only in bucket, so each case picks the staging wiring it wants.
+func newCopyTestArgs(t *testing.T, staging bool) importTaskArgs {
 	newClient := func(bucket string) storage.Client {
 		storeCfg := storage.Config{
 			Provider:   cfg.ProviderMinio,
@@ -42,38 +43,44 @@ func newCopyTestCollTask(t *testing.T, backupBucket, milvusBucket string, stream
 		return cli
 	}
 
-	return &collDMLTask{
+	return importTaskArgs{
 		taskID:        "task1",
 		target:        collref.New("db", "coll"),
-		backupStorage: newClient(backupBucket),
-		milvusStorage: newClient(milvusBucket),
-		streaming:     streaming,
+		staging:       staging,
+		backupStorage: newClient("backup-bucket"),
 		copySem:       semaphore.NewWeighted(1),
+		milvusStorage: newClient("milvus-bucket"),
 		logger:        zap.NewNop(),
 	}
 }
 
 func TestNewCopyTask(t *testing.T) {
-	t.Run("SameBucketAndNotStreaming", func(t *testing.T) {
-		ct := newCopyTestCollTask(t, "bucket", "bucket", false)
-		assert.Nil(t, ct.newCopyTask())
+	t.Run("NoStaging", func(t *testing.T) {
+		assert.Nil(t, newCopyTask(newCopyTestArgs(t, false)))
 	})
 
-	t.Run("DifferentBucket", func(t *testing.T) {
-		ct := newCopyTestCollTask(t, "bucket", "another", false)
-		copyT := ct.newCopyTask()
+	t.Run("Staging", func(t *testing.T) {
+		copyT := newCopyTask(newCopyTestArgs(t, true))
 		require.NotNil(t, copyT)
 		assert.Contains(t, copyT.tempDir, "restore-temp-task1-db-coll-")
 	})
 
-	t.Run("StreamingForcesCopy", func(t *testing.T) {
-		ct := newCopyTestCollTask(t, "bucket", "bucket", true)
-		assert.NotNil(t, ct.newCopyTask())
-	})
-
 	t.Run("TempDirIsUniquePerTask", func(t *testing.T) {
-		ct := newCopyTestCollTask(t, "bucket", "another", false)
-		first, second := ct.newCopyTask(), ct.newCopyTask()
+		args := newCopyTestArgs(t, true)
+		first, second := newCopyTask(args), newCopyTask(args)
 		assert.NotEqual(t, first.tempDir, second.tempDir)
 	})
+}
+
+// A nil copy task is the no-op the plan's no-staging decision produces: the
+// dirs pass through untouched and there is nothing to clean up.
+func TestCopyTaskNilIsNoOp(t *testing.T) {
+	var staging *copyTask
+
+	dirs := []partitionDir{{insertLogDir: "insert", size: 1}}
+	got, err := staging.Execute(context.Background(), dirs)
+	require.NoError(t, err)
+	assert.Equal(t, dirs, got)
+
+	staging.Cleanup(context.Background())
 }

@@ -97,16 +97,17 @@ func newTwoPCTask(t *testing.T, local *twoPCCluster, peers ...*twoPCCluster) *im
 	store.UpdateRestoreTask("task1", jobstate.AddRestoreCollTask(target, 1))
 
 	importer := &restfulImporter{
-		taskID:        "task1",
-		target:        target,
+		args: importTaskArgs{
+			taskID:        "task1",
+			target:        target,
+			milvusStorage: newTestStorageClient(t, cfg.ProviderMinio),
+			restfulCli:    local,
+			store:         store,
+			logger:        zap.NewNop(),
+		},
+
 		partitionName: "p1",
 		dirs:          []partitionDir{{insertLogDir: "insert", size: 1}},
-
-		milvusStorage: newTestStorageClient(t, cfg.ProviderMinio),
-
-		restfulCli: local,
-		store:      store,
-		logger:     zap.NewNop(),
 	}
 	importPeers := make([]importPeer, 0, len(peers))
 	for _, p := range peers {
@@ -295,10 +296,8 @@ func TestImportViaRESTFul2PCTaskExecute(t *testing.T) {
 
 func TestRESTfulImportPlannerPeerFork(t *testing.T) {
 	planner := &restfulImportPlanner{
-		maxSegsPerImportJob: 2,
-		multiL0InOneJob:     true,
-		newStaging:          func() *copyTask { return nil },
-		logger:              zap.NewNop(),
+		args:            importTaskArgs{maxSegsPerImportJob: 2, logger: zap.NewNop()},
+		multiL0InOneJob: true,
 	}
 	g := dirGroup{dirs: []partitionDir{{insertLogDir: "insert", size: 1}}}
 

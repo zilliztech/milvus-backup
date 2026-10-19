@@ -1,13 +1,17 @@
 package restore
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/meta"
+	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
 // newSelectPlanTask builds a task whose plan selection sees the given format
@@ -127,5 +131,71 @@ func TestTask_selectPlan(t *testing.T) {
 
 		_, err := task.selectPlan(nil)
 		assert.ErrorContains(t, err, "--peers")
+	})
+}
+
+func TestTask_needStaging(t *testing.T) {
+	newClient := func(bucket string) storage.Client {
+		cli, err := storage.NewClient(context.Background(), storage.Config{
+			Provider:   cfg.ProviderMinio,
+			Endpoint:   "localhost:9000",
+			Bucket:     bucket,
+			Credential: storage.Credential{Type: storage.Static, AK: "a", SK: "b"},
+		})
+		require.NoError(t, err)
+		return cli
+	}
+	newTask := func(backupBucket, milvusBucket string, streaming bool) *Task {
+		task := newTestTask()
+		task.args.BackupStorage = newClient(backupBucket)
+		task.args.MilvusStorage = newClient(milvusBucket)
+		task.streaming = streaming
+		return task
+	}
+
+	t.Run("SameBucketAndNotStreaming", func(t *testing.T) {
+		assert.False(t, newTask("bucket", "bucket", false).needStaging())
+	})
+
+	t.Run("DifferentBucket", func(t *testing.T) {
+		assert.True(t, newTask("bucket", "another", false).needStaging())
+	})
+
+	t.Run("StreamingForcesCopy", func(t *testing.T) {
+		assert.True(t, newTask("bucket", "bucket", true).needStaging())
+	})
+}
+
+func TestTask_mappedEZK(t *testing.T) {
+	newTask := func(mapping map[string]string) *Task {
+		task := newTestTask()
+		task.args.Option = &Option{EZKMapping: mapping}
+		return task
+	}
+
+	t.Run("Normal", func(t *testing.T) {
+		dbBackup := &backuppb.DatabaseBackupInfo{Ezk: "hello"}
+		assert.Equal(t, "hello", newTask(nil).mappedEZK(dbBackup))
+	})
+
+	t.Run("WithoutEZK", func(t *testing.T) {
+		assert.Equal(t, "", newTask(nil).mappedEZK(&backuppb.DatabaseBackupInfo{}))
+	})
+
+	t.Run("WithMapping", func(t *testing.T) {
+		dbBackup := &backuppb.DatabaseBackupInfo{Ezk: "old_key"}
+		task := newTask(map[string]string{"old_key": "new_key"})
+		assert.Equal(t, "new_key", task.mappedEZK(dbBackup))
+	})
+
+	t.Run("WithMappingNoMatch", func(t *testing.T) {
+		dbBackup := &backuppb.DatabaseBackupInfo{Ezk: "other_key"}
+		task := newTask(map[string]string{"old_key": "new_key"})
+		assert.Equal(t, "other_key", task.mappedEZK(dbBackup))
+	})
+
+	t.Run("WithMappingEmptyEZK", func(t *testing.T) {
+		task := newTask(map[string]string{"old_key": "new_key"})
+		assert.Equal(t, "", task.mappedEZK(&backuppb.DatabaseBackupInfo{}))
 	})
 }

@@ -14,10 +14,8 @@ func TestRESTfulImportPlannerPlanTasks(t *testing.T) {
 	// planning only assembles tasks, so no client is touched
 	newPlanner := func(maxSegs int, multiL0 bool) *restfulImportPlanner {
 		return &restfulImportPlanner{
-			maxSegsPerImportJob: maxSegs,
-			multiL0InOneJob:     multiL0,
-			newStaging:          func() *copyTask { return nil },
-			logger:              zap.NewNop(),
+			args:            importTaskArgs{maxSegsPerImportJob: maxSegs, logger: zap.NewNop()},
+			multiL0InOneJob: multiL0,
 		}
 	}
 
@@ -63,7 +61,7 @@ func TestRESTfulImportPlannerPlanTasks(t *testing.T) {
 
 func TestToPaths(t *testing.T) {
 	// a non-local target keeps the bucket-relative paths as-is
-	importer := &restfulImporter{milvusStorage: newTestStorageClient(t, cfg.ProviderMinio)}
+	importer := &restfulImporter{args: importTaskArgs{milvusStorage: newTestStorageClient(t, cfg.ProviderMinio)}}
 
 	// normal
 	dir := partitionDir{insertLogDir: "insert", deltaLogDir: "delta"}
@@ -82,10 +80,10 @@ func TestToPaths(t *testing.T) {
 	assert.Empty(t, importer.toPaths(dir))
 
 	// a local target resolves import paths against the path Milvus sees
-	importer = &restfulImporter{
+	importer = &restfulImporter{args: importTaskArgs{
 		milvusStorage:   newTestStorageClient(t, cfg.ProviderLocal),
 		milvusLocalPath: "/var/lib/milvus/data",
-	}
+	}}
 	dir = partitionDir{insertLogDir: "insert", deltaLogDir: "delta"}
 	assert.Equal(t, []string{"/var/lib/milvus/data/insert", "/var/lib/milvus/data/delta"}, importer.toPaths(dir))
 

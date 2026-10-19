@@ -160,44 +160,96 @@ func runCollPlanTasks(ctx context.Context, limit int, logger *zap.Logger, tasks 
 }
 
 // newCollDMLTaskArgs assembles the DML task's arguments for one target; the
-// same wiring serves both binlog plans. A local target resolves its storage
-// directory two ways: the path milvus-backup reaches it at (rootPath) and the
-// path the Milvus process itself resolves (localPath, falling back to
-// rootPath).
+// same wiring serves both binlog plans.
 func (t *Task) newCollDMLTaskArgs(tgt collTarget) collDMLTaskArgs {
-	milvusLocalPath := t.args.Params.Milvus.Storage.LocalPath.Val
-	if milvusLocalPath == "" {
-		milvusLocalPath = t.args.Params.Milvus.Storage.RootPath.Val
-	}
-
 	return collDMLTaskArgs{
 		taskID: t.args.TaskID,
 		store:  t.args.Store,
 		target: tgt.target,
 
-		dbBackup:   tgt.dbBackup,
 		collBackup: tgt.collBackup,
 
 		option: t.args.Option,
 
-		streaming:     t.streaming,
-		keepTempFiles: t.args.Params.Restore.KeepTempFiles.Val,
 		backupDir:     t.args.BackupDir,
-
 		backupStorage: t.args.BackupStorage,
-		milvusStorage: t.args.MilvusStorage,
 
+		bulkInsertSem: t.bulkInsertSem,
+	}
+}
+
+// newImportTaskArgs assembles the import wiring of one target collection; the
+// same wiring serves both binlog plans. A local target resolves its storage
+// directory two ways: the path milvus-backup reaches it at (rootPath) and the
+// path the Milvus process itself resolves (localPath, falling back to
+// rootPath). Whether the restore stages data is a job-level invariant — both
+// storages and the streaming flag are fixed for the whole job — so the
+// decision is made here, once per collection, and the import tasks only read
+// it.
+func (t *Task) newImportTaskArgs(tgt collTarget) importTaskArgs {
+	milvusLocalPath := t.args.Params.Milvus.Storage.LocalPath.Val
+	if milvusLocalPath == "" {
+		milvusLocalPath = t.args.Params.Milvus.Storage.RootPath.Val
+	}
+
+	src := collref.New(tgt.collBackup.GetDbName(), tgt.collBackup.GetCollectionName())
+	logger := log.With(
+		zap.String("restore_task_id", t.args.TaskID),
+		zap.String("backup_coll", src.String()),
+		zap.String("target_coll", tgt.target.String()))
+
+	return importTaskArgs{
+		taskID: t.args.TaskID,
+		target: tgt.target,
+		ezk:    t.mappedEZK(tgt.dbBackup),
+
+		staging:       t.needStaging(),
+		backupDir:     t.args.BackupDir,
+		backupStorage: t.args.BackupStorage,
+		copySem:       t.copySem,
+
+		keepTempFiles:       t.args.Params.Restore.KeepTempFiles.Val,
+		maxSegsPerImportJob: t.args.Params.Restore.MaxSegmentsPerImportJob.Val,
+
+		milvusStorage:   t.args.MilvusStorage,
 		milvusRootPath:  t.args.Params.Milvus.Storage.RootPath.Val,
 		milvusLocalPath: milvusLocalPath,
-
-		copySem:       t.copySem,
-		bulkInsertSem: t.bulkInsertSem,
 
 		grpcCli:    t.grpc,
 		restfulCli: t.restful,
 
-		maxSegsPerImportJob: t.args.Params.Restore.MaxSegmentsPerImportJob.Val,
+		store:  t.args.Store,
+		logger: logger,
 	}
+}
+
+// needStaging decides whether the backup's data must be copied into the
+// target's storage before the import: when backup and target share bucket and
+// provider and the transfer is not streamed, Milvus imports the backup in
+// place. The inputs are job-level invariants, so the tasks below only read the
+// answer this computes once per collection.
+func (t *Task) needStaging() bool {
+	sameService := t.args.BackupStorage.Config().Bucket == t.args.MilvusStorage.Config().Bucket &&
+		t.args.BackupStorage.Config().Provider == t.args.MilvusStorage.Config().Provider
+	return !sameService || t.streaming
+}
+
+// mappedEZK resolves the EZK the target imports with: the option's mapping
+// wins over the key the backup's database was encrypted with, which is the
+// fallback. An unencrypted backup has no key to map.
+func (t *Task) mappedEZK(dbBackup *backuppb.DatabaseBackupInfo) string {
+	oldEZK := dbBackup.GetEzk()
+	if oldEZK == "" {
+		return ""
+	}
+
+	if len(t.args.Option.EZKMapping) > 0 {
+		if newEZK, ok := t.args.Option.EZKMapping[oldEZK]; ok {
+			return newEZK
+		}
+	}
+
+	return oldEZK
 }
 
 // newBinlogCollPlanTask wraps one collection's binlog restore — DDL, then
@@ -249,8 +301,7 @@ func newBinlogGRPCPlan(t *Task, targets []collTarget) *binlogGRPCPlan {
 	for _, tgt := range targets {
 		ddl := newCollDDLTask(t.args.TaskID, t.args.Option, tgt.collOverride, tgt.collBackup, tgt.target, t.grpc)
 
-		dml := newCollDMLTask(t.newCollDMLTaskArgs(tgt))
-		dml.importer = newGRPCImportPlanner(dml)
+		dml := newCollDMLTask(t.newCollDMLTaskArgs(tgt), newGRPCImportPlanner(t.newImportTaskArgs(tgt)))
 
 		tasks = append(tasks, newBinlogCollPlanTask(t.args.Store, t.args.TaskID, tgt.target, ddl, dml))
 	}
@@ -289,8 +340,8 @@ func newBinlogRESTFulPlan(t *Task, targets []collTarget) *binlogRESTFulPlan {
 	for _, tgt := range targets {
 		ddl := newCollDDLTask(t.args.TaskID, t.args.Option, tgt.collOverride, tgt.collBackup, tgt.target, t.grpc)
 
-		dml := newCollDMLTask(t.newCollDMLTaskArgs(tgt))
-		dml.importer = newRestfulImportPlanner(dml, multiL0InOneJob, t.peers)
+		dml := newCollDMLTask(t.newCollDMLTaskArgs(tgt),
+			newRestfulImportPlanner(t.newImportTaskArgs(tgt), multiL0InOneJob, t.peers))
 
 		tasks = append(tasks, newBinlogCollPlanTask(t.args.Store, t.args.TaskID, tgt.target, ddl, dml))
 	}
