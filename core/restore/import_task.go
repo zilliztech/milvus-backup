@@ -11,9 +11,11 @@ import (
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/samber/lo"
 	"go.uber.org/zap"
+	"golang.org/x/sync/semaphore"
 
 	"github.com/zilliztech/milvus-backup/core/tasklet"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
+	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/storage"
@@ -23,6 +25,46 @@ const (
 	_bulkInsertTimeout       = 60 * time.Minute
 	_bulkInsertCheckInterval = 3 * time.Second
 )
+
+// importTaskArgs assembles everything it takes to build and run one
+// collection's import tasks: where the collection lands, how the target's
+// storage is reached, and how the job is reported. The plan that picked the
+// import protocol builds it; the planners and the tasks they mint hold it as a
+// single field, so no import type knows any task type. It is data only —
+// behavior lives in free functions and the tasks.
+type importTaskArgs struct {
+	taskID string
+	target collref.Name
+	ezk    string
+
+	// staging reports whether import jobs copy the backup's data into the
+	// target's storage first. The decision's inputs — both storages and the
+	// streaming flag — are job-level invariants, so the plan makes it once and
+	// the tasks below only read it.
+	staging       bool
+	backupDir     string
+	backupStorage storage.Client
+	copySem       *semaphore.Weighted
+
+	keepTempFiles bool
+	// maxSegsPerImportJob caps how many dirs one import task carries, because
+	// Milvus limits how many files one restful request may carry.
+	maxSegsPerImportJob int
+
+	milvusStorage storage.Client
+	// milvusRootPath is where milvus-backup reaches the target's local storage
+	// directory (milvus.storage.rootPath), and milvusLocalPath is what the
+	// Milvus process itself resolves (milvus.storage.localPath, falling back
+	// to rootPath). Both empty unless the target storage provider is local.
+	milvusRootPath  string
+	milvusLocalPath string
+
+	grpcCli    milvus.Grpc
+	restfulCli milvus.Restful
+
+	store  *jobstate.Store
+	logger *zap.Logger
+}
 
 // importPlanner turns the dir groups of one partition into the import tasks
 // that restore them. It is the protocol seam of the data restore: the v1 grpc

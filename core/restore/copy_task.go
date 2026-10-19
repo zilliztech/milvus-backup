@@ -6,6 +6,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/google/uuid"
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
 
@@ -26,6 +27,8 @@ type copyTask struct {
 
 	sem *semaphore.Weighted
 
+	keepTempFiles bool
+
 	// milvusRootPath is where milvus-backup reaches the target's local storage
 	// directory (milvus.storage.rootPath). Empty unless the target provider is local.
 	milvusRootPath string
@@ -33,9 +36,40 @@ type copyTask struct {
 	logger *zap.Logger
 }
 
+// newCopyTask builds the staging copy task of one import job, with a temp dir
+// unique to the job so the task cleans up after itself. It returns nil when
+// the plan decided the backup is imported in place.
+func newCopyTask(args importTaskArgs) *copyTask {
+	if !args.staging {
+		return nil
+	}
+
+	tempDir := fmt.Sprintf("restore-temp-%s-%s-%s-%s/",
+		args.taskID, args.target.DBName(), args.target.CollName(), uuid.NewString())
+	return &copyTask{
+		src:       args.backupStorage,
+		dest:      args.milvusStorage,
+		backupDir: args.backupDir,
+		tempDir:   tempDir,
+		sem:       args.copySem,
+
+		keepTempFiles: args.keepTempFiles,
+
+		milvusRootPath: args.milvusRootPath,
+
+		logger: args.logger,
+	}
+}
+
 // Execute copies every non-empty dir to the temp dir, verifies each copy, and
-// returns the dirs rewritten to point at the copies.
+// returns the dirs rewritten to point at the copies. A nil copy task is a
+// no-op pass-through: the plan decided the backup is imported in place, so
+// the dirs already sit in the shared bucket and are handed over as-is.
 func (t *copyTask) Execute(ctx context.Context, dirs []partitionDir) ([]partitionDir, error) {
+	if t == nil {
+		return dirs, nil
+	}
+
 	copied := make([]partitionDir, len(dirs))
 	for i, dir := range dirs {
 		if dir.insertLogDir != "" {
@@ -89,6 +123,26 @@ func (t *copyTask) copyPrefix(ctx context.Context, srcPrefix string) (string, er
 	t.logger.Info("copy temporary restore file success", zap.String("src", srcPrefix), zap.String("dest", destKey))
 
 	return dest, nil
+}
+
+// Cleanup removes the staged copy once the import is over, succeeded or not:
+// the import has either consumed the data or never will. A copy that failed
+// midway is safe too, whatever was copied sits under the same temp dir. A nil
+// copy task means the backup was imported in place and there is nothing to
+// remove.
+func (t *copyTask) Cleanup(ctx context.Context) {
+	if t == nil {
+		return
+	}
+	if t.keepTempFiles {
+		t.logger.Info("skip clean temporary files")
+		return
+	}
+
+	t.logger.Info("delete temporary file", zap.String("dir", t.tempDir))
+	if err := storage.DeletePrefix(ctx, t.dest, destKey(t.dest, t.milvusRootPath, t.tempDir)); err != nil {
+		t.logger.Warn("clean temporary restore files failed", zap.Error(err))
+	}
 }
 
 // destKey maps a bucket-relative restore key onto the key the target's storage

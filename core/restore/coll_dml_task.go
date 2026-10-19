@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/google/uuid"
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
@@ -13,7 +12,6 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/tasklet"
-	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
@@ -29,7 +27,6 @@ import (
 type collDMLTask struct {
 	taskID string
 
-	dbBackup   *backuppb.DatabaseBackupInfo
 	collBackup *backuppb.CollectionBackupInfo
 
 	option *Option
@@ -38,32 +35,13 @@ type collDMLTask struct {
 
 	target collref.Name
 
-	streaming     bool
-	keepTempFiles bool
-	copySem       *semaphore.Weighted
-	bulkInsertSem *semaphore.Weighted
-
-	// maxSegsPerImportJob is how many segments at most are merged into one
-	// import job, because Milvus limits how many files one request may carry.
-	maxSegsPerImportJob int
-
 	backupDir     string
 	backupStorage storage.Client
 
-	milvusStorage storage.Client
+	bulkInsertSem *semaphore.Weighted
 
-	// milvusRootPath is where milvus-backup reaches the target's local storage
-	// directory (milvus.storage.rootPath), and milvusLocalPath is what the
-	// Milvus process itself resolves (milvus.storage.localPath, falling back
-	// to rootPath). Both empty unless the target storage provider is local.
-	milvusRootPath  string
-	milvusLocalPath string
-
-	grpcCli    milvus.Grpc
-	restfulCli milvus.Restful
-
-	// importer organizes the dir groups into import tasks. Set by the plan
-	// that schedules this task: grpc or restful, per the restore option.
+	// importer organizes the dir groups into import tasks: grpc or restful,
+	// per the restore option the plan resolved.
 	importer importPlanner
 
 	vchTimestamp struct {
@@ -77,7 +55,6 @@ type collDMLTask struct {
 type collDMLTaskArgs struct {
 	taskID string
 
-	dbBackup   *backuppb.DatabaseBackupInfo
 	collBackup *backuppb.CollectionBackupInfo
 
 	target collref.Name
@@ -87,25 +64,12 @@ type collDMLTaskArgs struct {
 	store *jobstate.Store
 
 	backupDir     string
-	keepTempFiles bool
-	streaming     bool
-
-	maxSegsPerImportJob int
-
 	backupStorage storage.Client
-	milvusStorage storage.Client
 
-	milvusRootPath  string
-	milvusLocalPath string
-
-	copySem       *semaphore.Weighted
 	bulkInsertSem *semaphore.Weighted
-
-	grpcCli    milvus.Grpc
-	restfulCli milvus.Restful
 }
 
-func newCollDMLTask(args collDMLTaskArgs) *collDMLTask {
+func newCollDMLTask(args collDMLTaskArgs, importer importPlanner) *collDMLTask {
 	src := collref.New(args.collBackup.GetDbName(), args.collBackup.GetCollectionName())
 
 	logger := log.With(
@@ -121,7 +85,6 @@ func newCollDMLTask(args collDMLTaskArgs) *collDMLTask {
 	return &collDMLTask{
 		taskID: args.taskID,
 
-		dbBackup:   args.dbBackup,
 		collBackup: args.collBackup,
 
 		option: args.option,
@@ -130,23 +93,12 @@ func newCollDMLTask(args collDMLTaskArgs) *collDMLTask {
 
 		store: args.store,
 
-		copySem:       args.copySem,
+		backupDir:     args.backupDir,
+		backupStorage: args.backupStorage,
+
 		bulkInsertSem: args.bulkInsertSem,
 
-		streaming:     args.streaming,
-		keepTempFiles: args.keepTempFiles,
-		backupDir:     args.backupDir,
-
-		maxSegsPerImportJob: args.maxSegsPerImportJob,
-
-		backupStorage: args.backupStorage,
-		milvusStorage: args.milvusStorage,
-
-		milvusRootPath:  args.milvusRootPath,
-		milvusLocalPath: args.milvusLocalPath,
-
-		grpcCli:    args.grpcCli,
-		restfulCli: args.restfulCli,
+		importer: importer,
 
 		vchTimestamp: struct {
 			mu    sync.RWMutex
@@ -222,48 +174,6 @@ func (dt *collDMLTask) restorePartition(ctx context.Context, part *backuppb.Part
 	}
 
 	return nil
-}
-
-// newCopyTask builds the copy task that stages an import task's data into the
-// target's storage, with a temp dir unique to the import task so the task
-// cleans up after itself. It returns nil when backup and target share a bucket
-// and the transfer is not streamed, in which case Milvus imports the backup in
-// place.
-func (dt *collDMLTask) newCopyTask() *copyTask {
-	isSameBucket := dt.milvusStorage.Config().Bucket == dt.backupStorage.Config().Bucket
-	isSameStorage := dt.backupStorage.Config().Provider == dt.milvusStorage.Config().Provider
-	if isSameBucket && isSameStorage && !dt.streaming {
-		return nil
-	}
-
-	tempDir := fmt.Sprintf("restore-temp-%s-%s-%s-%s/",
-		dt.taskID, dt.target.DBName(), dt.target.CollName(), uuid.NewString())
-	return &copyTask{
-		src:       dt.backupStorage,
-		dest:      dt.milvusStorage,
-		backupDir: dt.backupDir,
-		tempDir:   tempDir,
-		sem:       dt.copySem,
-
-		milvusRootPath: dt.milvusRootPath,
-
-		logger: dt.logger,
-	}
-}
-
-func (dt *collDMLTask) ezk() string {
-	oldEZK := dt.dbBackup.GetEzk()
-	if oldEZK == "" {
-		return ""
-	}
-
-	if len(dt.option.EZKMapping) > 0 {
-		if newEZK, ok := dt.option.EZKMapping[oldEZK]; ok {
-			return newEZK
-		}
-	}
-
-	return oldEZK
 }
 
 func (dt *collDMLTask) backupTS(vch string) (uint64, error) {

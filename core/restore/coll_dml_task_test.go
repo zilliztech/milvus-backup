@@ -15,7 +15,7 @@ import (
 )
 
 func newTestCollDMLTask() *collDMLTask {
-	return &collDMLTask{logger: zap.NewNop(), option: &Option{}, maxSegsPerImportJob: 256}
+	return &collDMLTask{logger: zap.NewNop(), option: &Option{}}
 }
 
 // newTestStorageClient builds a storage client of the given provider without
@@ -28,39 +28,6 @@ func newTestStorageClient(t *testing.T, provider string) storage.Client {
 	})
 	require.NoError(t, err)
 	return cli
-}
-
-func TestCollTask_ezk(t *testing.T) {
-	t.Run("Normal", func(t *testing.T) {
-		ct := newTestCollDMLTask()
-		ct.dbBackup = &backuppb.DatabaseBackupInfo{Ezk: "hello"}
-		assert.Equal(t, "hello", ct.ezk())
-	})
-
-	t.Run("WithoutEZK", func(t *testing.T) {
-		ct := newTestCollDMLTask()
-		assert.Equal(t, "", ct.ezk())
-	})
-
-	t.Run("WithMapping", func(t *testing.T) {
-		ct := newTestCollDMLTask()
-		ct.dbBackup = &backuppb.DatabaseBackupInfo{Ezk: "old_key"}
-		ct.option.EZKMapping = map[string]string{"old_key": "new_key"}
-		assert.Equal(t, "new_key", ct.ezk())
-	})
-
-	t.Run("WithMappingNoMatch", func(t *testing.T) {
-		ct := newTestCollDMLTask()
-		ct.dbBackup = &backuppb.DatabaseBackupInfo{Ezk: "other_key"}
-		ct.option.EZKMapping = map[string]string{"old_key": "new_key"}
-		assert.Equal(t, "other_key", ct.ezk())
-	})
-
-	t.Run("WithMappingEmptyEZK", func(t *testing.T) {
-		ct := newTestCollDMLTask()
-		ct.option.EZKMapping = map[string]string{"old_key": "new_key"}
-		assert.Equal(t, "", ct.ezk())
-	})
 }
 
 // segs10 spreads 10 segments over 2 (vchannel, storage version) pairs: the

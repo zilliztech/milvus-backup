@@ -39,9 +39,10 @@ type importViaRESTFul2PCTask struct {
 }
 
 func (rt *importViaRESTFul2PCTask) Execute(ctx context.Context) error {
-	defer rt.importer.cleanup(ctx)
+	staging := newCopyTask(rt.importer.args)
+	defer staging.Cleanup(ctx)
 
-	if err := rt.importer.stage(ctx); err != nil {
+	if err := rt.importer.stage(ctx, staging); err != nil {
 		return err
 	}
 
@@ -90,7 +91,7 @@ func (rt *importViaRESTFul2PCTask) Execute(ctx context.Context) error {
 // Uncommitted. Committing or Completed mirrors are accepted too: a retried task
 // meets them when the commit of the crashed first run already replicated.
 func (rt *importViaRESTFul2PCTask) waitPeerMirrored(ctx context.Context, peer importPeer, jobID string) error {
-	db := rt.importer.target.DBName()
+	db := rt.importer.args.target.DBName()
 
 	// Stays zero until the peer reports an empty state, so the window only
 	// starts once there is something to wait out.
@@ -104,7 +105,7 @@ func (rt *importViaRESTFul2PCTask) waitPeerMirrored(ctx context.Context, peer im
 			return fmt.Errorf("restore: get the mirrored import job %s on peer %s: %w", jobID, peer.addr, err)
 		}
 
-		rt.importer.logger.Info("peer mirrored bulk insert task state",
+		rt.importer.args.logger.Info("peer mirrored bulk insert task state",
 			zap.String("peer", peer.addr),
 			zap.String("job_id", jobID),
 			zap.String("state", resp.Data.State),
@@ -148,7 +149,7 @@ func (rt *importViaRESTFul2PCTask) waitPeerMirrored(ctx context.Context, peer im
 // wait can surface is a mirror that failed on its own or a commit that never
 // arrived, both of which leave the two ends diverged.
 func (rt *importViaRESTFul2PCTask) waitPeerCommitted(ctx context.Context, peer importPeer, jobID string) error {
-	db := rt.importer.target.DBName()
+	db := rt.importer.args.target.DBName()
 
 	// The local commit has just landed, so the mirror is expected to be mid
 	// flight; the window starts right away, unlike the mirror wait's.
@@ -162,7 +163,7 @@ func (rt *importViaRESTFul2PCTask) waitPeerCommitted(ctx context.Context, peer i
 			return fmt.Errorf("restore: get the mirrored import job %s on peer %s: %w", jobID, peer.addr, err)
 		}
 
-		rt.importer.logger.Info("peer mirrored bulk insert task state",
+		rt.importer.args.logger.Info("peer mirrored bulk insert task state",
 			zap.String("peer", peer.addr),
 			zap.String("job_id", jobID),
 			zap.String("state", resp.Data.State),
