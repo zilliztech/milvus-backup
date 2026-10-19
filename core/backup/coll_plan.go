@@ -90,23 +90,6 @@ type collTaskArgs struct {
 // orchestration runs whichever artifact the format calls for.
 type dataTaskFactory func(collRef collref.Name, args collTaskArgs) tasklet.Tasklet
 
-func concurrentExecCollTask(ctx context.Context, sem *semaphore.Weighted, tasks []tasklet.Tasklet) error {
-	g, subCtx := errgroup.WithContext(ctx)
-	for _, task := range tasks {
-		if err := sem.Acquire(ctx, 1); err != nil {
-			return fmt.Errorf("backup: acquire collection semaphore %w", err)
-		}
-
-		g.Go(func() error {
-			defer sem.Release(1)
-
-			return task.Execute(subCtx)
-		})
-	}
-
-	return g.Wait()
-}
-
 func newDDLTasks(collRefs []collref.Name, args collTaskArgs) []tasklet.Tasklet {
 	ddlTasks := make([]tasklet.Tasklet, 0, len(collRefs))
 	for _, collRef := range collRefs {
@@ -137,7 +120,7 @@ func newMetaOnlyPlan(collRefs []collref.Name, args collTaskArgs) *metaOnlyPlan {
 
 func (m *metaOnlyPlan) Execute(ctx context.Context) error {
 	ddlTasks := newDDLTasks(m.collRefs, m.args)
-	if err := concurrentExecCollTask(ctx, m.args.Throttling.DDLSem, ddlTasks); err != nil {
+	if err := tasklet.RunConcurrent(ctx, m.args.Throttling.DDLSem, ddlTasks); err != nil {
 		return fmt.Errorf("backup: execute ddl tasks %w", err)
 	}
 
@@ -172,10 +155,10 @@ func (sf *skipFlushPlan) Execute(ctx context.Context) error {
 	// beats it.
 	g, subCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		return concurrentExecCollTask(subCtx, sf.args.Throttling.DDLSem, newDDLTasks(sf.collRefs, sf.args))
+		return tasklet.RunConcurrent(subCtx, sf.args.Throttling.DDLSem, newDDLTasks(sf.collRefs, sf.args))
 	})
 	g.Go(func() error {
-		return concurrentExecCollTask(subCtx, sf.args.Throttling.DMLSem, newDMLTasks(sf.collRefs, sf.args, sf.newData))
+		return tasklet.RunConcurrent(subCtx, sf.args.Throttling.DMLSem, newDMLTasks(sf.collRefs, sf.args, sf.newData))
 	})
 	if err := g.Wait(); err != nil {
 		return fmt.Errorf("backup: execute collection tasks %w", err)
@@ -211,10 +194,10 @@ func (sf *serialFlushPlan) Execute(ctx context.Context) error {
 
 	g, subCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		return concurrentExecCollTask(subCtx, sf.args.Throttling.DDLSem, newDDLTasks(sf.collRefs, sf.args))
+		return tasklet.RunConcurrent(subCtx, sf.args.Throttling.DDLSem, newDDLTasks(sf.collRefs, sf.args))
 	})
 	g.Go(func() error {
-		return concurrentExecCollTask(subCtx, sf.args.Throttling.DMLSem, dmlTasks)
+		return tasklet.RunConcurrent(subCtx, sf.args.Throttling.DMLSem, dmlTasks)
 	})
 	if err := g.Wait(); err != nil {
 		return fmt.Errorf("backup: execute collection tasks %w", err)
@@ -311,14 +294,14 @@ func (bf *bulkFlushPlan) Execute(ctx context.Context) error {
 	// cluster-wide RPC that moves no bytes; it takes no semaphore.
 	g, subCtx := errgroup.WithContext(ctx)
 	g.Go(func() error {
-		return concurrentExecCollTask(subCtx, bf.args.Throttling.DDLSem, newDDLTasks(bf.collRefs, bf.args))
+		return tasklet.RunConcurrent(subCtx, bf.args.Throttling.DDLSem, newDDLTasks(bf.collRefs, bf.args))
 	})
 	g.Go(func() error {
 		flush := &flushAllTask{collRefs: bf.collRefs, args: bf.args, logger: bf.logger}
 		if err := flush.Execute(subCtx); err != nil {
 			return err
 		}
-		return concurrentExecCollTask(subCtx, bf.args.Throttling.DMLSem, newDMLTasks(bf.collRefs, bf.args, bf.newData))
+		return tasklet.RunConcurrent(subCtx, bf.args.Throttling.DMLSem, newDMLTasks(bf.collRefs, bf.args, bf.newData))
 	})
 	if err := g.Wait(); err != nil {
 		return fmt.Errorf("backup: execute collection tasks %w", err)

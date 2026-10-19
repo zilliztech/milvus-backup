@@ -11,8 +11,6 @@ import (
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/samber/lo"
 	"go.uber.org/zap"
-	"golang.org/x/sync/errgroup"
-	"golang.org/x/sync/semaphore"
 
 	"github.com/zilliztech/milvus-backup/core/tasklet"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
@@ -33,32 +31,6 @@ const (
 type importPlanner interface {
 	// partitionName is empty for the collection-global L0 segments.
 	planTasks(partitionName string, groups []dirGroup) []tasklet.Tasklet
-}
-
-// runTasks runs the import tasks concurrently under the bulk insert semaphore.
-func runTasks(ctx context.Context, sem *semaphore.Weighted, tasks []tasklet.Tasklet) error {
-	g, subCtx := errgroup.WithContext(ctx)
-	for _, task := range tasks {
-		if err := sem.Acquire(ctx, 1); err != nil {
-			return fmt.Errorf("restore_collection: acquire bulk insert semaphore: %w", err)
-		}
-
-		g.Go(func() error {
-			defer sem.Release(1)
-
-			if err := task.Execute(subCtx); err != nil {
-				return fmt.Errorf("restore_collection: execute import task: %w", err)
-			}
-
-			return nil
-		})
-	}
-
-	if err := g.Wait(); err != nil {
-		return fmt.Errorf("restore_collection: wait for import tasks: %w", err)
-	}
-
-	return nil
 }
 
 // importJobState is one snapshot of an import job, normalized across the grpc

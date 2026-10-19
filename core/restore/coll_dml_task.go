@@ -12,6 +12,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/core/tasklet"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
@@ -186,7 +187,7 @@ func (dt *collDMLTask) Execute(ctx context.Context) error {
 		return fmt.Errorf("restore_collection: build L0 dir groups: %w", err)
 	}
 	l0Tasks := dt.importer.planTasks("", l0Groups)
-	if err := runTasks(ctx, dt.bulkInsertSem, l0Tasks); err != nil {
+	if err := tasklet.RunConcurrent(ctx, dt.bulkInsertSem, l0Tasks); err != nil {
 		return fmt.Errorf("restore_collection: restore global L0 segment: %w", err)
 	}
 
@@ -203,7 +204,7 @@ func (dt *collDMLTask) restorePartition(ctx context.Context, part *backuppb.Part
 		return fmt.Errorf("restore_collection: build not L0 dir groups: %w", err)
 	}
 	notL0Tasks := dt.importer.planTasks(part.GetPartitionName(), notL0Groups)
-	if err := runTasks(ctx, dt.bulkInsertSem, notL0Tasks); err != nil {
+	if err := tasklet.RunConcurrent(ctx, dt.bulkInsertSem, notL0Tasks); err != nil {
 		return fmt.Errorf("restore_collection: restore not L0 segments: %w", err)
 	}
 
@@ -216,7 +217,7 @@ func (dt *collDMLTask) restorePartition(ctx context.Context, part *backuppb.Part
 		return fmt.Errorf("restore_collection: build L0 dir groups: %w", err)
 	}
 	l0Tasks := dt.importer.planTasks(part.GetPartitionName(), l0Groups)
-	if err := runTasks(ctx, dt.bulkInsertSem, l0Tasks); err != nil {
+	if err := tasklet.RunConcurrent(ctx, dt.bulkInsertSem, l0Tasks); err != nil {
 		return fmt.Errorf("restore_collection: restore L0 segments: %w", err)
 	}
 
