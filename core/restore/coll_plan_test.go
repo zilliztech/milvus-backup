@@ -2,6 +2,7 @@ package restore
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -10,6 +11,8 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
+	"github.com/zilliztech/milvus-backup/internal/collref"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 )
@@ -30,6 +33,14 @@ func newSelectPlanTask(format string, strategy Strategy) *Task {
 // target's v2 import support, and a pin outside the format's set is a loud
 // error rather than a silent fallback.
 func TestTask_selectPlan(t *testing.T) {
+	// The two binlog data paths are one binlogPlan now; which import api the
+	// plan runs on lives in the planner its factory mints.
+	assertBinlogPlan := func(t *testing.T, plan collPlan, planner any) {
+		bp, ok := plan.(*binlogPlan)
+		require.True(t, ok, "plan is %T, want *binlogPlan", plan)
+		assert.IsType(t, planner, bp.newPlanner(importTaskArgs{}))
+	}
+
 	t.Run("BinlogAutoUsesV2WhenSupported", func(t *testing.T) {
 		task := newSelectPlanTask(meta.FormatBinlog, StrategyAuto)
 		grpcCli := milvus.NewMockGrpc(t)
@@ -39,7 +50,7 @@ func TestTask_selectPlan(t *testing.T) {
 
 		plan, err := task.selectPlan(nil)
 		require.NoError(t, err)
-		assert.IsType(t, &binlogRESTFulPlan{}, plan)
+		assertBinlogPlan(t, plan, &restfulImportPlanner{})
 	})
 
 	t.Run("BinlogAutoFallsBackToGrpc", func(t *testing.T) {
@@ -50,7 +61,7 @@ func TestTask_selectPlan(t *testing.T) {
 
 		plan, err := task.selectPlan(nil)
 		require.NoError(t, err)
-		assert.IsType(t, &binlogGRPCPlan{}, plan)
+		assertBinlogPlan(t, plan, &grpcImportPlanner{})
 	})
 
 	t.Run("BinlogPerSeg", func(t *testing.T) {
@@ -58,7 +69,7 @@ func TestTask_selectPlan(t *testing.T) {
 
 		plan, err := task.selectPlan(nil)
 		require.NoError(t, err)
-		assert.IsType(t, &binlogGRPCPlan{}, plan)
+		assertBinlogPlan(t, plan, &grpcImportPlanner{})
 	})
 
 	t.Run("BinlogMergedSeg", func(t *testing.T) {
@@ -69,7 +80,7 @@ func TestTask_selectPlan(t *testing.T) {
 
 		plan, err := task.selectPlan(nil)
 		require.NoError(t, err)
-		assert.IsType(t, &binlogRESTFulPlan{}, plan)
+		assertBinlogPlan(t, plan, &restfulImportPlanner{})
 	})
 
 	t.Run("BinlogRejectsSnapshotStrategies", func(t *testing.T) {
@@ -122,7 +133,7 @@ func TestTask_selectPlan(t *testing.T) {
 
 		plan, err := task.selectPlan(nil)
 		require.NoError(t, err)
-		assert.IsType(t, &binlogRESTFulPlan{}, plan)
+		assertBinlogPlan(t, plan, &restfulImportPlanner{})
 	})
 
 	t.Run("BinlogPerSegWithPeerFails", func(t *testing.T) {
@@ -131,6 +142,42 @@ func TestTask_selectPlan(t *testing.T) {
 
 		_, err := task.selectPlan(nil)
 		assert.ErrorContains(t, err, "--peers")
+	})
+}
+
+// The shell registers the collection when it is built and walks it through
+// executing → success/fail as the flow runs, whatever the flow is.
+func TestNewCollPlanTask(t *testing.T) {
+	newStore := func() *jobstate.Store {
+		store := jobstate.NewStore()
+		store.AddRestoreTask("task-1")
+		return store
+	}
+	target := collref.New("db1", "coll1")
+
+	t.Run("RegistersAndMarksSuccess", func(t *testing.T) {
+		store := newStore()
+		shell := newCollPlanTask(store, "task-1", target, 4096, func(ctx context.Context) error { return nil })
+		require.NoError(t, shell(context.Background()))
+
+		view, err := store.GetRestoreTask("task-1")
+		require.NoError(t, err)
+		coll := view.CollTasks()[target]
+		assert.Equal(t, backuppb.RestoreTaskStateCode_SUCCESS, coll.StateCode())
+		assert.Equal(t, int64(4096), coll.TotalSize())
+	})
+
+	t.Run("MarksFailAndReturnsError", func(t *testing.T) {
+		store := newStore()
+		shell := newCollPlanTask(store, "task-1", target, 0, func(ctx context.Context) error { return errors.New("boom") })
+		err := shell(context.Background())
+		assert.ErrorContains(t, err, "boom")
+
+		view, verr := store.GetRestoreTask("task-1")
+		require.NoError(t, verr)
+		coll := view.CollTasks()[target]
+		assert.Equal(t, backuppb.RestoreTaskStateCode_FAIL, coll.StateCode())
+		assert.Contains(t, coll.ErrorMessage(), "boom")
 	})
 }
 

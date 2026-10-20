@@ -69,10 +69,6 @@ func newCollSnapshotTask(args collSnapshotTaskArgs) *collSnapshotTask {
 		zap.String("backup_coll", src.String()),
 		zap.String("target_coll", args.target.String()))
 
-	// The export job reported this as the size of the whole bundle, index files included,
-	// so it is what the restore job's progress is a fraction of.
-	args.store.UpdateRestoreTask(args.taskID, jobstate.AddRestoreCollTask(args.target, args.collBackup.GetSize()))
-
 	return &collSnapshotTask{
 		taskID: args.taskID,
 
@@ -99,23 +95,9 @@ func (ct *collSnapshotTask) Target() collref.Name { return ct.target }
 
 // Execute hands the collection to Milvus, which creates it from the schema in the bundle,
 // restores its indexes and partitions, and copies the data. No bytes move through this
-// process, and nothing here creates anything in the target cluster.
+// process, and nothing here creates anything in the target cluster. The plan's shell owns
+// the collection's state transitions; this is the flow.
 func (ct *collSnapshotTask) Execute(ctx context.Context) error {
-	ct.store.UpdateRestoreTask(ct.taskID, jobstate.SetRestoreCollExecuting(ct.target))
-
-	if err := ct.privateExecute(ctx); err != nil {
-		ct.logger.Error("restore collection from snapshot failed", zap.Error(err))
-		ct.store.UpdateRestoreTask(ct.taskID, jobstate.SetRestoreCollFail(ct.target, err))
-		return err
-	}
-
-	ct.logger.Info("restore collection from snapshot success")
-	ct.store.UpdateRestoreTask(ct.taskID, jobstate.SetRestoreCollSuccess(ct.target))
-
-	return nil
-}
-
-func (ct *collSnapshotTask) privateExecute(ctx context.Context) error {
 	ct.logger.Info("start restore collection from snapshot")
 
 	// Milvus creates the collection from the schema in the bundle, so the shard count

@@ -5,10 +5,12 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/samber/lo"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/core/tasklet"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
@@ -45,11 +47,11 @@ const (
 )
 
 // collPlan restores every planned collection one way: from snapshot bundles
-// through Milvus's restore api, or from binlog through the v1 grpc or v2
-// restful import api. The task picks one plan per restore. The plans differ in
-// what restoring one collection is — the snapshot path hands the whole
-// collection to Milvus with no DDL of our own, the binlog paths run the DDL
-// then the DML — not in how collections are scheduled among themselves.
+// through Milvus's restore api, or from binlog through an import api. The task
+// picks one plan per restore. The plans differ in what restoring one
+// collection is — the snapshot path hands the whole collection to Milvus with
+// no DDL of our own, the binlog path runs the DDL then imports the binlogs —
+// not in how collections are scheduled among themselves.
 type collPlan interface {
 	Execute(ctx context.Context) error
 }
@@ -76,14 +78,14 @@ func (t *Task) selectPlan(targets []collTarget) (collPlan, error) {
 		}
 		if peerSet {
 			t.logger.Info("use binlog restful plan with two-phase commit")
-			return newBinlogRESTFulPlan(t, targets), nil
+			return newBinlogPlan(t, targets, t.restfulPlannerFactory()), nil
 		}
 		if t.grpc.HasFeature(milvus.ImportV2) {
 			t.logger.Info("use binlog restful plan")
-			return newBinlogRESTFulPlan(t, targets), nil
+			return newBinlogPlan(t, targets, t.restfulPlannerFactory()), nil
 		}
 		t.logger.Info("use binlog grpc plan")
-		return newBinlogGRPCPlan(t, targets), nil
+		return newBinlogPlan(t, targets, grpcPlannerFactory), nil
 	case StrategyPerSeg:
 		if t.format != meta.FormatBinlog {
 			return nil, wrongFormat("per_seg", meta.FormatBinlog, t.format)
@@ -93,13 +95,13 @@ func (t *Task) selectPlan(targets []collTarget) (collPlan, error) {
 				"commit, but the per_seg strategy imports through the v1 grpc api; use merged_seg or auto")
 		}
 		t.logger.Info("use binlog grpc plan")
-		return newBinlogGRPCPlan(t, targets), nil
+		return newBinlogPlan(t, targets, grpcPlannerFactory), nil
 	case StrategyMergedSeg:
 		if t.format != meta.FormatBinlog {
 			return nil, wrongFormat("merged_seg", meta.FormatBinlog, t.format)
 		}
 		t.logger.Info("use binlog restful plan")
-		return newBinlogRESTFulPlan(t, targets), nil
+		return newBinlogPlan(t, targets, t.restfulPlannerFactory()), nil
 	case StrategyRestoreSnap:
 		if t.format != meta.FormatSnapshot {
 			return nil, wrongFormat("restore_snap", meta.FormatSnapshot, t.format)
@@ -157,25 +159,6 @@ func runCollPlanTasks(ctx context.Context, limit int, logger *zap.Logger, tasks 
 
 	logger.Info("finish restore all collections")
 	return nil
-}
-
-// newCollDMLTaskArgs assembles the DML task's arguments for one target; the
-// same wiring serves both binlog plans.
-func (t *Task) newCollDMLTaskArgs(tgt collTarget) collDMLTaskArgs {
-	return collDMLTaskArgs{
-		taskID: t.args.TaskID,
-		store:  t.args.Store,
-		target: tgt.target,
-
-		collBackup: tgt.collBackup,
-
-		option: t.args.Option,
-
-		backupDir:     t.args.BackupDir,
-		backupStorage: t.args.BackupStorage,
-
-		bulkInsertSem: t.bulkInsertSem,
-	}
 }
 
 // newImportTaskArgs assembles the import wiring of one target collection; the
@@ -252,25 +235,22 @@ func (t *Task) mappedEZK(dbBackup *backuppb.DatabaseBackupInfo) string {
 	return oldEZK
 }
 
-// newBinlogCollPlanTask wraps one collection's binlog restore — DDL, then
-// DML — with its task-manager state transitions.
-func newBinlogCollPlanTask(store *jobstate.Store, taskID string, target collref.Name, ddl *collDDLTask, dml *collDMLTask) collPlanTask {
+// newCollPlanTask wraps one collection's restore flow with its task-manager
+// registration and state transitions, so every plan's per-collection task
+// reports the same way and the flow itself only does the work. Registration
+// happens here, at plan build time: it declares the collections the restore
+// will touch before anything runs.
+func newCollPlanTask(store *jobstate.Store, taskID string, target collref.Name, size int64, flow func(ctx context.Context) error) collPlanTask {
 	logger := log.With(
 		zap.String("restore_task_id", taskID),
 		zap.String("target_coll", target.String()))
 
+	store.UpdateRestoreTask(taskID, jobstate.AddRestoreCollTask(target, size))
+
 	return func(ctx context.Context) error {
 		store.UpdateRestoreTask(taskID, jobstate.SetRestoreCollExecuting(target))
 
-		if err := ddl.Execute(ctx); err != nil {
-			err := fmt.Errorf("restore_collection: restore collection ddl: %w", err)
-			logger.Error("restore collection failed", zap.Error(err))
-			store.UpdateRestoreTask(taskID, jobstate.SetRestoreCollFail(target, err))
-			return err
-		}
-
-		if err := dml.Execute(ctx); err != nil {
-			err := fmt.Errorf("restore_collection: restore collection data: %w", err)
+		if err := flow(ctx); err != nil {
 			logger.Error("restore collection failed", zap.Error(err))
 			store.UpdateRestoreTask(taskID, jobstate.SetRestoreCollFail(target, err))
 			return err
@@ -282,80 +262,171 @@ func newBinlogCollPlanTask(store *jobstate.Store, taskID string, target collref.
 	}
 }
 
-// binlogGRPCPlan restores every collection from a binlog backup through the
-// v1 grpc bulk insert api: each collection runs its DDL, then its DML, one
-// import job per partition dir.
-type binlogGRPCPlan struct {
-	tasks []collPlanTask
-	limit int
+// importPlannerFactory mints the per-collection import planner: grpc or
+// restful, the only thing the binlog data paths ever differ in.
+type importPlannerFactory func(args importTaskArgs) importPlanner
 
-	logger *zap.Logger
+// grpcPlannerFactory plans one import job per partition dir through the v1
+// grpc bulk insert api.
+func grpcPlannerFactory(args importTaskArgs) importPlanner {
+	return newGRPCImportPlanner(args)
 }
 
-// newBinlogGRPCPlan expands each target into its per-collection restore — the
-// DDL first, then the DML importing every partition dir as its own job through
-// the v1 grpc bulk insert api — and reports each collection's state
-// transitions.
-func newBinlogGRPCPlan(t *Task, targets []collTarget) *binlogGRPCPlan {
-	tasks := make([]collPlanTask, 0, len(targets))
-	for _, tgt := range targets {
-		ddl := newCollDDLTask(t.args.TaskID, t.args.Option, tgt.collOverride, tgt.collBackup, tgt.target, t.grpc)
-
-		dml := newCollDMLTask(t.newCollDMLTaskArgs(tgt), newGRPCImportPlanner(t.newImportTaskArgs(tgt)))
-
-		tasks = append(tasks, newBinlogCollPlanTask(t.args.Store, t.args.TaskID, tgt.target, ddl, dml))
-	}
-
-	return &binlogGRPCPlan{
-		tasks: tasks,
-		limit: t.args.Params.Restore.Concurrency.Collections.Val,
-
-		logger: log.With(zap.String("task_id", t.args.TaskID)),
-	}
-}
-
-func (p *binlogGRPCPlan) Execute(ctx context.Context) error {
-	return runCollPlanTasks(ctx, p.limit, p.logger, p.tasks)
-}
-
-// binlogRESTFulPlan restores every collection from a binlog backup through the
-// v2 restful bulk insert api: each collection runs its DDL, then its DML, one
-// import job per chunk of dirs.
-type binlogRESTFulPlan struct {
-	tasks []collPlanTask
-	limit int
-
-	logger *zap.Logger
-}
-
-// newBinlogRESTFulPlan expands each target into its per-collection restore —
-// the DDL first, then the DML importing chunks of dirs through the v2 restful
-// bulk insert api — and reports each collection's state transitions.
-func newBinlogRESTFulPlan(t *Task, targets []collTarget) *binlogRESTFulPlan {
-	// whether the target takes several L0 segments in one import job (2.6.5+)
-	// rides the grpc client's version handshake.
+// restfulPlannerFactory plans chunked import jobs through the v2 restful bulk
+// insert api. Whether the target takes several L0 segments in one import job
+// (2.6.5+) rides the grpc client's version handshake and is resolved once
+// here, not per collection.
+func (t *Task) restfulPlannerFactory() importPlannerFactory {
 	multiL0InOneJob := t.grpc.HasFeature(milvus.MultiL0InOneJob)
+	return func(args importTaskArgs) importPlanner {
+		return newRestfulImportPlanner(args, multiL0InOneJob, t.peers)
+	}
+}
 
+// binlogPlan restores every collection from a binlog backup through an import
+// api: each collection runs its DDL, then imports its binlogs, with the
+// importPlannerFactory choosing the protocol. The two binlog data paths differ
+// only in that factory.
+type binlogPlan struct {
+	tasks []collPlanTask
+	limit int
+
+	// newPlanner is kept after construction: it is the plan's record of which
+	// import protocol it runs on.
+	newPlanner importPlannerFactory
+
+	logger *zap.Logger
+}
+
+// newBinlogPlan expands each target into its per-collection restore — the DDL
+// first, then the binlog import through the planner the factory mints.
+func newBinlogPlan(t *Task, targets []collTarget, newPlanner importPlannerFactory) *binlogPlan {
 	tasks := make([]collPlanTask, 0, len(targets))
 	for _, tgt := range targets {
 		ddl := newCollDDLTask(t.args.TaskID, t.args.Option, tgt.collOverride, tgt.collBackup, tgt.target, t.grpc)
 
-		dml := newCollDMLTask(t.newCollDMLTaskArgs(tgt),
-			newRestfulImportPlanner(t.newImportTaskArgs(tgt), multiL0InOneJob, t.peers))
+		src := collref.New(tgt.collBackup.GetDbName(), tgt.collBackup.GetCollectionName())
+		logger := log.With(
+			zap.String("restore_task_id", t.args.TaskID),
+			zap.String("backup_coll", src.String()),
+			zap.String("target_coll", tgt.target.String()))
 
-		tasks = append(tasks, newBinlogCollPlanTask(t.args.Store, t.args.TaskID, tgt.target, ddl, dml))
+		source := newBinlogSource(tgt.collBackup, t.args.Option, t.args.BackupDir, t.args.BackupStorage, logger)
+		planner := newPlanner(t.newImportTaskArgs(tgt))
+
+		// The export-free binlog backup has no bundle size; the collection's
+		// declared size is the sum of its partitions'.
+		size := lo.SumBy(tgt.collBackup.GetPartitionBackups(), func(part *backuppb.PartitionBackupInfo) int64 {
+			return part.GetSize()
+		})
+
+		flow := func(ctx context.Context) error {
+			if err := ddl.Execute(ctx); err != nil {
+				return fmt.Errorf("restore_collection: restore collection ddl: %w", err)
+			}
+			if err := restoreBinlogData(ctx, t.args.Option, source, planner, t.bulkInsertSem, logger); err != nil {
+				return fmt.Errorf("restore_collection: restore collection data: %w", err)
+			}
+			return nil
+		}
+
+		tasks = append(tasks, newCollPlanTask(t.args.Store, t.args.TaskID, tgt.target, size, flow))
 	}
 
-	return &binlogRESTFulPlan{
-		tasks: tasks,
-		limit: t.args.Params.Restore.Concurrency.Collections.Val,
+	return &binlogPlan{
+		tasks:      tasks,
+		limit:      t.args.Params.Restore.Concurrency.Collections.Val,
+		newPlanner: newPlanner,
 
 		logger: log.With(zap.String("task_id", t.args.TaskID)),
 	}
 }
 
-func (p *binlogRESTFulPlan) Execute(ctx context.Context) error {
+func (p *binlogPlan) Execute(ctx context.Context) error {
 	return runCollPlanTasks(ctx, p.limit, p.logger, p.tasks)
+}
+
+// restoreBinlogData imports one collection's binlog data: every partition's
+// leveled segments first, its L0 segments after — L0 data must land after the
+// leveled data it supersedes, so the two runs are ordered barriers rather than
+// one concurrent pool — and the collection-global L0 segments last.
+func restoreBinlogData(
+	ctx context.Context,
+	option *Option,
+	source *binlogSource,
+	planner importPlanner,
+	sem tasklet.Semaphore,
+	logger *zap.Logger,
+) error {
+	if option.MetaOnly {
+		logger.Info("skip restore data")
+		return nil
+	}
+
+	// restore all partition segment
+	logger.Info("start restore partition segment", zap.Int("partition_num", len(source.collBackup.GetPartitionBackups())))
+	g, subCtx := errgroup.WithContext(ctx)
+	for _, part := range source.collBackup.GetPartitionBackups() {
+		g.Go(func() error {
+			if err := restorePartitionBinlogs(subCtx, source, planner, sem, part, logger); err != nil {
+				return fmt.Errorf("restore_collection: restore partition: %w", err)
+			}
+			return nil
+		})
+	}
+	if err := g.Wait(); err != nil {
+		return fmt.Errorf("restore_collection: wait for partition restore: %w", err)
+	}
+
+	// restore all partition l0 segment
+	logger.Info("start restore all partition L0 segment", zap.Int("l0_segments", len(source.collBackup.GetL0Segments())))
+	l0Groups, err := source.l0DirGroups(source.collBackup.GetL0Segments())
+	if err != nil {
+		return fmt.Errorf("restore_collection: build L0 dir groups: %w", err)
+	}
+	l0Tasks := planner.planTasks("", l0Groups)
+	if err := tasklet.RunConcurrent(ctx, sem, l0Tasks); err != nil {
+		return fmt.Errorf("restore_collection: restore global L0 segment: %w", err)
+	}
+
+	return nil
+}
+
+// restorePartitionBinlogs imports the partition's leveled segments, then its
+// L0 segments: L0 data must land after the leveled data it supersedes, so the
+// two runs are ordered barriers rather than one concurrent pool.
+func restorePartitionBinlogs(
+	ctx context.Context,
+	source *binlogSource,
+	planner importPlanner,
+	sem tasklet.Semaphore,
+	part *backuppb.PartitionBackupInfo,
+	logger *zap.Logger,
+) error {
+	logger.Info("start restore not L0 segment", zap.String("partition_name", part.GetPartitionName()))
+	notL0Groups, err := source.notL0DirGroups(ctx, part)
+	if err != nil {
+		return fmt.Errorf("restore_collection: build not L0 dir groups: %w", err)
+	}
+	notL0Tasks := planner.planTasks(part.GetPartitionName(), notL0Groups)
+	if err := tasklet.RunConcurrent(ctx, sem, notL0Tasks); err != nil {
+		return fmt.Errorf("restore_collection: restore not L0 segments: %w", err)
+	}
+
+	logger.Info("start restore L0 segment", zap.String("partition_name", part.GetPartitionName()))
+	l0Segs := lo.Filter(part.GetSegmentBackups(), func(seg *backuppb.SegmentBackupInfo, _ int) bool {
+		return seg.IsL0
+	})
+	l0Groups, err := source.l0DirGroups(l0Segs)
+	if err != nil {
+		return fmt.Errorf("restore_collection: build L0 dir groups: %w", err)
+	}
+	l0Tasks := planner.planTasks(part.GetPartitionName(), l0Groups)
+	if err := tasklet.RunConcurrent(ctx, sem, l0Tasks); err != nil {
+		return fmt.Errorf("restore_collection: restore L0 segments: %w", err)
+	}
+
+	return nil
 }
 
 // restoreSnapPlan restores every collection from a snapshot backup by handing
@@ -386,7 +457,10 @@ func newRestoreSnapPlan(t *Task, targets []collTarget) *restoreSnapPlan {
 			grpcCli:          t.grpc,
 			store:            t.args.Store,
 		})
-		tasks = append(tasks, st.Execute)
+
+		// The export job reported the bundle's size, index files included, so it
+		// is what the restore job's progress is a fraction of.
+		tasks = append(tasks, newCollPlanTask(t.args.Store, t.args.TaskID, tgt.target, tgt.collBackup.GetSize(), st.Execute))
 	}
 
 	return &restoreSnapPlan{
