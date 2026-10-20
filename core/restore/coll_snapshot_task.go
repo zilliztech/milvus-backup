@@ -39,7 +39,10 @@ type collSnapshotTask struct {
 	pollInterval time.Duration
 
 	grpcCli milvus.Grpc
-	store   *jobstate.Store
+	// job is the collection's single half on the snapshot path: the restore
+	// job Milvus runs plus the fixups after it, minted when the plan was
+	// built. The task settles it.
+	job *jobstate.RestoreJobTracker
 
 	logger *zap.Logger
 }
@@ -58,7 +61,7 @@ type collSnapshotTaskArgs struct {
 	skipParams       SkipParams
 
 	grpcCli milvus.Grpc
-	store   *jobstate.Store
+	job     *jobstate.RestoreJobTracker
 }
 
 func newCollSnapshotTask(args collSnapshotTaskArgs) *collSnapshotTask {
@@ -85,7 +88,7 @@ func newCollSnapshotTask(args collSnapshotTaskArgs) *collSnapshotTask {
 		pollInterval: _snapshotPollInterval,
 
 		grpcCli: args.grpcCli,
-		store:   args.store,
+		job:     args.job,
 
 		logger: logger,
 	}
@@ -94,20 +97,20 @@ func newCollSnapshotTask(args collSnapshotTaskArgs) *collSnapshotTask {
 func (ct *collSnapshotTask) Target() collref.Name { return ct.target }
 
 // Execute hands the collection to Milvus, which creates it from the schema in
-// the bundle, restores its indexes and partitions, and copies the data. No
+// the bundle, restores its indexes and partitions, and copies the data in. No
 // bytes move through this process, and nothing here creates anything in the
-// target cluster. The task settles its own state; privateExecute is the work.
+// target cluster. The task settles its job half — failed on any error it
+// returns, completed when the fixups after the restore have run — and the
+// collection's state derives from it.
 func (ct *collSnapshotTask) Execute(ctx context.Context) error {
-	ct.store.UpdateRestoreTask(ct.taskID, jobstate.SetRestoreCollExecuting(ct.target))
-
 	if err := ct.privateExecute(ctx); err != nil {
 		ct.logger.Error("restore collection failed", zap.Error(err))
-		ct.store.UpdateRestoreTask(ct.taskID, jobstate.SetRestoreCollFail(ct.target, err))
+		ct.job.SetFailed(err)
 		return err
 	}
 
 	ct.logger.Info("restore collection success")
-	ct.store.UpdateRestoreTask(ct.taskID, jobstate.SetRestoreCollSuccess(ct.target))
+	ct.job.SetCompleted()
 
 	return nil
 }
@@ -278,14 +281,14 @@ func (ct *collSnapshotTask) dropExistedColl(ctx context.Context) error {
 	return nil
 }
 
-// waitRestore polls the restore job until it is done. A job that failed comes back through
-// the info rather than as an error from the state query, so both are checked.
+// waitRestore polls the restore job until it is done, reporting progress on
+// the job half. A job that failed comes back through the info rather than as
+// an error from the state query, so both are checked.
 func (ct *collSnapshotTask) waitRestore(ctx context.Context, jobID int64) error {
 	ticker := time.NewTicker(ct.pollInterval)
 	defer ticker.Stop()
 
-	job := strconv.FormatInt(jobID, 10)
-	ct.store.UpdateRestoreTask(ct.taskID, jobstate.AddRestoreImportJob(ct.target, job, ct.collBackup.GetSize()))
+	ct.job.Bind(strconv.FormatInt(jobID, 10))
 
 	for {
 		info, err := ct.grpcCli.GetRestoreSnapshotState(ctx, jobID)
@@ -293,7 +296,7 @@ func (ct *collSnapshotTask) waitRestore(ctx context.Context, jobID int64) error 
 			return fmt.Errorf("restore: get restore snapshot state: %w", err)
 		}
 
-		ct.store.UpdateRestoreTask(ct.taskID, jobstate.UpdateRestoreImportJob(ct.target, job, int(info.GetProgress())))
+		ct.job.SetProgress(info.GetProgress())
 
 		switch info.GetState() {
 		case milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted:

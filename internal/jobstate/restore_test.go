@@ -2,274 +2,212 @@ package jobstate
 
 import (
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
-	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 )
 
-func TestRestoreCollectionTask_Progress(t *testing.T) {
-	t.Run("Normal", func(t *testing.T) {
-		task := &restoreCollectionTask{
-			totalSize: 100,
-			importJob: map[string]*importJob{
-				"job1": {totalSize: 10, progress: 100},
-				"job2": {totalSize: 20, progress: 50},
-				"job3": {totalSize: 30, progress: 0},
-			},
+// The collection's state is derived from its halves: nothing has started is
+// initial, a failed half fails it, every present half settled succeeds it,
+// and anything else is in flight.
+func TestRestoreCollTask_Derive(t *testing.T) {
+	newCollTracker := func() *RestoreCollTracker {
+		return NewStore().AddRestoreTask("task-1").NewCollTracker(collref.New("db1", "coll1"), 100)
+	}
+
+	t.Run("RegisteredOnlyIsInitial", func(t *testing.T) {
+		coll := newCollTracker()
+		assert.Equal(t, RestoreStateInitial, coll.coll.snapshot().State)
+	})
+
+	t.Run("MetaOnlyIsDDLOnly", func(t *testing.T) {
+		coll := newCollTracker()
+		ddl := coll.DDL()
+		assert.Equal(t, RestoreStateInitial, coll.coll.snapshot().State)
+
+		ddl.SetExecuting()
+		assert.Equal(t, RestoreStateExecuting, coll.coll.snapshot().State)
+
+		ddl.SetSuccess()
+		snap := coll.coll.snapshot()
+		assert.Equal(t, RestoreStateSuccess, snap.State)
+		assert.Equal(t, int32(100), snap.Progress)
+		assert.False(t, snap.EndTime.IsZero())
+	})
+
+	t.Run("SnapshotShapeIsOneJob", func(t *testing.T) {
+		coll := newCollTracker()
+		job := coll.NewJob(100)
+		assert.Equal(t, RestoreStateInitial, coll.coll.snapshot().State)
+
+		job.Bind("job-1")
+		job.SetProgress(40)
+		snap := coll.coll.snapshot()
+		assert.Equal(t, RestoreStateExecuting, snap.State)
+		assert.Equal(t, int32(40), snap.Progress)
+
+		job.SetCompleted()
+		snap = coll.coll.snapshot()
+		assert.Equal(t, RestoreStateSuccess, snap.State)
+		require.Len(t, snap.Jobs, 1)
+		assert.Equal(t, "job-1", snap.Jobs[0].ID)
+	})
+
+	t.Run("DDLFailFailsCollection", func(t *testing.T) {
+		coll := newCollTracker()
+		coll.NewJob(100) // the import never runs once the schema half fails
+		coll.DDL().SetExecuting()
+		coll.DDL().SetFail(assert.AnError)
+
+		snap := coll.coll.snapshot()
+		assert.Equal(t, RestoreStateFail, snap.State)
+		assert.Equal(t, assert.AnError.Error(), snap.ErrorMessage)
+	})
+
+	t.Run("JobFailFailsCollection", func(t *testing.T) {
+		coll := newCollTracker()
+		coll.DDL().SetSuccess()
+		ok := coll.NewJob(50)
+		bad := coll.NewJob(50)
+		ok.Bind("ok")
+		ok.SetCompleted()
+		bad.Bind("bad")
+		bad.SetFailed(assert.AnError)
+
+		snap := coll.coll.snapshot()
+		assert.Equal(t, RestoreStateFail, snap.State)
+		assert.Equal(t, assert.AnError.Error(), snap.ErrorMessage)
+		assert.False(t, snap.EndTime.IsZero())
+	})
+}
+
+func TestRestoreCollTask_DeriveProgress(t *testing.T) {
+	t.Run("WeightedByJobSize", func(t *testing.T) {
+		coll := NewStore().AddRestoreTask("task-1").NewCollTracker(collref.New("db1", "coll1"), 100)
+		for i, p := range []int32{100, 50, 0} {
+			job := coll.NewJob([]int64{10, 20, 30}[i])
+			job.Bind("job")
+			job.SetProgress(p)
 		}
 
-		assert.Equal(t, int32(20), task.Progress())
+		assert.Equal(t, int32(20), coll.coll.snapshot().Progress)
+	})
+
+	t.Run("CompletedCountsFull", func(t *testing.T) {
+		coll := NewStore().AddRestoreTask("task-1").NewCollTracker(collref.New("db1", "coll1"), 100)
+		done := coll.NewJob(50)
+		done.Bind("done")
+		done.SetProgress(30)
+		done.SetCompleted()
+		coll.NewJob(50) // still queued, so the collection is not done
+
+		// the last polled ratio does not matter once the job completed
+		assert.Equal(t, int32(50), coll.coll.snapshot().Progress)
 	})
 
 	t.Run("ZeroTotalSize", func(t *testing.T) {
-		task := &restoreCollectionTask{totalSize: 0}
+		coll := NewStore().AddRestoreTask("task-1").NewCollTracker(collref.New("db1", "coll1"), 0)
+		coll.NewJob(0).Bind("job")
 
-		assert.Equal(t, int32(1), task.Progress())
+		assert.Equal(t, int32(1), coll.coll.snapshot().Progress)
 	})
 
-	t.Run("ZeroRestoredSize", func(t *testing.T) {
-		task := &restoreCollectionTask{
-			totalSize: 100,
-			importJob: map[string]*importJob{"job1": {totalSize: 10, progress: 0}},
+	t.Run("ZeroRestoredSizeStillReportsOne", func(t *testing.T) {
+		coll := NewStore().AddRestoreTask("task-1").NewCollTracker(collref.New("db1", "coll1"), 100)
+		coll.NewJob(10).Bind("job")
+
+		assert.Equal(t, int32(1), coll.coll.snapshot().Progress)
+	})
+}
+
+func TestRestoreTracker(t *testing.T) {
+	t.Run("JobLifecycle", func(t *testing.T) {
+		tracker := NewStore().AddRestoreTask("task-1")
+
+		assert.Equal(t, RestoreStateInitial, tracker.Snapshot().State)
+
+		tracker.SetExecuting()
+		assert.Equal(t, RestoreStateExecuting, tracker.Snapshot().State)
+		assert.False(t, tracker.Snapshot().Terminal())
+
+		tracker.SetFail(assert.AnError)
+		snap := tracker.Snapshot()
+		assert.Equal(t, RestoreStateFail, snap.State)
+		assert.Equal(t, assert.AnError.Error(), snap.ErrorMessage)
+		assert.True(t, snap.Terminal())
+		assert.False(t, snap.EndTime.IsZero())
+	})
+
+	t.Run("ProgressWeightsCollections", func(t *testing.T) {
+		tracker := NewStore().AddRestoreTask("task-1")
+		names := []string{"coll1", "coll2", "coll3"}
+		sizes := []int64{10, 20, 30}
+		for i, p := range []int32{100, 50, 0} {
+			job := tracker.NewCollTracker(collref.New("db1", names[i]), sizes[i]).NewJob(sizes[i])
+			job.Bind("job")
+			job.SetProgress(p)
 		}
 
-		assert.Equal(t, int32(1), task.Progress())
+		// each collection's job is its whole size, so the collection percents
+		// are 100, 50 and 1 (the floor), weighting to (10+10+0)/60
+		assert.Equal(t, int32(33), tracker.Snapshot().Progress)
 	})
 
-	t.Run("Success", func(t *testing.T) {
-		task := &restoreCollectionTask{stateCode: backuppb.RestoreTaskStateCode_SUCCESS}
+	t.Run("SuccessIsFullProgress", func(t *testing.T) {
+		tracker := NewStore().AddRestoreTask("task-1")
+		tracker.SetSuccess()
 
-		assert.Equal(t, int32(100), task.Progress())
-	})
-}
-
-func TestRestoreCollectionTask_Getters(t *testing.T) {
-	t.Run("ID", func(t *testing.T) {
-		task := &restoreCollectionTask{id: "id1"}
-
-		assert.Equal(t, "id1", task.ID())
+		assert.Equal(t, int32(100), tracker.Snapshot().Progress)
 	})
 
-	t.Run("StateCode", func(t *testing.T) {
-		task := &restoreCollectionTask{stateCode: backuppb.RestoreTaskStateCode_SUCCESS}
+	t.Run("NoCollectionsReportsOne", func(t *testing.T) {
+		tracker := NewStore().AddRestoreTask("task-1")
+		tracker.SetExecuting()
 
-		assert.Equal(t, backuppb.RestoreTaskStateCode_SUCCESS, task.StateCode())
+		assert.Equal(t, int32(1), tracker.Snapshot().Progress)
 	})
 
-	t.Run("ErrorMessage", func(t *testing.T) {
-		task := &restoreCollectionTask{errorMessage: "error message"}
+	t.Run("SnapshotIsDeadData", func(t *testing.T) {
+		tracker := NewStore().AddRestoreTask("task-1")
+		coll := tracker.NewCollTracker(collref.New("db1", "coll1"), 100)
+		job := coll.NewJob(100)
+		job.Bind("job-1")
 
-		assert.Equal(t, "error message", task.ErrorMessage())
+		snap := tracker.Snapshot()
+		snap.State = RestoreStateFail
+		snap.Colls[collref.New("db1", "coll1")] = RestoreCollStatus{}
+
+		fresh := tracker.Snapshot()
+		assert.Equal(t, RestoreStateInitial, fresh.State)
+		assert.Equal(t, RestoreStateExecuting, fresh.Colls[collref.New("db1", "coll1")].State)
 	})
 
-	t.Run("StartTime", func(t *testing.T) {
-		task := &restoreCollectionTask{startTime: time.Now()}
+	t.Run("DDLHandleMintsOnce", func(t *testing.T) {
+		coll := NewStore().AddRestoreTask("task-1").NewCollTracker(collref.New("db1", "coll1"), 100)
+		coll.DDL().SetExecuting()
+		// a second handle to the same half writes the same node
+		coll.DDL().SetSuccess()
 
-		assert.Equal(t, task.startTime, task.StartTime())
-	})
-
-	t.Run("EndTime", func(t *testing.T) {
-		task := &restoreCollectionTask{endTime: time.Now()}
-
-		assert.Equal(t, task.endTime, task.EndTime())
-	})
-
-	t.Run("TotalSize", func(t *testing.T) {
-		task := &restoreCollectionTask{totalSize: 100}
-
-		assert.Equal(t, int64(100), task.TotalSize())
+		snap := coll.coll.snapshot()
+		require.NotNil(t, snap.DDL)
+		assert.Equal(t, RestoreDDLSuccess, snap.DDL.State)
 	})
 }
 
-func TestRestoreTask_Progress(t *testing.T) {
-	t.Run("Normal", func(t *testing.T) {
-		task := &RestoreTask{
-			collTask: map[collref.Name]*restoreCollectionTask{
-				collref.New("db1", "coll1"): {totalSize: 10, importJob: map[string]*importJob{
-					"job1": {totalSize: 10, progress: 100},
-				}},
-				collref.New("db1", "coll2"): {totalSize: 20, importJob: map[string]*importJob{
-					"job2": {totalSize: 20, progress: 50},
-				}},
-				collref.New("db1", "coll3"): {totalSize: 30, importJob: map[string]*importJob{
-					"job3": {totalSize: 30, progress: 0},
-				}},
-			},
-		}
+func TestStore_GetRestoreTask(t *testing.T) {
+	store := NewStore()
 
-		assert.Equal(t, int32(33), task.Progress())
-	})
+	_, err := store.GetRestoreTask("unknown")
+	assert.ErrorIs(t, err, ErrTaskNotFound)
 
-	t.Run("TaskSuccess", func(t *testing.T) {
-		task := &RestoreTask{stateCode: backuppb.RestoreTaskStateCode_SUCCESS}
+	tracker := store.AddRestoreTask("task-1")
+	tracker.NewCollTracker(collref.New("db1", "coll1"), 100).DDL().SetSuccess()
 
-		assert.Equal(t, int32(100), task.Progress())
-	})
-
-	t.Run("ZeroTotalSize", func(t *testing.T) {
-		task := &RestoreTask{}
-		assert.Equal(t, int32(1), task.Progress())
-	})
-
-	t.Run("ZeroRestoredSize", func(t *testing.T) {
-		task := &RestoreTask{
-			collTask: map[collref.Name]*restoreCollectionTask{
-				collref.New("db1", "coll1"): {totalSize: 10, importJob: map[string]*importJob{
-					"job1": {totalSize: 10, progress: 0},
-				}},
-			}}
-		assert.Equal(t, int32(1), task.Progress())
-	})
-}
-
-func TestRestoreTask_Getters(t *testing.T) {
-	t.Run("ID", func(t *testing.T) {
-		task := &RestoreTask{id: "id1"}
-
-		assert.Equal(t, "id1", task.ID())
-	})
-
-	t.Run("StateCode", func(t *testing.T) {
-		task := &RestoreTask{stateCode: backuppb.RestoreTaskStateCode_SUCCESS}
-
-		assert.Equal(t, backuppb.RestoreTaskStateCode_SUCCESS, task.StateCode())
-	})
-
-	t.Run("ErrorMessage", func(t *testing.T) {
-		task := &RestoreTask{errorMessage: "error message"}
-
-		assert.Equal(t, "error message", task.ErrorMessage())
-	})
-
-	t.Run("StartTime", func(t *testing.T) {
-		task := &RestoreTask{startTime: time.Now()}
-
-		assert.Equal(t, task.startTime, task.StartTime())
-	})
-
-	t.Run("EndTime", func(t *testing.T) {
-		task := &RestoreTask{endTime: time.Now()}
-
-		assert.Equal(t, task.endTime, task.EndTime())
-	})
-
-	t.Run("TotalSize", func(t *testing.T) {
-		task := &RestoreTask{
-			collTask: map[collref.Name]*restoreCollectionTask{
-				collref.New("db1", "coll1"): {totalSize: 100},
-			},
-		}
-
-		assert.Equal(t, int64(100), task.TotalSize())
-	})
-}
-
-func TestAddRestoreCollTask(t *testing.T) {
-	task := &RestoreTask{
-		collTask: make(map[collref.Name]*restoreCollectionTask),
-	}
-
-	AddRestoreCollTask(collref.New("db1", "coll1"), 100)(task)
-
-	assert.Len(t, task.collTask, 1)
-	assert.Equal(t, int64(100), task.collTask[collref.New("db1", "coll1")].totalSize)
-}
-
-func TestSetRestoreExecuting(t *testing.T) {
-	task := &RestoreTask{
-		stateCode: backuppb.RestoreTaskStateCode_INITIAL,
-	}
-
-	SetRestoreExecuting()(task)
-
-	assert.Equal(t, backuppb.RestoreTaskStateCode_EXECUTING, task.stateCode)
-}
-
-func TestSetRestoreSuccess(t *testing.T) {
-	task := &RestoreTask{
-		stateCode: backuppb.RestoreTaskStateCode_INITIAL,
-	}
-
-	SetRestoreSuccess()(task)
-
-	assert.Equal(t, backuppb.RestoreTaskStateCode_SUCCESS, task.stateCode)
-	assert.False(t, task.endTime.IsZero())
-}
-
-func TestSetRestoreFail(t *testing.T) {
-	task := &RestoreTask{
-		stateCode: backuppb.RestoreTaskStateCode_INITIAL,
-	}
-
-	SetRestoreFail(assert.AnError)(task)
-
-	assert.Equal(t, backuppb.RestoreTaskStateCode_FAIL, task.stateCode)
-	assert.False(t, task.endTime.IsZero())
-	assert.Equal(t, assert.AnError.Error(), task.errorMessage)
-}
-
-func TestSetRestoreCollExecuting(t *testing.T) {
-	task := &RestoreTask{
-		collTask: map[collref.Name]*restoreCollectionTask{collref.New("db1", "coll1"): {}},
-	}
-
-	SetRestoreCollExecuting(collref.New("db1", "coll1"))(task)
-
-	collTask := task.collTask[collref.New("db1", "coll1")]
-	assert.Equal(t, backuppb.RestoreTaskStateCode_EXECUTING, collTask.stateCode)
-}
-
-func TestSetRestoreCollSuccess(t *testing.T) {
-	task := &RestoreTask{
-		collTask: map[collref.Name]*restoreCollectionTask{collref.New("db1", "coll1"): {}},
-	}
-
-	SetRestoreCollSuccess(collref.New("db1", "coll1"))(task)
-
-	collTask := task.collTask[collref.New("db1", "coll1")]
-	assert.Equal(t, backuppb.RestoreTaskStateCode_SUCCESS, collTask.stateCode)
-	assert.False(t, collTask.endTime.IsZero())
-}
-
-func TestSetRestoreCollFail(t *testing.T) {
-	task := &RestoreTask{
-		collTask: map[collref.Name]*restoreCollectionTask{collref.New("db1", "coll1"): {}},
-	}
-
-	SetRestoreCollFail(collref.New("db1", "coll1"), assert.AnError)(task)
-
-	collTask := task.collTask[collref.New("db1", "coll1")]
-	assert.Equal(t, backuppb.RestoreTaskStateCode_FAIL, collTask.stateCode)
-	assert.False(t, collTask.endTime.IsZero())
-	assert.Equal(t, assert.AnError.Error(), collTask.errorMessage)
-}
-
-func TestAddRestoreImportJob(t *testing.T) {
-	task := &RestoreTask{
-		collTask: map[collref.Name]*restoreCollectionTask{collref.New("db1", "coll1"): {
-			importJob: make(map[string]*importJob),
-		}},
-	}
-
-	AddRestoreImportJob(collref.New("db1", "coll1"), "job1", 100)(task)
-
-	collTask := task.collTask[collref.New("db1", "coll1")]
-	assert.Len(t, collTask.importJob, 1)
-	assert.Equal(t, int64(100), collTask.importJob["job1"].totalSize)
-}
-
-func TestUpdateRestoreImportJob(t *testing.T) {
-	task := &RestoreTask{
-		collTask: map[collref.Name]*restoreCollectionTask{collref.New("db1", "coll1"): {
-			importJob: map[string]*importJob{"job1": {totalSize: 100}}},
-		},
-	}
-
-	UpdateRestoreImportJob(collref.New("db1", "coll1"), "job1", 50)(task)
-
-	collTask := task.collTask[collref.New("db1", "coll1")]
-	assert.Equal(t, 50, collTask.importJob["job1"].progress)
+	snap, err := store.GetRestoreTask("task-1")
+	require.NoError(t, err)
+	assert.Equal(t, "task-1", snap.ID)
+	require.Len(t, snap.Colls, 1)
+	assert.Equal(t, RestoreStateSuccess, snap.Colls[collref.New("db1", "coll1")].State)
 }

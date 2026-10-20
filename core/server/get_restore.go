@@ -17,7 +17,7 @@ import (
 // defines it: app returns concrete types, and this narrow interface is what
 // handler tests stub out.
 type getRestoreUC interface {
-	Execute(ctx context.Context, id string) (jobstate.RestoreTaskView, error)
+	Execute(ctx context.Context, id string) (jobstate.RestoreStatus, error)
 }
 
 // GetRestore Get restore interface

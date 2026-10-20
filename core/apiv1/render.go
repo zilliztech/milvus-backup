@@ -13,34 +13,46 @@ import (
 // The CLI's get command renders the same brief, which is why these are
 // exported.
 
-func NewRestoreCollTaskResp(collRef collref.Name, taskView jobstate.RestoreCollTaskView) *RestoreCollectionTaskResponse {
+func NewRestoreCollTaskResp(collRef collref.Name, coll jobstate.RestoreCollStatus) *RestoreCollectionTaskResponse {
 	return &RestoreCollectionTaskResponse{
-		Id:                   taskView.ID(),
-		StateCode:            taskView.StateCode(),
-		ErrorMessage:         taskView.ErrorMessage(),
-		StartTime:            taskView.StartTime().Unix(),
-		EndTime:              taskView.EndTime().Unix(),
-		Progress:             taskView.Progress(),
+		StateCode:            restoreStateToPB(coll.State),
+		ErrorMessage:         coll.ErrorMessage,
+		StartTime:            coll.StartTime.Unix(),
+		EndTime:              coll.EndTime.Unix(),
+		Progress:             coll.Progress,
 		TargetDbName:         collRef.DBName(),
 		TargetCollectionName: collRef.CollName(),
 	}
 }
 
-func NewRestoreTaskResp(view jobstate.RestoreTaskView) *RestoreBackupTaskResponse {
-	collTasks := view.CollTasks()
-	collTaskResps := make([]*RestoreCollectionTaskResponse, 0, len(collTasks))
-	for collRef, taskView := range collTasks {
-		collTaskResps = append(collTaskResps, NewRestoreCollTaskResp(collRef, taskView))
+func NewRestoreTaskResp(status jobstate.RestoreStatus) *RestoreBackupTaskResponse {
+	collTaskResps := make([]*RestoreCollectionTaskResponse, 0, len(status.Colls))
+	for collRef, coll := range status.Colls {
+		collTaskResps = append(collTaskResps, NewRestoreCollTaskResp(collRef, coll))
 	}
 
 	return &RestoreBackupTaskResponse{
-		Id:                     view.ID(),
-		StateCode:              view.StateCode(),
-		ErrorMessage:           view.ErrorMessage(),
-		StartTime:              view.StartTime().Unix(),
-		EndTime:                view.EndTime().Unix(),
-		Progress:               view.Progress(),
+		Id:                     status.ID,
+		StateCode:              restoreStateToPB(status.State),
+		ErrorMessage:           status.ErrorMessage,
+		StartTime:              status.StartTime.Unix(),
+		EndTime:                status.EndTime.Unix(),
+		Progress:               status.Progress,
 		CollectionRestoreTasks: collTaskResps,
+	}
+}
+
+// restoreStateToPB renders a restore state as the v1 wire code.
+func restoreStateToPB(state jobstate.RestoreState) backuppb.RestoreTaskStateCode {
+	switch state {
+	case jobstate.RestoreStateExecuting:
+		return backuppb.RestoreTaskStateCode_EXECUTING
+	case jobstate.RestoreStateSuccess:
+		return backuppb.RestoreTaskStateCode_SUCCESS
+	case jobstate.RestoreStateFail:
+		return backuppb.RestoreTaskStateCode_FAIL
+	default:
+		return backuppb.RestoreTaskStateCode_INITIAL
 	}
 }
 

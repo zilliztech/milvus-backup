@@ -62,7 +62,10 @@ type importTaskArgs struct {
 	grpcCli    milvus.Grpc
 	restfulCli milvus.Restful
 
-	store  *jobstate.Store
+	// jobs mints the collection's job halves. The planners call it when they
+	// build the tasks — a half exists from plan build and binds its
+	// server-side job id at submit.
+	jobs   *jobstate.RestoreCollTracker
 	logger *zap.Logger
 }
 
@@ -86,15 +89,15 @@ type importJobState struct {
 }
 
 // waitImportJob polls an import job every _bulkInsertCheckInterval until it
-// reaches a terminal state, reporting progress to the job state store and
-// warning when the job stops making progress. state fetches one snapshot of
-// the job; it is what differs between the grpc and restful apis.
+// reaches the state the caller waits for, reporting progress on the job's half
+// and warning when the job stops making progress. state fetches one snapshot
+// of the job; it is what differs between the grpc and restful apis. Reaching
+// the awaited state only ends the wait: settling the half is the caller's —
+// the two-phase commit waits to Uncommitted, which is no completion.
 func waitImportJob(
 	ctx context.Context,
 	logger *zap.Logger,
-	store *jobstate.Store,
-	taskID string,
-	target collref.Name,
+	job *jobstate.RestoreJobTracker,
 	jobID string,
 	state func(ctx context.Context) (importJobState, error),
 ) error {
@@ -110,11 +113,11 @@ func waitImportJob(
 			return fmt.Errorf("restore: bulk insert failed: %s", s.failedReason)
 		}
 		if s.completed {
-			logger.Info("bulk insert task success", zap.String("job_id", jobID))
+			logger.Info("bulk insert task reached awaited state", zap.String("job_id", jobID))
 			return nil
 		}
 
-		store.UpdateRestoreTask(taskID, jobstate.UpdateRestoreImportJob(target, jobID, s.progress))
+		job.SetProgress(int32(s.progress))
 		if s.progress > lastProgress {
 			lastProgress = s.progress
 			lastUpdateTime = time.Now()

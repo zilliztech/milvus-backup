@@ -20,11 +20,11 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
-func newTestCollSnapshotTask(t *testing.T, grpcCli milvus.Grpc, dropExist bool) *collSnapshotTask {
+func newTestCollSnapshotTask(t *testing.T, grpcCli milvus.Grpc, dropExist bool) (*collSnapshotTask, *jobstate.Store) {
 	target := collref.New("db2", "coll2")
 
 	mgr := jobstate.NewStore()
-	mgr.AddRestoreTask("task-1")
+	tracker := mgr.AddRestoreTask("task-1")
 
 	collBackup := &backuppb.CollectionBackupInfo{
 		DbName:         "db1",
@@ -37,7 +37,7 @@ func newTestCollSnapshotTask(t *testing.T, grpcCli milvus.Grpc, dropExist bool) 
 
 	// Registration is the plan's job at build time; constructing the task
 	// directly does it by hand.
-	mgr.UpdateRestoreTask("task-1", jobstate.AddRestoreCollTask(target, collBackup.GetSize()))
+	collTracker := tracker.NewCollTracker(target, collBackup.GetSize())
 
 	task := newCollSnapshotTask(collSnapshotTaskArgs{
 		taskID:     "task-1",
@@ -46,12 +46,12 @@ func newTestCollSnapshotTask(t *testing.T, grpcCli milvus.Grpc, dropExist bool) 
 		source:     snapshotSource{dirURI: "s3://backup-bucket/backup/mybackup", externalSpec: `{"extfs":{}}`},
 		dropExist:  dropExist,
 		grpcCli:    grpcCli,
-		store:      mgr,
+		job:        collTracker.NewJob(collBackup.GetSize()),
 	})
 	task.pollInterval = time.Millisecond
 	task.logger = zap.NewNop()
 
-	return task
+	return task, mgr
 }
 
 func TestCollSnapshotTask_Execute(t *testing.T) {
@@ -79,12 +79,12 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 				Progress: 100,
 			}, nil).Once()
 
-		task := newTestCollSnapshotTask(t, cli, false)
+		task, mgr := newTestCollSnapshotTask(t, cli, false)
 		require.NoError(t, task.Execute(context.Background()))
 
-		view, err := task.store.GetRestoreTask("task-1")
+		status, err := mgr.GetRestoreTask("task-1")
 		require.NoError(t, err)
-		assert.Equal(t, backuppb.RestoreTaskStateCode_SUCCESS, view.CollTasks()[task.target].StateCode())
+		assert.Equal(t, jobstate.RestoreStateSuccess, status.Colls[task.target].State)
 	})
 
 	// A failed job is reported through the info rather than as an error from the query.
@@ -97,15 +97,15 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 				Reason: "copy failed",
 			}, nil)
 
-		task := newTestCollSnapshotTask(t, cli, false)
+		task, mgr := newTestCollSnapshotTask(t, cli, false)
 		err := task.Execute(context.Background())
 		assert.ErrorContains(t, err, "copy failed")
 
-		view, verr := task.store.GetRestoreTask("task-1")
+		status, verr := mgr.GetRestoreTask("task-1")
 		require.NoError(t, verr)
-		coll := view.CollTasks()[task.target]
-		assert.Equal(t, backuppb.RestoreTaskStateCode_FAIL, coll.StateCode())
-		assert.Contains(t, coll.ErrorMessage(), "copy failed")
+		coll := status.Colls[task.target]
+		assert.Equal(t, jobstate.RestoreStateFail, coll.State)
+		assert.Contains(t, coll.ErrorMessage, "copy failed")
 	})
 
 	// Milvus creates the collection itself and refuses to restore over an existing one,
@@ -118,7 +118,7 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 		cli.EXPECT().GetRestoreSnapshotState(mock.Anything, int64(9001)).
 			Return(&milvuspb.RestoreSnapshotInfo{State: milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted}, nil)
 
-		task := newTestCollSnapshotTask(t, cli, true)
+		task, _ := newTestCollSnapshotTask(t, cli, true)
 		require.NoError(t, task.Execute(context.Background()))
 	})
 
@@ -129,7 +129,7 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 		cli.EXPECT().GetRestoreSnapshotState(mock.Anything, int64(9001)).
 			Return(&milvuspb.RestoreSnapshotInfo{State: milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted}, nil)
 
-		task := newTestCollSnapshotTask(t, cli, true)
+		task, _ := newTestCollSnapshotTask(t, cli, true)
 		require.NoError(t, task.Execute(context.Background()))
 	})
 
@@ -137,7 +137,7 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 	t.Run("NoMetadataPath", func(t *testing.T) {
 		cli := milvus.NewMockGrpc(t)
 
-		task := newTestCollSnapshotTask(t, cli, false)
+		task, _ := newTestCollSnapshotTask(t, cli, false)
 		task.collBackup.SnapshotBackup = nil
 		assert.Error(t, task.Execute(context.Background()))
 	})
@@ -150,7 +150,7 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 		cli.EXPECT().GetRestoreSnapshotState(mock.Anything, int64(9001)).
 			Return(&milvuspb.RestoreSnapshotInfo{State: milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted}, nil)
 
-		task := newTestCollSnapshotTask(t, cli, false)
+		task, _ := newTestCollSnapshotTask(t, cli, false)
 		task.collBackup.ShardsNum = 2
 		task.maxShardNum = 4
 		require.NoError(t, task.Execute(context.Background()))
@@ -161,7 +161,7 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 	t.Run("MaxShardNumBinds", func(t *testing.T) {
 		cli := milvus.NewMockGrpc(t)
 
-		task := newTestCollSnapshotTask(t, cli, false)
+		task, _ := newTestCollSnapshotTask(t, cli, false)
 		task.collBackup.ShardsNum = 8
 		task.maxShardNum = 4
 		err := task.Execute(context.Background())
@@ -176,7 +176,7 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 		cli.EXPECT().GetRestoreSnapshotState(mock.Anything, int64(9001)).
 			Return(&milvuspb.RestoreSnapshotInfo{State: milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted}, nil)
 
-		task := newTestCollSnapshotTask(t, cli, false)
+		task, _ := newTestCollSnapshotTask(t, cli, false)
 		task.collBackup.ShardsNum = 8
 		task.shardNumOverride = 8
 		require.NoError(t, task.Execute(context.Background()))
@@ -187,7 +187,7 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 	t.Run("ShardNumOverrideDiffers", func(t *testing.T) {
 		cli := milvus.NewMockGrpc(t)
 
-		task := newTestCollSnapshotTask(t, cli, false)
+		task, _ := newTestCollSnapshotTask(t, cli, false)
 		task.collBackup.ShardsNum = 8
 		task.shardNumOverride = 4
 		err := task.Execute(context.Background())
@@ -209,7 +209,7 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 				return nil
 			})
 
-		task := newTestCollSnapshotTask(t, cli, false)
+		task, _ := newTestCollSnapshotTask(t, cli, false)
 		task.descOverride = "new desc"
 		require.NoError(t, task.Execute(context.Background()))
 	})
@@ -222,7 +222,7 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 		cli.EXPECT().GetRestoreSnapshotState(mock.Anything, int64(9001)).
 			Return(&milvuspb.RestoreSnapshotInfo{State: milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted}, nil)
 
-		task := newTestCollSnapshotTask(t, cli, false)
+		task, _ := newTestCollSnapshotTask(t, cli, false)
 		require.NoError(t, task.Execute(context.Background()))
 	})
 
@@ -235,7 +235,7 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 		cli.EXPECT().AlterCollection(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 			Return(errors.New("alter failed"))
 
-		task := newTestCollSnapshotTask(t, cli, false)
+		task, _ := newTestCollSnapshotTask(t, cli, false)
 		task.descOverride = "new desc"
 		err := task.Execute(context.Background())
 		assert.ErrorContains(t, err, "alter collection description")
@@ -256,7 +256,7 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 		cli.EXPECT().DropIndexProperties(mock.Anything, "db2", "coll2", "idx_vec", []string{"mmap.enabled"}).
 			Return(nil).Once()
 
-		task := newTestCollSnapshotTask(t, cli, false)
+		task, _ := newTestCollSnapshotTask(t, cli, false)
 		task.collBackup.Schema = &backuppb.CollectionSchema{
 			Properties: []*backuppb.KeyValuePair{{Key: "mmap.enabled", Value: "true"}},
 			Fields: []*backuppb.FieldSchema{
@@ -284,7 +284,7 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 		cli.EXPECT().GetRestoreSnapshotState(mock.Anything, int64(9001)).
 			Return(&milvuspb.RestoreSnapshotInfo{State: milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted}, nil)
 
-		task := newTestCollSnapshotTask(t, cli, false)
+		task, _ := newTestCollSnapshotTask(t, cli, false)
 		task.collBackup.Schema = &backuppb.CollectionSchema{
 			Fields: []*backuppb.FieldSchema{
 				{Name: "vec", TypeParams: []*backuppb.KeyValuePair{{Key: "dim", Value: "128"}}},
@@ -307,7 +307,7 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 		cli.EXPECT().DropCollectionProperties(mock.Anything, mock.Anything, mock.Anything, mock.Anything).
 			Return(errors.New("drop failed"))
 
-		task := newTestCollSnapshotTask(t, cli, false)
+		task, _ := newTestCollSnapshotTask(t, cli, false)
 		task.collBackup.Schema = &backuppb.CollectionSchema{
 			Properties: []*backuppb.KeyValuePair{{Key: "mmap.enabled", Value: "true"}},
 		}

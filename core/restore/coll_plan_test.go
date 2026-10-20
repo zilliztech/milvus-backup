@@ -12,23 +12,19 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
-	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
 // newSelectPlanTask builds a task whose plan selection sees the given format
-// and strategy pin, with the wiring plan construction touches: a registered
-// job store and both storages. The storage clients are local-provider ones —
-// constructing them never dials, and their existence probes of the backup dir
-// simply find nothing.
+// and strategy pin, with the wiring plan construction touches: both storages
+// and the job tracker from newTestTask. The storage clients are local-provider
+// ones — constructing them never dials, and their existence probes of the
+// backup dir simply find nothing.
 func newSelectPlanTask(t *testing.T, format string, strategy Strategy) *Task {
 	task := newTestTask()
 	task.format = format
-	task.args.TaskID = "task-1"
 	task.args.Option = &Option{Strategy: strategy}
-	task.args.Store = jobstate.NewStore()
-	task.args.Store.AddRestoreTask(task.args.TaskID)
 	task.args.BackupDir = "backup/"
 	task.args.BackupStorage = newTestStorageClient(t, cfg.ProviderLocal)
 	task.args.MilvusStorage = newTestStorageClient(t, cfg.ProviderLocal)
@@ -122,9 +118,7 @@ func TestTask_selectPlan(t *testing.T) {
 		mp, ok := plan.(*metaOnlyPlan)
 		require.True(t, ok, "plan is %T, want *metaOnlyPlan", plan)
 		require.Len(t, mp.colls, 1)
-		assert.IsType(t, &collDDLTask{}, mp.colls[0].ddl)
-		assert.Empty(t, mp.colls[0].parts)
-		assert.Empty(t, mp.colls[0].globalL0)
+		assert.IsType(t, &collDDLTask{}, mp.colls[0])
 	})
 
 	t.Run("BinlogRejectsSnapshotStrategies", func(t *testing.T) {

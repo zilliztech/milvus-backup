@@ -14,60 +14,56 @@ import (
 func TestNewRestoreCollTaskResp(t *testing.T) {
 	now := time.Now()
 	collRef := collref.New("db1", "coll1")
-	taskView := jobstate.NewMockRestoreCollTaskView(t)
-	taskView.EXPECT().ID().Return("id1")
-	taskView.EXPECT().StateCode().Return(backuppb.RestoreTaskStateCode_INITIAL)
-	taskView.EXPECT().ErrorMessage().Return("error message")
-	taskView.EXPECT().StartTime().Return(now)
-	taskView.EXPECT().EndTime().Return(now)
-	taskView.EXPECT().Progress().Return(int32(100))
+	coll := jobstate.RestoreCollStatus{
+		State:        jobstate.RestoreStateFail,
+		ErrorMessage: "error message",
+		StartTime:    now,
+		EndTime:      now,
+		Progress:     42,
+	}
 
-	res := NewRestoreCollTaskResp(collRef, taskView)
-	assert.Equal(t, "id1", res.Id)
-	assert.Equal(t, backuppb.RestoreTaskStateCode_INITIAL, res.StateCode)
+	res := NewRestoreCollTaskResp(collRef, coll)
+	assert.Equal(t, backuppb.RestoreTaskStateCode_FAIL, res.StateCode)
 	assert.Equal(t, "error message", res.ErrorMessage)
 	assert.Equal(t, now.Unix(), res.StartTime)
 	assert.Equal(t, now.Unix(), res.EndTime)
-	assert.Equal(t, int32(100), res.Progress)
+	assert.Equal(t, int32(42), res.Progress)
+	assert.Equal(t, "db1", res.TargetDbName)
+	assert.Equal(t, "coll1", res.TargetCollectionName)
 }
 
 func TestNewRestoreTaskResp(t *testing.T) {
 	now := time.Now()
 
-	collTaskView := jobstate.NewMockRestoreCollTaskView(t)
-	collTaskView.EXPECT().ID().Return("id1")
-	collTaskView.EXPECT().StateCode().Return(backuppb.RestoreTaskStateCode_INITIAL)
-	collTaskView.EXPECT().ErrorMessage().Return("error message")
-	collTaskView.EXPECT().StartTime().Return(now)
-	collTaskView.EXPECT().EndTime().Return(now)
-	collTaskView.EXPECT().Progress().Return(int32(100))
+	status := jobstate.RestoreStatus{
+		ID:           "id1",
+		State:        jobstate.RestoreStateExecuting,
+		ErrorMessage: "error message",
+		StartTime:    now,
+		EndTime:      now,
+		Progress:     42,
+		Colls: map[collref.Name]jobstate.RestoreCollStatus{
+			collref.New("db1", "coll1"): {State: jobstate.RestoreStateInitial},
+		},
+	}
 
-	taskView := jobstate.NewMockRestoreTaskView(t)
-	taskView.EXPECT().ID().Return("id1")
-	taskView.EXPECT().StateCode().Return(backuppb.RestoreTaskStateCode_INITIAL)
-	taskView.EXPECT().ErrorMessage().Return("error message")
-	taskView.EXPECT().StartTime().Return(now)
-	taskView.EXPECT().EndTime().Return(now)
-	taskView.EXPECT().Progress().Return(int32(100))
-	taskView.EXPECT().CollTasks().Return(map[collref.Name]jobstate.RestoreCollTaskView{
-		collref.New("db1", "coll1"): collTaskView,
-	})
-
-	res := NewRestoreTaskResp(taskView)
+	res := NewRestoreTaskResp(status)
 	assert.Equal(t, "id1", res.Id)
-	assert.Equal(t, backuppb.RestoreTaskStateCode_INITIAL, res.StateCode)
+	assert.Equal(t, backuppb.RestoreTaskStateCode_EXECUTING, res.StateCode)
 	assert.Equal(t, "error message", res.ErrorMessage)
 	assert.Equal(t, now.Unix(), res.StartTime)
 	assert.Equal(t, now.Unix(), res.EndTime)
-	assert.Equal(t, int32(100), res.Progress)
+	assert.Equal(t, int32(42), res.Progress)
 
 	assert.Len(t, res.CollectionRestoreTasks, 1)
-	assert.Equal(t, "id1", res.CollectionRestoreTasks[0].Id)
 	assert.Equal(t, backuppb.RestoreTaskStateCode_INITIAL, res.CollectionRestoreTasks[0].StateCode)
-	assert.Equal(t, "error message", res.CollectionRestoreTasks[0].ErrorMessage)
-	assert.Equal(t, now.Unix(), res.CollectionRestoreTasks[0].StartTime)
-	assert.Equal(t, now.Unix(), res.CollectionRestoreTasks[0].EndTime)
-	assert.Equal(t, int32(100), res.CollectionRestoreTasks[0].Progress)
+}
+
+func TestRestoreStateToPB(t *testing.T) {
+	assert.Equal(t, backuppb.RestoreTaskStateCode_INITIAL, restoreStateToPB(jobstate.RestoreStateInitial))
+	assert.Equal(t, backuppb.RestoreTaskStateCode_EXECUTING, restoreStateToPB(jobstate.RestoreStateExecuting))
+	assert.Equal(t, backuppb.RestoreTaskStateCode_SUCCESS, restoreStateToPB(jobstate.RestoreStateSuccess))
+	assert.Equal(t, backuppb.RestoreTaskStateCode_FAIL, restoreStateToPB(jobstate.RestoreStateFail))
 }
 
 // The progress mapping is the v1 wire's historical contract; these cases pin

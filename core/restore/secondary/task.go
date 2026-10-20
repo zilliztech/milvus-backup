@@ -59,18 +59,16 @@ type Task struct {
 
 	streamCli milvus.Stream
 
-	store *jobstate.Store
+	tracker *jobstate.RestoreTracker
 
 	logger *zap.Logger
 }
 
 func NewTask(args TaskArgs) (*Task, error) {
-	args.Store.AddRestoreTask(args.TaskID)
-
 	return &Task{
 		args: args,
 
-		store: args.Store,
+		tracker: args.Store.AddRestoreTask(args.TaskID),
 
 		logger: log.With(zap.String("task_id", args.TaskID)),
 	}, nil
@@ -110,7 +108,7 @@ func (t *Task) Execute(ctx context.Context) error {
 	// that cannot produce a matching secondary is rejected before it leaves a
 	// half-created collection behind.
 	if err := checkIndexExtra(t.args.Backup); err != nil {
-		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreFail(err))
+		t.tracker.SetFail(err)
 		return err
 	}
 
@@ -119,20 +117,20 @@ func (t *Task) Execute(ctx context.Context) error {
 		return err
 	}
 
-	t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreExecuting())
+	t.tracker.SetExecuting()
 
 	if err := t.checkBackupHasFullMeta(); err != nil {
-		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreFail(err))
+		t.tracker.SetFail(err)
 		return err
 	}
 
 	if err := t.checkTargetReady(ctx); err != nil {
-		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreFail(err))
+		t.tracker.SetFail(err)
 		return err
 	}
 
 	if err := t.checkTargetIsUnused(ctx); err != nil {
-		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreFail(err))
+		t.tracker.SetFail(err)
 		return err
 	}
 
@@ -140,22 +138,22 @@ func (t *Task) Execute(ctx context.Context) error {
 	t.streamCli = milvus.NewStreamClient(t.args.SourceClusterID, t.args.TaskID, pchs, t.grpc)
 
 	if err := t.runDBTasks(ctx); err != nil {
-		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreFail(err))
+		t.tracker.SetFail(err)
 		return fmt.Errorf("secondary: run database tasks: %w", err)
 	}
 
 	if err := t.runCollTasks(ctx); err != nil {
-		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreFail(err))
+		t.tracker.SetFail(err)
 		return fmt.Errorf("secondary: run collection tasks: %w", err)
 	}
 
 	if err := t.sendRBACMsg(ctx); err != nil {
-		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreFail(err))
+		t.tracker.SetFail(err)
 		return fmt.Errorf("secondary: send rbac msg: %w", err)
 	}
 
 	if err := t.sendFlushAll(ctx); err != nil {
-		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreFail(err))
+		t.tracker.SetFail(err)
 		return fmt.Errorf("secondary: send flush all: %w", err)
 	}
 
@@ -163,11 +161,11 @@ func (t *Task) Execute(ctx context.Context) error {
 	t.streamCli.WaitConfirm()
 
 	if err := t.verifyRestored(ctx); err != nil {
-		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreFail(err))
+		t.tracker.SetFail(err)
 		return err
 	}
 
-	t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreSuccess())
+	t.tracker.SetSuccess()
 	t.logger.Info("restore done")
 	return nil
 }
@@ -439,33 +437,40 @@ func (t *Task) ddlTaskArgs() ddlTaskArgs {
 
 func (t *Task) runCollTask(ctx context.Context, dbBackup *backuppb.DatabaseBackupInfo, collBackup *backuppb.CollectionBackupInfo, ddlArgs ddlTaskArgs, dmlArgs dmlTaskArgs, loadArgs loadTaskArgs) error {
 	collRef := collref.New(dbBackup.GetDbName(), collBackup.GetCollectionName())
-	t.store.UpdateRestoreTask(t.args.TaskID, jobstate.AddRestoreCollTask(collRef, collBackup.GetSize()))
-	t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreCollExecuting(collRef))
+	collTracker := t.tracker.NewCollTracker(collRef, collBackup.GetSize())
+	ddlTracker := collTracker.DDL()
+	// The copy half covers everything past the schema: the create wait, the
+	// binlog copy and the load. It moves bytes through this process, so there
+	// is no server-side job id to bind.
+	copyJob := collTracker.NewJob(collBackup.GetSize())
 
+	ddlTracker.SetExecuting()
 	ddlTask := newCollDDLTask(ddlArgs, dbBackup, collBackup)
 	if err := ddlTask.Execute(ctx); err != nil {
-		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreCollFail(collRef, err))
+		ddlTracker.SetFail(err)
 		return fmt.Errorf("secondary: execute collection ddl task: %w", err)
 	}
+	ddlTracker.SetSuccess()
 
+	copyJob.SetRunning()
 	if err := t.waitCollCreated(ctx, collRef, collBackup.GetCollectionId()); err != nil {
-		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreCollFail(collRef, err))
+		copyJob.SetFailed(err)
 		return err
 	}
 
 	dmlTask := newCollDMLTask(dmlArgs, collBackup)
 	if err := dmlTask.Execute(ctx); err != nil {
-		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreCollFail(collRef, err))
+		copyJob.SetFailed(err)
 		return fmt.Errorf("secondary: execute collection dml task: %w", err)
 	}
 
 	loadTask := newCollLoadTask(loadArgs, dbBackup, collBackup)
 	if err := loadTask.Execute(ctx); err != nil {
-		t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreCollFail(collRef, err))
+		copyJob.SetFailed(err)
 		return fmt.Errorf("secondary: execute collection load task: %w", err)
 	}
 
-	t.store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreCollSuccess(collRef))
+	copyJob.SetCompleted()
 
 	return nil
 }

@@ -70,32 +70,26 @@ func call(t *testing.T, s *Server, method, path, body, requestID string) []byte 
 	return w.Body.Bytes()
 }
 
-// newGoldenRestoreView returns a task view with one collection task, so the
+// newGoldenRestoreStatus returns a job snapshot with one collection, so the
 // rendered response pins both levels of the restore wire shape. Map order
 // would be free-form, so the map carries exactly one collection.
-func newGoldenRestoreView(t *testing.T) *jobstate.MockRestoreTaskView {
-	t.Helper()
-
-	coll := jobstate.NewMockRestoreCollTaskView(t)
-	coll.EXPECT().ID().Return("coll-task-1").Maybe()
-	coll.EXPECT().StateCode().Return(backuppb.RestoreTaskStateCode_EXECUTING).Maybe()
-	coll.EXPECT().ErrorMessage().Return("slow copy").Maybe()
-	coll.EXPECT().StartTime().Return(time.Unix(1, 0)).Maybe()
-	coll.EXPECT().EndTime().Return(time.Unix(2, 0)).Maybe()
-	coll.EXPECT().Progress().Return(int32(42)).Maybe()
-
-	view := jobstate.NewMockRestoreTaskView(t)
-	view.EXPECT().ID().Return("task-1").Maybe()
-	view.EXPECT().StateCode().Return(backuppb.RestoreTaskStateCode_SUCCESS).Maybe()
-	view.EXPECT().ErrorMessage().Return("").Maybe()
-	view.EXPECT().StartTime().Return(time.Unix(1, 0)).Maybe()
-	view.EXPECT().EndTime().Return(time.Unix(2, 0)).Maybe()
-	view.EXPECT().Progress().Return(int32(100)).Maybe()
-	view.EXPECT().CollTasks().Return(map[collref.Name]jobstate.RestoreCollTaskView{
-		collref.New("db1", "coll1"): coll,
-	}).Maybe()
-
-	return view
+func newGoldenRestoreStatus() jobstate.RestoreStatus {
+	return jobstate.RestoreStatus{
+		ID:        "task-1",
+		State:     jobstate.RestoreStateSuccess,
+		StartTime: time.Unix(1, 0),
+		EndTime:   time.Unix(2, 0),
+		Progress:  100,
+		Colls: map[collref.Name]jobstate.RestoreCollStatus{
+			collref.New("db1", "coll1"): {
+				State:        jobstate.RestoreStateExecuting,
+				ErrorMessage: "slow copy",
+				StartTime:    time.Unix(1, 0),
+				EndTime:      time.Unix(2, 0),
+				Progress:     42,
+			},
+		},
+	}
 }
 
 func TestGoldenV1(t *testing.T) {
@@ -126,14 +120,14 @@ func TestGoldenV1(t *testing.T) {
 
 	t.Run("RestoreSuccess", func(t *testing.T) {
 		stub := &stubRestoreFactory{job: &stubRestoreJob{}}
-		s := newListTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{view: newGoldenRestoreView(t)}, nil))
+		s := newListTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{status: newGoldenRestoreStatus()}, nil))
 		body := call(t, s, http.MethodPost, "/api/v1/restore", `{"requestId":"rid-1","backup_name":"backup1"}`, "")
 		assertGolden(t, t.Name(), body)
 	})
 
 	t.Run("RestoreAsyncSuccess", func(t *testing.T) {
 		stub := &stubRestoreFactory{job: &stubRestoreJob{}}
-		s := newListTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{view: newGoldenRestoreView(t)}, nil))
+		s := newListTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{status: newGoldenRestoreStatus()}, nil))
 		body := call(t, s, http.MethodPost, "/api/v1/restore", `{"requestId":"rid-1","backup_name":"backup1","async":true}`, "")
 		assertGolden(t, t.Name(), body)
 	})
@@ -146,7 +140,7 @@ func TestGoldenV1(t *testing.T) {
 
 	t.Run("RestoreSecondarySuccess", func(t *testing.T) {
 		stub := &stubRestoreSecondaryFactory{job: &stubRestoreJob{}}
-		s := newListTestServer(t, withRestoreSecondary(stub), withGetRestore(&stubGetRestore{view: newGoldenRestoreView(t)}, nil))
+		s := newListTestServer(t, withRestoreSecondary(stub), withGetRestore(&stubGetRestore{status: newGoldenRestoreStatus()}, nil))
 		body := call(t, s, http.MethodPost, "/api/v1/restore_secondary",
 			`{"requestId":"rid-1","backup_name":"backup1","sourceClusterID":"src","targetClusterID":"dst"}`, "")
 		assertGolden(t, t.Name(), body)
@@ -213,7 +207,7 @@ func TestGoldenV1(t *testing.T) {
 	})
 
 	t.Run("GetRestoreSuccess", func(t *testing.T) {
-		s := newListTestServer(t, withGetRestore(&stubGetRestore{view: newGoldenRestoreView(t)}, nil))
+		s := newListTestServer(t, withGetRestore(&stubGetRestore{status: newGoldenRestoreStatus()}, nil))
 		body := call(t, s, http.MethodGet, "/api/v1/get_restore?id=task-1", "", "rid-1")
 		assertGolden(t, t.Name(), body)
 	})

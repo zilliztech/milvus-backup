@@ -18,20 +18,20 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
-// stubGetRestore stands in for app.GetRestore: a canned view, the id it was
-// called with, and a call count so tests can assert whether the handler
+// stubGetRestore stands in for app.GetRestore: a canned snapshot, the id it
+// was called with, and a call count so tests can assert whether the handler
 // reached the action at all.
 type stubGetRestore struct {
 	id         string
-	view       jobstate.RestoreTaskView
+	status     jobstate.RestoreStatus
 	executeErr error
 	calls      int
 }
 
-func (s *stubGetRestore) Execute(_ context.Context, id string) (jobstate.RestoreTaskView, error) {
+func (s *stubGetRestore) Execute(_ context.Context, id string) (jobstate.RestoreStatus, error) {
 	s.id = id
 	s.calls++
-	return s.view, s.executeErr
+	return s.status, s.executeErr
 }
 
 // withGetRestore wires the stub as the get-restore usecase. newErr simulates
@@ -60,27 +60,21 @@ func getRestore(t *testing.T, s *Server, query, requestID string) apiv1.RestoreB
 	return resp
 }
 
-// newRestoreTaskView returns a mock task view answering every read the v1
-// rendering makes.
-func newRestoreTaskView(t *testing.T) *jobstate.MockRestoreTaskView {
-	t.Helper()
-
-	now := time.Now()
-	task := jobstate.NewMockRestoreTaskView(t)
-	task.EXPECT().ID().Return("task-1")
-	task.EXPECT().StateCode().Return(backuppb.RestoreTaskStateCode_EXECUTING)
-	task.EXPECT().ErrorMessage().Return("coll1 fail")
-	task.EXPECT().StartTime().Return(now)
-	task.EXPECT().EndTime().Return(now)
-	task.EXPECT().Progress().Return(int32(42))
-	task.EXPECT().CollTasks().Return(nil)
-
-	return task
+// newRestoreStatus returns the snapshot the v1 rendering reads.
+func newRestoreStatus() jobstate.RestoreStatus {
+	return jobstate.RestoreStatus{
+		ID:           "task-1",
+		State:        jobstate.RestoreStateExecuting,
+		ErrorMessage: "coll1 fail",
+		StartTime:    time.Now(),
+		EndTime:      time.Now(),
+		Progress:     42,
+	}
 }
 
 func TestHandleGetRestore(t *testing.T) {
 	t.Run("RendersTheTaskView", func(t *testing.T) {
-		stub := &stubGetRestore{view: newRestoreTaskView(t)}
+		stub := &stubGetRestore{status: newRestoreStatus()}
 		s := newListTestServer(t, withGetRestore(stub, nil))
 
 		resp := getRestore(t, s, "?id=task-1", "")
@@ -110,7 +104,7 @@ func TestHandleGetRestore(t *testing.T) {
 	})
 
 	t.Run("GeneratesRequestIdWhenMissing", func(t *testing.T) {
-		stub := &stubGetRestore{view: newRestoreTaskView(t)}
+		stub := &stubGetRestore{status: newRestoreStatus()}
 		s := newListTestServer(t, withGetRestore(stub, nil))
 
 		resp := getRestore(t, s, "?id=task-1", "")
@@ -119,7 +113,7 @@ func TestHandleGetRestore(t *testing.T) {
 	})
 
 	t.Run("ForwardsRequestId", func(t *testing.T) {
-		stub := &stubGetRestore{view: newRestoreTaskView(t)}
+		stub := &stubGetRestore{status: newRestoreStatus()}
 		s := newListTestServer(t, withGetRestore(stub, nil))
 
 		resp := getRestore(t, s, "?id=task-1", "rid-1")

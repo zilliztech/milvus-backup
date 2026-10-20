@@ -70,6 +70,8 @@ func (p *restfulImportPlanner) newTask(partitionName string, g dirGroup, dirs []
 		timestamp:      g.timestamp,
 		isL0:           g.isL0,
 		storageVersion: g.storageVersion,
+
+		job: p.args.jobs.NewJob(lo.SumBy(dirs, func(dir partitionDir) int64 { return dir.size })),
 	}
 	if len(p.peers) != 0 {
 		return &importViaRESTFul2PCTask{importer: importer, peers: p.peers}
@@ -87,6 +89,15 @@ type importViaRESTFulTask struct {
 }
 
 func (rt *importViaRESTFulTask) Execute(ctx context.Context) error {
+	if err := rt.execute(ctx); err != nil {
+		rt.importer.job.SetFailed(err)
+		return err
+	}
+
+	return nil
+}
+
+func (rt *importViaRESTFulTask) execute(ctx context.Context) error {
 	staging := newCopyTask(rt.importer.args)
 	defer staging.Cleanup(ctx)
 
@@ -116,6 +127,11 @@ type restfulImporter struct {
 	timestamp      uint64
 	isL0           bool
 	storageVersion int64
+
+	// job is the import's half of the collection's node, minted when the plan
+	// was built; it binds the server-side job id at submit and settles when
+	// the task driving the importer does.
+	job *jobstate.RestoreJobTracker
 }
 
 // stage copies the dirs into the target's storage and rewrites them to point
@@ -131,7 +147,7 @@ func (im *restfulImporter) stage(ctx context.Context, staging *copyTask) error {
 	return nil
 }
 
-// submit sends the import request and records the job in the job state store.
+// submit sends the import request and binds the job half its server-side id.
 func (im *restfulImporter) submit(ctx context.Context) (string, error) {
 	return im.createJob(ctx, false)
 }
@@ -164,14 +180,12 @@ func (im *restfulImporter) createJob(ctx context.Context, manualCommit bool) (st
 		return "", fmt.Errorf("restore: failed to bulk insert via restful: %w", err)
 	}
 	im.args.logger.Info("create bulk insert via restful success", zap.String("job_id", jobID))
-
-	size := lo.SumBy(im.dirs, func(dir partitionDir) int64 { return dir.size })
-	im.args.store.UpdateRestoreTask(im.args.taskID, jobstate.AddRestoreImportJob(im.args.target, jobID, size))
+	im.job.Bind(jobID)
 
 	return jobID, nil
 }
 
-// waitCompleted polls the job until it completes.
+// waitCompleted polls the job until it completes, settling the job half.
 func (im *restfulImporter) waitCompleted(ctx context.Context, jobID string) error {
 	state := func(ctx context.Context) (importJobState, error) {
 		resp, err := im.args.restfulCli.GetBulkInsertState(ctx, im.args.target.DBName(), jobID)
@@ -186,19 +200,22 @@ func (im *restfulImporter) waitCompleted(ctx context.Context, jobID string) erro
 		case string(milvus.ImportStateFailed):
 			return importJobState{failedReason: resp.Data.Reason}, nil
 		case string(milvus.ImportStateCompleted):
-			im.args.store.UpdateRestoreTask(im.args.taskID, jobstate.UpdateRestoreImportJob(im.args.target, jobID, 100))
 			return importJobState{completed: true}, nil
 		default:
 			return importJobState{progress: resp.Data.Progress}, nil
 		}
 	}
 
-	return waitImportJob(ctx, im.args.logger, im.args.store, im.args.taskID, im.args.target, jobID, state)
+	if err := waitImportJob(ctx, im.args.logger, im.job, jobID, state); err != nil {
+		return err
+	}
+	im.job.SetCompleted()
+	return nil
 }
 
 // waitUncommitted polls the job until it holds at Uncommitted — the terminal a
 // two-phase job is waited to before anyone commits it. Progress stays short of
-// 100: the data is not visible yet.
+// 100: the data is not visible yet, and the job half is not settled.
 func (im *restfulImporter) waitUncommitted(ctx context.Context, jobID string) error {
 	state := func(ctx context.Context) (importJobState, error) {
 		resp, err := im.args.restfulCli.GetBulkInsertState(ctx, im.args.target.DBName(), jobID)
@@ -219,7 +236,7 @@ func (im *restfulImporter) waitUncommitted(ctx context.Context, jobID string) er
 		}
 	}
 
-	return waitImportJob(ctx, im.args.logger, im.args.store, im.args.taskID, im.args.target, jobID, state)
+	return waitImportJob(ctx, im.args.logger, im.job, jobID, state)
 }
 
 // commit makes the job's data visible. Milvus commits idempotently, so a

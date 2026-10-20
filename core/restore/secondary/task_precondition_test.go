@@ -396,7 +396,7 @@ func TestExecuteSecondaryPreflight(t *testing.T) {
 				require.NoError(t, err)
 				view, err := store.GetRestoreTask("restore")
 				require.NoError(t, err)
-				assert.Equal(t, backuppb.RestoreTaskStateCode_SUCCESS, view.StateCode())
+				assert.Equal(t, jobstate.RestoreStateSuccess, view.State)
 				srv.mu.Lock()
 				defer srv.mu.Unlock()
 				assert.Equal(t, []uint64{1, 2, 100}, srv.ticks, "DDL and RBAC must precede the backed-up FlushAll")
@@ -409,8 +409,8 @@ func TestExecuteSecondaryPreflight(t *testing.T) {
 			assert.Zero(t, srv.streams.Load())
 			view, err := store.GetRestoreTask("restore")
 			require.NoError(t, err)
-			assert.Equal(t, backuppb.RestoreTaskStateCode_FAIL, view.StateCode())
-			assert.Contains(t, view.ErrorMessage(), tc.want)
+			assert.Equal(t, jobstate.RestoreStateFail, view.State)
+			assert.Contains(t, view.ErrorMessage, tc.want)
 		})
 	}
 }

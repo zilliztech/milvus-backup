@@ -92,9 +92,7 @@ func (c *twoPCCluster) count(op string) int {
 // staging: the dirs are treated as already readable by the target.
 func newTwoPCTask(t *testing.T, local *twoPCCluster, peers ...*twoPCCluster) *importViaRESTFul2PCTask {
 	target := collref.New("db", "coll")
-	store := jobstate.NewStore()
-	store.AddRestoreTask("task1")
-	store.UpdateRestoreTask("task1", jobstate.AddRestoreCollTask(target, 1))
+	collTracker := jobstate.NewStore().AddRestoreTask("task1").NewCollTracker(target, 1)
 
 	importer := &restfulImporter{
 		args: importTaskArgs{
@@ -102,12 +100,14 @@ func newTwoPCTask(t *testing.T, local *twoPCCluster, peers ...*twoPCCluster) *im
 			target:        target,
 			milvusStorage: newTestStorageClient(t, cfg.ProviderMinio),
 			restfulCli:    local,
-			store:         store,
+			jobs:          collTracker,
 			logger:        zap.NewNop(),
 		},
 
 		partitionName: "p1",
 		dirs:          []partitionDir{{insertLogDir: "insert", size: 1}},
+
+		job: collTracker.NewJob(1),
 	}
 	importPeers := make([]importPeer, 0, len(peers))
 	for _, p := range peers {
@@ -295,8 +295,9 @@ func TestImportViaRESTFul2PCTaskExecute(t *testing.T) {
 }
 
 func TestRESTfulImportPlannerPeerFork(t *testing.T) {
+	jobs := jobstate.NewStore().AddRestoreTask("task-1").NewCollTracker(collref.New("db", "coll"), 0)
 	planner := &restfulImportPlanner{
-		args:            importTaskArgs{maxSegsPerImportJob: 2, logger: zap.NewNop()},
+		args:            importTaskArgs{maxSegsPerImportJob: 2, jobs: jobs, logger: zap.NewNop()},
 		multiL0InOneJob: true,
 	}
 	g := dirGroup{dirs: []partitionDir{{insertLogDir: "insert", size: 1}}}
