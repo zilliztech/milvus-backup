@@ -80,10 +80,7 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 			}, nil).Once()
 
 		task := newTestCollSnapshotTask(t, cli, false)
-		// Execute is the bare flow now; the state transitions are the plan shell's
-		// job, so run through it the way a plan does.
-		shell := newCollPlanTask(task.store, "task-1", task.target, task.collBackup.GetSize(), task.Execute)
-		require.NoError(t, shell(context.Background()))
+		require.NoError(t, task.Execute(context.Background()))
 
 		view, err := task.store.GetRestoreTask("task-1")
 		require.NoError(t, err)
@@ -103,6 +100,12 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 		task := newTestCollSnapshotTask(t, cli, false)
 		err := task.Execute(context.Background())
 		assert.ErrorContains(t, err, "copy failed")
+
+		view, verr := task.store.GetRestoreTask("task-1")
+		require.NoError(t, verr)
+		coll := view.CollTasks()[task.target]
+		assert.Equal(t, backuppb.RestoreTaskStateCode_FAIL, coll.StateCode())
+		assert.Contains(t, coll.ErrorMessage(), "copy failed")
 	})
 
 	// Milvus creates the collection itself and refuses to restore over an existing one,

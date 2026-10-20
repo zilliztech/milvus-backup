@@ -526,8 +526,9 @@ func (t *Task) privateExecute(ctx context.Context) error {
 
 	// Selecting the plan before anything touches the target keeps a strategy
 	// pin that mismatches the backup a pure validation failure, with no RBAC
-	// or database side effects behind it.
-	plan, err := t.selectPlan(collTargets)
+	// or database side effects behind it. Building the plan reads the backup
+	// bucket — the whole work tree is enumerated here — but writes nothing.
+	plan, err := t.selectPlan(ctx, collTargets)
 	if err != nil {
 		return fmt.Errorf("restore: select plan: %w", err)
 	}

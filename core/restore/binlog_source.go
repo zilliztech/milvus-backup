@@ -3,16 +3,25 @@ package restore
 import (
 	"context"
 	"fmt"
+	"slices"
+	"strings"
 	"sync"
 
 	"github.com/samber/lo"
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 )
+
+// _deltaDirProbeConcurrency bounds how many delta-log existence probes one
+// collection's enumeration keeps in flight. The enumeration runs at plan
+// build time, where one serial round trip per segment directory would sit on
+// the restore's critical path.
+const _deltaDirProbeConcurrency = 32
 
 // binlogSource enumerates what one collection's binlog backup carries: the dir
 // groups of every partition, leveled and L0 apart, with the backup timestamps
@@ -87,7 +96,7 @@ func (s *binlogSource) backupTS(vch string) (uint64, error) {
 	return ts, nil
 }
 
-func (s *binlogSource) notL0DirGroupsWithoutGroupID(ctx context.Context, part *backuppb.PartitionBackupInfo) ([]dirGroup, error) {
+func (s *binlogSource) notL0DirGroupsWithoutGroupID(part *backuppb.PartitionBackupInfo) ([]dirGroup, error) {
 	if s.option.TruncateBinlogByTs {
 		return nil, fmt.Errorf("restore: truncate binlog by ts is not supported if group id is not set in backup")
 	}
@@ -96,10 +105,7 @@ func (s *binlogSource) notL0DirGroupsWithoutGroupID(ctx context.Context, part *b
 		mpath.CollectionID(s.collBackup.GetCollectionId()),
 		mpath.PartitionID(part.GetPartitionId()),
 	}
-	partDir, err := s.buildBackupPartitionDir(ctx, part.GetSize(), opts...)
-	if err != nil {
-		return nil, fmt.Errorf("restore_collection: get partition backup binlog files: %w", err)
-	}
+	partDir := s.buildBackupPartitionDir(part.GetSize(), opts...)
 
 	s.logger.Info("build dir groups without group id", zap.String("partition", part.GetPartitionName()))
 	return []dirGroup{{dirs: []partitionDir{partDir}}}, nil
@@ -110,7 +116,7 @@ type batchKey struct {
 	sv  int64
 }
 
-func (s *binlogSource) notL0DirGroupsWithGroupID(ctx context.Context, notL0Segs []*backuppb.SegmentBackupInfo) ([]dirGroup, error) {
+func (s *binlogSource) notL0DirGroupsWithGroupID(notL0Segs []*backuppb.SegmentBackupInfo) ([]dirGroup, error) {
 	// group by vchannel and storage version
 	segGroups := lo.GroupBy(notL0Segs, func(seg *backuppb.SegmentBackupInfo) batchKey {
 		return batchKey{vch: seg.GetVChannel(), sv: seg.GetStorageVersion()}
@@ -131,11 +137,7 @@ func (s *binlogSource) notL0DirGroupsWithGroupID(ctx context.Context, notL0Segs 
 				mpath.GroupID(seg.GetGroupId()),
 			}
 
-			dir, err := s.buildBackupPartitionDir(ctx, seg.GetSize(), opts...)
-			if err != nil {
-				return nil, fmt.Errorf("restore_collection: get partition backup binlog files: %w", err)
-			}
-			dirs = append(dirs, dir)
+			dirs = append(dirs, s.buildBackupPartitionDir(seg.GetSize(), opts...))
 		}
 
 		groups = append(groups, dirGroup{timestamp: ts, storageVersion: key.sv, dirs: dirs})
@@ -163,11 +165,19 @@ func (s *binlogSource) notL0DirGroups(ctx context.Context, part *backuppb.Partit
 		return nil, nil
 	}
 
+	var groups []dirGroup
+	var err error
 	if withGroupID {
-		return s.notL0DirGroupsWithGroupID(ctx, notL0Segs)
+		groups, err = s.notL0DirGroupsWithGroupID(notL0Segs)
+	} else {
+		// backward compatible old backup without group id
+		groups, err = s.notL0DirGroupsWithoutGroupID(part)
 	}
-	// backward compatible old backup without group id
-	return s.notL0DirGroupsWithoutGroupID(ctx, part)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.probeDeltaDirs(ctx, groups)
 }
 
 func (s *binlogSource) l0DirGroups(l0Segs []*backuppb.SegmentBackupInfo) ([]dirGroup, error) {
@@ -196,6 +206,8 @@ func (s *binlogSource) l0DirGroups(l0Segs []*backuppb.SegmentBackupInfo) ([]dirG
 		groups = append(groups, dirGroup{isL0: true, timestamp: ts, storageVersion: key.sv, dirs: dirs})
 	}
 
+	sortDirGroups(groups)
+
 	return groups, nil
 }
 
@@ -218,17 +230,54 @@ type dirGroup struct {
 	dirs []partitionDir
 }
 
-func (s *binlogSource) buildBackupPartitionDir(ctx context.Context, size int64, pathOpt ...mpath.Option) (partitionDir, error) {
-	insertLogDir := mpath.BackupInsertLogDir(s.backupDir, pathOpt...)
-	deltaLogDir := mpath.BackupDeltaLogDir(s.backupDir, pathOpt...)
+// sortDirGroups pins the group order the map-based grouping leaves open, so
+// one backup meta always enumerates into the same plan.
+func sortDirGroups(groups []dirGroup) {
+	slices.SortFunc(groups, func(a, b dirGroup) int {
+		if c := strings.Compare(a.dirs[0].insertLogDir, b.dirs[0].insertLogDir); c != 0 {
+			return c
+		}
+		return strings.Compare(a.dirs[0].deltaLogDir, b.dirs[0].deltaLogDir)
+	})
+}
 
-	exist, err := storage.Exist(ctx, s.backupStorage, deltaLogDir)
-	if err != nil {
-		return partitionDir{}, fmt.Errorf("restore_collection: check delta log exist: %w", err)
+// buildBackupPartitionDir is the pure path half of enumerating one dir: the
+// delta dir is assumed present until probeDeltaDirs finds otherwise.
+func (s *binlogSource) buildBackupPartitionDir(size int64, pathOpt ...mpath.Option) partitionDir {
+	return partitionDir{
+		insertLogDir: mpath.BackupInsertLogDir(s.backupDir, pathOpt...),
+		deltaLogDir:  mpath.BackupDeltaLogDir(s.backupDir, pathOpt...),
+		size:         size,
+	}
+}
+
+// probeDeltaDirs drops the delta dirs that do not exist in the backup. A dir
+// the probe misses imports through its insert logs only.
+func (s *binlogSource) probeDeltaDirs(ctx context.Context, groups []dirGroup) ([]dirGroup, error) {
+	g, subCtx := errgroup.WithContext(ctx)
+	g.SetLimit(_deltaDirProbeConcurrency)
+	for gi := range groups {
+		for di := range groups[gi].dirs {
+			dir := &groups[gi].dirs[di]
+			if dir.deltaLogDir == "" {
+				continue
+			}
+			g.Go(func() error {
+				exist, err := storage.Exist(subCtx, s.backupStorage, dir.deltaLogDir)
+				if err != nil {
+					return fmt.Errorf("restore_collection: check delta log exist: %w", err)
+				}
+				if !exist {
+					dir.deltaLogDir = ""
+				}
+				return nil
+			})
+		}
+	}
+	if err := g.Wait(); err != nil {
+		return nil, err
 	}
 
-	if exist {
-		return partitionDir{insertLogDir: insertLogDir, deltaLogDir: deltaLogDir, size: size}, nil
-	}
-	return partitionDir{insertLogDir: insertLogDir, size: size}, nil
+	sortDirGroups(groups)
+	return groups, nil
 }
