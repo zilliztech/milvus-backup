@@ -313,15 +313,70 @@ def main_added(uri="http://127.0.0.1:19530", token="root:Milvus", total_entities
     )
 
 
+L0_COLLECTION = "hello_milvus_l0"
+L0_TOTAL_ENTITIES = 3000
+L0_DELETED_PKS = list(range(1000, 1100))
+
+
+def main_l0(uri="http://127.0.0.1:19530", token="root:Milvus", dim=8):
+    """Create hello_milvus_l0 with a known delete subset.
+
+    Rows are inserted in three flushed batches so the collection has several
+    sealed segments, then L0_DELETED_PKS are deleted and flushed. Milvus seals
+    those deletes into L0 (delete-only) segments, which is what
+    `milvus-backup l0compact` folds into per-segment deltalogs before a restore
+    into a 3.0 server, where L0 import is disabled by default.
+    """
+    fmt = "\n=== {:30} ===\n"
+    print(fmt.format("start connecting to Milvus"))
+    print(fmt.format(f"Milvus uri: {uri}"))
+    connections.connect("default", uri=uri, token=token)
+
+    fields = [
+        FieldSchema(name="pk", dtype=DataType.INT64, is_primary=True, auto_id=False),
+        FieldSchema(name="random", dtype=DataType.DOUBLE),
+        FieldSchema(name="var", dtype=DataType.VARCHAR, max_length=65535),
+        FieldSchema(name="embeddings", dtype=DataType.FLOAT_VECTOR, dim=dim),
+    ]
+    schema = CollectionSchema(fields, L0_COLLECTION)
+
+    print(fmt.format(f"Create collection `{L0_COLLECTION}`"))
+    coll = Collection(L0_COLLECTION, schema, consistency_level="Strong")
+
+    rng = np.random.default_rng(seed=19533)
+    batch_size = L0_TOTAL_ENTITIES // 3
+    for start in range(0, L0_TOTAL_ENTITIES, batch_size):
+        end = min(start + batch_size, L0_TOTAL_ENTITIES)
+        pks = list(range(start, end))
+        coll.insert(
+            [
+                pks,
+                rng.random(len(pks)).tolist(),
+                [str(pk) for pk in pks],
+                rng.random((len(pks), dim)).tolist(),
+            ]
+        )
+        coll.flush()
+        print(f"flushed pk range [{start}, {end})")
+
+    expr = "pk in [{}]".format(", ".join(str(pk) for pk in L0_DELETED_PKS))
+    print(fmt.format(f"Delete {len(L0_DELETED_PKS)} rows to seal L0 segments"))
+    coll.delete(expr)
+    coll.flush()
+    print(f"Number of entities in {L0_COLLECTION}: {coll.num_entities}")
+
+
 if __name__ == "__main__":
     args = argparse.ArgumentParser(description="prepare data for backup/restore testing")
     args.add_argument("--uri", type=str, default="http://127.0.0.1:19530", help="Milvus server uri")
     args.add_argument("--token", type=str, default="root:Milvus", help="Milvus server token")
     args.add_argument("--stage", type=int, choices=[1, 2], required=False, help="Stage 1 or 2 for multi-stage data preparation (only affects hello_milvus2). Omit for single-stage mode")
     args.add_argument("--total-entities", type=int, default=3000, help="Total number of entities (hello_milvus always gets all, hello_milvus2 respects stage)")
-    args.add_argument("--scenario", choices=["base", "added"], default="base", help="base: hello_milvus / hello_milvus2 / hello_milvus_dynamic. added: hello_milvus_added (requires Milvus master / 2.6+).")
+    args.add_argument("--scenario", choices=["base", "added", "l0"], default="base", help="base: hello_milvus / hello_milvus2 / hello_milvus_dynamic. added: hello_milvus_added (requires Milvus master / 2.6+). l0: hello_milvus_l0 with a known delete subset, for the l0compact CI leg.")
     args = args.parse_args()
     if args.scenario == "base":
         main(args.uri, args.token, args.stage, args.total_entities)
-    else:
+    elif args.scenario == "added":
         main_added(args.uri, args.token, args.total_entities)
+    else:
+        main_l0(args.uri, args.token)
