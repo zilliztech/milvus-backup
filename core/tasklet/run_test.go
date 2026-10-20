@@ -82,3 +82,47 @@ func TestRunConcurrent(t *testing.T) {
 		assert.ErrorIs(t, err, context.Canceled)
 	})
 }
+
+func TestRunConcurrentLimit(t *testing.T) {
+	newBlockingTasks := func(n int, inFlight, maxInFlight *atomic.Int64) []Tasklet {
+		tasks := make([]Tasklet, 0, n)
+		for range n {
+			tasks = append(tasks, funcTask(func(ctx context.Context) error {
+				cur := inFlight.Add(1)
+				for {
+					peak := maxInFlight.Load()
+					if cur <= peak || maxInFlight.CompareAndSwap(peak, cur) {
+						break
+					}
+				}
+				time.Sleep(time.Hour)
+				inFlight.Add(-1)
+				return nil
+			}))
+		}
+
+		return tasks
+	}
+
+	t.Run("CapsInFlightAtLimit", func(t *testing.T) {
+		var inFlight, maxInFlight atomic.Int64
+		tasks := newBlockingTasks(5, &inFlight, &maxInFlight)
+
+		synctest.Test(t, func(t *testing.T) {
+			assert.NoError(t, RunConcurrentLimit(context.Background(), 2, tasks))
+		})
+
+		assert.EqualValues(t, 2, maxInFlight.Load())
+	})
+
+	t.Run("NonPositiveLimitRunsUnbounded", func(t *testing.T) {
+		var inFlight, maxInFlight atomic.Int64
+		tasks := newBlockingTasks(3, &inFlight, &maxInFlight)
+
+		synctest.Test(t, func(t *testing.T) {
+			assert.NoError(t, RunConcurrentLimit(context.Background(), 0, tasks))
+		})
+
+		assert.EqualValues(t, 3, maxInFlight.Load())
+	})
+}

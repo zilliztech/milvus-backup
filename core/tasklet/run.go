@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"golang.org/x/sync/errgroup"
+	"golang.org/x/sync/semaphore"
 )
 
 // Semaphore bounds how many tasks RunConcurrent keeps in flight.
@@ -33,4 +34,15 @@ func RunConcurrent(ctx context.Context, sem Semaphore, tasks []Tasklet) error {
 	}
 
 	return g.Wait()
+}
+
+// RunConcurrentLimit is RunConcurrent with a budget no other call shares: it
+// mints a semaphore of capacity limit for this call alone. A non-positive
+// limit runs unbounded, matching errgroup's SetLimit.
+func RunConcurrentLimit(ctx context.Context, limit int, tasks []Tasklet) error {
+	if limit <= 0 {
+		limit = len(tasks)
+	}
+
+	return RunConcurrent(ctx, semaphore.NewWeighted(int64(max(limit, 1))), tasks)
 }
