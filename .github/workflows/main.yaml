@@ -156,6 +156,18 @@ jobs:
         run: |
           python example/prepare_data.py
 
+      # The 2.6 -> 3.0 leg also covers the L0 path: 2.6 backs up delete-only
+      # segments, 3.0 rejects L0 import by default, so the target restores a
+      # copy with the L0 deletes folded into per-segment deltalogs by l0compact.
+      # The unwashed restore is deliberately not run: its rejection is the
+      # server's fail-closed guard, not something this job needs to assert.
+      - name: Prepare L0 data
+        if: ${{ matrix.source_image_tag == '2.6-latest' && matrix.target_image_tag == 'master-latest' }}
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python example/prepare_data.py --scenario l0
+
       - name: List MinIO files before backup
         shell: bash
         working-directory: deployment/${{ matrix.milvus_mode }}
@@ -252,16 +264,40 @@ jobs:
           pwd
           ls -l
           tree
+
+      - name: Compact L0 segments
+        if: ${{ matrix.source_image_tag == '2.6-latest' && matrix.target_image_tag == 'master-latest' }}
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          ./milvus-backup l0compact -n my_backup -o my_backup_l0c
+
       - name: Restore backup from another Milvus
+        if: ${{ matrix.source_image_tag != '2.6-latest' || matrix.target_image_tag != 'master-latest' }}
         timeout-minutes: 5
         shell: bash
         run: |
           ./milvus-backup restore -n my_backup -s _recover
+
+      - name: Restore L0-compacted backup from another Milvus
+        if: ${{ matrix.source_image_tag == '2.6-latest' && matrix.target_image_tag == 'master-latest' }}
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          ./milvus-backup restore -n my_backup_l0c -s _recover
+
       - name: Verify data from another Milvus
         timeout-minutes: 5
         shell: bash
         run: |
           python example/verify_data.py
+
+      - name: Verify L0 data from another Milvus
+        if: ${{ matrix.source_image_tag == '2.6-latest' && matrix.target_image_tag == 'master-latest' }}
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python example/verify_data.py --scenario l0
 
   test-backup-restore-local-storage:
     needs: unit-test-go

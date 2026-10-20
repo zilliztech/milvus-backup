@@ -113,9 +113,63 @@ def main(uri, token):
         utility.drop_collection(recover_collection_name)
 
 
+L0_RECOVER_COLLECTION = "hello_milvus_l0_recover"
+L0_TOTAL_ENTITIES = 3000
+L0_DELETED_PKS = list(range(1000, 1100))
+
+
+def main_l0(uri, token):
+    fmt = "\n=== {:30} ===\n"
+    print(fmt.format("start connecting to Milvus"))
+    print(fmt.format(f"Milvus uri: {uri}"))
+    connections.connect("default", uri=uri, token=token)
+
+    has = utility.has_collection(L0_RECOVER_COLLECTION)
+    print(f"Does collection {L0_RECOVER_COLLECTION} exist in Milvus: {has}")
+    assert has, f"{L0_RECOVER_COLLECTION} not found after restore"
+    recover_collection = Collection(L0_RECOVER_COLLECTION)
+    print(recover_collection.schema)
+    recover_collection.flush()
+
+    print(fmt.format("Start Creating index IVF_FLAT"))
+    index = {
+        "index_type": "IVF_FLAT",
+        "metric_type": "L2",
+        "params": {"nlist": 128},
+    }
+    recover_collection.create_index("embeddings", index)
+
+    print(fmt.format("Start loading"))
+    recover_collection.load()
+
+    expected = L0_TOTAL_ENTITIES - len(L0_DELETED_PKS)
+    result = recover_collection.query("", output_fields=["count(*)"])
+    count = result[0]["count(*)"]
+    print(f"Number of entities in {L0_RECOVER_COLLECTION}: {count}, expected: {expected}")
+    assert count == expected, f"count {count} != expected {expected}"
+
+    expr = "pk in [{}]".format(", ".join(str(pk) for pk in L0_DELETED_PKS))
+    result = recover_collection.query(expr, output_fields=["pk"])
+    print(f"Deleted rows still present: {len(result)}")
+    assert len(result) == 0, f"deleted PKs reappeared after restore: {result[:10]}"
+
+    survivors = [0, 999, 1100, L0_TOTAL_ENTITIES - 1]
+    expr = "pk in [{}]".format(", ".join(str(pk) for pk in survivors))
+    result = recover_collection.query(expr, output_fields=["pk"])
+    print(f"Surviving rows found: {len(result)} of {len(survivors)}")
+    assert len(result) == len(survivors), f"surviving PKs missing: {result}"
+
+    print(fmt.format(f"Drop collection {L0_RECOVER_COLLECTION}"))
+    utility.drop_collection(L0_RECOVER_COLLECTION)
+
+
 if __name__ == "__main__":
     args = argparse.ArgumentParser(description="verify data")
     args.add_argument("--uri", type=str, default="http://127.0.0.1:19530", help="Milvus server uri")
     args.add_argument("--token",type=str, default="root:Milvus", help="Milvus server token")
+    args.add_argument("--scenario", choices=["base", "l0"], default="base", help="base: hello_milvus_recover / hello_milvus2_recover. l0: hello_milvus_l0_recover, restored from an l0compacted backup.")
     args = args.parse_args()
-    main(args.uri, args.token)
+    if args.scenario == "base":
+        main(args.uri, args.token)
+    else:
+        main_l0(args.uri, args.token)
