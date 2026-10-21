@@ -501,6 +501,22 @@ func (t *Task) newRestoreSnapCollTask(tgt collTarget) *collSnapshotTask {
 	// is what the restore job's progress is a fraction of.
 	collTracker := t.tracker.NewCollTracker(tgt.target, tgt.collBackup.GetSize())
 
+	// A backup on another storage service than the target's is staged into the
+	// milvus storage first: the restore api's server-side copy cannot cross
+	// services, so milvus-backup streams the bundle over itself.
+	var staging *snapshotStaging
+	if t.snapshotSource.staging {
+		milvusRootPath := t.args.Params.Milvus.Storage.RootPath.Val
+		staging = &snapshotStaging{
+			backupDir:      t.args.BackupDir,
+			backupStorage:  t.args.BackupStorage,
+			milvusStorage:  t.args.MilvusStorage,
+			milvusRootPath: milvusRootPath,
+			copySem:        t.copySem,
+			keepTempFiles:  t.args.Params.Restore.KeepTempFiles.Val,
+		}
+	}
+
 	return newCollSnapshotTask(collSnapshotTaskArgs{
 		taskID:           t.args.TaskID,
 		collBackup:       tgt.collBackup,
@@ -511,6 +527,7 @@ func (t *Task) newRestoreSnapCollTask(tgt collTarget) *collSnapshotTask {
 		shardNumOverride: tgt.collOverride.ShardNum,
 		descOverride:     tgt.collOverride.Description,
 		skipParams:       t.args.Option.SkipParams,
+		staging:          staging,
 		grpcCli:          t.grpc,
 		job:              collTracker.NewJob(tgt.collBackup.GetSize()),
 	})

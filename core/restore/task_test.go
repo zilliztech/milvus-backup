@@ -87,8 +87,8 @@ func TestNewTask_SnapshotSource(t *testing.T) {
 }
 
 // A backup on another storage service than the target's cannot ride the restore
-// api's server-side copy: auto and restore_snap refuse it with a pointer at
-// import_snap, which reads the source itself and is the only way across.
+// api's server-side copy: the restore path stages the bundle into the milvus
+// storage first, while the import path reads the source itself through the spec.
 func TestNewTask_SnapshotCrossService(t *testing.T) {
 	newArgs := func(strategy Strategy) TaskArgs {
 		milvusStorage := storage.NewMockClient(t)
@@ -114,23 +114,24 @@ func TestNewTask_SnapshotCrossService(t *testing.T) {
 		}
 	}
 
-	t.Run("AutoRefuses", func(t *testing.T) {
-		_, err := NewTask(t.Context(), newArgs(StrategyAuto))
-		assert.ErrorContains(t, err, "are not the same one")
-		assert.ErrorContains(t, err, "import_snap")
+	t.Run("AutoStages", func(t *testing.T) {
+		task, err := NewTask(t.Context(), newArgs(StrategyAuto))
+		require.NoError(t, err)
+		assert.True(t, task.snapshotSource.staging)
 	})
 
-	t.Run("RestoreSnapRefuses", func(t *testing.T) {
-		_, err := NewTask(t.Context(), newArgs(StrategyRestoreSnap))
-		assert.ErrorContains(t, err, "are not the same one")
+	t.Run("RestoreSnapStages", func(t *testing.T) {
+		task, err := NewTask(t.Context(), newArgs(StrategyRestoreSnap))
+		require.NoError(t, err)
+		assert.True(t, task.snapshotSource.staging)
 	})
 
 	// The import path reads the source under the backup storage's own
-	// credentials, spelled out in the external spec.
-	t.Run("ImportSnapPermits", func(t *testing.T) {
+	// credentials, spelled out in the external spec, so it stages nothing.
+	t.Run("ImportSnapSendsSpec", func(t *testing.T) {
 		task, err := NewTask(t.Context(), newArgs(StrategyImportSnap))
 		require.NoError(t, err)
-		assert.False(t, task.snapshotSource.sameService)
+		assert.False(t, task.snapshotSource.staging)
 		assert.Contains(t, task.snapshotSource.externalSpec, `"access_key_id":"ak"`)
 	})
 }

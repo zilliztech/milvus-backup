@@ -159,7 +159,7 @@ func TestTask_selectPlan(t *testing.T) {
 	// collection: the api expands the bundle's partitions and segments itself.
 	t.Run("SnapshotImportSnap", func(t *testing.T) {
 		task := newSelectPlanTask(t, meta.FormatSnapshot, StrategyImportSnap)
-		task.snapshotSource = snapshotSource{dirURI: "s3://backup-bucket/backup/mybackup", sameService: true}
+		task.snapshotSource = snapshotSource{dirURI: "s3://backup-bucket/backup/mybackup"}
 		grpcCli := milvus.NewMockGrpc(t)
 		grpcCli.EXPECT().HasFeature(milvus.ImportSnapshot).Return(true)
 		task.grpc = grpcCli
