@@ -68,6 +68,19 @@ jobs:
           fi
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.milvus_version }}-latest) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          # On master, keep auto compaction on even though the l0compact suite
+          # wants it off: master enables sort compaction, whose event-driven
+          # trigger ignores enableAutoCompaction while the periodic retry
+          # honors it. With it off, a sort compaction rejected by a snapshot
+          # export pin is never retried, the segment stays unsorted and is
+          # never indexed, and any create_index on the collection hangs
+          # forever. The l0compact cases only pass on 2.6 anyway.
+          # Same override as main.yaml; without it the master L1/RELEASE legs
+          # hang in test_milvus_restore_back_all_supported_data_type until the
+          # 180min job timeout kills the whole leg.
+          if [ ${{ matrix.milvus_version }} == "master" ]; then
+            yq -i '.dataCoord.compaction.enableAutoCompaction = true' custom_config.yaml
+          fi
           cat custom_config.yaml || true
           mkdir -p volumes/etcd volumes/minio volumes/milvus
           sudo chmod -R 777 volumes
