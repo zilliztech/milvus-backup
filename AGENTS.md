@@ -11,14 +11,14 @@ followed by `t.Errorf` / `t.Fatalf`.
 
 ```go
 // Good
-assert.Equal(t, "ab****ef", maskSecret("abcdef"))
+assert.Equal(t, "****", maskSecret("abcdef"))
 assert.NoError(t, err)
 assert.Len(t, backups, 1)
 assert.Contains(t, out, "milvus.port")
 
 // Bad — reimplements what assert already does, with worse failure messages
-if got := maskSecret("abcdef"); got != "ab****ef" {
-    t.Errorf("maskSecret() = %s, want %s", got, "ab****ef")
+if got := maskSecret("abcdef"); got != "****" {
+    t.Errorf("maskSecret() = %s, want %s", got, "****")
 }
 if err != nil {
     t.Fatalf("Load: %v", err)

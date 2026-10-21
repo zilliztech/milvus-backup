@@ -30,16 +30,15 @@ type Credentials struct {
 	TmpSK        string `json:"tmpSK"`
 }
 
+// mask renders a set credential as a fixed mask, keeping empty empty so set
+// and unset stay distinguishable. No value characters are retained: any
+// retained character confirms guesses at weak values.
 func mask(s string) string {
 	if len(s) == 0 {
 		return ""
 	}
 
-	if len(s) <= 6 {
-		return "****"
-	}
-
-	return s[:2] + "****" + s[len(s)-2:]
+	return "****"
 }
 
 func (cred *Credentials) String() string {

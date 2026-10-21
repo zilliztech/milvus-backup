@@ -50,14 +50,14 @@ type Field interface {
 	UseDefault()
 }
 
+// maskSecret renders a set secret as a fixed mask, keeping empty empty so set
+// and unset stay distinguishable. No value characters are retained: any
+// retained character confirms guesses at weak values.
 func maskSecret(s string) string {
 	if s == "" {
 		return ""
 	}
-	if len(s) <= 4 {
-		return "****"
-	}
-	return s[:2] + "****" + s[len(s)-2:]
+	return "****"
 }
 
 // Walk visits every field of the configuration struct pointed to by cfg,
