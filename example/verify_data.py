@@ -6,6 +6,7 @@ from pymilvus import (
     utility,
     FieldSchema, CollectionSchema, DataType,
     Collection,
+    MilvusClient,
 )
 import argparse
 
@@ -163,13 +164,66 @@ def main_l0(uri, token):
     utility.drop_collection(L0_RECOVER_COLLECTION)
 
 
+LATEFUNC_RECOVER_COLLECTION = "hello_milvus_latefunc_recover"
+LATEFUNC_TEXT_FIELD = "added_text"
+LATEFUNC_OUTPUT_FIELD = "bm25_sparse"
+LATEFUNC_FUNCTION = "bm25_late"
+
+
+def main_latefunc(uri, token):
+    """Verify the restored hello_milvus_latefunc_recover.
+
+    The function added after the source collection's creation must survive the
+    round trip: it is declared in the restored schema, its output field exists,
+    and the added input field keeps its nullable flag. The collection is
+    schema-only (no rows), because binlog backup cannot read the StorageV3
+    layout that the add_function_field gate requires on the source.
+    """
+    fmt = "\n=== {:30} ===\n"
+    print(fmt.format("start connecting to Milvus"))
+    print(fmt.format(f"Milvus uri: {uri}"))
+    connections.connect("default", uri=uri, token=token)
+    client = MilvusClient(uri=uri, token=token)
+
+    has = utility.has_collection(LATEFUNC_RECOVER_COLLECTION)
+    print(f"Does collection {LATEFUNC_RECOVER_COLLECTION} exist in Milvus: {has}")
+    assert has, f"{LATEFUNC_RECOVER_COLLECTION} not found after restore"
+
+    desc = client.describe_collection(LATEFUNC_RECOVER_COLLECTION)
+    print(desc)
+    function_names = [f["name"] for f in desc.get("functions", [])]
+    assert LATEFUNC_FUNCTION in function_names, f"function missing after restore: {function_names}"
+    field_by_name = {f["name"]: f for f in desc["fields"]}
+    assert LATEFUNC_TEXT_FIELD in field_by_name, f"added field missing after restore: {list(field_by_name)}"
+    assert field_by_name[LATEFUNC_TEXT_FIELD].get("nullable") is True, (
+        f"added field lost nullable: {field_by_name[LATEFUNC_TEXT_FIELD]}"
+    )
+    assert LATEFUNC_OUTPUT_FIELD in field_by_name, f"function output field missing after restore: {list(field_by_name)}"
+
+    # Field IDs must match the source layout exactly: the binlog import reader
+    # groups files by the field ID parsed from the backup's log paths, so a
+    # shifted ID would lose or misplace the field's data. Source layout: pk=100,
+    # embeddings=101, $meta=102, added_text=103 (add_collection_field),
+    # bm25_sparse=104 (add_function_field).
+    assert field_by_name[LATEFUNC_TEXT_FIELD]["field_id"] == 103, field_by_name[LATEFUNC_TEXT_FIELD]
+    assert field_by_name[LATEFUNC_OUTPUT_FIELD]["field_id"] == 104, field_by_name[LATEFUNC_OUTPUT_FIELD]
+
+    recover_collection = Collection(LATEFUNC_RECOVER_COLLECTION)
+    print(recover_collection.schema)
+
+    print(fmt.format(f"Drop collection {LATEFUNC_RECOVER_COLLECTION}"))
+    utility.drop_collection(LATEFUNC_RECOVER_COLLECTION)
+
+
 if __name__ == "__main__":
     args = argparse.ArgumentParser(description="verify data")
     args.add_argument("--uri", type=str, default="http://127.0.0.1:19530", help="Milvus server uri")
     args.add_argument("--token",type=str, default="root:Milvus", help="Milvus server token")
-    args.add_argument("--scenario", choices=["base", "l0"], default="base", help="base: hello_milvus_recover / hello_milvus2_recover. l0: hello_milvus_l0_recover, restored from an l0compacted backup.")
+    args.add_argument("--scenario", choices=["base", "l0", "latefunc"], default="base", help="base: hello_milvus_recover / hello_milvus2_recover. l0: hello_milvus_l0_recover, restored from an l0compacted backup. latefunc: hello_milvus_latefunc_recover, restored from a binlog backup of a collection with a late-added BM25 function.")
     args = args.parse_args()
     if args.scenario == "base":
         main(args.uri, args.token)
+    elif args.scenario == "latefunc":
+        main_latefunc(args.uri, args.token)
     else:
         main_l0(args.uri, args.token)

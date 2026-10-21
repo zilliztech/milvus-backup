@@ -8,6 +8,7 @@
 #   Multi-stage mode: python prepare_data.py --stage 1  # then later: --stage 2
 import time
 import numpy as np
+import requests
 from pymilvus import (
     connections,
     utility,
@@ -366,17 +367,103 @@ def main_l0(uri="http://127.0.0.1:19530", token="root:Milvus", dim=8):
     print(f"Number of entities in {L0_COLLECTION}: {coll.num_entities}")
 
 
+LATEFUNC_COLLECTION = "hello_milvus_latefunc"
+LATEFUNC_TEXT_FIELD = "added_text"
+LATEFUNC_OUTPUT_FIELD = "bm25_sparse"
+LATEFUNC_FUNCTION = "bm25_late"
+
+
+def main_latefunc(uri="http://127.0.0.1:19530", token="root:Milvus"):
+    """Create hello_milvus_latefunc with a function added after creation.
+
+    The collection is created with the dynamic field enabled and half of its
+    rows, then a nullable varchar field is added via add_collection_field and
+    a BM25 function over it via the RESTful add_function_field endpoint (the
+    pinned pymilvus has no add_function_field binding yet). A function whose
+    fields sit past the $meta gap is the shape that used to break restore:
+    CreateCollection got the function before its fields existed (see
+    zilliztech/milvus-backup#1331).
+
+    Requires Milvus 3.0 with StorageV3 (common.storage.useLoonFFI) and
+    dataCoord.compaction.bumpSchemaVersion.enabled=true; only the loonffi CI
+    leg enables them. The collection carries no rows on purpose: binlog backup
+    cannot parse the StorageV3 segment layout that LoonFFI writes, and the
+    regression this scenario guards is purely in the DDL replay, so a
+    schema-only round-trip covers it.
+    """
+    fmt = "\n=== {:30} ===\n"
+    dim = 8
+
+    print(fmt.format("start connecting to Milvus"))
+    print(fmt.format(f"Milvus uri: {uri}"))
+    connections.connect("default", uri=uri, token=token)
+
+    fields = [
+        FieldSchema(name="pk", dtype=DataType.INT64, is_primary=True, auto_id=False),
+        FieldSchema(name="embeddings", dtype=DataType.FLOAT_VECTOR, dim=dim),
+    ]
+    schema = CollectionSchema(fields, LATEFUNC_COLLECTION, enable_dynamic_field=True)
+
+    print(fmt.format(f"Create collection `{LATEFUNC_COLLECTION}`"))
+    coll = Collection(LATEFUNC_COLLECTION, schema, consistency_level="Strong")
+
+    client = MilvusClient(uri=uri, token=token)
+    print(fmt.format(f"add_collection_field {LATEFUNC_TEXT_FIELD}"))
+    client.add_collection_field(
+        collection_name=LATEFUNC_COLLECTION,
+        field_name=LATEFUNC_TEXT_FIELD,
+        data_type=DataType.VARCHAR,
+        max_length=256,
+        nullable=True,
+        enable_analyzer=True,
+    )
+
+    print(fmt.format(f"add_function_field {LATEFUNC_FUNCTION}"))
+    resp = requests.post(
+        f"{uri}/v2/vectordb/collections/add_function_field",
+        headers={"Authorization": f"Bearer {token}"},
+        json={
+            "collectionName": LATEFUNC_COLLECTION,
+            "function": {
+                "name": LATEFUNC_FUNCTION,
+                "type": "BM25",
+                "inputFieldNames": [LATEFUNC_TEXT_FIELD],
+                "outputFieldNames": [LATEFUNC_OUTPUT_FIELD],
+            },
+            "outputField": {
+                "fieldName": LATEFUNC_OUTPUT_FIELD,
+                "dataType": "SparseFloatVector",
+            },
+            "indexParams": {
+                "fieldName": LATEFUNC_OUTPUT_FIELD,
+                "indexName": "bm25_sparse_idx",
+                "indexType": "SPARSE_INVERTED_INDEX",
+                "metricType": "BM25",
+            },
+        },
+        timeout=30,
+    )
+    body = resp.json()
+    print(f"add_function_field response: {body}")
+    # the RESTful v2 wrapper reports success as code 0, not HTTP-style 200
+    assert resp.status_code == 200 and body.get("code") == 0, f"add_function_field failed: {body}"
+
+    print(f"Collection {LATEFUNC_COLLECTION} is schema-only on purpose, no rows inserted")
+
+
 if __name__ == "__main__":
     args = argparse.ArgumentParser(description="prepare data for backup/restore testing")
     args.add_argument("--uri", type=str, default="http://127.0.0.1:19530", help="Milvus server uri")
     args.add_argument("--token", type=str, default="root:Milvus", help="Milvus server token")
     args.add_argument("--stage", type=int, choices=[1, 2], required=False, help="Stage 1 or 2 for multi-stage data preparation (only affects hello_milvus2). Omit for single-stage mode")
     args.add_argument("--total-entities", type=int, default=3000, help="Total number of entities (hello_milvus always gets all, hello_milvus2 respects stage)")
-    args.add_argument("--scenario", choices=["base", "added", "l0"], default="base", help="base: hello_milvus / hello_milvus2 / hello_milvus_dynamic. added: hello_milvus_added (requires Milvus master / 2.6+). l0: hello_milvus_l0 with a known delete subset, for the l0compact CI leg.")
+    args.add_argument("--scenario", choices=["base", "added", "l0", "latefunc"], default="base", help="base: hello_milvus / hello_milvus2 / hello_milvus_dynamic. added: hello_milvus_added (requires Milvus master / 2.6+). l0: hello_milvus_l0 with a known delete subset, for the l0compact CI leg. latefunc: hello_milvus_latefunc with a BM25 function added after creation, for the loonffi CI leg (requires Milvus 3.0 with StorageV3 and bumpSchemaVersion compaction).")
     args = args.parse_args()
     if args.scenario == "base":
         main(args.uri, args.token, args.stage, args.total_entities)
     elif args.scenario == "added":
         main_added(args.uri, args.token, args.total_entities)
+    elif args.scenario == "latefunc":
+        main_latefunc(args.uri, args.token)
     else:
         main_l0(args.uri, args.token)

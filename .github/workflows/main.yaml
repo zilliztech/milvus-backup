@@ -872,6 +872,12 @@ jobs:
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag master-latest) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
           yq -i '.common.storage.useLoonFFI = ${{ matrix.use_loonffi }}' custom_config.yaml
+          # The latefunc scenario below adds a BM25 function after collection
+          # creation via add_function_field, which the server gates on StorageV3
+          # plus the bump-schema-version backfill compaction.
+          if [ "${{ matrix.use_loonffi }}" == "true" ]; then
+            yq -i '.dataCoord.compaction.bumpSchemaVersion.enabled = true' custom_config.yaml
+          fi
           cat custom_config.yaml || true
           mkdir -p volumes/etcd volumes/minio volumes/milvus
           sudo chmod -R 777 volumes
@@ -909,11 +915,35 @@ jobs:
         run: |
           ./milvus-backup restore -n my_backup -s _recover
 
+      - name: Prepare late-function data
+        timeout-minutes: 5
+        if: ${{ matrix.use_loonffi }}
+        shell: bash
+        run: |
+          python example/prepare_data.py --scenario latefunc
+
+      - name: Backup and restore late-function collection
+        timeout-minutes: 5
+        if: ${{ matrix.use_loonffi }}
+        shell: bash
+        run: |
+          # binlog format on purpose: the late-function bug lives in the
+          # binlog restore path, and auto would pick snapshot on 3.0
+          ./milvus-backup create -n latefunc_backup --filter hello_milvus_latefunc --format binlog
+          ./milvus-backup restore -n latefunc_backup -s _recover
+
       - name: Verify data
         timeout-minutes: 5
         shell: bash
         run: |
           python example/verify_data.py
+
+      - name: Verify late-function data
+        timeout-minutes: 5
+        if: ${{ matrix.use_loonffi }}
+        shell: bash
+        run: |
+          python example/verify_data.py --scenario latefunc
 
   test-backup-restore-secondary:
     needs: unit-test-go
