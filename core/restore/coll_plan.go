@@ -64,8 +64,9 @@ func (t *Task) selectPlan(ctx context.Context, targets []collTarget) (tasklet.Ta
 	switch strategy := t.args.Option.Strategy; strategy {
 	case StrategyAuto:
 		if t.format == meta.FormatSnapshot {
-			// importSnapPlan has not landed, so a snapshot backup rides the
-			// restore api regardless of the target's import support.
+			// The restore api is the fast path — a physical copy, indexes
+			// carried over — so auto always takes it. The import path is
+			// opt-in only, pinned with --strategy=import_snap.
 			t.logger.Info("use restore snap plan")
 			return newRestoreSnapPlan(t, targets), nil
 		}
@@ -105,7 +106,8 @@ func (t *Task) selectPlan(ctx context.Context, targets []collTarget) (tasklet.Ta
 		if t.format != meta.FormatSnapshot {
 			return nil, wrongFormat("import_snap", meta.FormatSnapshot, t.format)
 		}
-		return nil, errors.New("restore: strategy import_snap is not implemented yet")
+		t.logger.Info("use import snap plan")
+		return t.newImportSnapPlanChecked(targets)
 	default:
 		return nil, fmt.Errorf("restore: unsupported strategy: %s", strategy)
 	}
@@ -245,8 +247,8 @@ func runCollTasks(ctx context.Context, logger *zap.Logger, limit int, colls []ta
 	return nil
 }
 
-// metaOnlyPlan restores only the collections' schemas of a binlog backup: the
-// data half is never built, so the plan is the binlog plan's DDL tasks.
+// metaOnlyPlan restores only the collections' schemas: the data half is never
+// built, so the plan is the DDL tasks alone.
 type metaOnlyPlan struct {
 	colls []*collDDLTask
 	limit int
@@ -460,8 +462,7 @@ func (p *partBinlogTasks) execute(ctx context.Context, sem tasklet.Semaphore) er
 // restoreSnapPlan restores every collection from a snapshot backup by handing
 // it to Milvus's restore api: Milvus creates the collection from the schema in
 // the bundle, restores its indexes and partitions, and copies the data in. No
-// DDL runs on our side, and no bytes move through this process. A restful
-// sibling (importSnapPlan) will land beside it.
+// DDL runs on our side, and no bytes move through this process.
 type restoreSnapPlan struct {
 	colls []*collSnapshotTask
 	limit int
@@ -513,4 +514,103 @@ func (t *Task) newRestoreSnapCollTask(tgt collTarget) *collSnapshotTask {
 		grpcCli:          t.grpc,
 		job:              collTracker.NewJob(tgt.collBackup.GetSize()),
 	})
+}
+
+// newImportSnapPlanChecked gates the import snap plan on the target's support:
+// snapshot-sourced imports landed in Milvus 3.0.4, and an older server would
+// read the request as an ordinary path import and fail on the metadata URI.
+func (t *Task) newImportSnapPlanChecked(targets []collTarget) (tasklet.Tasklet, error) {
+	if !t.grpc.HasFeature(milvus.ImportSnapshot) {
+		return nil, errors.New("restore: the import_snap strategy restores through the target's import api, " +
+			"which needs a Milvus 3.0.4 or newer server")
+	}
+
+	if t.args.Option.MetaOnly {
+		t.logger.Info("use meta only plan")
+		return newMetaOnlyPlan(t, targets), nil
+	}
+
+	return newImportSnapPlan(t, targets)
+}
+
+// importSnapPlan restores every collection of a snapshot backup through the
+// target's import api: each collection's node creates the schema, partitions and
+// indexes through the ordinary DDL task, then submits one snapshot import job
+// covering the whole bundle. Where the restore api hands the whole restore to
+// Milvus, this path keeps the DDL on our side — shard overrides, skip_params and
+// the index options all work — and trades the server-side copy for a row rewrite
+// that folds the snapshot's L0 deletes and reads a source on another storage
+// service through its external spec.
+type importSnapPlan struct {
+	colls []*collImportSnapTask
+	limit int
+
+	logger *zap.Logger
+}
+
+func newImportSnapPlan(t *Task, targets []collTarget) (*importSnapPlan, error) {
+	colls := make([]*collImportSnapTask, 0, len(targets))
+	for _, tgt := range targets {
+		coll, err := t.newImportSnapCollTask(tgt)
+		if err != nil {
+			return nil, err
+		}
+		colls = append(colls, coll)
+	}
+
+	return &importSnapPlan{
+		colls: colls,
+		limit: t.args.Params.Restore.Concurrency.Collections.Val,
+
+		logger: log.With(zap.String("task_id", t.args.TaskID)),
+	}, nil
+}
+
+func (p *importSnapPlan) Execute(ctx context.Context) error {
+	tasks := make([]tasklet.Tasklet, 0, len(p.colls))
+	for _, coll := range p.colls {
+		tasks = append(tasks, coll)
+	}
+
+	return runCollTasks(ctx, p.logger, p.limit, tasks)
+}
+
+// newImportSnapCollTask expands one target into its node: the DDL half, built
+// like every other plan's, and the single snapshot import job behind it. The
+// bundle's metadata path resolves against where the backup is read from, so a
+// relocated backup imports from wherever it sits now.
+func (t *Task) newImportSnapCollTask(tgt collTarget) (*collImportSnapTask, error) {
+	collTracker := t.tracker.NewCollTracker(tgt.target, tgt.collBackup.GetSize())
+	ddl := newCollDDLTask(t.args.TaskID, t.args.Option, tgt.collOverride, tgt.collBackup, tgt.target, t.grpc, collTracker.DDL())
+
+	src := collref.New(tgt.collBackup.GetDbName(), tgt.collBackup.GetCollectionName())
+	logger := log.With(
+		zap.String("restore_task_id", t.args.TaskID),
+		zap.String("backup_coll", src.String()),
+		zap.String("target_coll", tgt.target.String()))
+
+	metadataURI, err := t.snapshotSource.metadataURI(tgt.collBackup.GetSnapshotBackup().GetMetadataPath())
+	if err != nil {
+		return nil, err
+	}
+	partMapping, err := snapshotPartitionMapping(tgt.collBackup)
+	if err != nil {
+		return nil, err
+	}
+
+	imp := &snapshotImportTask{
+		taskID:           t.args.TaskID,
+		target:           tgt.target,
+		metadataURI:      metadataURI,
+		externalSpec:     t.snapshotSource.externalSpec,
+		partitionMapping: partMapping,
+		ezk:              t.mappedEZK(tgt.dbBackup),
+
+		restfulCli: t.restful,
+		job:        collTracker.NewJob(tgt.collBackup.GetSize()),
+
+		logger: logger,
+	}
+
+	return &collImportSnapTask{ddl: ddl, imp: imp, logger: logger}, nil
 }
