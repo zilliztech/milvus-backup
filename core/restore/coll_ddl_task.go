@@ -1,8 +1,10 @@
 package restore
 
 import (
+	"cmp"
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
@@ -32,6 +34,11 @@ type collDDLTask struct {
 	grpcCli milvus.Grpc
 
 	tracker *jobstate.RestoreCollDDLTracker
+
+	// boundIndexFields names the function output fields whose index the server
+	// already materialized as a bound index during add_function_field replay, so
+	// createIndex does not create a second index on them.
+	boundIndexFields map[string]struct{}
 
 	logger *zap.Logger
 }
@@ -164,21 +171,152 @@ func (ddlt *collDDLTask) fields() ([]*schemapb.FieldSchema, []*schemapb.FieldSch
 	return createFields, addFields, nil
 }
 
-func (ddlt *collDDLTask) addFields(ctx context.Context, fields []*schemapb.FieldSchema) error {
-	// add fields
-	for _, field := range fields {
+// splitFunctions partitions the backup's functions by when they can be replayed.
+// A function whose input and output fields all live in createFields was defined
+// at collection creation and goes into the CreateCollection schema. The rest
+// were added by a later function DDL on the source, reference fields that only
+// appear via addField, and must be replayed after those fields exist — creating
+// them up front fails the server-side function validation with a missing field.
+func splitFunctions(bakFuncs []*backuppb.FunctionSchema, createFields []*schemapb.FieldSchema) (early, late []*backuppb.FunctionSchema) {
+	fieldNames := make(map[string]struct{}, len(createFields))
+	for _, f := range createFields {
+		fieldNames[f.GetName()] = struct{}{}
+	}
+
+	for _, fn := range bakFuncs {
+		allEarly := true
+		for _, name := range slices.Concat(fn.GetInputFieldNames(), fn.GetOutputFieldNames()) {
+			if _, ok := fieldNames[name]; !ok {
+				allEarly = false
+				break
+			}
+		}
+		if allEarly {
+			early = append(early, fn)
+		} else {
+			late = append(late, fn)
+		}
+	}
+
+	return early, late
+}
+
+// lateFunction is a function replayed after CreateCollection. output is the
+// function's output field when the field itself was also a later addition (the
+// 3.0 shape, where add_function_field creates both atomically); it is nil when
+// the output field already exists at creation (the 2.6 shape, where the legacy
+// AddCollectionFunction only attaches to it).
+type lateFunction struct {
+	fn     *schemapb.FunctionSchema
+	output *schemapb.FieldSchema
+}
+
+// addFieldsAndFunctions replays the schema DDL the source collection saw after
+// its creation, in original field-ID order so the target assigns the same IDs.
+// Function output fields in addFields are not added directly: the legacy
+// AddField requires nullable fields, which a function output can never be, and
+// on 3.0 they are created together with their function by add_function_field.
+func (ddlt *collDDLTask) addFieldsAndFunctions(ctx context.Context, addFields []*schemapb.FieldSchema, lateFuncs []*schemapb.FunctionSchema) error {
+	fieldByName := lo.SliceToMap(addFields, func(f *schemapb.FieldSchema) (string, *schemapb.FieldSchema) {
+		return f.GetName(), f
+	})
+
+	var withOutput, attachOnly []lateFunction
+	outputNames := make(map[string]struct{})
+	for _, fn := range lateFuncs {
+		lf := lateFunction{fn: fn}
+		if len(fn.GetOutputFieldNames()) == 1 {
+			lf.output = fieldByName[fn.GetOutputFieldNames()[0]]
+		}
+		if lf.output != nil {
+			withOutput = append(withOutput, lf)
+			outputNames[lf.output.GetName()] = struct{}{}
+		} else {
+			attachOnly = append(attachOnly, lf)
+		}
+	}
+
+	byFieldID := func(a, b *schemapb.FieldSchema) int { return cmp.Compare(a.GetFieldID(), b.GetFieldID()) }
+	slices.SortFunc(addFields, byFieldID)
+	slices.SortFunc(withOutput, func(a, b lateFunction) int { return byFieldID(a.output, b.output) })
+
+	fi := 0
+	for _, field := range addFields {
+		if _, isOutput := outputNames[field.GetName()]; isOutput {
+			continue
+		}
+		for fi < len(withOutput) && withOutput[fi].output.GetFieldID() < field.GetFieldID() {
+			if err := ddlt.addFunction(ctx, withOutput[fi]); err != nil {
+				return err
+			}
+			fi++
+		}
 		if err := ddlt.grpcCli.AddField(ctx, ddlt.target.DBName(), ddlt.target.CollName(), field); err != nil {
 			return fmt.Errorf("restore: add field %s id %d: %w", field.GetName(), field.GetFieldID(), err)
+		}
+	}
+	for ; fi < len(withOutput); fi++ {
+		if err := ddlt.addFunction(ctx, withOutput[fi]); err != nil {
+			return err
+		}
+	}
+	// attach-only functions introduce no field; their order only matters
+	// relative to their input fields, which all exist by now.
+	for _, lf := range attachOnly {
+		if err := ddlt.addFunction(ctx, lf); err != nil {
+			return err
 		}
 	}
 
 	return nil
 }
 
+func (ddlt *collDDLTask) addFunction(ctx context.Context, lf lateFunction) error {
+	if lf.output != nil && ddlt.grpcCli.HasFeature(milvus.AddFunctionField) {
+		indexName, indexParams := ddlt.functionOutputIndex(lf.output.GetName())
+		err := ddlt.grpcCli.AddFunctionField(ctx, ddlt.target.DBName(), ddlt.target.CollName(), lf.output, lf.fn, indexName, indexParams)
+		if err != nil {
+			return fmt.Errorf("restore: add function field %s: %w", lf.fn.GetName(), err)
+		}
+		if ddlt.boundIndexFields == nil {
+			ddlt.boundIndexFields = make(map[string]struct{})
+		}
+		ddlt.boundIndexFields[lf.output.GetName()] = struct{}{}
+		return nil
+	}
+
+	if ddlt.grpcCli.HasFeature(milvus.AddCollectionFunction) {
+		if err := ddlt.grpcCli.AddCollectionFunction(ctx, ddlt.target.DBName(), ddlt.target.CollName(), lf.fn); err != nil {
+			return fmt.Errorf("restore: add collection function %s: %w", lf.fn.GetName(), err)
+		}
+		return nil
+	}
+
+	return fmt.Errorf("restore: target milvus cannot add function %s after collection creation", lf.fn.GetName())
+}
+
+// functionOutputIndex returns the backup's index for a function output field so
+// it can be handed to add_function_field as the bound index instead of the
+// server's AUTOINDEX default.
+func (ddlt *collDDLTask) functionOutputIndex(fieldName string) (string, map[string]string) {
+	for _, index := range ddlt.collBackup.GetIndexInfos() {
+		if index.GetFieldName() == fieldName {
+			return index.GetIndexName(), index.GetParams()
+		}
+	}
+	return "", nil
+}
+
 // properties returns the properties of the collection.
 // If milvus support func runtime check, add disable_auto_function to properties to avoid error when create collection.
 func (ddlt *collDDLTask) properties() []*commonpb.KeyValuePair {
-	props := pbconv.BakKVToMilvusKV(ddlt.collBackup.GetSchema().GetProperties(), ddlt.option.SkipParams.CollectionProperties...)
+	// max_field_id is a server-managed reserved property: the target recomputes
+	// it from the created schema, and the replayed addField/add_function_field
+	// calls bump it back to the source value. Carrying the source value into
+	// create would lift the target's field-ID allocator past the replayed IDs
+	// and break the binlog path's field-ID alignment.
+	skip := append(slices.Clone(ddlt.option.SkipParams.CollectionProperties), common.MaxFieldIDKey)
+	props := pbconv.BakKVToMilvusKV(ddlt.collBackup.GetSchema().GetProperties(), skip...)
 
 	if len(ddlt.collBackup.GetSchema().GetFunctions()) == 0 {
 		ddlt.logger.Info("no functions, skip disable_auto_function")
@@ -245,7 +383,8 @@ func (ddlt *collDDLTask) createColl(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("collection: get fields: %w", err)
 	}
-	functions := conv.Functions(ddlt.collBackup.GetSchema().GetFunctions())
+	earlyFuncs, lateFuncs := splitFunctions(ddlt.collBackup.GetSchema().GetFunctions(), createFields)
+	functions := conv.Functions(earlyFuncs)
 	structArrayFields, err := ddlt.structArrayFields()
 	if err != nil {
 		return fmt.Errorf("restore: conv struct array fields: %w", err)
@@ -257,8 +396,10 @@ func (ddlt *collDDLTask) createColl(ctx context.Context) error {
 		Functions:          functions,
 		Fields:             createFields,
 		EnableDynamicField: ddlt.collBackup.GetSchema().GetEnableDynamicField(),
-		Properties:         pbconv.BakKVToMilvusKV(ddlt.collBackup.GetSchema().GetProperties()),
-		StructArrayFields:  structArrayFields,
+		// max_field_id is stripped for the same reason as in properties():
+		// the server recomputes it, and the source value would skew field IDs.
+		Properties:        pbconv.BakKVToMilvusKV(ddlt.collBackup.GetSchema().GetProperties(), common.MaxFieldIDKey),
+		StructArrayFields: structArrayFields,
 	}
 	ddlt.logger.Info("create collection", zap.Any("schema", schema))
 
@@ -274,8 +415,8 @@ func (ddlt *collDDLTask) createColl(ctx context.Context) error {
 		return fmt.Errorf("restore: call create collection api after retry: %w", err)
 	}
 
-	if err := ddlt.addFields(ctx, addFields); err != nil {
-		return fmt.Errorf("restore: add fields: %w", err)
+	if err := ddlt.addFieldsAndFunctions(ctx, addFields, conv.Functions(lateFuncs)); err != nil {
+		return fmt.Errorf("restore: add fields and functions: %w", err)
 	}
 
 	return nil
@@ -432,6 +573,12 @@ func (ddlt *collDDLTask) createIndex(ctx context.Context) error {
 	indexes := ddlt.collBackup.GetIndexInfos()
 	var vectorIndexes, scalarIndexes []*backuppb.IndexInfo
 	for _, index := range indexes {
+		if _, bound := ddlt.boundIndexFields[index.GetFieldName()]; bound {
+			ddlt.logger.Info("skip index already bound by add function field",
+				zap.String("field_name", index.GetFieldName()),
+				zap.String("index_name", index.GetIndexName()))
+			continue
+		}
 		if _, ok := vectorFields[index.GetFieldName()]; ok {
 			vectorIndexes = append(vectorIndexes, index)
 		} else {

@@ -275,7 +275,7 @@ func TestCollDDLTask_createColl(t *testing.T) {
 					IsPrimaryKey: true},
 				},
 				Properties:         []*backuppb.KeyValuePair{{Key: "key", Value: "val"}},
-				Functions:          []*backuppb.FunctionSchema{{Name: "func", InputFieldNames: []string{"hello"}}},
+				Functions:          []*backuppb.FunctionSchema{{Name: "func", InputFieldNames: []string{"field"}}},
 				EnableDynamicField: true,
 				AutoID:             true,
 				Description:        "desc",
@@ -295,7 +295,7 @@ func TestCollDDLTask_createColl(t *testing.T) {
 			assert.Equal(t, "key", coll.Schema.Properties[0].GetKey())
 			assert.Equal(t, "val", coll.Schema.Properties[0].GetValue())
 			assert.Equal(t, "func", coll.Schema.Functions[0].GetName())
-			assert.Equal(t, "hello", coll.Schema.Functions[0].GetInputFieldNames()[0])
+			assert.Equal(t, "field", coll.Schema.Functions[0].GetInputFieldNames()[0])
 			assert.Equal(t, "field", coll.Schema.Fields[0].GetName())
 			assert.Equal(t, schemapb.DataType_Int64, coll.Schema.Fields[0].GetDataType())
 			assert.Equal(t, true, coll.Schema.Fields[0].GetIsPrimaryKey())
@@ -344,4 +344,214 @@ func TestCollDDLTask_createColl(t *testing.T) {
 		err := ct.createColl(context.Background())
 		assert.NoError(t, err)
 	})
+}
+
+func TestSplitFunctions(t *testing.T) {
+	createFields := []*schemapb.FieldSchema{{Name: "pk"}, {Name: "text"}, {Name: "emb"}}
+
+	t.Run("EarlyWhenAllFieldsPresent", func(t *testing.T) {
+		early, late := splitFunctions([]*backuppb.FunctionSchema{{
+			Name:             "fn",
+			InputFieldNames:  []string{"text"},
+			OutputFieldNames: []string{"emb"},
+		}}, createFields)
+		assert.Len(t, early, 1)
+		assert.Empty(t, late)
+	})
+
+	t.Run("LateWhenInputMissing", func(t *testing.T) {
+		early, late := splitFunctions([]*backuppb.FunctionSchema{{
+			Name:             "fn",
+			InputFieldNames:  []string{"added_text"},
+			OutputFieldNames: []string{"emb"},
+		}}, createFields)
+		assert.Empty(t, early)
+		assert.Len(t, late, 1)
+	})
+
+	t.Run("LateWhenOutputMissing", func(t *testing.T) {
+		early, late := splitFunctions([]*backuppb.FunctionSchema{{
+			Name:             "fn",
+			InputFieldNames:  []string{"text"},
+			OutputFieldNames: []string{"added_out"},
+		}}, createFields)
+		assert.Empty(t, early)
+		assert.Len(t, late, 1)
+	})
+
+	t.Run("Empty", func(t *testing.T) {
+		early, late := splitFunctions(nil, createFields)
+		assert.Empty(t, early)
+		assert.Empty(t, late)
+	})
+}
+
+func TestCollDDLTask_addFieldsAndFunctions(t *testing.T) {
+	newTask := func(cli *milvus.MockGrpc) *collDDLTask {
+		ddlt := newTestCollDDLTask()
+		ddlt.target = collref.New("db1", "coll1")
+		ddlt.grpcCli = cli
+		return ddlt
+	}
+
+	t.Run("PlainFieldsInIDOrder", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		var order []string
+		cli.EXPECT().AddField(mock.Anything, "db1", "coll1", mock.Anything).
+			Run(func(ctx context.Context, db, collName string, field *schemapb.FieldSchema) {
+				order = append(order, field.GetName())
+			}).Return(nil)
+
+		fields := []*schemapb.FieldSchema{{Name: "b", FieldID: 104}, {Name: "a", FieldID: 103}}
+		err := newTask(cli).addFieldsAndFunctions(context.Background(), fields, nil)
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"a", "b"}, order)
+	})
+
+	t.Run("LateFunctionFieldReplaysAtOutputPosition", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().HasFeature(milvus.AddFunctionField).Return(true)
+
+		var order []string
+		cli.EXPECT().AddField(mock.Anything, "db1", "coll1", mock.Anything).
+			Run(func(ctx context.Context, db, collName string, field *schemapb.FieldSchema) {
+				order = append(order, "field:"+field.GetName())
+			}).Return(nil)
+		cli.EXPECT().AddFunctionField(mock.Anything, "db1", "coll1", mock.Anything, mock.Anything, "idx_out", map[string]string{"index_type": "SPARSE_INVERTED_INDEX"}).
+			Run(func(ctx context.Context, db, collName string, field *schemapb.FieldSchema, fn *schemapb.FunctionSchema, indexName string, indexParams map[string]string) {
+				order = append(order, "func:"+fn.GetName())
+				assert.Equal(t, "out", field.GetName())
+			}).Return(nil)
+
+		ddlt := newTask(cli)
+		ddlt.collBackup = &backuppb.CollectionBackupInfo{
+			IndexInfos: []*backuppb.IndexInfo{{
+				FieldName: "out", IndexName: "idx_out", Params: map[string]string{"index_type": "SPARSE_INVERTED_INDEX"},
+			}},
+		}
+
+		fields := []*schemapb.FieldSchema{
+			{Name: "z", FieldID: 105},
+			{Name: "text2", FieldID: 103},
+			{Name: "out", FieldID: 104, IsFunctionOutput: true},
+		}
+		funcs := []*schemapb.FunctionSchema{{
+			Name:             "bm25",
+			InputFieldNames:  []string{"text2"},
+			OutputFieldNames: []string{"out"},
+		}}
+
+		err := ddlt.addFieldsAndFunctions(context.Background(), fields, funcs)
+		assert.NoError(t, err)
+		// the function's output field is not added via AddField, it comes with the function
+		assert.Equal(t, []string{"field:text2", "func:bm25", "field:z"}, order)
+		assert.Contains(t, ddlt.boundIndexFields, "out")
+	})
+
+	t.Run("AttachOnlyFunctionUsesLegacyAPI", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().HasFeature(milvus.AddCollectionFunction).Return(true)
+
+		var order []string
+		cli.EXPECT().AddField(mock.Anything, "db1", "coll1", mock.Anything).
+			Run(func(ctx context.Context, db, collName string, field *schemapb.FieldSchema) {
+				order = append(order, "field:"+field.GetName())
+			}).Return(nil)
+		cli.EXPECT().AddCollectionFunction(mock.Anything, "db1", "coll1", mock.Anything).
+			Run(func(ctx context.Context, db, collName string, fn *schemapb.FunctionSchema) {
+				order = append(order, "func:"+fn.GetName())
+			}).Return(nil)
+
+		fields := []*schemapb.FieldSchema{{Name: "text2", FieldID: 103}}
+		funcs := []*schemapb.FunctionSchema{{
+			Name:             "embed",
+			InputFieldNames:  []string{"text2"},
+			OutputFieldNames: []string{"emb"},
+		}}
+
+		err := newTask(cli).addFieldsAndFunctions(context.Background(), fields, funcs)
+		assert.NoError(t, err)
+		assert.Equal(t, []string{"field:text2", "func:embed"}, order)
+	})
+
+	t.Run("NoAPIFails", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().HasFeature(milvus.AddFunctionField).Return(false)
+		cli.EXPECT().HasFeature(milvus.AddCollectionFunction).Return(false)
+
+		fields := []*schemapb.FieldSchema{{Name: "out", FieldID: 104, IsFunctionOutput: true}}
+		funcs := []*schemapb.FunctionSchema{{
+			Name:             "bm25",
+			InputFieldNames:  []string{"text"},
+			OutputFieldNames: []string{"out"},
+		}}
+
+		err := newTask(cli).addFieldsAndFunctions(context.Background(), fields, funcs)
+		assert.ErrorContains(t, err, "cannot add function bm25")
+	})
+}
+
+func TestCollDDLTask_createIndexSkipsBoundIndex(t *testing.T) {
+	ddlt := newTestCollDDLTask()
+	ddlt.option.RebuildIndex = true
+	ddlt.target = collref.New("db1", "coll1")
+	ddlt.boundIndexFields = map[string]struct{}{"out": {}}
+	ddlt.collBackup = &backuppb.CollectionBackupInfo{
+		Schema: &backuppb.CollectionSchema{
+			Fields: []*backuppb.FieldSchema{
+				{Name: "pk", FieldID: common.StartOfUserFieldID, DataType: backuppb.DataType_Int64, IsPrimaryKey: true},
+				{Name: "vec", FieldID: common.StartOfUserFieldID + 1, DataType: backuppb.DataType_FloatVector},
+				{Name: "out", FieldID: common.StartOfUserFieldID + 2, DataType: backuppb.DataType_SparseFloatVector, IsFunctionOutput: true},
+			},
+		},
+		IndexInfos: []*backuppb.IndexInfo{
+			{FieldName: "out", IndexName: "idx_out", Params: map[string]string{"index_type": "SPARSE_INVERTED_INDEX"}},
+			{FieldName: "vec", IndexName: "idx_vec", Params: map[string]string{"index_type": "HNSW", "metric_type": "L2"}},
+		},
+	}
+
+	cli := milvus.NewMockGrpc(t)
+	cli.EXPECT().CreateIndex(mock.Anything, mock.Anything).
+		Run(func(ctx context.Context, input milvus.CreateIndexInput) {
+			assert.Equal(t, "vec", input.FieldName)
+		}).Return(nil).Once()
+	ddlt.grpcCli = cli
+
+	err := ddlt.createIndex(context.Background())
+	assert.NoError(t, err)
+}
+
+func TestCollDDLTask_createCollStripsMaxFieldID(t *testing.T) {
+	ct := newTestCollDDLTask()
+	ct.target = collref.New("db1", "coll1")
+	ct.collBackup = &backuppb.CollectionBackupInfo{
+		Schema: &backuppb.CollectionSchema{
+			Fields: []*backuppb.FieldSchema{{
+				FieldID:      common.StartOfUserFieldID,
+				Name:         "field",
+				DataType:     backuppb.DataType_Int64,
+				IsPrimaryKey: true},
+			},
+			Properties: []*backuppb.KeyValuePair{
+				{Key: "key", Value: "val"},
+				{Key: common.MaxFieldIDKey, Value: "104"},
+			},
+		},
+		ShardsNum: 1,
+	}
+
+	cli := milvus.NewMockGrpc(t)
+	cli.EXPECT().CreateCollection(mock.Anything, mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
+		coll := args[1].(milvus.CreateCollectionInput)
+		for _, kv := range coll.Schema.GetProperties() {
+			assert.NotEqual(t, common.MaxFieldIDKey, kv.GetKey())
+		}
+		for _, kv := range coll.Properties {
+			assert.NotEqual(t, common.MaxFieldIDKey, kv.GetKey())
+		}
+		assert.Len(t, coll.Schema.GetProperties(), 1)
+	})
+	ct.grpcCli = cli
+	err := ct.createColl(context.Background())
+	assert.NoError(t, err)
 }

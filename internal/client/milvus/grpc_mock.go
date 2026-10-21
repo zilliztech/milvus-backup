@@ -50,6 +50,75 @@ func (_m *MockGrpc) EXPECT() *MockGrpc_Expecter {
 	return &MockGrpc_Expecter{mock: &_m.Mock}
 }
 
+// AddCollectionFunction provides a mock function for the type MockGrpc
+func (_mock *MockGrpc) AddCollectionFunction(ctx context.Context, db string, collName string, fn *schemapb.FunctionSchema) error {
+	ret := _mock.Called(ctx, db, collName, fn)
+
+	if len(ret) == 0 {
+		panic("no return value specified for AddCollectionFunction")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, *schemapb.FunctionSchema) error); ok {
+		r0 = returnFunc(ctx, db, collName, fn)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockGrpc_AddCollectionFunction_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'AddCollectionFunction'
+type MockGrpc_AddCollectionFunction_Call struct {
+	*mock.Call
+}
+
+// AddCollectionFunction is a helper method to define mock.On call
+//   - ctx context.Context
+//   - db string
+//   - collName string
+//   - fn *schemapb.FunctionSchema
+func (_e *MockGrpc_Expecter) AddCollectionFunction(ctx any, db any, collName any, fn any) *MockGrpc_AddCollectionFunction_Call {
+	return &MockGrpc_AddCollectionFunction_Call{Call: _e.mock.On("AddCollectionFunction", ctx, db, collName, fn)}
+}
+
+func (_c *MockGrpc_AddCollectionFunction_Call) Run(run func(ctx context.Context, db string, collName string, fn *schemapb.FunctionSchema)) *MockGrpc_AddCollectionFunction_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 *schemapb.FunctionSchema
+		if args[3] != nil {
+			arg3 = args[3].(*schemapb.FunctionSchema)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+		)
+	})
+	return _c
+}
+
+func (_c *MockGrpc_AddCollectionFunction_Call) Return(err error) *MockGrpc_AddCollectionFunction_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockGrpc_AddCollectionFunction_Call) RunAndReturn(run func(ctx context.Context, db string, collName string, fn *schemapb.FunctionSchema) error) *MockGrpc_AddCollectionFunction_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // AddField provides a mock function for the type MockGrpc
 func (_mock *MockGrpc) AddField(ctx context.Context, db string, collName string, field *schemapb.FieldSchema) error {
 	ret := _mock.Called(ctx, db, collName, field)
@@ -115,6 +184,93 @@ func (_c *MockGrpc_AddField_Call) Return(err error) *MockGrpc_AddField_Call {
 }
 
 func (_c *MockGrpc_AddField_Call) RunAndReturn(run func(ctx context.Context, db string, collName string, field *schemapb.FieldSchema) error) *MockGrpc_AddField_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// AddFunctionField provides a mock function for the type MockGrpc
+func (_mock *MockGrpc) AddFunctionField(ctx context.Context, db string, collName string, field *schemapb.FieldSchema, fn *schemapb.FunctionSchema, indexName string, indexParams map[string]string) error {
+	ret := _mock.Called(ctx, db, collName, field, fn, indexName, indexParams)
+
+	if len(ret) == 0 {
+		panic("no return value specified for AddFunctionField")
+	}
+
+	var r0 error
+	if returnFunc, ok := ret.Get(0).(func(context.Context, string, string, *schemapb.FieldSchema, *schemapb.FunctionSchema, string, map[string]string) error); ok {
+		r0 = returnFunc(ctx, db, collName, field, fn, indexName, indexParams)
+	} else {
+		r0 = ret.Error(0)
+	}
+	return r0
+}
+
+// MockGrpc_AddFunctionField_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'AddFunctionField'
+type MockGrpc_AddFunctionField_Call struct {
+	*mock.Call
+}
+
+// AddFunctionField is a helper method to define mock.On call
+//   - ctx context.Context
+//   - db string
+//   - collName string
+//   - field *schemapb.FieldSchema
+//   - fn *schemapb.FunctionSchema
+//   - indexName string
+//   - indexParams map[string]string
+func (_e *MockGrpc_Expecter) AddFunctionField(ctx any, db any, collName any, field any, fn any, indexName any, indexParams any) *MockGrpc_AddFunctionField_Call {
+	return &MockGrpc_AddFunctionField_Call{Call: _e.mock.On("AddFunctionField", ctx, db, collName, field, fn, indexName, indexParams)}
+}
+
+func (_c *MockGrpc_AddFunctionField_Call) Run(run func(ctx context.Context, db string, collName string, field *schemapb.FieldSchema, fn *schemapb.FunctionSchema, indexName string, indexParams map[string]string)) *MockGrpc_AddFunctionField_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		var arg0 context.Context
+		if args[0] != nil {
+			arg0 = args[0].(context.Context)
+		}
+		var arg1 string
+		if args[1] != nil {
+			arg1 = args[1].(string)
+		}
+		var arg2 string
+		if args[2] != nil {
+			arg2 = args[2].(string)
+		}
+		var arg3 *schemapb.FieldSchema
+		if args[3] != nil {
+			arg3 = args[3].(*schemapb.FieldSchema)
+		}
+		var arg4 *schemapb.FunctionSchema
+		if args[4] != nil {
+			arg4 = args[4].(*schemapb.FunctionSchema)
+		}
+		var arg5 string
+		if args[5] != nil {
+			arg5 = args[5].(string)
+		}
+		var arg6 map[string]string
+		if args[6] != nil {
+			arg6 = args[6].(map[string]string)
+		}
+		run(
+			arg0,
+			arg1,
+			arg2,
+			arg3,
+			arg4,
+			arg5,
+			arg6,
+		)
+	})
+	return _c
+}
+
+func (_c *MockGrpc_AddFunctionField_Call) Return(err error) *MockGrpc_AddFunctionField_Call {
+	_c.Call.Return(err)
+	return _c
+}
+
+func (_c *MockGrpc_AddFunctionField_Call) RunAndReturn(run func(ctx context.Context, db string, collName string, field *schemapb.FieldSchema, fn *schemapb.FunctionSchema, indexName string, indexParams map[string]string) error) *MockGrpc_AddFunctionField_Call {
 	_c.Call.Return(run)
 	return _c
 }

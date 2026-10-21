@@ -55,6 +55,8 @@ const (
 	Snapshot
 	ImportV2
 	Import2PC
+	AddFunctionField
+	AddCollectionFunction
 )
 
 type featureTuple struct {
@@ -101,6 +103,15 @@ var _featureTuples = []featureTuple{
 	// to 3.0 before any 2.7 release existed — no 2.7 build ever shipped, so the real
 	// floor is 3.0.
 	{Constraints: lo.Must(semver.NewConstraint(">= 3.0.0-0")), Flag: Import2PC},
+	// AddFunctionField is the AlterCollectionSchema add action that creates a
+	// function together with its new output field in one DDL. It landed with the
+	// AlterCollectionSchema framework in 3.0.0; the 2.6 branch has no
+	// AlterCollectionSchema at all.
+	{Constraints: lo.Must(semver.NewConstraint(">= 3.0.0-0")), Flag: AddFunctionField},
+	// AddCollectionFunction is the legacy attach RPC: it binds a function to an
+	// already-existing output field. It shipped in 2.6.8 and is rejected by design
+	// on 3.0, so the constraint caps below the 3.0 line.
+	{Constraints: lo.Must(semver.NewConstraint(">= 2.6.8-0, < 3.0.0-0")), Flag: AddCollectionFunction},
 }
 
 func defaultDialOpt() []grpc.DialOption {
@@ -162,6 +173,8 @@ type Grpc interface {
 	CreatePartition(ctx context.Context, db, collName, partitionName string) error
 	HasPartition(ctx context.Context, db, collName, partitionName string) (bool, error)
 	AddField(ctx context.Context, db, collName string, field *schemapb.FieldSchema) error
+	AddCollectionFunction(ctx context.Context, db, collName string, fn *schemapb.FunctionSchema) error
+	AddFunctionField(ctx context.Context, db, collName string, field *schemapb.FieldSchema, fn *schemapb.FunctionSchema, indexName string, indexParams map[string]string) error
 	CreateIndex(ctx context.Context, input CreateIndexInput) error
 	DropIndex(ctx context.Context, db, collName, indexName string) error
 	DropIndexProperties(ctx context.Context, db, collName, indexName string, keys []string) error
@@ -1099,6 +1112,56 @@ func (g *GrpcClient) AddField(ctx context.Context, db, collName string, field *s
 	resp, err := g.srv.AddCollectionField(ctx, in)
 	if err := checkResponse(resp, err); err != nil {
 		return fmt.Errorf("client: add field failed: %w", err)
+	}
+
+	return nil
+}
+
+// AddCollectionFunction is the legacy 2.6 attach RPC: the function's input and
+// output fields must already exist, and the server only marks the output field.
+// 3.0 rejects this RPC by design; there functions are added via AddFunctionField.
+func (g *GrpcClient) AddCollectionFunction(ctx context.Context, db, collName string, fn *schemapb.FunctionSchema) error {
+	ctx = g.newCtxWithDB(ctx, db)
+
+	in := &milvuspb.AddCollectionFunctionRequest{CollectionName: collName, FunctionSchema: fn}
+	resp, err := g.srv.AddCollectionFunction(ctx, in)
+	if err := checkResponse(resp, err); err != nil {
+		return fmt.Errorf("client: add collection function failed: %w", err)
+	}
+
+	return nil
+}
+
+// AddFunctionField adds a function together with its new output field via the
+// AlterCollectionSchema add action (3.0+). The output field must not exist yet;
+// indexName/indexParams become the bound index the server materializes for a
+// vector output field, empty values resolve to the server AUTOINDEX default.
+func (g *GrpcClient) AddFunctionField(ctx context.Context, db, collName string, field *schemapb.FieldSchema, fn *schemapb.FunctionSchema, indexName string, indexParams map[string]string) error {
+	ctx = g.newCtxWithDB(ctx, db)
+
+	in := &milvuspb.AlterCollectionSchemaRequest{
+		CollectionName: collName,
+		Action: &milvuspb.AlterCollectionSchemaRequest_Action{
+			Op: &milvuspb.AlterCollectionSchemaRequest_Action_AddRequest{
+				AddRequest: &milvuspb.AlterCollectionSchemaRequest_AddRequest{
+					FieldInfos: []*milvuspb.AlterCollectionSchemaRequest_FieldInfo{{
+						FieldSchema: field,
+						IndexName:   indexName,
+						ExtraParams: mapKvPairs(indexParams),
+					}},
+					FuncSchema: []*schemapb.FunctionSchema{fn},
+				},
+			},
+		},
+	}
+	resp, err := g.srv.AlterCollectionSchema(ctx, in)
+	if err != nil {
+		return fmt.Errorf("client: add function field failed: %w", err)
+	}
+	// AlterCollectionSchemaResponse carries the result in alter_status, not the
+	// status field checkResponse knows about.
+	if st := resp.GetAlterStatus(); st != nil && !statusOk(st) {
+		return fmt.Errorf("client: add function field failed: %v", st)
 	}
 
 	return nil

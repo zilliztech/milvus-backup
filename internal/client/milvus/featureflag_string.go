@@ -19,49 +19,31 @@ func _() {
 	_ = x[Snapshot-256]
 	_ = x[ImportV2-512]
 	_ = x[Import2PC-1024]
+	_ = x[AddFunctionField-2048]
+	_ = x[AddCollectionFunction-4096]
 }
 
-const (
-	_FeatureFlag_name_0 = "MultiDatabaseDescribeDatabase"
-	_FeatureFlag_name_1 = "MultiL0InOneJob"
-	_FeatureFlag_name_2 = "GetSegmentInfo"
-	_FeatureFlag_name_3 = "FlushAll"
-	_FeatureFlag_name_4 = "CollectionLevelGCControl"
-	_FeatureFlag_name_5 = "FuncRuntimeCheck"
-	_FeatureFlag_name_6 = "ReplicateMessage"
-	_FeatureFlag_name_7 = "Snapshot"
-	_FeatureFlag_name_8 = "ImportV2"
-	_FeatureFlag_name_9 = "Import2PC"
-)
+const _FeatureFlag_name = "MultiDatabaseDescribeDatabaseMultiL0InOneJobGetSegmentInfoFlushAllCollectionLevelGCControlFuncRuntimeCheckReplicateMessageSnapshotImportV2Import2PCAddFunctionFieldAddCollectionFunction"
 
-var (
-	_FeatureFlag_index_0 = [...]uint8{0, 13, 29}
-)
+var _FeatureFlag_map = map[FeatureFlag]string{
+	1:    _FeatureFlag_name[0:13],
+	2:    _FeatureFlag_name[13:29],
+	4:    _FeatureFlag_name[29:44],
+	8:    _FeatureFlag_name[44:58],
+	16:   _FeatureFlag_name[58:66],
+	32:   _FeatureFlag_name[66:90],
+	64:   _FeatureFlag_name[90:106],
+	128:  _FeatureFlag_name[106:122],
+	256:  _FeatureFlag_name[122:130],
+	512:  _FeatureFlag_name[130:138],
+	1024: _FeatureFlag_name[138:147],
+	2048: _FeatureFlag_name[147:163],
+	4096: _FeatureFlag_name[163:184],
+}
 
 func (i FeatureFlag) String() string {
-	switch {
-	case 1 <= i && i <= 2:
-		i -= 1
-		return _FeatureFlag_name_0[_FeatureFlag_index_0[i]:_FeatureFlag_index_0[i+1]]
-	case i == 4:
-		return _FeatureFlag_name_1
-	case i == 8:
-		return _FeatureFlag_name_2
-	case i == 16:
-		return _FeatureFlag_name_3
-	case i == 32:
-		return _FeatureFlag_name_4
-	case i == 64:
-		return _FeatureFlag_name_5
-	case i == 128:
-		return _FeatureFlag_name_6
-	case i == 256:
-		return _FeatureFlag_name_7
-	case i == 512:
-		return _FeatureFlag_name_8
-	case i == 1024:
-		return _FeatureFlag_name_9
-	default:
-		return "FeatureFlag(" + strconv.FormatInt(int64(i), 10) + ")"
+	if str, ok := _FeatureFlag_map[i]; ok {
+		return str
 	}
+	return "FeatureFlag(" + strconv.FormatInt(int64(i), 10) + ")"
 }
