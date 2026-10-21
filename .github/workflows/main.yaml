@@ -1126,17 +1126,18 @@ jobs:
             --downstream-uri downstream-standalone:19530
 
       # Two-phase import restore: restore the backup back into the upstream
-      # (now a replication source) with --peers aimed at the downstream, so
-      # every import job holds at Uncommitted until its mirror shows up on the
-      # peer and is then committed on both ends. Master-only: the commit
-      # endpoint and the enableInReplicatingCluster toggle exist on 2.7+ alone.
+      # (now a replication source) with --secondaries aimed at the downstream,
+      # so every import job holds at Uncommitted until its mirror shows up on
+      # the secondary and is then committed on both ends. Master-only: the
+      # commit endpoint and the enableInReplicatingCluster toggle exist on
+      # 2.7+ alone.
       - name: Restore into upstream with two-phase commit
         if: ${{ matrix.scenario == 'same-version-master' }}
         timeout-minutes: 5
         shell: bash
         run: |
           yq -i '.milvus.grpc.port = 19530' configs/backup.yaml
-          ./milvus-backup restore -n my_backup --suffix _2pc --peers http://127.0.0.1:19500
+          ./milvus-backup restore -n my_backup --suffix _2pc --secondaries http://127.0.0.1:19500
 
       - name: Verify two-phase restore on both ends
         if: ${{ matrix.scenario == 'same-version-master' }}
@@ -1162,16 +1163,16 @@ jobs:
           assert all(n > 0 for n in local.values()), local
 
           # The replicated commit lands on the downstream mirror asynchronously,
-          # so the peer's counts converge with some lag.
-          peer = {}
+          # so the secondary's counts converge with some lag.
+          secondary = {}
           for attempt in range(30):
-              peer = counts('http://127.0.0.1:19500', 'peer')
-              if peer == local:
+              secondary = counts('http://127.0.0.1:19500', 'secondary')
+              if secondary == local:
                   break
-              print(f'attempt {attempt}: downstream {peer} != upstream {local}, waiting')
+              print(f'attempt {attempt}: downstream {secondary} != upstream {local}, waiting')
               time.sleep(10)
-          print('downstream counts:', peer)
-          assert peer == local, (peer, local)
+          print('downstream counts:', secondary)
+          assert secondary == local, (secondary, local)
           EOF
 
       - name: Verify data on downstream

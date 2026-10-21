@@ -284,14 +284,6 @@ definitions:
       path:
         description: Path; with bucket_name, overrides the config for this call.
         type: string
-      peers:
-        description: |-
-          REST endpoints of the peer clusters that replicate this target, e.g.
-          http://10.0.0.2:19530; when set, every import job is committed
-          two-phase so its mirror commits on every peer.
-        items:
-          type: string
-        type: array
       rbac:
         description: Whether restore RBAC.
         type: boolean
@@ -305,6 +297,14 @@ definitions:
         allOf:
         - $ref: '#/definitions/apiv1.RestorePlan'
         description: Per-database restore plan with renames and a task filter.
+      secondaries:
+        description: |-
+          REST endpoints of the secondary clusters that replicate this target,
+          e.g. http://10.0.0.2:19530; when set, every import job is committed
+          two-phase so its mirror commits on every secondary.
+        items:
+          type: string
+        type: array
       skipCreateCollection:
         description: |-
           Skip collection create; use when the collection exists and only index

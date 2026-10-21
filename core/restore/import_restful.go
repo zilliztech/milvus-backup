@@ -24,24 +24,25 @@ type restfulImportPlanner struct {
 	// one import job; until 2.6.5 each L0 segment needs a job of its own.
 	multiL0InOneJob bool
 
-	// peers talk to the peer clusters that mirror the target's import jobs over
-	// the replication stream; when non-empty, every task commits two-phase on
-	// the target and all peers. Empty for a target without peers.
-	peers []importPeer
+	// secondaries talk to the secondary clusters that mirror the target's
+	// import jobs over the replication stream; when non-empty, every task
+	// commits two-phase on the target and all secondaries. Empty for a target
+	// without secondaries.
+	secondaries []importSecondary
 }
 
-// importPeer pairs a peer cluster's restful client with the address it was
-// dialed with, so a failure can name the peer.
-type importPeer struct {
+// importSecondary pairs a secondary cluster's restful client with the address
+// it was dialed with, so a failure can name the secondary.
+type importSecondary struct {
 	addr string
 	cli  milvus.Restful
 }
 
-func newRestfulImportPlanner(args importTaskArgs, multiL0InOneJob bool, peers []importPeer) *restfulImportPlanner {
+func newRestfulImportPlanner(args importTaskArgs, multiL0InOneJob bool, secondaries []importSecondary) *restfulImportPlanner {
 	return &restfulImportPlanner{
 		args:            args,
 		multiL0InOneJob: multiL0InOneJob,
-		peers:           peers,
+		secondaries:     secondaries,
 	}
 }
 
@@ -73,8 +74,8 @@ func (p *restfulImportPlanner) newTask(partitionName string, g dirGroup, dirs []
 
 		job: p.args.jobs.NewJob(lo.SumBy(dirs, func(dir partitionDir) int64 { return dir.size })),
 	}
-	if len(p.peers) != 0 {
-		return &importViaRESTFul2PCTask{importer: importer, peers: p.peers}
+	if len(p.secondaries) != 0 {
+		return &importViaRESTFul2PCTask{importer: importer, secondaries: p.secondaries}
 	}
 	return &importViaRESTFulTask{importer: importer}
 }

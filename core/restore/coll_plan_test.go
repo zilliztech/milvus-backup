@@ -158,13 +158,13 @@ func TestTask_selectPlan(t *testing.T) {
 		}
 	})
 
-	// A peer commit exists only on the restful import api, so auto resolves to
-	// it directly — the preflight has already established the target is new
-	// enough — and a per_seg pin is refused rather than silently losing the
-	// two-phase commit.
-	t.Run("BinlogAutoWithPeerUsesRestful", func(t *testing.T) {
+	// A secondary commit exists only on the restful import api, so auto
+	// resolves to it directly — the preflight has already established the
+	// target is new enough — and a per_seg pin is refused rather than silently
+	// losing the two-phase commit.
+	t.Run("BinlogAutoWithSecondariesUsesRestful", func(t *testing.T) {
 		task := newSelectPlanTask(t, meta.FormatBinlog, StrategyAuto)
-		task.args.Option.PeerEndpoints = []string{"http://peer:19530"}
+		task.args.Option.SecondaryEndpoints = []string{"http://secondary:19530"}
 		grpcCli := milvus.NewMockGrpc(t)
 		grpcCli.EXPECT().HasFeature(milvus.MultiL0InOneJob).Return(false).Maybe()
 		task.grpc = grpcCli
@@ -174,12 +174,12 @@ func TestTask_selectPlan(t *testing.T) {
 		assertBinlogPlan(t, plan, &importViaRESTFulTask{})
 	})
 
-	t.Run("BinlogPerSegWithPeerFails", func(t *testing.T) {
+	t.Run("BinlogPerSegWithSecondariesFails", func(t *testing.T) {
 		task := newSelectPlanTask(t, meta.FormatBinlog, StrategyPerSeg)
-		task.args.Option.PeerEndpoints = []string{"http://peer:19530"}
+		task.args.Option.SecondaryEndpoints = []string{"http://secondary:19530"}
 
 		_, err := task.selectPlan(t.Context(), nil)
-		assert.ErrorContains(t, err, "--peers")
+		assert.ErrorContains(t, err, "--secondaries")
 	})
 }
 

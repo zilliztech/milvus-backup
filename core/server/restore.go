@@ -229,10 +229,10 @@ func validateRestoreRequest(request *apiv1.RestoreBackupRequest) error {
 		}
 	}
 
-	for _, peer := range request.Peers {
-		u, err := url.Parse(peer)
+	for _, secondary := range request.Secondaries {
+		u, err := url.Parse(secondary)
 		if err != nil || u.Scheme == "" || u.Host == "" {
-			return fmt.Errorf("invalid peer %q, expect an http(s) url like http://10.0.0.2:19530", peer)
+			return fmt.Errorf("invalid secondary %q, expect an http(s) url like http://10.0.0.2:19530", secondary)
 		}
 	}
 
@@ -294,7 +294,7 @@ func newOptionFromRequest(request *apiv1.RestoreBackupRequest) (*restore.Option,
 		TruncateBinlogByTs:   request.TruncateBinlogByTs,
 		RestoreRBAC:          request.Rbac,
 		EZKMapping:           request.EzkMapping,
-		PeerEndpoints:        request.Peers,
+		SecondaryEndpoints:   request.Secondaries,
 	}, nil
 }
 

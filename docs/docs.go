@@ -656,13 +656,6 @@ const docTemplate = `{
                     "description": "Path; with bucket_name, overrides the config for this call.",
                     "type": "string"
                 },
-                "peers": {
-                    "description": "REST endpoints of the peer clusters that replicate this target, e.g.\nhttp://10.0.0.2:19530; when set, every import job is committed\ntwo-phase so its mirror commits on every peer.",
-                    "type": "array",
-                    "items": {
-                        "type": "string"
-                    }
-                },
                 "rbac": {
                     "description": "Whether restore RBAC.",
                     "type": "boolean"
@@ -682,6 +675,13 @@ const docTemplate = `{
                             "$ref": "#/definitions/apiv1.RestorePlan"
                         }
                     ]
+                },
+                "secondaries": {
+                    "description": "REST endpoints of the secondary clusters that replicate this target,\ne.g. http://10.0.0.2:19530; when set, every import job is committed\ntwo-phase so its mirror commits on every secondary.",
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
                 },
                 "skipCreateCollection": {
                     "description": "Skip collection create; use when the collection exists and only index\nor data is restored.",
