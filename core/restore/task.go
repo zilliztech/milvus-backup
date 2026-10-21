@@ -234,7 +234,8 @@ func NewTask(ctx context.Context, args TaskArgs) (*Task, error) {
 		logger.Info("restore from snapshot bundles",
 			zap.String("source_uri", source.DirURI),
 			zap.Bool("external_spec_set", source.ExternalSpec != ""),
-			zap.Bool("source_sas_set", source.SourceSASSet))
+			zap.Bool("source_sas_set", source.SourceSASSet),
+			zap.Bool("staging", source.Staging))
 	} else {
 		task.streaming = storage.UseStreaming(args.Params.Transfer.Mode.Val,
 			args.BackupStorage.Config(), args.MilvusStorage.Config())
