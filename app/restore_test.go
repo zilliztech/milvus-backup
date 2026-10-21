@@ -161,3 +161,77 @@ func TestNewRestoreSecondaryJob(t *testing.T) {
 		assert.ErrorContains(t, err, fmt.Sprintf("app: backup backup1: %s", ErrBackupNotFound))
 	})
 }
+
+// stubRestoreTask settles the tracker the way a real task does before Execute
+// returns: the job's Wait reads the settlement through the same handle.
+type stubRestoreTask struct {
+	tracker *jobstate.RestoreTracker
+	err     error
+}
+
+func (s stubRestoreTask) Execute(context.Context) error {
+	if s.err != nil {
+		s.tracker.SetFail(s.err)
+		return s.err
+	}
+
+	s.tracker.SetSuccess()
+	return nil
+}
+
+// newStubRestoreJob builds the job around a stubbed run: the tracker is the
+// job's own, as NewRestoreJob gets it from the task.
+func newStubRestoreJob(store *jobstate.Store, taskID string, runErr error) *RestoreJob {
+	tracker := store.AddRestoreTask(taskID)
+
+	return &RestoreJob{
+		task:    stubRestoreTask{tracker: tracker, err: runErr},
+		tracker: tracker,
+		done:    make(chan struct{}),
+	}
+}
+
+func TestRestoreJobRun(t *testing.T) {
+	t.Run("SuccessSettlesTheStatus", func(t *testing.T) {
+		store := jobstate.NewStore()
+		job := newStubRestoreJob(store, "task-1", nil)
+
+		// Run is fire-and-forget; the outcome is read back through Wait.
+		job.Run(context.Background())
+		status, err := job.Wait(context.Background())
+		require.NoError(t, err)
+		assert.Equal(t, jobstate.RestoreStateSuccess, status.State)
+		assert.True(t, status.Terminal())
+
+		// The store sees the same settlement the Wait answered with.
+		stored, err := store.GetRestoreTask("task-1")
+		require.NoError(t, err)
+		assert.Equal(t, jobstate.RestoreStateSuccess, stored.State)
+	})
+
+	t.Run("FailureLandsInTheStatus", func(t *testing.T) {
+		store := jobstate.NewStore()
+		job := newStubRestoreJob(store, "task-1", errors.New("boom"))
+
+		job.Run(context.Background())
+		status, err := job.Wait(context.Background())
+		require.NoError(t, err)
+		assert.Equal(t, jobstate.RestoreStateFail, status.State)
+		assert.Equal(t, "boom", status.ErrorMessage)
+		assert.True(t, status.Terminal())
+	})
+}
+
+func TestRestoreJobWait(t *testing.T) {
+	t.Run("StopsWhenContextCanceled", func(t *testing.T) {
+		store := jobstate.NewStore()
+		job := newStubRestoreJob(store, "task-1", nil)
+
+		// The job never runs, so only the context can release the wait.
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+
+		_, err := job.Wait(ctx)
+		assert.ErrorIs(t, err, context.Canceled)
+	})
+}

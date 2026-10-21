@@ -15,6 +15,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/apiv1"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
@@ -90,12 +91,23 @@ func (s *Server) restoreSecondary(ctx context.Context, request *apiv1.RestoreSec
 		return s.restoreSecondaryAsync(job, request, resp)
 	}
 
-	if err := job.Run(ctx); err != nil {
-		// The sync path settles the failure here, mirroring the async
-		// goroutine's log — writeResponse no longer logs on the way out.
-		log.Error("restore backup task execute fail", zap.String("request_id", request.RequestId), zap.Error(err))
+	// Run takes a process-scoped context, not the request's: the restore
+	// outlives the connection. Wait takes the request's, because a client
+	// giving up only stops the waiting, never the job.
+	job.Run(context.Background())
+	status, err := job.Wait(ctx)
+	if err != nil {
+		// The sync path settles the wait failure here, mirroring the async
+		// path's log — writeResponse no longer logs on the way out.
+		log.Error("restore secondary task wait fail", zap.String("request_id", request.RequestId), zap.Error(err))
 		resp.Code = backuppb.ResponseCode_Fail
 		resp.Msg = err.Error()
+		return resp
+	}
+	if status.State == jobstate.RestoreStateFail {
+		log.Error("restore secondary task execute fail", zap.String("request_id", request.RequestId), zap.String("message", status.ErrorMessage))
+		resp.Code = backuppb.ResponseCode_Fail
+		resp.Msg = status.ErrorMessage
 		return resp
 	}
 
@@ -112,15 +124,11 @@ func (s *Server) restoreSecondary(ctx context.Context, request *apiv1.RestoreSec
 	return resp
 }
 
-// restoreSecondaryAsync launches the job in the server's own goroutine —
-// async is a deployment concern of the HTTP server, not of the job — then
-// reports the freshly registered job's view.
+// restoreSecondaryAsync launches the job in the background — async is a
+// deployment concern of the HTTP server, not of the job — then reports the
+// freshly registered job's view.
 func (s *Server) restoreSecondaryAsync(job restoreJob, request *apiv1.RestoreSecondaryRequest, resp *apiv1.RestoreBackupResponse) *apiv1.RestoreBackupResponse {
-	go func() {
-		if err := job.Run(context.Background()); err != nil {
-			log.Error("restore backup task execute fail", zap.String("request_id", request.RequestId), zap.Error(err))
-		}
-	}()
+	job.Run(context.Background())
 
 	view, err := s.restoreTaskView(context.Background(), request.RequestId)
 	if err != nil {

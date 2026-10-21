@@ -4,9 +4,13 @@ import (
 	"context"
 	"fmt"
 
+	"go.uber.org/zap"
+
 	"github.com/zilliztech/milvus-backup/core/restore/secondary"
+	"github.com/zilliztech/milvus-backup/core/tasklet"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
+	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
@@ -16,12 +20,41 @@ import (
 // NewRestoreSecondaryJob, synchronously; running is Run, exactly as on
 // RestoreJob.
 type RestoreSecondaryJob struct {
-	task *secondary.Task
+	// task is the restore run itself, held as the shared tasklet interface for
+	// the same reason RestoreJob holds it.
+	task tasklet.Tasklet
+
+	// tracker is the job's handle on its own state: the task settles it before
+	// the run returns, and Wait reads the settlement through it.
+	tracker *jobstate.RestoreTracker
+
+	// done closes when the run settles. Wait selects on it.
+	done chan struct{}
 }
 
-// Run executes the job. The outcome is also recorded in the job state store,
-// where get_restore and the task API read it from.
-func (j *RestoreSecondaryJob) Run(ctx context.Context) error { return j.task.Execute(ctx) }
+var _ AsyncJob[jobstate.RestoreStatus] = (*RestoreSecondaryJob)(nil)
+
+// Run releases the job into the background; see RestoreJob.Run.
+func (j *RestoreSecondaryJob) Run(ctx context.Context) { go j.run(ctx) }
+
+// run is the job's whole body; see RestoreJob.run.
+func (j *RestoreSecondaryJob) run(ctx context.Context) {
+	defer close(j.done)
+
+	if err := j.task.Execute(ctx); err != nil {
+		log.Error("restore secondary task fail", zap.Error(err))
+	}
+}
+
+// Wait blocks until a Run settles; see RestoreJob.Wait.
+func (j *RestoreSecondaryJob) Wait(ctx context.Context) (jobstate.RestoreStatus, error) {
+	select {
+	case <-ctx.Done():
+		return jobstate.RestoreStatus{}, ctx.Err()
+	case <-j.done:
+		return j.tracker.Snapshot(), nil
+	}
+}
 
 // RestoreSecondaryRequest selects one secondary restore.
 type RestoreSecondaryRequest struct {
@@ -82,5 +115,9 @@ func newRestoreSecondaryJob(ctx context.Context, params *cfg.Config, store *jobs
 		return nil, fmt.Errorf("app: new restore task: %w", err)
 	}
 
-	return &RestoreSecondaryJob{task: task}, nil
+	return &RestoreSecondaryJob{
+		task:    task,
+		tracker: task.Tracker(),
+		done:    make(chan struct{}),
+	}, nil
 }

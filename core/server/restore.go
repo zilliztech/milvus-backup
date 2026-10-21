@@ -29,9 +29,14 @@ import (
 // defines it: app returns a concrete type, and this narrow interface is what
 // handler tests stub out.
 type restoreJob interface {
-	// Run executes the job; where its goroutine goes is this server's
-	// deployment decision, selected by the request's async flag.
-	Run(ctx context.Context) error
+	// Run releases the job into the background. A job is always released; a
+	// synchronous request is one that waits on it afterwards.
+	Run(ctx context.Context)
+
+	// Wait blocks until the job settles and answers its job-store snapshot.
+	// The sync path reads the outcome from here, so a failed restore is one
+	// settled status rather than an error traveling back out of a goroutine.
+	Wait(ctx context.Context) (jobstate.RestoreStatus, error)
 }
 
 // restoreJobFactory builds and registers the job for one restore request.
@@ -115,11 +120,20 @@ func (s *Server) restore(ctx context.Context, request *apiv1.RestoreBackupReques
 		return s.restoreAsync(job, request)
 	}
 
-	if err := job.Run(ctx); err != nil {
-		// The sync path settles the failure here, mirroring the async
-		// goroutine's log — writeResponse no longer logs on the way out.
-		log.Error("restore backup task execute fail", zap.String("backupId", request.ID), zap.Error(err))
+	// Run takes a process-scoped context, not the request's: the restore
+	// outlives the connection. Wait takes the request's, because a client
+	// giving up only stops the waiting, never the job.
+	job.Run(context.Background())
+	status, err := job.Wait(ctx)
+	if err != nil {
+		// The sync path settles the wait failure here, mirroring the async
+		// path's log — writeResponse no longer logs on the way out.
+		log.Error("restore backup task wait fail", zap.String("backupId", request.ID), zap.Error(err))
 		return &apiv1.RestoreBackupResponse{Code: backuppb.ResponseCode_Fail, Msg: err.Error()}
+	}
+	if status.State == jobstate.RestoreStateFail {
+		log.Error("restore backup task execute fail", zap.String("backupId", request.ID), zap.String("message", status.ErrorMessage))
+		return &apiv1.RestoreBackupResponse{Code: backuppb.ResponseCode_Fail, Msg: status.ErrorMessage}
 	}
 
 	view, err := s.restoreTaskView(ctx, request.ID)
@@ -139,15 +153,11 @@ func (s *Server) restore(ctx context.Context, request *apiv1.RestoreBackupReques
 	}
 }
 
-// restoreAsync launches the job in the server's own goroutine — async is a
-// deployment concern of the HTTP server, not of the job — then reports the
-// freshly registered job's view.
+// restoreAsync launches the job in the background — async is a deployment
+// concern of the HTTP server, not of the job — then reports the freshly
+// registered job's view.
 func (s *Server) restoreAsync(job restoreJob, request *apiv1.RestoreBackupRequest) *apiv1.RestoreBackupResponse {
-	go func() {
-		if err := job.Run(context.Background()); err != nil {
-			log.Error("restore backup task execute fail", zap.String("backupId", request.ID), zap.Error(err))
-		}
-	}()
+	job.Run(context.Background())
 
 	view, err := s.restoreTaskView(context.Background(), request.ID)
 	if err != nil {

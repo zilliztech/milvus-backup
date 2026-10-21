@@ -492,9 +492,18 @@ func (t *Task) closeClients() {
 
 var _ tasklet.Tasklet = (*Task)(nil)
 
+// Tracker hands the job the write handle the task registered at construction.
+// The task settles it before Execute returns; the job that owns the run reads
+// its terminal state through it.
+func (t *Task) Tracker() *jobstate.RestoreTracker { return t.tracker }
+
 func (t *Task) Execute(ctx context.Context) error {
 	defer t.closeClients()
 	if err := t.initClients(); err != nil {
+		// Client construction fails before the job has a state to run in, but
+		// the job still has to settle: a caller waiting on the store must not
+		// be left watching a task that is never going to move again.
+		t.tracker.SetFail(err)
 		return err
 	}
 
