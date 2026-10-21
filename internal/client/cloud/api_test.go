@@ -17,5 +17,5 @@ func TestMask(t *testing.T) {
 
 	// long than 6 characters
 	res = mask("123456789")
-	assert.Equal(t, "12****89", res)
+	assert.Equal(t, "****", res)
 }

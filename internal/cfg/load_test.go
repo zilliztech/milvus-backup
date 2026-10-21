@@ -313,5 +313,5 @@ func TestConfig_WriteTable(t *testing.T) {
 	assert.Contains(t, out, "Backup.Storage.RootPath")
 	assert.Contains(t, out, "override")
 	assert.NotContains(t, out, "supersecret123")
-	assert.Contains(t, out, "su****23")
+	assert.Contains(t, out, "****")
 }

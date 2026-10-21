@@ -17,10 +17,10 @@ func TestMaskSecret(t *testing.T) {
 		{"Short2Chars", "ab", "****"},
 		{"Short3Chars", "abc", "****"},
 		{"Short4Chars", "abcd", "****"},
-		{"5Chars", "abcde", "ab****de"},
-		{"6Chars", "abcdef", "ab****ef"},
-		{"10Chars", "0123456789", "01****89"},
-		{"Password", "minioadmin", "mi****in"},
+		{"5Chars", "abcde", "****"},
+		{"6Chars", "abcdef", "****"},
+		{"10Chars", "0123456789", "****"},
+		{"Password", "minioadmin", "****"},
 	}
 
 	for _, tt := range tests {
@@ -45,7 +45,7 @@ func TestValueDisplay(t *testing.T) {
 		entry := v.Display("Milvus.Password")
 
 		assert.NotEqual(t, "supersecret", entry.Value, "secret value should be masked")
-		// fixed-length masking: "su" + "****" + "et"
-		assert.Equal(t, "su****et", entry.Value)
+		// a set secret renders as a fixed mask; no value characters show
+		assert.Equal(t, "****", entry.Value)
 	})
 }

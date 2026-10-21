@@ -7,7 +7,7 @@ Log.File.MaxBackups	2
 Server.DebugMode	true
 Server.SwaggerBasePath	/backup
 Milvus.User	root
-Milvus.Password	mi****ss
+Milvus.Password	****
 Milvus.Grpc.Address	milvus-proxy
 Milvus.Grpc.Port	19531
 Milvus.Grpc.TLSMode	server
@@ -71,4 +71,4 @@ Transfer.Mode	auto
 Transfer.Concurrency	32
 Transfer.MultipartCopyThresholdMiB	500
 Cloud.Endpoint	https://api.example.com
-Cloud.APIKey	cl****ey
+Cloud.APIKey	****

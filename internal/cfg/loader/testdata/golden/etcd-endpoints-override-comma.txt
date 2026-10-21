@@ -35,7 +35,7 @@ Milvus.Storage.MilvusAddress
 Milvus.Storage.MilvusPort	0
 Milvus.Storage.Auth.Type	static
 Milvus.Storage.Auth.AccessKeyID	minioadmin
-Milvus.Storage.Auth.SecretAccessKey	mi****in
+Milvus.Storage.Auth.SecretAccessKey	****
 Milvus.Storage.Auth.SessionToken	
 Milvus.Storage.Auth.AccountKey	
 Milvus.Storage.Auth.CredentialsFile	
@@ -55,7 +55,7 @@ Backup.Storage.MilvusAddress
 Backup.Storage.MilvusPort	0
 Backup.Storage.Auth.Type	static
 Backup.Storage.Auth.AccessKeyID	minioadmin
-Backup.Storage.Auth.SecretAccessKey	mi****in
+Backup.Storage.Auth.SecretAccessKey	****
 Backup.Storage.Auth.SessionToken	
 Backup.Storage.Auth.AccountKey	
 Backup.Storage.Auth.CredentialsFile	
