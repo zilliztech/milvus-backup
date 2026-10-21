@@ -455,18 +455,20 @@ func TestNewCollOverridesFromPlan(t *testing.T) {
 	})
 }
 
-// stubRestoreJob stands in for *app.RestoreJob: a canned Run error and a
+// stubRestoreJob stands in for *app.RestoreJob: a canned settlement and a
 // call count, so tests can assert whether the handler ran the job at all. The
 // count is atomic because async tests poll it from the test goroutine while
-// the handler's job goroutine increments it.
+// the job goroutine increments it.
 type stubRestoreJob struct {
-	runErr error
-	calls  atomic.Int32
+	status  jobstate.RestoreStatus
+	waitErr error
+	calls   atomic.Int32
 }
 
-func (j *stubRestoreJob) Run(context.Context) error {
-	j.calls.Add(1)
-	return j.runErr
+func (j *stubRestoreJob) Run(context.Context) { j.calls.Add(1) }
+
+func (j *stubRestoreJob) Wait(context.Context) (jobstate.RestoreStatus, error) {
+	return j.status, j.waitErr
 }
 
 // stubRestoreFactory stands in for the job factory: the params and request it
@@ -680,8 +682,11 @@ func TestHandleRestoreBackup(t *testing.T) {
 		assert.Equal(t, 1, stub.calls)
 	})
 
-	t.Run("MapsRunErrorToFail", func(t *testing.T) {
-		job := &stubRestoreJob{runErr: errors.New("bulk insert failed")}
+	t.Run("MapsFailedStatusToFail", func(t *testing.T) {
+		job := &stubRestoreJob{status: jobstate.RestoreStatus{
+			State:        jobstate.RestoreStateFail,
+			ErrorMessage: "bulk insert failed",
+		}}
 		stub := &stubRestoreFactory{job: job}
 		s := newListTestServer(t, withRestoreBackup(stub))
 
@@ -690,6 +695,17 @@ func TestHandleRestoreBackup(t *testing.T) {
 		assert.Equal(t, backuppb.ResponseCode_Fail, resp.GetCode())
 		assert.Contains(t, resp.GetMsg(), "bulk insert failed")
 		assert.Equal(t, int32(1), job.calls.Load())
+	})
+
+	t.Run("MapsWaitErrorToFail", func(t *testing.T) {
+		job := &stubRestoreJob{waitErr: errors.New("context deadline exceeded")}
+		stub := &stubRestoreFactory{job: job}
+		s := newListTestServer(t, withRestoreBackup(stub))
+
+		resp := restoreBackup(t, s, `{"backup_name":"backup1"}`, "rid-1")
+
+		assert.Equal(t, backuppb.ResponseCode_Fail, resp.GetCode())
+		assert.Contains(t, resp.GetMsg(), "context deadline exceeded")
 	})
 
 	t.Run("MapsGetRestoreErrorToFail", func(t *testing.T) {
@@ -831,8 +847,11 @@ func TestHandleRestoreSecondary(t *testing.T) {
 		assert.Equal(t, 1, stub.calls)
 	})
 
-	t.Run("MapsRunErrorToFail", func(t *testing.T) {
-		job := &stubRestoreJob{runErr: errors.New("ddl replay failed")}
+	t.Run("MapsFailedStatusToFail", func(t *testing.T) {
+		job := &stubRestoreJob{status: jobstate.RestoreStatus{
+			State:        jobstate.RestoreStateFail,
+			ErrorMessage: "ddl replay failed",
+		}}
 		stub := &stubRestoreSecondaryFactory{job: job}
 		s := newListTestServer(t, withRestoreSecondary(stub))
 

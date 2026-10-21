@@ -5,11 +5,13 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 
 	"github.com/zilliztech/milvus-backup/app"
 	"github.com/zilliztech/milvus-backup/cmd/flags"
@@ -19,6 +21,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
+	"github.com/zilliztech/milvus-backup/internal/progressbar"
 )
 
 // removedFlags are the restore flags dropped in 0.6, after 0.5 accepted them
@@ -217,15 +220,37 @@ func (o *options) run(cmd *cobra.Command, params *cfg.Config) error {
 		return err
 	}
 
-	job, err := app.NewRestoreJob(cmd.Context(), params, jobstate.Default(), req)
+	store := jobstate.Default()
+	job, err := app.NewRestoreJob(cmd.Context(), params, store, req)
 	if err != nil {
 		return fmt.Errorf("restore: new restore job: %w", err)
 	}
 
-	if err := job.Run(context.Background()); err != nil {
-		return err
+	// The CLI exposes no async form: the job runs detached and the command
+	// waits on it. On a terminal it renders progress from job-store
+	// snapshots; piped output keeps the old plain behavior, so scripts and
+	// CI logs never see bar frames.
+	job.Run(context.Background())
+
+	var status jobstate.RestoreStatus
+	if term.IsTerminal(int(os.Stdout.Fd())) {
+		p := progressbar.Progress()
+		status, err = renderRestore(context.Background(), p, store, req.TaskID, 200*time.Millisecond,
+			params.Restore.Concurrency.Collections.Val)
+		// mpb buffers intercepted writes and the bars' last frames until the
+		// container shuts down, so the Wait must precede any plain output.
+		p.Wait()
+	} else {
+		status, err = job.Wait(context.Background())
+	}
+	if err != nil {
+		return fmt.Errorf("restore: wait restore job: %w", err)
+	}
+	if status.State == jobstate.RestoreStateFail {
+		return fmt.Errorf("restore: run restore job: %s", status.ErrorMessage)
 	}
 
+	cmd.Println("restore backup success")
 	duration := time.Since(start)
 	cmd.Println(fmt.Sprintf("duration:%.2f s", duration.Seconds()))
 
