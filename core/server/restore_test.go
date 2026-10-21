@@ -66,13 +66,13 @@ func TestValidateRestoreRequest(t *testing.T) {
 		assert.NoError(t, validateRestoreRequest(request))
 	})
 
-	t.Run("ValidPeers", func(t *testing.T) {
-		request := &apiv1.RestoreBackupRequest{BackupName: "backup", Peers: []string{"http://10.0.0.2:19530", "http://10.0.0.3:19530"}}
+	t.Run("ValidSecondaries", func(t *testing.T) {
+		request := &apiv1.RestoreBackupRequest{BackupName: "backup", Secondaries: []string{"http://10.0.0.2:19530", "http://10.0.0.3:19530"}}
 		assert.NoError(t, validateRestoreRequest(request))
 	})
 
-	t.Run("InvalidPeer", func(t *testing.T) {
-		request := &apiv1.RestoreBackupRequest{BackupName: "backup", Peers: []string{"10.0.0.2:19530"}}
+	t.Run("InvalidSecondary", func(t *testing.T) {
+		request := &apiv1.RestoreBackupRequest{BackupName: "backup", Secondaries: []string{"10.0.0.2:19530"}}
 		assert.Error(t, validateRestoreRequest(request))
 	})
 }
@@ -593,25 +593,25 @@ func TestHandleRestoreBackup(t *testing.T) {
 		assert.Equal(t, "rid-1", resp.GetRequestId())
 	})
 
-	t.Run("PeersReachTheOption", func(t *testing.T) {
+	t.Run("SecondariesReachTheOption", func(t *testing.T) {
 		job := &stubRestoreJob{}
 		stub := &stubRestoreFactory{job: job}
 		s := newListTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{status: newStubRestoreStatus()}, nil))
 
-		resp := restoreBackup(t, s, `{"backup_name":"backup1","peers":["http://10.0.0.2:19530","http://10.0.0.3:19530"]}`, "rid-1")
+		resp := restoreBackup(t, s, `{"backup_name":"backup1","secondaries":["http://10.0.0.2:19530","http://10.0.0.3:19530"]}`, "rid-1")
 
 		assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
-		assert.Equal(t, []string{"http://10.0.0.2:19530", "http://10.0.0.3:19530"}, stub.req.Option.PeerEndpoints)
+		assert.Equal(t, []string{"http://10.0.0.2:19530", "http://10.0.0.3:19530"}, stub.req.Option.SecondaryEndpoints)
 	})
 
-	t.Run("RejectsInvalidPeerWithoutBuildingAJob", func(t *testing.T) {
+	t.Run("RejectsInvalidSecondaryWithoutBuildingAJob", func(t *testing.T) {
 		stub := &stubRestoreFactory{}
 		s := newListTestServer(t, withRestoreBackup(stub))
 
-		resp := restoreBackup(t, s, `{"backup_name":"backup1","peers":["10.0.0.2:19530"]}`, "rid-1")
+		resp := restoreBackup(t, s, `{"backup_name":"backup1","secondaries":["10.0.0.2:19530"]}`, "rid-1")
 
 		assert.Equal(t, backuppb.ResponseCode_Parameter_Error, resp.GetCode())
-		assert.Contains(t, resp.GetMsg(), "invalid peer")
+		assert.Contains(t, resp.GetMsg(), "invalid secondary")
 		assert.Zero(t, stub.calls)
 	})
 

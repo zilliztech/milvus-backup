@@ -148,76 +148,76 @@ func TestSnapshotIgnoredOptions(t *testing.T) {
 	assert.Empty(t, snapshotIgnoredOptions(&Option{}))
 }
 
-// The peer option means something only on a server new enough to commit imports
-// two-phase, and only when replication mirrors the target's import jobs to that
-// peer; every mismatch fails before any DDL runs.
+// The secondaries option means something only on a server new enough to commit
+// imports two-phase, and only when replication mirrors the target's import jobs
+// to the secondaries; every mismatch fails before any DDL runs.
 func TestTask_CheckImport2PCSetup(t *testing.T) {
 	replicatingCfg := &commonpb.ReplicateConfiguration{
 		Clusters: []*commonpb.MilvusCluster{{ClusterId: "a"}, {ClusterId: "b"}},
 	}
 
-	newTaskWithPeers := func(peers []string, grpcCli *milvus.MockGrpc) *Task {
+	newTaskWithSecondaries := func(secondaries []string, grpcCli *milvus.MockGrpc) *Task {
 		task := newTestTask()
-		task.args.Option = &Option{PeerEndpoints: peers}
+		task.args.Option = &Option{SecondaryEndpoints: secondaries}
 		task.grpc = grpcCli
 		return task
 	}
 
-	t.Run("PeerOnOldServerFails", func(t *testing.T) {
+	t.Run("SecondariesOnOldServerFails", func(t *testing.T) {
 		grpcCli := milvus.NewMockGrpc(t)
 		grpcCli.EXPECT().HasFeature(milvus.Import2PC).Return(false)
 
-		err := newTaskWithPeers([]string{"http://peer:19530"}, grpcCli).checkImport2PCSetup(t.Context())
+		err := newTaskWithSecondaries([]string{"http://secondary:19530"}, grpcCli).checkImport2PCSetup(t.Context())
 		assert.ErrorContains(t, err, "3.0")
 	})
 
 	// An older server has neither the commit endpoint nor the rejection of
 	// auto-commit imports, so nothing is probed.
-	t.Run("NoPeerOnOldServerSkips", func(t *testing.T) {
+	t.Run("NoSecondariesOnOldServerSkips", func(t *testing.T) {
 		grpcCli := milvus.NewMockGrpc(t)
 		grpcCli.EXPECT().HasFeature(milvus.Import2PC).Return(false)
 
-		assert.NoError(t, newTaskWithPeers(nil, grpcCli).checkImport2PCSetup(t.Context()))
+		assert.NoError(t, newTaskWithSecondaries(nil, grpcCli).checkImport2PCSetup(t.Context()))
 	})
 
-	t.Run("PeerWithoutReplicationFails", func(t *testing.T) {
+	t.Run("SecondariesWithoutReplicationFails", func(t *testing.T) {
 		grpcCli := milvus.NewMockGrpc(t)
 		grpcCli.EXPECT().HasFeature(milvus.Import2PC).Return(true)
 		grpcCli.EXPECT().GetReplicateConfiguration(mock.Anything).
 			Return(&commonpb.ReplicateConfiguration{}, nil)
 
-		err := newTaskWithPeers([]string{"http://peer:19530"}, grpcCli).checkImport2PCSetup(t.Context())
+		err := newTaskWithSecondaries([]string{"http://secondary:19530"}, grpcCli).checkImport2PCSetup(t.Context())
 		assert.ErrorContains(t, err, "not part of a replication topology")
 	})
 
-	t.Run("PeerWithReplicationOK", func(t *testing.T) {
+	t.Run("SecondariesWithReplicationOK", func(t *testing.T) {
 		grpcCli := milvus.NewMockGrpc(t)
 		grpcCli.EXPECT().HasFeature(milvus.Import2PC).Return(true)
 		grpcCli.EXPECT().GetReplicateConfiguration(mock.Anything).Return(replicatingCfg, nil)
 
-		assert.NoError(t, newTaskWithPeers([]string{"http://peer:19530"}, grpcCli).checkImport2PCSetup(t.Context()))
+		assert.NoError(t, newTaskWithSecondaries([]string{"http://secondary:19530"}, grpcCli).checkImport2PCSetup(t.Context()))
 	})
 
-	t.Run("NoPeerOnReplicatingServerFails", func(t *testing.T) {
+	t.Run("NoSecondariesOnReplicatingServerFails", func(t *testing.T) {
 		grpcCli := milvus.NewMockGrpc(t)
 		grpcCli.EXPECT().HasFeature(milvus.Import2PC).Return(true)
 		grpcCli.EXPECT().GetReplicateConfiguration(mock.Anything).Return(replicatingCfg, nil)
 
-		err := newTaskWithPeers(nil, grpcCli).checkImport2PCSetup(t.Context())
-		assert.ErrorContains(t, err, "--peers")
+		err := newTaskWithSecondaries(nil, grpcCli).checkImport2PCSetup(t.Context())
+		assert.ErrorContains(t, err, "--secondaries")
 	})
 
-	// Without a peer the replication probe is best-effort: a target that cannot
-	// be asked restores as before, with a warning.
+	// Without secondaries the replication probe is best-effort: a target that
+	// cannot be asked restores as before, with a warning.
 	t.Run("UnreadableReplicationConfig", func(t *testing.T) {
 		grpcCli := milvus.NewMockGrpc(t)
 		grpcCli.EXPECT().HasFeature(milvus.Import2PC).Return(true)
 		grpcCli.EXPECT().GetReplicateConfiguration(mock.Anything).
 			Return(nil, errors.New("permission denied"))
 
-		assert.NoError(t, newTaskWithPeers(nil, grpcCli).checkImport2PCSetup(t.Context()))
+		assert.NoError(t, newTaskWithSecondaries(nil, grpcCli).checkImport2PCSetup(t.Context()))
 
-		err := newTaskWithPeers([]string{"http://peer:19530"}, grpcCli).checkImport2PCSetup(t.Context())
+		err := newTaskWithSecondaries([]string{"http://secondary:19530"}, grpcCli).checkImport2PCSetup(t.Context())
 		assert.ErrorContains(t, err, "permission denied")
 	})
 }

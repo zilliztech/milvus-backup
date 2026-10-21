@@ -50,7 +50,7 @@ type options struct {
 	rbac                 bool
 	strategy             string
 	useV2Restore         bool
-	peers                []string
+	secondaries          []string
 }
 
 func (o *options) validate() error {
@@ -71,10 +71,10 @@ func (o *options) validate() error {
 		return fmt.Errorf("invalid strategy %s, only support %s", o.strategy, strings.Join(restore.SupportStrategy(), ","))
 	}
 
-	for _, peer := range o.peers {
-		u, err := url.Parse(peer)
+	for _, secondary := range o.secondaries {
+		u, err := url.Parse(secondary)
 		if err != nil || u.Scheme == "" || u.Host == "" {
-			return fmt.Errorf("invalid peer %q, expect an http(s) url like http://10.0.0.2:19530", peer)
+			return fmt.Errorf("invalid secondary %q, expect an http(s) url like http://10.0.0.2:19530", secondary)
 		}
 	}
 
@@ -99,7 +99,7 @@ func (o *options) addFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVarP(&o.skipCreateCollection, "skip_create_collection", "", false, "if true, will skip collection, use when collection exist, restore index or data")
 	cmd.Flags().BoolVarP(&o.rbac, "rbac", "", false, "whether restore RBAC meta")
 	cmd.Flags().StringVarP(&o.strategy, "strategy", "", "", "restore strategy, one of [auto, per_seg, merged_seg, restore_snap, import_snap], if not set will auto select")
-	cmd.Flags().StringSliceVarP(&o.peers, "peers", "", nil, "REST endpoints of the peer clusters that replicate this target, comma-separated or repeated, e.g. --peers http://10.0.0.2:19530,http://10.0.0.3:19530. Every import job is then committed two-phase: held uncommitted until its mirror shows up on every peer, then committed on this cluster; the commit replicates and commits the mirrors")
+	cmd.Flags().StringSliceVarP(&o.secondaries, "secondaries", "", nil, "REST endpoints of the secondary clusters that replicate this target, comma-separated or repeated, e.g. --secondaries http://10.0.0.2:19530,http://10.0.0.3:19530. Every import job is then committed two-phase: held uncommitted until its mirror shows up on every secondary, then committed on this cluster; the commit replicates and commits the mirrors")
 
 	// The deprecated bool of the pre-strategy days keeps working so an old
 	// command line restores exactly what it used to: cobra answers every use
@@ -134,7 +134,7 @@ func (o *options) toOption() (*restore.Option, error) {
 		MetaOnly:             o.metaOnly,
 		Strategy:             strategy,
 		RestoreRBAC:          o.rbac,
-		PeerEndpoints:        o.peers,
+		SecondaryEndpoints:   o.secondaries,
 	}, nil
 }
 

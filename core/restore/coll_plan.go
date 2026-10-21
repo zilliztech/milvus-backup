@@ -56,10 +56,10 @@ const (
 // and reportable, and resumable — before the first task executes. Building
 // reads the backup bucket but never touches the target.
 func (t *Task) selectPlan(ctx context.Context, targets []collTarget) (tasklet.Tasklet, error) {
-	// A peer commit rides the restful import api: the v1 grpc import has no
-	// two-phase commit at all. Auto resolves to the restful plan directly — the
-	// preflight has already established the target is new enough.
-	peerSet := len(t.args.Option.PeerEndpoints) != 0
+	// A secondary commit rides the restful import api: the v1 grpc import has
+	// no two-phase commit at all. Auto resolves to the restful plan directly —
+	// the preflight has already established the target is new enough.
+	hasSecondaries := len(t.args.Option.SecondaryEndpoints) != 0
 
 	switch strategy := t.args.Option.Strategy; strategy {
 	case StrategyAuto:
@@ -69,7 +69,7 @@ func (t *Task) selectPlan(ctx context.Context, targets []collTarget) (tasklet.Ta
 			t.logger.Info("use restore snap plan")
 			return newRestoreSnapPlan(t, targets), nil
 		}
-		if peerSet {
+		if hasSecondaries {
 			t.logger.Info("use binlog restful plan with two-phase commit")
 			return t.newBinlogDataPlan(ctx, targets, t.restfulPlannerFactory())
 		}
@@ -83,8 +83,8 @@ func (t *Task) selectPlan(ctx context.Context, targets []collTarget) (tasklet.Ta
 		if t.format != meta.FormatBinlog {
 			return nil, wrongFormat("per_seg", meta.FormatBinlog, t.format)
 		}
-		if peerSet {
-			return nil, errors.New("restore: --peers needs the restful import api for its two-phase " +
+		if hasSecondaries {
+			return nil, errors.New("restore: --secondaries needs the restful import api for its two-phase " +
 				"commit, but the per_seg strategy imports through the v1 grpc api; use merged_seg or auto")
 		}
 		t.logger.Info("use binlog grpc plan")
@@ -228,7 +228,7 @@ func grpcPlannerFactory(args importTaskArgs) importPlanner {
 func (t *Task) restfulPlannerFactory() importPlannerFactory {
 	multiL0InOneJob := t.grpc.HasFeature(milvus.MultiL0InOneJob)
 	return func(args importTaskArgs) importPlanner {
-		return newRestfulImportPlanner(args, multiL0InOneJob, t.peers)
+		return newRestfulImportPlanner(args, multiL0InOneJob, t.secondaries)
 	}
 }
 

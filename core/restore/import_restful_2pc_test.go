@@ -20,8 +20,8 @@ import (
 // It answers GetBulkInsertState from a sequence (repeating the last entry),
 // captures how the job was created, and appends every lifecycle call to a log
 // shared with the other cluster, so a test can assert the order of events
-// across the two ends — and that the peer ends never get a lifecycle call at
-// all, since a replication target refuses client-side commit/abort.
+// across the two ends — and that the secondary ends never get a lifecycle call
+// at all, since a replication target refuses client-side commit/abort.
 type twoPCCluster struct {
 	name string
 
@@ -90,7 +90,7 @@ func (c *twoPCCluster) count(op string) int {
 
 // newTwoPCTask builds the two-phase task against the scripted clusters, with no
 // staging: the dirs are treated as already readable by the target.
-func newTwoPCTask(t *testing.T, local *twoPCCluster, peers ...*twoPCCluster) *importViaRESTFul2PCTask {
+func newTwoPCTask(t *testing.T, local *twoPCCluster, secondaries ...*twoPCCluster) *importViaRESTFul2PCTask {
 	target := collref.New("db", "coll")
 	collTracker := jobstate.NewStore().AddRestoreTask("task1").NewCollTracker(target, 1)
 
@@ -109,18 +109,18 @@ func newTwoPCTask(t *testing.T, local *twoPCCluster, peers ...*twoPCCluster) *im
 
 		job: collTracker.NewJob(1),
 	}
-	importPeers := make([]importPeer, 0, len(peers))
-	for _, p := range peers {
-		importPeers = append(importPeers, importPeer{addr: p.name, cli: p})
+	importSecondaries := make([]importSecondary, 0, len(secondaries))
+	for _, s := range secondaries {
+		importSecondaries = append(importSecondaries, importSecondary{addr: s.name, cli: s})
 	}
-	return &importViaRESTFul2PCTask{importer: importer, peers: importPeers}
+	return &importViaRESTFul2PCTask{importer: importer, secondaries: importSecondaries}
 }
 
 func TestImportViaRESTFul2PCTaskExecute(t *testing.T) {
-	// The happy path commits on the local cluster only; the peer mirrors are
-	// committed by the replicated fence message, so the task just waits them
-	// out and never issues a lifecycle call against a peer.
-	t.Run("CommitsLocalThenWaitsPeer", func(t *testing.T) {
+	// The happy path commits on the local cluster only; the secondary mirrors
+	// are committed by the replicated fence message, so the task just waits
+	// them out and never issues a lifecycle call against a secondary.
+	t.Run("CommitsLocalThenWaitsSecondaries", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			var log []string
 			var mu sync.Mutex
@@ -128,37 +128,37 @@ func TestImportViaRESTFul2PCTaskExecute(t *testing.T) {
 				string(milvus.ImportStateImporting),
 				string(milvus.ImportStateUncommitted),
 				string(milvus.ImportStateCompleted))
-			peer := newTwoPCCluster("peer", &log, &mu,
+			secondary := newTwoPCCluster("secondary", &log, &mu,
 				string(milvus.ImportStateUncommitted),
 				string(milvus.ImportStateCommitting),
 				string(milvus.ImportStateCompleted))
 
-			task := newTwoPCTask(t, local, peer)
+			task := newTwoPCTask(t, local, secondary)
 			require.NoError(t, task.Execute(t.Context()))
 
 			assert.True(t, local.manualCommit)
 			assert.Equal(t, []string{"local:create", "local:commit"}, log)
 			assert.Zero(t, local.count("abort"))
-			assert.Zero(t, peer.count("commit"))
-			assert.Zero(t, peer.count("abort"))
+			assert.Zero(t, secondary.count("commit"))
+			assert.Zero(t, secondary.count("abort"))
 		})
 	})
 
 	// Past the local commit there is no way back: a mirror that fails on its
 	// own does not take the replicated commit, so the error says the two ends
 	// have diverged — and nothing aborts, the local data stays.
-	t.Run("PeerMirrorFailureDiverges", func(t *testing.T) {
+	t.Run("SecondaryMirrorFailureDiverges", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			var log []string
 			var mu sync.Mutex
 			local := newTwoPCCluster("local", &log, &mu,
 				string(milvus.ImportStateUncommitted),
 				string(milvus.ImportStateCompleted))
-			peer := newTwoPCCluster("peer", &log, &mu,
+			secondary := newTwoPCCluster("secondary", &log, &mu,
 				string(milvus.ImportStateUncommitted),
 				string(milvus.ImportStateFailed))
 
-			task := newTwoPCTask(t, local, peer)
+			task := newTwoPCTask(t, local, secondary)
 			err := task.Execute(t.Context())
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "disk quota exceeded")
@@ -167,134 +167,135 @@ func TestImportViaRESTFul2PCTaskExecute(t *testing.T) {
 
 			assert.Equal(t, []string{"local:create", "local:commit"}, log)
 			assert.Zero(t, local.count("abort"))
-			assert.Zero(t, peer.count("abort"))
+			assert.Zero(t, secondary.count("abort"))
 		})
 	})
 
 	// A failure before the commit aborts the local job; the abort's rollback
-	// message replicates and fails the mirrors, so the peers are never called.
+	// message replicates and fails the mirrors, so the secondaries are never
+	// called.
 	t.Run("LocalFailureAbortsLocally", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			var log []string
 			var mu sync.Mutex
 			local := newTwoPCCluster("local", &log, &mu, string(milvus.ImportStateFailed))
-			peer := newTwoPCCluster("peer", &log, &mu, string(milvus.ImportStateUncommitted))
+			secondary := newTwoPCCluster("secondary", &log, &mu, string(milvus.ImportStateUncommitted))
 
-			task := newTwoPCTask(t, local, peer)
+			task := newTwoPCTask(t, local, secondary)
 			err := task.Execute(t.Context())
 			require.Error(t, err)
 			assert.Contains(t, err.Error(), "disk quota exceeded")
 
 			assert.Equal(t, []string{"local:create", "local:abort"}, log)
-			assert.Zero(t, peer.count("commit"))
-			assert.Zero(t, peer.count("abort"))
+			assert.Zero(t, secondary.count("commit"))
+			assert.Zero(t, secondary.count("abort"))
 		})
 	})
 
-	// The mirror is created around the submit, so a peer that still has no trace
-	// of the job a minute later means the peer is wrong, not slow.
-	t.Run("PeerMirrorTimeout", func(t *testing.T) {
+	// The mirror is created around the submit, so a secondary that still has no
+	// trace of the job a minute later means the secondary is wrong, not slow.
+	t.Run("SecondaryMirrorTimeout", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			var log []string
 			var mu sync.Mutex
 			local := newTwoPCCluster("local", &log, &mu, string(milvus.ImportStateUncommitted))
-			peer := newTwoPCCluster("peer", &log, &mu, "")
+			secondary := newTwoPCCluster("secondary", &log, &mu, "")
 
-			task := newTwoPCTask(t, local, peer)
+			task := newTwoPCTask(t, local, secondary)
 			err := task.Execute(t.Context())
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), "--peers")
+			assert.Contains(t, err.Error(), "--secondaries")
 
 			assert.Equal(t, []string{"local:create", "local:abort"}, log)
 		})
 	})
 
 	// A mirror that takes a few polls to show up is waited for.
-	t.Run("PeerMirrorAppearsLate", func(t *testing.T) {
+	t.Run("SecondaryMirrorAppearsLate", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			var log []string
 			var mu sync.Mutex
 			local := newTwoPCCluster("local", &log, &mu,
 				string(milvus.ImportStateUncommitted),
 				string(milvus.ImportStateCompleted))
-			peer := newTwoPCCluster("peer", &log, &mu,
+			secondary := newTwoPCCluster("secondary", &log, &mu,
 				"", "",
 				string(milvus.ImportStateUncommitted),
 				string(milvus.ImportStateCompleted))
 
-			task := newTwoPCTask(t, local, peer)
+			task := newTwoPCTask(t, local, secondary)
 			require.NoError(t, task.Execute(t.Context()))
 			assert.Equal(t, []string{"local:create", "local:commit"}, log)
 		})
 	})
 
-	// A retried task can meet a peer mirror that is already committing: the
-	// crashed first run's commit replicated before the retry got there.
-	t.Run("PeerAlreadyCommitting", func(t *testing.T) {
+	// A retried task can meet a secondary mirror that is already committing:
+	// the crashed first run's commit replicated before the retry got there.
+	t.Run("SecondaryAlreadyCommitting", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			var log []string
 			var mu sync.Mutex
 			local := newTwoPCCluster("local", &log, &mu,
 				string(milvus.ImportStateUncommitted),
 				string(milvus.ImportStateCompleted))
-			peer := newTwoPCCluster("peer", &log, &mu,
+			secondary := newTwoPCCluster("secondary", &log, &mu,
 				string(milvus.ImportStateCommitting),
 				string(milvus.ImportStateCompleted))
 
-			task := newTwoPCTask(t, local, peer)
+			task := newTwoPCTask(t, local, secondary)
 			require.NoError(t, task.Execute(t.Context()))
-			assert.Zero(t, peer.count("commit"))
+			assert.Zero(t, secondary.count("commit"))
 		})
 	})
 
-	// Every peer must show the mirror before the local commit, and every
-	// peer's mirror is waited out after it.
-	t.Run("TwoPeers", func(t *testing.T) {
+	// Every secondary must show the mirror before the local commit, and every
+	// secondary's mirror is waited out after it.
+	t.Run("TwoSecondaries", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			var log []string
 			var mu sync.Mutex
 			local := newTwoPCCluster("local", &log, &mu,
 				string(milvus.ImportStateUncommitted),
 				string(milvus.ImportStateCompleted))
-			peer1 := newTwoPCCluster("peer1", &log, &mu,
+			secondary1 := newTwoPCCluster("secondary1", &log, &mu,
 				string(milvus.ImportStateUncommitted),
 				string(milvus.ImportStateCompleted))
-			peer2 := newTwoPCCluster("peer2", &log, &mu, "",
+			secondary2 := newTwoPCCluster("secondary2", &log, &mu, "",
 				string(milvus.ImportStateUncommitted),
 				string(milvus.ImportStateCompleted))
 
-			task := newTwoPCTask(t, local, peer1, peer2)
+			task := newTwoPCTask(t, local, secondary1, secondary2)
 			require.NoError(t, task.Execute(t.Context()))
 			assert.Equal(t, []string{"local:create", "local:commit"}, log)
-			assert.Zero(t, peer1.count("commit"))
-			assert.Zero(t, peer2.count("commit"))
+			assert.Zero(t, secondary1.count("commit"))
+			assert.Zero(t, secondary2.count("commit"))
 		})
 	})
 
 	// A mirror that never finishes after the local commit means the fence did
-	// not land; the timeout names the peer and points at the stream.
-	t.Run("PeerCommitTimeoutNamesIt", func(t *testing.T) {
+	// not land; the timeout names the secondary and points at the stream.
+	t.Run("SecondaryCommitTimeoutNamesIt", func(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			var log []string
 			var mu sync.Mutex
 			local := newTwoPCCluster("local", &log, &mu,
 				string(milvus.ImportStateUncommitted),
 				string(milvus.ImportStateCompleted))
-			peer1 := newTwoPCCluster("peer1", &log, &mu,
+			secondary1 := newTwoPCCluster("secondary1", &log, &mu,
 				string(milvus.ImportStateUncommitted),
 				string(milvus.ImportStateCompleted))
-			peer2 := newTwoPCCluster("peer2", &log, &mu, string(milvus.ImportStateUncommitted))
+			secondary2 := newTwoPCCluster("secondary2", &log, &mu, string(milvus.ImportStateUncommitted))
 
-			task := newTwoPCTask(t, local, peer1, peer2)
+			task := newTwoPCTask(t, local, secondary1, secondary2)
 			err := task.Execute(t.Context())
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), "peer2")
+			assert.Contains(t, err.Error(), "secondary2")
 			assert.Contains(t, err.Error(), "replication stream")
 		})
 	})
 }
 
-func TestRESTfulImportPlannerPeerFork(t *testing.T) {
+func TestRESTfulImportPlannerSecondaryFork(t *testing.T) {
 	jobs := jobstate.NewStore().AddRestoreTask("task-1").NewCollTracker(collref.New("db", "coll"), 0)
 	planner := &restfulImportPlanner{
 		args:            importTaskArgs{maxSegsPerImportJob: 2, jobs: jobs, logger: zap.NewNop()},
@@ -302,20 +303,20 @@ func TestRESTfulImportPlannerPeerFork(t *testing.T) {
 	}
 	g := dirGroup{dirs: []partitionDir{{insertLogDir: "insert", size: 1}}}
 
-	// Without a peer every task is the plain single-phase shape.
+	// Without a secondary every task is the plain single-phase shape.
 	task := planner.newTask("p1", g, g.dirs)
 	_, ok := task.(*importViaRESTFulTask)
 	assert.True(t, ok)
 
-	// With peers the same import rides the two-phase task, driving the same
-	// importer device.
-	planner.peers = []importPeer{{
-		addr: "peer",
-		cli:  newTwoPCCluster("peer", &[]string{}, &sync.Mutex{}, string(milvus.ImportStateUncommitted)),
+	// With secondaries the same import rides the two-phase task, driving the
+	// same importer device.
+	planner.secondaries = []importSecondary{{
+		addr: "secondary",
+		cli:  newTwoPCCluster("secondary", &[]string{}, &sync.Mutex{}, string(milvus.ImportStateUncommitted)),
 	}}
 	task = planner.newTask("p1", g, g.dirs)
 	twoPC, ok := task.(*importViaRESTFul2PCTask)
 	require.True(t, ok)
-	assert.Equal(t, planner.peers, twoPC.peers)
+	assert.Equal(t, planner.secondaries, twoPC.secondaries)
 	assert.NotNil(t, twoPC.importer)
 }

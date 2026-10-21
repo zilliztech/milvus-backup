@@ -219,10 +219,10 @@ type RestoreBackupRequest struct {
 	// import_snap]; auto, like leaving the field unset, lets the restore pick
 	// the plan against the backup's format.
 	Strategy string `json:"strategy,omitempty"`
-	// REST endpoints of the peer clusters that replicate this target, e.g.
-	// http://10.0.0.2:19530; when set, every import job is committed
-	// two-phase so its mirror commits on every peer.
-	Peers []string `json:"peers,omitempty"`
+	// REST endpoints of the secondary clusters that replicate this target,
+	// e.g. http://10.0.0.2:19530; when set, every import job is committed
+	// two-phase so its mirror commits on every secondary.
+	Secondaries []string `json:"secondaries,omitempty"`
 }
 
 // SkipParams names the collection, field and index params the restore leaves
