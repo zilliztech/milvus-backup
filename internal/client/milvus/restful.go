@@ -38,7 +38,25 @@ type BulkInsertV2Input struct {
 	// ManualCommit submits the job with auto_commit=false: it stops at
 	// Uncommitted and waits for an explicit CommitImport.
 	ManualCommit bool
+
+	// SourceType selects a metadata source contract for the import. The only
+	// supported value is SourceTypeSnapshot, which turns Paths into exactly one
+	// entry holding one complete snapshot metadata URI. The server rejects a
+	// source type together with BackupTS, StorageVersion or IsL0, so a snapshot
+	// import leaves them all unset.
+	SourceType string
+	// ExternalSpec carries request-scoped credentials for the snapshot source
+	// storage, as the extfs json the snapshot export/restore APIs take. Empty
+	// when the server reads the source with its own storage config.
+	ExternalSpec string
+	// PartitionMapping is a json string mapping every source partition name to
+	// an existing target partition name. Snapshot imports only.
+	PartitionMapping string
 }
+
+// SourceTypeSnapshot makes a bulk import read a snapshot metadata file as its
+// source, the value the server expects under the source_type option key.
+const SourceTypeSnapshot = "snapshot"
 
 func (in *BulkInsertV2Input) opts() map[string]string {
 	opts := map[string]string{"skip_disk_quota_check": "true"}
@@ -63,6 +81,18 @@ func (in *BulkInsertV2Input) opts() map[string]string {
 
 	if in.EZK != "" {
 		opts["ezk"] = in.EZK
+	}
+
+	if in.SourceType != "" {
+		opts["source_type"] = in.SourceType
+	}
+
+	if in.ExternalSpec != "" {
+		opts["external_spec"] = in.ExternalSpec
+	}
+
+	if in.PartitionMapping != "" {
+		opts["partition_mapping"] = in.PartitionMapping
 	}
 
 	return opts
@@ -128,6 +158,24 @@ type createImportReq struct {
 	Options        map[string]string `json:"options,omitempty"`
 }
 
+// redacted returns the request as it may appear in logs: the external spec
+// carries source storage credentials, and the ezk is a key, so both are
+// masked. The mask is total on purpose — see cfg maskSecret.
+func (r createImportReq) redacted() createImportReq {
+	if r.Options == nil {
+		return r
+	}
+	masked := make(map[string]string, len(r.Options))
+	for k, v := range r.Options {
+		if k == "external_spec" || k == "ezk" {
+			v = "****"
+		}
+		masked[k] = v
+	}
+	r.Options = masked
+	return r
+}
+
 type getSegmentInfoResp struct {
 	Code int `json:"code"`
 	Data struct {
@@ -185,7 +233,7 @@ func (r *RestfulClient) BulkInsert(ctx context.Context, input BulkInsertV2Input)
 		Options:        input.opts(),
 	}
 	var createResp createImportResp
-	log.Info("send create import job via restful", zap.Any("createReq", createReq))
+	log.Info("send create import job via restful", zap.Any("createReq", createReq.redacted()))
 	resp, err := r.cli.R().
 		SetHeader("Request-Timeout", "600").
 		SetContext(ctx).
