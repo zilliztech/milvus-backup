@@ -15,19 +15,17 @@ func TestNewRestoreCollTaskResp(t *testing.T) {
 	now := time.Now()
 	collRef := collref.New("db1", "coll1")
 	coll := jobstate.RestoreCollStatus{
-		State:        jobstate.RestoreStateFail,
-		ErrorMessage: "error message",
-		StartTime:    now,
-		EndTime:      now,
-		Progress:     42,
+		StartTime: now,
+		TotalSize: 100,
+		DDL:       &jobstate.RestoreDDLStatus{State: jobstate.RestoreDDLSuccess, EndTime: now},
 	}
 
 	res := NewRestoreCollTaskResp(collRef, coll)
-	assert.Equal(t, backuppb.RestoreTaskStateCode_FAIL, res.StateCode)
-	assert.Equal(t, "error message", res.ErrorMessage)
+	assert.Equal(t, backuppb.RestoreTaskStateCode_SUCCESS, res.StateCode)
+	assert.Empty(t, res.ErrorMessage)
 	assert.Equal(t, now.Unix(), res.StartTime)
 	assert.Equal(t, now.Unix(), res.EndTime)
-	assert.Equal(t, int32(42), res.Progress)
+	assert.Equal(t, int32(100), res.Progress)
 	assert.Equal(t, "db1", res.TargetDbName)
 	assert.Equal(t, "coll1", res.TargetCollectionName)
 }
@@ -41,9 +39,8 @@ func TestNewRestoreTaskResp(t *testing.T) {
 		ErrorMessage: "error message",
 		StartTime:    now,
 		EndTime:      now,
-		Progress:     42,
 		Colls: map[collref.Name]jobstate.RestoreCollStatus{
-			collref.New("db1", "coll1"): {State: jobstate.RestoreStateInitial},
+			collref.New("db1", "coll1"): {StartTime: now},
 		},
 	}
 
@@ -53,10 +50,141 @@ func TestNewRestoreTaskResp(t *testing.T) {
 	assert.Equal(t, "error message", res.ErrorMessage)
 	assert.Equal(t, now.Unix(), res.StartTime)
 	assert.Equal(t, now.Unix(), res.EndTime)
-	assert.Equal(t, int32(42), res.Progress)
+	// the collection has no halves and no size, so the percent floors at 1
+	assert.Equal(t, int32(1), res.Progress)
 
 	assert.Len(t, res.CollectionRestoreTasks, 1)
 	assert.Equal(t, backuppb.RestoreTaskStateCode_INITIAL, res.CollectionRestoreTasks[0].StateCode)
+}
+
+// The collection's state is derived from its halves: nothing has started is
+// initial, a failed half fails it, every present half settled succeeds it,
+// and anything else is in flight.
+func TestRestoreCollState(t *testing.T) {
+	t.Run("NoHalvesIsInitial", func(t *testing.T) {
+		state, _, endTime := restoreCollState(jobstate.RestoreCollStatus{})
+		assert.Equal(t, jobstate.RestoreStateInitial, state)
+		assert.True(t, endTime.IsZero())
+	})
+
+	t.Run("DDLOnlySettles", func(t *testing.T) {
+		end := time.Unix(1, 0)
+		state, _, endTime := restoreCollState(jobstate.RestoreCollStatus{
+			DDL: &jobstate.RestoreDDLStatus{State: jobstate.RestoreDDLSuccess, EndTime: end},
+		})
+		assert.Equal(t, jobstate.RestoreStateSuccess, state)
+		assert.Equal(t, end, endTime)
+	})
+
+	t.Run("OneJobInFlight", func(t *testing.T) {
+		state, _, endTime := restoreCollState(jobstate.RestoreCollStatus{
+			Jobs: []jobstate.RestoreJobStatus{{State: jobstate.RestoreJobRunning, Progress: 40}},
+		})
+		assert.Equal(t, jobstate.RestoreStateExecuting, state)
+		assert.True(t, endTime.IsZero())
+	})
+
+	t.Run("DDLFailWinsOverJobFailure", func(t *testing.T) {
+		state, errMessage, _ := restoreCollState(jobstate.RestoreCollStatus{
+			DDL:  &jobstate.RestoreDDLStatus{State: jobstate.RestoreDDLFail, ErrorMessage: "ddl failed"},
+			Jobs: []jobstate.RestoreJobStatus{{State: jobstate.RestoreJobFailed, ErrorMessage: "job failed"}},
+		})
+		assert.Equal(t, jobstate.RestoreStateFail, state)
+		assert.Equal(t, "ddl failed", errMessage)
+	})
+
+	t.Run("JobFailFailsCollection", func(t *testing.T) {
+		end := time.Unix(2, 0)
+		state, errMessage, endTime := restoreCollState(jobstate.RestoreCollStatus{
+			DDL: &jobstate.RestoreDDLStatus{State: jobstate.RestoreDDLSuccess},
+			Jobs: []jobstate.RestoreJobStatus{
+				{State: jobstate.RestoreJobCompleted},
+				{State: jobstate.RestoreJobFailed, ErrorMessage: assert.AnError.Error(), EndTime: end},
+			},
+		})
+		assert.Equal(t, jobstate.RestoreStateFail, state)
+		assert.Equal(t, assert.AnError.Error(), errMessage)
+		assert.Equal(t, end, endTime)
+	})
+}
+
+func TestRestoreCollProgress(t *testing.T) {
+	t.Run("WeightedByJobSize", func(t *testing.T) {
+		coll := jobstate.RestoreCollStatus{
+			TotalSize: 100,
+			Jobs: []jobstate.RestoreJobStatus{
+				{State: jobstate.RestoreJobRunning, Size: 10, Progress: 100},
+				{State: jobstate.RestoreJobRunning, Size: 20, Progress: 50},
+				{State: jobstate.RestoreJobRunning, Size: 30, Progress: 0},
+			},
+		}
+
+		assert.Equal(t, int32(20), restoreCollProgress(coll))
+	})
+
+	t.Run("CompletedCountsFull", func(t *testing.T) {
+		coll := jobstate.RestoreCollStatus{
+			TotalSize: 100,
+			Jobs: []jobstate.RestoreJobStatus{
+				// the last polled ratio does not matter once the job completed
+				{State: jobstate.RestoreJobCompleted, Size: 50, Progress: 30},
+				{State: jobstate.RestoreJobPending, Size: 50},
+			},
+		}
+
+		assert.Equal(t, int32(50), restoreCollProgress(coll))
+	})
+
+	t.Run("ZeroTotalSize", func(t *testing.T) {
+		coll := jobstate.RestoreCollStatus{
+			Jobs: []jobstate.RestoreJobStatus{{State: jobstate.RestoreJobRunning}},
+		}
+
+		assert.Equal(t, int32(1), restoreCollProgress(coll))
+	})
+
+	t.Run("ZeroRestoredSizeStillReportsOne", func(t *testing.T) {
+		coll := jobstate.RestoreCollStatus{
+			TotalSize: 100,
+			Jobs:      []jobstate.RestoreJobStatus{{State: jobstate.RestoreJobRunning, Size: 10}},
+		}
+
+		assert.Equal(t, int32(1), restoreCollProgress(coll))
+	})
+}
+
+func TestRestoreProgress(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		assert.Equal(t, int32(100), restoreProgress(jobstate.RestoreStatus{State: jobstate.RestoreStateSuccess}))
+	})
+
+	t.Run("WeightedCollections", func(t *testing.T) {
+		status := jobstate.RestoreStatus{
+			State: jobstate.RestoreStateExecuting,
+			Colls: map[collref.Name]jobstate.RestoreCollStatus{
+				collref.New("db1", "coll1"): {
+					TotalSize: 10,
+					Jobs:      []jobstate.RestoreJobStatus{{State: jobstate.RestoreJobRunning, Size: 10, Progress: 100}},
+				},
+				collref.New("db1", "coll2"): {
+					TotalSize: 20,
+					Jobs:      []jobstate.RestoreJobStatus{{State: jobstate.RestoreJobRunning, Size: 20, Progress: 50}},
+				},
+				collref.New("db1", "coll3"): {
+					TotalSize: 30,
+					Jobs:      []jobstate.RestoreJobStatus{{State: jobstate.RestoreJobRunning, Size: 30, Progress: 0}},
+				},
+			},
+		}
+
+		// each collection's job is its whole size, so the collection percents
+		// are 100, 50 and 1 (the floor), weighting to (10+10+0)/60
+		assert.Equal(t, int32(33), restoreProgress(status))
+	})
+
+	t.Run("NoCollectionsReportsOne", func(t *testing.T) {
+		assert.Equal(t, int32(1), restoreProgress(jobstate.RestoreStatus{State: jobstate.RestoreStateExecuting}))
+	})
 }
 
 func TestRestoreStateToPB(t *testing.T) {

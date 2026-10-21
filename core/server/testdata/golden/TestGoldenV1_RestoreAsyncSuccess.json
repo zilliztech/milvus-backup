@@ -9,11 +9,10 @@
     "progress": 100,
     "collection_restore_tasks": [
       {
-        "state_code": 1,
-        "errorMessage": "slow copy",
+        "state_code": 2,
         "start_time": 1,
         "end_time": 2,
-        "progress": 42,
+        "progress": 100,
         "target_db_name": "db1",
         "target_collection_name": "coll1"
       }

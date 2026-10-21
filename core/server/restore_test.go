@@ -504,7 +504,6 @@ func newStubRestoreStatus() jobstate.RestoreStatus {
 		State:     jobstate.RestoreStateSuccess,
 		StartTime: time.Unix(1, 0),
 		EndTime:   time.Unix(2, 0),
-		Progress:  100,
 	}
 }
 

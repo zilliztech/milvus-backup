@@ -56,9 +56,6 @@ type RestoreStatus struct {
 	StartTime time.Time
 	EndTime   time.Time
 
-	// Progress is the size-weighted mean of the collections' percents.
-	Progress int32
-
 	// Colls holds one entry per collection the job covers, registered when the
 	// plan is built. The map is this snapshot's own copy.
 	Colls map[collref.Name]RestoreCollStatus
@@ -71,20 +68,14 @@ func (s RestoreStatus) Terminal() bool {
 }
 
 // RestoreCollStatus is the snapshot of one collection's slice of a restore
-// job. State, ErrorMessage, EndTime and Progress are derived from the halves
-// at snapshot time; nobody writes a collection's state directly. A nil DDL
-// half means the plan runs no DDL for the collection — the snapshot path;
-// Jobs holds the import jobs, the single snapshot restore job, or the
-// secondary copy job, whichever the plan runs.
+// job: the halves that ran, with nothing aggregated over them. A nil DDL half
+// means the plan runs no DDL for the collection — the snapshot path; Jobs
+// holds the import jobs, the single snapshot restore job, or the secondary
+// copy job, whichever the plan runs. The collection's state and percent are
+// renderings over these halves, computed by the transport that answers.
 type RestoreCollStatus struct {
-	State        RestoreState
-	ErrorMessage string
-
 	StartTime time.Time
-	EndTime   time.Time
-
 	TotalSize int64
-	Progress  int32
 
 	DDL  *RestoreDDLStatus
 	Jobs []RestoreJobStatus
@@ -138,26 +129,8 @@ func (t *restoreTask) snapshot() RestoreStatus {
 	defer t.mu.RUnlock()
 
 	colls := make(map[collref.Name]RestoreCollStatus, len(t.collTask))
-	var restoredSize, totalSize int64
 	for collRef, coll := range t.collTask {
-		status := coll.snapshot()
-		colls[collRef] = status
-		restoredSize += status.TotalSize * int64(status.Progress) / 100
-		totalSize += status.TotalSize
-	}
-
-	var progress int32
-	switch {
-	case t.state == RestoreStateSuccess:
-		progress = 100
-	case totalSize == 0:
-		// don't report zero once the job is underway
-		progress = 1
-	default:
-		progress = int32(float64(restoredSize) / float64(totalSize) * 100)
-		if progress == 0 {
-			progress = 1
-		}
+		colls[collRef] = coll.snapshot()
 	}
 
 	return RestoreStatus{
@@ -166,7 +139,6 @@ func (t *restoreTask) snapshot() RestoreStatus {
 		ErrorMessage: t.errorMessage,
 		StartTime:    t.startTime,
 		EndTime:      t.endTime,
-		Progress:     progress,
 		Colls:        colls,
 	}
 }
@@ -213,78 +185,7 @@ func (t *restoreCollTask) snapshot() RestoreCollStatus {
 		})
 	}
 
-	status.State, status.ErrorMessage, status.EndTime = t.derive()
-	status.Progress = t.deriveProgress(status.State)
-
 	return status
-}
-
-// derive computes the collection's state from its halves: a failed half fails
-// the collection — the schema half's error wins over a job's because it failed
-// earlier in the flow — everything present settling success settles the
-// collection, a collection nothing has started for is initial, and anything
-// else is in flight.
-func (t *restoreCollTask) derive() (RestoreState, string, time.Time) {
-	if t.ddl != nil && t.ddl.state == RestoreDDLFail {
-		return RestoreStateFail, t.ddl.errorMessage, t.ddl.endTime
-	}
-	for _, job := range t.jobs {
-		if job.state == RestoreJobFailed {
-			return RestoreStateFail, job.errorMessage, job.endTime
-		}
-	}
-
-	allSettled := t.ddl == nil || t.ddl.state == RestoreDDLSuccess
-	anyStarted := t.ddl != nil && t.ddl.state != RestoreDDLPending
-	var endTime time.Time
-	if t.ddl != nil {
-		endTime = t.ddl.endTime
-	}
-	for _, job := range t.jobs {
-		allSettled = allSettled && job.state == RestoreJobCompleted
-		anyStarted = anyStarted || job.state != RestoreJobPending
-		if job.endTime.After(endTime) {
-			endTime = job.endTime
-		}
-	}
-
-	switch {
-	case allSettled && (t.ddl != nil || len(t.jobs) != 0):
-		return RestoreStateSuccess, "", endTime
-	case anyStarted:
-		return RestoreStateExecuting, "", time.Time{}
-	default:
-		return RestoreStateInitial, "", time.Time{}
-	}
-}
-
-// deriveProgress computes the collection's percent from its jobs: a completed
-// job counts fully, a running one by its reported ratio. The schema half is a
-// handful of RPCs with no meaningful size, so it never weighs in.
-func (t *restoreCollTask) deriveProgress(state RestoreState) int32 {
-	if state == RestoreStateSuccess {
-		return 100
-	}
-	if t.totalSize == 0 {
-		return 1
-	}
-
-	var restoredSize int64
-	for _, job := range t.jobs {
-		progress := job.progress
-		if job.state == RestoreJobCompleted {
-			progress = 100
-		}
-		restoredSize += job.size * int64(progress) / 100
-	}
-
-	progress := int32(float64(restoredSize) / float64(t.totalSize) * 100)
-	// don't report zero once the collection is underway
-	if progress == 0 {
-		return 1
-	}
-
-	return progress
 }
 
 type restoreCollDDL struct {

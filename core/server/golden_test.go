@@ -79,14 +79,23 @@ func newGoldenRestoreStatus() jobstate.RestoreStatus {
 		State:     jobstate.RestoreStateSuccess,
 		StartTime: time.Unix(1, 0),
 		EndTime:   time.Unix(2, 0),
-		Progress:  100,
 		Colls: map[collref.Name]jobstate.RestoreCollStatus{
 			collref.New("db1", "coll1"): {
-				State:        jobstate.RestoreStateExecuting,
-				ErrorMessage: "slow copy",
-				StartTime:    time.Unix(1, 0),
-				EndTime:      time.Unix(2, 0),
-				Progress:     42,
+				StartTime: time.Unix(1, 0),
+				TotalSize: 100,
+				DDL: &jobstate.RestoreDDLStatus{
+					State:   jobstate.RestoreDDLSuccess,
+					EndTime: time.Unix(1, 0),
+				},
+				Jobs: []jobstate.RestoreJobStatus{
+					{
+						ID:       "job-1",
+						State:    jobstate.RestoreJobCompleted,
+						Size:     100,
+						Progress: 100,
+						EndTime:  time.Unix(2, 0),
+					},
+				},
 			},
 		},
 	}

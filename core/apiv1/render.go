@@ -1,6 +1,8 @@
 package apiv1
 
 import (
+	"time"
+
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
@@ -14,12 +16,14 @@ import (
 // exported.
 
 func NewRestoreCollTaskResp(collRef collref.Name, coll jobstate.RestoreCollStatus) *RestoreCollectionTaskResponse {
+	state, errMessage, endTime := restoreCollState(coll)
+
 	return &RestoreCollectionTaskResponse{
-		StateCode:            restoreStateToPB(coll.State),
-		ErrorMessage:         coll.ErrorMessage,
+		StateCode:            restoreStateToPB(state),
+		ErrorMessage:         errMessage,
 		StartTime:            coll.StartTime.Unix(),
-		EndTime:              coll.EndTime.Unix(),
-		Progress:             coll.Progress,
+		EndTime:              endTime.Unix(),
+		Progress:             restoreCollProgress(coll),
 		TargetDbName:         collRef.DBName(),
 		TargetCollectionName: collRef.CollName(),
 	}
@@ -37,9 +41,104 @@ func NewRestoreTaskResp(status jobstate.RestoreStatus) *RestoreBackupTaskRespons
 		ErrorMessage:           status.ErrorMessage,
 		StartTime:              status.StartTime.Unix(),
 		EndTime:                status.EndTime.Unix(),
-		Progress:               status.Progress,
+		Progress:               restoreProgress(status),
 		CollectionRestoreTasks: collTaskResps,
 	}
+}
+
+// restoreCollState renders one collection's aggregate state from its halves:
+// a failed half fails the collection — the schema half's error wins over a
+// job's because it failed earlier in the flow — every present half settling
+// succeeds it, a collection nothing has started for is initial, and anything
+// else is in flight. The aggregate is a rendering, not a stored state: the
+// store keeps the halves, and nobody owns the collection as a whole.
+func restoreCollState(coll jobstate.RestoreCollStatus) (jobstate.RestoreState, string, time.Time) {
+	if coll.DDL != nil && coll.DDL.State == jobstate.RestoreDDLFail {
+		return jobstate.RestoreStateFail, coll.DDL.ErrorMessage, coll.DDL.EndTime
+	}
+	for _, job := range coll.Jobs {
+		if job.State == jobstate.RestoreJobFailed {
+			return jobstate.RestoreStateFail, job.ErrorMessage, job.EndTime
+		}
+	}
+
+	allSettled := coll.DDL == nil || coll.DDL.State == jobstate.RestoreDDLSuccess
+	anyStarted := coll.DDL != nil && coll.DDL.State != jobstate.RestoreDDLPending
+	var endTime time.Time
+	if coll.DDL != nil {
+		endTime = coll.DDL.EndTime
+	}
+	for _, job := range coll.Jobs {
+		allSettled = allSettled && job.State == jobstate.RestoreJobCompleted
+		anyStarted = anyStarted || job.State != jobstate.RestoreJobPending
+		if job.EndTime.After(endTime) {
+			endTime = job.EndTime
+		}
+	}
+
+	switch {
+	case allSettled && (coll.DDL != nil || len(coll.Jobs) != 0):
+		return jobstate.RestoreStateSuccess, "", endTime
+	case anyStarted:
+		return jobstate.RestoreStateExecuting, "", time.Time{}
+	default:
+		return jobstate.RestoreStateInitial, "", time.Time{}
+	}
+}
+
+// restoreCollProgress renders one collection's percent from its jobs: a
+// completed job counts fully, a running one by its reported ratio. The schema
+// half is a handful of RPCs with no meaningful size, so it never weighs in.
+func restoreCollProgress(coll jobstate.RestoreCollStatus) int32 {
+	state, _, _ := restoreCollState(coll)
+	if state == jobstate.RestoreStateSuccess {
+		return 100
+	}
+	if coll.TotalSize == 0 {
+		return 1
+	}
+
+	var restoredSize int64
+	for _, job := range coll.Jobs {
+		progress := job.Progress
+		if job.State == jobstate.RestoreJobCompleted {
+			progress = 100
+		}
+		restoredSize += job.Size * int64(progress) / 100
+	}
+
+	progress := int32(float64(restoredSize) / float64(coll.TotalSize) * 100)
+	// don't report zero once the collection is underway
+	if progress == 0 {
+		return 1
+	}
+
+	return progress
+}
+
+// restoreProgress renders the job's percent: success is full, otherwise the
+// size-weighted mean of the collections' percents.
+func restoreProgress(status jobstate.RestoreStatus) int32 {
+	if status.State == jobstate.RestoreStateSuccess {
+		return 100
+	}
+
+	var restoredSize, totalSize int64
+	for _, coll := range status.Colls {
+		restoredSize += coll.TotalSize * int64(restoreCollProgress(coll)) / 100
+		totalSize += coll.TotalSize
+	}
+	if totalSize == 0 {
+		// don't report zero once the job is underway
+		return 1
+	}
+
+	progress := int32(float64(restoredSize) / float64(totalSize) * 100)
+	if progress == 0 {
+		return 1
+	}
+
+	return progress
 }
 
 // restoreStateToPB renders a restore state as the v1 wire code.

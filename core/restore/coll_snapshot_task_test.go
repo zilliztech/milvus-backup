@@ -84,7 +84,10 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 
 		status, err := mgr.GetRestoreTask("task-1")
 		require.NoError(t, err)
-		assert.Equal(t, jobstate.RestoreStateSuccess, status.Colls[task.target].State)
+		coll := status.Colls[task.target]
+		require.Len(t, coll.Jobs, 1)
+		assert.Equal(t, jobstate.RestoreJobCompleted, coll.Jobs[0].State)
+		assert.Equal(t, int32(100), coll.Jobs[0].Progress)
 	})
 
 	// A failed job is reported through the info rather than as an error from the query.
@@ -104,8 +107,9 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 		status, verr := mgr.GetRestoreTask("task-1")
 		require.NoError(t, verr)
 		coll := status.Colls[task.target]
-		assert.Equal(t, jobstate.RestoreStateFail, coll.State)
-		assert.Contains(t, coll.ErrorMessage, "copy failed")
+		require.Len(t, coll.Jobs, 1)
+		assert.Equal(t, jobstate.RestoreJobFailed, coll.Jobs[0].State)
+		assert.Contains(t, coll.Jobs[0].ErrorMessage, "copy failed")
 	})
 
 	// Milvus creates the collection itself and refuses to restore over an existing one,
