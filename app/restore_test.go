@@ -61,10 +61,10 @@ func TestNewRestoreJob(t *testing.T) {
 		require.NotNil(t, job)
 
 		// Task creation registered the job with the job state store.
-		view, err := store.GetRestoreTask("restore_1")
+		status, err := store.GetRestoreTask("restore_1")
 		require.NoError(t, err)
-		assert.Equal(t, "restore_1", view.ID())
-		assert.Equal(t, backuppb.RestoreTaskStateCode_INITIAL, view.StateCode())
+		assert.Equal(t, "restore_1", status.ID)
+		assert.Equal(t, jobstate.RestoreStateInitial, status.State)
 	})
 
 	t.Run("FailsWhenBackupNotFound", func(t *testing.T) {
@@ -143,10 +143,10 @@ func TestNewRestoreSecondaryJob(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, job)
 
-		view, err := store.GetRestoreTask("restore_1")
+		status, err := store.GetRestoreTask("restore_1")
 		require.NoError(t, err)
-		assert.Equal(t, "restore_1", view.ID())
-		assert.Equal(t, backuppb.RestoreTaskStateCode_INITIAL, view.StateCode())
+		assert.Equal(t, "restore_1", status.ID)
+		assert.Equal(t, jobstate.RestoreStateInitial, status.State)
 	})
 
 	t.Run("FailsWhenBackupNotFound", func(t *testing.T) {

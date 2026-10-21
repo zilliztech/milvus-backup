@@ -24,7 +24,8 @@ func newGRPCImportPlanner(args importTaskArgs) *grpcImportPlanner {
 	return &grpcImportPlanner{args: args}
 }
 
-// planTasks turns the dir groups into one import task per dir.
+// planTasks turns the dir groups into one import task per dir, minting each
+// task's job half as it goes.
 func (p *grpcImportPlanner) planTasks(partitionName string, groups []dirGroup) []tasklet.Tasklet {
 	var tasks []tasklet.Tasklet
 	for _, g := range groups {
@@ -37,6 +38,8 @@ func (p *grpcImportPlanner) planTasks(partitionName string, groups []dirGroup) [
 				timestamp:      g.timestamp,
 				isL0:           g.isL0,
 				storageVersion: g.storageVersion,
+
+				job: p.args.jobs.NewJob(dir.size),
 			})
 		}
 	}
@@ -46,7 +49,7 @@ func (p *grpcImportPlanner) planTasks(partitionName string, groups []dirGroup) [
 // importViaGRPCTask imports one partition dir through the v1 grpc bulk insert
 // API. The task is self-contained: it stages its data where Milvus can read
 // it, submits the import, waits for the job to finish, and removes its own
-// temp files.
+// temp files. It settles its own job half: failed on any error it returns.
 type importViaGRPCTask struct {
 	args importTaskArgs
 
@@ -55,9 +58,20 @@ type importViaGRPCTask struct {
 	timestamp      uint64
 	isL0           bool
 	storageVersion int64
+
+	job *jobstate.RestoreJobTracker
 }
 
 func (gt *importViaGRPCTask) Execute(ctx context.Context) error {
+	if err := gt.execute(ctx); err != nil {
+		gt.job.SetFailed(err)
+		return err
+	}
+
+	return nil
+}
+
+func (gt *importViaGRPCTask) execute(ctx context.Context) error {
 	staging := newCopyTask(gt.args)
 	defer staging.Cleanup(ctx)
 
@@ -93,8 +107,7 @@ func (gt *importViaGRPCTask) sendImportReq(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("restore: failed to bulk insert via grpc: %w", err)
 	}
-	gt.args.store.UpdateRestoreTask(gt.args.taskID,
-		jobstate.AddRestoreImportJob(gt.args.target, strconv.FormatInt(jobID, 10), gt.dir.size))
+	gt.job.Bind(strconv.FormatInt(jobID, 10))
 	gt.args.logger.Info("create bulk insert via grpc success", zap.Int64("job_id", jobID))
 
 	return jobID, nil
@@ -119,7 +132,11 @@ func (gt *importViaGRPCTask) waitImport(ctx context.Context, jobID int64) error 
 		}
 	}
 
-	return waitImportJob(ctx, gt.args.logger, gt.args.store, gt.args.taskID, gt.args.target, strconv.FormatInt(jobID, 10), state)
+	if err := waitImportJob(ctx, gt.args.logger, gt.job, strconv.FormatInt(jobID, 10), state); err != nil {
+		return err
+	}
+	gt.job.SetCompleted()
+	return nil
 }
 
 // toGrpcPaths builds the [insertLogDir, deltaLogDir] argument for the grpc bulk

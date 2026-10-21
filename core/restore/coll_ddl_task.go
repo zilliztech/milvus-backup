@@ -16,6 +16,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/restore/funcs"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/pbconv"
 	"github.com/zilliztech/milvus-backup/internal/validate"
@@ -30,23 +31,40 @@ type collDDLTask struct {
 	target  collref.Name
 	grpcCli milvus.Grpc
 
+	tracker *jobstate.RestoreCollDDLTracker
+
 	logger *zap.Logger
 }
 
-func newCollDDLTask(taskID string, opt *Option, override CollOverride, collBackup *backuppb.CollectionBackupInfo, target collref.Name, grpcCli milvus.Grpc) *collDDLTask {
+func newCollDDLTask(taskID string, opt *Option, override CollOverride, collBackup *backuppb.CollectionBackupInfo, target collref.Name, grpcCli milvus.Grpc, tracker *jobstate.RestoreCollDDLTracker) *collDDLTask {
 	return &collDDLTask{
 		option:       opt,
 		collOverride: override,
 		collBackup:   collBackup,
 		target:       target,
 		grpcCli:      grpcCli,
+		tracker:      tracker,
 		logger:       log.With(zap.String("task_id", taskID), zap.String("target_coll", target.String())),
 	}
 }
 
+// Execute restores the collection's schema side and settles the schema half's
+// state itself: the collection's overall state is derived from its halves, so
+// no one above the task settles it.
 func (ddlt *collDDLTask) Execute(ctx context.Context) error {
+	ddlt.tracker.SetExecuting()
 	ddlt.logger.Info("start restore collection ddl")
 
+	if err := ddlt.execute(ctx); err != nil {
+		ddlt.tracker.SetFail(err)
+		return err
+	}
+
+	ddlt.tracker.SetSuccess()
+	return nil
+}
+
+func (ddlt *collDDLTask) execute(ctx context.Context) error {
 	// restore collection schema
 	if err := ddlt.dropExistedColl(ctx); err != nil {
 		return fmt.Errorf("restore: drop exist collection: %w", err)

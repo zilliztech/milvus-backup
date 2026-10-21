@@ -9,7 +9,6 @@
     "progress": 100,
     "collection_restore_tasks": [
       {
-        "id": "coll-task-1",
         "state_code": 1,
         "errorMessage": "slow copy",
         "start_time": 1,

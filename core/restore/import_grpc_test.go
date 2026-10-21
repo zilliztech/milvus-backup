@@ -23,8 +23,10 @@ import (
 )
 
 func TestGRPCImportPlannerPlanTasks(t *testing.T) {
-	// planning only assembles tasks, so no client is touched
-	p := &grpcImportPlanner{args: importTaskArgs{logger: zap.NewNop()}}
+	// planning only assembles tasks, so no client is touched; the job halves it
+	// mints land on a throwaway tracker.
+	jobs := jobstate.NewStore().AddRestoreTask("task-1").NewCollTracker(collref.New("db", "coll"), 0)
+	p := &grpcImportPlanner{args: importTaskArgs{jobs: jobs, logger: zap.NewNop()}}
 
 	dirs := func(n int) []partitionDir {
 		ds := make([]partitionDir, 0, n)
@@ -101,8 +103,7 @@ func newLocalGRPCTask(t *testing.T, keepTempFiles bool) (*importViaGRPCTask, str
 
 	mgr := jobstate.NewStore()
 	target := collref.New("db", "coll")
-	mgr.AddRestoreTask("task1")
-	mgr.UpdateRestoreTask("task1", jobstate.AddRestoreCollTask(target, 5))
+	collTracker := mgr.AddRestoreTask("task1").NewCollTracker(target, 5)
 
 	task := &importViaGRPCTask{
 		args: importTaskArgs{
@@ -116,11 +117,12 @@ func newLocalGRPCTask(t *testing.T, keepTempFiles bool) (*importViaGRPCTask, str
 			milvusStorage:   milvusCli,
 			milvusRootPath:  milvusRoot,
 			milvusLocalPath: milvusRoot,
-			store:           mgr,
+			jobs:            collTracker,
 			logger:          zap.NewNop(),
 		},
 		partitionName: "p1",
 		dir:           partitionDir{insertLogDir: srcDir, size: 5},
+		job:           collTracker.NewJob(5),
 	}
 	stagedGlob := filepath.Join(milvusRoot, "restore-temp-task1-db-coll-*", "backup/binlog/insert_log/1/2/3/file1")
 	return task, backupRoot, stagedGlob

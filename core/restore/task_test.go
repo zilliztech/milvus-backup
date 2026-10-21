@@ -24,12 +24,17 @@ import (
 )
 
 func newTestTask() *Task {
+	store := jobstate.NewStore()
 	return &Task{
 		logger: zap.NewNop(),
 
+		tracker: store.AddRestoreTask("task-1"),
+
 		args: TaskArgs{
+			TaskID: "task-1",
 			Plan:   &Plan{},
 			Params: &cfg.Config{},
+			Store:  store,
 		},
 	}
 }

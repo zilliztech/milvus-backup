@@ -145,7 +145,7 @@ func formatWord(format string) string {
 // storages and the streaming flag are fixed for the whole job — so the
 // decision is made here, once per collection, and the import tasks only read
 // it.
-func (t *Task) newImportTaskArgs(tgt collTarget) importTaskArgs {
+func (t *Task) newImportTaskArgs(tgt collTarget, jobs *jobstate.RestoreCollTracker) importTaskArgs {
 	milvusLocalPath := t.args.Params.Milvus.Storage.LocalPath.Val
 	if milvusLocalPath == "" {
 		milvusLocalPath = t.args.Params.Milvus.Storage.RootPath.Val
@@ -177,7 +177,7 @@ func (t *Task) newImportTaskArgs(tgt collTarget) importTaskArgs {
 		grpcCli:    t.grpc,
 		restfulCli: t.restful,
 
-		store:  t.args.Store,
+		jobs:   jobs,
 		logger: logger,
 	}
 }
@@ -246,18 +246,19 @@ func runCollTasks(ctx context.Context, logger *zap.Logger, limit int, colls []ta
 }
 
 // metaOnlyPlan restores only the collections' schemas of a binlog backup: the
-// data half is never built, so every node carries its DDL alone.
+// data half is never built, so the plan is the binlog plan's DDL tasks.
 type metaOnlyPlan struct {
-	colls []*collBinlogTask
+	colls []*collDDLTask
 	limit int
 
 	logger *zap.Logger
 }
 
 func newMetaOnlyPlan(t *Task, targets []collTarget) *metaOnlyPlan {
-	colls := make([]*collBinlogTask, 0, len(targets))
+	colls := make([]*collDDLTask, 0, len(targets))
 	for _, tgt := range targets {
-		colls = append(colls, t.newCollBinlogTaskBase(tgt))
+		ddl, _ := t.newCollSchemaTask(tgt)
+		colls = append(colls, ddl)
 	}
 
 	return &metaOnlyPlan{
@@ -319,8 +320,10 @@ func (p *binlogPlan) Execute(ctx context.Context) error {
 
 // collBinlogTask restores one collection from a binlog backup: its DDL, then
 // every partition's binlogs, then the collection-global L0 segments. The whole
-// shape is built before anything runs; Execute only walks it and settles the
-// collection's state.
+// shape is built before anything runs; Execute only walks it. The task holds
+// no state handle of its own: the DDL task settles the schema half and each
+// import task settles its job half, and the collection's state is derived from
+// those halves.
 type collBinlogTask struct {
 	ddl tasklet.Tasklet
 
@@ -328,10 +331,6 @@ type collBinlogTask struct {
 	globalL0 []tasklet.Tasklet
 
 	sem tasklet.Semaphore
-
-	store  *jobstate.Store
-	taskID string
-	target collref.Name
 
 	logger *zap.Logger
 }
@@ -343,44 +342,40 @@ type partBinlogTasks struct {
 	l0      []tasklet.Tasklet
 }
 
-// newCollBinlogTaskBase builds the node's schema half and registers the
-// collection with the task manager; the data half stays empty for the meta
-// only plan.
-func (t *Task) newCollBinlogTaskBase(tgt collTarget) *collBinlogTask {
+// newCollSchemaTask registers the collection's node — its declared size is the
+// sum of its partitions', an export-free binlog backup having no bundle size —
+// and builds its schema task: the shared head of the binlog and meta only
+// plans.
+func (t *Task) newCollSchemaTask(tgt collTarget) (*collDDLTask, *jobstate.RestoreCollTracker) {
+	size := lo.SumBy(tgt.collBackup.GetPartitionBackups(), func(part *backuppb.PartitionBackupInfo) int64 {
+		return part.GetSize()
+	})
+	collTracker := t.tracker.NewCollTracker(tgt.target, size)
+
+	ddl := newCollDDLTask(t.args.TaskID, t.args.Option, tgt.collOverride, tgt.collBackup, tgt.target, t.grpc, collTracker.DDL())
+
+	return ddl, collTracker
+}
+
+// newCollBinlogTask builds the whole node: the schema half plus every import
+// task of the collection's data, enumerated from the backup meta now.
+func (t *Task) newCollBinlogTask(ctx context.Context, tgt collTarget, newPlanner importPlannerFactory) (*collBinlogTask, error) {
+	ddl, collTracker := t.newCollSchemaTask(tgt)
+
 	src := collref.New(tgt.collBackup.GetDbName(), tgt.collBackup.GetCollectionName())
 	logger := log.With(
 		zap.String("restore_task_id", t.args.TaskID),
 		zap.String("backup_coll", src.String()),
 		zap.String("target_coll", tgt.target.String()))
 
-	// The export-free binlog backup has no bundle size; the collection's
-	// declared size is the sum of its partitions'.
-	size := lo.SumBy(tgt.collBackup.GetPartitionBackups(), func(part *backuppb.PartitionBackupInfo) int64 {
-		return part.GetSize()
-	})
-	t.args.Store.UpdateRestoreTask(t.args.TaskID, jobstate.AddRestoreCollTask(tgt.target, size))
+	source := newBinlogSource(tgt.collBackup, t.args.Option, t.args.BackupDir, t.args.BackupStorage, logger)
+	planner := newPlanner(t.newImportTaskArgs(tgt, collTracker))
 
-	return &collBinlogTask{
-		ddl: newCollDDLTask(t.args.TaskID, t.args.Option, tgt.collOverride, tgt.collBackup, tgt.target, t.grpc),
-
-		sem: t.bulkInsertSem,
-
-		store:  t.args.Store,
-		taskID: t.args.TaskID,
-		target: tgt.target,
-
+	task := &collBinlogTask{
+		ddl:    ddl,
+		sem:    t.bulkInsertSem,
 		logger: logger,
 	}
-}
-
-// newCollBinlogTask builds the whole node: the schema half plus every import
-// task of the collection's data, enumerated from the backup meta now. Building
-// it registers the collection; the task settles its own state as it runs.
-func (t *Task) newCollBinlogTask(ctx context.Context, tgt collTarget, newPlanner importPlannerFactory) (*collBinlogTask, error) {
-	task := t.newCollBinlogTaskBase(tgt)
-
-	source := newBinlogSource(tgt.collBackup, t.args.Option, t.args.BackupDir, t.args.BackupStorage, task.logger)
-	planner := newPlanner(t.newImportTaskArgs(tgt))
 
 	task.parts = make([]partBinlogTasks, 0, len(tgt.collBackup.GetPartitionBackups()))
 	for _, part := range tgt.collBackup.GetPartitionBackups() {
@@ -416,16 +411,12 @@ func (t *Task) newCollBinlogTask(ctx context.Context, tgt collTarget, newPlanner
 }
 
 func (t *collBinlogTask) Execute(ctx context.Context) error {
-	t.store.UpdateRestoreTask(t.taskID, jobstate.SetRestoreCollExecuting(t.target))
-
 	if err := t.execute(ctx); err != nil {
 		t.logger.Error("restore collection failed", zap.Error(err))
-		t.store.UpdateRestoreTask(t.taskID, jobstate.SetRestoreCollFail(t.target, err))
 		return err
 	}
 
 	t.logger.Info("restore collection success")
-	t.store.UpdateRestoreTask(t.taskID, jobstate.SetRestoreCollSuccess(t.target))
 	return nil
 }
 
@@ -502,10 +493,14 @@ func (p *restoreSnapPlan) Execute(ctx context.Context) error {
 }
 
 // newRestoreSnapCollTask expands one target into its restore job on Milvus's
-// restore api. Building it registers the collection; the task settles its own
-// state.
+// restore api. Building it registers the collection; the task settles the
+// collection's single job half itself.
 func (t *Task) newRestoreSnapCollTask(tgt collTarget) *collSnapshotTask {
-	st := newCollSnapshotTask(collSnapshotTaskArgs{
+	// The export job reported the bundle's size, index files included, so it
+	// is what the restore job's progress is a fraction of.
+	collTracker := t.tracker.NewCollTracker(tgt.target, tgt.collBackup.GetSize())
+
+	return newCollSnapshotTask(collSnapshotTaskArgs{
 		taskID:           t.args.TaskID,
 		collBackup:       tgt.collBackup,
 		target:           tgt.target,
@@ -516,12 +511,6 @@ func (t *Task) newRestoreSnapCollTask(tgt collTarget) *collSnapshotTask {
 		descOverride:     tgt.collOverride.Description,
 		skipParams:       t.args.Option.SkipParams,
 		grpcCli:          t.grpc,
-		store:            t.args.Store,
+		job:              collTracker.NewJob(tgt.collBackup.GetSize()),
 	})
-
-	// The export job reported the bundle's size, index files included, so it
-	// is what the restore job's progress is a fraction of.
-	t.args.Store.UpdateRestoreTask(t.args.TaskID, jobstate.AddRestoreCollTask(tgt.target, tgt.collBackup.GetSize()))
-
-	return st
 }

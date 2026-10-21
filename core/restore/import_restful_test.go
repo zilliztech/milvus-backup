@@ -8,13 +8,17 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/internal/cfg"
+	"github.com/zilliztech/milvus-backup/internal/collref"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
 func TestRESTfulImportPlannerPlanTasks(t *testing.T) {
-	// planning only assembles tasks, so no client is touched
+	// planning only assembles tasks, so no client is touched; the job halves it
+	// mints land on a throwaway tracker.
 	newPlanner := func(maxSegs int, multiL0 bool) *restfulImportPlanner {
+		jobs := jobstate.NewStore().AddRestoreTask("task-1").NewCollTracker(collref.New("db", "coll"), 0)
 		return &restfulImportPlanner{
-			args:            importTaskArgs{maxSegsPerImportJob: maxSegs, logger: zap.NewNop()},
+			args:            importTaskArgs{maxSegsPerImportJob: maxSegs, jobs: jobs, logger: zap.NewNop()},
 			multiL0InOneJob: multiL0,
 		}
 	}

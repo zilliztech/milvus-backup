@@ -23,16 +23,16 @@ func NewGetRestore(store *jobstate.Store) *GetRestore {
 	return &GetRestore{store: store}
 }
 
-// Execute returns the job state store's view of the restore job with the given
-// ID. An unknown ID is an error, not a silent success. A restore has no
+// Execute returns the job state store's snapshot of the restore job with the
+// given ID. An unknown ID is an error, not a silent success. A restore has no
 // artifact half to merge — the backup a job produces is read through
-// GetBackup — so unlike GetBackup the job state store's own view type travels
+// GetBackup — so unlike GetBackup the job state store's own snapshot travels
 // unchanged; an app-defined struct would only rename it.
-func (uc *GetRestore) Execute(ctx context.Context, id string) (jobstate.RestoreTaskView, error) {
-	taskView, err := uc.store.GetRestoreTask(id)
+func (uc *GetRestore) Execute(ctx context.Context, id string) (jobstate.RestoreStatus, error) {
+	status, err := uc.store.GetRestoreTask(id)
 	if err != nil {
-		return nil, fmt.Errorf("app: get restore task %s: %w", id, err)
+		return jobstate.RestoreStatus{}, fmt.Errorf("app: get restore task %s: %w", id, err)
 	}
 
-	return taskView, nil
+	return status, nil
 }

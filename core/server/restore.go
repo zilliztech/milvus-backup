@@ -166,13 +166,13 @@ func (s *Server) restoreAsync(job restoreJob, request *apiv1.RestoreBackupReques
 	}
 }
 
-// restoreTaskView reads the view of a restore job through the get-restore
+// restoreTaskView reads the snapshot of a restore job through the get-restore
 // usecase — the same usecase the /get_restore endpoint reads state through,
 // so the job half has one reader in this package.
-func (s *Server) restoreTaskView(ctx context.Context, taskID string) (jobstate.RestoreTaskView, error) {
+func (s *Server) restoreTaskView(ctx context.Context, taskID string) (jobstate.RestoreStatus, error) {
 	uc, err := s.config.newGetRestore()
 	if err != nil {
-		return nil, err
+		return jobstate.RestoreStatus{}, err
 	}
 
 	return uc.Execute(ctx, taskID)

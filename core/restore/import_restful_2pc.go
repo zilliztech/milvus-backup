@@ -39,6 +39,15 @@ type importViaRESTFul2PCTask struct {
 }
 
 func (rt *importViaRESTFul2PCTask) Execute(ctx context.Context) error {
+	if err := rt.execute(ctx); err != nil {
+		rt.importer.job.SetFailed(err)
+		return err
+	}
+
+	return nil
+}
+
+func (rt *importViaRESTFul2PCTask) execute(ctx context.Context) error {
 	staging := newCopyTask(rt.importer.args)
 	defer staging.Cleanup(ctx)
 

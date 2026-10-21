@@ -182,6 +182,10 @@ type Task struct {
 	copySem       *semaphore.Weighted
 	bulkInsertSem *semaphore.Weighted
 
+	// tracker is the job's write handle on the job state store, minted at
+	// construction; the plans mint their per-collection handles from it.
+	tracker *jobstate.RestoreTracker
+
 	logger *zap.Logger
 }
 
@@ -233,7 +237,7 @@ func NewTask(ctx context.Context, args TaskArgs) (*Task, error) {
 			zap.Bool("streaming", task.streaming))
 	}
 
-	args.Store.AddRestoreTask(args.TaskID)
+	task.tracker = args.Store.AddRestoreTask(args.TaskID)
 
 	return task, nil
 }
@@ -496,17 +500,17 @@ func (t *Task) Execute(ctx context.Context) error {
 
 	if err := t.privateExecute(ctx); err != nil {
 		t.logger.Error("restore task failed", zap.Error(err))
-		t.args.Store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreFail(err))
+		t.tracker.SetFail(err)
 		return fmt.Errorf("restore: execute %w", err)
 	}
 
 	t.logger.Info("restore task finished")
-	t.args.Store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreSuccess())
+	t.tracker.SetSuccess()
 	return nil
 }
 
 func (t *Task) privateExecute(ctx context.Context) error {
-	t.args.Store.UpdateRestoreTask(t.args.TaskID, jobstate.SetRestoreExecuting())
+	t.tracker.SetExecuting()
 
 	// The server is only known once the client is connected, so this cannot be part of
 	// NewTask. Checking it once here beats one identical failure per collection.

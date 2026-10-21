@@ -12,7 +12,7 @@ var Default = sync.OnceValue(NewStore)
 
 func NewStore() *Store {
 	return &Store{
-		restoreTask:        make(map[string]*RestoreTask),
+		restoreTask:        make(map[string]*restoreTask),
 		migrateTask:        make(map[string]*migrateTask),
 		backupTask:         make(map[string]*backupTask),
 		backupNameBackupID: make(map[string]string),
@@ -24,8 +24,8 @@ func NewStore() *Store {
 type Store struct {
 	mu sync.RWMutex
 
-	// restoreID -> RestoreTask
-	restoreTask map[string]*RestoreTask
+	// restoreID -> restoreTask
+	restoreTask map[string]*restoreTask
 
 	// migrateID -> migrateTask
 	migrateTask map[string]*migrateTask
@@ -41,33 +41,29 @@ type Store struct {
 	deleteNameDeleteID map[string]string
 }
 
-func (m *Store) AddRestoreTask(taskID string) {
+// AddRestoreTask registers one restore job and returns its tracker, the write
+// side the job holds for its whole run.
+func (m *Store) AddRestoreTask(taskID string) *RestoreTracker {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	m.restoreTask[taskID] = newRestoreTask(taskID)
+	task := newRestoreTask(taskID)
+	m.restoreTask[taskID] = task
+
+	return &RestoreTracker{task: task}
 }
 
-func (m *Store) UpdateRestoreTask(taskID string, opts ...RestoreTaskOpt) {
-	m.mu.RLock()
-	task := m.restoreTask[taskID]
-	m.mu.RUnlock()
-
-	for _, opt := range opts {
-		opt(task)
-	}
-}
-
-func (m *Store) GetRestoreTask(taskID string) (RestoreTaskView, error) {
+// GetRestoreTask reads a snapshot of one restore job.
+func (m *Store) GetRestoreTask(taskID string) (RestoreStatus, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 
 	task, ok := m.restoreTask[taskID]
 	if !ok {
-		return nil, ErrTaskNotFound
+		return RestoreStatus{}, ErrTaskNotFound
 	}
 
-	return task, nil
+	return task.snapshot(), nil
 }
 
 // AddBackupTask registers one backup job and returns its tracker. A backup

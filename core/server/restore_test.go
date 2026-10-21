@@ -497,21 +497,15 @@ func withRestoreBackup(stub *stubRestoreFactory) Option {
 	}
 }
 
-// newStubRestoreView returns a task view the rendering can run over.
-func newStubRestoreView(t *testing.T) *jobstate.MockRestoreTaskView {
-	t.Helper()
-
-	view := jobstate.NewMockRestoreTaskView(t)
-	view.EXPECT().ID().Return("task-1").Maybe()
-	view.EXPECT().StateCode().Return(backuppb.RestoreTaskStateCode_SUCCESS).Maybe()
-	view.EXPECT().ErrorMessage().Return("").Maybe()
-	view.EXPECT().StartTime().Return(time.Unix(1, 0)).Maybe()
-	view.EXPECT().EndTime().Return(time.Unix(2, 0)).Maybe()
-	view.EXPECT().Progress().Return(int32(100)).Maybe()
-	view.EXPECT().TotalSize().Return(int64(0)).Maybe()
-	view.EXPECT().CollTasks().Return(nil).Maybe()
-
-	return view
+// newStubRestoreStatus returns a job snapshot the rendering can run over.
+func newStubRestoreStatus() jobstate.RestoreStatus {
+	return jobstate.RestoreStatus{
+		ID:        "task-1",
+		State:     jobstate.RestoreStateSuccess,
+		StartTime: time.Unix(1, 0),
+		EndTime:   time.Unix(2, 0),
+		Progress:  100,
+	}
 }
 
 func restoreBackup(t *testing.T, s *Server, body string, requestID string) apiv1.RestoreBackupResponse {
@@ -534,7 +528,7 @@ func TestHandleRestoreBackup(t *testing.T) {
 	t.Run("SyncRunsTheJob", func(t *testing.T) {
 		job := &stubRestoreJob{}
 		stub := &stubRestoreFactory{job: job}
-		gr := &stubGetRestore{view: newStubRestoreView(t)}
+		gr := &stubGetRestore{status: newStubRestoreStatus()}
 		s := newListTestServer(t, withRestoreBackup(stub), withGetRestore(gr, nil))
 
 		resp := restoreBackup(t, s, `{"backup_name":"backup1"}`, "")
@@ -575,7 +569,7 @@ func TestHandleRestoreBackup(t *testing.T) {
 	t.Run("DefaultsRequestIdAndTaskId", func(t *testing.T) {
 		job := &stubRestoreJob{}
 		stub := &stubRestoreFactory{job: job}
-		s := newListTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{view: newStubRestoreView(t)}, nil))
+		s := newListTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{status: newStubRestoreStatus()}, nil))
 
 		resp := restoreBackup(t, s, `{"backup_name":"backup1"}`, "")
 
@@ -589,7 +583,7 @@ func TestHandleRestoreBackup(t *testing.T) {
 	t.Run("ForwardsRequestId", func(t *testing.T) {
 		job := &stubRestoreJob{}
 		stub := &stubRestoreFactory{job: job}
-		s := newListTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{view: newStubRestoreView(t)}, nil))
+		s := newListTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{status: newStubRestoreStatus()}, nil))
 
 		// This endpoint takes the request id from the body field, unlike the
 		// list and delete handlers, which read the header.
@@ -601,7 +595,7 @@ func TestHandleRestoreBackup(t *testing.T) {
 	t.Run("PeersReachTheOption", func(t *testing.T) {
 		job := &stubRestoreJob{}
 		stub := &stubRestoreFactory{job: job}
-		s := newListTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{view: newStubRestoreView(t)}, nil))
+		s := newListTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{status: newStubRestoreStatus()}, nil))
 
 		resp := restoreBackup(t, s, `{"backup_name":"backup1","peers":["http://10.0.0.2:19530","http://10.0.0.3:19530"]}`, "rid-1")
 
@@ -624,7 +618,7 @@ func TestHandleRestoreBackup(t *testing.T) {
 		// The v1 bucket_name field is applied as a config override, not sent
 		// through the request.
 		stub := &stubRestoreFactory{job: &stubRestoreJob{}}
-		s := newLoadedTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{view: newStubRestoreView(t)}, nil))
+		s := newLoadedTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{status: newStubRestoreStatus()}, nil))
 
 		resp := restoreBackup(t, s, `{"backup_name":"backup1","bucket_name":"other-bucket"}`, "rid-1")
 
@@ -641,7 +635,7 @@ func TestHandleRestoreBackup(t *testing.T) {
 		// The v1 path field is applied as a config override, not sent
 		// through the request.
 		stub := &stubRestoreFactory{job: &stubRestoreJob{}}
-		s := newLoadedTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{view: newStubRestoreView(t)}, nil))
+		s := newLoadedTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{status: newStubRestoreStatus()}, nil))
 
 		resp := restoreBackup(t, s, `{"backup_name":"backup1","path":"other"}`, "rid-1")
 
@@ -656,7 +650,7 @@ func TestHandleRestoreBackup(t *testing.T) {
 
 	t.Run("NoOverridesKeepServerConfig", func(t *testing.T) {
 		stub := &stubRestoreFactory{job: &stubRestoreJob{}}
-		s := newLoadedTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{view: newStubRestoreView(t)}, nil))
+		s := newLoadedTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{status: newStubRestoreStatus()}, nil))
 
 		resp := restoreBackup(t, s, `{"backup_name":"backup1"}`, "rid-1")
 
@@ -713,7 +707,7 @@ func TestHandleRestoreBackup(t *testing.T) {
 	t.Run("AsyncRunsTheJobAndReportsIt", func(t *testing.T) {
 		job := &stubRestoreJob{}
 		stub := &stubRestoreFactory{job: job}
-		s := newListTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{view: newStubRestoreView(t)}, nil))
+		s := newListTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{status: newStubRestoreStatus()}, nil))
 
 		resp := restoreBackup(t, s, `{"backup_name":"backup1","async":true}`, "rid-1")
 
@@ -771,7 +765,7 @@ func TestHandleRestoreSecondary(t *testing.T) {
 	t.Run("SyncRunsTheJob", func(t *testing.T) {
 		job := &stubRestoreJob{}
 		stub := &stubRestoreSecondaryFactory{job: job}
-		gr := &stubGetRestore{view: newStubRestoreView(t)}
+		gr := &stubGetRestore{status: newStubRestoreStatus()}
 		s := newListTestServer(t, withRestoreSecondary(stub), withGetRestore(gr, nil))
 
 		resp := restoreSecondary(t, s, `{"backup_name":"backup1","sourceClusterID":"src","targetClusterID":"dst"}`, "")
@@ -804,7 +798,7 @@ func TestHandleRestoreSecondary(t *testing.T) {
 		// The v1 path field is applied as a config override, not sent
 		// through the request.
 		stub := &stubRestoreSecondaryFactory{job: &stubRestoreJob{}}
-		s := newLoadedTestServer(t, withRestoreSecondary(stub), withGetRestore(&stubGetRestore{view: newStubRestoreView(t)}, nil))
+		s := newLoadedTestServer(t, withRestoreSecondary(stub), withGetRestore(&stubGetRestore{status: newStubRestoreStatus()}, nil))
 
 		resp := restoreSecondary(t, s, `{"backup_name":"backup1","sourceClusterID":"src","targetClusterID":"dst","path":"other"}`, "rid-1")
 
@@ -852,7 +846,7 @@ func TestHandleRestoreSecondary(t *testing.T) {
 	t.Run("AsyncRunsTheJobAndReportsIt", func(t *testing.T) {
 		job := &stubRestoreJob{}
 		stub := &stubRestoreSecondaryFactory{job: job}
-		s := newListTestServer(t, withRestoreSecondary(stub), withGetRestore(&stubGetRestore{view: newStubRestoreView(t)}, nil))
+		s := newListTestServer(t, withRestoreSecondary(stub), withGetRestore(&stubGetRestore{status: newStubRestoreStatus()}, nil))
 
 		resp := restoreSecondary(t, s, `{"backup_name":"backup1","sourceClusterID":"src","targetClusterID":"dst","async":true}`, "rid-1")
 
