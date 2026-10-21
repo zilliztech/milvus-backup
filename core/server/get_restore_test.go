@@ -15,6 +15,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/apiv1"
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
@@ -68,7 +69,14 @@ func newRestoreStatus() jobstate.RestoreStatus {
 		ErrorMessage: "coll1 fail",
 		StartTime:    time.Now(),
 		EndTime:      time.Now(),
-		Progress:     42,
+		Colls: map[collref.Name]jobstate.RestoreCollStatus{
+			collref.New("db1", "coll1"): {
+				TotalSize: 100,
+				Jobs: []jobstate.RestoreJobStatus{
+					{State: jobstate.RestoreJobRunning, Size: 100, Progress: 42},
+				},
+			},
+		},
 	}
 }
 
