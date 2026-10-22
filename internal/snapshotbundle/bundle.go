@@ -142,8 +142,8 @@ func writeBundleManifests(
 	rootPath string,
 ) (string, []byte, int64, error) {
 	// The bundle carries the source snapshot's format version, capped at what
-	// this build supports: a version this build cannot write fails the version
-	// gate on read long before the copy starts.
+	// this build can write: a newer source is rewritten at the newest format
+	// this build understands, so the copy never claims a format it cannot emit.
 	formatVersion := snapshot.FormatVersion
 	if formatVersion <= 0 || formatVersion > SnapshotFormatVersion {
 		formatVersion = SnapshotFormatVersion
@@ -263,7 +263,7 @@ func marshalSnapshotMetadata(snapshot *SnapshotData, manifestPaths []string, sto
 }
 
 func validateStagedSnapshotMetadata(data []byte, metadataURI string) error {
-	metadata, err := ParseSnapshotMetadataWithVersionCheck(data)
+	metadata, err := ParseSnapshotMetadata(data)
 	if err != nil {
 		return merr.WrapErrDataIntegrity(err, "invalid staged snapshot metadata")
 	}
@@ -294,7 +294,7 @@ func LoadSnapshotData(ctx context.Context, store Store, metadataPath string, inc
 	if err != nil {
 		return nil, merr.Wrap(err, "failed to read metadata file")
 	}
-	metadata, err := ParseSnapshotMetadataWithVersionCheck(data)
+	metadata, err := ParseSnapshotMetadata(data)
 	if err != nil {
 		return nil, merr.WrapErrDataIntegrity(err, "invalid snapshot metadata")
 	}

@@ -1,13 +1,14 @@
 package snapshotbundle
 
 import (
+	"bytes"
 	"fmt"
 	"testing"
 
 	"github.com/iskorotkov/avro/v2"
+	"github.com/iskorotkov/avro/v2/ocf"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
@@ -87,6 +88,7 @@ func TestSegmentManifestRoundTrip(t *testing.T) {
 
 	data, err := MarshalSegmentManifest(segment, SnapshotFormatVersion)
 	require.NoError(t, err)
+	assert.True(t, bytes.HasPrefix(data, []byte(ocfMagic)), "v6 manifests are avro containers")
 	parsed, err := ParseSegmentManifest(data, SnapshotFormatVersion)
 	require.NoError(t, err)
 	assert.Equal(t, segment.GetSegmentId(), parsed.GetSegmentId())
@@ -108,11 +110,110 @@ func TestSegmentManifestRoundTrip(t *testing.T) {
 	assert.Equal(t, segment.GetTextIndexFiles()[101].GetFiles(), parsed.GetTextIndexFiles()[101].GetFiles())
 	assert.Equal(t, segment.GetJsonKeyIndexFiles()[102].GetJsonKeyStatsDataFormat(), parsed.GetJsonKeyIndexFiles()[102].GetJsonKeyStatsDataFormat())
 
-	_, err = ParseSegmentManifest(data, SnapshotFormatVersion+1)
-	require.Error(t, err)
+	// A future version remains readable: OCF embeds the writer schema and the
+	// reader skips fields it does not know.
+	future, err := ParseSegmentManifest(data, SnapshotFormatVersion+1)
+	require.NoError(t, err)
+	assert.Equal(t, segment.GetSegmentId(), future.GetSegmentId())
 
 	_, err = ParseSegmentManifest([]byte("not-avro"), SnapshotFormatVersion)
 	require.Error(t, err)
+}
+
+func TestSegmentManifestEncodingByVersion(t *testing.T) {
+	segment := &datapb.SegmentDescription{
+		SegmentId:      1001,
+		PartitionId:    2001,
+		StorageVersion: 2,
+		Binlogs: []*datapb.FieldBinlog{
+			fieldBinlog(101, 1, "insert-log"),
+		},
+	}
+
+	t.Run("V5StaysRawBinary", func(t *testing.T) {
+		data, err := MarshalSegmentManifest(segment, 5)
+		require.NoError(t, err)
+		assert.False(t, bytes.HasPrefix(data, []byte(ocfMagic)))
+
+		parsed, err := ParseSegmentManifest(data, 5)
+		require.NoError(t, err)
+		assert.Equal(t, segment.GetSegmentId(), parsed.GetSegmentId())
+	})
+
+	t.Run("V6IsOCF", func(t *testing.T) {
+		data, err := MarshalSegmentManifest(segment, 6)
+		require.NoError(t, err)
+		assert.True(t, bytes.HasPrefix(data, []byte(ocfMagic)))
+	})
+
+	t.Run("RawBinaryRejectedAtV6", func(t *testing.T) {
+		data, err := MarshalSegmentManifest(segment, 5)
+		require.NoError(t, err)
+
+		_, err = ParseSegmentManifest(data, 6)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "requires an avro container")
+	})
+
+	t.Run("OCFRejectedAtV5", func(t *testing.T) {
+		data, err := MarshalSegmentManifest(segment, 6)
+		require.NoError(t, err)
+
+		_, err = ParseSegmentManifest(data, 5)
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "requires a raw binary manifest")
+	})
+
+	t.Run("NegativeVersionRejected", func(t *testing.T) {
+		_, err := MarshalSegmentManifest(segment, -1)
+		require.Error(t, err)
+
+		_, err = ParseSegmentManifest([]byte("not-avro"), -1)
+		require.Error(t, err)
+	})
+}
+
+func TestSegmentManifestIndexMarkerPresence(t *testing.T) {
+	t.Run("ExplicitFalseSurvivesV6", func(t *testing.T) {
+		segment := &datapb.SegmentDescription{SegmentId: 1001, ManifestHasIndex: proto.Bool(false)}
+		data, err := MarshalSegmentManifest(segment, 6)
+		require.NoError(t, err)
+
+		parsed, err := ParseSegmentManifest(data, 6)
+		require.NoError(t, err)
+		require.NotNil(t, parsed.ManifestHasIndex)
+		assert.False(t, parsed.GetManifestHasIndex())
+	})
+
+	t.Run("PresenceFollowsEmbeddedSchema", func(t *testing.T) {
+		// A V4 OCF carries no index marker field. Its presence must follow the
+		// embedded schema, not the outer V6 metadata version.
+		schema, err := ManifestSchemaV4()
+		require.NoError(t, err)
+		var buf bytes.Buffer
+		encoder, err := ocf.NewEncoderWithSchema(schema, &buf, ocf.WithSchemaMarshaler(ocf.FullSchemaMarshaler))
+		require.NoError(t, err)
+		require.NoError(t, encoder.Encode(SegmentToManifestEntry(&datapb.SegmentDescription{SegmentId: 1001})))
+		require.NoError(t, encoder.Close())
+
+		parsed, err := ParseSegmentManifest(buf.Bytes(), 6)
+		require.NoError(t, err)
+		assert.Nil(t, parsed.ManifestHasIndex)
+	})
+}
+
+func TestValidateOCFBlockSizes(t *testing.T) {
+	segment := &datapb.SegmentDescription{
+		SegmentId: 1001,
+		Binlogs:   []*datapb.FieldBinlog{fieldBinlog(101, 1, "insert-log")},
+	}
+	data, err := MarshalSegmentManifest(segment, SnapshotFormatVersion)
+	require.NoError(t, err)
+	require.NoError(t, validateOCFBlockSizes(data))
+
+	assert.Error(t, validateOCFBlockSizes(data[:len(data)-1]))
+	assert.Error(t, validateOCFBlockSizes([]byte(ocfMagic)))
+	assert.Error(t, validateOCFBlockSizes([]byte("not-ocf")))
 }
 
 func TestParseSegmentManifestEverySchemaVersion(t *testing.T) {
@@ -171,20 +272,20 @@ func TestOptionalManifestConversions(t *testing.T) {
 	assert.Empty(t, AvroToJSONKeyIndexMap(nil))
 }
 
-func TestParseSnapshotMetadataVersionGate(t *testing.T) {
-	metadata := &datapb.SnapshotMetadata{FormatVersion: SnapshotFormatVersion + 1}
-	data, err := protojson.Marshal(metadata)
-	require.NoError(t, err)
-
-	_, err = ParseSnapshotMetadata(data)
-	assert.NoError(t, err)
-	_, err = ParseSnapshotMetadataWithVersionCheck(data)
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "too new")
-
-	parsed, err := ParseSnapshotMetadataWithVersionCheck([]byte(`{"formatVersion":` + fmt.Sprint(SnapshotFormatVersion) + `}`))
+func TestParseSnapshotMetadataVersionValidation(t *testing.T) {
+	parsed, err := ParseSnapshotMetadata([]byte(`{"formatVersion":` + fmt.Sprint(SnapshotFormatVersion) + `}`))
 	require.NoError(t, err)
 	assert.EqualValues(t, SnapshotFormatVersion, parsed.GetFormatVersion())
+
+	// There is no reader ceiling: OCF embeds the writer schema, so a newer
+	// snapshot stays readable when its unknown fields can be skipped.
+	parsed, err = ParseSnapshotMetadata([]byte(`{"formatVersion":` + fmt.Sprint(SnapshotFormatVersion+1) + `}`))
+	require.NoError(t, err)
+	assert.EqualValues(t, SnapshotFormatVersion+1, parsed.GetFormatVersion())
+
+	_, err = ParseSnapshotMetadata([]byte(`{"formatVersion":-1}`))
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "invalid snapshot format version")
 }
 
 func fieldBinlog(fieldID int64, logID int64, logPath string) *datapb.FieldBinlog {
