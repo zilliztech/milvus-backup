@@ -91,22 +91,20 @@ Use the [latest release](https://github.com/zilliztech/milvus-backup/releases) w
 
 A backup can be restored only to the same or a newer Milvus version:
 
-| Backup version | Restore to 2.5 | Restore to 2.6 | Restore to 3.0* |
-|----------------|----------------|----------------|-----------------|
-| 2.2            | Supported      | Supported      | Supported       |
-| 2.3            | Supported      | Supported      | Supported       |
-| 2.4            | Supported      | Supported      | Supported       |
-| 2.5            | Supported      | Supported      | Supported       |
-| 2.6            | —              | Supported      | Supported       |
-| 3.0*           | —              | —              | Supported       |
+| Backup version | Restore to 2.5 | Restore to 2.6 | Restore to 3.0 |
+|----------------|----------------|----------------|----------------|
+| 2.2            | Supported      | Supported      | Supported      |
+| 2.3            | Supported      | Supported      | Supported      |
+| 2.4            | Supported      | Supported      | Supported      |
+| 2.5            | Supported      | Supported      | Supported      |
+| 2.6            | —              | Supported      | Supported      |
+| 3.0            | —              | —              | Supported      |
 
 For example, a backup created from Milvus 2.6 cannot be restored to Milvus 2.5.
 
-\* Supported from Milvus 3.0.1 and later; 3.0.0 is not supported.
-
 ### Backup formats
 
-On Milvus 3.0.1 and later, backups are taken in the snapshot format by default: Milvus freezes each collection into a snapshot, and milvus-backup reads the snapshot's manifest and copies its files to the backup storage itself. Like the binlog format, the copy moves data between any two supported backends; whether it streams through the milvus-backup host or is performed by the storage service follows the same `transfer.mode` policy as the binlog copy. Older servers use the binlog format, and `--format=binlog` selects it explicitly.
+On Milvus 3.0 and later, backups are taken in the snapshot format by default: Milvus freezes each collection into a snapshot, and milvus-backup reads the snapshot's manifest and copies its files to the backup storage itself. Like the binlog format, the copy moves data between any two supported backends; whether it streams through the milvus-backup host or is performed by the storage service follows the same `transfer.mode` policy as the binlog copy. Older servers use the binlog format, and `--format=binlog` selects it explicitly.
 
 Restore moves the bundle the other way with a server-side copy inside one storage service, so restoring a snapshot backup requires the backup storage to be the same service as the target Milvus storage: another bucket, account, or region of the same cloud provider works, but a different provider — or a second self-hosted MinIO — does not, and milvus-backup refuses the restore instead of producing a partial one.
 
