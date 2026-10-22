@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	semver "github.com/Masterminds/semver/v3"
@@ -660,5 +661,144 @@ func TestGrpcClient_GetRestoreSnapshotState(t *testing.T) {
 		info, err := cli.GetRestoreSnapshotState(context.Background(), 9002)
 		assert.Error(t, err)
 		assert.Nil(t, info)
+	})
+}
+
+func TestGrpcClient_GetReplicateConfiguration(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv}
+
+		mockSrv.EXPECT().GetReplicateConfiguration(mock.Anything, mock.Anything).
+			Return(&milvuspb.GetReplicateConfigurationResponse{
+				Status:        &commonpb.Status{Code: 0},
+				Configuration: &commonpb.ReplicateConfiguration{Clusters: []*commonpb.MilvusCluster{{ClusterId: "by-dev"}}},
+			}, nil)
+
+		cfg, err := cli.GetReplicateConfiguration(context.Background())
+		require.NoError(t, err)
+		assert.Equal(t, "by-dev", cfg.GetClusters()[0].GetClusterId())
+	})
+
+	t.Run("RequestCtxCarriesDeadline", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv}
+
+		var gotDeadline time.Time
+		var gotOK bool
+		mockSrv.EXPECT().GetReplicateConfiguration(mock.Anything, mock.Anything).
+			Run(func(ctx context.Context, _ *milvuspb.GetReplicateConfigurationRequest, _ ...grpc.CallOption) {
+				gotDeadline, gotOK = ctx.Deadline()
+			}).
+			Return(&milvuspb.GetReplicateConfigurationResponse{Status: &commonpb.Status{Code: 0}}, nil)
+
+		_, err := cli.GetReplicateConfiguration(context.Background())
+		require.NoError(t, err)
+		require.True(t, gotOK, "the replicate read must carry a deadline; without one it hangs forever on an unconfigured cluster")
+		remaining := time.Until(gotDeadline)
+		assert.Greater(t, remaining, 25*time.Second)
+		assert.LessOrEqual(t, remaining, replicateReadTimeout)
+	})
+
+	t.Run("OwnTimeoutExplained", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			mockSrv := NewMockMilvusServiceClient(t)
+			cli := &GrpcClient{srv: mockSrv}
+
+			// Behave like a real gRPC call on an unconfigured cluster: block
+			// until the request context ends, then fail with its error.
+			mockSrv.EXPECT().GetReplicateConfiguration(mock.Anything, mock.Anything).
+				RunAndReturn(func(ctx context.Context, _ *milvuspb.GetReplicateConfigurationRequest, _ ...grpc.CallOption) (*milvuspb.GetReplicateConfigurationResponse, error) {
+					<-ctx.Done()
+					return nil, status.FromContextError(ctx.Err()).Err()
+				})
+
+			_, err := cli.GetReplicateConfiguration(context.Background())
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "never been given a replicate configuration")
+		})
+	})
+
+	t.Run("ServerDeadlineExceededNotAnnotated", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv}
+
+		// A DEADLINE_EXCEEDED produced server-side, while our own timeout has
+		// not fired, is not ours to explain.
+		mockSrv.EXPECT().GetReplicateConfiguration(mock.Anything, mock.Anything).
+			Return(nil, status.Error(codes.DeadlineExceeded, "server-side deadline"))
+
+		_, err := cli.GetReplicateConfiguration(context.Background())
+		require.Error(t, err)
+		assert.NotContains(t, err.Error(), "never been given a replicate configuration")
+	})
+
+	t.Run("OtherErrorPassThrough", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv}
+
+		mockSrv.EXPECT().GetReplicateConfiguration(mock.Anything, mock.Anything).
+			Return(nil, status.Error(codes.Unavailable, "connection refused"))
+
+		_, err := cli.GetReplicateConfiguration(context.Background())
+		require.Error(t, err)
+		assert.NotContains(t, err.Error(), "never been given a replicate configuration")
+	})
+}
+
+func TestGrpcClient_GetReplicateInfo(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv}
+
+		var got *milvuspb.GetReplicateInfoRequest
+		mockSrv.EXPECT().GetReplicateInfo(mock.Anything, mock.Anything).
+			Run(func(_ context.Context, in *milvuspb.GetReplicateInfoRequest, _ ...grpc.CallOption) { got = in }).
+			Return(&milvuspb.GetReplicateInfoResponse{
+				Checkpoint: &commonpb.ReplicateCheckpoint{ClusterId: "source", Pchannel: "by-dev-rootcoord-dml_0"},
+			}, nil)
+
+		resp, err := cli.GetReplicateInfo(context.Background(), "source", "by-dev-rootcoord-dml_0")
+		require.NoError(t, err)
+		assert.Equal(t, "source", got.GetSourceClusterId())
+		assert.Equal(t, "by-dev-rootcoord-dml_0", got.GetTargetPchannel())
+		assert.Equal(t, "source", resp.GetCheckpoint().GetClusterId())
+	})
+
+	t.Run("RequestCtxCarriesDeadline", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv}
+
+		var gotDeadline time.Time
+		var gotOK bool
+		mockSrv.EXPECT().GetReplicateInfo(mock.Anything, mock.Anything).
+			Run(func(ctx context.Context, _ *milvuspb.GetReplicateInfoRequest, _ ...grpc.CallOption) {
+				gotDeadline, gotOK = ctx.Deadline()
+			}).
+			Return(&milvuspb.GetReplicateInfoResponse{}, nil)
+
+		_, err := cli.GetReplicateInfo(context.Background(), "source", "by-dev-rootcoord-dml_0")
+		require.NoError(t, err)
+		require.True(t, gotOK, "the replicate read must carry a deadline; a pchannel of another cluster blocks until it")
+		remaining := time.Until(gotDeadline)
+		assert.Greater(t, remaining, 25*time.Second)
+		assert.LessOrEqual(t, remaining, replicateReadTimeout)
+	})
+
+	t.Run("OwnTimeoutExplained", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			mockSrv := NewMockMilvusServiceClient(t)
+			cli := &GrpcClient{srv: mockSrv}
+
+			mockSrv.EXPECT().GetReplicateInfo(mock.Anything, mock.Anything).
+				RunAndReturn(func(ctx context.Context, _ *milvuspb.GetReplicateInfoRequest, _ ...grpc.CallOption) (*milvuspb.GetReplicateInfoResponse, error) {
+					<-ctx.Done()
+					return nil, status.FromContextError(ctx.Err()).Err()
+				})
+
+			_, err := cli.GetReplicateInfo(context.Background(), "source", "by-dev-rootcoord-dml_0")
+			require.Error(t, err)
+			assert.Contains(t, err.Error(), "never been given a replicate configuration")
+		})
 	})
 }
