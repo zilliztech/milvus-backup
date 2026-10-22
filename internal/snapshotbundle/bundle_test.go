@@ -1,6 +1,7 @@
 package snapshotbundle
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"testing"
@@ -63,6 +64,8 @@ func preparedBundle(t *testing.T, store *mapStore) (metadataPath string, metadat
 	assert.NotEmpty(t, store.objects[GetSnapshotStagingMetadataPath("bundle")])
 	assert.NotEmpty(t, store.objects["bundle/snapshots/457/manifests/123/1001.avro"])
 	assert.NotEmpty(t, store.objects["bundle/snapshots/457/manifests/123/1002.avro"])
+	// An unset source version means the current format, whose manifests are OCF.
+	assert.True(t, bytes.HasPrefix(store.objects["bundle/snapshots/457/manifests/123/1001.avro"], []byte(ocfMagic)))
 	return metadataPath, "bundle/snapshots/457/metadata/123.json"
 }
 
@@ -183,4 +186,6 @@ func TestPrepareBundleKeepsSourceFormatVersion(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 4, snapshot.FormatVersion)
 	require.Len(t, snapshot.Segments, 2)
+	// A V4 bundle keeps writing raw binary manifests: only V6+ uses OCF.
+	assert.False(t, bytes.HasPrefix(store.objects["bundle/snapshots/457/manifests/123/1001.avro"], []byte(ocfMagic)))
 }
