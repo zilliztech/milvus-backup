@@ -1172,14 +1172,48 @@ func (g *GrpcClient) DropIndexProperties(ctx context.Context, db, collName, inde
 	return nil
 }
 
+// replicateReadTimeout bounds the two replicate reads below. Both block
+// server-side until a condition becomes true — an assignment carrying a
+// replicate configuration, or a checkpoint for the pchannel — and where that
+// condition never becomes true (no replication configured at all, or a
+// pchannel that belongs to another cluster) Milvus versions without
+// milvus-io/milvus#52687 answer only at the caller's deadline. Callers pass
+// their long-lived task context, so without a deadline here the read hangs
+// forever.
+const replicateReadTimeout = 30 * time.Second
+
+// errReplicateReadTimeout is the context cause of a replicate read that burned
+// its replicateReadTimeout. Carrying it as the cause (rather than pattern-
+// matching the resulting DEADLINE_EXCEEDED) is what separates "our client
+// deadline fired" from a server-side deadline: only the former means the
+// cluster most likely has no replicate configuration.
+var errReplicateReadTimeout = errors.New("no answer within the replicate read timeout")
+
+// explainReplicateReadTimeout turns the timeout of a replicate read into a
+// cause an operator can act on: on servers without milvus-io/milvus#52687 the
+// timeout is the expected answer from a cluster that has never been given a
+// replicate configuration, not a sign of illness.
+func explainReplicateReadTimeout(ctx context.Context, err error) error {
+	if err == nil || !errors.Is(context.Cause(ctx), errReplicateReadTimeout) {
+		return err
+	}
+	return fmt.Errorf("%w (on a cluster that has never been given a replicate configuration, "+
+		"Milvus versions before milvus-io/milvus#52687 answer this read only at the caller's "+
+		"deadline, which this client bounds at %s; if replication IS configured there, treat "+
+		"this as an unhealthy target)", err, replicateReadTimeout)
+}
+
 // GetReplicateConfiguration returns the cross-cluster replication configuration
-// the cluster currently holds. A cluster that has never been given one answers
-// with an empty configuration rather than an error.
+// the cluster currently holds, or nil when it has none. Milvus versions without
+// milvus-io/milvus#52687 do not answer at all on an unconfigured cluster, so
+// the read is bounded by replicateReadTimeout.
 func (g *GrpcClient) GetReplicateConfiguration(ctx context.Context) (*commonpb.ReplicateConfiguration, error) {
-	ctx = g.newCtx(ctx)
-	resp, err := g.srv.GetReplicateConfiguration(ctx, &milvuspb.GetReplicateConfigurationRequest{})
+	ctx, cancel := context.WithTimeoutCause(ctx, replicateReadTimeout, errReplicateReadTimeout)
+	defer cancel()
+
+	resp, err := g.srv.GetReplicateConfiguration(g.newCtx(ctx), &milvuspb.GetReplicateConfigurationRequest{})
 	if err := checkResponse(resp, err); err != nil {
-		return nil, fmt.Errorf("client: get replicate configuration: %w", err)
+		return nil, fmt.Errorf("client: get replicate configuration: %w", explainReplicateReadTimeout(ctx, err))
 	}
 
 	return resp.GetConfiguration(), nil
@@ -1187,15 +1221,17 @@ func (g *GrpcClient) GetReplicateConfiguration(ctx context.Context) (*commonpb.R
 
 // GetReplicateInfo returns the replication checkpoint the cluster holds for one
 // of its OWN pchannels. Passing a pchannel that belongs to another cluster does
-// not fail: the lookup blocks until the caller's deadline.
+// not fail: the lookup blocks until the deadline, replicateReadTimeout here.
 func (g *GrpcClient) GetReplicateInfo(ctx context.Context, sourceClusterID, targetPchannel string) (*milvuspb.GetReplicateInfoResponse, error) {
-	ctx = g.newCtx(ctx)
-	resp, err := g.srv.GetReplicateInfo(ctx, &milvuspb.GetReplicateInfoRequest{
+	ctx, cancel := context.WithTimeoutCause(ctx, replicateReadTimeout, errReplicateReadTimeout)
+	defer cancel()
+
+	resp, err := g.srv.GetReplicateInfo(g.newCtx(ctx), &milvuspb.GetReplicateInfoRequest{
 		SourceClusterId: sourceClusterID,
 		TargetPchannel:  targetPchannel,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("client: get replicate info of %s: %w", targetPchannel, err)
+		return nil, fmt.Errorf("client: get replicate info of %s: %w", targetPchannel, explainReplicateReadTimeout(ctx, err))
 	}
 
 	return resp, nil
