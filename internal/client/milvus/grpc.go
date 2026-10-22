@@ -873,6 +873,7 @@ func (g *GrpcClient) HasCollection(ctx context.Context, db, collName string) (bo
 // being reclaimed after a drop, say -- reads as absent here, which is what the
 // caller needs to know.
 func (g *GrpcClient) HasCollectionByID(ctx context.Context, collectionID int64) (bool, error) {
+	ctx = g.newCtx(ctx)
 	resp, err := g.srv.DescribeCollection(ctx, &milvuspb.DescribeCollectionRequest{CollectionID: collectionID})
 	if err != nil {
 		return false, fmt.Errorf("client: has collection by id failed: %w", err)
