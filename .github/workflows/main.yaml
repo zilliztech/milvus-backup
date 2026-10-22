@@ -85,6 +85,11 @@ jobs:
     needs: unit-test-go
     name: Backup and restore cross version
     runs-on: ubuntu-latest
+    # Master is the 3.1 dev line: its legs run for signal but do not gate CI.
+    # Only the released lines (3.0, 2.6, and the fixed old sources) must pass.
+    # A failed master leg is marked green here; check the Actions UI for its
+    # real result.
+    continue-on-error: ${{ matrix.target_image_tag == 'master-latest' }}
     strategy:
       fail-fast: false
       matrix:
@@ -92,7 +97,10 @@ jobs:
         milvus_mode: [standalone]
         another_milvus_mode: [standalone]
         source_image_tag: [v2.2.16, v2.3.22, v2.4.23, v2.5.20, 2.6-latest]
-        target_image_tag: [master-latest, 2.6-latest]
+        # 3.0-latest resolves to the newest nightly image of the milvus 3.0
+        # branch (tags look like 3.0-20261021-<sha>; there is no literal
+        # "3.0-latest" tag on Docker Hub). master-latest is the 3.1 dev line.
+        target_image_tag: [master-latest, 3.0-latest, 2.6-latest]
         exclude:
           - source_image_tag: 2.6-latest
             target_image_tag: 2.6-latest
@@ -156,13 +164,14 @@ jobs:
         run: |
           python example/prepare_data.py
 
-      # The 2.6 -> 3.0 leg also covers the L0 path: 2.6 backs up delete-only
-      # segments, 3.0 rejects L0 import by default, so the target restores a
-      # copy with the L0 deletes folded into per-segment deltalogs by l0compact.
+      # The 2.6 -> 3.0+ legs also cover the L0 path: 2.6 backs up delete-only
+      # segments, 3.0 (and master) rejects L0 import by default, so the target
+      # restores a copy with the L0 deletes folded into per-segment deltalogs
+      # by l0compact.
       # The unwashed restore is deliberately not run: its rejection is the
       # server's fail-closed guard, not something this job needs to assert.
       - name: Prepare L0 data
-        if: ${{ matrix.source_image_tag == '2.6-latest' && matrix.target_image_tag == 'master-latest' }}
+        if: ${{ matrix.source_image_tag == '2.6-latest' && matrix.target_image_tag != '2.6-latest' }}
         timeout-minutes: 5
         shell: bash
         run: |
@@ -266,21 +275,21 @@ jobs:
           tree
 
       - name: Compact L0 segments
-        if: ${{ matrix.source_image_tag == '2.6-latest' && matrix.target_image_tag == 'master-latest' }}
+        if: ${{ matrix.source_image_tag == '2.6-latest' && matrix.target_image_tag != '2.6-latest' }}
         timeout-minutes: 5
         shell: bash
         run: |
           ./milvus-backup l0compact -n my_backup -o my_backup_l0c
 
       - name: Restore backup from another Milvus
-        if: ${{ matrix.source_image_tag != '2.6-latest' || matrix.target_image_tag != 'master-latest' }}
+        if: ${{ matrix.source_image_tag != '2.6-latest' || matrix.target_image_tag == '2.6-latest' }}
         timeout-minutes: 5
         shell: bash
         run: |
           ./milvus-backup restore -n my_backup -s _recover
 
       - name: Restore L0-compacted backup from another Milvus
-        if: ${{ matrix.source_image_tag == '2.6-latest' && matrix.target_image_tag == 'master-latest' }}
+        if: ${{ matrix.source_image_tag == '2.6-latest' && matrix.target_image_tag != '2.6-latest' }}
         timeout-minutes: 5
         shell: bash
         run: |
@@ -293,7 +302,7 @@ jobs:
           python example/verify_data.py
 
       - name: Verify L0 data from another Milvus
-        if: ${{ matrix.source_image_tag == '2.6-latest' && matrix.target_image_tag == 'master-latest' }}
+        if: ${{ matrix.source_image_tag == '2.6-latest' && matrix.target_image_tag != '2.6-latest' }}
         timeout-minutes: 5
         shell: bash
         run: |
@@ -507,15 +516,17 @@ jobs:
         milvus_mode: [standalone]
         another_milvus_mode: [standalone]
         # Only in-place upgrades on the documented support matrix: 2.5 -> 2.6
-        # and 2.6 -> 3.0. A direct 2.5 -> master jump is not a supported
+        # and 2.6 -> 3.0. The 2.6 -> 3.0 leg targets the real 3.0 branch now
+        # that it exists; master is the 3.1 dev line, and a direct 2.6 ->
+        # master (or 2.5 -> anything past 2.6) jump is not a supported
         # upgrade path (2.5 sources never persist a streaming checkpoint, so
         # it is cross-version restore territory — covered by
         # test-backup-restore-cross-version with v2.5.20 sources).
         source_image_tag: [2.5-latest, 2.6-latest]
-        target_image_tag: [master-latest, 2.6-latest]
+        target_image_tag: [3.0-latest, 2.6-latest]
         exclude:
           - source_image_tag: 2.5-latest
-            target_image_tag: master-latest
+            target_image_tag: 3.0-latest
           - source_image_tag: 2.6-latest
             target_image_tag: 2.6-latest
 
@@ -653,13 +664,15 @@ jobs:
     needs: unit-test-go
     name: Backup and restore cli
     runs-on: ubuntu-latest
+    # Master legs do not gate CI (see cross-version for the rationale).
+    continue-on-error: ${{ matrix.image_tag == 'master-latest' }}
     strategy:
       fail-fast: false
       matrix:
         deploy_tools: [docker-compose]
         milvus_mode: [standalone]
         another_milvus_mode: [standalone]
-        image_tag: [master-latest, 2.6-latest]
+        image_tag: [master-latest, 3.0-latest, 2.6-latest]
         # mq_type: [pulsar, kafka]  # TODO: add pulsar and kafka
 
     steps:
@@ -827,13 +840,16 @@ jobs:
         run: |
           python example/verify_data.py
 
-  test-backup-restore-master-loonffi:
+  test-backup-restore-loonffi:
     needs: unit-test-go
-    name: Backup and restore master (useLoonFFI=${{ matrix.use_loonffi }})
+    name: Backup and restore loonffi (${{ matrix.image_tag }}, useLoonFFI=${{ matrix.use_loonffi }})
     runs-on: ubuntu-latest
+    # Master legs do not gate CI (see cross-version for the rationale).
+    continue-on-error: ${{ matrix.image_tag == 'master-latest' }}
     strategy:
       fail-fast: false
       matrix:
+        image_tag: [master-latest, 3.0-latest]
         use_loonffi: [true, false]
     steps:
       - uses: actions/checkout@v7
@@ -869,7 +885,7 @@ jobs:
         shell: bash
         working-directory: deployment/standalone
         run: |
-          tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag master-latest) && echo $tag
+          tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
           yq -i '.common.storage.useLoonFFI = ${{ matrix.use_loonffi }}' custom_config.yaml
           cat custom_config.yaml || true
@@ -919,17 +935,24 @@ jobs:
     needs: unit-test-go
     name: Backup and restore secondary (${{ matrix.scenario }})
     runs-on: ubuntu-latest
+    # The master scenario runs for signal but does not gate CI (see
+    # cross-version for the rationale).
+    continue-on-error: ${{ matrix.scenario == 'same-version-master' }}
     strategy:
       fail-fast: false
       matrix:
-        # Three scenarios:
+        # Four scenarios:
         #   - same-version:          source and target are both the latest 2.6.
-        #   - same-version-master:   source and target are both the latest master,
-        #     the only line that has import two-phase commit. #1080 dropped master
-        #     from CI because red master jobs hid regressions on the released
-        #     line; this brings it back for secondary restore alone, next to the
-        #     2.6 scenario rather than in place of it, so the 2PC path is covered
-        #     without master failures masking a 2.6 one.
+        #   - same-version-3.0:      source and target are both the latest 3.0
+        #     branch build. 3.0 is the released line that has import two-phase
+        #     commit (the 2.7 line was renamed to 3.0), so this leg runs the
+        #     2PC restore the same way same-version-master does.
+        #   - same-version-master:   source and target are both the latest master.
+        #     #1080 dropped master from CI because red master jobs hid
+        #     regressions on the released line; this brings it back for
+        #     secondary restore alone, next to the released-line scenarios
+        #     rather than in place of them, so the 2PC path on the dev line is
+        #     covered without master failures masking a released-line one.
         #   - cross-version-upgrade: source data is created on a pre-#46419 Milvus
         #     (v2.6.7, where the auto-appended $meta field has no Nullable nor
         #     DefaultValue), then the cluster is upgraded to a CDC-capable image
@@ -942,12 +965,19 @@ jobs:
           - scenario: same-version
             prepare_image_tag: 2.6-latest
             run_image_tag: 2.6-latest
+            two_phase_commit: false
+          - scenario: same-version-3.0
+            prepare_image_tag: 3.0-latest
+            run_image_tag: 3.0-latest
+            two_phase_commit: true
           - scenario: same-version-master
             prepare_image_tag: master-latest
             run_image_tag: master-latest
+            two_phase_commit: true
           - scenario: cross-version-upgrade
             prepare_image_tag: v2.6.7
             run_image_tag: 2.6-latest
+            two_phase_commit: false
 
     steps:
       - uses: actions/checkout@v7
@@ -1128,11 +1158,11 @@ jobs:
       # Two-phase import restore: restore the backup back into the upstream
       # (now a replication source) with --secondaries aimed at the downstream,
       # so every import job holds at Uncommitted until its mirror shows up on
-      # the secondary and is then committed on both ends. Master-only: the
+      # the secondary and is then committed on both ends. 3.0+ only: the
       # commit endpoint and the enableInReplicatingCluster toggle exist on
-      # 2.7+ alone.
+      # 3.0 (the renamed 2.7 line) and master alone.
       - name: Restore into upstream with two-phase commit
-        if: ${{ matrix.scenario == 'same-version-master' }}
+        if: ${{ matrix.two_phase_commit }}
         timeout-minutes: 5
         shell: bash
         run: |
@@ -1140,7 +1170,7 @@ jobs:
           ./milvus-backup restore -n my_backup --suffix _2pc --secondaries http://127.0.0.1:19500
 
       - name: Verify two-phase restore on both ends
-        if: ${{ matrix.scenario == 'same-version-master' }}
+        if: ${{ matrix.two_phase_commit }}
         timeout-minutes: 5
         shell: bash
         run: |
@@ -1215,12 +1245,14 @@ jobs:
     needs: unit-test-go
     name: Backup and restore with rbac config
     runs-on: ubuntu-latest
+    # Master legs do not gate CI (see cross-version for the rationale).
+    continue-on-error: ${{ matrix.image_tag == 'master-latest' }}
     strategy:
       fail-fast: false
       matrix:
         deploy_tools: [helm]
         milvus_mode: [standalone]
-        image_tag: [master-latest, 2.6-latest]
+        image_tag: [master-latest, 3.0-latest, 2.6-latest]
 
     steps:
       - uses: actions/checkout@v7
@@ -1383,13 +1415,17 @@ jobs:
     name: Backup and restore api
     runs-on: ubuntu-latest
     needs: test-backup-restore-cli
+    # Master legs do not gate CI (see cross-version for the rationale).
+    continue-on-error: ${{ matrix.image_tag == 'master-latest' }}
     strategy:
       fail-fast: false
       matrix:
         deploy_tools: [docker-compose]
         milvus_mode: [standalone]
-        image_tag: [master-latest, 2.6-latest]
+        image_tag: [master-latest, 3.0-latest, 2.6-latest]
         case_tag: [L0, L1, L2, MASTER, RELEASE, RBAC]
+        # MASTER-tagged cases cover features that landed in 3.0 (MinHash
+        # functions), so they run on master and 3.0 but not on 2.6.
         exclude:
           - image_tag: 2.6-latest
             case_tag: MASTER
@@ -1443,14 +1479,15 @@ jobs:
           fi
           tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
           yq -i ".services.standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
-          # On master, keep auto compaction on even though the l0compact suite
-          # wants it off: master enables sort compaction, whose event-driven
-          # trigger ignores enableAutoCompaction while the periodic retry
-          # honors it. With it off, a sort compaction rejected by a snapshot
-          # export pin is never retried, the segment stays unsorted and is
-          # never indexed, and any create_index on the collection hangs
-          # forever. The l0compact cases only pass on 2.6 anyway.
-          if [ ${{ matrix.image_tag }} == "master-latest" ]; then
+          # On 3.0 and master, keep auto compaction on even though the
+          # l0compact suite wants it off: 3.0+ enables sort compaction, whose
+          # event-driven trigger ignores enableAutoCompaction while the
+          # periodic retry honors it. With it off, a sort compaction rejected
+          # by a snapshot export pin is never retried, the segment stays
+          # unsorted and is never indexed, and any create_index on the
+          # collection hangs forever. The l0compact cases only pass on 2.6
+          # anyway.
+          if [ ${{ matrix.image_tag }} != "2.6-latest" ]; then
             yq -i '.dataCoord.compaction.enableAutoCompaction = true' custom_config.yaml
           fi
           cat custom_config.yaml || true
@@ -1521,7 +1558,7 @@ jobs:
       - test-backup-restore-cross-version
       - test-backup-restore-after-upgrade
       - test-backup-restore-cli
-      - test-backup-restore-master-loonffi
+      - test-backup-restore-loonffi
       - test-backup-restore-secondary
       - test-backup-restore-with-rbac-config
       - test-backup-restore-api
