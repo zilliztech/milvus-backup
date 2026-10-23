@@ -576,7 +576,9 @@ class TestcaseBase(Base):
                     create_index_for_vector_fields(coll)
                 except Exception as e:
                     log.error(f"collection {coll.name} create index failed with error: {e}")
-            coll.load()
+            # Bounded wait: pymilvus load with timeout=None polls forever when
+            # the server never reaches 100% loading progress.
+            coll.load(timeout=600)
             time.sleep(5)
         # get entities by count
         src_count = collection_src.query(expr="", output_fields=["count(*)"])
