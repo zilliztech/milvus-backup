@@ -303,6 +303,10 @@ func (t *Task) privateExecute(ctx context.Context) error {
 		return fmt.Errorf("backup: run coll dyn field task: %w", err)
 	}
 
+	if err := t.checkCollFieldIDs(); err != nil {
+		return fmt.Errorf("backup: check field id space: %w", err)
+	}
+
 	if err := t.writeMeta(ctx); err != nil {
 		return fmt.Errorf("backup: write meta: %w", err)
 	}
@@ -667,6 +671,28 @@ func (t *Task) backupCollDynField(ctx context.Context) error {
 	dynFieldTask := newCollDynFieldTask(t.taskID, t.etcd, t.etcdRootPath, t.metaBuilder)
 	if err := dynFieldTask.Execute(ctx); err != nil {
 		return fmt.Errorf("backup: execute coll dyn field task: %w", err)
+	}
+
+	return nil
+}
+
+// checkCollFieldIDs refuses to write a backup whose collections' field IDs
+// restore cannot reproduce. It runs after the dynamic field task so that
+// enriched schemas carry the real $meta slot: a hole that the per-collection
+// DDL check could only flag as ambiguous becomes decidable here. Meta-only
+// backups are gated too — their restore replays the same guessed split, which
+// can strand the vector field on the add-field side and fail at create. The
+// snapshot format is exempt: its restore preserves field IDs server-side.
+func (t *Task) checkCollFieldIDs() error {
+	if t.resolvedFormat == meta.FormatSnapshot {
+		return nil
+	}
+
+	for _, coll := range t.metaBuilder.allCollectionBackups() {
+		name := coll.GetDbName() + "." + coll.GetCollectionName()
+		if err := checkFieldIDSpaceFromMeta(name, coll.GetSchema()); err != nil {
+			return fmt.Errorf("backup: %w", err)
+		}
 	}
 
 	return nil
