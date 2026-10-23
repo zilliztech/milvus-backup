@@ -50,7 +50,7 @@ func TestNewSnapshotSource(t *testing.T) {
 		backupCfg := milvusCfg
 		backupCfg.Bucket = "backup-bucket"
 
-		source, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/")
+		source, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
 		require.NoError(t, err)
 		assert.Equal(t, "s3://backup-bucket/backup/mybackup", source.dirURI)
 		assert.Empty(t, source.externalSpec)
@@ -69,7 +69,7 @@ func TestNewSnapshotSource(t *testing.T) {
 			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
 		}
 
-		source, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/")
+		source, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
 		require.NoError(t, err)
 		assert.Equal(t, "s3://backup-bucket/backup/mybackup", source.dirURI)
 		assert.Contains(t, source.externalSpec, `"access_key_id":"ak"`)
@@ -84,8 +84,25 @@ func TestNewSnapshotSource(t *testing.T) {
 			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
 		}
 
-		_, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/")
+		_, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
 		assert.ErrorContains(t, err, "are not the same one")
+	})
+
+	// The import path reads the source itself, so a backup on another service is
+	// permitted: the spec carries the source's own credentials, and the source
+	// reports the crossing so the strategy resolves on it.
+	t.Run("CrossServicePermittedForTheImportPath", func(t *testing.T) {
+		milvusCfg := storage.Config{Provider: cfg.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket"}
+		backupCfg := storage.Config{
+			Provider: cfg.ProviderS3, Region: "us-west-2", Bucket: "backup-bucket",
+			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
+		}
+
+		source, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", true)
+		require.NoError(t, err)
+		assert.False(t, source.sameService)
+		assert.Equal(t, "s3://backup-bucket/backup/mybackup", source.dirURI)
+		assert.Contains(t, source.externalSpec, `"access_key_id":"ak"`)
 	})
 
 	// A restore whose backup container lives in another storage account reads
@@ -95,7 +112,7 @@ func TestNewSnapshotSource(t *testing.T) {
 		milvusCfg := azureCfg("milvus-account", "milvus-bucket")
 		backupCfg := azureCfg("backup-account", "backup-bucket")
 
-		source, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/")
+		source, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
 		require.NoError(t, err)
 		assert.Equal(t, "azure://backup-account.blob.core.windows.net/backup-bucket/backup/mybackup", source.dirURI)
 
@@ -112,7 +129,7 @@ func TestNewSnapshotSource(t *testing.T) {
 		backupCfg := azureCfg("backup-account", "backup-bucket")
 		backupCfg.SourceSAS = "?sv=2024-08-04&sig=abc"
 
-		source, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/")
+		source, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
 		require.NoError(t, err)
 		assert.Equal(t, "sv=2024-08-04&sig=abc", extfs(t, source.externalSpec)["source_sas_token"])
 	})
@@ -124,7 +141,7 @@ func TestNewSnapshotSource(t *testing.T) {
 		backupCfg := azureCfg("account", "backup-bucket")
 		backupCfg.SourceSAS = "sv=2024-08-04&sig=abc"
 
-		_, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/")
+		_, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
 		assert.ErrorContains(t, err, "crosses azure storage accounts")
 	})
 
@@ -138,7 +155,7 @@ func TestNewSnapshotSource(t *testing.T) {
 		backupCfg := azureCfg("backup-account", "backup-bucket")
 		backupCfg.SourceSAS = "sv=2024-08-04&sig=abc"
 
-		_, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/")
+		_, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
 		assert.ErrorContains(t, err, "are not the same one")
 	})
 }

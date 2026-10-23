@@ -9,7 +9,7 @@ import (
 )
 
 // snapshotSource says where the bundles of a snapshot-format backup are read from, in the
-// terms RestoreExternalSnapshot takes them.
+// terms RestoreExternalSnapshot and a snapshot-sourced import take them.
 type snapshotSource struct {
 	// dirURI is the backup directory as a complete URI, which the paths in the backup meta
 	// are relative to.
@@ -22,14 +22,22 @@ type snapshotSource struct {
 	// sourceSASSet reports whether the spec carries a source SAS, for logging: the
 	// token itself is a secret and never appears there.
 	sourceSASSet bool
+
+	// sameService reports whether the backup storage and the milvus storage are one
+	// storage service. The restore api path needs it to be; the import path reads the
+	// source through the external spec and does not.
+	sameService bool
 }
 
-func newSnapshotSource(ctx context.Context, milvusCfg, backupCfg storage.Config, backupDir string) (snapshotSource, error) {
-	// Milvus copies the bundles in with a server-side copy inside one storage
-	// service, so a backup held on another service cannot be restored from
-	// directly — move it onto the milvus storage's service first.
-	if !storage.SnapshotSameService(milvusCfg, backupCfg) {
-		return snapshotSource{}, fmt.Errorf("restore: the snapshot format copies data inside one storage service, but the milvus storage (%s) and the backup storage (%s) are not the same one",
+// newSnapshotSource resolves where Milvus reads the backup's bundles from. The restore api
+// copies data inside one storage service, so crossServiceOK=false refuses a backup held on
+// another service; the import path reads the source itself, and crossServiceOK=true lets
+// that through on the external spec.
+func newSnapshotSource(ctx context.Context, milvusCfg, backupCfg storage.Config, backupDir string, crossServiceOK bool) (snapshotSource, error) {
+	sameService := storage.SnapshotSameService(milvusCfg, backupCfg)
+	if !sameService && !crossServiceOK {
+		return snapshotSource{}, fmt.Errorf("restore: the restore api copies data inside one storage service, but the milvus storage (%s) and the backup storage (%s) are not the same one; "+
+			"on a Milvus 3.0.4 or newer target the import_snap strategy reads the source directly, otherwise move the backup onto the milvus storage's service first",
 			storage.SnapshotStoreDescription(milvusCfg), storage.SnapshotStoreDescription(backupCfg))
 	}
 
@@ -37,7 +45,7 @@ func newSnapshotSource(ctx context.Context, milvusCfg, backupCfg storage.Config,
 	if err != nil {
 		return snapshotSource{}, err
 	}
-	source := snapshotSource{dirURI: uri}
+	source := snapshotSource{dirURI: uri, sameService: sameService}
 
 	// The copy source is the backup bucket. On Azure it lives in the backup
 	// storage account, and no single principal can authorize reading a blob of

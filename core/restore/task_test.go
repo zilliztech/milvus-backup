@@ -86,31 +86,94 @@ func TestNewTask_SnapshotSource(t *testing.T) {
 	assert.Empty(t, task.snapshotSource.externalSpec)
 }
 
-// Milvus restores a snapshot bundle on its own terms, so an option asking for anything else
-// is refused rather than silently dropped.
-func TestCheckSnapshotSupport(t *testing.T) {
-	tests := []struct {
-		name string
-		plan *Plan
-		opt  *Option
-	}{
-		{"SkipCreateCollection", &Plan{}, &Option{SkipCreateCollection: true}},
-		{"MetaOnly", &Plan{}, &Option{MetaOnly: true}},
-		{"TruncateBinlogByTs", &Plan{}, &Option{TruncateBinlogByTs: true}},
-		{"EZKMapping", &Plan{}, &Option{EZKMapping: map[string]string{"old": "new"}}},
+// A backup on another storage service than the target's cannot ride the restore
+// api's server-side copy: auto and restore_snap refuse it with a pointer at
+// import_snap, which reads the source itself and is the only way across.
+func TestNewTask_SnapshotCrossService(t *testing.T) {
+	newArgs := func(strategy Strategy) TaskArgs {
+		milvusStorage := storage.NewMockClient(t)
+		milvusStorage.EXPECT().Config().Return(storage.Config{
+			Provider: cfg.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket",
+		})
+		backupStorage := storage.NewMockClient(t)
+		backupStorage.EXPECT().Config().Return(storage.Config{
+			Provider: cfg.ProviderS3, Region: "us-west-2", Bucket: "backup-bucket",
+			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
+		})
+
+		return TaskArgs{
+			TaskID:        "task-1",
+			Backup:        &backuppb.BackupInfo{Name: "mybackup", Format: meta.FormatSnapshot},
+			Plan:          &Plan{},
+			Option:        &Option{Strategy: strategy},
+			Params:        &cfg.Config{},
+			BackupDir:     "backup/mybackup/",
+			BackupStorage: backupStorage,
+			MilvusStorage: milvusStorage,
+			Store:         jobstate.NewStore(),
+		}
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Error(t, checkSnapshotSupport(tt.plan, tt.opt))
-		})
-	}
+	t.Run("AutoRefuses", func(t *testing.T) {
+		_, err := NewTask(t.Context(), newArgs(StrategyAuto))
+		assert.ErrorContains(t, err, "are not the same one")
+		assert.ErrorContains(t, err, "import_snap")
+	})
+
+	t.Run("RestoreSnapRefuses", func(t *testing.T) {
+		_, err := NewTask(t.Context(), newArgs(StrategyRestoreSnap))
+		assert.ErrorContains(t, err, "are not the same one")
+	})
+
+	// The import path reads the source under the backup storage's own
+	// credentials, spelled out in the external spec.
+	t.Run("ImportSnapPermits", func(t *testing.T) {
+		task, err := NewTask(t.Context(), newArgs(StrategyImportSnap))
+		require.NoError(t, err)
+		assert.False(t, task.snapshotSource.sameService)
+		assert.Contains(t, task.snapshotSource.externalSpec, `"access_key_id":"ak"`)
+	})
+}
+
+// Milvus restores a snapshot bundle on its own terms on the restore api path, so an
+// option asking for anything else is refused rather than silently dropped. The import
+// path creates the collection through the ordinary DDL task and honors them.
+func TestCheckSnapshotSupport(t *testing.T) {
+	// No snapshot data path honors these.
+	t.Run("RefusedOnEveryStrategy", func(t *testing.T) {
+		for _, strategy := range []Strategy{StrategyRestoreSnap, StrategyImportSnap} {
+			assert.Error(t, checkSnapshotSupport(&Option{TruncateBinlogByTs: true}, strategy))
+			assert.Error(t, checkSnapshotSupport(&Option{SecondaryEndpoints: []string{"http://secondary:19530"}}, strategy))
+		}
+	})
+
+	// The restore api creates the collection itself, so these only work on the
+	// import path.
+	t.Run("RefusedOnTheRestorePathOnly", func(t *testing.T) {
+		tests := []struct {
+			name string
+			opt  *Option
+		}{
+			{"SkipCreateCollection", &Option{SkipCreateCollection: true}},
+			{"MetaOnly", &Option{MetaOnly: true}},
+			{"EZKMapping", &Option{EZKMapping: map[string]string{"old": "new"}}},
+		}
+
+		for _, tt := range tests {
+			t.Run(tt.name, func(t *testing.T) {
+				err := checkSnapshotSupport(tt.opt, StrategyRestoreSnap)
+				assert.ErrorContains(t, err, "import_snap")
+				assert.NoError(t, checkSnapshotSupport(tt.opt, StrategyImportSnap))
+			})
+		}
+	})
 
 	// Renaming, filtering and dropping the target are all done before Milvus is asked to
 	// restore, so they stay available.
 	t.Run("SupportedOptions", func(t *testing.T) {
 		opt := &Option{DropExistCollection: true, RestoreRBAC: true}
-		assert.NoError(t, checkSnapshotSupport(&Plan{}, opt))
+		assert.NoError(t, checkSnapshotSupport(opt, StrategyRestoreSnap))
+		assert.NoError(t, checkSnapshotSupport(opt, StrategyImportSnap))
 	})
 
 	// Skipped params are dropped from the restored collection with delete_keys once the
@@ -121,31 +184,18 @@ func TestCheckSnapshotSupport(t *testing.T) {
 			FieldTypeParams:      []string{"mmap.enabled"},
 			IndexParams:          []string{"mmap.enabled"},
 		}}
-		assert.NoError(t, checkSnapshotSupport(&Plan{}, opt))
-	})
-
-	// A description override is applied with an AlterCollection after the restore, so it
-	// stays available even though the collection is created by Milvus.
-	t.Run("DescriptionOverride", func(t *testing.T) {
-		plan := &Plan{CollOverrides: map[string]CollOverride{"db1.coll1": {Description: "new desc"}}}
-		assert.NoError(t, checkSnapshotSupport(plan, &Option{}))
-	})
-
-	// A shard_num override is not refused here: one equal to the bundle's shard count
-	// asks for exactly what the restore produces, and one that differs is checked
-	// against the collection's real shard count in the snapshot task.
-	t.Run("ShardNumOverride", func(t *testing.T) {
-		plan := &Plan{CollOverrides: map[string]CollOverride{"db1.coll1": {ShardNum: 2}}}
-		assert.NoError(t, checkSnapshotSupport(plan, &Option{}))
+		assert.NoError(t, checkSnapshotSupport(opt, StrategyRestoreSnap))
 	})
 }
 
-// The index options are not refused: Milvus restores the bundle's own indexes either way,
-// so there is nothing lost by ignoring them.
+// On the restore api path the index options are not refused: Milvus restores the
+// bundle's own indexes either way, so there is nothing lost by ignoring them. The
+// import path creates indexes through the DDL task, so they are honored there.
 func TestSnapshotIgnoredOptions(t *testing.T) {
 	opt := &Option{RebuildIndex: true, UseAutoIndex: true, DropExistCollection: true}
-	assert.ElementsMatch(t, []string{"restore_index", "use_auto_index"}, snapshotIgnoredOptions(opt))
-	assert.Empty(t, snapshotIgnoredOptions(&Option{}))
+	assert.ElementsMatch(t, []string{"restore_index", "use_auto_index"}, snapshotIgnoredOptions(opt, StrategyRestoreSnap))
+	assert.Empty(t, snapshotIgnoredOptions(opt, StrategyImportSnap))
+	assert.Empty(t, snapshotIgnoredOptions(&Option{}, StrategyRestoreSnap))
 }
 
 // The secondaries option means something only on a server new enough to commit
