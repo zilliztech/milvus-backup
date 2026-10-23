@@ -53,6 +53,12 @@ type posRecord struct {
 type snapshotRecord struct {
 	snapshot   *backuppb.SnapshotBackupInfo
 	snapshotTs uint64
+
+	// dynField is the $meta field as the bundle's schema carries it, nil when
+	// the collection has no dynamic schema. The snapshot metadata holds the
+	// internal schema, which keeps the dynamic field the public
+	// DescribeCollection hides from the DDL half.
+	dynField *backuppb.FieldSchema
 }
 
 func newMetaBuilder(taskID, backupName string) *metaBuilder {
@@ -155,25 +161,65 @@ func (builder *metaBuilder) setFormat(format string) {
 // addSnapshot attaches a collection's exported bundle. snapshotTs is the snapshot's
 // own boundary as Milvus reports it, which is what backup_timestamp means for this
 // format — the flush response the binlog path reads it from has no counterpart here.
-// A bundle that arrives before its collection's DDL waits in the pendings.
-func (builder *metaBuilder) addSnapshot(collRef collref.Name, snapshot *backuppb.SnapshotBackupInfo, snapshotTs uint64) {
+// bundleSchema is the collection schema inside the snapshot metadata: its dynamic
+// field is the one the DDL half cannot get from DescribeCollection, and it is recorded
+// when the meta still lacks it. A bundle that arrives before its collection's DDL
+// waits in the pendings.
+func (builder *metaBuilder) addSnapshot(collRef collref.Name, snapshot *backuppb.SnapshotBackupInfo, snapshotTs uint64, bundleSchema *schemapb.CollectionSchema) error {
+	dynField, err := bundleDynField(bundleSchema)
+	if err != nil {
+		return fmt.Errorf("backup: convert dynamic field in snapshot bundle of %s: %w", collRef.String(), err)
+	}
+	record := snapshotRecord{snapshot: snapshot, snapshotTs: snapshotTs, dynField: dynField}
+
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
 
 	collID := builder.nameToCollID[collRef]
 	collBackup, ok := builder.collectionBackups[collID]
 	if !ok {
-		builder.pendingSnapshot[collRef] = snapshotRecord{snapshot: snapshot, snapshotTs: snapshotTs}
-		return
+		builder.pendingSnapshot[collRef] = record
+		return nil
 	}
 
-	setCollSnapshot(collBackup, snapshotRecord{snapshot: snapshot, snapshotTs: snapshotTs})
+	setCollSnapshot(collBackup, record)
+	return nil
 }
 
 func setCollSnapshot(collBackup *backuppb.CollectionBackupInfo, record snapshotRecord) {
 	collBackup.SnapshotBackup = record.snapshot
 	collBackup.BackupTimestamp = record.snapshotTs
 	collBackup.Size = record.snapshot.GetTotalBytes()
+
+	// The $meta field is recorded once: the bundle and the etcd scan are two
+	// sources for the same field, and whichever lands first wins.
+	if record.dynField != nil &&
+		collBackup.GetSchema().GetEnableDynamicField() &&
+		!hasDynField(collBackup.GetSchema().GetFields()) {
+		collBackup.Schema.Fields = append(collBackup.Schema.Fields, record.dynField)
+	}
+}
+
+// bundleDynField picks the dynamic field out of a snapshot bundle's collection
+// schema, converted for the backup meta. Nil when the schema carries none.
+func bundleDynField(schema *schemapb.CollectionSchema) (*backuppb.FieldSchema, error) {
+	for _, field := range schema.GetFields() {
+		if field.GetIsDynamic() {
+			return convDynField(field)
+		}
+	}
+
+	return nil, nil
+}
+
+func hasDynField(fields []*backuppb.FieldSchema) bool {
+	for _, field := range fields {
+		if field.GetIsDynamic() {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (builder *metaBuilder) addPOS(collRef collref.Name, channelCP map[string]string, maxChannelTS uint64, sealTime uint64) {
@@ -258,17 +304,19 @@ func (builder *metaBuilder) backupCollectionIDs() []int64 {
 	return ids
 }
 
-// dynamicSchemaCollections names the backed-up collections that have dynamic
-// schema enabled, in db.collection form. Their $meta field can only reach the
-// backup through the etcd-backed dynamic field task, so this is what a caller
-// needs in order to say which collections an absent task leaves incomplete.
-func (builder *metaBuilder) dynamicSchemaCollections() []string {
+// collectionsMissingDynField names, in db.collection form, the backed-up
+// collections that have dynamic schema enabled but whose recorded schema still
+// lacks the $meta field. A snapshot-format collection records it from its own
+// bundle; anything else can get it only through the etcd-backed dynamic field
+// task, so this is what a caller needs in order to say which collections an
+// absent task leaves incomplete.
+func (builder *metaBuilder) collectionsMissingDynField() []string {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
 
 	var names []string
 	for _, coll := range builder.data.GetCollectionBackups() {
-		if coll.GetSchema().GetEnableDynamicField() {
+		if coll.GetSchema().GetEnableDynamicField() && !hasDynField(coll.GetSchema().GetFields()) {
 			names = append(names, coll.GetDbName()+"."+coll.GetCollectionName())
 		}
 	}
@@ -329,6 +377,10 @@ func (builder *metaBuilder) addIndexExtraInfo(indexes []*indexpb.FieldIndex) err
 // DefaultValue) and secondary restore would have to reconstruct it blindly.
 // See zilliztech/milvus-backup#1013.
 //
+// A collection that already carries the field — recorded from its snapshot
+// bundle — is left alone: the bundle's copy is the schema the data was written
+// under, and a second $meta would be a corrupt schema.
+//
 // Returns an error if any collection has EnableDynamicField=true but the
 // caller did not supply a matching dynamic field. We treat this as a hard
 // failure rather than silently producing an incomplete backup, since the
@@ -338,7 +390,7 @@ func (builder *metaBuilder) addDynamicFields(dynFields map[int64]*schemapb.Field
 	defer builder.mu.Unlock()
 
 	for _, coll := range builder.data.GetCollectionBackups() {
-		if !coll.GetSchema().GetEnableDynamicField() {
+		if !coll.GetSchema().GetEnableDynamicField() || hasDynField(coll.GetSchema().GetFields()) {
 			continue
 		}
 
