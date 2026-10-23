@@ -1,7 +1,10 @@
 package backup
 
 import (
+	"context"
+	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -40,5 +43,44 @@ func TestCollGCCtrl_RenewalGCLease(t *testing.T) {
 		ticket := ctrl.collIDTicket[1]
 		assert.Equal(t, "old_ticket", ticket.ticketID)
 		assert.Equal(t, expire, ticket.expire)
+	})
+}
+
+func TestClusterGCCtrl_StopRenewal(t *testing.T) {
+	t.Run("StopSignalSurvivesRenewalInFlight", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			var renewals atomic.Int64
+			firstRenewalStarted := make(chan struct{})
+			gate := make(chan struct{})
+
+			manage := milvus.NewMockManage(t)
+			manage.EXPECT().PauseGC(mock.Anything, mock.Anything).Return("ticket", nil).Once()
+			// exactly one renewal may happen: the one in flight while ResumeGC
+			// signals the stop. A second one means the signal was dropped, and
+			// the mock fails the test through its own unexpected-call path.
+			// PauseGC's typed Run takes the unexported option type, so the hook
+			// goes through Once's plain call.
+			manage.EXPECT().PauseGC(mock.Anything, mock.Anything).Once().Run(func(args mock.Arguments) {
+				close(firstRenewalStarted)
+				<-gate // hold the renewal RPC while ResumeGC signals the stop
+				renewals.Add(1)
+			}).Return("ticket", nil)
+			manage.EXPECT().ResumeGC(mock.Anything, mock.Anything).Return(nil).Once()
+
+			ctrl := newClusterGCCtrl("test_task", manage)
+			ctrl.PauseGC(context.Background())
+
+			// resume while the renewal goroutine is inside the renewal RPC: the
+			// stop signal must still reach it once the RPC returns.
+			<-firstRenewalStarted
+			ctrl.ResumeGC(context.Background())
+			close(gate)
+
+			// sleep past the next renewal tick: on a correct implementation the
+			// goroutine has exited and the tick never fires; on a dropped signal
+			// the tick fires a second renewal, which the mock rejects.
+			time.Sleep(2 * _defaultPauseDuration)
+			assert.EqualValues(t, 1, renewals.Load(), "renewal loop must stop after ResumeGC")
+		})
 	})
 }

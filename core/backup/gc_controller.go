@@ -38,6 +38,9 @@ var _ gcCtrl = (*clusterGCCtrl)(nil)
 type clusterGCCtrl struct {
 	manage milvus.Manage
 
+	// stopGC holds at most one pending stop. Buffered because the renewal
+	// goroutine is not at its select while it is inside a renewal RPC: a stop
+	// signaled then must wait there, not drop.
 	stopGC chan struct{}
 
 	logger *zap.Logger
@@ -46,7 +49,7 @@ type clusterGCCtrl struct {
 func newClusterGCCtrl(taskID string, manage milvus.Manage) *clusterGCCtrl {
 	return &clusterGCCtrl{
 		manage: manage,
-		stopGC: make(chan struct{}),
+		stopGC: make(chan struct{}, 1),
 		logger: log.With(zap.String("task_id", taskID)),
 	}
 }
@@ -84,7 +87,7 @@ func (c *clusterGCCtrl) ResumeGC(ctx context.Context) {
 	select {
 	case c.stopGC <- struct{}{}:
 	default:
-		c.logger.Info("stop channel is full, maybe renewal lease goroutine not running")
+		c.logger.Info("stop signal already queued, renewal lease goroutine is stopping or gone")
 	}
 
 	if err := c.manage.ResumeGC(ctx); err != nil {
