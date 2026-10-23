@@ -144,7 +144,12 @@ func (t *Task) Execute(ctx context.Context) error {
 	}
 
 	pchs := t.args.Backup.GetPhysicalChannelNames()
-	t.streamCli = milvus.NewStreamClient(t.args.SourceClusterID, t.args.TaskID, pchs, t.grpc)
+	walName, err := sourceWALName(t.args.Backup)
+	if err != nil {
+		t.tracker.SetFail(err)
+		return err
+	}
+	t.streamCli = milvus.NewStreamClient(t.args.SourceClusterID, t.args.TaskID, pchs, walName, t.grpc)
 
 	if err := t.runDBTasks(ctx); err != nil {
 		t.tracker.SetFail(err)
@@ -213,6 +218,35 @@ func (t *Task) checkBackupHasFullMeta() error {
 		"secondary restore cannot, because it has no point in the source's stream to start "+
 		"replication from. Take the backup again with the default strategy",
 		b.GetName(), strings.Join(missing, ", "))
+}
+
+// sourceWALName learns the source cluster's WAL kind from the flush-all
+// messages the backup captured: every captured message is a real source WAL
+// message, so its id names the source's WAL. The replay stream fabricates
+// message ids of that kind; ids of any other kind would poison the
+// per-source replicate checkpoint milvus persists from the header, and a
+// later real CDC resuming the source's WAL from such a checkpoint fails
+// permanently with STREAMING_CODE_WALNAME_MISMATCH.
+func sourceWALName(b *backuppb.BackupInfo) (message.WALName, error) {
+	for _, msgB64 := range b.GetFlushAllMsgsBase64() {
+		raw, err := base64.StdEncoding.DecodeString(msgB64)
+		if err != nil {
+			continue
+		}
+		var msg commonpb.ImmutableMessage
+		if err := proto.Unmarshal(raw, &msg); err != nil {
+			continue
+		}
+		name := message.WALName(msg.GetId().GetWALName())
+		if milvus.SupportedFakeWALName(name) {
+			return name, nil
+		}
+	}
+	return message.WALNameUnknown, fmt.Errorf("secondary: backup %q carries no flush-all "+
+		"message id naming a supported source WAL (kafka, pulsar, rocksmq or woodpecker). "+
+		"The replay stream cannot fabricate message ids that a later CDC could resume "+
+		"the source's WAL from; take the backup again against a healthy source cluster",
+		b.GetName())
 }
 
 // checkTargetReady requires a zero checkpoint from the expected source on every

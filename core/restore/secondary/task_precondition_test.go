@@ -277,6 +277,58 @@ func TestCheckBackupHasFullMeta(t *testing.T) {
 	})
 }
 
+// flushAllMsgWithWAL builds a backup flush-all entry carrying a message id of
+// the given WAL kind, the way a real source WAL message does.
+func flushAllMsgWithWAL(t *testing.T, walName commonpb.WALName) string {
+	t.Helper()
+	msg := &commonpb.ImmutableMessage{
+		Id:         &commonpb.MessageID{WALName: walName, Id: "anything"},
+		Properties: map[string]string{},
+	}
+	raw, err := proto.Marshal(msg)
+	require.NoError(t, err)
+	return base64.StdEncoding.EncodeToString(raw)
+}
+
+func TestSourceWALName(t *testing.T) {
+	t.Run("the flush-all message id names the source WAL", func(t *testing.T) {
+		b := &backuppb.BackupInfo{Name: "bk", FlushAllMsgsBase64: map[string]string{
+			"dml_0": flushAllMsgWithWAL(t, commonpb.WALName_WoodPecker),
+		}}
+		name, err := sourceWALName(b)
+		require.NoError(t, err)
+		assert.Equal(t, message.WALNameWoodpecker, name)
+	})
+
+	t.Run("entries without a usable id are skipped", func(t *testing.T) {
+		raw, err := proto.Marshal(&commonpb.ImmutableMessage{})
+		require.NoError(t, err)
+		b := &backuppb.BackupInfo{Name: "bk", FlushAllMsgsBase64: map[string]string{
+			"dml_0": base64.StdEncoding.EncodeToString(raw),
+			"dml_1": "not-base64!!!",
+			"dml_2": flushAllMsgWithWAL(t, commonpb.WALName_RocksMQ),
+		}}
+		name, err := sourceWALName(b)
+		require.NoError(t, err)
+		assert.Equal(t, message.WALNameRocksmq, name)
+	})
+
+	t.Run("no usable id is an error naming the backup", func(t *testing.T) {
+		b := &backuppb.BackupInfo{Name: "bk", FlushAllMsgsBase64: map[string]string{
+			"dml_0": flushAllMsgWithWAL(t, commonpb.WALName_Unknown),
+		}}
+		_, err := sourceWALName(b)
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), `"bk"`)
+		assert.Contains(t, err.Error(), "source WAL")
+	})
+
+	t.Run("an empty backup is an error", func(t *testing.T) {
+		_, err := sourceWALName(&backuppb.BackupInfo{Name: "bk"})
+		assert.Error(t, err)
+	})
+}
+
 func TestCheckTargetIsUnusedOtherErrors(t *testing.T) {
 	t.Run("an error other than database-not-found is not a reason to refuse either", func(t *testing.T) {
 		cli := milvus.NewMockGrpc(t)
@@ -349,8 +401,8 @@ func TestExecuteSecondaryPreflight(t *testing.T) {
 		WithHeader(&message.FlushAllMessageHeader{}).
 		WithBody(&message.FlushAllMessageBody{}).
 		WithBroadcast([]string{"src-rootcoord-dml_0_vcchan"}).MustBuildBroadcast().WithBroadcastID(1).SplitIntoMutableMessage()[0].
-		WithTimeTick(100).WithLastConfirmed(milvus.NewFakeMessageID(100)).
-		IntoImmutableMessage(milvus.NewFakeMessageID(100)).IntoImmutableMessageProto()
+		WithTimeTick(100).WithLastConfirmed(milvus.NewFakeMessageID(100, message.WALNameKafka)).
+		IntoImmutableMessage(milvus.NewFakeMessageID(100, message.WALNameKafka)).IntoImmutableMessageProto()
 	flushBytes, err := proto.Marshal(flush)
 	require.NoError(t, err)
 	for _, tc := range []struct {
