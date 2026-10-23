@@ -74,6 +74,12 @@ type Stream interface {
 type StreamClient struct {
 	pchClient map[string]*pchClient
 
+	// sourceWALName names the WAL kind of the source cluster being
+	// impersonated. Fabricated message ids claim this kind so the replicate
+	// checkpoints milvus persists from them stay resumable against the
+	// source's own WAL; see FakeMessageID.
+	sourceWALName message.WALName
+
 	// dispatchMu serializes Send so (alloc wire tt + build + stamp + enqueue)
 	// is atomic, keeping per-pchannel wire time-ticks monotonic across
 	// concurrent callers without any external locking.
@@ -85,7 +91,7 @@ type StreamClient struct {
 	closeOnce  sync.Once
 }
 
-func NewStreamClient(srcClusterID, taskID string, pch []string, grpc Grpc) *StreamClient {
+func NewStreamClient(srcClusterID, taskID string, pch []string, sourceWALName message.WALName, grpc Grpc) *StreamClient {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	pchClients := make(map[string]*pchClient, len(pch))
@@ -94,9 +100,10 @@ func NewStreamClient(srcClusterID, taskID string, pch []string, grpc Grpc) *Stre
 	}
 
 	return &StreamClient{
-		pchClient:  pchClients,
-		ctx:        ctx,
-		cancelFunc: cancel,
+		pchClient:     pchClients,
+		sourceWALName: sourceWALName,
+		ctx:           ctx,
+		cancelFunc:    cancel,
 	}
 }
 
@@ -124,8 +131,8 @@ func (s *StreamClient) Send(ctx context.Context, build func(ts uint64) []message
 		}
 
 		imm := msg.WithTimeTick(wireTS).
-			WithLastConfirmed(NewFakeMessageID(wireTS)).
-			IntoImmutableMessage(NewFakeMessageID(wireTS)).
+			WithLastConfirmed(NewFakeMessageID(wireTS, s.sourceWALName)).
+			IntoImmutableMessage(NewFakeMessageID(wireTS, s.sourceWALName)).
 			IntoImmutableMessageProto()
 
 		pch := GetPch(imm)

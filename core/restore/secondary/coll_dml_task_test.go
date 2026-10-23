@@ -49,8 +49,8 @@ func (s *recordingStream) Send(_ context.Context, build func(ts uint64) []messag
 			wireTS = s.ttCtr
 		}
 		imm := msg.WithTimeTick(wireTS).
-			WithLastConfirmed(milvus.NewFakeMessageID(wireTS)).
-			IntoImmutableMessage(milvus.NewFakeMessageID(wireTS)).
+			WithLastConfirmed(milvus.NewFakeMessageID(wireTS, message.WALNameKafka)).
+			IntoImmutableMessage(milvus.NewFakeMessageID(wireTS, message.WALNameKafka)).
 			IntoImmutableMessageProto()
 		s.msgs = append(s.msgs, imm)
 	}

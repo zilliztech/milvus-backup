@@ -185,8 +185,8 @@ func buildImportMsg(t *testing.T, ts uint64, vchannel string) *commonpb.Immutabl
 	msgs := broadcast.SplitIntoMutableMessage()
 	return msgs[0].
 		WithTimeTick(ts).
-		WithLastConfirmed(NewFakeMessageID(ts)).
-		IntoImmutableMessage(NewFakeMessageID(ts)).
+		WithLastConfirmed(NewFakeMessageID(ts, message.WALNameKafka)).
+		IntoImmutableMessage(NewFakeMessageID(ts, message.WALNameKafka)).
 		IntoImmutableMessageProto()
 }
 
@@ -220,7 +220,7 @@ const (
 func TestStreamClient_SendAndConfirm(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		fs := newFakeReplicateStream()
-		cli := NewStreamClient("src", "task", []string{testPch}, newFakeGrpc(fs))
+		cli := NewStreamClient("src", "task", []string{testPch}, message.WALNameKafka, newFakeGrpc(fs))
 		defer cli.Close()
 
 		synctest.Wait() // runOneConnection establishes
@@ -264,7 +264,7 @@ func TestStreamClient_SendAndConfirm(t *testing.T) {
 func TestStreamClient_ForwardPreservesSourceTT(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		fs := newFakeReplicateStream()
-		cli := NewStreamClient("src", "task", []string{testPch}, newFakeGrpc(fs))
+		cli := NewStreamClient("src", "task", []string{testPch}, message.WALNameKafka, newFakeGrpc(fs))
 		defer cli.Close()
 
 		synctest.Wait()
@@ -289,7 +289,7 @@ func TestStreamClient_ForwardPreservesSourceTT(t *testing.T) {
 func TestStreamClient_BroadcastCollidingPchGetsDistinctTT(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		fs := newFakeReplicateStream()
-		cli := NewStreamClient("src", "task", []string{testPch}, newFakeGrpc(fs))
+		cli := NewStreamClient("src", "task", []string{testPch}, message.WALNameKafka, newFakeGrpc(fs))
 		defer cli.Close()
 
 		synctest.Wait()
@@ -319,7 +319,7 @@ func TestStreamClient_ReplayOnReconnect(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		first := newFakeReplicateStream()
 		second := newFakeReplicateStream()
-		cli := NewStreamClient("src", "task", []string{testPch}, newFakeGrpc(first, second))
+		cli := NewStreamClient("src", "task", []string{testPch}, message.WALNameKafka, newFakeGrpc(first, second))
 		defer cli.Close()
 
 		synctest.Wait()
@@ -367,7 +367,7 @@ func TestStreamClient_ReplayOnReconnect(t *testing.T) {
 func TestStreamClient_ConfirmDropsPrefix(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		fs := newFakeReplicateStream()
-		cli := NewStreamClient("src", "task", []string{testPch}, newFakeGrpc(fs))
+		cli := NewStreamClient("src", "task", []string{testPch}, message.WALNameKafka, newFakeGrpc(fs))
 		defer cli.Close()
 
 		synctest.Wait()
@@ -415,7 +415,7 @@ func TestStreamClient_RoutesByPch(t *testing.T) {
 		// CreateReplicateStream independently. The fakeGrpc hands streams out
 		// in call order — we verify routing by total-count per stream, which
 		// holds regardless of which pch got which stream.
-		cli := NewStreamClient("src", "task", []string{testPch, testPch2}, newFakeGrpc(fsA, fsB))
+		cli := NewStreamClient("src", "task", []string{testPch, testPch2}, message.WALNameKafka, newFakeGrpc(fsA, fsB))
 		defer cli.Close()
 
 		synctest.Wait()
@@ -436,7 +436,7 @@ func TestStreamClient_RoutesByPch(t *testing.T) {
 func TestStreamClient_UnknownPchRejected(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		fs := newFakeReplicateStream()
-		cli := NewStreamClient("src", "task", []string{testPch}, newFakeGrpc(fs))
+		cli := NewStreamClient("src", "task", []string{testPch}, message.WALNameKafka, newFakeGrpc(fs))
 		defer cli.Close()
 
 		synctest.Wait()
@@ -459,7 +459,7 @@ func TestStreamClient_ImmediateEOFBacksOff(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		logs := useObservedLogger(t)
 		g := &eofGrpc{}
-		cli := NewStreamClient("src", "task", []string{testPch}, g)
+		cli := NewStreamClient("src", "task", []string{testPch}, message.WALNameKafka, g)
 		defer cli.Close()
 
 		imm := buildImportMsg(t, 77, testDataVch)
@@ -491,7 +491,7 @@ func TestStreamClient_ConfirmedDisconnectReconnectsImmediately(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		first := newFakeReplicateStream()
 		second := newFakeReplicateStream()
-		cli := NewStreamClient("src", "task", []string{testPch}, newFakeGrpc(first, second))
+		cli := NewStreamClient("src", "task", []string{testPch}, message.WALNameKafka, newFakeGrpc(first, second))
 		defer cli.Close()
 
 		synctest.Wait()
@@ -524,7 +524,7 @@ func TestStreamClient_LifetimeWithoutConfirmCountsAsEstablished(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			first := newFakeReplicateStream()
 			second := newFakeReplicateStream()
-			cli := NewStreamClient("src", "task", []string{testPch}, newFakeGrpc(first, second))
+			cli := NewStreamClient("src", "task", []string{testPch}, message.WALNameKafka, newFakeGrpc(first, second))
 			defer cli.Close()
 
 			synctest.Wait()
@@ -548,7 +548,7 @@ func TestStreamClient_LifetimeWithoutConfirmCountsAsEstablished(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			first := newFakeReplicateStream()
 			second := newFakeReplicateStream()
-			cli := NewStreamClient("src", "task", []string{testPch}, newFakeGrpc(first, second))
+			cli := NewStreamClient("src", "task", []string{testPch}, message.WALNameKafka, newFakeGrpc(first, second))
 			defer cli.Close()
 
 			synctest.Wait()
@@ -580,7 +580,7 @@ func TestStreamClient_WaitConfirmNoProgress(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			logs := useObservedLogger(t)
 			fs := newFakeReplicateStream()
-			cli := NewStreamClient("src", "task", []string{testPch}, newFakeGrpc(fs))
+			cli := NewStreamClient("src", "task", []string{testPch}, message.WALNameKafka, newFakeGrpc(fs))
 			defer cli.Close()
 
 			synctest.Wait()
@@ -626,7 +626,7 @@ func TestStreamClient_WaitConfirmNoProgress(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			logs := useObservedLogger(t)
 			fs := newFakeReplicateStream()
-			cli := NewStreamClient("src", "task", []string{testPch}, newFakeGrpc(fs))
+			cli := NewStreamClient("src", "task", []string{testPch}, message.WALNameKafka, newFakeGrpc(fs))
 
 			synctest.Wait()
 			assert.NoError(t, cli.Forward(context.Background(), buildImportMsg(t, 42, testDataVch)))
