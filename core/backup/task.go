@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
 
+	"github.com/zilliztech/milvus-backup/core/restore/replay"
 	"github.com/zilliztech/milvus-backup/core/tasklet"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
@@ -301,6 +302,10 @@ func (t *Task) privateExecute(ctx context.Context) error {
 
 	if err := t.backupCollDynField(ctx); err != nil {
 		return fmt.Errorf("backup: run coll dyn field task: %w", err)
+	}
+
+	if err := t.checkCollFieldIDs(); err != nil {
+		return fmt.Errorf("backup: check field id replay: %w", err)
 	}
 
 	if err := t.writeMeta(ctx); err != nil {
@@ -667,6 +672,26 @@ func (t *Task) backupCollDynField(ctx context.Context) error {
 	dynFieldTask := newCollDynFieldTask(t.taskID, t.etcd, t.etcdRootPath, t.metaBuilder)
 	if err := dynFieldTask.Execute(ctx); err != nil {
 		return fmt.Errorf("backup: execute coll dyn field task: %w", err)
+	}
+
+	return nil
+}
+
+// checkCollFieldIDs dry-runs restore's field plan after the dynamic field task
+// has enriched every schema available at backup time. It accepts only plans
+// that reproduce every source field ID; an ambiguous hidden $meta is an error,
+// not a successful guess. Meta-only backups use the same restore plan. The
+// snapshot format is exempt because its restore preserves field IDs server-side.
+func (t *Task) checkCollFieldIDs() error {
+	if t.resolvedFormat == meta.FormatSnapshot {
+		return nil
+	}
+
+	for _, coll := range t.metaBuilder.allCollectionBackups() {
+		name := coll.GetDbName() + "." + coll.GetCollectionName()
+		if err := replay.Check(coll.GetSchema()); err != nil {
+			return fmt.Errorf("backup: replay collection %s: %w", name, err)
+		}
 	}
 
 	return nil
