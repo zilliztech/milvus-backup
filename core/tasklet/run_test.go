@@ -81,6 +81,49 @@ func TestRunConcurrent(t *testing.T) {
 
 		assert.ErrorIs(t, err, context.Canceled)
 	})
+
+	t.Run("AcquireFailureJoinsInFlightTasks", func(t *testing.T) {
+		sem := semaphore.NewWeighted(1)
+		ctx, cancel := context.WithCancel(context.Background())
+
+		started := make(chan struct{})
+		var finished atomic.Bool
+		tasks := []Tasklet{
+			funcTask(func(ctx context.Context) error {
+				close(started)
+				time.Sleep(time.Hour) // outlives the acquire failure
+				finished.Store(true)
+				return nil
+			}),
+			funcTask(func(ctx context.Context) error {
+				t.Error("the second task must never be spawned")
+				return nil
+			}),
+		}
+
+		synctest.Test(t, func(t *testing.T) {
+			done := make(chan error, 1)
+			go func() { done <- RunConcurrent(ctx, sem, tasks) }()
+
+			<-started
+			cancel() // the Acquire queued behind the in-flight task now fails
+
+			select {
+			case err := <-done:
+				assert.Failf(t, "RunConcurrent returned while a task was still in flight", "err: %v", err)
+				return
+			case <-time.After(time.Millisecond):
+				// the runner is still parked waiting for the in-flight task
+			}
+
+			err := <-done // virtual time advances past the task's sleep
+			assert.ErrorIs(t, err, context.Canceled)
+		})
+
+		// the in-flight task ran to completion and gave its slot back
+		assert.True(t, finished.Load())
+		assert.True(t, sem.TryAcquire(1))
+	})
 }
 
 func TestRunConcurrentLimit(t *testing.T) {
