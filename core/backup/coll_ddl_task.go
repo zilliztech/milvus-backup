@@ -278,18 +278,6 @@ func (ddlt *collDDLTask) execute(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("backup: convert schema %w", err)
 	}
-	// Restore replays the schema through the guessed $meta split, which only
-	// reproduces the source's field ids when the id space is contiguous. A
-	// dropped field leaves a hole that strands fields on the wrong side of
-	// the split — a create without its vector field, or ids the binlog
-	// import cannot match — so refuse the collection here, before any flush
-	// or copy starts. The snapshot format is exempt: its restore preserves
-	// field ids server-side. See checkFieldIDSpaceFromMeta.
-	if ddlt.metaBuilder.format() != meta.FormatSnapshot {
-		if err := checkFieldIDSpaceFromMeta(ddlt.collRef.String(), schema); err != nil {
-			return fmt.Errorf("backup: check field id space: %w", err)
-		}
-	}
 	indexes, err := ddlt.backupIndexes(ctx)
 	if err != nil {
 		return fmt.Errorf("backup: backup indexes %w", err)

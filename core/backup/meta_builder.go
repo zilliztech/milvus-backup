@@ -152,15 +152,6 @@ func (builder *metaBuilder) setFormat(format string) {
 	builder.data.Format = format
 }
 
-// format returns the artifact the job resolved to write. It is set before any
-// collection task runs, so tasks can consult it without extra plumbing.
-func (builder *metaBuilder) format() string {
-	builder.mu.Lock()
-	defer builder.mu.Unlock()
-
-	return builder.data.GetFormat()
-}
-
 // addSnapshot attaches a collection's exported bundle. snapshotTs is the snapshot's
 // own boundary as Milvus reports it, which is what backup_timestamp means for this
 // format — the flush response the binlog path reads it from has no counterpart here.
@@ -268,8 +259,8 @@ func (builder *metaBuilder) backupCollectionIDs() []int64 {
 }
 
 // allCollectionBackups returns every collection backup recorded so far. The
-// field-id-space check uses it for a job-wide pass over the collected schemas
-// once the collection and dynamic field tasks have settled.
+// field replay check uses it once the collection and dynamic field tasks have
+// settled, when the most complete schemas are available.
 func (builder *metaBuilder) allCollectionBackups() []*backuppb.CollectionBackupInfo {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()

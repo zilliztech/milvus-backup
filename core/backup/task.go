@@ -11,6 +11,7 @@ import (
 	"go.uber.org/zap"
 	"golang.org/x/sync/semaphore"
 
+	"github.com/zilliztech/milvus-backup/core/restore/replay"
 	"github.com/zilliztech/milvus-backup/core/tasklet"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
@@ -304,7 +305,7 @@ func (t *Task) privateExecute(ctx context.Context) error {
 	}
 
 	if err := t.checkCollFieldIDs(); err != nil {
-		return fmt.Errorf("backup: check field id space: %w", err)
+		return fmt.Errorf("backup: check field id replay: %w", err)
 	}
 
 	if err := t.writeMeta(ctx); err != nil {
@@ -676,13 +677,11 @@ func (t *Task) backupCollDynField(ctx context.Context) error {
 	return nil
 }
 
-// checkCollFieldIDs refuses to write a backup whose collections' field IDs
-// restore cannot reproduce. It runs after the dynamic field task so that
-// enriched schemas carry the real $meta slot: a hole that the per-collection
-// DDL check could only flag as ambiguous becomes decidable here. Meta-only
-// backups are gated too — their restore replays the same guessed split, which
-// can strand the vector field on the add-field side and fail at create. The
-// snapshot format is exempt: its restore preserves field IDs server-side.
+// checkCollFieldIDs dry-runs restore's field plan after the dynamic field task
+// has enriched every schema available at backup time. It accepts only plans
+// that reproduce every source field ID; an ambiguous hidden $meta is an error,
+// not a successful guess. Meta-only backups use the same restore plan. The
+// snapshot format is exempt because its restore preserves field IDs server-side.
 func (t *Task) checkCollFieldIDs() error {
 	if t.resolvedFormat == meta.FormatSnapshot {
 		return nil
@@ -690,8 +689,8 @@ func (t *Task) checkCollFieldIDs() error {
 
 	for _, coll := range t.metaBuilder.allCollectionBackups() {
 		name := coll.GetDbName() + "." + coll.GetCollectionName()
-		if err := checkFieldIDSpaceFromMeta(name, coll.GetSchema()); err != nil {
-			return fmt.Errorf("backup: %w", err)
+		if err := replay.Check(coll.GetSchema()); err != nil {
+			return fmt.Errorf("backup: replay collection %s: %w", name, err)
 		}
 	}
 
