@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
+	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -60,7 +61,21 @@ func newSnapshotTaskFixture(t *testing.T) *snapshotTaskFixture {
 	milvusStore := bundleStore{cli: newLocalTestClient(t, f.milvusDir)}
 	source := &snapshotbundle.SnapshotData{
 		SnapshotInfo: &datapb.SnapshotInfo{Id: 2, CollectionId: 1, Name: "mbk_mybackup"},
-		Collection:   &datapb.CollectionDescription{NumShards: 1},
+		Collection: &datapb.CollectionDescription{
+			NumShards: 1,
+			// The internal schema the server writes: every field, $meta included,
+			// where DescribeCollection hides it.
+			Schema: &schemapb.CollectionSchema{
+				EnableDynamicField: true,
+				Fields: []*schemapb.FieldSchema{
+					{FieldID: 0, Name: "RowID", DataType: schemapb.DataType_Int64},
+					{FieldID: 1, Name: "Timestamp", DataType: schemapb.DataType_Int64},
+					{FieldID: 100, Name: "pk", IsPrimaryKey: true, DataType: schemapb.DataType_Int64},
+					{FieldID: 101, Name: "vec", DataType: schemapb.DataType_FloatVector},
+					{FieldID: 102, Name: "$meta", DataType: schemapb.DataType_JSON, IsDynamic: true, Nullable: true},
+				},
+			},
+		},
 		Segments: []*datapb.SegmentDescription{
 			{
 				SegmentId:      1001,
@@ -180,6 +195,36 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 		require.NotNil(t, dml)
 		assert.Equal(t, jobstate.BackupCollDMLStateSuccess, dml.State)
 		assert.Equal(t, int64(len(f.binlogData)+len(f.statsData)), dml.TotalSize)
+	})
+
+	// The DDL half's DescribeCollection never returns $meta; the bundle's own
+	// schema does, and the task records it on the collection — no etcd needed.
+	t.Run("RecordsDynamicFieldFromBundleSchema", func(t *testing.T) {
+		f := newSnapshotTaskFixture(t)
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().CreateSnapshot(mock.Anything, "db1", "coll1", "mbk_mybackup", time.Duration(0)).Return(nil)
+		cli.EXPECT().DescribeSnapshot(mock.Anything, "db1", "coll1", "mbk_mybackup").
+			Return(&milvuspb.DescribeSnapshotResponse{CreateTs: 456, S3Location: f.sourceS3}, nil)
+		cli.EXPECT().DropSnapshot(mock.Anything, "db1", "coll1", "mbk_mybackup").Return(nil).Once()
+
+		task, builder, _ := f.newTask(t, cli)
+		coll := builder.data.GetCollectionBackups()[0]
+		coll.Schema = &backuppb.CollectionSchema{
+			EnableDynamicField: true,
+			Fields: []*backuppb.FieldSchema{
+				{FieldID: 100, Name: "pk", IsPrimaryKey: true, DataType: backuppb.DataType_Int64},
+				{FieldID: 101, Name: "vec", DataType: backuppb.DataType_FloatVector},
+			},
+		}
+		require.NoError(t, task.Execute(context.Background()))
+
+		fields := coll.GetSchema().GetFields()
+		require.Len(t, fields, 3)
+		assert.Equal(t, "$meta", fields[2].GetName())
+		assert.Equal(t, int64(102), fields[2].GetFieldID())
+		assert.True(t, fields[2].GetIsDynamic())
+		assert.True(t, fields[2].GetNullable())
+		assert.Empty(t, builder.collectionsMissingDynField())
 	})
 
 	// A source file that vanished between snapshot creation and the copy fails

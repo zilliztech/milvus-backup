@@ -19,19 +19,21 @@ func _() {
 	_ = x[Snapshot-256]
 	_ = x[ImportV2-512]
 	_ = x[Import2PC-1024]
+	_ = x[ImportSnapshot-2048]
 }
 
 const (
-	_FeatureFlag_name_0 = "MultiDatabaseDescribeDatabase"
-	_FeatureFlag_name_1 = "MultiL0InOneJob"
-	_FeatureFlag_name_2 = "GetSegmentInfo"
-	_FeatureFlag_name_3 = "FlushAll"
-	_FeatureFlag_name_4 = "CollectionLevelGCControl"
-	_FeatureFlag_name_5 = "FuncRuntimeCheck"
-	_FeatureFlag_name_6 = "ReplicateMessage"
-	_FeatureFlag_name_7 = "Snapshot"
-	_FeatureFlag_name_8 = "ImportV2"
-	_FeatureFlag_name_9 = "Import2PC"
+	_FeatureFlag_name_0  = "MultiDatabaseDescribeDatabase"
+	_FeatureFlag_name_1  = "MultiL0InOneJob"
+	_FeatureFlag_name_2  = "GetSegmentInfo"
+	_FeatureFlag_name_3  = "FlushAll"
+	_FeatureFlag_name_4  = "CollectionLevelGCControl"
+	_FeatureFlag_name_5  = "FuncRuntimeCheck"
+	_FeatureFlag_name_6  = "ReplicateMessage"
+	_FeatureFlag_name_7  = "Snapshot"
+	_FeatureFlag_name_8  = "ImportV2"
+	_FeatureFlag_name_9  = "Import2PC"
+	_FeatureFlag_name_10 = "ImportSnapshot"
 )
 
 var (
@@ -61,6 +63,8 @@ func (i FeatureFlag) String() string {
 		return _FeatureFlag_name_8
 	case i == 1024:
 		return _FeatureFlag_name_9
+	case i == 2048:
+		return _FeatureFlag_name_10
 	default:
 		return "FeatureFlag(" + strconv.FormatInt(int64(i), 10) + ")"
 	}

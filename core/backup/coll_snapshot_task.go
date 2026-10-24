@@ -157,7 +157,9 @@ func (st *collSnapshotTask) execute(ctx context.Context) error {
 		TotalFiles:   int64(len(files.attrs)),
 		TotalBytes:   files.totalBytes,
 	}
-	st.metaBuilder.addSnapshot(st.collRef, snapshotBackup, uint64(desc.GetCreateTs()))
+	if err := st.metaBuilder.addSnapshot(st.collRef, snapshotBackup, uint64(desc.GetCreateTs()), snapshot.Collection.GetSchema()); err != nil {
+		return fmt.Errorf("backup: record snapshot bundle in meta: %w", err)
+	}
 
 	st.logger.Info("backup collection with snapshot done",
 		zap.String("metadata_path", metadataPath),

@@ -36,6 +36,10 @@ type collSnapshotTask struct {
 	descOverride     string
 	skipParams       SkipParams
 
+	// staging copies the bundle into the milvus storage before the restore;
+	// nil when the backup already sits on the target's storage service.
+	staging *snapshotStaging
+
 	pollInterval time.Duration
 
 	grpcCli milvus.Grpc
@@ -59,6 +63,7 @@ type collSnapshotTaskArgs struct {
 	shardNumOverride int32
 	descOverride     string
 	skipParams       SkipParams
+	staging          *snapshotStaging
 
 	grpcCli milvus.Grpc
 	job     *jobstate.RestoreJobTracker
@@ -84,6 +89,7 @@ func newCollSnapshotTask(args collSnapshotTaskArgs) *collSnapshotTask {
 		shardNumOverride: args.shardNumOverride,
 		descOverride:     args.descOverride,
 		skipParams:       args.skipParams,
+		staging:          args.staging,
 
 		pollInterval: _snapshotPollInterval,
 
@@ -144,10 +150,13 @@ func (ct *collSnapshotTask) privateExecute(ctx context.Context) error {
 			zap.Int32("shard_num", ct.shardNumOverride))
 	}
 
-	metadataURI, err := ct.source.metadataURI(ct.collBackup.GetSnapshotBackup().GetMetadataPath())
+	metadataURI, cleanup, err := ct.resolveMetadataURI(ctx)
 	if err != nil {
 		return err
 	}
+	// The staged copy is consumed by the restore job, so it leaves once the job
+	// settles — succeeded or not.
+	defer cleanup(ctx)
 
 	if err := ct.dropExistedColl(ctx); err != nil {
 		return err
@@ -175,6 +184,20 @@ func (ct *collSnapshotTask) privateExecute(ctx context.Context) error {
 	}
 
 	return ct.applyDescOverride(ctx)
+}
+
+// resolveMetadataURI resolves the uri of the collection's snapshot metadata: read
+// from the backup's current location when it sits on the target's storage service, or
+// staged into the milvus storage first when it does not. The returned cleanup removes
+// the staged copy; it is a no-op for a restore that read in place.
+func (ct *collSnapshotTask) resolveMetadataURI(ctx context.Context) (string, func(context.Context), error) {
+	metadataPath := ct.collBackup.GetSnapshotBackup().GetMetadataPath()
+	if ct.staging == nil {
+		uri, err := ct.source.metadataURI(metadataPath)
+		return uri, func(context.Context) {}, err
+	}
+
+	return ct.staging.stage(ctx, ct.logger, ct.taskID, ct.target, metadataPath)
 }
 
 // applySkipParams drops the params the caller asked to skip from the restored collection.

@@ -212,15 +212,20 @@ func NewTask(ctx context.Context, args TaskArgs) (*Task, error) {
 	}
 
 	if format == meta.FormatSnapshot {
-		if err := checkSnapshotSupport(args.Plan, args.Option); err != nil {
+		// The import path is opt-in only, so the option checks key on the pin
+		// itself; the target's capabilities are checked at plan time, once the
+		// client is up.
+		strategy := args.Option.Strategy
+		if err := checkSnapshotSupport(args.Option, strategy); err != nil {
 			return nil, err
 		}
-		if ignored := snapshotIgnoredOptions(args.Option); len(ignored) != 0 {
-			logger.Warn("options do not apply to a snapshot format backup and are ignored",
+		if ignored := snapshotIgnoredOptions(args.Option, strategy); len(ignored) != 0 {
+			logger.Warn("options do not apply to a snapshot format backup restored with the restore api and are ignored",
 				zap.Strings("options", ignored))
 		}
 
-		source, err := newSnapshotSource(ctx, args.MilvusStorage.Config(), args.BackupStorage.Config(), args.BackupDir)
+		source, err := newSnapshotSource(ctx, args.MilvusStorage.Config(), args.BackupStorage.Config(), args.BackupDir,
+			strategy == StrategyImportSnap)
 		if err != nil {
 			return nil, err
 		}
@@ -228,7 +233,8 @@ func NewTask(ctx context.Context, args TaskArgs) (*Task, error) {
 		logger.Info("restore from snapshot bundles",
 			zap.String("source_uri", source.dirURI),
 			zap.Bool("external_spec_set", source.externalSpec != ""),
-			zap.Bool("source_sas_set", source.sourceSASSet))
+			zap.Bool("source_sas_set", source.sourceSASSet),
+			zap.Bool("staging", source.staging))
 	} else {
 		task.streaming = storage.UseStreaming(args.Params.Transfer.Mode.Val,
 			args.BackupStorage.Config(), args.MilvusStorage.Config())
@@ -242,47 +248,62 @@ func NewTask(ctx context.Context, args TaskArgs) (*Task, error) {
 	return task, nil
 }
 
-// The snapshot path hands the whole restore to Milvus: it creates the collection from the
-// schema in the bundle, restores its indexes and partitions, and copies the data in. Options
-// that ask for something else would silently hand back a collection nobody asked for.
-// skip_params is not one of them: the skipped keys are dropped from the restored collection
-// with delete_keys once the job completes, which is what skipping them at creation time
-// achieves on the binlog path.
-func checkSnapshotSupport(plan *Plan, opt *Option) error {
+// checkSnapshotSupport refuses the options no snapshot data path can honor, and —
+// keyed on the resolved strategy — the ones only the import path honors. The restore
+// api path hands the whole restore to Milvus: it creates the collection from the
+// schema in the bundle, restores its indexes and partitions, and copies the data in, so
+// options that ask for something else would silently hand back a collection nobody
+// asked for. The import path creates the collection through the ordinary DDL task and
+// honors them. skip_params needs neither list: on the restore path the skipped keys
+// are dropped with delete_keys once the job completes, on the import path they are
+// simply not written, both matching what the binlog path achieves at creation time.
+func checkSnapshotSupport(opt *Option, strategy Strategy) error {
 	var unsupported []string
-	if opt.SkipCreateCollection {
-		unsupported = append(unsupported, "skip_create_collection")
-	}
-	if opt.MetaOnly {
-		unsupported = append(unsupported, "meta_only")
-	}
 	if opt.TruncateBinlogByTs {
 		unsupported = append(unsupported, "truncate_binlog_by_ts")
-	}
-	if len(opt.EZKMapping) != 0 {
-		unsupported = append(unsupported, "ezk_mapping")
 	}
 	if len(opt.SecondaryEndpoints) != 0 {
 		unsupported = append(unsupported, "secondaries")
 	}
-	// A description override is applied with an AlterCollection after the restore
-	// completes, so it stays available. A shard_num override is checked per collection
-	// against the bundle's shard count in the snapshot task, where that count is known:
-	// an override asking for exactly what the restore produces passes, anything that
-	// would change the shard count is refused.
+	// A description override stays available on both paths: the restore api applies it
+	// with an AlterCollection once the job completes, the import path sets it at
+	// creation time. A shard_num override is checked per collection, where the bundle's
+	// shard count is known.
 	if len(unsupported) != 0 {
 		return fmt.Errorf("restore: %s cannot be used with a snapshot format backup",
 			strings.Join(unsupported, ", "))
 	}
 
+	if strategy == StrategyImportSnap {
+		return nil
+	}
+	var restoreOnly []string
+	if opt.SkipCreateCollection {
+		restoreOnly = append(restoreOnly, "skip_create_collection")
+	}
+	if opt.MetaOnly {
+		restoreOnly = append(restoreOnly, "meta_only")
+	}
+	if len(opt.EZKMapping) != 0 {
+		restoreOnly = append(restoreOnly, "ezk_mapping")
+	}
+	if len(restoreOnly) != 0 {
+		return fmt.Errorf("restore: %s cannot be used with the restore api strategy; the import_snap strategy supports them, on a Milvus 3.0.4 or newer target",
+			strings.Join(restoreOnly, ", "))
+	}
+
 	return nil
 }
 
-// snapshotIgnoredOptions names the options the snapshot path does not read: Milvus restores
-// the bundle's own indexes either way, and there is no import job to pick an api for. A
-// strategy pin that mismatches the snapshot format is not ignored but refused, at plan
-// selection.
-func snapshotIgnoredOptions(opt *Option) []string {
+// snapshotIgnoredOptions names the options the restore api path does not read: Milvus
+// restores the bundle's own indexes either way. The import path creates indexes through
+// the ordinary DDL task, so the index options are honored there. A strategy pin that
+// mismatches the snapshot format is not ignored but refused, at plan selection.
+func snapshotIgnoredOptions(opt *Option, strategy Strategy) []string {
+	if strategy == StrategyImportSnap {
+		return nil
+	}
+
 	var ignored []string
 	if opt.DropExistIndex {
 		ignored = append(ignored, "drop_exist_index")

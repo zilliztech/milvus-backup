@@ -50,7 +50,7 @@ func TestNewSnapshotSource(t *testing.T) {
 		backupCfg := milvusCfg
 		backupCfg.Bucket = "backup-bucket"
 
-		source, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/")
+		source, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
 		require.NoError(t, err)
 		assert.Equal(t, "s3://backup-bucket/backup/mybackup", source.dirURI)
 		assert.Empty(t, source.externalSpec)
@@ -69,23 +69,56 @@ func TestNewSnapshotSource(t *testing.T) {
 			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
 		}
 
-		source, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/")
+		source, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
 		require.NoError(t, err)
 		assert.Equal(t, "s3://backup-bucket/backup/mybackup", source.dirURI)
 		assert.Contains(t, source.externalSpec, `"access_key_id":"ak"`)
 	})
 
-	// A backup held on another provider's service is unreadable to the
-	// server-side copy, so the restore refuses it before any job is submitted.
-	t.Run("CrossServiceFails", func(t *testing.T) {
+	// A backup held on another provider's service cannot ride the server-side
+	// copy, so the restore path stages it into the milvus storage first: no uri
+	// or spec exists until the bundle has been copied over.
+	t.Run("CrossServiceStagesForTheRestorePath", func(t *testing.T) {
 		milvusCfg := storage.Config{Provider: cfg.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket"}
 		backupCfg := storage.Config{
 			Provider: cfg.ProviderS3, Region: "us-west-2", Bucket: "backup-bucket",
 			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
 		}
 
-		_, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/")
-		assert.ErrorContains(t, err, "are not the same one")
+		source, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
+		require.NoError(t, err)
+		assert.True(t, source.staging)
+		assert.Empty(t, source.dirURI)
+		assert.Empty(t, source.externalSpec)
+	})
+
+	// Staging still needs a milvus storage a snapshot uri can name; a local one
+	// is refused before any copying starts.
+	t.Run("StagingOntoLocalMilvusStorageFails", func(t *testing.T) {
+		milvusCfg := storage.Config{Provider: cfg.ProviderLocal}
+		backupCfg := storage.Config{
+			Provider: cfg.ProviderS3, Region: "us-west-2", Bucket: "backup-bucket",
+			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
+		}
+
+		_, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
+		assert.Error(t, err)
+	})
+
+	// The import path reads the source itself, so a backup on another service is
+	// not staged: the spec carries the source's own credentials.
+	t.Run("CrossServiceSendsSpecForTheImportPath", func(t *testing.T) {
+		milvusCfg := storage.Config{Provider: cfg.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket"}
+		backupCfg := storage.Config{
+			Provider: cfg.ProviderS3, Region: "us-west-2", Bucket: "backup-bucket",
+			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
+		}
+
+		source, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", true)
+		require.NoError(t, err)
+		assert.False(t, source.staging)
+		assert.Equal(t, "s3://backup-bucket/backup/mybackup", source.dirURI)
+		assert.Contains(t, source.externalSpec, `"access_key_id":"ak"`)
 	})
 
 	// A restore whose backup container lives in another storage account reads
@@ -95,7 +128,7 @@ func TestNewSnapshotSource(t *testing.T) {
 		milvusCfg := azureCfg("milvus-account", "milvus-bucket")
 		backupCfg := azureCfg("backup-account", "backup-bucket")
 
-		source, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/")
+		source, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
 		require.NoError(t, err)
 		assert.Equal(t, "azure://backup-account.blob.core.windows.net/backup-bucket/backup/mybackup", source.dirURI)
 
@@ -112,7 +145,7 @@ func TestNewSnapshotSource(t *testing.T) {
 		backupCfg := azureCfg("backup-account", "backup-bucket")
 		backupCfg.SourceSAS = "?sv=2024-08-04&sig=abc"
 
-		source, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/")
+		source, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
 		require.NoError(t, err)
 		assert.Equal(t, "sv=2024-08-04&sig=abc", extfs(t, source.externalSpec)["source_sas_token"])
 	})
@@ -124,13 +157,14 @@ func TestNewSnapshotSource(t *testing.T) {
 		backupCfg := azureCfg("account", "backup-bucket")
 		backupCfg.SourceSAS = "sv=2024-08-04&sig=abc"
 
-		_, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/")
+		_, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
 		assert.ErrorContains(t, err, "crosses azure storage accounts")
 	})
 
 	// A SAS minted for a backup on another provider's service never gets as far
-	// as the token check: the copy cannot cross services to begin with.
-	t.Run("NonAzureMilvusWithSASFails", func(t *testing.T) {
+	// as the token check: that copy stages instead of riding the server-side
+	// copy the SAS is for.
+	t.Run("NonAzureMilvusWithSASStages", func(t *testing.T) {
 		milvusCfg := storage.Config{
 			Provider: cfg.ProviderMinio, Endpoint: "minio:9000", Bucket: "milvus-bucket",
 			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
@@ -138,8 +172,9 @@ func TestNewSnapshotSource(t *testing.T) {
 		backupCfg := azureCfg("backup-account", "backup-bucket")
 		backupCfg.SourceSAS = "sv=2024-08-04&sig=abc"
 
-		_, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/")
-		assert.ErrorContains(t, err, "are not the same one")
+		source, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
+		require.NoError(t, err)
+		assert.True(t, source.staging)
 	})
 }
 

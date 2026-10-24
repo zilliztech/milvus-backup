@@ -55,6 +55,7 @@ const (
 	Snapshot
 	ImportV2
 	Import2PC
+	ImportSnapshot
 )
 
 type featureTuple struct {
@@ -101,6 +102,11 @@ var _featureTuples = []featureTuple{
 	// to 3.0 before any 2.7 release existed — no 2.7 build ever shipped, so the real
 	// floor is 3.0.
 	{Constraints: lo.Must(semver.NewConstraint(">= 3.0.0-0")), Flag: Import2PC},
+	// ImportSnapshot is snapshot-sourced backup import through the import pipeline: the
+	// source_type=snapshot contract with external_spec and partition_mapping
+	// (milvus-io/milvus#52932). It merged after the v3.0.3 tag, so the first release
+	// carrying it on the 3.0 line is 3.0.4.
+	{Constraints: lo.Must(semver.NewConstraint(">= 3.0.4-0")), Flag: ImportSnapshot},
 }
 
 func defaultDialOpt() []grpc.DialOption {

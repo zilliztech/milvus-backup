@@ -641,6 +641,11 @@ func (t *Task) backupIndexExtraInfo(ctx context.Context) error {
 // reconstruct the field with hardcoded defaults that may not match the source
 // collection. See zilliztech/milvus-backup#1013.
 //
+// The snapshot format gets there without etcd: the bundle's metadata carries the
+// internal schema, and the snapshot task records the $meta field from it. The etcd
+// scan runs only for collections still lacking the field, so a snapshot backup
+// skips it altogether.
+//
 // Reuses the etcd client created for BackupIndexExtra; if etcd is not
 // configured (BackupIndexExtra disabled) the task is skipped.
 //
@@ -650,15 +655,17 @@ func (t *Task) backupIndexExtraInfo(ctx context.Context) error {
 // naming the collections it leaves incomplete -- that message is the only place
 // the missing option is visible before a restore fails on it much later.
 func (t *Task) backupCollDynField(ctx context.Context) error {
+	missing := t.metaBuilder.collectionsMissingDynField()
+	if len(missing) == 0 {
+		t.logger.Info("skip backup collection dynamic field, every dynamic schema already carries its $meta field")
+		return nil
+	}
+
 	if t.etcd == nil {
-		if affected := t.metaBuilder.dynamicSchemaCollections(); len(affected) > 0 {
-			t.logger.Warn("dynamic field not recorded, this backup cannot serve a secondary restore",
-				zap.Strings("collections_with_dynamic_schema", affected),
-				zap.String("reason", "index extra info is off, so there is no etcd client to read $meta with"),
-				zap.String("enable_with", "--backup_index_extra, or with_index_extra in the REST create request"))
-			return nil
-		}
-		t.logger.Info("skip backup collection dynamic field, etcd client is not initialized")
+		t.logger.Warn("dynamic field not recorded, this backup cannot serve a secondary restore",
+			zap.Strings("collections_with_dynamic_schema", missing),
+			zap.String("reason", "index extra info is off, so there is no etcd client to read $meta with"),
+			zap.String("enable_with", "--backup_index_extra, or with_index_extra in the REST create request"))
 		return nil
 	}
 
