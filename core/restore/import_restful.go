@@ -186,27 +186,33 @@ func (im *restfulImporter) createJob(ctx context.Context, manualCommit bool) (st
 	return jobID, nil
 }
 
-// waitCompleted polls the job until it completes, settling the job half.
-func (im *restfulImporter) waitCompleted(ctx context.Context, jobID string) error {
-	state := func(ctx context.Context) (importJobState, error) {
-		resp, err := im.args.restfulCli.GetBulkInsertState(ctx, im.args.target.DBName(), jobID)
+// restfulJobState fetches one snapshot of a restful import job, normalized for
+// waitImportJob: a failed job answers its reason, and reaching terminal ends the
+// wait — Completed for a single-phase job, Uncommitted for the two-phase one.
+func restfulJobState(logger *zap.Logger, cli milvus.Restful, db, jobID string, terminal milvus.ImportState) func(ctx context.Context) (importJobState, error) {
+	return func(ctx context.Context) (importJobState, error) {
+		resp, err := cli.GetBulkInsertState(ctx, db, jobID)
 		if err != nil {
 			return importJobState{}, err
 		}
 
-		im.args.logger.Info("bulk insert task state", zap.String("job_id", jobID),
+		logger.Info("bulk insert task state", zap.String("job_id", jobID),
 			zap.String("state", resp.Data.State),
 			zap.Int("progress", resp.Data.Progress))
 		switch resp.Data.State {
 		case string(milvus.ImportStateFailed):
 			return importJobState{failedReason: resp.Data.Reason}, nil
-		case string(milvus.ImportStateCompleted):
+		case string(terminal):
 			return importJobState{completed: true}, nil
 		default:
 			return importJobState{progress: resp.Data.Progress}, nil
 		}
 	}
+}
 
+// waitCompleted polls the job until it completes, settling the job half.
+func (im *restfulImporter) waitCompleted(ctx context.Context, jobID string) error {
+	state := restfulJobState(im.args.logger, im.args.restfulCli, im.args.target.DBName(), jobID, milvus.ImportStateCompleted)
 	if err := waitImportJob(ctx, im.args.logger, im.job, jobID, state); err != nil {
 		return err
 	}
@@ -218,25 +224,7 @@ func (im *restfulImporter) waitCompleted(ctx context.Context, jobID string) erro
 // two-phase job is waited to before anyone commits it. Progress stays short of
 // 100: the data is not visible yet, and the job half is not settled.
 func (im *restfulImporter) waitUncommitted(ctx context.Context, jobID string) error {
-	state := func(ctx context.Context) (importJobState, error) {
-		resp, err := im.args.restfulCli.GetBulkInsertState(ctx, im.args.target.DBName(), jobID)
-		if err != nil {
-			return importJobState{}, err
-		}
-
-		im.args.logger.Info("bulk insert task state", zap.String("job_id", jobID),
-			zap.String("state", resp.Data.State),
-			zap.Int("progress", resp.Data.Progress))
-		switch resp.Data.State {
-		case string(milvus.ImportStateFailed):
-			return importJobState{failedReason: resp.Data.Reason}, nil
-		case string(milvus.ImportStateUncommitted):
-			return importJobState{completed: true}, nil
-		default:
-			return importJobState{progress: resp.Data.Progress}, nil
-		}
-	}
-
+	state := restfulJobState(im.args.logger, im.args.restfulCli, im.args.target.DBName(), jobID, milvus.ImportStateUncommitted)
 	return waitImportJob(ctx, im.args.logger, im.job, jobID, state)
 }
 

@@ -50,6 +50,17 @@ func oneCollTargets() []collTarget {
 	}}
 }
 
+// oneSnapCollTargets adds the bundle pointer a snapshot backup carries: the
+// metadata path the import and restore api calls resolve against the backup
+// directory.
+func oneSnapCollTargets() []collTarget {
+	targets := oneCollTargets()
+	targets[0].collBackup.SnapshotBackup = &backuppb.SnapshotBackupInfo{
+		MetadataPath: "bundle/snapshots/1/metadata/2.json",
+	}
+	return targets
+}
+
 // The plan is picked by the backup's format and the strategy: the format
 // narrows which strategies exist, auto resolves a binlog backup against the
 // target's v2 import support, and a pin outside the format's set is a loud
@@ -144,11 +155,46 @@ func TestTask_selectPlan(t *testing.T) {
 		assert.IsType(t, &restoreSnapPlan{}, plan)
 	})
 
-	t.Run("SnapshotImportSnapNotImplemented", func(t *testing.T) {
+	// The import plan is one DDL head and one snapshot import job per
+	// collection: the api expands the bundle's partitions and segments itself.
+	t.Run("SnapshotImportSnap", func(t *testing.T) {
 		task := newSelectPlanTask(t, meta.FormatSnapshot, StrategyImportSnap)
+		task.snapshotSource = snapshotSource{dirURI: "s3://backup-bucket/backup/mybackup", sameService: true}
+		grpcCli := milvus.NewMockGrpc(t)
+		grpcCli.EXPECT().HasFeature(milvus.ImportSnapshot).Return(true)
+		task.grpc = grpcCli
 
-		_, err := task.selectPlan(t.Context(), nil)
-		assert.ErrorContains(t, err, "not implemented")
+		plan, err := task.selectPlan(t.Context(), oneSnapCollTargets())
+		require.NoError(t, err)
+		ip, ok := plan.(*importSnapPlan)
+		require.True(t, ok, "plan is %T, want *importSnapPlan", plan)
+		require.Len(t, ip.colls, 1)
+		assert.IsType(t, &collDDLTask{}, ip.colls[0].ddl)
+		imp := ip.colls[0].imp.(*snapshotImportTask)
+		assert.Equal(t, "s3://backup-bucket/backup/mybackup/bundle/snapshots/1/metadata/2.json", imp.metadataURI)
+		assert.JSONEq(t, `{"p1": "p1"}`, imp.partitionMapping)
+	})
+
+	t.Run("SnapshotImportSnapNeedsNewerServer", func(t *testing.T) {
+		task := newSelectPlanTask(t, meta.FormatSnapshot, StrategyImportSnap)
+		grpcCli := milvus.NewMockGrpc(t)
+		grpcCli.EXPECT().HasFeature(milvus.ImportSnapshot).Return(false)
+		task.grpc = grpcCli
+
+		_, err := task.selectPlan(t.Context(), oneSnapCollTargets())
+		assert.ErrorContains(t, err, "3.0.4")
+	})
+
+	t.Run("SnapshotImportSnapMetaOnlyBuildsNoDataTasks", func(t *testing.T) {
+		task := newSelectPlanTask(t, meta.FormatSnapshot, StrategyImportSnap)
+		task.args.Option.MetaOnly = true
+		grpcCli := milvus.NewMockGrpc(t)
+		grpcCli.EXPECT().HasFeature(milvus.ImportSnapshot).Return(true)
+		task.grpc = grpcCli
+
+		plan, err := task.selectPlan(t.Context(), oneSnapCollTargets())
+		require.NoError(t, err)
+		assert.IsType(t, &metaOnlyPlan{}, plan)
 	})
 
 	t.Run("SnapshotRejectsBinlogStrategies", func(t *testing.T) {
