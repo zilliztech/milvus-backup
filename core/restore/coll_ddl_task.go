@@ -250,10 +250,12 @@ func (ddlt *collDDLTask) createColl(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("restore: conv struct array fields: %w", err)
 	}
+	// CollectionSchema.AutoID is a deprecated proto field that Milvus proxy has zeroed
+	// on entry of every supported target since 2.2, so the backup value is never
+	// consumed there; the authoritative autoID is the per-field one in convFields.
 	schema := &schemapb.CollectionSchema{
 		Name:               ddlt.target.CollName(),
 		Description:        ddlt.description(),
-		AutoID:             ddlt.collBackup.GetSchema().GetAutoID(),
 		Functions:          functions,
 		Fields:             createFields,
 		EnableDynamicField: ddlt.collBackup.GetSchema().GetEnableDynamicField(),
