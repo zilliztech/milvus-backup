@@ -299,15 +299,36 @@ func (bf *bulkFlushPlan) Execute(ctx context.Context) error {
 	g.Go(func() error {
 		flush := &flushAllTask{collRefs: bf.collRefs, args: bf.args, logger: bf.logger}
 		if err := flush.Execute(subCtx); err != nil {
+			bf.markUnstartedDMLFailed(err)
 			return err
 		}
-		return tasklet.RunConcurrent(subCtx, bf.args.Throttling.DMLSem, newDMLTasks(bf.collRefs, bf.args, bf.newData))
+		if err := tasklet.RunConcurrent(subCtx, bf.args.Throttling.DMLSem, newDMLTasks(bf.collRefs, bf.args, bf.newData)); err != nil {
+			bf.markUnstartedDMLFailed(err)
+			return err
+		}
+		return nil
 	})
 	if err := g.Wait(); err != nil {
 		return fmt.Errorf("backup: execute collection tasks %w", err)
 	}
 
 	return nil
+}
+
+// markUnstartedDMLFailed settles every data half still in flushing as failed. The
+// flush flips all halves before its RPC runs, so a failed data branch can leave
+// halves with no owner left to settle them: the flush task has returned, and a
+// data task that never launched never ran. A half that got past flushing was
+// settled by its own data task before its goroutine joined, so only flushing
+// ones remain, and only those are touched.
+func (bf *bulkFlushPlan) markUnstartedDMLFailed(err error) {
+	for collRef, coll := range bf.args.tracker.Snapshot().Colls {
+		if coll.DML == nil || coll.DML.State != jobstate.BackupCollDMLStateFlushing {
+			continue
+		}
+
+		bf.args.tracker.NewCollDMLTracker(collRef).SetFail(err)
+	}
 }
 
 // flushAllTask is the bulk plan's cluster-wide flush, the head of the data
