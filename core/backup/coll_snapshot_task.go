@@ -149,9 +149,15 @@ func (st *collSnapshotTask) execute(ctx context.Context) error {
 		Sem:       st.copySem,
 		TraceFn:   st.tracker.AddCopiedSize,
 	}
+	// The copy itself logs nothing at info level — per-file output lives at
+	// debug in the copier — so both ends of the batch are logged here.
+	st.logger.Info("start to copy snapshot files",
+		zap.Int("file_count", len(files.attrs)),
+		zap.Int64("total_bytes", files.totalBytes))
 	if err := storage.NewCopyObjectsTask(opt).Execute(ctx); err != nil {
 		return fmt.Errorf("backup: copy snapshot files: %w", err)
 	}
+	st.logger.Info("copy snapshot files done")
 
 	_, metadataPath, err := st.writeBundle(ctx, snapshot, files)
 	if err != nil {
