@@ -353,6 +353,53 @@ func TestGrpcClient_GetVersion(t *testing.T) {
 	})
 }
 
+func TestGrpcClient_HasCollectionByID(t *testing.T) {
+	t.Run("SendsAuthMetadata", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, auth: "auth", identifier: "identifier"}
+
+		mockSrv.EXPECT().DescribeCollection(mock.Anything, mock.Anything).
+			RunAndReturn(func(ctx context.Context, req *milvuspb.DescribeCollectionRequest, _ ...grpc.CallOption) (*milvuspb.DescribeCollectionResponse, error) {
+				md, ok := metadata.FromOutgoingContext(ctx)
+				assert.True(t, ok)
+				assert.Equal(t, []string{"auth"}, md.Get(_authorizationHeader))
+				assert.Equal(t, []string{"identifier"}, md.Get(_identifierHeader))
+				assert.Equal(t, int64(42), req.GetCollectionID())
+				return &milvuspb.DescribeCollectionResponse{Status: &commonpb.Status{Code: 0}}, nil
+			})
+
+		has, err := cli.HasCollectionByID(context.Background(), 42)
+		assert.NoError(t, err)
+		assert.True(t, has)
+	})
+
+	t.Run("NewServerErrorCodeReadsAbsent", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, auth: "auth"}
+
+		mockSrv.EXPECT().DescribeCollection(mock.Anything, mock.Anything).Return(&milvuspb.DescribeCollectionResponse{
+			Status: &commonpb.Status{Code: _collectionNotFoundCode, Reason: "collection not found"},
+		}, nil)
+
+		has, err := cli.HasCollectionByID(context.Background(), 42)
+		assert.NoError(t, err)
+		assert.False(t, has)
+	})
+
+	t.Run("LegacyErrorCodeReadsAbsent", func(t *testing.T) {
+		mockSrv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: mockSrv, auth: "auth"}
+
+		mockSrv.EXPECT().DescribeCollection(mock.Anything, mock.Anything).Return(&milvuspb.DescribeCollectionResponse{
+			Status: &commonpb.Status{ErrorCode: commonpb.ErrorCode_CollectionNotExists},
+		}, nil)
+
+		has, err := cli.HasCollectionByID(context.Background(), 42)
+		assert.NoError(t, err)
+		assert.False(t, has)
+	})
+}
+
 func TestGrpcClient_ListIndex(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		mockSrv := NewMockMilvusServiceClient(t)
