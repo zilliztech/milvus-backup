@@ -13,6 +13,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/meta"
+	"github.com/zilliztech/milvus-backup/internal/snapshotsource"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
@@ -159,7 +160,7 @@ func TestTask_selectPlan(t *testing.T) {
 	// collection: the api expands the bundle's partitions and segments itself.
 	t.Run("SnapshotImportSnap", func(t *testing.T) {
 		task := newSelectPlanTask(t, meta.FormatSnapshot, StrategyImportSnap)
-		task.snapshotSource = snapshotSource{dirURI: "s3://backup-bucket/backup/mybackup", sameService: true}
+		task.snapshotSource = snapshotsource.Source{DirURI: "s3://backup-bucket/backup/mybackup", SameService: true}
 		grpcCli := milvus.NewMockGrpc(t)
 		grpcCli.EXPECT().HasFeature(milvus.ImportSnapshot).Return(true)
 		task.grpc = grpcCli

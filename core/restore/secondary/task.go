@@ -5,12 +5,14 @@ import (
 	"encoding/base64"
 	"fmt"
 	"math/rand/v2"
+	"path"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
+	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
 	"github.com/milvus-io/milvus/pkg/v3/streaming/util/message"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
@@ -26,6 +28,9 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/meta"
+	"github.com/zilliztech/milvus-backup/internal/snapshotbundle"
+	"github.com/zilliztech/milvus-backup/internal/snapshotsource"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
@@ -45,7 +50,9 @@ type TaskArgs struct {
 	// MilvusStorage is the target cluster's own object storage. When it is not
 	// the same bucket/backend as BackupStorage, binlogs are staged into it
 	// before the import message is broadcast, because DataCoord lists import
-	// paths only from its own storage.
+	// paths only from its own storage. A snapshot backup stages nothing — the
+	// target reads the bundle itself — but resolves where it reads it from
+	// against this storage's config.
 	MilvusStorage storage.Client
 
 	Store *jobstate.Store
@@ -53,6 +60,13 @@ type TaskArgs struct {
 
 type Task struct {
 	args TaskArgs
+
+	// snapSource is where the target reads a snapshot backup's bundles from,
+	// and snapLayouts is what the preflight read of every bundle learned, keyed
+	// by collection id: the layout its import message has to name. Both are
+	// only set for the snapshot format.
+	snapSource  snapshotsource.Source
+	snapLayouts map[int64]datapb.SnapshotLayout
 
 	grpc    milvus.Grpc
 	restful milvus.Restful
@@ -128,6 +142,11 @@ func (t *Task) Execute(ctx context.Context) error {
 
 	t.tracker.SetExecuting()
 
+	if err := t.checkFormatSupport(ctx); err != nil {
+		t.tracker.SetFail(err)
+		return err
+	}
+
 	if err := t.checkBackupHasFullMeta(); err != nil {
 		t.tracker.SetFail(err)
 		return err
@@ -139,6 +158,11 @@ func (t *Task) Execute(ctx context.Context) error {
 	}
 
 	if err := t.checkTargetIsUnused(ctx); err != nil {
+		t.tracker.SetFail(err)
+		return err
+	}
+
+	if err := t.checkSnapshotBundles(ctx); err != nil {
 		t.tracker.SetFail(err)
 		return err
 	}
@@ -182,6 +206,45 @@ func (t *Task) Execute(ctx context.Context) error {
 	t.tracker.SetSuccess()
 	t.logger.Info("restore done")
 	return nil
+}
+
+// checkFormatSupport refuses a backup whose data this restore cannot replay,
+// before any DDL is broadcast. A binlog backup replays as import messages
+// pointing at its binlogs. A snapshot backup replays as a snapshot-sourced
+// import message, which the target turns into the import job the import api
+// would have created: that import exists only on a new enough secondary, and
+// where the target reads the bundle from is resolved here, against the
+// target's own storage, the way a plain import_snap restore resolves it.
+func (t *Task) checkFormatSupport(ctx context.Context) error {
+	switch format := t.args.Backup.GetFormat(); format {
+	case meta.FormatBinlog:
+		return nil
+	case meta.FormatSnapshot:
+		if !t.grpc.HasFeature(milvus.ImportSnapshot) {
+			return fmt.Errorf("secondary: a snapshot format backup replays its data through the target's " +
+				"snapshot import, which needs a Milvus 3.0.4 or newer secondary; this server is older. " +
+				"Take the backup in the binlog format (create --for secondary) to restore it here")
+		}
+		if t.args.MilvusStorage == nil {
+			return fmt.Errorf("secondary: a snapshot format backup needs the target's storage config to " +
+				"resolve where the target reads the bundles from")
+		}
+		source, err := snapshotsource.New(ctx, t.args.MilvusStorage.Config(), t.args.BackupStorage.Config(), t.args.BackupDir, true)
+		if err != nil {
+			return fmt.Errorf("secondary: resolve the snapshot source: %w", err)
+		}
+		t.snapSource = source
+		t.logger.Info("restore secondary from snapshot bundles",
+			zap.String("source_uri", source.DirURI),
+			zap.Bool("external_spec_set", source.ExternalSpec != ""),
+			zap.Bool("source_sas_set", source.SourceSASSet))
+		return nil
+	default:
+		// Without this an unknown format would go down the binlog path, find no
+		// segments, and replay an empty collection.
+		return fmt.Errorf("secondary: backup %s was taken in the %q format, which this version of milvus-backup cannot restore",
+			t.args.Backup.GetName(), format)
+	}
 }
 
 // checkBackupHasFullMeta refuses to run against a backup whose cluster-level
@@ -478,13 +541,14 @@ func (t *Task) ddlTaskArgs() ddlTaskArgs {
 	}
 }
 
-func (t *Task) runCollTask(ctx context.Context, dbBackup *backuppb.DatabaseBackupInfo, collBackup *backuppb.CollectionBackupInfo, ddlArgs ddlTaskArgs, dmlArgs dmlTaskArgs, loadArgs loadTaskArgs) error {
+func (t *Task) runCollTask(ctx context.Context, dbBackup *backuppb.DatabaseBackupInfo, collBackup *backuppb.CollectionBackupInfo, ddlArgs ddlTaskArgs, dml tasklet.Tasklet, loadArgs loadTaskArgs) error {
 	collRef := collref.New(dbBackup.GetDbName(), collBackup.GetCollectionName())
 	collTracker := t.tracker.NewCollTracker(collRef, collBackup.GetSize())
 	ddlTracker := collTracker.DDL()
 	// The copy half covers everything past the schema: the create wait, the
-	// binlog copy and the load. It moves bytes through this process, so there
-	// is no server-side job id to bind.
+	// data replay and the load. It moves bytes through this process on the
+	// binlog path and hands the target a bundle to read on the snapshot path,
+	// so there is no server-side job id to bind either way.
 	copyJob := collTracker.NewJob(collBackup.GetSize())
 
 	ddlTracker.SetExecuting()
@@ -501,8 +565,7 @@ func (t *Task) runCollTask(ctx context.Context, dbBackup *backuppb.DatabaseBacku
 		return err
 	}
 
-	dmlTask := newCollDMLTask(dmlArgs, collBackup)
-	if err := dmlTask.Execute(ctx); err != nil {
+	if err := dml.Execute(ctx); err != nil {
 		copyJob.SetFailed(err)
 		return fmt.Errorf("secondary: execute collection dml task: %w", err)
 	}
@@ -573,9 +636,9 @@ func (t *Task) runCollTasks(ctx context.Context) error {
 		dbNameBackup[db.GetDbName()] = db
 	}
 
-	dmlArgs, err := t.dmlTaskArgs()
+	newDML, err := t.newCollDMLTaskFactory()
 	if err != nil {
-		return fmt.Errorf("secondary: get dml task args: %w", err)
+		return err
 	}
 	ddlArgs := t.ddlTaskArgs()
 	loadArgs := t.loadTaskArgs()
@@ -584,11 +647,105 @@ func (t *Task) runCollTasks(ctx context.Context) error {
 	g.SetLimit(t.args.Params.Restore.Concurrency.Collections.Val)
 	for _, coll := range t.args.Backup.GetCollectionBackups() {
 		g.Go(func() error {
-			return t.runCollTask(subCtx, dbNameBackup[coll.GetDbName()], coll, ddlArgs, dmlArgs, loadArgs)
+			dml, err := newDML(coll)
+			if err != nil {
+				return fmt.Errorf("secondary: create collection dml task: %w", err)
+			}
+			return t.runCollTask(subCtx, dbNameBackup[coll.GetDbName()], coll, ddlArgs, dml, loadArgs)
 		})
 	}
 
 	return g.Wait()
+}
+
+// collDMLTaskFactory builds the data half of one collection.
+type collDMLTaskFactory func(collBackup *backuppb.CollectionBackupInfo) (tasklet.Tasklet, error)
+
+// newCollDMLTaskFactory picks the data half's shape from the backup's format:
+// binlog batches, each replayed as its own import message, or the snapshot
+// bundle replayed as the single import message the target expands itself.
+// What every collection shares — the binlog path's copy semaphore above all —
+// is built here, once, and the factory only reads it.
+func (t *Task) newCollDMLTaskFactory() (collDMLTaskFactory, error) {
+	if t.args.Backup.GetFormat() == meta.FormatSnapshot {
+		args := snapDMLTaskArgs{TaskID: t.args.TaskID, StreamCli: t.streamCli, RestfulCli: t.restful}
+		return func(collBackup *backuppb.CollectionBackupInfo) (tasklet.Tasklet, error) {
+			metadataURI, err := t.snapSource.MetadataURI(collBackup.GetSnapshotBackup().GetMetadataPath())
+			if err != nil {
+				return nil, fmt.Errorf("secondary: resolve the bundle metadata uri: %w", err)
+			}
+			layout := t.snapLayouts[collBackup.GetCollectionId()]
+			return newCollSnapDMLTask(args, collBackup, metadataURI, t.snapSource.ExternalSpec, layout)
+		}, nil
+	}
+
+	dmlArgs, err := t.dmlTaskArgs()
+	if err != nil {
+		return nil, fmt.Errorf("secondary: get dml task args: %w", err)
+	}
+	return func(collBackup *backuppb.CollectionBackupInfo) (tasklet.Tasklet, error) {
+		return newCollDMLTask(dmlArgs, collBackup), nil
+	}, nil
+}
+
+// _storageV3 is the storage version the snapshot import reads; it is the
+// server's constant, which is not importable.
+const _storageV3 int64 = 3
+
+// checkSnapshotBundles reads every bundle of a snapshot backup before any DDL
+// is broadcast and refuses what the target's snapshot import would refuse
+// after it: a data segment written in a storage version other than V3. The
+// import expands a bundle on the target only once its job is pending, which is
+// after the collection — and every collection replayed before it — exists on
+// the secondary, and a secondary that got that far has to be redeployed (see
+// checkTargetIsUnused). Refusing here costs a read of the bundle's manifests
+// instead. The same read settles each bundle's layout, which its import
+// message has to name, so the data tasks never touch the backup again.
+func (t *Task) checkSnapshotBundles(ctx context.Context) error {
+	if t.args.Backup.GetFormat() != meta.FormatSnapshot {
+		return nil
+	}
+
+	store := snapshotbundle.NewStorageStore(t.args.BackupStorage)
+	t.snapLayouts = make(map[int64]datapb.SnapshotLayout, len(t.args.Backup.GetCollectionBackups()))
+	var legacy []string
+	for _, coll := range t.args.Backup.GetCollectionBackups() {
+		name := fmt.Sprintf("%s.%s", coll.GetDbName(), coll.GetCollectionName())
+		key := path.Join(t.args.BackupDir, coll.GetSnapshotBackup().GetMetadataPath())
+		snapshot, err := snapshotbundle.LoadSnapshotData(ctx, store, key, true)
+		if err != nil {
+			return fmt.Errorf("secondary: read the bundle of %s at %s: %w", name, key, err)
+		}
+		t.snapLayouts[coll.GetCollectionId()] = snapshot.Layout
+
+		for _, segment := range snapshot.Segments {
+			// L0 segments carry deletes, which the import folds on its own; only
+			// the data segments are read in their storage format.
+			if segment.GetSegmentLevel() == datapb.SegmentLevel_L0 || segment.GetStorageVersion() == _storageV3 {
+				continue
+			}
+			legacy = append(legacy, fmt.Sprintf("%s/%d (storage version %d)", name, segment.GetSegmentId(), segment.GetStorageVersion()))
+		}
+	}
+	if len(legacy) == 0 {
+		t.logger.Info("all snapshot bundles read, every data segment is StorageV3", zap.Int("collections", len(t.snapLayouts)))
+		return nil
+	}
+
+	// Name a handful, so the message points at the collections without
+	// listing every segment of a large backup.
+	const shown = 5
+	more := ""
+	if len(legacy) > shown {
+		more = fmt.Sprintf(" and %d more", len(legacy)-shown)
+		legacy = legacy[:shown]
+	}
+	return fmt.Errorf("secondary: a snapshot format backup replays through the target's snapshot import, "+
+		"which reads StorageV3 segments only, but this backup carries data segments written in another "+
+		"storage version: %s%s. Nothing has been sent to the target. Take the backup in the binlog format "+
+		"instead (create --for secondary), or have the source write StorageV3 segments "+
+		"(common.storage.useLoonFFI) before the data is written and back it up again",
+		strings.Join(legacy, ", "), more)
 }
 
 func (t *Task) sendRBACMsg(ctx context.Context) error {

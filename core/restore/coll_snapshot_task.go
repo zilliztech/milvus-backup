@@ -19,6 +19,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/snapshotsource"
 )
 
 const _snapshotPollInterval = 3 * time.Second
@@ -29,7 +30,7 @@ type collSnapshotTask struct {
 	collBackup *backuppb.CollectionBackupInfo
 	target     collref.Name
 
-	source           snapshotSource
+	source           snapshotsource.Source
 	dropExist        bool
 	maxShardNum      int32
 	shardNumOverride int32
@@ -53,7 +54,7 @@ type collSnapshotTaskArgs struct {
 	collBackup *backuppb.CollectionBackupInfo
 	target     collref.Name
 
-	source           snapshotSource
+	source           snapshotsource.Source
 	dropExist        bool
 	maxShardNum      int32
 	shardNumOverride int32
@@ -144,7 +145,7 @@ func (ct *collSnapshotTask) privateExecute(ctx context.Context) error {
 			zap.Int32("shard_num", ct.shardNumOverride))
 	}
 
-	metadataURI, err := ct.source.metadataURI(ct.collBackup.GetSnapshotBackup().GetMetadataPath())
+	metadataURI, err := ct.source.MetadataURI(ct.collBackup.GetSnapshotBackup().GetMetadataPath())
 	if err != nil {
 		return err
 	}
@@ -157,7 +158,7 @@ func (ct *collSnapshotTask) privateExecute(ctx context.Context) error {
 		DB:                   ct.target.DBName(),
 		TargetCollectionName: ct.target.CollName(),
 		SnapshotMetadataURI:  metadataURI,
-		ExternalSpec:         ct.source.externalSpec,
+		ExternalSpec:         ct.source.ExternalSpec,
 	})
 	if err != nil {
 		return fmt.Errorf("restore: restore external snapshot: %w", err)

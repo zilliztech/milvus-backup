@@ -1,4 +1,4 @@
-package restore
+package snapshotsource
 
 import (
 	"encoding/base64"
@@ -37,7 +37,7 @@ func extfs(t *testing.T, spec string) map[string]string {
 	return parsed.Extfs
 }
 
-func TestNewSnapshotSource(t *testing.T) {
+func TestNew(t *testing.T) {
 	// Milvus falls back to its own credential when no spec is given, which is what to rely
 	// on when both sides are the same backend — it keeps the key off the wire. The uri
 	// omits the endpoint for the same reason: it is Milvus's own store, which it resolves
@@ -50,10 +50,10 @@ func TestNewSnapshotSource(t *testing.T) {
 		backupCfg := milvusCfg
 		backupCfg.Bucket = "backup-bucket"
 
-		source, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
+		source, err := New(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
 		require.NoError(t, err)
-		assert.Equal(t, "s3://backup-bucket/backup/mybackup", source.dirURI)
-		assert.Empty(t, source.externalSpec)
+		assert.Equal(t, "s3://backup-bucket/backup/mybackup", source.DirURI)
+		assert.Empty(t, source.ExternalSpec)
 	})
 
 	// Two s3 configs that are not one backend — different regions, different
@@ -69,10 +69,10 @@ func TestNewSnapshotSource(t *testing.T) {
 			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
 		}
 
-		source, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
+		source, err := New(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
 		require.NoError(t, err)
-		assert.Equal(t, "s3://backup-bucket/backup/mybackup", source.dirURI)
-		assert.Contains(t, source.externalSpec, `"access_key_id":"ak"`)
+		assert.Equal(t, "s3://backup-bucket/backup/mybackup", source.DirURI)
+		assert.Contains(t, source.ExternalSpec, `"access_key_id":"ak"`)
 	})
 
 	// A backup held on another provider's service is unreadable to the
@@ -84,7 +84,7 @@ func TestNewSnapshotSource(t *testing.T) {
 			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
 		}
 
-		_, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
+		_, err := New(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
 		assert.ErrorContains(t, err, "are not the same one")
 	})
 
@@ -98,11 +98,11 @@ func TestNewSnapshotSource(t *testing.T) {
 			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
 		}
 
-		source, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", true)
+		source, err := New(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", true)
 		require.NoError(t, err)
-		assert.False(t, source.sameService)
-		assert.Equal(t, "s3://backup-bucket/backup/mybackup", source.dirURI)
-		assert.Contains(t, source.externalSpec, `"access_key_id":"ak"`)
+		assert.False(t, source.SameService)
+		assert.Equal(t, "s3://backup-bucket/backup/mybackup", source.DirURI)
+		assert.Contains(t, source.ExternalSpec, `"access_key_id":"ak"`)
 	})
 
 	// A restore whose backup container lives in another storage account reads
@@ -112,14 +112,14 @@ func TestNewSnapshotSource(t *testing.T) {
 		milvusCfg := azureCfg("milvus-account", "milvus-bucket")
 		backupCfg := azureCfg("backup-account", "backup-bucket")
 
-		source, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
+		source, err := New(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
 		require.NoError(t, err)
-		assert.Equal(t, "azure://backup-account.blob.core.windows.net/backup-bucket/backup/mybackup", source.dirURI)
+		assert.Equal(t, "azure://backup-account.blob.core.windows.net/backup-bucket/backup/mybackup", source.DirURI)
 
-		spec := extfs(t, source.externalSpec)
+		spec := extfs(t, source.ExternalSpec)
 		assert.Equal(t, "backup-account", spec["access_key_id"])
 		assert.NotEmpty(t, spec["source_sas_token"])
-		assert.True(t, source.sourceSASSet)
+		assert.True(t, source.SourceSASSet)
 	})
 
 	// The explicit token stands in for a minted one, trimmed to the bare query
@@ -129,9 +129,9 @@ func TestNewSnapshotSource(t *testing.T) {
 		backupCfg := azureCfg("backup-account", "backup-bucket")
 		backupCfg.SourceSAS = "?sv=2024-08-04&sig=abc"
 
-		source, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
+		source, err := New(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
 		require.NoError(t, err)
-		assert.Equal(t, "sv=2024-08-04&sig=abc", extfs(t, source.externalSpec)["source_sas_token"])
+		assert.Equal(t, "sv=2024-08-04&sig=abc", extfs(t, source.ExternalSpec)["source_sas_token"])
 	})
 
 	// A SAS on a copy that stays within one account is a misconfiguration the
@@ -141,7 +141,7 @@ func TestNewSnapshotSource(t *testing.T) {
 		backupCfg := azureCfg("account", "backup-bucket")
 		backupCfg.SourceSAS = "sv=2024-08-04&sig=abc"
 
-		_, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
+		_, err := New(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
 		assert.ErrorContains(t, err, "crosses azure storage accounts")
 	})
 
@@ -155,30 +155,30 @@ func TestNewSnapshotSource(t *testing.T) {
 		backupCfg := azureCfg("backup-account", "backup-bucket")
 		backupCfg.SourceSAS = "sv=2024-08-04&sig=abc"
 
-		_, err := newSnapshotSource(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
+		_, err := New(t.Context(), milvusCfg, backupCfg, "backup/mybackup/", false)
 		assert.ErrorContains(t, err, "are not the same one")
 	})
 }
 
-func TestSnapshotSource_MetadataURI(t *testing.T) {
-	source := snapshotSource{dirURI: "s3://backup-bucket/backup/mybackup"}
+func TestSource_MetadataURI(t *testing.T) {
+	source := Source{DirURI: "s3://backup-bucket/backup/mybackup"}
 
 	// The meta records the path relative to the backup directory, so a backup that was
 	// moved resolves against wherever it is being read from now.
 	t.Run("RelativeToTheBackupDir", func(t *testing.T) {
-		got, err := source.metadataURI("bundle/snapshots/449577/metadata/449580.json")
+		got, err := source.MetadataURI("bundle/snapshots/449577/metadata/449580.json")
 		require.NoError(t, err)
 		assert.Equal(t, "s3://backup-bucket/backup/mybackup/bundle/snapshots/449577/metadata/449580.json", got)
 	})
 
 	// A collection with no bundle recorded is a broken backup, not an empty restore.
 	t.Run("NoPath", func(t *testing.T) {
-		_, err := source.metadataURI("")
+		_, err := source.MetadataURI("")
 		assert.Error(t, err)
 	})
 
 	t.Run("AbsoluteURI", func(t *testing.T) {
-		_, err := source.metadataURI("s3://other-bucket/snapshots/449577/metadata/449580.json")
+		_, err := source.MetadataURI("s3://other-bucket/snapshots/449577/metadata/449580.json")
 		assert.ErrorContains(t, err, "relative")
 	})
 }

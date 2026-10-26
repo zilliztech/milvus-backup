@@ -20,6 +20,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
+	"github.com/zilliztech/milvus-backup/internal/snapshotsource"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
@@ -167,7 +168,7 @@ type Task struct {
 	format string
 	// snapshotSource is where the bundles are read from, and is only set for the
 	// snapshot format.
-	snapshotSource snapshotSource
+	snapshotSource snapshotsource.Source
 
 	// streaming is decided once: it depends on the transfer policy and the two
 	// backends, none of which vary per collection.
@@ -224,16 +225,16 @@ func NewTask(ctx context.Context, args TaskArgs) (*Task, error) {
 				zap.Strings("options", ignored))
 		}
 
-		source, err := newSnapshotSource(ctx, args.MilvusStorage.Config(), args.BackupStorage.Config(), args.BackupDir,
+		source, err := snapshotsource.New(ctx, args.MilvusStorage.Config(), args.BackupStorage.Config(), args.BackupDir,
 			strategy == StrategyImportSnap)
 		if err != nil {
 			return nil, err
 		}
 		task.snapshotSource = source
 		logger.Info("restore from snapshot bundles",
-			zap.String("source_uri", source.dirURI),
-			zap.Bool("external_spec_set", source.externalSpec != ""),
-			zap.Bool("source_sas_set", source.sourceSASSet))
+			zap.String("source_uri", source.DirURI),
+			zap.Bool("external_spec_set", source.ExternalSpec != ""),
+			zap.Bool("source_sas_set", source.SourceSASSet))
 	} else {
 		task.streaming = storage.UseStreaming(args.Params.Transfer.Mode.Val,
 			args.BackupStorage.Config(), args.MilvusStorage.Config())

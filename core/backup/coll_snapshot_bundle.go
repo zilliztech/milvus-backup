@@ -1,10 +1,8 @@
 package backup
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"path"
 	"sort"
 
@@ -20,51 +18,6 @@ const (
 	_storageV2 int64 = 2
 	_storageV3 int64 = 3
 )
-
-// bundleStore adapts the backup storage client to the snapshot bundle reader
-// and writer.
-type bundleStore struct {
-	cli storage.Client
-}
-
-func (b bundleStore) Read(ctx context.Context, key string) ([]byte, error) {
-	obj, err := b.cli.GetObject(ctx, key)
-	if err != nil {
-		// A HEAD that also fails means the object is not there — or at least
-		// not readable, which the staged-commit logic treats the same way: the
-		// caller either writes the object or reports an error, and the
-		// read-back after a write still verifies the published bytes.
-		if _, headErr := b.cli.HeadObject(ctx, key); headErr != nil {
-			return nil, fmt.Errorf("%w: %s: %w", snapshotbundle.ErrObjectNotFound, key, err)
-		}
-		return nil, fmt.Errorf("backup: read bundle object %s: %w", key, err)
-	}
-	defer obj.Body.Close()
-	data, err := io.ReadAll(obj.Body)
-	if err != nil {
-		return nil, fmt.Errorf("backup: read bundle object %s: %w", key, err)
-	}
-	return data, nil
-}
-
-func (b bundleStore) Write(ctx context.Context, key string, data []byte) error {
-	err := b.cli.UploadObject(ctx, storage.UploadObjectInput{
-		Key:  key,
-		Body: bytes.NewReader(data),
-		Size: int64(len(data)),
-	})
-	if err != nil {
-		return fmt.Errorf("backup: write bundle object %s: %w", key, err)
-	}
-	return nil
-}
-
-func (b bundleStore) Remove(ctx context.Context, key string) error {
-	if err := b.cli.DeleteObject(ctx, key); err != nil {
-		return fmt.Errorf("backup: delete bundle object %s: %w", key, err)
-	}
-	return nil
-}
 
 // bundleFileSet is the copy plan of one snapshot export: every file to move
 // from the milvus storage into the bundle, plus the path mappings the bundle

@@ -560,7 +560,7 @@ func TestCheckBulkInsertJob_Import2PCStates(t *testing.T) {
 		task := newTestDMLTask(t, collBackup, stream)
 		task.restfulCli = &sequencedRestful{states: []milvus.ImportState{milvus.ImportStateCompleted}}
 
-		err := task.checkBulkInsertJob(context.Background(), 101)
+		err := task.importJob().check(context.Background(), 101)
 		assert.NoError(t, err)
 		assert.Empty(t, stream.messagesByType(strconv.Itoa(_commitImportMessageType)))
 	})
@@ -574,7 +574,7 @@ func TestCheckBulkInsertJob_Import2PCStates(t *testing.T) {
 		task := newTestDMLTask(t, collBackup, stream)
 		task.restfulCli = restful
 
-		err := task.checkBulkInsertJob(context.Background(), 102)
+		err := task.importJob().check(context.Background(), 102)
 		assert.NoError(t, err)
 		assert.Equal(t, 2, restful.calls)
 		assert.Len(t, stream.messagesByType(strconv.Itoa(_commitImportMessageType)), len(vchannels))
@@ -589,7 +589,7 @@ func TestCheckBulkInsertJob_Import2PCStates(t *testing.T) {
 		task := newTestDMLTask(t, collBackup, stream)
 		task.restfulCli = restful
 
-		err := task.checkBulkInsertJob(context.Background(), 103)
+		err := task.importJob().check(context.Background(), 103)
 		assert.NoError(t, err)
 		assert.Equal(t, 2, restful.calls)
 		assert.Empty(t, stream.messagesByType(strconv.Itoa(_commitImportMessageType)))
@@ -623,7 +623,7 @@ func TestSendCommitImportMsg_WireCompatibilityAndFanout(t *testing.T) {
 	task := newTestDMLTask(t, collBackup, stream)
 	jobID := int64(456)
 
-	err := task.sendCommitImportMsg(context.Background(), jobID)
+	err := task.importJob().sendCommitMsg(context.Background(), jobID)
 	assert.NoError(t, err)
 
 	commitMessages := stream.messagesByType(strconv.Itoa(_commitImportMessageType))
@@ -734,9 +734,9 @@ func (r *stateSequenceRestful) callCount() int {
 	return r.calls
 }
 
-func newWaitTask(cli milvus.Restful) *collDMLTask {
-	return &collDMLTask{
-		collBackup: &backuppb.CollectionBackupInfo{DbName: "default"},
+func newWaitJob(cli milvus.Restful) bulkInsertJob {
+	return bulkInsertJob{
+		dbName:     "default",
 		restfulCli: cli,
 		logger:     zap.NewNop(),
 	}
@@ -754,7 +754,7 @@ func TestWaitBulkInsertStateUnknownJob(t *testing.T) {
 
 	t.Run("an always unknown job gives up without claiming a cause", func(t *testing.T) {
 		cli := &stateSequenceRestful{states: []string{""}}
-		_, err := newWaitTask(cli).waitBulkInsertReadyToCommit(context.Background(), 4242)
+		_, err := newWaitJob(cli).waitReadyToCommit(context.Background(), 4242)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "does not know import job 4242")
 		// Success and failure are dropped alike, so neither may be claimed here.
@@ -766,7 +766,7 @@ func TestWaitBulkInsertStateUnknownJob(t *testing.T) {
 	t.Run("a job that is merely slow to appear is waited for", func(t *testing.T) {
 		// Empty for a few polls, well inside the window, then a real state.
 		cli := &stateSequenceRestful{states: []string{"", "", "", string(milvus.ImportStateCompleted)}}
-		state, err := newWaitTask(cli).waitBulkInsertReadyToCommit(context.Background(), 7)
+		state, err := newWaitJob(cli).waitReadyToCommit(context.Background(), 7)
 		assert.NoError(t, err)
 		assert.Equal(t, milvus.ImportStateCompleted, state)
 		assert.Equal(t, 4, cli.callCount())
@@ -778,14 +778,14 @@ func TestWaitBulkInsertStateUnknownJob(t *testing.T) {
 		cli := &stateSequenceRestful{states: []string{
 			"", string(milvus.ImportStatePending), "", string(milvus.ImportStateCompleted),
 		}}
-		state, err := newWaitTask(cli).waitBulkInsertReadyToCommit(context.Background(), 9)
+		state, err := newWaitJob(cli).waitReadyToCommit(context.Background(), 9)
 		assert.NoError(t, err)
 		assert.Equal(t, milvus.ImportStateCompleted, state)
 	})
 
 	t.Run("a failed job still reports its own reason", func(t *testing.T) {
 		cli := &stateSequenceRestful{states: []string{string(milvus.ImportStateFailed)}}
-		_, err := newWaitTask(cli).waitBulkInsertReadyToCommit(context.Background(), 11)
+		_, err := newWaitJob(cli).waitReadyToCommit(context.Background(), 11)
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "bulk insert failed")
 	})
