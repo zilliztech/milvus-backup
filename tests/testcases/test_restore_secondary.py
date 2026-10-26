@@ -93,9 +93,8 @@ class TestRestoreSecondary(TestcaseBase):
 
         # verify the collections and data were actually restored on downstream.
         # The load state reaches the downstream through the replicate stream,
-        # which can lag the restore response, so poll until the collections are
-        # queryable there — being queryable at all also proves the load state
-        # was replicated.
+        # which can lag the restore response, so poll until each collection
+        # holds its complete data set there — a partial copy must not pass.
         connections.connect(
             "secondary_downstream", uri=secondary_milvus_uri, token="root:Milvus"
         )
@@ -108,13 +107,25 @@ class TestRestoreSecondary(TestcaseBase):
         while remaining and time.time() < deadline:
             name = remaining[0]
             try:
-                count = Collection(name, using="secondary_downstream").query(
-                    expr="", output_fields=["count(*)"]
+                collection = Collection(name, using="secondary_downstream")
+                pks = {
+                    row[ct.default_int64_field_name]
+                    for row in collection.query(
+                        expr=f"{ct.default_int64_field_name} >= 0",
+                        output_fields=[ct.default_int64_field_name],
+                    )
+                }
+                # prepare_data inserts int64 primary keys 0..nb-1, so a partial
+                # copy shows up as a missing slice of the range
+                if pks == set(range(nb)):
+                    log.info(f"collection {name} holds all {nb} rows on downstream")
+                    remaining.pop(0)
+                    continue
+                log.debug(
+                    f"collection {name} holds {len(pks)} of {nb} "
+                    "expected rows downstream"
                 )
-                assert count[0]["count(*)"] > 0
-                log.info(f"collection {name} is queryable on downstream")
-                remaining.pop(0)
             except Exception as e:
                 log.debug(f"collection {name} not queryable downstream yet: {e}")
-                time.sleep(10)
-        assert not remaining, f"collections not queryable downstream: {remaining}"
+            time.sleep(10)
+        assert not remaining, f"collections not converged downstream: {remaining}"
