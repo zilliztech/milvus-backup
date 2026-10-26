@@ -26,12 +26,12 @@ func TestCollDynFieldTaskExecute(t *testing.T) {
 
 	newBuilder := func() *metaBuilder {
 		builder := newMetaBuilder("task1", "backup1")
-		builder.addCollection(collref.New("db1", "coll1"), &backuppb.CollectionBackupInfo{
+		require.NoError(t, builder.addCollection(collref.New("db1", "coll1"), &backuppb.CollectionBackupInfo{
 			CollectionId:   1,
 			DbName:         "db1",
 			CollectionName: "coll1",
 			Schema:         &backuppb.CollectionSchema{EnableDynamicField: true},
-		})
+		}))
 
 		return builder
 	}

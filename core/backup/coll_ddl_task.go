@@ -310,7 +310,9 @@ func (ddlt *collDDLTask) execute(ctx context.Context) error {
 		Aliases:              descResp.GetAliases(),
 	}
 
-	ddlt.metaBuilder.addCollection(ddlt.collRef, collBackup)
+	if err := ddlt.metaBuilder.addCollection(ddlt.collRef, collBackup); err != nil {
+		return fmt.Errorf("backup: add collection meta: %w", err)
+	}
 
 	return nil
 }
