@@ -97,6 +97,13 @@ func (st *collSnapshotTask) Execute(ctx context.Context) error {
 }
 
 func (st *collSnapshotTask) execute(ctx context.Context) error {
+	// Registered before the create: the create call may land the snapshot server-side
+	// and still return early on a canceled context, and only an already-registered
+	// defer runs on that path. The server treats dropping an unknown snapshot name
+	// as success, so the early registration is a no-op whenever the create failed
+	// for real.
+	defer st.dropSnapshot(ctx)
+
 	// Compaction protection is left off: the snapshot holds its files against GC for
 	// as long as it exists, and it exists only for this export.
 	if err := st.grpc.CreateSnapshot(ctx, st.collRef.DBName(), st.collRef.CollName(), st.snapshotName, 0); err != nil {
@@ -105,7 +112,6 @@ func (st *collSnapshotTask) execute(ctx context.Context) error {
 	// A snapshot pins its collection's files in Milvus until dropped, so both ends of
 	// its lifetime are logged.
 	st.logger.Info("snapshot created")
-	defer st.dropSnapshot(ctx)
 
 	// The snapshot's own boundary, read before the copy so a failed copy still
 	// leaves nothing behind to interpret. S3Location points at the snapshot's
@@ -195,9 +201,10 @@ func (st *collSnapshotTask) writeBundle(ctx context.Context, snapshot *snapshotb
 	return metadataURI, metadataPath, nil
 }
 
-// dropSnapshot releases the snapshot once the bundle is written. The bundle is
-// self-contained, so nothing that was backed up depends on the snapshot surviving —
-// a snapshot left behind only holds its collection's files against GC.
+// dropSnapshot releases the snapshot once the task settles, whichever way it
+// settles. The bundle is self-contained, so nothing that was backed up depends
+// on the snapshot surviving — a snapshot left behind only holds its collection's
+// files against GC.
 func (st *collSnapshotTask) dropSnapshot(ctx context.Context) {
 	// The task's own context may already be canceled by the failure that brought us
 	// here, and the snapshot still has to go.

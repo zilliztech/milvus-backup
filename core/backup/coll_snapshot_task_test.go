@@ -203,4 +203,28 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 		require.NotNil(t, dml)
 		assert.Equal(t, jobstate.BackupCollDMLStateFail, dml.State)
 	})
+
+	// The create call may land the snapshot server-side and still return early on a
+	// canceled context, so the drop must be registered before the create and fire
+	// even when the create reports failure.
+	t.Run("CreateFailureStillDropsSnapshot", func(t *testing.T) {
+		f := newSnapshotTaskFixture(t)
+
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().CreateSnapshot(mock.Anything, "db1", "coll1", "mbk_mybackup", time.Duration(0)).
+			Return(context.Canceled)
+		cli.EXPECT().DropSnapshot(mock.Anything, "db1", "coll1", "mbk_mybackup").Return(nil).Once()
+
+		task, builder, tracker := f.newTask(t, cli)
+		err := task.Execute(context.Background())
+		assert.ErrorIs(t, err, context.Canceled)
+		assert.Nil(t, builder.data.GetCollectionBackups()[0].GetSnapshotBackup())
+
+		// The drop call is the point of this test, so hold it against the mock.
+		cli.AssertExpectations(t)
+
+		dml := tracker.Snapshot().Colls[collRef].DML
+		require.NotNil(t, dml)
+		assert.Equal(t, jobstate.BackupCollDMLStateFail, dml.State)
+	})
 }
