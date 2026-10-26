@@ -18,12 +18,18 @@ type Semaphore interface {
 // RunConcurrent runs every task in its own goroutine, acquiring one slot per
 // task before spawning it, so no more than sem's capacity is in flight. The
 // first error cancels the context handed to the remaining tasks; the first
-// error raised is the one returned.
+// error raised is the one returned. A failed acquire stops scheduling but
+// never abandons tasks already in flight.
 func RunConcurrent(ctx context.Context, sem Semaphore, tasks []Tasklet) error {
 	g, subCtx := errgroup.WithContext(ctx)
 	for _, task := range tasks {
 		if err := sem.Acquire(ctx, 1); err != nil {
-			return fmt.Errorf("tasklet: acquire semaphore: %w", err)
+			// Report through the group rather than returning here, so
+			// g.Wait drains the tasks already spawned before the call ends.
+			g.Go(func() error {
+				return fmt.Errorf("tasklet: acquire semaphore: %w", err)
+			})
+			break
 		}
 
 		g.Go(func() error {
