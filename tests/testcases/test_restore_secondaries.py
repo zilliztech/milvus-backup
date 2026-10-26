@@ -5,7 +5,6 @@ from pymilvus import Collection, connections, utility
 
 from base.client_base import TestcaseBase
 from common import common_func as cf
-from common import common_type as ct
 from common.common_type import CaseLabel
 from utils.util_log import test_log as log
 
@@ -43,8 +42,10 @@ class TestRestoreSecondaries(TestcaseBase):
     def _wait_secondary_converged(self, uri, collection_name, expected, timeout=300):
         # the replicated commit lands on the secondary asynchronously, so poll
         # until the mirrored collection holds the complete data set — a partial
-        # copy would pass a bare "has rows" check. prepare_data inserts int64
-        # primary keys 0..nb-1, so the expected set is range(expected).
+        # copy would pass a bare "has rows" check. The count comes from
+        # num_entities because the two-phase-committed collection stays
+        # unloaded on the secondary, so query — and with it a primary key set
+        # check — is not available here.
         connections.connect("secondaries_downstream", uri=uri, token="root:Milvus")
         try:
             deadline = time.time() + timeout
@@ -53,27 +54,19 @@ class TestRestoreSecondaries(TestcaseBase):
                     if utility.has_collection(
                         collection_name, using="secondaries_downstream"
                     ):
-                        collection = Collection(
+                        entities = Collection(
                             collection_name, using="secondaries_downstream"
-                        )
-                        if collection.num_entities == expected:
-                            pks = {
-                                row[ct.default_int64_field_name]
-                                for row in collection.query(
-                                    expr=f"{ct.default_int64_field_name} >= 0",
-                                    output_fields=[ct.default_int64_field_name],
-                                )
-                            }
-                            if pks == set(range(expected)):
-                                log.info(
-                                    f"collection {collection_name} converged on the "
-                                    f"secondary with {expected} entities"
-                                )
-                                return True
-                            log.debug(
-                                f"secondary {collection_name} holds "
-                                f"{len(pks)} of {expected} expected primary keys"
+                        ).num_entities
+                        if entities == expected:
+                            log.info(
+                                f"collection {collection_name} converged on the "
+                                f"secondary with {entities} entities"
                             )
+                            return True
+                        log.debug(
+                            f"secondary {collection_name} holds {entities} of "
+                            f"{expected} entities"
+                        )
                 except Exception as e:
                     log.debug(f"secondary {collection_name} not ready yet: {e}")
                 time.sleep(10)
