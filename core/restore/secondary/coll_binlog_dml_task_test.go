@@ -291,7 +291,7 @@ func TestPartitionDirToPaths(t *testing.T) {
 	}
 }
 
-func newTestDMLTask(t *testing.T, collBackup *backuppb.CollectionBackupInfo, stream *recordingStream) *collDMLTask {
+func newTestBinlogDMLTask(t *testing.T, collBackup *backuppb.CollectionBackupInfo, stream *recordingStream) *collBinlogDMLTask {
 	vchannels := collBackup.GetVirtualChannelNames()
 
 	storageMock := storage.NewMockClient(t)
@@ -300,7 +300,7 @@ func newTestDMLTask(t *testing.T, collBackup *backuppb.CollectionBackupInfo, str
 		Return(storage.NewMockObjectIterator(nil)).
 		Maybe()
 
-	return &collDMLTask{
+	return &collBinlogDMLTask{
 		pchTS:         newTestPchTS(vchannels),
 		collBackup:    collBackup,
 		backupStorage: storageMock,
@@ -337,7 +337,7 @@ func TestExecute_TimestampOrderingPerPch(t *testing.T) {
 
 	collBackup := newTestCollBackup(vchannels, partitions, nil)
 	stream := &recordingStream{}
-	task := newTestDMLTask(t, collBackup, stream)
+	task := newTestBinlogDMLTask(t, collBackup, stream)
 
 	err := task.Execute(context.Background())
 	assert.NoError(t, err)
@@ -371,7 +371,7 @@ func TestExecute_NonL0BeforeL0(t *testing.T) {
 
 	collBackup := newTestCollBackup(vchannels, partitions, allPartL0)
 	stream := &recordingStream{}
-	task := newTestDMLTask(t, collBackup, stream)
+	task := newTestBinlogDMLTask(t, collBackup, stream)
 
 	err := task.Execute(context.Background())
 	assert.NoError(t, err)
@@ -401,7 +401,7 @@ func TestExecute_EmptyPartitions(t *testing.T) {
 
 	collBackup := newTestCollBackup(vchannels, partitions, nil)
 	stream := &recordingStream{}
-	task := newTestDMLTask(t, collBackup, stream)
+	task := newTestBinlogDMLTask(t, collBackup, stream)
 
 	err := task.Execute(context.Background())
 	assert.NoError(t, err)
@@ -424,7 +424,7 @@ func TestConcurrentCollections_TimestampOrderingPerPch(t *testing.T) {
 
 	// Create 4 collections with different vchannels mapping to the same 2 pchs.
 	numColls := 4
-	tasks := make([]*collDMLTask, numColls)
+	tasks := make([]*collBinlogDMLTask, numColls)
 	for i := range numColls {
 		collID := int64(100 + i)
 		vchannels := []string{
@@ -461,7 +461,7 @@ func TestConcurrentCollections_TimestampOrderingPerPch(t *testing.T) {
 			PartitionBackups:    partitions,
 		}
 
-		tasks[i] = &collDMLTask{
+		tasks[i] = &collBinlogDMLTask{
 			pchTS:         newTestPchTS(vchannels),
 			collBackup:    collBackup,
 			backupStorage: storageMock,
@@ -494,7 +494,7 @@ func TestSendBatches(t *testing.T) {
 	vchannels := newTestVChannels()
 	collBackup := newTestCollBackup(vchannels, nil, nil)
 	stream := &recordingStream{}
-	task := newTestDMLTask(t, collBackup, stream)
+	task := newTestBinlogDMLTask(t, collBackup, stream)
 
 	batches := []batch{
 		{timestamp: 100, partitionDirs: []partitionDir{{insertLogDir: "/a"}}, storageVersion: 2},
@@ -518,7 +518,7 @@ func TestSendBatchesWaitsFromSubmission(t *testing.T) {
 	vchannels := newTestVChannels()
 	collBackup := newTestCollBackup(vchannels, nil, nil)
 	stream := &recordingStream{}
-	task := newTestDMLTask(t, collBackup, stream)
+	task := newTestBinlogDMLTask(t, collBackup, stream)
 
 	started := make(chan struct{}, 8)
 	task.restfulCli = &countingRestful{onCall: func() {
@@ -557,7 +557,7 @@ func TestCheckBulkInsertJob_Import2PCStates(t *testing.T) {
 
 	t.Run("LegacyCompletedSendsNoCommit", func(t *testing.T) {
 		stream := &recordingStream{}
-		task := newTestDMLTask(t, collBackup, stream)
+		task := newTestBinlogDMLTask(t, collBackup, stream)
 		task.restfulCli = &sequencedRestful{states: []milvus.ImportState{milvus.ImportStateCompleted}}
 
 		err := task.importJob().check(context.Background(), 101)
@@ -571,7 +571,7 @@ func TestCheckBulkInsertJob_Import2PCStates(t *testing.T) {
 			milvus.ImportStateUncommitted,
 			milvus.ImportStateCompleted,
 		}}
-		task := newTestDMLTask(t, collBackup, stream)
+		task := newTestBinlogDMLTask(t, collBackup, stream)
 		task.restfulCli = restful
 
 		err := task.importJob().check(context.Background(), 102)
@@ -586,7 +586,7 @@ func TestCheckBulkInsertJob_Import2PCStates(t *testing.T) {
 			milvus.ImportStateCommitting,
 			milvus.ImportStateCompleted,
 		}}
-		task := newTestDMLTask(t, collBackup, stream)
+		task := newTestBinlogDMLTask(t, collBackup, stream)
 		task.restfulCli = restful
 
 		err := task.importJob().check(context.Background(), 103)
@@ -600,7 +600,7 @@ func TestSendImportMsg_DisablesAutoCommit(t *testing.T) {
 	vchannels := newTestVChannels()
 	collBackup := newTestCollBackup(vchannels, nil, nil)
 	stream := &recordingStream{}
-	task := newTestDMLTask(t, collBackup, stream)
+	task := newTestBinlogDMLTask(t, collBackup, stream)
 
 	_, err := task.sendImportMsg(context.Background(), 1, batch{
 		timestamp:      100,
@@ -620,7 +620,7 @@ func TestSendCommitImportMsg_WireCompatibilityAndFanout(t *testing.T) {
 	vchannels := newTestVChannels()
 	collBackup := newTestCollBackup(vchannels, nil, nil)
 	stream := &recordingStream{}
-	task := newTestDMLTask(t, collBackup, stream)
+	task := newTestBinlogDMLTask(t, collBackup, stream)
 	jobID := int64(456)
 
 	err := task.importJob().sendCommitMsg(context.Background(), jobID)
@@ -678,7 +678,7 @@ func TestExecute_Import2PCPreservesPhaseAndTimestampOrdering(t *testing.T) {
 	}
 	collBackup := newTestCollBackup(vchannels, partitions, allPartitionL0)
 	stream := &recordingStream{}
-	task := newTestDMLTask(t, collBackup, stream)
+	task := newTestBinlogDMLTask(t, collBackup, stream)
 	task.restfulCli = &perJobSequencedRestful{}
 
 	err := task.Execute(context.Background())
