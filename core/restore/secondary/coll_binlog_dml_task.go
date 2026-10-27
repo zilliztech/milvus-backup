@@ -94,7 +94,7 @@ type batchKey struct {
 	sv  int64
 }
 
-type dmlTaskArgs struct {
+type binlogDMLTaskArgs struct {
 	TaskID string
 
 	PchTS map[string]uint64
@@ -111,7 +111,7 @@ type dmlTaskArgs struct {
 	RestfulCli milvus.Restful
 }
 
-type collDMLTask struct {
+type collBinlogDMLTask struct {
 	taskID string
 
 	backupStorage storage.Client
@@ -135,10 +135,10 @@ type collDMLTask struct {
 	logger *zap.Logger
 }
 
-func newCollDMLTask(args dmlTaskArgs, collBackup *backuppb.CollectionBackupInfo) *collDMLTask {
+func newCollBinlogDMLTask(args binlogDMLTaskArgs, collBackup *backuppb.CollectionBackupInfo) *collBinlogDMLTask {
 	collRef := collref.New(collBackup.GetDbName(), collBackup.GetCollectionName())
 
-	return &collDMLTask{
+	return &collBinlogDMLTask{
 		taskID: args.TaskID,
 
 		pchTS:      args.PchTS,
@@ -159,7 +159,7 @@ func newCollDMLTask(args dmlTaskArgs, collBackup *backuppb.CollectionBackupInfo)
 	}
 }
 
-func (dmlt *collDMLTask) Execute(ctx context.Context) (err error) {
+func (dmlt *collBinlogDMLTask) Execute(ctx context.Context) (err error) {
 	dmlt.logger.Info("start restore collection dml")
 	defer func() {
 		if cerr := dmlt.cleanTempDirs(context.WithoutCancel(ctx)); cerr != nil {
@@ -191,7 +191,7 @@ func (dmlt *collDMLTask) Execute(ctx context.Context) (err error) {
 // restorePartitionNonL0 builds and sends non-L0 import messages for all partitions
 // sequentially to ensure messages arrive at each physical channel in ts order,
 // waiting on each import job from the moment it is submitted.
-func (dmlt *collDMLTask) restorePartitionNonL0(ctx context.Context) error {
+func (dmlt *collBinlogDMLTask) restorePartitionNonL0(ctx context.Context) error {
 	g, subCtx := errgroup.WithContext(ctx)
 	var count int
 	for _, partition := range dmlt.collBackup.GetPartitionBackups() {
@@ -220,7 +220,7 @@ func (dmlt *collDMLTask) restorePartitionNonL0(ctx context.Context) error {
 
 // restorePartitionL0 builds and sends per-partition L0 import messages sequentially,
 // waiting on each import job from the moment it is submitted.
-func (dmlt *collDMLTask) restorePartitionL0(ctx context.Context) error {
+func (dmlt *collBinlogDMLTask) restorePartitionL0(ctx context.Context) error {
 	g, subCtx := errgroup.WithContext(ctx)
 	var count int
 	for _, partition := range dmlt.collBackup.GetPartitionBackups() {
@@ -247,7 +247,7 @@ func (dmlt *collDMLTask) restorePartitionL0(ctx context.Context) error {
 	return nil
 }
 
-func (dmlt *collDMLTask) backupTS(vch string) (uint64, error) {
+func (dmlt *collBinlogDMLTask) backupTS(vch string) (uint64, error) {
 	pch := funcutil.ToPhysicalChannel(vch)
 
 	ts, ok := dmlt.pchTS[pch]
@@ -258,7 +258,7 @@ func (dmlt *collDMLTask) backupTS(vch string) (uint64, error) {
 	return ts, nil
 }
 
-func (dmlt *collDMLTask) restoreAllPartitionL0(ctx context.Context) error {
+func (dmlt *collBinlogDMLTask) restoreAllPartitionL0(ctx context.Context) error {
 	dmlt.logger.Info("restore all partition l0")
 
 	batches, err := dmlt.l0SegBatches(dmlt.collBackup.GetL0Segments())
@@ -291,7 +291,7 @@ func (dmlt *collDMLTask) restoreAllPartitionL0(ctx context.Context) error {
 // therefore finishes and is reclaimed long before a deferred wait would first
 // ask about it, and the restore then cannot tell a job that succeeded and was
 // forgotten from one that never ran.
-func (dmlt *collDMLTask) sendBatches(ctx context.Context, g *errgroup.Group, partitionID int64, batches []batch) (int, error) {
+func (dmlt *collBinlogDMLTask) sendBatches(ctx context.Context, g *errgroup.Group, partitionID int64, batches []batch) (int, error) {
 	for i, b := range batches {
 		jobID, err := dmlt.sendImportMsg(ctx, partitionID, b)
 		if err != nil {
@@ -310,7 +310,7 @@ func (dmlt *collDMLTask) sendBatches(ctx context.Context, g *errgroup.Group, par
 // importJob is the lifecycle view of the import jobs this collection submits,
 // read off the task's fields at call time so a client swapped in later is
 // honored.
-func (dmlt *collDMLTask) importJob() bulkInsertJob {
+func (dmlt *collBinlogDMLTask) importJob() bulkInsertJob {
 	return bulkInsertJob{
 		dbName:       dmlt.collBackup.GetDbName(),
 		collectionID: dmlt.collBackup.GetCollectionId(),
@@ -323,7 +323,7 @@ func (dmlt *collDMLTask) importJob() bulkInsertJob {
 	}
 }
 
-func (dmlt *collDMLTask) nonL0SegBatches(ctx context.Context, segs []*backuppb.SegmentBackupInfo) ([]batch, error) {
+func (dmlt *collBinlogDMLTask) nonL0SegBatches(ctx context.Context, segs []*backuppb.SegmentBackupInfo) ([]batch, error) {
 	// group by vchannel and storage version
 	segBatch := lo.GroupBy(segs, func(seg *backuppb.SegmentBackupInfo) batchKey {
 		return batchKey{vch: seg.GetVChannel(), sv: seg.GetStorageVersion()}
@@ -364,7 +364,7 @@ func (dmlt *collDMLTask) nonL0SegBatches(ctx context.Context, segs []*backuppb.S
 	return batches, nil
 }
 
-func (dmlt *collDMLTask) l0SegBatches(l0Segs []*backuppb.SegmentBackupInfo) ([]batch, error) {
+func (dmlt *collBinlogDMLTask) l0SegBatches(l0Segs []*backuppb.SegmentBackupInfo) ([]batch, error) {
 	segBatch := lo.GroupBy(l0Segs, func(seg *backuppb.SegmentBackupInfo) batchKey {
 		return batchKey{vch: seg.GetVChannel(), sv: seg.GetStorageVersion()}
 	})
@@ -398,7 +398,7 @@ func (dmlt *collDMLTask) l0SegBatches(l0Segs []*backuppb.SegmentBackupInfo) ([]b
 	return batches, nil
 }
 
-func (dmlt *collDMLTask) buildImportFiles(b batch) []*msgpb.ImportFile {
+func (dmlt *collBinlogDMLTask) buildImportFiles(b batch) []*msgpb.ImportFile {
 	files := make([]*msgpb.ImportFile, 0, len(b.partitionDirs))
 
 	for i, dir := range b.partitionDirs {
@@ -413,7 +413,7 @@ func (dmlt *collDMLTask) buildImportFiles(b batch) []*msgpb.ImportFile {
 	return files
 }
 
-func (dmlt *collDMLTask) sendImportMsg(ctx context.Context, partitionID int64, b batch) (int64, error) {
+func (dmlt *collBinlogDMLTask) sendImportMsg(ctx context.Context, partitionID int64, b batch) (int64, error) {
 	jobID := rand.Int64()
 	b, err := dmlt.stageBatch(ctx, b)
 	if err != nil {
@@ -460,7 +460,7 @@ func (dmlt *collDMLTask) sendImportMsg(ctx context.Context, partitionID int64, b
 	return jobID, nil
 }
 
-func (dmlt *collDMLTask) buildBackupPartitionDir(ctx context.Context, size int64, pathOpt ...mpath.Option) (partitionDir, error) {
+func (dmlt *collBinlogDMLTask) buildBackupPartitionDir(ctx context.Context, size int64, pathOpt ...mpath.Option) (partitionDir, error) {
 	insertLogDir := mpath.BackupInsertLogDir(dmlt.backupDir, pathOpt...)
 	deltaLogDir := mpath.BackupDeltaLogDir(dmlt.backupDir, pathOpt...)
 
@@ -480,7 +480,7 @@ func (dmlt *collDMLTask) buildBackupPartitionDir(ctx context.Context, size int64
 // storage before import. DataCoord resolves import paths only against its own
 // bucket, so a backup kept in a different bucket or backend is unreachable to
 // it. Mirrors the rule used by the plain restore path (copyAndRewriteDir).
-func (dmlt *collDMLTask) needStaging() bool {
+func (dmlt *collBinlogDMLTask) needStaging() bool {
 	if dmlt.milvusStorage == nil {
 		return false
 	}
@@ -489,13 +489,13 @@ func (dmlt *collDMLTask) needStaging() bool {
 	return !isSameBucket || !isSameStorage || dmlt.streaming
 }
 
-func (dmlt *collDMLTask) isLocal() bool {
+func (dmlt *collBinlogDMLTask) isLocal() bool {
 	return dmlt.milvusStorage.Config().Provider == cfg.ProviderLocal
 }
 
 // destKey maps a bucket-relative key onto the key the milvus storage client
 // reads and writes; only the local provider needs the root path prefixed.
-func (dmlt *collDMLTask) destKey(key string) string {
+func (dmlt *collBinlogDMLTask) destKey(key string) string {
 	if !dmlt.isLocal() || key == "" {
 		return key
 	}
@@ -505,7 +505,7 @@ func (dmlt *collDMLTask) destKey(key string) string {
 // stageBatch copies every partition dir of b from the backup storage into a
 // temporary prefix in the milvus storage and rewrites the batch to point at the
 // copies. It is a no-op when the two storages are the same bucket.
-func (dmlt *collDMLTask) stageBatch(ctx context.Context, b batch) (batch, error) {
+func (dmlt *collBinlogDMLTask) stageBatch(ctx context.Context, b batch) (batch, error) {
 	if !dmlt.needStaging() {
 		return b, nil
 	}
@@ -533,7 +533,7 @@ func (dmlt *collDMLTask) stageBatch(ctx context.Context, b batch) (batch, error)
 	return b, nil
 }
 
-func (dmlt *collDMLTask) copyToMilvusStorage(ctx context.Context, tempDir, srcPrefix string) (string, error) {
+func (dmlt *collBinlogDMLTask) copyToMilvusStorage(ctx context.Context, tempDir, srcPrefix string) (string, error) {
 	dest := path.Join(tempDir, strings.Replace(srcPrefix, dmlt.backupDir, "", 1)) + "/"
 	destKey := dmlt.destKey(dest)
 	dmlt.logger.Info("milvus and backup store in different bucket, stage binlogs first",
@@ -562,7 +562,7 @@ func (dmlt *collDMLTask) copyToMilvusStorage(ctx context.Context, tempDir, srcPr
 	return dest, nil
 }
 
-func (dmlt *collDMLTask) cleanTempDirs(ctx context.Context) error {
+func (dmlt *collBinlogDMLTask) cleanTempDirs(ctx context.Context) error {
 	for _, dir := range dmlt.tempDirs {
 		dmlt.logger.Info("delete staged binlogs", zap.String("dir", dir))
 		if err := storage.DeletePrefix(ctx, dmlt.milvusStorage, dmlt.destKey(dir)); err != nil {

@@ -488,22 +488,22 @@ func (t *Task) runDBTasks(ctx context.Context) error {
 	return nil
 }
 
-func (t *Task) dmlTaskArgs() (dmlTaskArgs, error) {
+func (t *Task) binlogDMLTaskArgs() (binlogDMLTaskArgs, error) {
 	pchTS := make(map[string]uint64, len(t.args.Backup.GetFlushAllMsgsBase64()))
 	for pch, msgBase64 := range t.args.Backup.GetFlushAllMsgsBase64() {
 		msyBytes, err := base64.StdEncoding.DecodeString(msgBase64)
 		if err != nil {
-			return dmlTaskArgs{}, fmt.Errorf("secondary: decode flush all msg: %w", err)
+			return binlogDMLTaskArgs{}, fmt.Errorf("secondary: decode flush all msg: %w", err)
 		}
 
 		var msg commonpb.ImmutableMessage
 		if err := proto.Unmarshal(msyBytes, &msg); err != nil {
-			return dmlTaskArgs{}, fmt.Errorf("secondary: unmarshal flush all msg: %w", err)
+			return binlogDMLTaskArgs{}, fmt.Errorf("secondary: unmarshal flush all msg: %w", err)
 		}
 
 		ts, err := milvus.GetTT(&msg)
 		if err != nil {
-			return dmlTaskArgs{}, fmt.Errorf("secondary: get tt from flush all msg: %w", err)
+			return binlogDMLTaskArgs{}, fmt.Errorf("secondary: get tt from flush all msg: %w", err)
 		}
 
 		pchTS[pch] = ts
@@ -515,7 +515,7 @@ func (t *Task) dmlTaskArgs() (dmlTaskArgs, error) {
 			t.args.BackupStorage.Config(), t.args.MilvusStorage.Config())
 	}
 
-	return dmlTaskArgs{
+	return binlogDMLTaskArgs{
 		TaskID: t.args.TaskID,
 
 		PchTS: pchTS,
@@ -679,12 +679,12 @@ func (t *Task) newCollDMLTaskFactory() (collDMLTaskFactory, error) {
 		}, nil
 	}
 
-	dmlArgs, err := t.dmlTaskArgs()
+	dmlArgs, err := t.binlogDMLTaskArgs()
 	if err != nil {
 		return nil, fmt.Errorf("secondary: get dml task args: %w", err)
 	}
 	return func(collBackup *backuppb.CollectionBackupInfo) (tasklet.Tasklet, error) {
-		return newCollDMLTask(dmlArgs, collBackup), nil
+		return newCollBinlogDMLTask(dmlArgs, collBackup), nil
 	}, nil
 }
 
