@@ -57,7 +57,7 @@ func newSnapshotTaskFixture(t *testing.T) *snapshotTaskFixture {
 	f.binlogPath = filepath.Join(f.milvusDir, "files", "insert_log", "db1", "coll1", "1001", "101", "1.parquet")
 	f.statsPath = filepath.Join(f.milvusDir, "files", "stats_log", "db1", "coll1", "1001", "101", "2.parquet")
 
-	milvusStore := bundleStore{cli: newLocalTestClient(t, f.milvusDir)}
+	milvusStore := snapshotbundle.NewStorageStore(newLocalTestClient(t, f.milvusDir))
 	source := &snapshotbundle.SnapshotData{
 		SnapshotInfo: &datapb.SnapshotInfo{Id: 2, CollectionId: 1, Name: "mbk_mybackup"},
 		Collection:   &datapb.CollectionDescription{NumShards: 1},
@@ -117,7 +117,8 @@ func (f *snapshotTaskFixture) newTask(t *testing.T, grpc milvus.Grpc) (*collSnap
 		exportRootURI:  f.exportRootURI,
 		milvusStorage:  newLocalTestClient(t, f.milvusDir),
 		milvusRootPath: filepath.Join(f.milvusDir, "files"),
-		backupStore:    bundleStore{cli: newLocalTestClient(t, f.backupDir)},
+		backupStorage:  newLocalTestClient(t, f.backupDir),
+		backupStore:    snapshotbundle.NewStorageStore(newLocalTestClient(t, f.backupDir)),
 		streaming:      true,
 		copySem:        semaphore.NewWeighted(4),
 		tracker:        tracker.NewCollDMLTracker(collRef),

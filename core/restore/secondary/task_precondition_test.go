@@ -21,6 +21,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"net"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -28,6 +29,7 @@ import (
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
+	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
 	"github.com/milvus-io/milvus/pkg/v3/streaming/util/message"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -43,6 +45,9 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
+	"github.com/zilliztech/milvus-backup/internal/meta"
+	"github.com/zilliztech/milvus-backup/internal/snapshotbundle"
+	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
 func taskWithBackup(cli milvus.Grpc, colls ...*backuppb.CollectionBackupInfo) *Task {
@@ -515,4 +520,195 @@ func (s *preflightServer) CreateReplicateStream(stream milvuspb.MilvusService_Cr
 
 func (s *preflightServer) BackupRBAC(context.Context, *milvuspb.BackupRBACMetaRequest) (*milvuspb.BackupRBACMetaResponse, error) {
 	return &milvuspb.BackupRBACMetaResponse{Status: &commonpb.Status{}}, nil
+}
+
+// A snapshot backup replays through the target's snapshot import, so the
+// target has to be new enough for it, and where it reads the bundles from is
+// resolved up front against the target's own storage. An unknown format has no
+// replay at all and is refused before any DDL goes out.
+func TestCheckFormatSupport(t *testing.T) {
+	minioCfg := func(bucket string) storage.Config {
+		return storage.Config{
+			Provider: cfg.ProviderMinio, Endpoint: "minio:9000", Bucket: bucket,
+			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
+		}
+	}
+
+	t.Run("BinlogNeedsNothing", func(t *testing.T) {
+		task := taskWithBackup(milvus.NewMockGrpc(t))
+		assert.NoError(t, task.checkFormatSupport(context.Background()))
+	})
+
+	t.Run("SnapshotNeedsImportSnapshot", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().HasFeature(milvus.ImportSnapshot).Return(false)
+		task := taskWithBackup(cli)
+		task.args.Backup.Format = meta.FormatSnapshot
+
+		err := task.checkFormatSupport(context.Background())
+		assert.ErrorContains(t, err, "3.0.4")
+		assert.ErrorContains(t, err, "binlog")
+	})
+
+	t.Run("SnapshotNeedsTheTargetStorage", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().HasFeature(milvus.ImportSnapshot).Return(true)
+		task := taskWithBackup(cli)
+		task.args.Backup.Format = meta.FormatSnapshot
+
+		err := task.checkFormatSupport(context.Background())
+		assert.ErrorContains(t, err, "storage config")
+	})
+
+	// Both sides on one backend: the target reads the bundle with its own
+	// credential, so no spec is sent and the uri names only the bucket.
+	t.Run("SnapshotResolvesTheSource", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().HasFeature(milvus.ImportSnapshot).Return(true)
+		milvusStorage := storage.NewMockClient(t)
+		milvusStorage.EXPECT().Config().Return(minioCfg("milvus-bucket"))
+		backupStorage := storage.NewMockClient(t)
+		backupStorage.EXPECT().Config().Return(minioCfg("backup-bucket"))
+
+		task := taskWithBackup(cli)
+		task.args.Backup.Format = meta.FormatSnapshot
+		task.args.BackupDir = "backup/mybackup/"
+		task.args.MilvusStorage = milvusStorage
+		task.args.BackupStorage = backupStorage
+
+		require.NoError(t, task.checkFormatSupport(context.Background()))
+		assert.Equal(t, "s3://backup-bucket/backup/mybackup", task.snapSource.DirURI)
+		assert.Empty(t, task.snapSource.ExternalSpec)
+	})
+
+	// The import path reads the bundle itself, so a backup on another service
+	// is allowed through with the backup side's credentials in the spec.
+	t.Run("SnapshotCrossServiceSendsSpec", func(t *testing.T) {
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().HasFeature(milvus.ImportSnapshot).Return(true)
+		milvusStorage := storage.NewMockClient(t)
+		milvusStorage.EXPECT().Config().Return(minioCfg("milvus-bucket"))
+		backupStorage := storage.NewMockClient(t)
+		backupStorage.EXPECT().Config().Return(storage.Config{
+			Provider: cfg.ProviderS3, Region: "us-west-2", Bucket: "backup-bucket",
+			Credential: storage.Credential{Type: storage.Static, AK: "ak", SK: "sk"},
+		})
+
+		task := taskWithBackup(cli)
+		task.args.Backup.Format = meta.FormatSnapshot
+		task.args.BackupDir = "backup/mybackup/"
+		task.args.MilvusStorage = milvusStorage
+		task.args.BackupStorage = backupStorage
+
+		require.NoError(t, task.checkFormatSupport(context.Background()))
+		assert.False(t, task.snapSource.SameService)
+		assert.Contains(t, task.snapSource.ExternalSpec, `"access_key_id":"ak"`)
+	})
+
+	t.Run("UnknownFormatIsRefused", func(t *testing.T) {
+		task := taskWithBackup(milvus.NewMockGrpc(t))
+		task.args.Backup.Name = "mybackup"
+		task.args.Backup.Format = "parquet"
+
+		err := task.checkFormatSupport(context.Background())
+		assert.ErrorContains(t, err, "mybackup")
+		assert.ErrorContains(t, err, `"parquet"`)
+		assert.ErrorContains(t, err, "cannot restore")
+	})
+}
+
+// writeTestBundle publishes one collection's bundle under backupDir on a local
+// store, with one data segment in the given storage version and, when asked,
+// one L0 segment in the legacy version next to it. It returns the metadata
+// path the backup meta records: relative to the backup directory.
+func writeTestBundle(t *testing.T, store snapshotbundle.Store, backupDir string, collectionID, storageVersion int64, withL0 bool) string {
+	t.Helper()
+
+	segments := []*datapb.SegmentDescription{{SegmentId: 1001, PartitionId: 2001, StorageVersion: storageVersion, NumOfRows: 10}}
+	segmentIDs := []int64{1001}
+	if withL0 {
+		segments = append(segments, &datapb.SegmentDescription{SegmentId: 1002, PartitionId: 2001, StorageVersion: 2, SegmentLevel: datapb.SegmentLevel_L0})
+		segmentIDs = append(segmentIDs, 1002)
+	}
+	snapshot := &snapshotbundle.SnapshotData{
+		SnapshotInfo: &datapb.SnapshotInfo{Id: 7, CollectionId: collectionID, Name: "mbk_mybackup"},
+		Collection:   &datapb.CollectionDescription{NumShards: 1},
+		Segments:     segments,
+		SegmentIDs:   segmentIDs,
+	}
+	root := filepath.Join(backupDir, "bundle", "exports", "ns")
+	metadataPath, _, err := snapshotbundle.SaveBundle(context.Background(), store, snapshot, root, datapb.SnapshotLayout_SnapshotLayoutSelfContained)
+	require.NoError(t, err)
+
+	rel, err := filepath.Rel(backupDir, metadataPath)
+	require.NoError(t, err)
+	return rel
+}
+
+// The snapshot import on the target reads StorageV3 data segments only, and
+// finds out after the DDL has been replayed. The preflight reads the bundles
+// and refuses the same segments before anything is sent, so the secondary is
+// not burned by a backup that could never land.
+func TestCheckSnapshotBundles(t *testing.T) {
+	newTask := func(t *testing.T, backupDir string, cli storage.Client, colls ...*backuppb.CollectionBackupInfo) *Task {
+		t.Helper()
+		task := taskWithBackup(milvus.NewMockGrpc(t), colls...)
+		task.args.Backup.Format = meta.FormatSnapshot
+		task.args.BackupDir = backupDir
+		task.args.BackupStorage = cli
+		return task
+	}
+	newLocalStorage := func(t *testing.T) storage.Client {
+		t.Helper()
+		cli, err := storage.NewClient(context.Background(), storage.Config{Provider: cfg.ProviderLocal})
+		require.NoError(t, err)
+		return cli
+	}
+
+	t.Run("BinlogReadsNothing", func(t *testing.T) {
+		task := taskWithBackup(milvus.NewMockGrpc(t), coll("default", "orders"))
+		assert.NoError(t, task.checkSnapshotBundles(context.Background()))
+		assert.Nil(t, task.snapLayouts)
+	})
+
+	t.Run("StorageV3PassesAndSettlesTheLayout", func(t *testing.T) {
+		backupDir := t.TempDir()
+		cli := newLocalStorage(t)
+		store := snapshotbundle.NewStorageStore(cli)
+		orders := coll("default", "orders")
+		orders.CollectionId = 11
+		orders.SnapshotBackup = &backuppb.SnapshotBackupInfo{MetadataPath: writeTestBundle(t, store, backupDir, 11, 3, true)}
+
+		task := newTask(t, backupDir, cli, orders)
+		require.NoError(t, task.checkSnapshotBundles(context.Background()))
+		assert.Equal(t, datapb.SnapshotLayout_SnapshotLayoutSelfContained, task.snapLayouts[11])
+	})
+
+	t.Run("LegacyDataSegmentIsRefusedBeforeAnyDDL", func(t *testing.T) {
+		backupDir := t.TempDir()
+		cli := newLocalStorage(t)
+		store := snapshotbundle.NewStorageStore(cli)
+		orders, invoices := coll("default", "orders"), coll("default", "invoices")
+		orders.CollectionId, invoices.CollectionId = 11, 12
+		orders.SnapshotBackup = &backuppb.SnapshotBackupInfo{MetadataPath: writeTestBundle(t, store, backupDir, 11, 3, false)}
+		invoices.SnapshotBackup = &backuppb.SnapshotBackupInfo{MetadataPath: writeTestBundle(t, store, backupDir, 12, 2, false)}
+
+		err := newTask(t, backupDir, cli, orders, invoices).checkSnapshotBundles(context.Background())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "default.invoices/1001 (storage version 2)")
+		assert.NotContains(t, err.Error(), "default.orders")
+		assert.Contains(t, err.Error(), "Nothing has been sent")
+		assert.Contains(t, err.Error(), "create --for secondary")
+	})
+
+	t.Run("MissingBundleIsNamed", func(t *testing.T) {
+		backupDir := t.TempDir()
+		orders := coll("default", "orders")
+		orders.SnapshotBackup = &backuppb.SnapshotBackupInfo{MetadataPath: "bundle/exports/ns/snapshots/11/metadata/7.json"}
+
+		err := newTask(t, backupDir, newLocalStorage(t), orders).checkSnapshotBundles(context.Background())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "default.orders")
+		assert.Contains(t, err.Error(), "snapshots/11/metadata/7.json")
+	})
 }

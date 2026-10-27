@@ -589,7 +589,7 @@ func (t *Task) newImportSnapCollTask(tgt collTarget) (*collImportSnapTask, error
 		zap.String("backup_coll", src.String()),
 		zap.String("target_coll", tgt.target.String()))
 
-	metadataURI, err := t.snapshotSource.metadataURI(tgt.collBackup.GetSnapshotBackup().GetMetadataPath())
+	metadataURI, err := t.snapshotSource.MetadataURI(tgt.collBackup.GetSnapshotBackup().GetMetadataPath())
 	if err != nil {
 		return nil, err
 	}
@@ -602,7 +602,7 @@ func (t *Task) newImportSnapCollTask(tgt collTarget) (*collImportSnapTask, error
 		taskID:           t.args.TaskID,
 		target:           tgt.target,
 		metadataURI:      metadataURI,
-		externalSpec:     t.snapshotSource.externalSpec,
+		externalSpec:     t.snapshotSource.ExternalSpec,
 		partitionMapping: partMapping,
 		ezk:              t.mappedEZK(tgt.dbBackup),
 

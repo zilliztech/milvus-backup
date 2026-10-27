@@ -2,7 +2,6 @@ package secondary
 
 import (
 	"context"
-	"encoding/base64"
 	"fmt"
 	"math/rand/v2"
 	"path"
@@ -14,14 +13,12 @@ import (
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/msgpb"
 	"github.com/milvus-io/milvus/pkg/v3/common"
-	"github.com/milvus-io/milvus/pkg/v3/proto/messagespb"
 	"github.com/milvus-io/milvus/pkg/v3/streaming/util/message"
 	"github.com/milvus-io/milvus/pkg/v3/util/funcutil"
 	"github.com/samber/lo"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
-	"google.golang.org/protobuf/encoding/protowire"
 
 	"github.com/zilliztech/milvus-backup/internal/collref"
 
@@ -34,22 +31,11 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
 )
 
-const (
-	_bulkInsertTimeout             = 60 * time.Minute
-	_bulkInsertRestfulAPIChunkSize = 256
-	_commitImportMessageType       = 45
-	_commitImportMessageVersion    = 2
-)
+const _bulkInsertRestfulAPIChunkSize = 256
 
-// Overridden in tests so the unknown-job path does not take a minute to
+// Overridden in tests so the waits do not take their production time to
 // exercise.
 var (
-	_bulkInsertCheckInterval = 3 * time.Second
-	// How long an import job may stay unknown to the target before the restore
-	// gives up on it. The job id travels inside the import message, so the
-	// target only knows the job once that message has been applied; the window
-	// covers the message still being in flight.
-	_bulkInsertUnknownJobTimeout = 1 * time.Minute
 	// How long to let the target apply the DDL before concluding that a
 	// collection the restore created is not there.
 	_restoreVerifyTimeout  = 30 * time.Second
@@ -312,7 +298,7 @@ func (dmlt *collDMLTask) sendBatches(ctx context.Context, g *errgroup.Group, par
 			return i, fmt.Errorf("secondary: send import msg: %w", err)
 		}
 		g.Go(func() error {
-			if err := dmlt.checkBulkInsertJob(ctx, jobID); err != nil {
+			if err := dmlt.importJob().check(ctx, jobID); err != nil {
 				return fmt.Errorf("secondary: check bulk insert job %d: %w", jobID, err)
 			}
 			return nil
@@ -321,147 +307,20 @@ func (dmlt *collDMLTask) sendBatches(ctx context.Context, g *errgroup.Group, par
 	return len(batches), nil
 }
 
-func (dmlt *collDMLTask) checkBulkInsertJob(ctx context.Context, jobID int64) error {
-	state, err := dmlt.waitBulkInsertReadyToCommit(ctx, jobID)
-	if err != nil {
-		return err
+// importJob is the lifecycle view of the import jobs this collection submits,
+// read off the task's fields at call time so a client swapped in later is
+// honored.
+func (dmlt *collDMLTask) importJob() bulkInsertJob {
+	return bulkInsertJob{
+		dbName:       dmlt.collBackup.GetDbName(),
+		collectionID: dmlt.collBackup.GetCollectionId(),
+		vchannels:    dmlt.collBackup.GetVirtualChannelNames(),
+
+		streamCli:  dmlt.streamCli,
+		restfulCli: dmlt.restfulCli,
+
+		logger: dmlt.logger,
 	}
-
-	switch state {
-	case milvus.ImportStateCompleted:
-		return nil
-	case milvus.ImportStateUncommitted:
-		if err := dmlt.sendCommitImportMsg(ctx, jobID); err != nil {
-			return fmt.Errorf("secondary: send commit import msg: %w", err)
-		}
-	case milvus.ImportStateCommitting:
-		// Another coordinator already initiated the commit; only wait for completion.
-	default:
-		return fmt.Errorf("secondary: unexpected bulk insert state %s", state)
-	}
-
-	return dmlt.waitBulkInsertCompleted(ctx, jobID)
-}
-
-func (dmlt *collDMLTask) waitBulkInsertReadyToCommit(ctx context.Context, jobID int64) (milvus.ImportState, error) {
-	return dmlt.waitBulkInsertState(ctx, jobID, func(state milvus.ImportState) bool {
-		return state == milvus.ImportStateCompleted ||
-			state == milvus.ImportStateUncommitted ||
-			state == milvus.ImportStateCommitting
-	})
-}
-
-func (dmlt *collDMLTask) waitBulkInsertCompleted(ctx context.Context, jobID int64) error {
-	_, err := dmlt.waitBulkInsertState(ctx, jobID, func(state milvus.ImportState) bool {
-		return state == milvus.ImportStateCompleted
-	})
-	return err
-}
-
-func (dmlt *collDMLTask) waitBulkInsertState(
-	ctx context.Context,
-	jobID int64,
-	done func(milvus.ImportState) bool,
-) (milvus.ImportState, error) {
-	jobIDStr := strconv.FormatInt(jobID, 10)
-
-	var lastProgress int
-	// Stays zero until the target reports an empty state, so the window only
-	// starts once there is something to wait out.
-	var unknownSince time.Time
-	lastUpdateTime := time.Now()
-	ticker := time.NewTicker(_bulkInsertCheckInterval)
-	defer ticker.Stop()
-
-	for {
-		resp, err := dmlt.restfulCli.GetBulkInsertState(ctx, dmlt.collBackup.GetDbName(), jobIDStr)
-		if err != nil {
-			return "", fmt.Errorf("secondary: get bulk insert state: %w", err)
-		}
-
-		state := milvus.ImportState(resp.Data.State)
-		dmlt.logger.Info("bulk insert task state", zap.Int64("job_id", jobID),
-			zap.String("state", resp.Data.State),
-			zap.Int("progress", resp.Data.Progress))
-		if state == milvus.ImportStateFailed {
-			return "", fmt.Errorf("secondary: bulk insert failed: %s", resp.Data.Reason)
-		}
-		// An empty state is not a state the job can be in: the target does not
-		// have this job at all. That never turns into anything else, so waiting
-		// for it is waiting forever.
-		if state == "" {
-			if unknownSince.IsZero() {
-				unknownSince = time.Now()
-			} else if time.Since(unknownSince) >= _bulkInsertUnknownJobTimeout {
-				return "", fmt.Errorf("secondary: the target does not know import job %d after %s, "+
-					"so this batch cannot be confirmed either way. Two things produce this and "+
-					"they are not distinguishable from here: the import message was never "+
-					"applied, or the job ran and the target already dropped its record. A record "+
-					"is kept only for dataCoord.import.taskRetention past the job finishing, and "+
-					"success and failure are dropped alike, so a short retention loses the "+
-					"outcome rather than reporting it. Check the target's log for job %d before "+
-					"concluding anything about this batch, and raise "+
-					"dataCoord.import.taskRetention if it is below the default of 10800",
-					jobID, _bulkInsertUnknownJobTimeout, jobID)
-			}
-		} else {
-			unknownSince = time.Time{}
-		}
-		if done(state) {
-			if state == milvus.ImportStateCompleted {
-				dmlt.logger.Info("bulk insert task success", zap.Int64("job_id", jobID))
-			}
-			return state, nil
-		}
-
-		currentProgress := resp.Data.Progress
-		if currentProgress > lastProgress {
-			lastProgress = currentProgress
-			lastUpdateTime = time.Now()
-		} else if time.Since(lastUpdateTime) >= _bulkInsertTimeout {
-			dmlt.logger.Warn("bulk insert task no progress for too long, may milvus is not healthy",
-				zap.Int64("job_id", jobID),
-				zap.Duration("timeout", _bulkInsertTimeout))
-			lastUpdateTime = time.Now()
-		}
-
-		select {
-		case <-ctx.Done():
-			return "", ctx.Err()
-		case <-ticker.C:
-		}
-	}
-}
-
-func (dmlt *collDMLTask) sendCommitImportMsg(ctx context.Context, jobID int64) error {
-	header := protowire.AppendTag(nil, 1, protowire.VarintType)
-	header = protowire.AppendVarint(header, uint64(dmlt.collBackup.GetCollectionId()))
-	header = protowire.AppendTag(header, 2, protowire.VarintType)
-	header = protowire.AppendVarint(header, uint64(jobID))
-
-	broadcastHeader, err := message.EncodeProto(&messagespb.BroadcastHeader{
-		Vchannels: dmlt.collBackup.GetVirtualChannelNames(),
-	})
-	if err != nil {
-		return fmt.Errorf("secondary: encode commit import broadcast header: %w", err)
-	}
-
-	properties := map[string]string{
-		"_t":  strconv.Itoa(_commitImportMessageType),
-		"_v":  strconv.Itoa(_commitImportMessageVersion),
-		"_h":  base64.StdEncoding.EncodeToString(header),
-		"_bh": broadcastHeader,
-	}
-
-	if err := dmlt.streamCli.Send(ctx, func(uint64) []message.MutableMessage {
-		broadcast := message.NewBroadcastMutableMessageBeforeAppend(nil, properties).
-			WithBroadcastID(rand.Uint64())
-		return broadcast.SplitIntoMutableMessage()
-	}); err != nil {
-		return fmt.Errorf("secondary: broadcast commit import: %w", err)
-	}
-
-	return nil
 }
 
 func (dmlt *collDMLTask) nonL0SegBatches(ctx context.Context, segs []*backuppb.SegmentBackupInfo) ([]batch, error) {

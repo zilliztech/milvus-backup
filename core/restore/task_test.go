@@ -81,9 +81,9 @@ func TestNewTask_SnapshotSource(t *testing.T) {
 	assert.Equal(t, meta.FormatSnapshot, task.format)
 	// Both sides are the same backend, so the uri names only the bucket and Milvus
 	// resolves it through its own storage config.
-	assert.Equal(t, "s3://backup-bucket/backup/mybackup", task.snapshotSource.dirURI)
+	assert.Equal(t, "s3://backup-bucket/backup/mybackup", task.snapshotSource.DirURI)
 	// Both sides are the same backend, so Milvus reads with its own credential.
-	assert.Empty(t, task.snapshotSource.externalSpec)
+	assert.Empty(t, task.snapshotSource.ExternalSpec)
 }
 
 // A backup on another storage service than the target's cannot ride the restore
@@ -130,8 +130,8 @@ func TestNewTask_SnapshotCrossService(t *testing.T) {
 	t.Run("ImportSnapPermits", func(t *testing.T) {
 		task, err := NewTask(t.Context(), newArgs(StrategyImportSnap))
 		require.NoError(t, err)
-		assert.False(t, task.snapshotSource.sameService)
-		assert.Contains(t, task.snapshotSource.externalSpec, `"access_key_id":"ak"`)
+		assert.False(t, task.snapshotSource.SameService)
+		assert.Contains(t, task.snapshotSource.ExternalSpec, `"access_key_id":"ak"`)
 	})
 }
 

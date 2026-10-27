@@ -31,7 +31,8 @@ type collSnapshotTask struct {
 
 	milvusStorage  storage.Client
 	milvusRootPath string
-	backupStore    bundleStore
+	backupStorage  storage.Client
+	backupStore    snapshotbundle.Store
 
 	// exportNamespace isolates everything this task writes under the bundle
 	// root, one random namespace per collection export — the same shape the
@@ -63,7 +64,8 @@ func newCollSnapshotTaskWithNamespace(collRef collref.Name, snapshotName string,
 		target:          target,
 		milvusStorage:   args.MilvusStorage,
 		milvusRootPath:  args.MilvusRootPath,
-		backupStore:     bundleStore{cli: args.BackupStorage},
+		backupStorage:   args.BackupStorage,
+		backupStore:     snapshotbundle.NewStorageStore(args.BackupStorage),
 		exportNamespace: namespace,
 		exportDir:       snapshotbundle.NamespaceBundleRoot(target.dir, namespace),
 		exportRootURI:   target.rootURI + "/" + snapshotbundle.ExportNamespaceSubPath + "/" + namespace,
@@ -124,7 +126,7 @@ func (st *collSnapshotTask) execute(ctx context.Context) error {
 
 	snapshot, err := snapshotbundle.LoadSnapshotData(
 		ctx,
-		bundleStore{cli: st.milvusStorage},
+		snapshotbundle.NewStorageStore(st.milvusStorage),
 		desc.GetS3Location(),
 		true,
 	)
@@ -143,7 +145,7 @@ func (st *collSnapshotTask) execute(ctx context.Context) error {
 
 	opt := storage.CopyObjectsOpt{
 		Src:       st.milvusStorage,
-		Dest:      st.backupStore.cli,
+		Dest:      st.backupStorage,
 		Attrs:     files.attrs,
 		Streaming: st.streaming,
 		Sem:       st.copySem,

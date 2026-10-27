@@ -18,6 +18,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
+	"github.com/zilliztech/milvus-backup/internal/snapshotsource"
 )
 
 func newTestCollSnapshotTask(t *testing.T, grpcCli milvus.Grpc, dropExist bool) (*collSnapshotTask, *jobstate.Store) {
@@ -43,7 +44,7 @@ func newTestCollSnapshotTask(t *testing.T, grpcCli milvus.Grpc, dropExist bool) 
 		taskID:     "task-1",
 		collBackup: collBackup,
 		target:     target,
-		source:     snapshotSource{dirURI: "s3://backup-bucket/backup/mybackup", externalSpec: `{"extfs":{}}`},
+		source:     snapshotsource.Source{DirURI: "s3://backup-bucket/backup/mybackup", ExternalSpec: `{"extfs":{}}`},
 		dropExist:  dropExist,
 		grpcCli:    grpcCli,
 		job:        collTracker.NewJob(collBackup.GetSize()),
