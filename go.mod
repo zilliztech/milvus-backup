@@ -16,7 +16,7 @@ require (
 	github.com/huaweicloud/huaweicloud-sdk-go-v3 v0.1.219
 	github.com/imroc/req/v3 v3.61.0
 	github.com/iskorotkov/avro/v2 v2.34.0
-	github.com/labstack/echo/v5 v5.4.0
+	github.com/labstack/echo/v5 v5.4.1
 	github.com/milvus-io/milvus-proto/go-api/v3 v3.0.0-20261014040338-d453f0648677
 	github.com/milvus-io/milvus/pkg/v3 v3.0.0-20261016014550-0ebf9f2d1d24
 	github.com/minio/minio-go/v7 v7.4.1
