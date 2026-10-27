@@ -910,6 +910,16 @@ jobs:
         run: |
           python example/prepare_data.py
 
+      # The import_snap restore below is the only consumer of the L0 scenario
+      # here, so the delete-bearing collection is only prepared on the cells
+      # that run it.
+      - name: Prepare L0 data
+        if: ${{ matrix.use_loonffi }}
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python example/prepare_data.py --scenario l0
+
       - name: Backup
         timeout-minutes: 5
         shell: bash
@@ -930,6 +940,29 @@ jobs:
         shell: bash
         run: |
           python example/verify_data.py
+
+      # import_snap rewrites the snapshot's rows through the target's import
+      # api, which only accepts StorageV3 segments; useLoonFFI=true is what
+      # makes Milvus write them, so the useLoonFFI=false cells cannot run this
+      # strategy. The L0 scenario is verified here because folding the
+      # snapshot's deletes into the rows is the import path's own work, where
+      # the restore api copies the L0 segments as they are. The verify step
+      # above leaves hello_milvus_dynamic_recover and hello_milvus_l0_recover
+      # behind, hence --drop_exist_collection.
+      - name: Restore backup (import_snap)
+        if: ${{ matrix.use_loonffi }}
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          ./milvus-backup restore -n my_backup -s _recover --strategy import_snap --drop_exist_collection
+
+      - name: Verify data (import_snap)
+        if: ${{ matrix.use_loonffi }}
+        timeout-minutes: 5
+        shell: bash
+        run: |
+          python example/verify_data.py
+          python example/verify_data.py --scenario l0
 
   test-backup-restore-secondary:
     needs: unit-test-go
