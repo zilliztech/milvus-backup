@@ -797,6 +797,25 @@ func (t *Task) sendFlushAll(ctx context.Context) error {
 			return fmt.Errorf("secondary: unmarshal flush all msg: %w", err)
 		}
 
+		// The source stamps the flush-all response `_ur` — unreplicable,
+		// milvus#54380 (master) / #54502 (3.0). Forwarded as-is, the target's
+		// replicate interceptor drops it with IGNORED_OPERATION: the ack looks
+		// successful but the message never enters the WAL, so the only real
+		// source position in the replay is lost and CDC resumes from the
+		// fabricated counter position, re-inserting the backed-up rows.
+		//
+		// Milvus now answers FlushAll without the marker so Backup can
+		// replicate the positions (milvus#54742 on master, #54745 on 3.0), but
+		// a backup captured before its source carries that fix still stores
+		// the marked copy, and a target of any version drops it on arrival.
+		// The stored bytes are what we replay, so strip them here. Targets
+		// that predate the concept never saw the property either, so this is
+		// the wire shape every target of the same era accepts.
+		if _, ok := msg.Properties["_ur"]; ok {
+			delete(msg.Properties, "_ur")
+			t.logger.Info("strip unreplicable marker from flush all msg")
+		}
+
 		if err := t.streamCli.Forward(ctx, &msg); err != nil {
 			return fmt.Errorf("secondary: send flush all msg: %w", err)
 		}
