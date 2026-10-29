@@ -44,6 +44,8 @@ type options struct {
 
 	rbac bool
 
+	dropSnapshotIfExists bool
+
 	forPreset string
 }
 
@@ -90,6 +92,8 @@ func (o *options) addFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVarP(&o.backupIndexExtra, "backup_index_extra", "", false, "whether backup index extra info")
 
 	cmd.Flags().BoolVarP(&o.rbac, "rbac", "", false, "whether backup RBAC meta")
+
+	cmd.Flags().BoolVarP(&o.dropSnapshotIfExists, "drop_snapshot_if_exists", "", false, "drop a snapshot of the same name before creating the backup's own snapshot, to clear a leftover from an earlier run that died mid-flight; snapshot format only")
 
 	cmd.Flags().StringVarP(&o.forPreset, "for", "", "", "purpose preset, one of [archive, clone, secondary]: forces the option values the matching restore path requires, overriding conflicting flags")
 
@@ -138,6 +142,8 @@ func (o *options) toOption(params *cfg.Config) (backup.Option, error) {
 		BackupRBAC: o.rbac,
 
 		BackupIndexExtra: o.backupIndexExtra,
+
+		DropSnapshotIfExists: o.dropSnapshotIfExists,
 
 		Filter: f,
 	}

@@ -143,6 +143,12 @@ definitions:
 
           Deprecated: use filter.
         type: string
+      drop_snapshot_if_exists:
+        description: |-
+          Drop a snapshot of the same name before creating the backup's own, so a
+          leftover from an earlier run that died mid-flight cannot fail the create.
+          Snapshot format only.
+        type: boolean
       filter:
         additionalProperties:
           $ref: '#/definitions/apiv1.CollFilter'

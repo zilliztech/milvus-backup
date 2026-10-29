@@ -29,6 +29,8 @@ type collSnapshotTask struct {
 	snapshotName string
 	target       snapshotTarget
 
+	dropSnapshotIfExists bool
+
 	milvusStorage  storage.Client
 	milvusRootPath string
 	backupStorage  storage.Client
@@ -52,28 +54,29 @@ type collSnapshotTask struct {
 	logger *zap.Logger
 }
 
-func newCollSnapshotTask(collRef collref.Name, snapshotName string, target snapshotTarget, args collTaskArgs) *collSnapshotTask {
-	return newCollSnapshotTaskWithNamespace(collRef, snapshotName, target, args, uuid.NewString())
+func newCollSnapshotTask(collRef collref.Name, snapshotName string, target snapshotTarget, args collTaskArgs, dropSnapshotIfExists bool) *collSnapshotTask {
+	return newCollSnapshotTaskWithNamespace(collRef, snapshotName, target, args, dropSnapshotIfExists, uuid.NewString())
 }
 
-func newCollSnapshotTaskWithNamespace(collRef collref.Name, snapshotName string, target snapshotTarget, args collTaskArgs, namespace string) *collSnapshotTask {
+func newCollSnapshotTaskWithNamespace(collRef collref.Name, snapshotName string, target snapshotTarget, args collTaskArgs, dropSnapshotIfExists bool, namespace string) *collSnapshotTask {
 	return &collSnapshotTask{
-		taskID:          args.TaskID,
-		collRef:         collRef,
-		snapshotName:    snapshotName,
-		target:          target,
-		milvusStorage:   args.MilvusStorage,
-		milvusRootPath:  args.MilvusRootPath,
-		backupStorage:   args.BackupStorage,
-		backupStore:     snapshotbundle.NewStorageStore(args.BackupStorage),
-		exportNamespace: namespace,
-		exportDir:       snapshotbundle.NamespaceBundleRoot(target.dir, namespace),
-		exportRootURI:   target.rootURI + "/" + snapshotbundle.ExportNamespaceSubPath + "/" + namespace,
-		streaming:       args.Streaming,
-		copySem:         args.Throttling.CopySem,
-		tracker:         args.tracker.NewCollDMLTracker(collRef),
-		metaBuilder:     args.MetaBuilder,
-		grpc:            args.Grpc,
+		taskID:               args.TaskID,
+		collRef:              collRef,
+		snapshotName:         snapshotName,
+		target:               target,
+		dropSnapshotIfExists: dropSnapshotIfExists,
+		milvusStorage:        args.MilvusStorage,
+		milvusRootPath:       args.MilvusRootPath,
+		backupStorage:        args.BackupStorage,
+		backupStore:          snapshotbundle.NewStorageStore(args.BackupStorage),
+		exportNamespace:      namespace,
+		exportDir:            snapshotbundle.NamespaceBundleRoot(target.dir, namespace),
+		exportRootURI:        target.rootURI + "/" + snapshotbundle.ExportNamespaceSubPath + "/" + namespace,
+		streaming:            args.Streaming,
+		copySem:              args.Throttling.CopySem,
+		tracker:              args.tracker.NewCollDMLTracker(collRef),
+		metaBuilder:          args.MetaBuilder,
+		grpc:                 args.Grpc,
 		logger: log.L().With(
 			zap.String("task_id", args.TaskID),
 			zap.String("coll", collRef.String()),
@@ -105,6 +108,15 @@ func (st *collSnapshotTask) execute(ctx context.Context) error {
 	// as success, so the early registration is a no-op whenever the create failed
 	// for real.
 	defer st.dropSnapshot(ctx)
+
+	// A same-name snapshot left by an earlier run of this backup that died
+	// mid-flight refuses the create below until it is removed, so when asked,
+	// drop it first. The server treats dropping an unknown snapshot name as
+	// success, so on a clean cluster this is a no-op.
+	if st.dropSnapshotIfExists {
+		st.logger.Info("drop same-name snapshot before create")
+		st.dropSnapshot(ctx)
+	}
 
 	// Compaction protection is left off: the snapshot holds its files against GC for
 	// as long as it exists, and it exists only for this export.

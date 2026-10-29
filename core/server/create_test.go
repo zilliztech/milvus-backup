@@ -234,14 +234,15 @@ func TestToCreateBackupRequest(t *testing.T) {
 		s := newListTestServer(t, withCreateBackup(&stubCreateFactory{}))
 
 		req, err := s.toCreateBackupRequest(&apiv1.CreateBackupRequest{
-			BackupName:     "backup1",
-			RequestId:      "rid-1",
-			Rbac:           true,
-			WithIndexExtra: true,
-			GcPauseEnable:  true,
-			GcPauseAddress: "http://manage",
-			Strategy:       "skip_flush",
-			Format:         "binlog",
+			BackupName:           "backup1",
+			RequestId:            "rid-1",
+			Rbac:                 true,
+			WithIndexExtra:       true,
+			GcPauseEnable:        true,
+			GcPauseAddress:       "http://manage",
+			Strategy:             "skip_flush",
+			Format:               "binlog",
+			DropSnapshotIfExists: true,
 		})
 
 		require.NoError(t, err)
@@ -252,6 +253,7 @@ func TestToCreateBackupRequest(t *testing.T) {
 		assert.True(t, req.Option.BackupRBAC)
 		assert.True(t, req.Option.BackupIndexExtra)
 		assert.True(t, req.Option.PauseGC)
+		assert.True(t, req.Option.DropSnapshotIfExists)
 		assert.Equal(t, "http://manage", req.Option.ManageAddr)
 	})
 

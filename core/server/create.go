@@ -199,7 +199,10 @@ func (s *Server) toCreateBackupRequest(request *apiv1.CreateBackupRequest) (app.
 			Format:           format,
 			BackupRBAC:       request.Rbac,
 			BackupIndexExtra: request.WithIndexExtra,
-			Filter:           f,
+
+			DropSnapshotIfExists: request.DropSnapshotIfExists,
+
+			Filter: f,
 		},
 	}, nil
 }

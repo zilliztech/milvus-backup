@@ -228,4 +228,34 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 		require.NotNil(t, dml)
 		assert.Equal(t, jobstate.BackupCollDMLStateFail, dml.State)
 	})
+
+	// drop_snapshot_if_exists clears a same-name snapshot left behind by an
+	// earlier run that died mid-flight before the create, and the task's own
+	// end-of-lifetime drop still fires afterward.
+	t.Run("DropSnapshotIfExistsBeforeCreate", func(t *testing.T) {
+		f := newSnapshotTaskFixture(t)
+
+		var calls []string
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().DropSnapshot(mock.Anything, "db1", "coll1", "mbk_mybackup").
+			Run(func(context.Context, string, string, string) { calls = append(calls, "drop") }).
+			Return(nil).Twice()
+		cli.EXPECT().CreateSnapshot(mock.Anything, "db1", "coll1", "mbk_mybackup", time.Duration(0)).
+			Run(func(context.Context, string, string, string, time.Duration) { calls = append(calls, "create") }).
+			Return(nil)
+		cli.EXPECT().DescribeSnapshot(mock.Anything, "db1", "coll1", "mbk_mybackup").
+			Return(&milvuspb.DescribeSnapshotResponse{CreateTs: 456, S3Location: f.sourceS3}, nil)
+
+		task, _, tracker := f.newTask(t, cli)
+		task.dropSnapshotIfExists = true
+		require.NoError(t, task.Execute(context.Background()))
+
+		// The pre-create drop must precede the create, and the lifetime drop
+		// settles last.
+		assert.Equal(t, []string{"drop", "create", "drop"}, calls)
+
+		dml := tracker.Snapshot().Colls[collRef].DML
+		require.NotNil(t, dml)
+		assert.Equal(t, jobstate.BackupCollDMLStateSuccess, dml.State)
+	})
 }

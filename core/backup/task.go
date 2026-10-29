@@ -59,6 +59,12 @@ type Option struct {
 
 	BackupIndexExtra bool
 
+	// DropSnapshotIfExists drops a same-name snapshot before the backup's own
+	// snapshot is created, clearing a leftover from an earlier run that died
+	// mid-flight; without it that leftover refuses the create. Snapshot format
+	// only.
+	DropSnapshotIfExists bool
+
 	// dbName -> CollFilter
 	Filter filter.Filter
 }
@@ -356,7 +362,7 @@ func (t *Task) newDataTask(format string) dataTaskFactory {
 			// semaphore bounds how many exports are in flight: a job starts its timeout
 			// when DataCoord accepts it, so anything queued beyond what
 			// dataCoord.snapshot.exportMaxConcurrentJobs can run burns that budget.
-			return newCollSnapshotTask(collRef, t.snapshotName(), t.snapshotTarget, args)
+			return newCollSnapshotTask(collRef, t.snapshotName(), t.snapshotTarget, args, t.option.DropSnapshotIfExists)
 		}
 
 		return newCollDMLTask(collRef, args)
