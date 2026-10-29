@@ -119,7 +119,10 @@ def get_json_field_name_list(schema):
             json_fields.append(field.name)
     return json_fields
 
-def create_index_for_vector_fields(collection):
+def create_index_for_vector_fields(collection, timeout=600):
+    # timeout must stay an int: pymilvus wait_for_creating_index only enforces
+    # isinstance(timeout, int), and None polls DescribeIndex forever when the
+    # server never finishes the build.
     schema = collection.schema
     float_vector_fields = get_float_vec_field_name_list(schema)
     binary_vector_fields = get_binary_vec_field_name_list(schema)
@@ -130,19 +133,19 @@ def create_index_for_vector_fields(collection):
     for field_name in float_vector_fields:
         if field_name in indexed_fields:
             continue
-        collection.create_index(field_name, DEFAULT_FLOAT_INDEX_PARAM)
+        collection.create_index(field_name, DEFAULT_FLOAT_INDEX_PARAM, timeout=timeout)
     for field_name in binary_vector_fields:
         if field_name in indexed_fields:
             continue
-        collection.create_index(field_name, DEFAULT_BINARY_INDEX_PARAM)
+        collection.create_index(field_name, DEFAULT_BINARY_INDEX_PARAM, timeout=timeout)
     for field_name in sparse_vector_fields:
         if field_name in indexed_fields:
             continue
-        collection.create_index(field_name, DEFAULT_SPARSE_INDEX_PARAM)
+        collection.create_index(field_name, DEFAULT_SPARSE_INDEX_PARAM, timeout=timeout)
     for field_name in bm25_vector_fields:
         if field_name in indexed_fields:
             continue
-        collection.create_index(field_name, DEFAULT_BM25_INDEX_PARAM)
+        collection.create_index(field_name, DEFAULT_BM25_INDEX_PARAM, timeout=timeout)
 
 def create_json_path_index_for_json_fields(collection):
     schema = collection.schema
