@@ -135,9 +135,10 @@ func TestCollSnapDMLTask_SendImportMsg(t *testing.T) {
 		assert.Equal(t, "self-contained", opts["_snapshot_layout"])
 		assert.Equal(t, `{"extfs":{"access_key_id":"ak"}}`, opts["external_spec"])
 		assert.JSONEq(t, `{"_default":"_default","p_b":"p_b"}`, opts["partition_mapping"])
-		// The cut is per channel, so it travels as its own map; the scalar
+		// The cut is per PChannel, so it travels as its own map; the scalar
 		// end_ts, the L0 flag and the storage version stay the snapshot's own.
-		assert.JSONEq(t, `{"rootcoord-dml_0":"100","rootcoord-dml_1":"100"}`, opts["_snapshot_end_ts"])
+		assert.JSONEq(t, `{"rootcoord-dml_0":"100","rootcoord-dml_1":"100"}`, opts["snapshot_pch_end_ts"])
+		assert.NotContains(t, opts, "_snapshot_end_ts")
 		assert.NotContains(t, opts, "l0_import")
 		assert.NotContains(t, opts, "end_ts")
 		assert.NotContains(t, opts, "storage_version")
@@ -210,14 +211,14 @@ func TestCollSnapDMLTask_Execute_FailedJob(t *testing.T) {
 	assert.Empty(t, stream.messagesByType(strconv.Itoa(_commitImportMessageType)))
 }
 
-// The bundle is cut per channel: every bound is the flush boundary of the
-// channel those rows live on, so a collection spread over two channels keeps
+// The bundle is cut per PChannel: every bound is the flush boundary of the
+// PChannel those rows live on, so a collection spread over two PChannels keeps
 // two bounds and neither is flattened into the other.
-func TestSnapshotChannelEndTS(t *testing.T) {
-	t.Run("EveryChannelBound", func(t *testing.T) {
+func TestSnapshotPChannelEndTS(t *testing.T) {
+	t.Run("EveryPChannelBound", func(t *testing.T) {
 		collBackup := newTestCollBackup(newTestVChannels(), nil, nil)
 
-		got, err := snapshotChannelEndTS(collBackup, map[string]uint64{
+		got, err := snapshotPChannelEndTS(collBackup, map[string]uint64{
 			"rootcoord-dml_0": 100,
 			"rootcoord-dml_1": 200,
 		})
@@ -230,20 +231,20 @@ func TestSnapshotChannelEndTS(t *testing.T) {
 	t.Run("MissingFlushBoundaryFails", func(t *testing.T) {
 		collBackup := newTestCollBackup(newTestVChannels(), nil, nil)
 
-		_, err := snapshotChannelEndTS(collBackup, map[string]uint64{"rootcoord-dml_0": 100})
+		_, err := snapshotPChannelEndTS(collBackup, map[string]uint64{"rootcoord-dml_0": 100})
 		assert.ErrorContains(t, err, "no flush all ts for pch rootcoord-dml_1")
 	})
 
 	t.Run("NoChannelsFails", func(t *testing.T) {
-		_, err := snapshotChannelEndTS(newTestCollBackup(nil, nil, nil), nil)
+		_, err := snapshotPChannelEndTS(newTestCollBackup(nil, nil, nil), nil)
 		assert.ErrorContains(t, err, "carries no virtual channels")
 	})
 
-	// Two vchannels sharing one physical channel share its single boundary.
-	t.Run("ChannelsSharePhysicalBoundary", func(t *testing.T) {
+	// Two VChannels sharing one PChannel share its single boundary.
+	t.Run("VChannelsSharePChannelBoundary", func(t *testing.T) {
 		collBackup := newTestCollBackup([]string{"rootcoord-dml_0_123v0", "rootcoord-dml_0_123v1"}, nil, nil)
 
-		got, err := snapshotChannelEndTS(collBackup, map[string]uint64{"rootcoord-dml_0": 300})
+		got, err := snapshotPChannelEndTS(collBackup, map[string]uint64{"rootcoord-dml_0": 300})
 		require.NoError(t, err)
 		assert.JSONEq(t, `{"rootcoord-dml_0":"300"}`, got)
 	})
