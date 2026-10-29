@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"testing"
 
+	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
 	"github.com/milvus-io/milvus/pkg/v3/proto/indexpb"
 	"github.com/stretchr/testify/assert"
@@ -29,7 +30,7 @@ func newTestMetaBuilder(t *testing.T) *metaBuilder {
 			{PartitionId: 11, PartitionName: "part2", CollectionId: 1},
 		},
 	}
-	builder.addCollection(collRef, coll)
+	require.NoError(t, builder.addCollection(collRef, coll))
 
 	segments := []*backuppb.SegmentBackupInfo{
 		{
@@ -83,10 +84,10 @@ func TestAddSegments(t *testing.T) {
 		})
 
 		collRef := collref.New("db1", "coll1")
-		builder.addCollection(collRef, &backuppb.CollectionBackupInfo{
+		require.NoError(t, builder.addCollection(collRef, &backuppb.CollectionBackupInfo{
 			CollectionId: 1, DbName: "db1", CollectionName: "coll1",
 			PartitionBackups: []*backuppb.PartitionBackupInfo{{PartitionId: 10, CollectionId: 1}},
-		})
+		}))
 
 		coll := builder.data.GetCollectionBackups()[0]
 		assert.EqualValues(t, 4096, coll.GetSize())
@@ -121,9 +122,9 @@ func TestAddPOS(t *testing.T) {
 		collRef := collref.New("db1", "coll1")
 		builder.addPOS(collRef, map[string]string{"ch1": "cp1"}, 100, 200)
 
-		builder.addCollection(collRef, &backuppb.CollectionBackupInfo{
+		require.NoError(t, builder.addCollection(collRef, &backuppb.CollectionBackupInfo{
 			CollectionId: 1, DbName: "db1", CollectionName: "coll1",
-		})
+		}))
 
 		coll := builder.data.GetCollectionBackups()[0]
 		assert.Equal(t, map[string]string{"ch1": "cp1"}, coll.GetChannelCheckpoints())
@@ -230,7 +231,7 @@ func TestAddDynamicFields(t *testing.T) {
 				},
 			},
 		}
-		builder.addCollection(collRef, coll)
+		require.NoError(t, builder.addCollection(collRef, coll))
 
 		defaultValue := &schemapb.ValueField{Data: &schemapb.ValueField_BytesData{BytesData: []byte("{}")}}
 		dynField := &schemapb.FieldSchema{
@@ -271,7 +272,7 @@ func TestAddDynamicFields(t *testing.T) {
 				Fields:             []*backuppb.FieldSchema{{FieldID: 100, Name: "pk"}},
 			},
 		}
-		builder.addCollection(collRef, coll)
+		require.NoError(t, builder.addCollection(collRef, coll))
 
 		dynField := &schemapb.FieldSchema{FieldID: 101, Name: "$meta", IsDynamic: true}
 		assert.NoError(t, builder.addDynamicFields(map[int64]*schemapb.FieldSchema{1: dynField}))
@@ -291,7 +292,7 @@ func TestAddDynamicFields(t *testing.T) {
 				Fields:             []*backuppb.FieldSchema{{FieldID: 100, Name: "pk"}},
 			},
 		}
-		builder.addCollection(collRef, coll)
+		require.NoError(t, builder.addCollection(collRef, coll))
 
 		// etcd has no record for collection 1.
 		err := builder.addDynamicFields(map[int64]*schemapb.FieldSchema{2: {FieldID: 101, IsDynamic: true}})
@@ -330,22 +331,22 @@ func TestSequentialBuildDoesNotCorruptData(t *testing.T) {
 	assert.Equal(t, 2, totalSegs)
 }
 
-func newIndexExtraTestBuilder() *metaBuilder {
+func newIndexExtraTestBuilder(t *testing.T) *metaBuilder {
 	builder := newMetaBuilder("task1", "backup1")
 	collRef := collref.New("db1", "coll1")
-	builder.addCollection(collRef, &backuppb.CollectionBackupInfo{
+	require.NoError(t, builder.addCollection(collRef, &backuppb.CollectionBackupInfo{
 		CollectionId:   1,
 		DbName:         "db1",
 		CollectionName: "coll1",
 		IndexInfos:     []*backuppb.IndexInfo{{IndexId: 100, FieldName: "vec", IndexName: "vec_idx"}},
-	})
+	}))
 
 	return builder
 }
 
 func TestAddIndexExtraInfo(t *testing.T) {
 	t.Run("MergesExtraAttributes", func(t *testing.T) {
-		builder := newIndexExtraTestBuilder()
+		builder := newIndexExtraTestBuilder(t)
 
 		indexes := []*indexpb.FieldIndex{
 			{
@@ -363,8 +364,51 @@ func TestAddIndexExtraInfo(t *testing.T) {
 		assert.Equal(t, int32(2), got.GetMaxIndexVersion())
 	})
 
+	t.Run("EtcdOnlySupplementsFieldsSnapshotCannotProvide", func(t *testing.T) {
+		builder := newIndexExtraTestBuilder(t)
+		require.NoError(t, builder.addSnapshot(collref.New("db1", "coll1"), &backuppb.SnapshotBackupInfo{}, 456, nil, []*indexpb.IndexInfo{{
+			CollectionID:    1,
+			IndexID:         100,
+			FieldID:         7,
+			TypeParams:      []*commonpb.KeyValuePair{{Key: "source", Value: "snapshot"}},
+			IndexParams:     []*commonpb.KeyValuePair{{Key: "source", Value: "snapshot"}},
+			UserIndexParams: []*commonpb.KeyValuePair{{Key: "source", Value: "snapshot"}},
+			IsAutoIndex:     false,
+		}}))
+
+		err := builder.addIndexExtraInfo([]*indexpb.FieldIndex{{
+			IndexInfo: &indexpb.IndexInfo{
+				CollectionID:    1,
+				IndexID:         100,
+				FieldID:         70,
+				TypeParams:      []*commonpb.KeyValuePair{{Key: "source", Value: "etcd"}},
+				IndexParams:     []*commonpb.KeyValuePair{{Key: "source", Value: "etcd"}},
+				UserIndexParams: []*commonpb.KeyValuePair{{Key: "source", Value: "etcd"}},
+				IsAutoIndex:     true,
+				MinIndexVersion: 1,
+				MaxIndexVersion: 2,
+			},
+			CreateTime: 42,
+		}})
+		require.NoError(t, err)
+
+		got := builder.collectionBackups[1].GetIndexInfos()[0]
+		assert.Equal(t, int64(7), got.GetFieldId())
+		require.Len(t, got.GetTypeParams(), 1)
+		require.Len(t, got.GetIndexParams(), 1)
+		require.Len(t, got.GetUserIndexParams(), 1)
+		assert.Equal(t, "snapshot", got.GetTypeParams()[0].GetValue())
+		assert.Equal(t, "snapshot", got.GetIndexParams()[0].GetValue())
+		assert.Equal(t, "snapshot", got.GetUserIndexParams()[0].GetValue())
+		assert.False(t, got.GetIsAutoIndex())
+		assert.Equal(t, uint64(42), got.GetCreateTime())
+		assert.Equal(t, int32(1), got.GetMinIndexVersion())
+		assert.Equal(t, int32(2), got.GetMaxIndexVersion())
+		assert.Equal(t, "vec", got.GetFieldName())
+	})
+
 	t.Run("UnknownCollectionID", func(t *testing.T) {
-		builder := newIndexExtraTestBuilder()
+		builder := newIndexExtraTestBuilder(t)
 
 		indexes := []*indexpb.FieldIndex{
 			{IndexInfo: &indexpb.IndexInfo{CollectionID: 999, IndexID: 100}},
@@ -375,7 +419,7 @@ func TestAddIndexExtraInfo(t *testing.T) {
 	})
 
 	t.Run("IndexNotInBackupInfos", func(t *testing.T) {
-		builder := newIndexExtraTestBuilder()
+		builder := newIndexExtraTestBuilder(t)
 
 		indexes := []*indexpb.FieldIndex{
 			{IndexInfo: &indexpb.IndexInfo{CollectionID: 1, IndexID: 300}},
@@ -387,8 +431,8 @@ func TestAddIndexExtraInfo(t *testing.T) {
 }
 
 func TestBackupCollectionIDs(t *testing.T) {
-	builder := newIndexExtraTestBuilder()
-	builder.addCollection(collref.New("db1", "coll2"), &backuppb.CollectionBackupInfo{CollectionId: 2})
+	builder := newIndexExtraTestBuilder(t)
+	require.NoError(t, builder.addCollection(collref.New("db1", "coll2"), &backuppb.CollectionBackupInfo{CollectionId: 2}))
 
 	assert.ElementsMatch(t, []int64{1, 2}, builder.backupCollectionIDs())
 }
@@ -402,7 +446,7 @@ func TestAddSnapshot(t *testing.T) {
 		TotalFiles:   3,
 		TotalBytes:   4096,
 	}
-	builder.addSnapshot(collRef, snapshot, 456)
+	require.NoError(t, builder.addSnapshot(collRef, snapshot, 456, nil, nil))
 
 	coll := builder.data.GetCollectionBackups()[0]
 	assert.Equal(t, "snapshots/1/metadata/2.json", coll.GetSnapshotBackup().GetMetadataPath())
@@ -417,14 +461,169 @@ func TestAddSnapshot(t *testing.T) {
 
 		// The export can finish before the collection's DDL lands; the bundle
 		// waits in the pendings and addCollection applies it.
-		other.addSnapshot(otherRef, snapshot, 789)
-		other.addCollection(otherRef, &backuppb.CollectionBackupInfo{CollectionId: 2, CollectionName: "late"})
+		require.NoError(t, other.addSnapshot(otherRef, snapshot, 789, nil, nil))
+		require.NoError(t, other.addCollection(otherRef, &backuppb.CollectionBackupInfo{CollectionId: 2, CollectionName: "late"}))
 
 		coll := other.data.GetCollectionBackups()[0]
 		assert.Equal(t, "snapshots/1/metadata/2.json", coll.GetSnapshotBackup().GetMetadataPath())
 		assert.EqualValues(t, 4096, coll.GetSize())
 		assert.EqualValues(t, 789, coll.GetBackupTimestamp())
 	})
+
+	// The DDL half reads the schema through DescribeCollection, which hides the
+	// dynamic field; the bundle's schema is the internal one and carries it.
+	bundleSchema := &schemapb.CollectionSchema{
+		EnableDynamicField: true,
+		Fields: []*schemapb.FieldSchema{
+			{FieldID: 0, Name: "RowID", DataType: schemapb.DataType_Int64},
+			{FieldID: 1, Name: "Timestamp", DataType: schemapb.DataType_Int64},
+			{FieldID: 100, Name: "pk", IsPrimaryKey: true, DataType: schemapb.DataType_Int64},
+			{FieldID: 101, Name: "vec", DataType: schemapb.DataType_FloatVector},
+			{FieldID: 102, Name: "$meta", DataType: schemapb.DataType_JSON, IsDynamic: true, Nullable: true},
+		},
+	}
+	newDynColl := func() *backuppb.CollectionBackupInfo {
+		return &backuppb.CollectionBackupInfo{
+			CollectionId:   1,
+			DbName:         "db1",
+			CollectionName: "coll1",
+			Schema: &backuppb.CollectionSchema{
+				EnableDynamicField: true,
+				Fields: []*backuppb.FieldSchema{
+					{FieldID: 100, Name: "pk", IsPrimaryKey: true, DataType: backuppb.DataType_Int64},
+					{FieldID: 101, Name: "vec", DataType: backuppb.DataType_FloatVector},
+				},
+			},
+		}
+	}
+
+	t.Run("RecordsTheBundlesDynamicField", func(t *testing.T) {
+		builder := newMetaBuilder("task1", "backup1")
+		require.NoError(t, builder.addCollection(collRef, newDynColl()))
+
+		require.NoError(t, builder.addSnapshot(collRef, snapshot, 456, bundleSchema, nil))
+
+		// Only the dynamic field is taken: the system fields are Milvus's own and
+		// the user fields are already there from DescribeCollection.
+		fields := builder.data.GetCollectionBackups()[0].GetSchema().GetFields()
+		require.Len(t, fields, 3)
+		dyn := fields[2]
+		assert.Equal(t, int64(102), dyn.GetFieldID())
+		assert.Equal(t, "$meta", dyn.GetName())
+		assert.Equal(t, backuppb.DataType_JSON, dyn.GetDataType())
+		assert.True(t, dyn.GetIsDynamic())
+		assert.True(t, dyn.GetNullable())
+	})
+
+	t.Run("DynamicFieldSurvivesThePendingOrder", func(t *testing.T) {
+		builder := newMetaBuilder("task1", "backup1")
+
+		require.NoError(t, builder.addSnapshot(collRef, snapshot, 456, bundleSchema, nil))
+		require.NoError(t, builder.addCollection(collRef, newDynColl()))
+
+		fields := builder.data.GetCollectionBackups()[0].GetSchema().GetFields()
+		require.Len(t, fields, 3)
+		assert.True(t, fields[2].GetIsDynamic())
+	})
+
+	t.Run("FailsABundleWhoseDynamicSchemaCarriesNoMetaField", func(t *testing.T) {
+		builder := newMetaBuilder("task1", "backup1")
+		require.NoError(t, builder.addCollection(collRef, newDynColl()))
+
+		// The bundle schema is catalog truth: enabled means $meta present. A
+		// schema without the field would surface as a secondary restore that
+		// cannot recreate the collection, so it fails the backup here.
+		broken := &schemapb.CollectionSchema{
+			EnableDynamicField: true,
+			Fields:             []*schemapb.FieldSchema{{FieldID: 100, Name: "pk", IsPrimaryKey: true}},
+		}
+		err := builder.addSnapshot(collRef, snapshot, 456, broken, nil)
+
+		assert.ErrorContains(t, err, "enables dynamic field but carries no $meta field")
+		assert.Len(t, builder.data.GetCollectionBackups()[0].GetSchema().GetFields(), 2)
+	})
+
+	t.Run("BundleWithoutADynamicFieldChangesNothing", func(t *testing.T) {
+		builder := newMetaBuilder("task1", "backup1")
+		require.NoError(t, builder.addCollection(collRef, newDynColl()))
+
+		plain := &schemapb.CollectionSchema{Fields: []*schemapb.FieldSchema{{FieldID: 100, Name: "pk"}}}
+		require.NoError(t, builder.addSnapshot(collRef, snapshot, 456, plain, nil))
+
+		assert.Len(t, builder.data.GetCollectionBackups()[0].GetSchema().GetFields(), 2)
+	})
+}
+
+func TestAddSnapshotRejectsUnknownIndex(t *testing.T) {
+	builder := newIndexExtraTestBuilder(t)
+
+	err := builder.addSnapshot(collref.New("db1", "coll1"), &backuppb.SnapshotBackupInfo{}, 456, nil, []*indexpb.IndexInfo{{
+		CollectionID: 1,
+		IndexID:      999,
+		FieldID:      7,
+	}})
+
+	assert.ErrorContains(t, err, "snapshot index 999 of collection 1 not in backup index infos")
+}
+
+func TestAddSnapshotRejectsIndexMissingFromSnapshot(t *testing.T) {
+	builder := newIndexExtraTestBuilder(t)
+
+	err := builder.addSnapshot(collref.New("db1", "coll1"), &backuppb.SnapshotBackupInfo{}, 456, nil, nil)
+
+	assert.ErrorContains(t, err, "index 100 of collection 1 exists in backup index infos but not in snapshot")
+}
+
+func TestAddSnapshotIndexExtraSurvivesPendingOrder(t *testing.T) {
+	builder := newMetaBuilder("task1", "backup1")
+	collRef := collref.New("db1", "coll1")
+	require.NoError(t, builder.addSnapshot(collRef, &backuppb.SnapshotBackupInfo{}, 456, nil, []*indexpb.IndexInfo{{
+		CollectionID:    1,
+		IndexID:         100,
+		FieldID:         7,
+		TypeParams:      []*commonpb.KeyValuePair{{Key: "source", Value: "snapshot"}},
+		IndexParams:     []*commonpb.KeyValuePair{{Key: "source", Value: "snapshot"}},
+		UserIndexParams: []*commonpb.KeyValuePair{{Key: "source", Value: "snapshot"}},
+	}}))
+
+	require.NoError(t, builder.addCollection(collRef, &backuppb.CollectionBackupInfo{
+		CollectionId: 1,
+		IndexInfos: []*backuppb.IndexInfo{{
+			IndexId:   100,
+			FieldName: "vec",
+			IndexName: "vec_idx",
+			Params:    map[string]string{"index_type": "HNSW"},
+		}},
+	}))
+
+	got := builder.collectionBackups[1].GetIndexInfos()[0]
+	assert.Equal(t, int64(7), got.GetFieldId())
+	require.Len(t, got.GetTypeParams(), 1)
+	require.Len(t, got.GetIndexParams(), 1)
+	require.Len(t, got.GetUserIndexParams(), 1)
+	assert.Equal(t, "snapshot", got.GetTypeParams()[0].GetValue())
+	assert.Equal(t, "snapshot", got.GetIndexParams()[0].GetValue())
+	assert.Equal(t, "snapshot", got.GetUserIndexParams()[0].GetValue())
+	assert.False(t, got.GetIsAutoIndex())
+	assert.Equal(t, "vec", got.GetFieldName())
+	assert.Equal(t, map[string]string{"index_type": "HNSW"}, got.GetParams())
+}
+
+func TestAddCollectionRejectsUnknownPendingSnapshotIndex(t *testing.T) {
+	builder := newMetaBuilder("task1", "backup1")
+	collRef := collref.New("db1", "coll1")
+	require.NoError(t, builder.addSnapshot(collRef, &backuppb.SnapshotBackupInfo{}, 456, nil, []*indexpb.IndexInfo{{
+		CollectionID: 1,
+		IndexID:      999,
+		FieldID:      7,
+	}}))
+
+	err := builder.addCollection(collRef, &backuppb.CollectionBackupInfo{
+		CollectionId: 1,
+		IndexInfos:   []*backuppb.IndexInfo{{IndexId: 100}},
+	})
+
+	assert.ErrorContains(t, err, "snapshot index 999 of collection 1 not in backup index infos")
 }
 
 // backup_meta.json is the top-level view, and a reader that fetches only it still has
@@ -442,7 +641,7 @@ func TestBuildBackupMetaCarriesFormat(t *testing.T) {
 }
 
 func TestMetaBuilder_DynamicSchemaCollections(t *testing.T) {
-	t.Run("names only the dynamic ones, sorted", func(t *testing.T) {
+	t.Run("NamesOnlyTheDynamicOnesSorted", func(t *testing.T) {
 		b := newMetaBuilder("task", "backup")
 		b.data.CollectionBackups = []*backuppb.CollectionBackupInfo{
 			{DbName: "db2", CollectionName: "z", Schema: &backuppb.CollectionSchema{EnableDynamicField: true}},
@@ -453,7 +652,7 @@ func TestMetaBuilder_DynamicSchemaCollections(t *testing.T) {
 		assert.Equal(t, []string{"db1.a", "db2.z"}, b.dynamicSchemaCollections())
 	})
 
-	t.Run("empty when none has dynamic schema", func(t *testing.T) {
+	t.Run("EmptyWhenNoneHasDynamicSchema", func(t *testing.T) {
 		b := newMetaBuilder("task", "backup")
 		b.data.CollectionBackups = []*backuppb.CollectionBackupInfo{
 			{DbName: "db1", CollectionName: "plain", Schema: &backuppb.CollectionSchema{}},

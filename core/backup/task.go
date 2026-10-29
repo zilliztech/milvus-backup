@@ -636,10 +636,17 @@ func (t *Task) backupIndexExtraInfo(ctx context.Context) error {
 // backupCollDynField reads each collection's dynamic field ($meta) schema
 // directly from etcd and stores it in the backup metadata. This is necessary
 // because the Milvus DescribeCollection API filters out IsDynamic fields, so
-// the gRPC-based backup path never sees the actual $meta attributes
+// the gRPC-based binlog path never sees the actual $meta attributes
 // (Nullable, DefaultValue, ...). Without this info, secondary restore would
 // reconstruct the field with hardcoded defaults that may not match the source
 // collection. See zilliztech/milvus-backup#1013.
+//
+// The snapshot format never gets here: every collection of that format is
+// backed up through a snapshot task, whose bundle metadata carries the internal
+// schema — catalog truth the proxy filter does not touch — and records the
+// $meta field from it, failing the backup if a dynamic schema arrived without
+// one. The format branch below is that guarantee's other half, not a fallback:
+// there is no population of snapshot collections etcd could still complete.
 //
 // Reuses the etcd client created for BackupIndexExtra; if etcd is not
 // configured (BackupIndexExtra disabled) the task is skipped.
@@ -650,6 +657,11 @@ func (t *Task) backupIndexExtraInfo(ctx context.Context) error {
 // naming the collections it leaves incomplete -- that message is the only place
 // the missing option is visible before a restore fails on it much later.
 func (t *Task) backupCollDynField(ctx context.Context) error {
+	if t.resolvedFormat == meta.FormatSnapshot {
+		t.logger.Info("skip backup collection dynamic field, the snapshot bundles carry it")
+		return nil
+	}
+
 	if t.etcd == nil {
 		if affected := t.metaBuilder.dynamicSchemaCollections(); len(affected) > 0 {
 			t.logger.Warn("dynamic field not recorded, this backup cannot serve a secondary restore",

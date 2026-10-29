@@ -37,11 +37,21 @@ type metaBuilder struct {
 	pendingSegments map[int64][]*backuppb.SegmentBackupInfo // coll id -> segments
 	pendingPOS      map[collref.Name]posRecord
 	pendingSnapshot map[collref.Name]snapshotRecord
+
+	// snapshotIndexes records which indexes carry the snapshot's five internal
+	// fields. Presence, rather than a zero-value check, is necessary because
+	// IsAutoIndex=false and empty parameter lists are valid snapshot values.
+	snapshotIndexes map[indexKey]struct{}
 }
 
 type partitionKey struct {
 	collectionID int64
 	partitionID  int64
+}
+
+type indexKey struct {
+	collectionID int64
+	indexID      int64
 }
 
 type posRecord struct {
@@ -53,6 +63,13 @@ type posRecord struct {
 type snapshotRecord struct {
 	snapshot   *backuppb.SnapshotBackupInfo
 	snapshotTs uint64
+
+	// dynField is the $meta field as the bundle's schema carries it, nil when
+	// the collection has no dynamic schema. The snapshot metadata holds the
+	// internal schema, which keeps the dynamic field the public
+	// DescribeCollection hides from the DDL half.
+	dynField *backuppb.FieldSchema
+	indexes  []*indexpb.IndexInfo
 }
 
 func newMetaBuilder(taskID, backupName string) *metaBuilder {
@@ -67,6 +84,7 @@ func newMetaBuilder(taskID, backupName string) *metaBuilder {
 		pendingSegments: make(map[int64][]*backuppb.SegmentBackupInfo),
 		pendingPOS:      make(map[collref.Name]posRecord),
 		pendingSnapshot: make(map[collref.Name]snapshotRecord),
+		snapshotIndexes: make(map[indexKey]struct{}),
 	}
 }
 
@@ -93,7 +111,7 @@ func (builder *metaBuilder) addDatabase(databaseBackup *backuppb.DatabaseBackupI
 	builder.data.DatabaseBackups = append(builder.data.DatabaseBackups, databaseBackup)
 }
 
-func (builder *metaBuilder) addCollection(collRef collref.Name, collectionBackup *backuppb.CollectionBackupInfo) {
+func (builder *metaBuilder) addCollection(collRef collref.Name, collectionBackup *backuppb.CollectionBackupInfo) error {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
 
@@ -106,12 +124,12 @@ func (builder *metaBuilder) addCollection(collRef collref.Name, collectionBackup
 		builder.partitionBackups[key] = partition
 	}
 
-	builder.drainPendings(collRef, collectionBackup)
+	return builder.drainPendings(collRef, collectionBackup)
 }
 
 // drainPendings applies the data-side writes that beat this collection's DDL
 // to the now-registered entry. The lock is the caller's.
-func (builder *metaBuilder) drainPendings(collRef collref.Name, collectionBackup *backuppb.CollectionBackupInfo) {
+func (builder *metaBuilder) drainPendings(collRef collref.Name, collectionBackup *backuppb.CollectionBackupInfo) error {
 	collID := collectionBackup.GetCollectionId()
 
 	for _, segment := range builder.pendingSegments[collID] {
@@ -125,9 +143,14 @@ func (builder *metaBuilder) drainPendings(collRef collref.Name, collectionBackup
 	}
 
 	if snapshot, ok := builder.pendingSnapshot[collRef]; ok {
-		setCollSnapshot(collectionBackup, snapshot)
+		if err := validateSnapshotIndexes(collectionBackup, snapshot.indexes); err != nil {
+			return err
+		}
+		builder.setCollSnapshot(collectionBackup, snapshot)
 		delete(builder.pendingSnapshot, collRef)
 	}
+
+	return nil
 }
 
 // checkDrained refuses to build meta while data-side writes are still
@@ -155,25 +178,140 @@ func (builder *metaBuilder) setFormat(format string) {
 // addSnapshot attaches a collection's exported bundle. snapshotTs is the snapshot's
 // own boundary as Milvus reports it, which is what backup_timestamp means for this
 // format — the flush response the binlog path reads it from has no counterpart here.
-// A bundle that arrives before its collection's DDL waits in the pendings.
-func (builder *metaBuilder) addSnapshot(collRef collref.Name, snapshot *backuppb.SnapshotBackupInfo, snapshotTs uint64) {
+// bundleSchema is the collection schema inside the snapshot metadata: its dynamic
+// field is the one the DDL half cannot get from DescribeCollection, and it is recorded
+// when the meta still lacks it. bundleIndexes supplements the internal index fields
+// that DescribeIndex does not return. A bundle that arrives before its collection's
+// DDL waits in the pendings.
+func (builder *metaBuilder) addSnapshot(
+	collRef collref.Name,
+	snapshot *backuppb.SnapshotBackupInfo,
+	snapshotTs uint64,
+	bundleSchema *schemapb.CollectionSchema,
+	bundleIndexes []*indexpb.IndexInfo,
+) error {
+	dynField, err := bundleDynField(bundleSchema)
+	if err != nil {
+		return fmt.Errorf("backup: snapshot bundle of %s: %w", collRef.String(), err)
+	}
+	record := snapshotRecord{snapshot: snapshot, snapshotTs: snapshotTs, dynField: dynField, indexes: bundleIndexes}
+
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
 
 	collID := builder.nameToCollID[collRef]
 	collBackup, ok := builder.collectionBackups[collID]
 	if !ok {
-		builder.pendingSnapshot[collRef] = snapshotRecord{snapshot: snapshot, snapshotTs: snapshotTs}
-		return
+		builder.pendingSnapshot[collRef] = record
+		return nil
 	}
 
-	setCollSnapshot(collBackup, snapshotRecord{snapshot: snapshot, snapshotTs: snapshotTs})
+	if err := validateSnapshotIndexes(collBackup, record.indexes); err != nil {
+		return err
+	}
+	builder.setCollSnapshot(collBackup, record)
+	return nil
 }
 
-func setCollSnapshot(collBackup *backuppb.CollectionBackupInfo, record snapshotRecord) {
+func validateSnapshotIndexes(collBackup *backuppb.CollectionBackupInfo, indexes []*indexpb.IndexInfo) error {
+	describeIDs := make(map[int64]struct{}, len(collBackup.GetIndexInfos()))
+	for _, index := range collBackup.GetIndexInfos() {
+		describeIDs[index.GetIndexId()] = struct{}{}
+	}
+
+	snapshotIDs := make(map[int64]struct{}, len(indexes))
+	for _, info := range indexes {
+		if info.GetCollectionID() != collBackup.GetCollectionId() {
+			return fmt.Errorf("backup: snapshot index %d references collection %d, want %d",
+				info.GetIndexID(), info.GetCollectionID(), collBackup.GetCollectionId())
+		}
+		if _, ok := describeIDs[info.GetIndexID()]; !ok {
+			return fmt.Errorf("backup: snapshot index %d of collection %d not in backup index infos",
+				info.GetIndexID(), info.GetCollectionID())
+		}
+		snapshotIDs[info.GetIndexID()] = struct{}{}
+	}
+
+	for _, index := range collBackup.GetIndexInfos() {
+		if _, ok := snapshotIDs[index.GetIndexId()]; !ok {
+			return fmt.Errorf("backup: index %d of collection %d exists in backup index infos but not in snapshot",
+				index.GetIndexId(), collBackup.GetCollectionId())
+		}
+	}
+
+	return nil
+}
+
+func (builder *metaBuilder) setCollSnapshot(collBackup *backuppb.CollectionBackupInfo, record snapshotRecord) {
 	collBackup.SnapshotBackup = record.snapshot
 	collBackup.BackupTimestamp = record.snapshotTs
 	collBackup.Size = record.snapshot.GetTotalBytes()
+
+	// The bundle's copy is the only source of $meta: the schema the DDL half
+	// recorded comes from DescribeCollection, which hides the field.
+	if record.dynField != nil {
+		collBackup.Schema.Fields = append(collBackup.Schema.Fields, record.dynField)
+	}
+
+	builder.mergeSnapshotIndexExtra(collBackup, record.indexes)
+}
+
+// mergeSnapshotIndexExtra supplements only the internal fields absent from the
+// public DescribeIndex response. FieldName, Params and IndexType stay in the
+// public projection; CreateTime and the index versions are left to etcd.
+func (builder *metaBuilder) mergeSnapshotIndexExtra(collBackup *backuppb.CollectionBackupInfo, indexes []*indexpb.IndexInfo) {
+	byID := make(map[int64]*backuppb.IndexInfo, len(collBackup.GetIndexInfos()))
+	for _, index := range collBackup.GetIndexInfos() {
+		byID[index.GetIndexId()] = index
+	}
+
+	for _, info := range indexes {
+		if info.GetCollectionID() != collBackup.GetCollectionId() {
+			continue
+		}
+		target, ok := byID[info.GetIndexID()]
+		if !ok {
+			continue
+		}
+
+		setIndexInternalFields(target, info)
+		builder.snapshotIndexes[indexKey{collectionID: info.GetCollectionID(), indexID: info.GetIndexID()}] = struct{}{}
+	}
+}
+
+func setIndexInternalFields(target *backuppb.IndexInfo, info *indexpb.IndexInfo) {
+	target.FieldId = info.GetFieldID()
+	target.TypeParams = pbconv.MilvusKVToBakKV(info.GetTypeParams())
+	target.IndexParams = pbconv.MilvusKVToBakKV(info.GetIndexParams())
+	target.UserIndexParams = pbconv.MilvusKVToBakKV(info.GetUserIndexParams())
+	target.IsAutoIndex = info.GetIsAutoIndex()
+}
+
+// bundleDynField picks the dynamic field out of a snapshot bundle's collection
+// schema, converted for the backup meta. The bundle schema is the catalog truth
+// the server exported, which carries $meta whenever the dynamic schema is
+// enabled, so a schema claiming enabled without the field is a broken snapshot:
+// it fails the backup here rather than surfacing later as a restore that cannot
+// recreate the collection.
+func bundleDynField(schema *schemapb.CollectionSchema) (*backuppb.FieldSchema, error) {
+	var dynField *backuppb.FieldSchema
+	for _, field := range schema.GetFields() {
+		if !field.GetIsDynamic() {
+			continue
+		}
+		converted, err := convDynField(field)
+		if err != nil {
+			return nil, err
+		}
+		dynField = converted
+		break
+	}
+
+	if schema.GetEnableDynamicField() && dynField == nil {
+		return nil, fmt.Errorf("schema enables dynamic field but carries no $meta field")
+	}
+
+	return dynField, nil
 }
 
 func (builder *metaBuilder) addPOS(collRef collref.Name, channelCP map[string]string, maxChannelTS uint64, sealTime uint64) {
@@ -259,9 +397,10 @@ func (builder *metaBuilder) backupCollectionIDs() []int64 {
 }
 
 // dynamicSchemaCollections names the backed-up collections that have dynamic
-// schema enabled, in db.collection form. Their $meta field can only reach the
-// backup through the etcd-backed dynamic field task, so this is what a caller
-// needs in order to say which collections an absent task leaves incomplete.
+// schema enabled, in db.collection form. In the binlog format their $meta field
+// can only reach the backup through the etcd-backed dynamic field task, so this
+// is what a caller needs in order to say which collections an absent task
+// leaves incomplete.
 func (builder *metaBuilder) dynamicSchemaCollections() []string {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
@@ -278,12 +417,16 @@ func (builder *metaBuilder) dynamicSchemaCollections() []string {
 }
 
 // addIndexExtraInfo merges the extra index attributes read from etcd into the
-// index infos already collected via DescribeIndex. The caller must only pass
-// indexes that belong to backed-up collections (the etcd scan is scoped per
-// collection). Every index is expected to have a matching IndexInfo; a miss
-// means etcd and DescribeIndex disagree, which would produce an incomplete
-// backup that breaks CDC secondary restore, so it is reported as an error
-// rather than silently skipped.
+// index infos already collected via DescribeIndex. For indexes supplemented by
+// a snapshot, etcd fills only CreateTime and the index versions; the snapshot's
+// five internal fields stay authoritative, including valid zero values. For all
+// other indexes etcd fills the complete extra set.
+//
+// The caller must only pass indexes that belong to backed-up collections (the
+// etcd scan is scoped per collection). Every index is expected to have a
+// matching IndexInfo; a miss means etcd and DescribeIndex disagree, which would
+// produce an incomplete backup that breaks CDC secondary restore, so it is
+// reported as an error rather than silently skipped.
 func (builder *metaBuilder) addIndexExtraInfo(indexes []*indexpb.FieldIndex) error {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
@@ -309,14 +452,14 @@ func (builder *metaBuilder) addIndexExtraInfo(indexes []*indexpb.FieldIndex) err
 				info.GetIndexID(), info.GetCollectionID())
 		}
 
-		indexInfo.FieldId = info.GetFieldID()
-		indexInfo.TypeParams = pbconv.MilvusKVToBakKV(info.GetTypeParams())
 		indexInfo.CreateTime = index.GetCreateTime()
-		indexInfo.IndexParams = pbconv.MilvusKVToBakKV(info.GetIndexParams())
-		indexInfo.UserIndexParams = pbconv.MilvusKVToBakKV(info.GetUserIndexParams())
-		indexInfo.IsAutoIndex = info.GetIsAutoIndex()
 		indexInfo.MinIndexVersion = info.GetMinIndexVersion()
 		indexInfo.MaxIndexVersion = info.GetMaxIndexVersion()
+		if _, fromSnapshot := builder.snapshotIndexes[indexKey{collectionID: info.GetCollectionID(), indexID: info.GetIndexID()}]; fromSnapshot {
+			continue
+		}
+
+		setIndexInternalFields(indexInfo, info)
 	}
 
 	return nil
@@ -328,6 +471,10 @@ func (builder *metaBuilder) addIndexExtraInfo(indexes []*indexpb.FieldIndex) err
 // backup metadata is missing the actual $meta field attributes (Nullable,
 // DefaultValue) and secondary restore would have to reconstruct it blindly.
 // See zilliztech/milvus-backup#1013.
+//
+// Only the binlog format gets here: a snapshot-format collection records its
+// field from its own bundle in setCollSnapshot, and DescribeCollection never
+// carries the field, so a binlog schema cannot already have one.
 //
 // Returns an error if any collection has EnableDynamicField=true but the
 // caller did not supply a matching dynamic field. We treat this as a hard
