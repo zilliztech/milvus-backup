@@ -479,6 +479,10 @@
                     "description": "Database and collections to backup. Accepts both shapes it always has:\na JSON string holding a JSON object, or the object itself.\n\nDeprecated: use filter.",
                     "type": "string"
                 },
+                "drop_snapshot_if_exists": {
+                    "description": "Drop a snapshot of the same name before creating the backup's own, so a\nleftover from an earlier run that died mid-flight cannot fail the create.\nSnapshot format only.",
+                    "type": "boolean"
+                },
                 "filter": {
                     "description": "Filter for backup: database name to its collection list.",
                     "type": "object",

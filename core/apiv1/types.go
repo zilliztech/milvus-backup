@@ -82,6 +82,10 @@ type CreateBackupRequest struct {
 	// Format for backup, one of [auto, binlog, snapshot]; auto selects when
 	// unset.
 	Format string `json:"format,omitempty"`
+	// Drop a snapshot of the same name before creating the backup's own, so a
+	// leftover from an earlier run that died mid-flight cannot fail the create.
+	// Snapshot format only.
+	DropSnapshotIfExists bool `json:"drop_snapshot_if_exists,omitempty"`
 }
 
 // CollFilter is the per-database collection list of a filter. The single
