@@ -78,58 +78,6 @@ func TestCollDDLTask_description(t *testing.T) {
 	})
 }
 
-func TestCollDDLTask_fields(t *testing.T) {
-	t.Run("WithDynamicField", func(t *testing.T) {
-		ddlt := newTestCollDDLTask()
-
-		ddlt.collBackup = &backuppb.CollectionBackupInfo{
-			Schema: &backuppb.CollectionSchema{
-				Fields: []*backuppb.FieldSchema{
-					{Name: "field1", FieldID: common.StartOfUserFieldID},
-					{Name: "field2", FieldID: common.StartOfUserFieldID + 1},
-					{Name: "field3", FieldID: common.StartOfUserFieldID + 2},
-					// $meta field's field id is common.StartOfUserFieldID + 3
-					{Name: "field4", FieldID: common.StartOfUserFieldID + 4},
-					{Name: "field5", FieldID: common.StartOfUserFieldID + 5},
-				},
-				EnableDynamicField: true,
-			},
-		}
-
-		createFields, addFields, err := ddlt.fields()
-		assert.NoError(t, err)
-		assert.Len(t, createFields, 3)
-		assert.Len(t, addFields, 2)
-
-		assert.Equal(t, "field1", createFields[0].GetName())
-		assert.Equal(t, "field2", createFields[1].GetName())
-		assert.Equal(t, "field3", createFields[2].GetName())
-		assert.Equal(t, "field4", addFields[0].GetName())
-	})
-
-	t.Run("WithoutDynamicField", func(t *testing.T) {
-		ddlt := newTestCollDDLTask()
-
-		ddlt.collBackup = &backuppb.CollectionBackupInfo{
-			Schema: &backuppb.CollectionSchema{
-				Fields: []*backuppb.FieldSchema{
-					{Name: "field1", FieldID: common.StartOfUserFieldID},
-					{Name: "field2", FieldID: common.StartOfUserFieldID + 1},
-				},
-				EnableDynamicField: false,
-			},
-		}
-
-		createFields, addFields, err := ddlt.fields()
-		assert.NoError(t, err)
-		assert.Len(t, createFields, 2)
-		assert.Empty(t, addFields)
-
-		assert.Equal(t, "field1", createFields[0].GetName())
-		assert.Equal(t, "field2", createFields[1].GetName())
-	})
-}
-
 func TestCollDDLTask_properties(t *testing.T) {
 	t.Run("NotSupportFuncRuntimeCheck", func(t *testing.T) {
 		grpcCli := milvus.NewMockGrpc(t)

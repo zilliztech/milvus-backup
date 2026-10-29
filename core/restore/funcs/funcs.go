@@ -3,13 +3,18 @@ package funcs
 import (
 	"slices"
 
-	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
 	"github.com/milvus-io/milvus/pkg/v3/common"
 )
 
+// FieldSchema exposes the field identity needed to locate the dynamic slot.
+type FieldSchema interface {
+	GetFieldID() int64
+	GetIsDynamic() bool
+}
+
 // GuessDynFieldID guess the dynamic field id.
 // The describeCollection API does not return the $meta field, so we need to guess it.
-func GuessDynFieldID(fields []*schemapb.FieldSchema) int64 {
+func GuessDynFieldID[T FieldSchema](fields []T) int64 {
 	fieldIDs := make([]int64, 0, len(fields))
 
 	// if $meta field exists, return its field id

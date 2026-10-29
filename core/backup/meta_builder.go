@@ -258,6 +258,16 @@ func (builder *metaBuilder) backupCollectionIDs() []int64 {
 	return ids
 }
 
+// allCollectionBackups returns every collection backup recorded so far. The
+// field replay check uses it once the collection and dynamic field tasks have
+// settled, when the most complete schemas are available.
+func (builder *metaBuilder) allCollectionBackups() []*backuppb.CollectionBackupInfo {
+	builder.mu.Lock()
+	defer builder.mu.Unlock()
+
+	return builder.data.GetCollectionBackups()
+}
+
 // dynamicSchemaCollections names the backed-up collections that have dynamic
 // schema enabled, in db.collection form. Their $meta field can only reach the
 // backup through the etcd-backed dynamic field task, so this is what a caller

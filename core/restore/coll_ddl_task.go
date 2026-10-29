@@ -13,7 +13,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore/conv"
-	"github.com/zilliztech/milvus-backup/core/restore/funcs"
+	"github.com/zilliztech/milvus-backup/core/restore/replay"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
@@ -115,55 +115,6 @@ func (ddlt *collDDLTask) dropExistedColl(ctx context.Context) error {
 	return nil
 }
 
-// fields returns two types of fields:
-// 1. fields that can be created in CreateCollection API
-// 2. fields that need to be created by addField API
-//
-// If the original collection had addField operations, the $meta field might not be at the end of the fields list.
-// However, the CreateCollection API always appends the $meta field to the end.
-// This discrepancy in field order between the new collection and the backup file can cause restore errors.
-// Therefore, we stop processing fields if the field IDs are not continuous.
-// The remaining fields will be imported via addField.
-//
-// The dynamic field ($meta) is never returned in either slice: when
-// EnableDynamicField is true, Milvus auto-creates $meta inside CreateCollection,
-// and the AddField API rejects dynamic fields. Newer backups carry the actual
-// $meta schema in the backup metadata (see zilliztech/milvus-backup#1013) but
-// for the regular restore path it is purely informational.
-func (ddlt *collDDLTask) fields() ([]*schemapb.FieldSchema, []*schemapb.FieldSchema, error) {
-	allFields, err := ddlt.convFields(ddlt.collBackup.GetSchema().GetFields())
-	if err != nil {
-		return nil, nil, fmt.Errorf("collection: get fields: %w", err)
-	}
-
-	// Drop the dynamic field if present; CreateCollection / Milvus owns it.
-	fields := make([]*schemapb.FieldSchema, 0, len(allFields))
-	for _, f := range allFields {
-		if f.GetIsDynamic() {
-			continue
-		}
-		fields = append(fields, f)
-	}
-
-	if !ddlt.collBackup.GetSchema().GetEnableDynamicField() {
-		ddlt.logger.Info("fields", zap.Any("fields", fields))
-		return fields, nil, nil
-	}
-
-	dynFieldID := funcs.GuessDynFieldID(fields)
-	var createFields, addFields []*schemapb.FieldSchema
-	for _, field := range fields {
-		if field.GetFieldID() < dynFieldID {
-			createFields = append(createFields, field)
-		} else {
-			addFields = append(addFields, field)
-		}
-	}
-
-	ddlt.logger.Info("fields", zap.Any("create_fields", createFields), zap.Any("add_fields", addFields))
-	return createFields, addFields, nil
-}
-
 func (ddlt *collDDLTask) addFields(ctx context.Context, fields []*schemapb.FieldSchema) error {
 	// add fields
 	for _, field := range fields {
@@ -241,12 +192,18 @@ func (ddlt *collDDLTask) createColl(ctx context.Context) error {
 		return nil
 	}
 
-	createFields, addFields, err := ddlt.fields()
+	allFields, err := ddlt.convFields(ddlt.collBackup.GetSchema().GetFields())
 	if err != nil {
 		return fmt.Errorf("collection: get fields: %w", err)
 	}
+	plan, err := replay.BuildPlan(ddlt.collBackup.GetSchema(), allFields)
+	if err != nil {
+		return fmt.Errorf("collection: plan fields: %w", err)
+	}
+	createFields := plan.CreateFields
+	addFields := plan.AddFields
 	functions := conv.Functions(ddlt.collBackup.GetSchema().GetFunctions())
-	structArrayFields, err := ddlt.structArrayFields()
+	structArrayFields, err := ddlt.structArrayFields(plan.StructArrayFields)
 	if err != nil {
 		return fmt.Errorf("restore: conv struct array fields: %w", err)
 	}
@@ -258,7 +215,7 @@ func (ddlt *collDDLTask) createColl(ctx context.Context) error {
 		Description:        ddlt.description(),
 		Functions:          functions,
 		Fields:             createFields,
-		EnableDynamicField: ddlt.collBackup.GetSchema().GetEnableDynamicField(),
+		EnableDynamicField: plan.EnableDynamicField,
 		Properties:         pbconv.BakKVToMilvusKV(ddlt.collBackup.GetSchema().GetProperties()),
 		StructArrayFields:  structArrayFields,
 	}
@@ -315,8 +272,7 @@ func (ddlt *collDDLTask) convFields(bakFields []*backuppb.FieldSchema) ([]*schem
 	return fields, nil
 }
 
-func (ddlt *collDDLTask) structArrayFields() ([]*schemapb.StructArrayFieldSchema, error) {
-	bakFields := ddlt.collBackup.GetSchema().GetStructArrayFields()
+func (ddlt *collDDLTask) structArrayFields(bakFields []*backuppb.StructArrayFieldSchema) ([]*schemapb.StructArrayFieldSchema, error) {
 	structArrayFields := make([]*schemapb.StructArrayFieldSchema, 0, len(bakFields))
 	for _, bakField := range bakFields {
 		fields, err := ddlt.convFields(bakField.GetFields())
