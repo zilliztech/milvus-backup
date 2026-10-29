@@ -280,6 +280,31 @@ func TestAddDynamicFields(t *testing.T) {
 		assert.Len(t, builder.collectionBackups[1].GetSchema().GetFields(), 1)
 	})
 
+	// The snapshot task records $meta from the bundle before the etcd scan runs; a
+	// second copy from etcd would corrupt the schema.
+	t.Run("SkipsCollectionThatAlreadyCarriesTheField", func(t *testing.T) {
+		builder := newMetaBuilder("task1", "backup1")
+		collRef := collref.New("db1", "coll1")
+		coll := &backuppb.CollectionBackupInfo{
+			CollectionId: 1,
+			Schema: &backuppb.CollectionSchema{
+				EnableDynamicField: true,
+				Fields: []*backuppb.FieldSchema{
+					{FieldID: 100, Name: "pk"},
+					{FieldID: 101, Name: "$meta", IsDynamic: true, Nullable: true},
+				},
+			},
+		}
+		builder.addCollection(collRef, coll)
+
+		dynField := &schemapb.FieldSchema{FieldID: 101, Name: "$meta", IsDynamic: true}
+		assert.NoError(t, builder.addDynamicFields(map[int64]*schemapb.FieldSchema{1: dynField}))
+
+		fields := builder.collectionBackups[1].GetSchema().GetFields()
+		require.Len(t, fields, 2)
+		assert.True(t, fields[1].GetNullable())
+	})
+
 	t.Run("ErrorsOnMissingEntryForCollection", func(t *testing.T) {
 		builder := newMetaBuilder("task1", "backup1")
 		collRef := collref.New("db1", "coll1")
@@ -402,7 +427,7 @@ func TestAddSnapshot(t *testing.T) {
 		TotalFiles:   3,
 		TotalBytes:   4096,
 	}
-	builder.addSnapshot(collRef, snapshot, 456)
+	require.NoError(t, builder.addSnapshot(collRef, snapshot, 456, nil))
 
 	coll := builder.data.GetCollectionBackups()[0]
 	assert.Equal(t, "snapshots/1/metadata/2.json", coll.GetSnapshotBackup().GetMetadataPath())
@@ -417,13 +442,90 @@ func TestAddSnapshot(t *testing.T) {
 
 		// The export can finish before the collection's DDL lands; the bundle
 		// waits in the pendings and addCollection applies it.
-		other.addSnapshot(otherRef, snapshot, 789)
+		require.NoError(t, other.addSnapshot(otherRef, snapshot, 789, nil))
 		other.addCollection(otherRef, &backuppb.CollectionBackupInfo{CollectionId: 2, CollectionName: "late"})
 
 		coll := other.data.GetCollectionBackups()[0]
 		assert.Equal(t, "snapshots/1/metadata/2.json", coll.GetSnapshotBackup().GetMetadataPath())
 		assert.EqualValues(t, 4096, coll.GetSize())
 		assert.EqualValues(t, 789, coll.GetBackupTimestamp())
+	})
+
+	// The DDL half reads the schema through DescribeCollection, which hides the
+	// dynamic field; the bundle's schema is the internal one and carries it.
+	bundleSchema := &schemapb.CollectionSchema{
+		EnableDynamicField: true,
+		Fields: []*schemapb.FieldSchema{
+			{FieldID: 0, Name: "RowID", DataType: schemapb.DataType_Int64},
+			{FieldID: 1, Name: "Timestamp", DataType: schemapb.DataType_Int64},
+			{FieldID: 100, Name: "pk", IsPrimaryKey: true, DataType: schemapb.DataType_Int64},
+			{FieldID: 101, Name: "vec", DataType: schemapb.DataType_FloatVector},
+			{FieldID: 102, Name: "$meta", DataType: schemapb.DataType_JSON, IsDynamic: true, Nullable: true},
+		},
+	}
+	newDynColl := func() *backuppb.CollectionBackupInfo {
+		return &backuppb.CollectionBackupInfo{
+			CollectionId:   1,
+			DbName:         "db1",
+			CollectionName: "coll1",
+			Schema: &backuppb.CollectionSchema{
+				EnableDynamicField: true,
+				Fields: []*backuppb.FieldSchema{
+					{FieldID: 100, Name: "pk", IsPrimaryKey: true, DataType: backuppb.DataType_Int64},
+					{FieldID: 101, Name: "vec", DataType: backuppb.DataType_FloatVector},
+				},
+			},
+		}
+	}
+
+	t.Run("RecordsTheBundlesDynamicField", func(t *testing.T) {
+		builder := newMetaBuilder("task1", "backup1")
+		builder.addCollection(collRef, newDynColl())
+
+		require.NoError(t, builder.addSnapshot(collRef, snapshot, 456, bundleSchema))
+
+		// Only the dynamic field is taken: the system fields are Milvus's own and
+		// the user fields are already there from DescribeCollection.
+		fields := builder.data.GetCollectionBackups()[0].GetSchema().GetFields()
+		require.Len(t, fields, 3)
+		dyn := fields[2]
+		assert.Equal(t, int64(102), dyn.GetFieldID())
+		assert.Equal(t, "$meta", dyn.GetName())
+		assert.Equal(t, backuppb.DataType_JSON, dyn.GetDataType())
+		assert.True(t, dyn.GetIsDynamic())
+		assert.True(t, dyn.GetNullable())
+	})
+
+	t.Run("DynamicFieldSurvivesThePendingOrder", func(t *testing.T) {
+		builder := newMetaBuilder("task1", "backup1")
+
+		require.NoError(t, builder.addSnapshot(collRef, snapshot, 456, bundleSchema))
+		builder.addCollection(collRef, newDynColl())
+
+		fields := builder.data.GetCollectionBackups()[0].GetSchema().GetFields()
+		require.Len(t, fields, 3)
+		assert.True(t, fields[2].GetIsDynamic())
+	})
+
+	t.Run("LeavesARecordedDynamicFieldAlone", func(t *testing.T) {
+		builder := newMetaBuilder("task1", "backup1")
+		coll := newDynColl()
+		coll.Schema.Fields = append(coll.Schema.Fields, &backuppb.FieldSchema{FieldID: 102, Name: "$meta", IsDynamic: true})
+		builder.addCollection(collRef, coll)
+
+		require.NoError(t, builder.addSnapshot(collRef, snapshot, 456, bundleSchema))
+
+		assert.Len(t, builder.data.GetCollectionBackups()[0].GetSchema().GetFields(), 3)
+	})
+
+	t.Run("BundleWithoutADynamicFieldChangesNothing", func(t *testing.T) {
+		builder := newMetaBuilder("task1", "backup1")
+		builder.addCollection(collRef, newDynColl())
+
+		plain := &schemapb.CollectionSchema{Fields: []*schemapb.FieldSchema{{FieldID: 100, Name: "pk"}}}
+		require.NoError(t, builder.addSnapshot(collRef, snapshot, 456, plain))
+
+		assert.Len(t, builder.data.GetCollectionBackups()[0].GetSchema().GetFields(), 2)
 	})
 }
 
@@ -441,24 +543,29 @@ func TestBuildBackupMetaCarriesFormat(t *testing.T) {
 	assert.Equal(t, meta.FormatSnapshot, got.GetFormat())
 }
 
-func TestMetaBuilder_DynamicSchemaCollections(t *testing.T) {
-	t.Run("names only the dynamic ones, sorted", func(t *testing.T) {
+func TestMetaBuilder_CollectionsMissingDynField(t *testing.T) {
+	t.Run("NamesOnlyTheDynamicOnesStillLackingTheField", func(t *testing.T) {
 		b := newMetaBuilder("task", "backup")
 		b.data.CollectionBackups = []*backuppb.CollectionBackupInfo{
 			{DbName: "db2", CollectionName: "z", Schema: &backuppb.CollectionSchema{EnableDynamicField: true}},
 			{DbName: "db1", CollectionName: "plain", Schema: &backuppb.CollectionSchema{}},
 			{DbName: "db1", CollectionName: "a", Schema: &backuppb.CollectionSchema{EnableDynamicField: true}},
+			// Recorded from its snapshot bundle: complete without etcd.
+			{DbName: "db1", CollectionName: "snap", Schema: &backuppb.CollectionSchema{
+				EnableDynamicField: true,
+				Fields:             []*backuppb.FieldSchema{{FieldID: 101, Name: "$meta", IsDynamic: true}},
+			}},
 		}
 
-		assert.Equal(t, []string{"db1.a", "db2.z"}, b.dynamicSchemaCollections())
+		assert.Equal(t, []string{"db1.a", "db2.z"}, b.collectionsMissingDynField())
 	})
 
-	t.Run("empty when none has dynamic schema", func(t *testing.T) {
+	t.Run("EmptyWhenNoneHasDynamicSchema", func(t *testing.T) {
 		b := newMetaBuilder("task", "backup")
 		b.data.CollectionBackups = []*backuppb.CollectionBackupInfo{
 			{DbName: "db1", CollectionName: "plain", Schema: &backuppb.CollectionSchema{}},
 		}
 
-		assert.Empty(t, b.dynamicSchemaCollections())
+		assert.Empty(t, b.collectionsMissingDynField())
 	})
 }
