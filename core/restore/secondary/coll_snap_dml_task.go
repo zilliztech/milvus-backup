@@ -6,12 +6,14 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/msgpb"
 	"github.com/milvus-io/milvus/pkg/v3/proto/datapb"
 	"github.com/milvus-io/milvus/pkg/v3/streaming/util/message"
+	"github.com/milvus-io/milvus/pkg/v3/util/funcutil"
 	"github.com/milvus-io/milvus/pkg/v3/util/typeutil"
 	"go.uber.org/zap"
 
@@ -22,8 +24,8 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
-// The option keys a snapshot import broadcast carries on the wire, which the
-// import api refuses from a caller: a coordinator sets them when it turns a
+// The reference option keys of a snapshot import broadcast, which public
+// Import requests may not supply: a coordinator sets them when it turns a
 // request into the WAL body, naming the bundle the body's single empty file
 // stands for, and the target reconstructs the job from exactly that. A
 // secondary restore plays the coordinator's part, so it sets them itself.
@@ -33,6 +35,14 @@ const (
 
 	_snapshotLayoutReferenced    = "referenced"
 	_snapshotLayoutSelfContained = "self-contained"
+
+	// _snapshotPChannelEndTSKey carries the per-PChannel end bounds of the
+	// import: a JSON object of PChannel to hybrid timestamp. Unlike the
+	// coordinator-owned reference keys above, this is a client-supplied option.
+	// The import api takes at most one scalar end_ts, which cannot name the
+	// different points the PChannels were flushed at, so the cut travels as a
+	// map of its own and the import's expansion applies it PChannel by PChannel.
+	_snapshotPChannelEndTSKey = "snapshot_pch_end_ts"
 )
 
 // The server bounds the partition mapping option at 64 KiB.
@@ -40,6 +50,13 @@ const _snapshotPartitionMappingMaxBytes = 64 * 1024
 
 type snapDMLTaskArgs struct {
 	TaskID string
+
+	// PchTS is each physical channel's flush boundary, read off the flush-all
+	// messages the backup captured. A snapshot bundle is frozen after that
+	// boundary, so it also holds what the source sealed in between; the import
+	// is cut at these bounds to hold exactly what the checkpoint the restore
+	// replays names.
+	PchTS map[string]uint64
 
 	StreamCli  milvus.Stream
 	RestfulCli milvus.Restful
@@ -76,6 +93,10 @@ type collSnapDMLTask struct {
 	// partitionIDs are the target partitions the message names, in the order
 	// the server pairs them with the mapping's destinations.
 	partitionIDs []int64
+	// pchannelEndTS is the flush boundary of every PChannel the collection lives
+	// on, as the JSON map the target's snapshot import takes. See
+	// snapshotPChannelEndTS for what the cut is for.
+	pchannelEndTS string
 
 	streamCli  milvus.Stream
 	restfulCli milvus.Restful
@@ -87,9 +108,16 @@ type collSnapDMLTask struct {
 // bundle's layout is read off its metadata here, as the one source read of
 // the whole path; the partition routing is derived from the backup meta, which
 // is also the DDL the secondary replayed, so the target partition ids are the
-// source's.
+// source's. The channel end bounds come from the same flush messages the
+// restore forwards as its checkpoint, so the import and the checkpoint name
+// the same point of the source stream.
 func newCollSnapDMLTask(args snapDMLTaskArgs, collBackup *backuppb.CollectionBackupInfo, metadataURI, externalSpec string, layout datapb.SnapshotLayout) (*collSnapDMLTask, error) {
 	collRef := collref.New(collBackup.GetDbName(), collBackup.GetCollectionName())
+
+	pchannelEndTS, err := snapshotPChannelEndTS(collBackup, args.PchTS)
+	if err != nil {
+		return nil, err
+	}
 
 	mapping, partitionIDs, err := snapshotPartitionRouting(collBackup)
 	if err != nil {
@@ -106,12 +134,50 @@ func newCollSnapDMLTask(args snapDMLTaskArgs, collBackup *backuppb.CollectionBac
 		layout:           snapshotLayoutOption(layout),
 		partitionMapping: mapping,
 		partitionIDs:     partitionIDs,
+		pchannelEndTS:    pchannelEndTS,
 
 		streamCli:  args.StreamCli,
 		restfulCli: args.RestfulCli,
 
 		logger: log.With(zap.String("task_id", args.TaskID), zap.String("coll", collRef.String())),
 	}, nil
+}
+
+// snapshotPChannelEndTS renders the flush boundary of every PChannel the
+// collection lives on as the JSON object a snapshot import takes, PChannel to
+// hybrid timestamp. The collection's VChannels are used only to check coverage
+// and to resolve their PChannel; the rendered keys are always PChannels.
+//
+// A snapshot bundle is frozen after the backup's flush, so it carries the rows
+// the source sealed in between; the restore replays the captured flush-all
+// messages as the secondary's replication checkpoint, and the CDC resumes
+// there. Without the cut everything in the bundle is imported and the rows past
+// the checkpoint are replayed a second time, duplicating them. A channel whose
+// boundary cannot be resolved is refused rather than imported uncut: the
+// duplicate it would produce is the failure this cut exists to prevent.
+func snapshotPChannelEndTS(collBackup *backuppb.CollectionBackupInfo, pchTS map[string]uint64) (string, error) {
+	vchs := collBackup.GetVirtualChannelNames()
+	if len(vchs) == 0 {
+		return "", fmt.Errorf("secondary: collection %s carries no virtual channels",
+			collref.New(collBackup.GetDbName(), collBackup.GetCollectionName()))
+	}
+
+	endTS := make(map[string]string, len(vchs))
+	for _, vch := range vchs {
+		pch := funcutil.ToPhysicalChannel(vch)
+		ts, ok := pchTS[pch]
+		if !ok {
+			return "", fmt.Errorf("secondary: no flush all ts for pch %s", pch)
+		}
+		endTS[pch] = strconv.FormatUint(ts, 10)
+	}
+
+	bs, err := json.Marshal(endTS)
+	if err != nil {
+		return "", fmt.Errorf("secondary: marshal the channel end bounds: %w", err)
+	}
+
+	return string(bs), nil
 }
 
 // snapshotLayoutOption renders a bundle layout as the option value the import
@@ -146,19 +212,22 @@ func (st *collSnapDMLTask) Execute(ctx context.Context) error {
 
 // options is the snapshot import contract as the target's coordinator would
 // have written it into the WAL body: the public keys of a snapshot-sourced
-// backup import, plus the two reference keys that name the bundle. The L0
-// flag, end_ts and storage_version stay unset — the snapshot's own metadata is
-// the authority for every one of them, and the server rejects them next to a
-// snapshot source. So does the ezk: the server reads the source's key off the
+// backup import, the two reference keys that name the bundle, and the
+// per-PChannel end bounds the target cuts it at. The scalar end_ts is not sent
+// — one value cannot name the different points the channels were flushed at —
+// and the L0 flag and storage_version stay unset: the snapshot's own metadata
+// is the authority for both, and the server rejects them next to a snapshot
+// source. So does the ezk: the server reads the source's key off the
 // snapshot's own schema and drops any the request carries.
 func (st *collSnapDMLTask) options() map[string]string {
 	opts := map[string]string{
-		"skip_disk_quota_check": "true",
-		"auto_commit":           "false",
-		"backup":                "true",
-		"source_type":           milvus.SourceTypeSnapshot,
-		_snapshotSourceURIKey:   st.metadataURI,
-		_snapshotLayoutKey:      st.layout,
+		"skip_disk_quota_check":   "true",
+		"auto_commit":             "false",
+		"backup":                  "true",
+		"source_type":             milvus.SourceTypeSnapshot,
+		_snapshotSourceURIKey:     st.metadataURI,
+		_snapshotLayoutKey:        st.layout,
+		_snapshotPChannelEndTSKey: st.pchannelEndTS,
 	}
 	if st.externalSpec != "" {
 		opts["external_spec"] = st.externalSpec
