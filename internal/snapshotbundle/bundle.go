@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"path"
+	"strings"
 
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -283,9 +285,10 @@ func validateStagedSnapshotMetadata(data []byte, metadataURI string) error {
 }
 
 // LoadSnapshotData reads one snapshot's metadata JSON and, when requested,
-// its per-segment manifests. Paths resolve as written: backup reads source
-// snapshots in the Milvus bucket and bundles at the URI it wrote them to, so
-// no relocation rebasing happens here.
+// its per-segment manifests. Referenced snapshots resolve their paths as
+// written. A self-contained bundle may be copied as a whole, so its manifests
+// resolve against the metadata's current location rather than the export
+// location recorded inside it.
 func LoadSnapshotData(ctx context.Context, store Store, metadataPath string, includeManifests bool) (*SnapshotData, error) {
 	if metadataPath == "" {
 		return nil, merr.WrapErrServiceInternalMsg("metadata file path cannot be empty")
@@ -311,9 +314,14 @@ func LoadSnapshotData(ctx context.Context, store Store, metadataPath string, inc
 		layout = datapb.SnapshotLayout_SnapshotLayoutReferenced
 	}
 
+	manifestPaths := metadata.GetManifestList()
+	if layout == datapb.SnapshotLayout_SnapshotLayoutSelfContained {
+		manifestPaths = relocateSelfContainedManifests(metadataPath, metadata.GetSnapshotInfo().GetS3Location(), manifestPaths)
+	}
+
 	var segments []*datapb.SegmentDescription
 	if includeManifests {
-		for _, manifestPath := range metadata.GetManifestList() {
+		for _, manifestPath := range manifestPaths {
 			manifestData, err := store.Read(ctx, NormalizeObjectPath(manifestPath))
 			if err != nil {
 				return nil, merr.Wrap(err, "failed to read manifest file")
@@ -339,11 +347,40 @@ func LoadSnapshotData(ctx context.Context, store Store, metadataPath string, inc
 		Indexes:       metadata.GetIndexes(),
 		FormatVersion: int(metadata.GetFormatVersion()),
 		MetadataPath:  metadataPath,
-		ManifestPaths: append([]string(nil), metadata.GetManifestList()...),
+		ManifestPaths: append([]string(nil), manifestPaths...),
 		SegmentIDs:    metadata.GetSegmentIds(),
 		BuildIDs:      metadata.GetBuildIds(),
 		Layout:        layout,
 	}, nil
+}
+
+// relocateSelfContainedManifests maps references under the export root onto
+// the root where the bundle is being read. Paths outside that root are left
+// untouched so malformed or mixed-layout metadata keeps its original error.
+func relocateSelfContainedManifests(metadataPath, exportMetadataURI string, manifestPaths []string) []string {
+	currentRoot, currentCollectionID, currentSnapshotID, ok := DeriveBundleRoot(metadataPath)
+	if !ok {
+		return manifestPaths
+	}
+	exportRoot, exportCollectionID, exportSnapshotID, ok := DeriveBundleRoot(exportMetadataURI)
+	if !ok || currentCollectionID != exportCollectionID || currentSnapshotID != exportSnapshotID || currentRoot == exportRoot {
+		return manifestPaths
+	}
+
+	exportPrefix := ""
+	if exportRoot != "" {
+		exportPrefix = strings.TrimSuffix(exportRoot, "/") + "/"
+	}
+	relocated := make([]string, len(manifestPaths))
+	for i, manifestPath := range manifestPaths {
+		key := NormalizeObjectPath(manifestPath)
+		if exportPrefix != "" && !strings.HasPrefix(key, exportPrefix) {
+			relocated[i] = manifestPath
+			continue
+		}
+		relocated[i] = path.Join(currentRoot, strings.TrimPrefix(key, exportPrefix))
+	}
+	return relocated
 }
 
 func validateSnapshotSegmentIDs(expected []int64, segments []*datapb.SegmentDescription) error {
