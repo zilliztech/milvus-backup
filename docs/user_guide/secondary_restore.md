@@ -30,6 +30,8 @@
 
 A secondary restore replays the source's DDL and then its data over the replication stream. With a binlog backup, the data goes out as one import message per segment batch pointing at the binlogs, which are staged into the target's storage first when the backup sits in another bucket. With a snapshot backup, each collection goes out as a single snapshot-sourced import message: the target expands it into the same import job the import api would create for `restore --strategy=import_snap`, reads the bundle itself, and folds the snapshot's deletes on its own side. No bytes move through `milvus-backup`, and a bundle on another storage service is read through the external spec, so nothing is staged.
 
+A self-contained bundle can be copied to another bucket or prefix as a whole, as long as its internal layout stays intact. The preflight resolves its manifests against the copied metadata location, so copying only the metadata JSON is not enough.
+
 What this needs:
 
 - The secondary must run Milvus 3.0.4 or newer, where snapshot-sourced imports exist. The restore refuses an older secondary before any DDL is sent; take a binlog backup (`create --for secondary`) for it instead.

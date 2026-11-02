@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"path"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -99,6 +101,35 @@ func TestPrepareAndCommitBundleRoundTrip(t *testing.T) {
 	assert.NotContains(t, store.objects, GetSnapshotStagingMetadataPath("bundle"))
 	// The published metadata outlives its staging object.
 	assert.Contains(t, store.objects, metadataPath)
+}
+
+func TestLoadSnapshotDataRelocatedBundle(t *testing.T) {
+	ctx := context.Background()
+	store := newMapStore()
+	metadataPath, metadataURI := preparedBundle(t, store)
+	_, err := CommitBundleMetadata(ctx, store, GetSnapshotStagingMetadataPath("bundle"), metadataPath, metadataURI)
+	require.NoError(t, err)
+
+	// Copy the complete export, then remove the original so the read cannot
+	// silently fall back to the paths recorded in the metadata.
+	for key, data := range store.objects {
+		if !strings.HasPrefix(key, "bundle/") {
+			continue
+		}
+		relocated := path.Join("relocated", strings.TrimPrefix(key, "bundle/"))
+		store.objects[relocated] = append([]byte(nil), data...)
+		delete(store.objects, key)
+	}
+
+	relocatedMetadata := "relocated/snapshots/457/metadata/123.json"
+	snapshot, err := LoadSnapshotData(ctx, store, relocatedMetadata, true)
+	require.NoError(t, err)
+	assert.Equal(t, []string{
+		"relocated/snapshots/457/manifests/123/1001.avro",
+		"relocated/snapshots/457/manifests/123/1002.avro",
+	}, snapshot.ManifestPaths)
+	require.Len(t, snapshot.Segments, 2)
+	assert.Equal(t, datapb.SnapshotLayout_SnapshotLayoutSelfContained, snapshot.Layout)
 }
 
 func TestCommitBundleMetadataValidatesURI(t *testing.T) {
