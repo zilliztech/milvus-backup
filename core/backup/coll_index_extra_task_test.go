@@ -59,12 +59,12 @@ func TestCollIndexExtraTaskExecute(t *testing.T) {
 
 	newBuilder := func() *metaBuilder {
 		builder := newMetaBuilder("task1", "backup1")
-		builder.addCollection(collref.New("db1", "coll1"), &backuppb.CollectionBackupInfo{
+		require.NoError(t, builder.addCollection(collref.New("db1", "coll1"), &backuppb.CollectionBackupInfo{
 			CollectionId:   1,
 			DbName:         "db1",
 			CollectionName: "coll1",
 			IndexInfos:     []*backuppb.IndexInfo{{IndexId: 100, FieldName: "vec", IndexName: "vec_idx"}},
-		})
+		}))
 
 		return builder
 	}

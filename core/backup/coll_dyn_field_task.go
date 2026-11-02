@@ -44,10 +44,12 @@ func (cdft *collDynFieldTask) Execute(ctx context.Context) error {
 	//   {MetaRootPath}/root-coord/fields/{collectionID}/{fieldID}
 	// where MetaRootPath is "{etcdRootPath}/meta" in milvus-backup config terms.
 	// The collection id is the first segment, so the scan is scoped to the
-	// backed-up collections rather than read whole. A cluster-wide read grows
-	// with the instance instead of with the backup, and nearly all of it is
-	// waste: every field of every collection comes back so that at most one
-	// dynamic field per backed-up collection can be picked out.
+	// backed-up collections rather than read whole. The task only runs for the
+	// binlog format — a snapshot-format backup records $meta from its bundles
+	// and never consults etcd for it. A cluster-wide read grows with the
+	// instance instead of with the backup, and nearly all of it is waste: every
+	// field of every collection comes back so that at most one dynamic field
+	// per backed-up collection can be picked out.
 	collIDs := cdft.metaBuilder.backupCollectionIDs()
 
 	dynFields := make(map[int64]*schemapb.FieldSchema)

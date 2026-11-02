@@ -6,7 +6,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
+	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
+	"github.com/milvus-io/milvus/pkg/v3/proto/indexpb"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -60,7 +63,31 @@ func newSnapshotTaskFixture(t *testing.T) *snapshotTaskFixture {
 	milvusStore := snapshotbundle.NewStorageStore(newLocalTestClient(t, f.milvusDir))
 	source := &snapshotbundle.SnapshotData{
 		SnapshotInfo: &datapb.SnapshotInfo{Id: 2, CollectionId: 1, Name: "mbk_mybackup"},
-		Collection:   &datapb.CollectionDescription{NumShards: 1},
+		Collection: &datapb.CollectionDescription{
+			NumShards: 1,
+			// The internal schema the server writes: every field, $meta included,
+			// where DescribeCollection hides it.
+			Schema: &schemapb.CollectionSchema{
+				EnableDynamicField: true,
+				Fields: []*schemapb.FieldSchema{
+					{FieldID: 0, Name: "RowID", DataType: schemapb.DataType_Int64},
+					{FieldID: 1, Name: "Timestamp", DataType: schemapb.DataType_Int64},
+					{FieldID: 100, Name: "pk", IsPrimaryKey: true, DataType: schemapb.DataType_Int64},
+					{FieldID: 101, Name: "vec", DataType: schemapb.DataType_FloatVector},
+					{FieldID: 102, Name: "$meta", DataType: schemapb.DataType_JSON, IsDynamic: true, Nullable: true},
+				},
+			},
+		},
+		Indexes: []*indexpb.IndexInfo{{
+			CollectionID:    1,
+			IndexID:         100,
+			FieldID:         101,
+			IndexName:       "vec_idx",
+			TypeParams:      []*commonpb.KeyValuePair{{Key: "type_source", Value: "snapshot"}},
+			IndexParams:     []*commonpb.KeyValuePair{{Key: "index_source", Value: "snapshot"}},
+			UserIndexParams: []*commonpb.KeyValuePair{{Key: "user_source", Value: "snapshot"}},
+			IsAutoIndex:     true,
+		}},
 		Segments: []*datapb.SegmentDescription{
 			{
 				SegmentId:      1001,
@@ -106,7 +133,25 @@ func (f *snapshotTaskFixture) newTask(t *testing.T, grpc milvus.Grpc) (*collSnap
 
 	builder := newMetaBuilder("task-1", "mybackup")
 	collRef := collref.New("db1", "coll1")
-	builder.addCollection(collRef, &backuppb.CollectionBackupInfo{CollectionId: 1, CollectionName: collRef.CollName()})
+	require.NoError(t, builder.addCollection(collRef, &backuppb.CollectionBackupInfo{
+		CollectionId:   1,
+		CollectionName: collRef.CollName(),
+		// The DDL half always records a schema before the data task runs, and
+		// setCollSnapshot appends the bundle's $meta field to it.
+		Schema: &backuppb.CollectionSchema{
+			Fields: []*backuppb.FieldSchema{
+				{FieldID: 100, Name: "pk", IsPrimaryKey: true, DataType: backuppb.DataType_Int64},
+				{FieldID: 101, Name: "vec", DataType: backuppb.DataType_FloatVector},
+			},
+		},
+		IndexInfos: []*backuppb.IndexInfo{{
+			IndexId:   100,
+			FieldName: "vec",
+			IndexName: "vec_idx",
+			IndexType: "HNSW",
+			Params:    map[string]string{"index_type": "HNSW", "user_param": "describe"},
+		}},
+	}))
 
 	task := &collSnapshotTask{
 		taskID:         "task-1",
@@ -177,10 +222,54 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 		assert.EqualValues(t, len(f.binlogData)+len(f.statsData), coll.GetSize())
 		assert.EqualValues(t, 456, coll.GetBackupTimestamp())
 
+		index := coll.GetIndexInfos()[0]
+		assert.Equal(t, int64(101), index.GetFieldId())
+		require.Len(t, index.GetTypeParams(), 1)
+		require.Len(t, index.GetIndexParams(), 1)
+		require.Len(t, index.GetUserIndexParams(), 1)
+		assert.Equal(t, "snapshot", index.GetTypeParams()[0].GetValue())
+		assert.Equal(t, "snapshot", index.GetIndexParams()[0].GetValue())
+		assert.Equal(t, "snapshot", index.GetUserIndexParams()[0].GetValue())
+		assert.True(t, index.GetIsAutoIndex())
+		// The public DescribeIndex projection stays authoritative for the fields
+		// the snapshot does not carry.
+		assert.Equal(t, "vec", index.GetFieldName())
+		assert.Equal(t, "HNSW", index.GetIndexType())
+		assert.Equal(t, map[string]string{"index_type": "HNSW", "user_param": "describe"}, index.GetParams())
+
 		dml := tracker.Snapshot().Colls[collRef].DML
 		require.NotNil(t, dml)
 		assert.Equal(t, jobstate.BackupCollDMLStateSuccess, dml.State)
 		assert.Equal(t, int64(len(f.binlogData)+len(f.statsData)), dml.TotalSize)
+	})
+
+	// The DDL half's DescribeCollection never returns $meta; the bundle's own
+	// schema does, and the task records it on the collection — no etcd needed.
+	t.Run("RecordsDynamicFieldFromBundleSchema", func(t *testing.T) {
+		f := newSnapshotTaskFixture(t)
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().CreateSnapshot(mock.Anything, "db1", "coll1", "mbk_mybackup", time.Duration(0)).Return(nil)
+		cli.EXPECT().DescribeSnapshot(mock.Anything, "db1", "coll1", "mbk_mybackup").
+			Return(&milvuspb.DescribeSnapshotResponse{CreateTs: 456, S3Location: f.sourceS3}, nil)
+		cli.EXPECT().DropSnapshot(mock.Anything, "db1", "coll1", "mbk_mybackup").Return(nil).Once()
+
+		task, builder, _ := f.newTask(t, cli)
+		coll := builder.data.GetCollectionBackups()[0]
+		coll.Schema = &backuppb.CollectionSchema{
+			EnableDynamicField: true,
+			Fields: []*backuppb.FieldSchema{
+				{FieldID: 100, Name: "pk", IsPrimaryKey: true, DataType: backuppb.DataType_Int64},
+				{FieldID: 101, Name: "vec", DataType: backuppb.DataType_FloatVector},
+			},
+		}
+		require.NoError(t, task.Execute(context.Background()))
+
+		fields := coll.GetSchema().GetFields()
+		require.Len(t, fields, 3)
+		assert.Equal(t, "$meta", fields[2].GetName())
+		assert.Equal(t, int64(102), fields[2].GetFieldID())
+		assert.True(t, fields[2].GetIsDynamic())
+		assert.True(t, fields[2].GetNullable())
 	})
 
 	// A source file that vanished between snapshot creation and the copy fails
