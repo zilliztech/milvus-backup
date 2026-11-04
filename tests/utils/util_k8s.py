@@ -322,7 +322,7 @@ def get_metrics_querynode_sq_req_count():
         'app_kubernetes_io_name="milvus",namespace="chaos-testing"}'
     )
 
-    response = requests.get(PROMETHEUS + "/api/v1/query", params={"query": query_str})
+    response = requests.get(PROMETHEUS + "/api/v1/query", params={"query": query_str}, timeout=30)
     if response.status_code == 200:
         results = response.json()["data"]["result"]
         # print(results)
