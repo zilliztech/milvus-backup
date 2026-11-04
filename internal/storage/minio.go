@@ -191,6 +191,12 @@ func (m *MinioClient) copyPart(ctx context.Context, i copyPartInput) (minio.Comp
 			return fmt.Errorf("storage: %s copy part: %w", m.cfg.Provider, err)
 		}
 
+		// minio-go v7.4.1 does not detect an S3 error embedded in a 200 OK
+		// UploadPartCopy response; it decodes the body to an empty ETag.
+		if output.ETag == "" {
+			return fmt.Errorf("storage: %s copy part: empty ETag in CopyPartResult, possible 200 OK with embedded error", m.cfg.Provider)
+		}
+
 		return nil
 	})
 

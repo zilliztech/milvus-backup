@@ -436,6 +436,116 @@ func TestCopyObject(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestCopyPartEmbeddedError simulates a failed UploadPartCopy that answers
+// 200 OK with an <Error> body. minio-go decodes that body as an empty
+// CopyPartResult, so the copy layer must reject the missing ETag and retry
+// instead of passing an invalid part to CompleteMultipartUpload.
+func TestCopyPartEmbeddedError(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var copyReqCount atomic.Int32
+		cli, err := newInternalMinio(Config{
+			Provider: "s3",
+			Endpoint: "example.com",
+			UseSSL:   true,
+			Bucket:   "dest-bucket",
+			Credential: Credential{
+				Type: Static,
+				AK:   "ak",
+				SK:   "sk",
+			},
+		}, &minio.Options{
+			Secure: true,
+			Creds:  credentials.NewStaticV4("ak", "sk", ""),
+			Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+				if _, ok := r.URL.Query()["location"]; ok {
+					return &http.Response{
+						StatusCode: http.StatusOK,
+						Header:     http.Header{"Content-Type": []string{"application/xml"}},
+						Body:       io.NopCloser(strings.NewReader(`<LocationConstraint xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></LocationConstraint>`)),
+						Request:    r,
+					}, nil
+				}
+
+				copyReqCount.Add(1)
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/xml"}},
+					Body: io.NopCloser(strings.NewReader(`<?xml version="1.0" encoding="UTF-8"?>
+<Error>
+  <Code>InternalError</Code>
+  <Message>We encountered an internal error. Please try again.</Message>
+</Error>`)),
+					Request: r,
+				}, nil
+			}),
+		})
+		require.NoError(t, err)
+
+		_, err = cli.copyPart(context.Background(), copyPartInput{
+			SrcBucket: "src-bucket",
+			SrcKey:    "src-key",
+			DestKey:   "dest-key",
+			UploadID:  "upload-id",
+			Part:      part{Index: 1, Offset: 0, Size: 1024},
+		})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "empty ETag")
+		assert.Positive(t, copyReqCount.Load())
+	})
+}
+
+// TestCopyPart pins the happy path: a well-formed CopyPartResult succeeds and
+// preserves the part number and ETag needed by CompleteMultipartUpload.
+func TestCopyPart(t *testing.T) {
+	cli, err := newInternalMinio(Config{
+		Provider: "s3",
+		Endpoint: "example.com",
+		UseSSL:   true,
+		Bucket:   "dest-bucket",
+		Credential: Credential{
+			Type: Static,
+			AK:   "ak",
+			SK:   "sk",
+		},
+	}, &minio.Options{
+		Secure: true,
+		Creds:  credentials.NewStaticV4("ak", "sk", ""),
+		Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+			if _, ok := r.URL.Query()["location"]; ok {
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/xml"}},
+					Body:       io.NopCloser(strings.NewReader(`<LocationConstraint xmlns="http://s3.amazonaws.com/doc/2006-03-01/"></LocationConstraint>`)),
+					Request:    r,
+				}, nil
+			}
+
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Header:     http.Header{"Content-Type": []string{"application/xml"}},
+				Body: io.NopCloser(strings.NewReader(`<?xml version="1.0" encoding="UTF-8"?>
+<CopyPartResult xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+  <LastModified>2026-09-14T01:00:00.000Z</LastModified>
+  <ETag>"part-etag"</ETag>
+</CopyPartResult>`)),
+				Request: r,
+			}, nil
+		}),
+	})
+	require.NoError(t, err)
+
+	output, err := cli.copyPart(context.Background(), copyPartInput{
+		SrcBucket: "src-bucket",
+		SrcKey:    "src-key",
+		DestKey:   "dest-key",
+		UploadID:  "upload-id",
+		Part:      part{Index: 1, Offset: 0, Size: 1024},
+	})
+	require.NoError(t, err)
+	assert.Equal(t, 1, output.PartNumber)
+	assert.Equal(t, `"part-etag"`, output.ETag)
+}
+
 func TestDeleteObjects(t *testing.T) {
 	var deleteReqCount atomic.Int32
 	cli, err := newInternalMinio(Config{
