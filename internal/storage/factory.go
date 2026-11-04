@@ -155,7 +155,7 @@ func NewClient(ctx context.Context, conf Config) (Client, error) {
 	case cfg.ProviderAliyun:
 		return newAliyunClient(conf)
 	case cfg.ProviderAWS, cfg.ProviderS3, cfg.ProviderMinio:
-		return newMinioClient(conf)
+		return newS3Client(conf)
 	case cfg.ProviderAzure:
 		return newAzureClient(conf)
 	case cfg.ProviderTencent:

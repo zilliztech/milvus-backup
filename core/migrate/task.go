@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	minioCred "github.com/minio/minio-go/v7/pkg/credentials"
+	aws "github.com/aws/aws-sdk-go-v2/aws"
 	"go.uber.org/zap"
 	"golang.org/x/oauth2"
 	"golang.org/x/sync/semaphore"
@@ -20,8 +20,8 @@ import (
 )
 
 var (
-	_ minioCred.Provider = (*volume)(nil)
-	_ oauth2.TokenSource = (*volume)(nil)
+	_ aws.CredentialsProvider = (*volume)(nil)
+	_ oauth2.TokenSource      = (*volume)(nil)
 )
 
 type volume struct {
@@ -50,16 +50,13 @@ func newVolume(clusterID, prefix string, cloudCli cloud.Client) *volume {
 	}
 }
 
-func (v *volume) RetrieveWithCredContext(_ *minioCred.CredContext) (minioCred.Value, error) {
-	return v.Retrieve()
-}
-
-func (v *volume) minioValue() minioCred.Value {
-	return minioCred.Value{
+func (v *volume) awsValue() aws.Credentials {
+	return aws.Credentials{
 		AccessKeyID:     v.currentResp.resp.Credentials.TmpAK,
 		SecretAccessKey: v.currentResp.resp.Credentials.TmpSK,
 		SessionToken:    v.currentResp.resp.Credentials.SessionToken,
-		Expiration:      v.currentResp.expiration,
+		CanExpire:       true,
+		Expires:         v.currentResp.expiration,
 	}
 }
 
@@ -67,13 +64,17 @@ func (v *volume) oauth2Token() *oauth2.Token {
 	return &oauth2.Token{AccessToken: v.currentResp.resp.Credentials.SessionToken, Expiry: v.currentResp.expiration}
 }
 
-func (v *volume) Retrieve() (minioCred.Value, error) {
+// Retrieve serves the S3 client a temporary volume credential, applying for a
+// fresh one through the cloud API when the cached one expired. The S3 signing
+// middleware calls it per operation; the cache below keeps that at one Apply
+// per expiry window.
+func (v *volume) Retrieve(ctx context.Context) (aws.Credentials, error) {
 	v.logger.Debug("retrieve volume credential")
 	v.currentResp.mu.RLock()
 	if !v.IsExpired() {
 		v.logger.Debug("volume credential not expired, return cached credential")
 		v.currentResp.mu.RUnlock()
-		return v.minioValue(), nil
+		return v.awsValue(), nil
 	}
 	v.currentResp.mu.RUnlock()
 
@@ -82,18 +83,18 @@ func (v *volume) Retrieve() (minioCred.Value, error) {
 	v.currentResp.mu.Lock()
 	defer v.currentResp.mu.Unlock()
 	if !v.IsExpired() {
-		return v.minioValue(), nil
+		return v.awsValue(), nil
 	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	v.logger.Info("volume credential expired, apply new credential")
 	if err := v.apply(ctx); err != nil {
-		return minioCred.Value{}, err
+		return aws.Credentials{}, err
 	}
 
-	return v.minioValue(), nil
+	return v.awsValue(), nil
 }
 
 func (v *volume) IsExpired() bool { return time.Now().After(v.currentResp.expiration) }
@@ -155,7 +156,7 @@ func newVolumeStorage(ctx context.Context, vol *volume) (storage.Client, error) 
 	case cfg.ProviderGCP:
 		cred = storage.Credential{Type: storage.OAuth2TokenSource, OAuth2TokenSource: vol}
 	case cfg.ProviderAWS:
-		cred = storage.Credential{Type: storage.MinioCredProvider, MinioCredProvider: vol}
+		cred = storage.Credential{Type: storage.AWSCredProvider, AWSCredProvider: vol}
 	default:
 		return nil, fmt.Errorf("migrate: unsupported cloud provider %s", vol.currentResp.resp.Cloud)
 	}

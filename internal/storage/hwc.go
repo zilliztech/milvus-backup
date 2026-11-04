@@ -1,56 +1,77 @@
 package storage
 
 import (
+	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
+	aws "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/provider"
 	iam "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3/model"
 	hwcRegion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/iam/v3/region"
-	"github.com/minio/minio-go/v7"
-	minioCred "github.com/minio/minio-go/v7/pkg/credentials"
 )
 
-var _ minioCred.Provider = (*HwcCredentialProvider)(nil)
+var _ aws.CredentialsProvider = (*HwcCredentialProvider)(nil)
 
+// HwcCredentialProvider implements aws.CredentialsProvider on top of an OBS
+// temporary credential minted from the IAM token of the environment.
 type HwcCredentialProvider struct {
+	// mu guards the cached temporary credential: the AWS SDK resolves
+	// credentials from several goroutines.
+	mu sync.Mutex
+
 	expireTime time.Time
+	lastCred   *model.Credential
 	iamClient  *iam.IamClient
 }
 
-func (c *HwcCredentialProvider) RetrieveWithCredContext(_ *minioCred.CredContext) (minioCred.Value, error) {
-	return c.Retrieve()
-}
+// Retrieve serves the cached temporary credential until two minutes before it
+// expires, then mints a fresh one over the network. The 2-minute lead keeps a
+// credential from dying mid-signature, and the cache keeps the mint rate at
+// one per roughly two hours instead of one per request.
+func (c *HwcCredentialProvider) Retrieve(_ context.Context) (aws.Credentials, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 
-func (c *HwcCredentialProvider) Retrieve() (minioCred.Value, error) {
+	if !c.isExpired() {
+		return c.awsValue(), nil
+	}
+
 	cred, err := retrieveTempCredential(c.iamClient)
 	if err != nil {
-		return minioCred.Value{}, fmt.Errorf("storage: hwc retrieve temporary credential: %w", err)
+		return aws.Credentials{}, fmt.Errorf("storage: hwc retrieve temporary credential: %w", err)
 	}
 
 	ti, err := time.Parse(time.RFC3339Nano, cred.ExpiresAt)
 	if err != nil {
-		return minioCred.Value{}, fmt.Errorf("storage: hwc parse temporary credential expire time: %w", err)
+		return aws.Credentials{}, fmt.Errorf("storage: hwc parse temporary credential expire time: %w", err)
 	}
 
 	c.expireTime = ti
+	c.lastCred = cred
 
-	return minioCred.Value{
-		AccessKeyID:     cred.Access,
-		SecretAccessKey: cred.Secret,
-		SessionToken:    cred.Securitytoken,
-	}, nil
+	return c.awsValue(), nil
 }
 
-func (c *HwcCredentialProvider) IsExpired() bool {
+func (c *HwcCredentialProvider) isExpired() bool {
 	now := time.Now().Add(time.Minute * 2) // prepare 2 minute get the new credential
-	expired := now.After(c.expireTime)
-	return expired
+	return now.After(c.expireTime)
 }
 
-func newHwcCredProvider(cfg Config) (minioCred.Provider, error) {
+func (c *HwcCredentialProvider) awsValue() aws.Credentials {
+	return aws.Credentials{
+		AccessKeyID:     c.lastCred.Access,
+		SecretAccessKey: c.lastCred.Secret,
+		SessionToken:    c.lastCred.Securitytoken,
+		CanExpire:       true,
+		Expires:         c.expireTime,
+	}
+}
+
+func newHwcCredProvider(cfg Config) (aws.CredentialsProvider, error) {
 	iamCred, err := provider.BasicCredentialEnvProvider().GetCredentials()
 	if err != nil {
 		return nil, fmt.Errorf("storage: new hwc iam credential: %w", err)
@@ -76,7 +97,7 @@ func newHwcCredProvider(cfg Config) (minioCred.Provider, error) {
 		return nil, fmt.Errorf("storage: hwc parse temporary credential expire time: %w", err)
 	}
 
-	return &HwcCredentialProvider{iamClient: iamClient, expireTime: t}, nil
+	return &HwcCredentialProvider{iamClient: iamClient, expireTime: t, lastCred: cred}, nil
 }
 
 func retrieveTempCredential(iamClient *iam.IamClient) (*model.Credential, error) {
@@ -108,20 +129,22 @@ func retrieveTempCredential(iamClient *iam.IamClient) (*model.Credential, error)
 	return resp.Credential, nil
 }
 
-func NewHwcClient(cfg Config) (*MinioClient, error) {
-	opts := minio.Options{Secure: cfg.UseSSL, Region: cfg.Region, BucketLookup: minio.BucketLookupDNS}
-	switch cfg.Credential.Type {
-	case IAM:
-		hwcProvider, err := newHwcCredProvider(cfg)
+func NewHwcClient(cfg Config) (*S3Client, error) {
+	provider, ok, err := baseS3CredProvider(cfg.Credential)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		if cfg.Credential.Type != IAM {
+			return nil, fmt.Errorf("storage: hwc unsupported credential type: %s", cfg.Credential.Type.String())
+		}
+		provider, err = newHwcCredProvider(cfg)
 		if err != nil {
 			return nil, fmt.Errorf("storage: new hwc iam provider: %w", err)
 		}
-		opts.Creds = minioCred.New(hwcProvider)
-	case Static:
-		opts.Creds = minioCred.NewStaticV4(cfg.Credential.AK, cfg.Credential.SK, cfg.Credential.Token)
-	default:
-		return nil, fmt.Errorf("storage: hwc unsupported credential type: %s", cfg.Credential.Type)
 	}
 
-	return newInternalMinio(cfg, &opts)
+	// OBS resolves buckets by virtual host, so the client keeps the DNS-style
+	// lookup the minio client used.
+	return newS3ClientWithCreds(cfg, provider, false)
 }

@@ -20,7 +20,7 @@ const (
 )
 
 var _ Client = (*gcpClient)(nil)
-var _ minioBacked = (*gcpClient)(nil)
+var _ s3Backed = (*gcpClient)(nil)
 
 // gcpClient wraps the minio-backed GCS client to lock its method set to
 // exactly Client: embedding the interface (not *MinioClient) promotes only
@@ -33,10 +33,10 @@ type gcpClient struct {
 	Client
 }
 
-// minioCfg re-declares the minioBacked capability the embedding hides, so a
+// s3Cfg re-declares the s3Backed capability the embedding hides, so a
 // gcp to gcp server-side copy still resolves its source bucket through
 // CopyObject's capability probe.
-func (g *gcpClient) minioCfg() Config { return g.Config() }
+func (g *gcpClient) s3Cfg() Config { return g.Config() }
 
 // gcpTransport wraps http.Transport, add an auth header to support GCP native auth
 type gcpTransport struct {

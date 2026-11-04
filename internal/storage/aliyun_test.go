@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"sync"
 	"testing"
 
@@ -39,7 +40,7 @@ func (f *fakeAliCred) GetType() *string                     { return nil }
 
 // Retrieve must hand out whatever the SDK session currently holds. The SDK
 // rotates its session under our feet, so any provider-side snapshot would go
-// stale.
+// stale; the AWS signing middleware calls Retrieve per operation.
 func TestAliCredProviderServesFreshSession(t *testing.T) {
 	fake := &fakeAliCred{model: &aliyunCred.CredentialModel{
 		AccessKeyId:     tea.String("ak-1"),
@@ -48,7 +49,7 @@ func TestAliCredProviderServesFreshSession(t *testing.T) {
 	}}
 	p := &aliCredProvider{cred: fake}
 
-	first, err := p.Retrieve()
+	first, err := p.Retrieve(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, "ak-1", first.AccessKeyID)
 
@@ -58,8 +59,7 @@ func TestAliCredProviderServesFreshSession(t *testing.T) {
 		SecurityToken:   tea.String("token-2"),
 	}
 
-	assert.True(t, p.IsExpired())
-	second, err := p.Retrieve()
+	second, err := p.Retrieve(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, "ak-2", second.AccessKeyID)
 	assert.Equal(t, "token-2", second.SessionToken)
@@ -80,9 +80,8 @@ func TestAliCredProviderSurvivesConcurrentFetches(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := p.Retrieve()
+			_, err := p.Retrieve(context.Background())
 			assert.NoError(t, err)
-			assert.True(t, p.IsExpired())
 		}()
 	}
 	wg.Wait()
