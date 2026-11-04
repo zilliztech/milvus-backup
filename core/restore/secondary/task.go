@@ -488,25 +488,39 @@ func (t *Task) runDBTasks(ctx context.Context) error {
 	return nil
 }
 
-func (t *Task) binlogDMLTaskArgs() (binlogDMLTaskArgs, error) {
+// pchTS reads each physical channel's flush boundary off the flush-all
+// messages the backup captured. They are the source positions the restore's
+// replay anchors the secondary's replication checkpoint at, so both data paths
+// cut their imports there: the binlog batches by passing the bound as end_ts,
+// the snapshot bundle by handing the whole map to the target.
+func (t *Task) pchTS() (map[string]uint64, error) {
 	pchTS := make(map[string]uint64, len(t.args.Backup.GetFlushAllMsgsBase64()))
 	for pch, msgBase64 := range t.args.Backup.GetFlushAllMsgsBase64() {
 		msyBytes, err := base64.StdEncoding.DecodeString(msgBase64)
 		if err != nil {
-			return binlogDMLTaskArgs{}, fmt.Errorf("secondary: decode flush all msg: %w", err)
+			return nil, fmt.Errorf("secondary: decode flush all msg: %w", err)
 		}
 
 		var msg commonpb.ImmutableMessage
 		if err := proto.Unmarshal(msyBytes, &msg); err != nil {
-			return binlogDMLTaskArgs{}, fmt.Errorf("secondary: unmarshal flush all msg: %w", err)
+			return nil, fmt.Errorf("secondary: unmarshal flush all msg: %w", err)
 		}
 
 		ts, err := milvus.GetTT(&msg)
 		if err != nil {
-			return binlogDMLTaskArgs{}, fmt.Errorf("secondary: get tt from flush all msg: %w", err)
+			return nil, fmt.Errorf("secondary: get tt from flush all msg: %w", err)
 		}
 
 		pchTS[pch] = ts
+	}
+
+	return pchTS, nil
+}
+
+func (t *Task) binlogDMLTaskArgs() (binlogDMLTaskArgs, error) {
+	pchTS, err := t.pchTS()
+	if err != nil {
+		return binlogDMLTaskArgs{}, err
 	}
 
 	streaming := false
@@ -668,7 +682,14 @@ type collDMLTaskFactory func(collBackup *backuppb.CollectionBackupInfo) (tasklet
 // is built here, once, and the factory only reads it.
 func (t *Task) newCollDMLTaskFactory() (collDMLTaskFactory, error) {
 	if t.args.Backup.GetFormat() == meta.FormatSnapshot {
-		args := snapDMLTaskArgs{TaskID: t.args.TaskID, StreamCli: t.streamCli, RestfulCli: t.restful}
+		pchTS, err := t.pchTS()
+		if err != nil {
+			return nil, fmt.Errorf("secondary: get flush all ts: %w", err)
+		}
+		args := snapDMLTaskArgs{
+			TaskID: t.args.TaskID, PchTS: pchTS,
+			StreamCli: t.streamCli, RestfulCli: t.restful,
+		}
 		return func(collBackup *backuppb.CollectionBackupInfo) (tasklet.Tasklet, error) {
 			metadataURI, err := t.snapSource.MetadataURI(collBackup.GetSnapshotBackup().GetMetadataPath())
 			if err != nil {
