@@ -60,21 +60,16 @@ type directCopier struct {
 func (dc *directCopier) copy(ctx context.Context, copyAttr CopyAttr) error {
 	dc.logger.Debug("copy object", zap.String("src", copyAttr.Src.Key), zap.String("dest", copyAttr.DestKey))
 
-	err := retry.Do(ctx, func() error {
-		i := CopyObjectInput{SrcCli: dc.src, SrcAttr: copyAttr.Src, DestKey: copyAttr.DestKey}
+	i := CopyObjectInput{SrcCli: dc.src, SrcAttr: copyAttr.Src, DestKey: copyAttr.DestKey}
+	if err := dc.dest.CopyObject(ctx, i); err != nil {
+		return fmt.Errorf("storage: direct copier copy object: %w", err)
+	}
 
-		if err := dc.dest.CopyObject(ctx, i); err != nil {
-			return fmt.Errorf("storage: direct copier copy object: %w", err)
-		}
-
-		return nil
-	})
-
-	if err == nil && dc.opt.traceFn != nil {
+	if dc.opt.traceFn != nil {
 		dc.opt.traceFn(copyAttr.Src.Length)
 	}
 
-	return err
+	return nil
 }
 
 // streamingCopier downloads from src and uploads to dest, so the object is

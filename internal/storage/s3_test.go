@@ -294,8 +294,8 @@ func TestObjectIterYieldsCommonPrefixes(t *testing.T) {
 // the copy layer must surface it so the retry kicks in instead of silently
 // dropping the object.
 func TestCopyObjectEmbeddedError(t *testing.T) {
-	// Both the SDK's internal retries on the embedded error and our retry.Do
-	// back off on a real clock; run the bubble on a fake one.
+	// The SDK's internal retries on the embedded error back off on a real
+	// clock; run the bubble on a fake one.
 	synctest.Test(t, func(t *testing.T) {
 		src := &S3Client{cfg: Config{Bucket: "src-bucket"}}
 

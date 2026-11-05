@@ -66,18 +66,18 @@ func TestDirectCopier_Copy(t *testing.T) {
 		assert.Contains(t, err.Error(), "copy object")
 	})
 
-	t.Run("RetryThenSuccess", func(t *testing.T) {
+	t.Run("ErrorIsNotRetried", func(t *testing.T) {
 		dest := NewMockClient(t)
 		src := NewMockClient(t)
 		rp := &directCopier{src: src, dest: dest, logger: zap.NewNop()}
 
 		in := CopyObjectInput{SrcCli: src, SrcAttr: ObjectAttr{Key: "a/b", Length: 5}, DestKey: "c/d"}
+		// transient retries live in the SDK retryer, not in the copier
 		dest.EXPECT().CopyObject(mock.Anything, in).Return(assert.AnError).Once()
-		dest.EXPECT().CopyObject(mock.Anything, in).Return(nil).Once()
 
 		attr := CopyAttr{Src: ObjectAttr{Key: "a/b", Length: 5}, DestKey: "c/d"}
 		err := rp.copy(context.Background(), attr)
-		assert.NoError(t, err)
+		assert.Error(t, err)
 	})
 
 	t.Run("SuccessWithTraceFn", func(t *testing.T) {

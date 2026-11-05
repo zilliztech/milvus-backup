@@ -17,6 +17,7 @@ import (
 	"time"
 
 	aws "github.com/aws/aws-sdk-go-v2/aws"
+	awsretry "github.com/aws/aws-sdk-go-v2/aws/retry"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 	awscred "github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
@@ -49,8 +50,13 @@ const (
 
 	// aborting an unfinished multipart upload runs on a context detached from the
 	// caller's, so it needs its own bound to avoid hanging the copy path
-	_abortTimeout  = 30 * time.Second
-	_abortAttempts = 3
+	_abortTimeout = 30 * time.Second
+
+	// the SDK retryer owns transient-error retries for every operation; 10
+	// attempts with a 5s backoff cap spans the window the removed client-layer
+	// loops used to cover, and adds jitter they lacked
+	_sdkRetryAttempts   = 10
+	_sdkRetryMaxBackoff = 5 * time.Second
 
 	// S3 DeleteObjects takes at most 1000 keys per request, so one
 	// DeleteObjects call is one request.
@@ -145,6 +151,12 @@ func s3Options(cfg Config, provider aws.CredentialsProvider, usePathStyle bool) 
 	opts := s3.Options{
 		Region:      cfg.Region,
 		Credentials: provider,
+		// Transient errors retry here, inside the SDK retryer, not in
+		// client-method wrappers: one retry domain in the stack, with the
+		// SDK's error classification, jitter and throttle-aware rate limiter.
+		Retryer: awsretry.AddWithMaxBackoffDelay(
+			awsretry.AddWithMaxAttempts(awsretry.NewStandard(), _sdkRetryAttempts),
+			_sdkRetryMaxBackoff),
 		// Old MinIO, Ceph and OSS releases reject the checksum headers the
 		// SDK adds by default, so only send and validate them when the
 		// backend asks for it.
@@ -322,20 +334,18 @@ func copySource(bucket, key string) string {
 }
 
 func (c *S3Client) copyObject(ctx context.Context, srcCfg Config, i CopyObjectInput) error {
-	return retry.Do(ctx, func() error {
-		// The SDK detects the S3 "200 OK with an embedded <Error>" failure
-		// mode itself for every S3 operation and returns it as an error here.
-		_, err := c.cli.CopyObject(ctx, &s3.CopyObjectInput{
-			Bucket:     aws.String(c.cfg.Bucket),
-			Key:        aws.String(i.DestKey),
-			CopySource: aws.String(copySource(srcCfg.Bucket, i.SrcAttr.Key)),
-		})
-		if err != nil {
-			return fmt.Errorf("storage: %s copy from %s / %s to %s / %s: %w", c.cfg.Provider, srcCfg.Bucket, i.SrcAttr.Key, c.cfg.Bucket, i.DestKey, err)
-		}
-
-		return nil
+	// The SDK detects the S3 "200 OK with an embedded <Error>" failure mode
+	// itself for every S3 operation and retries it inside the retryer.
+	_, err := c.cli.CopyObject(ctx, &s3.CopyObjectInput{
+		Bucket:     aws.String(c.cfg.Bucket),
+		Key:        aws.String(i.DestKey),
+		CopySource: aws.String(copySource(srcCfg.Bucket, i.SrcAttr.Key)),
 	})
+	if err != nil {
+		return fmt.Errorf("storage: %s copy from %s / %s to %s / %s: %w", c.cfg.Provider, srcCfg.Bucket, i.SrcAttr.Key, c.cfg.Bucket, i.DestKey, err)
+	}
+
+	return nil
 }
 
 type copyPartInput struct {
@@ -374,7 +384,10 @@ func (c *S3Client) copyPart(ctx context.Context, i copyPartInput) (types.Complet
 			UploadId:        aws.String(i.UploadID),
 		})
 		if err != nil {
-			return fmt.Errorf("storage: %s copy part: %w", c.cfg.Provider, err)
+			// The SDK retryer has already spent its transient-error budget;
+			// this loop retries only the shape failure below, so don't let
+			// SDK-classified failures amplify through it.
+			return retry.Unrecoverable(fmt.Errorf("storage: %s copy part: %w", c.cfg.Provider, err))
 		}
 
 		etag := ""
@@ -408,17 +421,12 @@ func (c *S3Client) abortMultipartUpload(ctx context.Context, destKey, uploadID s
 	abortCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), _abortTimeout)
 	defer cancel()
 
-	err := retry.Do(abortCtx, func() error {
-		_, err := c.cli.AbortMultipartUpload(abortCtx, &s3.AbortMultipartUploadInput{
-			Bucket:   aws.String(c.cfg.Bucket),
-			Key:      aws.String(destKey),
-			UploadId: aws.String(uploadID),
-		})
-		if err != nil {
-			return fmt.Errorf("storage: %s abort multipart upload: %w", c.cfg.Provider, err)
-		}
-		return nil
-	}, retry.Attempts(_abortAttempts))
+	// The SDK retryer retries transient failures within abortCtx's deadline.
+	_, err := c.cli.AbortMultipartUpload(abortCtx, &s3.AbortMultipartUploadInput{
+		Bucket:   aws.String(c.cfg.Bucket),
+		Key:      aws.String(destKey),
+		UploadId: aws.String(uploadID),
+	})
 	if err != nil {
 		c.logger.Error("abort multipart upload failed", zap.Error(err),
 			zap.String("dest_key", destKey), zap.String("upload_id", uploadID))
@@ -546,17 +554,15 @@ func (c *S3Client) UploadObject(ctx context.Context, i UploadObjectInput) error 
 func (c *S3Client) DeleteObject(ctx context.Context, key string) error {
 	// The SDK accepts any 2xx answer and rewrites a 200 OK with an embedded
 	// <Error> body into an error, so no per-backend salvage is needed here.
-	return retry.Do(ctx, func() error {
-		_, err := c.cli.DeleteObject(ctx, &s3.DeleteObjectInput{
-			Bucket: aws.String(c.cfg.Bucket),
-			Key:    aws.String(key),
-		})
-		if err != nil {
-			return fmt.Errorf("storage: %s delete object: %w", c.cfg.Provider, err)
-		}
-
-		return nil
+	_, err := c.cli.DeleteObject(ctx, &s3.DeleteObjectInput{
+		Bucket: aws.String(c.cfg.Bucket),
+		Key:    aws.String(key),
 	})
+	if err != nil {
+		return fmt.Errorf("storage: %s delete object: %w", c.cfg.Provider, err)
+	}
+
+	return nil
 }
 
 func (c *S3Client) DeleteObjectsBatchSize() int { return _deleteObjectsBatchSize }
@@ -565,16 +571,14 @@ func (c *S3Client) DeleteObjectsBatchSize() int { return _deleteObjectsBatchSize
 // request-level failure (the whole batch rejected) and per-key failures inside
 // a 200 response both arrive on the returned error.
 func (c *S3Client) DeleteObjects(ctx context.Context, keys []string) error {
-	return retry.Do(ctx, func() error {
-		err := c.deleteObjects(ctx, keys)
-		if isBatchDeleteUnsupported(err) {
-			// A gateway without multi-object delete will never learn it, so
-			// skip the retries and tell DeleteWithCallback to degrade to
-			// per-key deletion for the rest of the run.
-			return retry.Unrecoverable(fmt.Errorf("%w: %w", errBatchDeleteUnsupported, err))
-		}
-		return err
-	})
+	err := c.deleteObjects(ctx, keys)
+	if isBatchDeleteUnsupported(err) {
+		// A gateway without multi-object delete will never learn it, so tell
+		// DeleteWithCallback to degrade to per-key deletion for the rest of
+		// the run.
+		return fmt.Errorf("%w: %w", errBatchDeleteUnsupported, err)
+	}
+	return err
 }
 
 func (c *S3Client) deleteObjects(ctx context.Context, keys []string) error {
