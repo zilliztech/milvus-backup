@@ -153,19 +153,19 @@ func NewClient(ctx context.Context, conf Config) (Client, error) {
 	// canonical name while the configuration is loaded.
 	switch conf.Provider {
 	case cfg.ProviderAliyun:
-		return newAliyunClient(conf)
+		return newAliyunClient(ctx, conf)
 	case cfg.ProviderAWS, cfg.ProviderS3, cfg.ProviderMinio:
-		return newMinioClient(conf)
+		return newS3Client(ctx, conf)
 	case cfg.ProviderAzure:
 		return newAzureClient(conf)
 	case cfg.ProviderTencent:
-		return newTencentClient(conf)
+		return newTencentClient(ctx, conf)
 	case cfg.ProviderGCP:
 		return newGCPClient(conf)
 	case cfg.ProviderGCPNative:
 		return newGCPNativeClient(ctx, conf)
 	case cfg.ProviderHwc:
-		return NewHwcClient(conf)
+		return NewHwcClient(ctx, conf)
 	case cfg.ProviderLocal:
 		return newLocalClient(conf), nil
 	default:

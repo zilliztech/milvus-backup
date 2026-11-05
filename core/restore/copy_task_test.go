@@ -35,6 +35,7 @@ func newCopyTestArgs(t *testing.T, staging bool) importTaskArgs {
 		storeCfg := storage.Config{
 			Provider:   cfg.ProviderMinio,
 			Endpoint:   "localhost:9000",
+			Region:     "us-east-1",
 			Bucket:     bucket,
 			Credential: storage.Credential{Type: storage.Static, AK: "a", SK: "b"},
 		}

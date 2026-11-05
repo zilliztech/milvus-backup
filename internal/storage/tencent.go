@@ -5,37 +5,38 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/minio/minio-go/v7"
-	minioCred "github.com/minio/minio-go/v7/pkg/credentials"
+	aws "github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/tencentcloud/tencentcloud-sdk-go/tencentcloud/common"
 
 	"github.com/zilliztech/milvus-backup/internal/retry"
 )
 
-// NewTencentClient returns a minio.Client which is compatible for tencent OSS
-func newTencentClient(cfg Config) (*MinioClient, error) {
-	opts := minio.Options{Secure: cfg.UseSSL, Region: cfg.Region, BucketLookup: minio.BucketLookupDNS}
+// newTencentClient returns an S3 client which is compatible for tencent COS.
+// COS resolves buckets by virtual host, so the client keeps the DNS-style
+// lookup the minio client used.
+func newTencentClient(ctx context.Context, cfg Config) (*S3Client, error) {
+	var provider aws.CredentialsProvider
 	switch cfg.Credential.Type {
 	case IAM:
-		provider, err := newTencentCredProvider()
+		p, err := newTencentCredProvider()
 		if err != nil {
 			return nil, err
 		}
-		opts.Creds = minioCred.New(provider)
+		provider = p
 	case Static:
-		opts.Creds = minioCred.NewStaticV4(cfg.Credential.AK, cfg.Credential.SK, cfg.Credential.Token)
+		provider = staticS3CredProvider(cfg.Credential)
 	default:
-		return nil, fmt.Errorf("storage: tencent unsupported credential type: %s", cfg.Credential.Type)
+		return nil, fmt.Errorf("storage: tencent unsupported credential type: %s", cfg.Credential.Type.String())
 	}
 
-	return newInternalMinio(cfg, &opts)
+	return newS3ClientWithCreds(ctx, cfg, provider, false)
 }
 
-// tencentCredProvider implements "github.com/minio/minio-go/v7/pkg/credentials".Provider
-// also implements transport
+// tencentCredProvider implements aws.CredentialsProvider on top of the
+// tencentcloud-sdk-go credential.
 type tencentCredProvider struct {
-	// mu serializes the SDK calls: minio locks each Credentials wrapper
-	// separately while this provider is shared by all of them.
+	// mu serializes the SDK calls: the AWS SDK resolves credentials from
+	// several goroutines while this provider is shared by all of them.
 	mu    sync.Mutex
 	creds common.CredentialIface
 }
@@ -44,7 +45,7 @@ type tencentCredProvider struct {
 // One per process, because building the TKE OIDC provider exchanges the web
 // identity token for STS credentials right away: one per client would issue an
 // AssumeRoleWithWebIdentity call per client and trip the STS rate limit.
-var newTencentCredProvider = sync.OnceValues(func() (minioCred.Provider, error) {
+var newTencentCredProvider = sync.OnceValues(func() (aws.CredentialsProvider, error) {
 	provider, err := common.DefaultTkeOIDCRoleArnProvider()
 	if err != nil {
 		return nil, fmt.Errorf("storage: create tencent credential provider: %w", err)
@@ -69,28 +70,15 @@ var newTencentCredProvider = sync.OnceValues(func() (minioCred.Provider, error) 
 })
 
 // Retrieve returns the current SDK credential. RoleArnCredential serves its
-// cached token and refreshes it internally when due, so answering minio's
-// every fetch costs no extra STS traffic.
-func (c *tencentCredProvider) Retrieve() (minioCred.Value, error) {
+// cached token and refreshes it internally when due, so answering the AWS
+// SDK's every fetch costs no extra STS traffic.
+func (c *tencentCredProvider) Retrieve(ctx context.Context) (aws.Credentials, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	return minioCred.Value{
+	return aws.Credentials{
 		AccessKeyID:     c.creds.GetSecretId(),
 		SecretAccessKey: c.creds.GetSecretKey(),
 		SessionToken:    c.creds.GetToken(),
 	}, nil
-}
-
-func (c *tencentCredProvider) RetrieveWithCredContext(_ *minioCred.CredContext) (minioCred.Value, error) {
-	return c.Retrieve()
-}
-
-// IsExpired always reports expired so minio re-fetches through Retrieve on
-// every signature. The SDK keeps the real expiration private and re-serves its
-// cached token until it refreshes internally, so the cached secret id this
-// struct used to keep only bridged that gap; delegating expiry to the SDK is
-// simpler and cannot go stale.
-func (c *tencentCredProvider) IsExpired() bool {
-	return true
 }

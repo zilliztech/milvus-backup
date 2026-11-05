@@ -235,6 +235,7 @@ func TestTask_needStaging(t *testing.T) {
 		cli, err := storage.NewClient(context.Background(), storage.Config{
 			Provider:   cfg.ProviderMinio,
 			Endpoint:   "localhost:9000",
+			Region:     "us-east-1",
 			Bucket:     bucket,
 			Credential: storage.Credential{Type: storage.Static, AK: "a", SK: "b"},
 		})

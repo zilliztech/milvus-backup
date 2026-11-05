@@ -283,7 +283,7 @@ func TestSnapshotExternalSpec(t *testing.T) {
 	})
 
 	t.Run("RejectsUnsupportedCredential", func(t *testing.T) {
-		storeCfg := Config{Provider: cfg.ProviderAWS, Credential: Credential{Type: MinioCredProvider}}
+		storeCfg := Config{Provider: cfg.ProviderAWS, Credential: Credential{Type: AWSCredProvider}}
 		_, err := SnapshotExternalSpec(storeCfg)
 		assert.Error(t, err)
 	})
