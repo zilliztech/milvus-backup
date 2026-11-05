@@ -119,7 +119,10 @@ def get_json_field_name_list(schema):
             json_fields.append(field.name)
     return json_fields
 
-def create_index_for_vector_fields(collection):
+def create_index_for_vector_fields(collection, timeout=600):
+    # timeout must stay an int: pymilvus wait_for_creating_index only enforces
+    # isinstance(timeout, int), and None polls DescribeIndex forever when the
+    # server never finishes the build.
     schema = collection.schema
     float_vector_fields = get_float_vec_field_name_list(schema)
     binary_vector_fields = get_binary_vec_field_name_list(schema)
@@ -130,21 +133,23 @@ def create_index_for_vector_fields(collection):
     for field_name in float_vector_fields:
         if field_name in indexed_fields:
             continue
-        collection.create_index(field_name, DEFAULT_FLOAT_INDEX_PARAM)
+        collection.create_index(field_name, DEFAULT_FLOAT_INDEX_PARAM, timeout=timeout)
     for field_name in binary_vector_fields:
         if field_name in indexed_fields:
             continue
-        collection.create_index(field_name, DEFAULT_BINARY_INDEX_PARAM)
+        collection.create_index(field_name, DEFAULT_BINARY_INDEX_PARAM, timeout=timeout)
     for field_name in sparse_vector_fields:
         if field_name in indexed_fields:
             continue
-        collection.create_index(field_name, DEFAULT_SPARSE_INDEX_PARAM)
+        collection.create_index(field_name, DEFAULT_SPARSE_INDEX_PARAM, timeout=timeout)
     for field_name in bm25_vector_fields:
         if field_name in indexed_fields:
             continue
-        collection.create_index(field_name, DEFAULT_BM25_INDEX_PARAM)
+        collection.create_index(field_name, DEFAULT_BM25_INDEX_PARAM, timeout=timeout)
 
-def create_json_path_index_for_json_fields(collection):
+def create_json_path_index_for_json_fields(collection, timeout=600):
+    # Same unbounded index-build wait as create_index_for_vector_fields:
+    # pymilvus polls DescribeIndex forever when timeout is None.
     schema = collection.schema
     json_fields = get_json_field_name_list(schema)
     indexes = [index.to_dict() for index in collection.indexes]
@@ -152,10 +157,10 @@ def create_json_path_index_for_json_fields(collection):
     for field_name in json_fields:
         if field_name in indexed_fields:
             continue
-        collection.create_index(field_name, DEFAULT_JSON_PATH_INDEX)
-        collection.create_index(field_name, DEFAULT_JSON_PATH_INDEX_DOUBLE)
-        collection.create_index(field_name, DEFAULT_JSON_PATH_INDEX_VARCHAR)
-        collection.create_index(field_name, DEFAULT_JSON_PATH_INDEX_BOOL)
+        collection.create_index(field_name, DEFAULT_JSON_PATH_INDEX, timeout=timeout)
+        collection.create_index(field_name, DEFAULT_JSON_PATH_INDEX_DOUBLE, timeout=timeout)
+        collection.create_index(field_name, DEFAULT_JSON_PATH_INDEX_VARCHAR, timeout=timeout)
+        collection.create_index(field_name, DEFAULT_JSON_PATH_INDEX_BOOL, timeout=timeout)
 
 def create_target_index(index, field_name):
     index["field_name"] = field_name
@@ -1085,7 +1090,7 @@ def compare_list_elements(_first, _second):
 
 
 def get_token(url):
-    rep = requests.get(url)
+    rep = requests.get(url, timeout=30)
     data = json.loads(rep.text)
     if "token" in data:
         token = data["token"]
@@ -1103,7 +1108,7 @@ def get_tags(url, token):
         "Authorization": "Bearer %s" % token,
     }
     try:
-        rep = requests.get(url, headers=headers)
+        rep = requests.get(url, headers=headers, timeout=30)
         data = json.loads(rep.text)
 
         tags = []
@@ -1138,7 +1143,7 @@ def get_config_digest(url, token):
         "Authorization": "Bearer %s" % token,
     }
     try:
-        rep = requests.get(url, headers=headers)
+        rep = requests.get(url, headers=headers, timeout=30)
         data = json.loads(rep.text)
 
         digest = ""

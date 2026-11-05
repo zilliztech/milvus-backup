@@ -35,6 +35,11 @@ def logger_request_response(
 
 
 class Requests:
+    # Upper bound for a single REST call. Sync backup/restore requests can
+    # legitimately run for minutes; without a timeout they block forever when
+    # the server never responds.
+    TIMEOUT = 600
+
     def __init__(self, url=None):
         self.url = url
         self.headers = {
@@ -53,7 +58,9 @@ class Requests:
         data = json.dumps(data)
         str_data = data[:200] + "..." + data[-200:] if len(data) > 400 else data
         t0 = time.time()
-        response = requests.post(url, headers=headers, data=data, params=params)
+        response = requests.post(
+            url, headers=headers, data=data, params=params, timeout=self.TIMEOUT
+        )
         tt = time.time() - t0
         str_response = (
             response.text[:200] + "..." + response.text[-200:]
@@ -72,9 +79,13 @@ class Requests:
         str_data = data[:200] + "..." + data[-200:] if len(data) > 400 else data
         t0 = time.time()
         if data is None or data == "null":
-            response = requests.get(url, headers=headers, params=params)
+            response = requests.get(
+                url, headers=headers, params=params, timeout=self.TIMEOUT
+            )
         else:
-            response = requests.get(url, headers=headers, params=params, data=data)
+            response = requests.get(
+                url, headers=headers, params=params, data=data, timeout=self.TIMEOUT
+            )
         tt = time.time() - t0
         str_response = (
             response.text[:200] + "..." + response.text[-200:]
@@ -92,7 +103,9 @@ class Requests:
         data = json.dumps(data)
         str_data = data[:200] + "..." + data[-200:] if len(data) > 400 else data
         t0 = time.time()
-        response = requests.put(url, headers=headers, data=data)
+        response = requests.put(
+            url, headers=headers, data=data, timeout=self.TIMEOUT
+        )
         tt = time.time() - t0
         str_response = (
             response.text[:200] + "..." + response.text[-200:]
@@ -110,7 +123,9 @@ class Requests:
         data = json.dumps(data)
         str_data = data[:200] + "..." + data[-200:] if len(data) > 400 else data
         t0 = time.time()
-        response = requests.delete(url, headers=headers, data=data, params=params)
+        response = requests.delete(
+            url, headers=headers, data=data, params=params, timeout=self.TIMEOUT
+        )
         tt = time.time() - t0
         str_response = (
             response.text[:200] + "..." + response.text[-200:]

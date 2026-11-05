@@ -108,11 +108,11 @@ class TestCreateBackup(TestcaseBase):
         if collection_load_status == "loaded":
             for name in names_origin:
                 c = Collection(name=name)
-                c.load()
+                c.load(timeout=600)
         if collection_load_status == "not_loaded":
             for name in names_origin:
                 c = Collection(name=name)
-                c.load()
+                c.load(timeout=600)
                 c.release()
         collection_info = {}
         for name in names_origin:

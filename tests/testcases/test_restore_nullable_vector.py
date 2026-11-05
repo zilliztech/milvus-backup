@@ -66,7 +66,7 @@ def _flush(client, collection_name):
     """pymilvus flush() blocks until the underlying FlushAll returns, so a
     helper here is mostly for readability and future hardening if we need
     to add row-count polling."""
-    client.flush(collection_name=collection_name)
+    client.flush(collection_name=collection_name, timeout=600)
 
 
 def _describe_field(client, collection_name, field_name):
@@ -112,8 +112,8 @@ def _index_and_load(client, collection_name, fields):
                 index_type="FLAT",
                 metric_type="L2",
             )
-    client.create_index(collection_name=collection_name, index_params=index_params)
-    client.load_collection(collection_name)
+    client.create_index(collection_name=collection_name, index_params=index_params, timeout=600)
+    client.load_collection(collection_name, timeout=600)
 
 
 # Vector dtypes whose Milvus support for `nullable=True` is in scope per PRD.
@@ -304,8 +304,9 @@ class TestRestoreNullableVector(TestcaseBase):
         self.milvus_client.create_index(
             collection_name=restored,
             index_params=index_params,
+            timeout=600,
         )
-        self.milvus_client.load_collection(restored)
+        self.milvus_client.load_collection(restored, timeout=600)
 
         # Request topK >= nb, expect at most non_null_count results back.
         query_vec = [np.float32(x) for x in rng.random(dim)]

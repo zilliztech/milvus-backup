@@ -1122,7 +1122,7 @@ class TestRestoreBackup(TestcaseBase):
         token = word_freq.most_common(1)[0][0]
         c = Collection(name=name_origin + suffix)
         create_index_for_vector_fields(c)
-        c.load()
+        c.load(timeout=600)
         if enable_text_match:
             res = c.query(
                 expr=f"text_match(text, '{token}')",
@@ -1669,7 +1669,9 @@ class TestRestoreBackup(TestcaseBase):
             index_name="geometry_index",
             index_type="RTREE",
         )
-        self.milvus_client.create_index(collection_name=name_origin, index_params=index_params)
+        self.milvus_client.create_index(
+            collection_name=name_origin, index_params=index_params, timeout=600
+        )
         log.info(f"Created index for {name_origin} geometry field")
         res = self.client.create_backup(
             {
@@ -1801,7 +1803,7 @@ class TestRestoreBackup(TestcaseBase):
             self.milvus_client.insert(collection_name=name_origin, data=data[i:i+batch_size])
 
         # Flush to ensure all data is persisted
-        self.milvus_client.flush(collection_name=name_origin)
+        self.milvus_client.flush(collection_name=name_origin, timeout=600)
         log.info(f"Inserted {nb} rows, {len(empty_clips_ids)} rows have empty clips array")
 
         # Create index for struct array vector field
@@ -1813,7 +1815,9 @@ class TestRestoreBackup(TestcaseBase):
             metric_type="MAX_SIM",
             params={"M": 16, "efConstruction": 200}
         )
-        self.milvus_client.create_index(collection_name=name_origin, index_params=index_params)
+        self.milvus_client.create_index(
+            collection_name=name_origin, index_params=index_params, timeout=600
+        )
         log.info(f"Created index for clips[clip_embedding] field")
 
         # Create backup
@@ -1862,8 +1866,8 @@ class TestRestoreBackup(TestcaseBase):
         restored_name = name_origin + suffix
 
         # Load collections to make them queryable
-        self.milvus_client.load_collection(collection_name=name_origin)
-        self.milvus_client.load_collection(collection_name=restored_name)
+        self.milvus_client.load_collection(collection_name=name_origin, timeout=600)
+        self.milvus_client.load_collection(collection_name=restored_name, timeout=600)
         log.info(f"Loaded collections: {name_origin} and {restored_name}")
 
         # Verify struct array data integrity by querying
@@ -2071,7 +2075,7 @@ class TestRestoreBackup(TestcaseBase):
         log.info(f"df: \n{df}")
         # Use MilvusClient instead of ORM to ensure schema cache is updated
         self.milvus_client.insert(collection_name=name_origin, data=new_data)
-        self.milvus_client.flush(collection_name=name_origin)
+        self.milvus_client.flush(collection_name=name_origin, timeout=600)
         log.info(f"Inserted {nb_after} rows with new fields populated")
 
         # Step 5: Create backup
@@ -2175,7 +2179,7 @@ class TestRestoreBackup(TestcaseBase):
             for i in range(nb_initial)
         ]
         self.milvus_client.insert(collection_name, initial_data)
-        self.milvus_client.flush(collection_name)
+        self.milvus_client.flush(collection_name, timeout=600)
         log.info(f"Inserted {nb_initial} initial rows (static fields only)")
 
         # Step 3: Alter collection to enable dynamic schema
@@ -2206,7 +2210,7 @@ class TestRestoreBackup(TestcaseBase):
             for i in range(nb_initial, nb_initial + nb_after)
         ]
         self.milvus_client.insert(collection_name, dynamic_data)
-        self.milvus_client.flush(collection_name)
+        self.milvus_client.flush(collection_name, timeout=600)
         log.info(f"Inserted {nb_after} rows with dynamic fields")
 
         # Step 5: Create backup
@@ -2350,12 +2354,17 @@ class TestRestoreBackup(TestcaseBase):
             pass
         else:
             # Binlog restore carries no indexes, recreate them as on 2.6.
-            c.create_index("float_vector", {"index_type": "FLAT", "metric_type": "L2", "params": {}})
+            c.create_index(
+                "float_vector",
+                {"index_type": "FLAT", "metric_type": "L2", "params": {}},
+                timeout=600,
+            )
             c.create_index(
                 "minhash_signature",
                 {"index_type": "MINHASH_LSH", "metric_type": "MHJACCARD", "params": {}},
+                timeout=600,
             )
-        c.load()
+        c.load(timeout=600)
         res = c.search(
             data=[data[0]["text"]],
             anns_field="minhash_signature",
