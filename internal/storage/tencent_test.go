@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"context"
 	"sync"
 	"testing"
 
@@ -40,19 +41,18 @@ func (f *fakeTencentCred) GetCredential() (string, string, string) {
 
 // Retrieve must hand out whatever the SDK credential currently holds. The SDK
 // rotates its token under our feet, so any provider-side snapshot would go
-// stale.
+// stale; the AWS signing middleware calls Retrieve per operation.
 func TestTencentCredProviderServesFreshSession(t *testing.T) {
 	fake := &fakeTencentCred{secretId: "ak-1"}
 	p := &tencentCredProvider{creds: fake}
 
-	first, err := p.Retrieve()
+	first, err := p.Retrieve(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, "ak-1", first.AccessKeyID)
 
 	fake.secretId = "ak-2"
 
-	assert.True(t, p.IsExpired())
-	second, err := p.Retrieve()
+	second, err := p.Retrieve(context.Background())
 	require.NoError(t, err)
 	assert.Equal(t, "ak-2", second.AccessKeyID)
 	assert.Equal(t, "token", second.SessionToken)
@@ -69,9 +69,8 @@ func TestTencentCredProviderSurvivesConcurrentFetches(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := p.Retrieve()
+			_, err := p.Retrieve(context.Background())
 			assert.NoError(t, err)
-			assert.True(t, p.IsExpired())
 		}()
 	}
 	wg.Wait()

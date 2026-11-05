@@ -15,11 +15,12 @@ import (
 )
 
 // newTestStorageClient builds a storage client of the given provider without
-// touching any backend: constructing a client never connects.
+// touching any backend: a configured region keeps construction off the network.
 func newTestStorageClient(t *testing.T, provider string) storage.Client {
 	cli, err := storage.NewClient(context.Background(), storage.Config{
 		Provider:   provider,
 		Endpoint:   "localhost:9000",
+		Region:     "us-east-1",
 		Credential: storage.Credential{Type: storage.Static, AK: "a", SK: "b"},
 	})
 	require.NoError(t, err)

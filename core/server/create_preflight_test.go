@@ -93,7 +93,7 @@ func TestCreateStoragePreflightRetry(t *testing.T) {
 			s, dest := preflightTestServer(t, func(w http.ResponseWriter, r *http.Request) {
 				calls.Add(1)
 				assert.Equal(t, http.MethodGet, r.Method)
-				assert.Equal(t, "/source-bucket/", r.URL.Path)
+				assert.Equal(t, "/source-bucket", r.URL.Path)
 				assert.Equal(t, "source-instance/insert_log/", r.URL.Query().Get("prefix"))
 				assert.Equal(t, "2", r.URL.Query().Get("list-type"))
 				w.Header().Set("Content-Type", "application/xml")

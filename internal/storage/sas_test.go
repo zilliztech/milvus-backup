@@ -99,7 +99,7 @@ func TestResolveSourceSAS(t *testing.T) {
 	t.Run("MintNeedsSharedKeyOrIAM", func(t *testing.T) {
 		storeCfg := Config{
 			Provider:   cfg.ProviderAzure,
-			Credential: Credential{Type: MinioCredProvider, AzureAccountName: "milvusaccount"},
+			Credential: Credential{Type: AWSCredProvider, AzureAccountName: "milvusaccount"},
 		}
 
 		_, err := ResolveSourceSAS(t.Context(), storeCfg)

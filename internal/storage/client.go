@@ -6,7 +6,7 @@ import (
 	"io"
 	"iter"
 
-	minioCred "github.com/minio/minio-go/v7/pkg/credentials"
+	aws "github.com/aws/aws-sdk-go-v2/aws"
 	"golang.org/x/oauth2"
 )
 
@@ -90,8 +90,9 @@ type Credential struct {
 	// GCPCredJSON
 	GCPCredJSON string
 
-	// MinioCredential
-	MinioCredProvider minioCred.Provider
+	// AWSCredProvider hands the S3 client a credentials provider the caller
+	// built from an SDK of its own (the migrate volume, for instance).
+	AWSCredProvider aws.CredentialsProvider
 
 	// OAuth2 TokenSource
 	OAuth2TokenSource oauth2.TokenSource
@@ -109,9 +110,9 @@ const (
 
 	// GCPCredJSON For GCPNative storage. pass the json file path to the GCPNative storage.
 	GCPCredJSON
-	// MinioCredProvider For S3 compatible storage (now only support minio, aws),
-	// pass a struct which implements minioCred.Provider
-	MinioCredProvider
+	// AWSCredProvider For S3 compatible storage, pass a struct which implements
+	// aws.CredentialsProvider.
+	AWSCredProvider
 	// OAuth2TokenSource for some object storage which need OAuth2 to auth.
 	OAuth2TokenSource
 )
@@ -124,8 +125,8 @@ func (c CredentialType) String() string {
 		return "IAM"
 	case GCPCredJSON:
 		return "GCPCredJSON"
-	case MinioCredProvider:
-		return "MinioCredProvider"
+	case AWSCredProvider:
+		return "AWSCredProvider"
 	case OAuth2TokenSource:
 		return "OAuth2TokenSource"
 	case Unknown:
