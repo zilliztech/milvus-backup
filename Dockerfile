@@ -1,4 +1,4 @@
-FROM golang:1.26 AS builder
+FROM golang:1.26.10 AS builder
 
 ENV CGO_ENABLED=0
 
@@ -12,7 +12,7 @@ RUN go mod download
 COPY . .
 RUN make build
 
-FROM alpine:3.17
+FROM alpine:3.22
 
 WORKDIR /app
 RUN apk update && apk add --no-cache \
