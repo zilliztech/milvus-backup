@@ -196,18 +196,7 @@ func (t *Task) initClients(ctx context.Context) error {
 	// whose etcd this tool cannot reach fails in the first seconds of the backup
 	// rather than at the end of it.
 	if t.option.BackupIndexExtra {
-		endpoints := t.params.Milvus.Etcd.Endpoints.Val
-		etcdCli, err := clientv3.New(clientv3.Config{
-			Endpoints:   endpoints,
-			DialTimeout: 5 * time.Second,
-		})
-		if err != nil {
-			return fmt.Errorf("backup: create etcd client: %w", err)
-		}
-		t.etcdCli = etcdCli
-		t.etcd = newEtcdMeta(etcdCli, endpoints)
-
-		if err := t.etcd.probe(ctx); err != nil {
+		if err := t.initEtcd(ctx); err != nil {
 			return err
 		}
 	}
@@ -257,6 +246,13 @@ func (t *Task) privateExecute(ctx context.Context) error {
 	}
 	t.resolvedFormat = format
 	t.metaBuilder.setFormat(format)
+	// Preserved-ID binlog restore needs the hidden source IDs independently
+	// of index metadata. Snapshot bundles already carry the internal schema.
+	if format == meta.FormatBinlog && t.params.Milvus.PreserveFieldIDs.Val && t.etcd == nil {
+		if err := t.initEtcd(ctx); err != nil {
+			return err
+		}
+	}
 
 	// Pausing GC is the binlog path's way of holding the files still while they are
 	// copied one by one. A snapshot does that itself, unconditionally and only for the
@@ -639,29 +635,10 @@ func (t *Task) backupIndexExtraInfo(ctx context.Context) error {
 	return nil
 }
 
-// backupCollDynField reads each collection's dynamic field ($meta) schema
-// directly from etcd and stores it in the backup metadata. This is necessary
-// because the Milvus DescribeCollection API filters out IsDynamic fields, so
-// the gRPC-based binlog path never sees the actual $meta attributes
-// (Nullable, DefaultValue, ...). Without this info, secondary restore would
-// reconstruct the field with hardcoded defaults that may not match the source
-// collection. See zilliztech/milvus-backup#1013.
-//
-// The snapshot format never gets here: every collection of that format is
-// backed up through a snapshot task, whose bundle metadata carries the internal
-// schema — catalog truth the proxy filter does not touch — and records the
-// $meta field from it, failing the backup if a dynamic schema arrived without
-// one. The format branch below is that guarantee's other half, not a fallback:
-// there is no population of snapshot collections etcd could still complete.
-//
-// Reuses the etcd client created for BackupIndexExtra; if etcd is not
-// configured (BackupIndexExtra disabled) the task is skipped.
-//
-// Skipping is not an error: a regular restore recreates $meta through
-// CreateCollection and never reads the stored copy. A secondary restore does
-// read it, and refuses a backup without it, so the skip is logged at warn level
-// naming the collections it leaves incomplete -- that message is the only place
-// the missing option is visible before a restore fails on it much later.
+// backupCollDynField captures the hidden $meta and $namespace_id schemas.
+// Snapshot bundles provide them directly. Binlog backups use the etcd client
+// enabled by schema ID capture or index-extra backup. Older ordinary backups
+// can omit these IDs, but cannot then support preserved-ID or secondary restore.
 func (t *Task) backupCollDynField(ctx context.Context) error {
 	if t.resolvedFormat == meta.FormatSnapshot {
 		t.logger.Info("skip backup collection dynamic field, the snapshot bundles carry it")
@@ -670,10 +647,10 @@ func (t *Task) backupCollDynField(ctx context.Context) error {
 
 	if t.etcd == nil {
 		if affected := t.metaBuilder.dynamicSchemaCollections(); len(affected) > 0 {
-			t.logger.Warn("dynamic field not recorded, this backup cannot serve a secondary restore",
+			t.logger.Warn("hidden field IDs not recorded, this backup cannot preserve source field IDs or serve a secondary restore",
 				zap.Strings("collections_with_dynamic_schema", affected),
-				zap.String("reason", "index extra info is off, so there is no etcd client to read $meta with"),
-				zap.String("enable_with", "--backup_index_extra, or with_index_extra in the REST create request"))
+				zap.String("reason", "schema ID capture and index extra info are off, so there is no etcd client to read hidden fields with"),
+				zap.String("enable_with", "--set milvus.preserveFieldIDs=true, --backup_index_extra, or with_index_extra in the REST create request"))
 			return nil
 		}
 		t.logger.Info("skip backup collection dynamic field, etcd client is not initialized")
@@ -725,5 +702,23 @@ func (t *Task) writeMeta(ctx context.Context) error {
 	}
 
 	t.logger.Info("finish write meta")
+	return nil
+}
+
+func (t *Task) initEtcd(ctx context.Context) error {
+	endpoints := t.params.Milvus.Etcd.Endpoints.Val
+	etcdCli, err := clientv3.New(clientv3.Config{
+		Endpoints:   endpoints,
+		DialTimeout: 5 * time.Second,
+	})
+	if err != nil {
+		return fmt.Errorf("backup: create etcd client: %w", err)
+	}
+	t.etcdCli = etcdCli
+	t.etcd = newEtcdMeta(etcdCli, endpoints)
+
+	if err := t.etcd.probe(ctx); err != nil {
+		return err
+	}
 	return nil
 }

@@ -419,7 +419,7 @@ func (dmlt *collBinlogDMLTask) sendImportMsg(ctx context.Context, partitionID in
 	if err != nil {
 		return 0, fmt.Errorf("secondary: stage binlogs into milvus storage: %w", err)
 	}
-	schema, err := conv.Schema(dmlt.collBackup.GetSchema())
+	schema, err := conv.SchemaFromCollection(dmlt.collBackup)
 	if err != nil {
 		return 0, fmt.Errorf("secondary: convert schema: %w", err)
 	}

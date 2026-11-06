@@ -231,6 +231,10 @@ type MilvusEtcdConfig struct {
 }
 
 type MilvusConfig struct {
+	// PreserveFieldIDs explicitly declares support for the CreateCollection
+	// preserve_field_ids contract until its first released version is known.
+	PreserveFieldIDs param.Value[bool]
+
 	User     param.Value[string]
 	Password param.Value[string]
 
@@ -244,8 +248,9 @@ type MilvusConfig struct {
 
 func newMilvusConfig() MilvusConfig {
 	return MilvusConfig{
-		User:     param.Value[string]{Default: "", Keys: []string{"milvus.user"}, EnvKeys: []string{"MILVUS_USER"}},
-		Password: param.Value[string]{Default: "", Keys: []string{"milvus.password"}, EnvKeys: []string{"MILVUS_PASSWORD"}, Opts: param.SecretValue},
+		PreserveFieldIDs: param.Value[bool]{Default: false, Keys: []string{"milvus.preserveFieldIDs"}},
+		User:             param.Value[string]{Default: "", Keys: []string{"milvus.user"}, EnvKeys: []string{"MILVUS_USER"}},
+		Password:         param.Value[string]{Default: "", Keys: []string{"milvus.password"}, EnvKeys: []string{"MILVUS_PASSWORD"}, Opts: param.SecretValue},
 
 		Grpc: MilvusGrpcConfig{
 			Address: param.Value[string]{Default: "localhost", Keys: []string{"milvus.grpc.address"}},
@@ -283,7 +288,7 @@ func newMilvusConfig() MilvusConfig {
 
 func (c *MilvusConfig) Resolve(s *param.Source) error {
 	return param.Resolve(s,
-		&c.User, &c.Password,
+		&c.User, &c.Password, &c.PreserveFieldIDs,
 		&c.Grpc.Address, &c.Grpc.Port,
 		&c.Grpc.TLSMode, &c.Grpc.CACertPath, &c.Grpc.ServerName,
 		&c.Grpc.MTLSCertPath, &c.Grpc.MTLSKeyPath,

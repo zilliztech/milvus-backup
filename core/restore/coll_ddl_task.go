@@ -2,6 +2,7 @@ package restore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -65,11 +66,32 @@ func (ddlt *collDDLTask) Execute(ctx context.Context) error {
 }
 
 func (ddlt *collDDLTask) execute(ctx context.Context) error {
+	// Validate the complete request before a requested drop can remove the target.
+	var input milvus.CreateCollectionInput
+	var addFields []*schemapb.FieldSchema
+	if !ddlt.option.SkipCreateCollection {
+		var err error
+		input, addFields, err = ddlt.createCollectionInput()
+		if err != nil {
+			return err
+		}
+	} else {
+		// Skipping DDL does not make an older import understand new column shapes.
+		schema, err := ddlt.sourceSchema()
+		if err != nil {
+			return err
+		}
+		if err := conv.ValidateLegacySchema(schema); err != nil {
+			if !errors.Is(err, conv.ErrSchemaEvolutionUnsupported) || !ddlt.grpcCli.HasFeature(milvus.PreserveFieldIDs) {
+				return err
+			}
+		}
+	}
 	// restore collection schema
 	if err := ddlt.dropExistedColl(ctx); err != nil {
 		return fmt.Errorf("restore: drop exist collection: %w", err)
 	}
-	if err := ddlt.createColl(ctx); err != nil {
+	if err := ddlt.createCollWithInput(ctx, input, addFields); err != nil {
 		return fmt.Errorf("restore: create collection: %w", err)
 	}
 	if err := ddlt.restoreFuncRuntimeCheck(ctx); err != nil {
@@ -131,37 +153,42 @@ func (ddlt *collDDLTask) dropExistedColl(ctx context.Context) error {
 // $meta schema in the backup metadata (see zilliztech/milvus-backup#1013) but
 // for the regular restore path it is purely informational.
 func (ddlt *collDDLTask) fields() ([]*schemapb.FieldSchema, []*schemapb.FieldSchema, error) {
-	allFields, err := ddlt.convFields(ddlt.collBackup.GetSchema().GetFields())
+	schema, err := ddlt.sourceSchema()
 	if err != nil {
-		return nil, nil, fmt.Errorf("collection: get fields: %w", err)
+		return nil, nil, err
 	}
+	create, add := legacyFields(schema)
+	return create, add, nil
+}
 
-	// Drop the dynamic field if present; CreateCollection / Milvus owns it.
-	fields := make([]*schemapb.FieldSchema, 0, len(allFields))
-	for _, f := range allFields {
-		if f.GetIsDynamic() {
+func legacyFields(schema *schemapb.CollectionSchema) ([]*schemapb.FieldSchema, []*schemapb.FieldSchema) {
+	fields := make([]*schemapb.FieldSchema, 0, len(schema.GetFields()))
+	var dynamicID int64
+	for _, field := range schema.GetFields() {
+		if field.GetName() == common.NamespaceFieldName {
 			continue
 		}
-		fields = append(fields, f)
+		if field.GetIsDynamic() {
+			dynamicID = field.GetFieldID()
+			continue
+		}
+		fields = append(fields, field)
 	}
-
-	if !ddlt.collBackup.GetSchema().GetEnableDynamicField() {
-		ddlt.logger.Info("fields", zap.Any("fields", fields))
-		return fields, nil, nil
+	if !schema.GetEnableDynamicField() {
+		return fields, nil
 	}
-
-	dynFieldID := funcs.GuessDynFieldID(fields)
-	var createFields, addFields []*schemapb.FieldSchema
+	if dynamicID == 0 {
+		dynamicID = funcs.GuessDynFieldID(fields)
+	}
+	var create, add []*schemapb.FieldSchema
 	for _, field := range fields {
-		if field.GetFieldID() < dynFieldID {
-			createFields = append(createFields, field)
+		if field.GetFieldID() < dynamicID {
+			create = append(create, field)
 		} else {
-			addFields = append(addFields, field)
+			add = append(add, field)
 		}
 	}
-
-	ddlt.logger.Info("fields", zap.Any("create_fields", createFields), zap.Any("add_fields", addFields))
-	return createFields, addFields, nil
+	return create, add
 }
 
 func (ddlt *collDDLTask) addFields(ctx context.Context, fields []*schemapb.FieldSchema) error {
@@ -178,31 +205,35 @@ func (ddlt *collDDLTask) addFields(ctx context.Context, fields []*schemapb.Field
 // properties returns the properties of the collection.
 // If milvus support func runtime check, add disable_auto_function to properties to avoid error when create collection.
 func (ddlt *collDDLTask) properties() []*commonpb.KeyValuePair {
-	props := pbconv.BakKVToMilvusKV(ddlt.collBackup.GetSchema().GetProperties(), ddlt.option.SkipParams.CollectionProperties...)
+	return ddlt.propertiesForSchema(&schemapb.CollectionSchema{
+		Properties: pbconv.BakKVToMilvusKV(ddlt.collBackup.GetSchema().GetProperties()),
+		Functions:  conv.Functions(ddlt.collBackup.GetSchema().GetFunctions()),
+	})
+}
 
-	if len(ddlt.collBackup.GetSchema().GetFunctions()) == 0 {
-		ddlt.logger.Info("no functions, skip disable_auto_function")
+func (ddlt *collDDLTask) propertiesForSchema(schema *schemapb.CollectionSchema) []*commonpb.KeyValuePair {
+	props := filterParams(schema.GetProperties(), ddlt.option.SkipParams.CollectionProperties)
+	// This is a request capability, not a persistent collection property.
+	props = lo.Filter(props, func(item *commonpb.KeyValuePair, _ int) bool {
+		return item.GetKey() != preserveFieldIDsProperty
+	})
+	if len(schema.GetFunctions()) == 0 || !ddlt.grpcCli.HasFeature(milvus.FuncRuntimeCheck) {
 		return props
 	}
-
-	if !ddlt.grpcCli.HasFeature(milvus.FuncRuntimeCheck) {
-		ddlt.logger.Info("milvus does not support func runtime check, skip disable")
-		return props
-	}
-
-	ddlt.logger.Info("milvus support func runtime check, disable it")
-	// remove original disable_func_runtime_check
 	props = lo.Filter(props, func(item *commonpb.KeyValuePair, _ int) bool {
 		return item.GetKey() != common.DisableFuncRuntimeCheck
 	})
-	props = append(props, &commonpb.KeyValuePair{Key: common.DisableFuncRuntimeCheck, Value: "true"})
-	return props
+	return append(props, &commonpb.KeyValuePair{Key: common.DisableFuncRuntimeCheck, Value: "true"})
 }
 
 // restoreFuncRuntimeCheck restores the disable_func_runtime_check property to original value from backup.
 // properties function add disable_auto_function to properties, we need to restore the original value from backup.
 func (ddlt *collDDLTask) restoreFuncRuntimeCheck(ctx context.Context) error {
-	if len(ddlt.collBackup.GetSchema().GetFunctions()) == 0 {
+	schema, err := ddlt.sourceSchema()
+	if err != nil {
+		return err
+	}
+	if len(schema.GetFunctions()) == 0 {
 		ddlt.logger.Info("no functions, skip restore func runtime check")
 		return nil
 	}
@@ -214,7 +245,7 @@ func (ddlt *collDDLTask) restoreFuncRuntimeCheck(ctx context.Context) error {
 
 	ddlt.logger.Info("milvus support func runtime check, restore original value")
 	val := "false"
-	for _, kv := range ddlt.collBackup.GetSchema().GetProperties() {
+	for _, kv := range schema.GetProperties() {
 		if kv.GetKey() == common.DisableFuncRuntimeCheck {
 			val = kv.GetValue()
 			break
@@ -237,105 +268,29 @@ func (ddlt *collDDLTask) restoreFuncRuntimeCheck(ctx context.Context) error {
 
 func (ddlt *collDDLTask) createColl(ctx context.Context) error {
 	if ddlt.option.SkipCreateCollection {
+		return nil
+	}
+	input, addFields, err := ddlt.createCollectionInput()
+	if err != nil {
+		return err
+	}
+	return ddlt.createCollWithInput(ctx, input, addFields)
+}
+
+func (ddlt *collDDLTask) createCollWithInput(ctx context.Context, input milvus.CreateCollectionInput, addFields []*schemapb.FieldSchema) error {
+	if ddlt.option.SkipCreateCollection {
 		ddlt.logger.Info("skip create collection")
 		return nil
 	}
-
-	createFields, addFields, err := ddlt.fields()
-	if err != nil {
-		return fmt.Errorf("collection: get fields: %w", err)
-	}
-	functions := conv.Functions(ddlt.collBackup.GetSchema().GetFunctions())
-	structArrayFields, err := ddlt.structArrayFields()
-	if err != nil {
-		return fmt.Errorf("restore: conv struct array fields: %w", err)
-	}
-	// CollectionSchema.AutoID is a deprecated proto field that Milvus proxy has zeroed
-	// on entry of every supported target since 2.2, so the backup value is never
-	// consumed there; the authoritative autoID is the per-field one in convFields.
-	schema := &schemapb.CollectionSchema{
-		Name:               ddlt.target.CollName(),
-		Description:        ddlt.description(),
-		Functions:          functions,
-		Fields:             createFields,
-		EnableDynamicField: ddlt.collBackup.GetSchema().GetEnableDynamicField(),
-		Properties:         pbconv.BakKVToMilvusKV(ddlt.collBackup.GetSchema().GetProperties()),
-		StructArrayFields:  structArrayFields,
-	}
-	ddlt.logger.Info("create collection", zap.Any("schema", schema))
-
-	opt := milvus.CreateCollectionInput{
-		DB:           ddlt.target.DBName(),
-		Schema:       schema,
-		ConsLevel:    commonpb.ConsistencyLevel(ddlt.collBackup.GetConsistencyLevel()),
-		ShardNum:     ddlt.shardNum(),
-		PartitionNum: ddlt.partitionNum(),
-		Properties:   ddlt.properties(),
-	}
-	if err := ddlt.grpcCli.CreateCollection(ctx, opt); err != nil {
+	ddlt.logger.Info("create collection", zap.Any("schema", input.Schema))
+	if err := ddlt.grpcCli.CreateCollection(ctx, input); err != nil {
 		return fmt.Errorf("restore: call create collection api after retry: %w", err)
 	}
-
-	if err := ddlt.addFields(ctx, addFields); err != nil {
-		return fmt.Errorf("restore: add fields: %w", err)
-	}
-
-	return nil
+	return ddlt.addFields(ctx, addFields)
 }
 
-func (ddlt *collDDLTask) convFields(bakFields []*backuppb.FieldSchema) ([]*schemapb.FieldSchema, error) {
-	fields := make([]*schemapb.FieldSchema, 0, len(bakFields))
-
-	for _, bakField := range bakFields {
-		defaultValue, err := conv.DefaultValue(bakField)
-		if err != nil {
-			return nil, fmt.Errorf("restore: get default value: %w", err)
-		}
-
-		fieldRestore := &schemapb.FieldSchema{
-			FieldID:          bakField.GetFieldID(),
-			Name:             bakField.GetName(),
-			IsPrimaryKey:     bakField.GetIsPrimaryKey(),
-			AutoID:           bakField.GetAutoID(),
-			Description:      bakField.GetDescription(),
-			DataType:         schemapb.DataType(bakField.GetDataType()),
-			TypeParams:       pbconv.BakKVToMilvusKV(bakField.GetTypeParams(), ddlt.option.SkipParams.FieldTypeParams...),
-			IndexParams:      pbconv.BakKVToMilvusKV(bakField.GetIndexParams(), ddlt.option.SkipParams.FieldIndexParams...),
-			IsDynamic:        bakField.GetIsDynamic(),
-			IsPartitionKey:   bakField.GetIsPartitionKey(),
-			Nullable:         bakField.GetNullable(),
-			ElementType:      schemapb.DataType(bakField.GetElementType()),
-			IsFunctionOutput: bakField.GetIsFunctionOutput(),
-			DefaultValue:     defaultValue,
-		}
-
-		fields = append(fields, fieldRestore)
-	}
-
-	return fields, nil
-}
-
-func (ddlt *collDDLTask) structArrayFields() ([]*schemapb.StructArrayFieldSchema, error) {
-	bakFields := ddlt.collBackup.GetSchema().GetStructArrayFields()
-	structArrayFields := make([]*schemapb.StructArrayFieldSchema, 0, len(bakFields))
-	for _, bakField := range bakFields {
-		fields, err := ddlt.convFields(bakField.GetFields())
-		if err != nil {
-			return nil, fmt.Errorf("restore: convert struct array fields: %w", err)
-		}
-
-		structArrayField := &schemapb.StructArrayFieldSchema{
-			FieldID:     bakField.GetFieldID(),
-			Name:        bakField.GetName(),
-			Description: bakField.GetDescription(),
-			Fields:      fields,
-			Nullable:    conv.ApplyStructNullable(bakField, fields),
-		}
-
-		structArrayFields = append(structArrayFields, structArrayField)
-	}
-
-	return structArrayFields, nil
+func (ddlt *collDDLTask) sourceSchema() (*schemapb.CollectionSchema, error) {
+	return conv.SchemaFromCollection(ddlt.collBackup)
 }
 
 // shardNum returns the shard number of the collection.
@@ -366,25 +321,6 @@ func (ddlt *collDDLTask) description() string {
 		return ddlt.collOverride.Description
 	}
 	return ddlt.collBackup.GetSchema().GetDescription()
-}
-
-// partitionNum returns the partition number of the collection
-// if partition key was set, return the length of partition in backup
-// else return 0.
-func (ddlt *collDDLTask) partitionNum() int {
-	var hasPartitionKey bool
-	for _, field := range ddlt.collBackup.GetSchema().GetFields() {
-		if field.GetIsPartitionKey() {
-			hasPartitionKey = true
-			break
-		}
-	}
-
-	if hasPartitionKey {
-		return len(ddlt.collBackup.GetPartitionBackups())
-	}
-
-	return 0
 }
 
 func (ddlt *collDDLTask) dropExistedIndex(ctx context.Context) error {

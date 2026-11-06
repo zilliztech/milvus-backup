@@ -56,6 +56,7 @@ const (
 	ImportV2
 	Import2PC
 	ImportSnapshot
+	PreserveFieldIDs
 )
 
 type featureTuple struct {
@@ -358,6 +359,11 @@ func NewGrpc(c *cfg.MilvusConfig) (*GrpcClient, error) {
 
 		user: c.User.Val,
 		auth: auth,
+	}
+
+	// No release floor is established yet; only an explicit capability assertion enables it.
+	if c.PreserveFieldIDs.Val {
+		cli.flags |= PreserveFieldIDs
 	}
 
 	if err := cli.connect(context.TODO()); err != nil {

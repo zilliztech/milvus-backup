@@ -1,16 +1,15 @@
 package backup
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"sort"
 	"sync"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
+	"github.com/milvus-io/milvus/pkg/v3/common"
 	"github.com/milvus-io/milvus/pkg/v3/proto/indexpb"
 	"go.uber.org/zap"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/collref"
@@ -68,8 +67,9 @@ type snapshotRecord struct {
 	// the collection has no dynamic schema. The snapshot metadata holds the
 	// internal schema, which keeps the dynamic field the public
 	// DescribeCollection hides from the DDL half.
-	dynField *backuppb.FieldSchema
-	indexes  []*indexpb.IndexInfo
+	dynField       *backuppb.FieldSchema
+	namespaceField *backuppb.FieldSchema
+	indexes        []*indexpb.IndexInfo
 }
 
 func newMetaBuilder(taskID, backupName string) *metaBuilder {
@@ -114,6 +114,15 @@ func (builder *metaBuilder) addDatabase(databaseBackup *backuppb.DatabaseBackupI
 func (builder *metaBuilder) addCollection(collRef collref.Name, collectionBackup *backuppb.CollectionBackupInfo) error {
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
+
+	// DescribeCollectionResponse.Properties is authoritative. Include its
+	// values in the schema metadata for hidden-field capture and restore.
+	if schema := collectionBackup.GetSchema(); schema != nil {
+		schema.Properties = pbconv.MilvusKVToBakKV(pbconv.MergeMilvusKV(
+			pbconv.BakKVToMilvusKV(schema.GetProperties()),
+			pbconv.BakKVToMilvusKV(collectionBackup.GetProperties()),
+		))
+	}
 
 	builder.data.CollectionBackups = append(builder.data.CollectionBackups, collectionBackup)
 	// add to index
@@ -194,7 +203,11 @@ func (builder *metaBuilder) addSnapshot(
 	if err != nil {
 		return fmt.Errorf("backup: snapshot bundle of %s: %w", collRef.String(), err)
 	}
-	record := snapshotRecord{snapshot: snapshot, snapshotTs: snapshotTs, dynField: dynField, indexes: bundleIndexes}
+	namespaceField, err := bundleNamespaceField(bundleSchema)
+	if err != nil {
+		return fmt.Errorf("backup: snapshot namespace field: %w", err)
+	}
+	record := snapshotRecord{snapshot: snapshot, snapshotTs: snapshotTs, dynField: dynField, namespaceField: namespaceField, indexes: bundleIndexes}
 
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
@@ -251,6 +264,10 @@ func (builder *metaBuilder) setCollSnapshot(collBackup *backuppb.CollectionBacku
 	// recorded comes from DescribeCollection, which hides the field.
 	if record.dynField != nil {
 		collBackup.Schema.Fields = append(collBackup.Schema.Fields, record.dynField)
+	}
+
+	if record.namespaceField != nil {
+		collBackup.Schema.Fields = append(collBackup.Schema.Fields, record.namespaceField)
 	}
 
 	builder.mergeSnapshotIndexExtra(collBackup, record.indexes)
@@ -396,8 +413,8 @@ func (builder *metaBuilder) backupCollectionIDs() []int64 {
 	return ids
 }
 
-// dynamicSchemaCollections names the backed-up collections that have dynamic
-// schema enabled, in db.collection form. In the binlog format their $meta field
+// dynamicSchemaCollections names collections with hidden schema fields, in
+// db.collection form. In the binlog format their $meta field
 // can only reach the backup through the etcd-backed dynamic field task, so this
 // is what a caller needs in order to say which collections an absent task
 // leaves incomplete.
@@ -407,7 +424,7 @@ func (builder *metaBuilder) dynamicSchemaCollections() []string {
 
 	var names []string
 	for _, coll := range builder.data.GetCollectionBackups() {
-		if coll.GetSchema().GetEnableDynamicField() {
+		if coll.GetSchema().GetEnableDynamicField() || (coll.GetSchema().GetEnableNamespace() && !common.IsNamespaceModePartition(pbconv.BakKVToMilvusKV(coll.GetSchema().GetProperties())...)) {
 			names = append(names, coll.GetDbName()+"."+coll.GetCollectionName())
 		}
 	}
@@ -505,34 +522,13 @@ func (builder *metaBuilder) addDynamicFields(dynFields map[int64]*schemapb.Field
 }
 
 // convDynField converts a milvus schemapb.FieldSchema (read from etcd) into
-// the backup proto FieldSchema. It only fills the subset of attributes that
-// matter for the dynamic field ($meta).
+// the backup proto FieldSchema using the same projection as visible fields.
 func convDynField(field *schemapb.FieldSchema) (*backuppb.FieldSchema, error) {
-	var defaultValueBase64 string
-	if field.GetDefaultValue() != nil {
-		bytes, err := proto.Marshal(field.GetDefaultValue())
-		if err != nil {
-			return nil, fmt.Errorf("backup: marshal dynamic field default value: %w", err)
-		}
-		defaultValueBase64 = base64.StdEncoding.EncodeToString(bytes)
+	fields, err := convFields([]*schemapb.FieldSchema{field})
+	if err != nil {
+		return nil, fmt.Errorf("backup: convert dynamic field: %w", err)
 	}
-
-	return &backuppb.FieldSchema{
-		FieldID:            field.GetFieldID(),
-		Name:               field.GetName(),
-		IsPrimaryKey:       field.GetIsPrimaryKey(),
-		Description:        field.GetDescription(),
-		AutoID:             field.GetAutoID(),
-		DataType:           backuppb.DataType(field.GetDataType()),
-		TypeParams:         pbconv.MilvusKVToBakKV(field.GetTypeParams()),
-		IndexParams:        pbconv.MilvusKVToBakKV(field.GetIndexParams()),
-		IsDynamic:          field.GetIsDynamic(),
-		IsPartitionKey:     field.GetIsPartitionKey(),
-		Nullable:           field.GetNullable(),
-		ElementType:        backuppb.DataType(field.GetElementType()),
-		IsFunctionOutput:   field.GetIsFunctionOutput(),
-		DefaultValueBase64: defaultValueBase64,
-	}, nil
+	return fields[0], nil
 }
 
 func (builder *metaBuilder) setRBACMeta(rbacMeta *backuppb.RBACMeta) {
@@ -672,4 +668,36 @@ func (builder *metaBuilder) buildSegmentMeta() ([]byte, error) {
 	}
 
 	return data, nil
+}
+
+func bundleNamespaceField(schema *schemapb.CollectionSchema) (*backuppb.FieldSchema, error) {
+	for _, field := range schema.GetFields() {
+		if field.GetName() == common.NamespaceFieldName {
+			return convDynField(field)
+		}
+	}
+	if schema.GetEnableNamespace() && !common.IsNamespaceModePartition(schema.GetProperties()...) {
+		return nil, fmt.Errorf("schema enables namespace field but carries no $namespace_id")
+	}
+	return nil, nil
+}
+
+func (builder *metaBuilder) addNamespaceFields(fields map[int64]*schemapb.FieldSchema) error {
+	builder.mu.Lock()
+	defer builder.mu.Unlock()
+	for _, coll := range builder.data.GetCollectionBackups() {
+		if !coll.GetSchema().GetEnableNamespace() || common.IsNamespaceModePartition(pbconv.BakKVToMilvusKV(coll.GetSchema().GetProperties())...) {
+			continue
+		}
+		field, ok := fields[coll.GetCollectionId()]
+		if !ok {
+			return fmt.Errorf("backup: %q missing $namespace_id field in etcd", coll.GetCollectionName())
+		}
+		converted, err := convDynField(field)
+		if err != nil {
+			return err
+		}
+		coll.Schema.Fields = append(coll.Schema.Fields, converted)
+	}
+	return nil
 }

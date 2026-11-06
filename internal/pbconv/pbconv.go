@@ -35,6 +35,24 @@ func MilvusKVToBakKV(kv []*commonpb.KeyValuePair) []*backuppb.KeyValuePair {
 	})
 }
 
+// MergeMilvusKV preserves schema properties while collection response properties
+// override matching keys. The result has one entry per key and does not mutate inputs.
+func MergeMilvusKV(schema, response []*commonpb.KeyValuePair) []*commonpb.KeyValuePair {
+	merged := make([]*commonpb.KeyValuePair, 0, len(schema)+len(response))
+	positions := make(map[string]int, len(schema)+len(response))
+	for _, properties := range [][]*commonpb.KeyValuePair{schema, response} {
+		for _, property := range properties {
+			if index, exists := positions[property.GetKey()]; exists {
+				merged[index] = property
+				continue
+			}
+			positions[property.GetKey()] = len(merged)
+			merged = append(merged, property)
+		}
+	}
+	return merged
+}
+
 func MilvusKVToMap(kvs []*commonpb.KeyValuePair) map[string]string {
 	res := make(map[string]string, len(kvs))
 	for _, kv := range kvs {

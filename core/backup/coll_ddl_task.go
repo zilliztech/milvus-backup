@@ -43,7 +43,7 @@ func newCollDDLTask(collRef collref.Name, args collTaskArgs) *collDDLTask {
 	}
 }
 
-func (ddlt *collDDLTask) convFields(fields []*schemapb.FieldSchema) ([]*backuppb.FieldSchema, error) {
+func convFields(fields []*schemapb.FieldSchema) ([]*backuppb.FieldSchema, error) {
 	bakFields := make([]*backuppb.FieldSchema, 0, len(fields))
 	for _, field := range fields {
 		var defaultValueBase64 string
@@ -53,6 +53,15 @@ func (ddlt *collDDLTask) convFields(fields []*schemapb.FieldSchema) ([]*backuppb
 				return nil, fmt.Errorf("backup: marshal default value")
 			}
 			defaultValueBase64 = base64.StdEncoding.EncodeToString(bytes)
+		}
+
+		var typeSchema []byte
+		if field.GetTypeSchema() != nil {
+			var err error
+			typeSchema, err = proto.Marshal(field.GetTypeSchema())
+			if err != nil {
+				return nil, fmt.Errorf("backup: marshal type schema of field %q: %w", field.GetName(), err)
+			}
 		}
 
 		f := &backuppb.FieldSchema{
@@ -70,6 +79,8 @@ func (ddlt *collDDLTask) convFields(fields []*schemapb.FieldSchema) ([]*backuppb
 			ElementType:        backuppb.DataType(field.GetElementType()),
 			IsFunctionOutput:   field.GetIsFunctionOutput(),
 			DefaultValueBase64: defaultValueBase64,
+			ElementNullable:    field.GetElementNullable(),
+			TypeSchema:         typeSchema,
 		}
 		bakFields = append(bakFields, f)
 	}
@@ -100,7 +111,7 @@ func (ddlt *collDDLTask) convFunctions(funs []*schemapb.FunctionSchema) []*backu
 func (ddlt *collDDLTask) convStructArrayFields(fieldSchemas []*schemapb.StructArrayFieldSchema) ([]*backuppb.StructArrayFieldSchema, error) {
 	bakFields := make([]*backuppb.StructArrayFieldSchema, 0, len(fieldSchemas))
 	for _, fieldSchema := range fieldSchemas {
-		fields, err := ddlt.convFields(fieldSchema.GetFields())
+		fields, err := convFields(fieldSchema.GetFields())
 		if err != nil {
 			return nil, fmt.Errorf("backup: convert struct array fields %w", err)
 		}
@@ -120,7 +131,7 @@ func (ddlt *collDDLTask) convStructArrayFields(fieldSchemas []*schemapb.StructAr
 }
 
 func (ddlt *collDDLTask) convSchema(schema *schemapb.CollectionSchema) (*backuppb.CollectionSchema, error) {
-	fields, err := ddlt.convFields(schema.Fields)
+	fields, err := convFields(schema.Fields)
 	if err != nil {
 		return nil, fmt.Errorf("backup: convert fields %w", err)
 	}
@@ -133,12 +144,14 @@ func (ddlt *collDDLTask) convSchema(schema *schemapb.CollectionSchema) (*backupp
 	}
 
 	bakSchema := &backuppb.CollectionSchema{
+		Version:            schema.GetVersion(),
 		Name:               schema.GetName(),
 		Description:        schema.GetDescription(),
 		AutoID:             schema.GetAutoID(), //nolint:staticcheck // SA1019: deprecated but needed for backward compatibility
 		Fields:             fields,
 		Properties:         pbconv.MilvusKVToBakKV(schema.GetProperties()),
 		EnableDynamicField: schema.GetEnableDynamicField(),
+		EnableNamespace:    schema.GetEnableNamespace(),
 		Functions:          functions,
 		StructArrayFields:  structArrayFields,
 	}

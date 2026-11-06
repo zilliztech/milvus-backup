@@ -138,7 +138,7 @@ func (ddlt *collDDLTask) createColl(ctx context.Context) error {
 
 	ddlt.logger.Info("create collection", zap.Any("header", header))
 
-	schema, err := conv.Schema(ddlt.collBackup.GetSchema())
+	schema, err := conv.SchemaFromCollection(ddlt.collBackup)
 	if err != nil {
 		return fmt.Errorf("secondary: convert schema: %w", err)
 	}

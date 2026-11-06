@@ -62,6 +62,18 @@ func Functions(bakFuncs []*backuppb.FunctionSchema) []*schemapb.FunctionSchema {
 	return funcs
 }
 
+// TypeSchema decodes the recursive type representation without a JSON oneof conversion.
+func TypeSchema(field *backuppb.FieldSchema) (*schemapb.TypeSchema, error) {
+	if len(field.GetTypeSchema()) == 0 {
+		return nil, nil
+	}
+	var schema schemapb.TypeSchema
+	if err := proto.Unmarshal(field.GetTypeSchema(), &schema); err != nil {
+		return nil, fmt.Errorf("restore: decode type_schema of field %q (id %d): %w", field.GetName(), field.GetFieldID(), err)
+	}
+	return &schema, nil
+}
+
 func Fields(bakFields []*backuppb.FieldSchema) ([]*schemapb.FieldSchema, error) {
 	fields := make([]*schemapb.FieldSchema, 0, len(bakFields))
 
@@ -69,6 +81,11 @@ func Fields(bakFields []*backuppb.FieldSchema) ([]*schemapb.FieldSchema, error) 
 		defaultValue, err := DefaultValue(bakField)
 		if err != nil {
 			return nil, fmt.Errorf("conv: get default value: %w", err)
+		}
+
+		typeSchema, err := TypeSchema(bakField)
+		if err != nil {
+			return nil, err
 		}
 
 		fieldRestore := &schemapb.FieldSchema{
@@ -86,6 +103,8 @@ func Fields(bakFields []*backuppb.FieldSchema) ([]*schemapb.FieldSchema, error) 
 			ElementType:      schemapb.DataType(bakField.GetElementType()),
 			IsFunctionOutput: bakField.GetIsFunctionOutput(),
 			DefaultValue:     defaultValue,
+			ElementNullable:  bakField.GetElementNullable(),
+			TypeSchema:       typeSchema,
 		}
 
 		fields = append(fields, fieldRestore)
@@ -158,6 +177,18 @@ func ApplyStructNullable(bak *backuppb.StructArrayFieldSchema, fields []*schemap
 	return true
 }
 
+// SchemaFromCollection is the restore boundary for collection metadata. Both
+// proxy requests and WAL replay use the collection response's property values.
+// Callers entering Proxy normalize the qualified sub-field names afterward.
+func SchemaFromCollection(collection *backuppb.CollectionBackupInfo) (*schemapb.CollectionSchema, error) {
+	converted, err := Schema(collection.GetSchema())
+	if err != nil {
+		return nil, err
+	}
+	converted.Properties = pbconv.MergeMilvusKV(converted.GetProperties(), pbconv.BakKVToMilvusKV(collection.GetProperties()))
+	return converted, nil
+}
+
 func Schema(bakSchema *backuppb.CollectionSchema) (*schemapb.CollectionSchema, error) {
 	fields, err := Fields(bakSchema.GetFields())
 	if err != nil {
@@ -174,11 +205,13 @@ func Schema(bakSchema *backuppb.CollectionSchema) (*schemapb.CollectionSchema, e
 	properties := pbconv.BakKVToMilvusKV(bakSchema.GetProperties())
 
 	schema := &schemapb.CollectionSchema{
+		Version:            bakSchema.GetVersion(),
 		Name:               bakSchema.GetName(),
 		Description:        bakSchema.GetDescription(),
 		Functions:          functions,
 		Fields:             fields,
 		EnableDynamicField: bakSchema.GetEnableDynamicField(),
+		EnableNamespace:    bakSchema.GetEnableNamespace(),
 		Properties:         properties,
 		StructArrayFields:  structArrayFields,
 	}
