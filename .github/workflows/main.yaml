@@ -974,7 +974,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Four scenarios:
+        # Five scenarios:
         #   - same-version:          source and target are both the latest 2.6.
         #   - same-version-3.0:      source and target are both the latest 3.0
         #     branch build. 3.0 is the released line that has import two-phase
@@ -994,23 +994,38 @@ jobs:
         #     zilliztech/milvus-backup#1013 — etcd-schema-verify is expected to
         #     fail on the $meta field's nullable/default_value until the bug is
         #     fixed.
+        #   - same-version-3.0-snapshot: like same-version-3.0, but the backup
+        #     carries the snapshot format. #1351 taught restore secondary to
+        #     replay such a backup as snapshot-sourced import messages; the
+        #     import reads StorageV3 segments only, so the upstream writes with
+        #     useLoonFFI=true (the step below) and the two-phase restore, which
+        #     rides the binlog backup, does not run here.
         include:
           - scenario: same-version
             prepare_image_tag: 2.6-latest
             run_image_tag: 2.6-latest
             two_phase_commit: false
+            backup_format: binlog
           - scenario: same-version-3.0
             prepare_image_tag: 3.0-latest
             run_image_tag: 3.0-latest
             two_phase_commit: true
+            backup_format: binlog
           - scenario: same-version-master
             prepare_image_tag: master-latest
             run_image_tag: master-latest
             two_phase_commit: true
+            backup_format: binlog
           - scenario: cross-version-upgrade
             prepare_image_tag: v2.6.7
             run_image_tag: 2.6-latest
             two_phase_commit: false
+            backup_format: binlog
+          - scenario: same-version-3.0-snapshot
+            prepare_image_tag: 3.0-latest
+            run_image_tag: 3.0-latest
+            two_phase_commit: false
+            backup_format: snapshot
 
     steps:
       - uses: actions/checkout@v7
@@ -1042,6 +1057,19 @@ jobs:
         shell: bash
         run: |
           pip install -r requirements.txt --trusted-host https://test.pypi.org
+
+      # The snapshot scenario replays the backup through the target's import
+      # api, which only accepts StorageV3 segments; useLoonFFI=true is what
+      # makes the upstream Milvus write them, and 3.0 defaults to V2 without
+      # it. The downstream keeps its default: it only reads the bundle, it
+      # writes its own segments in whatever format it is configured for.
+      - name: Enable loon FFI on the upstream
+        if: ${{ matrix.backup_format == 'snapshot' }}
+        timeout-minutes: 1
+        shell: bash
+        run: |
+          yq -i '.common.storage.useLoonFFI = true' deployment/secondary/upstream.yaml
+          cat deployment/secondary/upstream.yaml
 
       - name: Deploy dual Milvus (prepare image)
         timeout-minutes: 15
@@ -1135,10 +1163,12 @@ jobs:
         run: |
           ./milvus-backup check
           ./milvus-backup list
-          # Pin binlog until ExportSnapshot lands on the milvus master line: master
-          # reports the snapshot feature, so auto resolves to the snapshot format
-          # there, which its export RPC does not implement yet.
-          ./milvus-backup create -n my_backup --backup_index_extra --format=binlog
+          # Pin the format per scenario. auto would resolve to snapshot on the
+          # 3.0/master lines (they report the feature), so the binlog
+          # scenarios pin binlog to keep the binlog replay — and the two-phase
+          # commit built on top of it — deterministic. The snapshot scenario
+          # pins snapshot to reach the import-api replay #1351 added instead.
+          ./milvus-backup create -n my_backup --backup_index_extra --format=${{ matrix.backup_format }}
           ./milvus-backup list
 
       - name: Init downstream replicate configuration
