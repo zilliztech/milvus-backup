@@ -1244,6 +1244,105 @@ jobs:
         run: |
           python example/secondary/verify_data.py --uri http://127.0.0.1:19500
 
+      # A restored secondary must preserve the source's nonzero schema version
+      # before it can accept replayed inserts. Check the counter directly, then
+      # prove live CDC replay of inserts written AFTER the backup converges.
+      # hello_milvus_added went through add_collection_field during prepare, so
+      # its source schema version is nonzero. Run this on the released 3.0 line,
+      # independently of master-only regressions.
+      - name: Verify schema version and live replay of post-backup inserts
+        if: ${{ matrix.scenario == 'same-version-3.0' }}
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          python - <<'EOF'
+          import time
+
+          from pymilvus import MilvusClient
+          from pymilvus.grpc_gen import milvus_pb2
+
+          UPSTREAM = "http://127.0.0.1:19530"
+          DOWNSTREAM = "http://127.0.0.1:19500"
+          COLLECTION = "hello_milvus_added"
+          BASE_PK = 3000  # prepare_data inserted pks 0..2999 before the backup
+          EXTRA = 500
+          DIM = 8
+
+          def schema_version(client):
+              # The pinned pymilvus public describe_collection drops schema.version;
+              # use its authenticated handler to read the raw response instead.
+              response = client._get_connection()._stub.DescribeCollection(
+                  milvus_pb2.DescribeCollectionRequest(collection_name=COLLECTION),
+                  timeout=10,
+              )
+              if response.status.code != 0:
+                  raise RuntimeError(f"DescribeCollection failed: {response.status}")
+              return response.schema.version
+
+          upstream = MilvusClient(uri=UPSTREAM, token="root:Milvus")
+          downstream = MilvusClient(uri=DOWNSTREAM, token="root:Milvus")
+          upstream_version = schema_version(upstream)
+          downstream_version = schema_version(downstream)
+          print(
+              f"schema versions for {COLLECTION}: "
+              f"upstream={upstream_version}, downstream={downstream_version}"
+          )
+          assert upstream_version > 0, (
+              f"fixture must exercise a schema-changed collection, got {upstream_version}"
+          )
+          assert downstream_version == upstream_version, (
+              f"restored schema version {downstream_version} != source {upstream_version}"
+          )
+
+          rows = [
+              {
+                  "pk": i,
+                  "random": float(i) / (BASE_PK + EXTRA),
+                  "var": str(i),
+                  "embeddings": [float((i + j) % 7) / 7 for j in range(DIM)],
+                  "added_int64": i * 10,
+                  "added_varchar": f"value_{i}",
+                  "added_double": float(i) * 1.5,
+                  "added_bool": i % 2 == 0,
+                  "added_json": {"k": i},
+              }
+              for i in range(BASE_PK, BASE_PK + EXTRA)
+          ]
+
+          upstream.insert(collection_name=COLLECTION, data=rows)
+          upstream.flush(collection_name=COLLECTION)
+          print(f"inserted {EXTRA} post-backup rows into {COLLECTION} on the upstream")
+
+          expected = set(range(BASE_PK, BASE_PK + EXTRA))
+          for attempt in range(30):
+              try:
+                  pks = {
+                      row["pk"]
+                      for row in downstream.query(
+                          collection_name=COLLECTION,
+                          filter=f"pk >= {BASE_PK}",
+                          output_fields=["pk"],
+                      )
+                  }
+              except Exception as e:
+                  print(f"attempt {attempt}: downstream not queryable yet: {e}")
+                  time.sleep(10)
+                  continue
+              if pks == expected:
+                  print(f"attempt {attempt}: downstream holds all {EXTRA} replayed rows")
+                  break
+              print(
+                  f"attempt {attempt}: downstream holds {len(pks)} of {EXTRA} "
+                  "replayed rows, waiting"
+              )
+              time.sleep(10)
+          else:
+              raise SystemExit(
+                  "post-backup inserts never converged downstream; "
+                  "see the secondary-restore-logs artifact"
+              )
+          EOF
+
       - name: List MinIO files after backup
         if: ${{ always() }}
         shell: bash
