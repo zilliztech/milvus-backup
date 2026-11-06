@@ -247,7 +247,7 @@ func (st *collSnapDMLTask) options() map[string]string {
 func (st *collSnapDMLTask) sendImportMsg(ctx context.Context) (int64, error) {
 	jobID := rand.Int64()
 
-	schema, err := conv.Schema(st.collBackup.GetSchema())
+	schema, err := conv.SchemaFromCollection(st.collBackup)
 	if err != nil {
 		return 0, fmt.Errorf("secondary: convert schema: %w", err)
 	}
@@ -317,7 +317,7 @@ func (st *collSnapDMLTask) importJob() bulkInsertJob {
 // across the partitions it has — and the message names every partition,
 // arranged by partition-key index as the proxy arranges them.
 func snapshotPartitionRouting(collBackup *backuppb.CollectionBackupInfo) (string, []int64, error) {
-	schema, err := conv.Schema(collBackup.GetSchema())
+	schema, err := conv.SchemaFromCollection(collBackup)
 	if err != nil {
 		return "", nil, fmt.Errorf("secondary: convert schema: %w", err)
 	}

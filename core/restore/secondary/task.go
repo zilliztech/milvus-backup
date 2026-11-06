@@ -3,6 +3,7 @@ package secondary
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"path"
@@ -148,6 +149,11 @@ func (t *Task) Execute(ctx context.Context) error {
 	}
 
 	if err := t.checkBackupHasFullMeta(); err != nil {
+		t.tracker.SetFail(err)
+		return err
+	}
+
+	if err := t.checkSchemaSupport(); err != nil {
 		t.tracker.SetFail(err)
 		return err
 	}
@@ -825,5 +831,25 @@ func (t *Task) sendFlushAll(ctx context.Context) error {
 
 	t.logger.Info("send flush all msg done")
 
+	return nil
+}
+
+// checkSchemaSupport runs before any WAL write. WAL preserves IDs itself, but
+// older imports cannot read the new sub-field shapes or missing evolved columns.
+func (t *Task) checkSchemaSupport() error {
+	for _, coll := range t.args.Backup.GetCollectionBackups() {
+		schema, err := conv.SchemaFromCollection(coll)
+		if err != nil {
+			return fmt.Errorf("secondary: collection %q schema: %w", coll.GetCollectionName(), err)
+		}
+		if err := checkDynamicField(schema); err != nil {
+			return err
+		}
+		if err := conv.ValidateLegacySchema(schema); err != nil {
+			if !errors.Is(err, conv.ErrSchemaEvolutionUnsupported) || !t.grpc.HasFeature(milvus.PreserveFieldIDs) {
+				return fmt.Errorf("secondary: collection %q: %w", coll.GetCollectionName(), err)
+			}
+		}
+	}
 	return nil
 }

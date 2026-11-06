@@ -85,3 +85,13 @@ func TestBase64DecodeMsgPosition(t *testing.T) {
 	assert.Equal(t, position.Timestamp, decodePos.Timestamp)
 	assert.Equal(t, position.MsgGroup, decodePos.MsgGroup)
 }
+
+func TestMergeMilvusKV(t *testing.T) {
+	schema := []*commonpb.KeyValuePair{{Key: "schema.only", Value: "keep"}, {Key: "max_field_id", Value: "104"}, {Key: "max_field_id", Value: "105"}}
+	response := []*commonpb.KeyValuePair{{Key: "max_field_id", Value: "200"}, {Key: "response.only", Value: "carry"}}
+	merged := MergeMilvusKV(schema, response)
+	assert.Equal(t, map[string]string{"schema.only": "keep", "max_field_id": "200", "response.only": "carry"}, MilvusKVToMap(merged))
+	assert.Len(t, merged, 3)
+	assert.Equal(t, "104", schema[1].GetValue(), "merging must not modify source properties")
+	assert.Equal(t, "200", response[0].GetValue())
+}

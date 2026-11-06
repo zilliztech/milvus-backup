@@ -6,6 +6,7 @@ Log.File.MaxDays	3
 Log.File.MaxBackups	2
 Server.DebugMode	true
 Server.SwaggerBasePath	/backup
+Milvus.PreserveFieldIDs	false
 Milvus.User	root
 Milvus.Password	****
 Milvus.Grpc.Address	milvus-proxy

@@ -301,6 +301,10 @@ message FieldSchema {
   string default_value_proto = 15 [deprecated=true]; // json not support marshall oneof, so use proto string
   bool is_function_output = 16;
   string default_value_base64 = 17;
+  bool element_nullable = 18;
+  bytes type_schema = 19; // serialized schemapb.TypeSchema
+  bool is_clustering_key = 20;
+  string external_field = 21;
 }
 
 message FunctionSchema {
@@ -333,6 +337,8 @@ message CollectionSchema {
   // restored with a version lower than its source breaks CDC replay of inserts
   // (STREAMING_CODE_SCHEMA_VERSION_MISMATCH). Field number mirrors the upstream proto.
   int32 version = 10;
+  bool enable_namespace = 11;
+  bytes schema_proto = 12; // original serialized schemapb.CollectionSchema from DescribeCollection
 }
 
 message StructArrayFieldSchema {

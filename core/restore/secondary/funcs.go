@@ -14,19 +14,24 @@ import (
 // schema enabled but the backup metadata does not carry the actual $meta
 // field. See zilliztech/milvus-backup#1013.
 func checkDynamicField(schema *schemapb.CollectionSchema) error {
-	if !schema.GetEnableDynamicField() {
-		return nil
+	var dynamic, namespace bool
+	for _, field := range schema.GetFields() {
+		dynamic = dynamic || field.GetIsDynamic()
+		namespace = namespace || field.GetName() == common.NamespaceFieldName
 	}
-	for _, f := range schema.GetFields() {
-		if f.GetIsDynamic() {
-			return nil
-		}
+	if schema.GetEnableDynamicField() && !dynamic {
+		return fmt.Errorf("secondary: %q has dynamic schema enabled but the backup carries no $meta "+
+			"field, so the collection cannot be recreated to match the source. Take a new binlog "+
+			"backup with --set milvus.preserveFieldIDs=true or --backup_index_extra "+
+			"(with_index_extra in the REST create request) and milvus.etcd configured; "+
+			"snapshot backups capture hidden fields automatically", schema.GetName())
 	}
-	return fmt.Errorf("secondary: %q has dynamic schema enabled but the backup carries no $meta "+
-		"field, so the collection cannot be recreated to match the source. Milvus does not return "+
-		"$meta from DescribeCollection, so a backup can only record it by reading etcd, which it "+
-		"does only when index extra info is enabled. Take the backup again with --backup_index_extra "+
-		"(with_index_extra in the REST create request) and milvus.etcd configured", schema.GetName())
+	if schema.GetEnableNamespace() && !common.IsNamespaceModePartition(schema.GetProperties()...) && !namespace {
+		return fmt.Errorf("secondary: %q enables namespace schema but the backup carries no $namespace_id; "+
+			"take a new binlog backup with --set milvus.preserveFieldIDs=true or --backup_index_extra and "+
+			"milvus.etcd configured; snapshot backups capture hidden fields automatically", schema.GetName())
+	}
+	return nil
 }
 
 // indexNames formats the indexes as "<db>.<coll>/<index>" for error and log
