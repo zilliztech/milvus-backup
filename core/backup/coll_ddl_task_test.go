@@ -27,6 +27,7 @@ func TestCollDDLTask_convSchema(t *testing.T) {
 		Description:        "description",
 		AutoID:             true,
 		EnableDynamicField: true,
+		Version:            7,
 		Properties:         []*commonpb.KeyValuePair{{Key: "k1", Value: "v1"}, {Key: "k2", Value: "v2"}},
 	}
 
@@ -37,6 +38,7 @@ func TestCollDDLTask_convSchema(t *testing.T) {
 	assert.Equal(t, schema.GetDescription(), bakSchema.GetDescription())
 	assert.Equal(t, schema.GetAutoID(), bakSchema.GetAutoID()) //nolint:staticcheck // SA1019: testing deprecated field
 	assert.Equal(t, schema.GetEnableDynamicField(), bakSchema.GetEnableDynamicField())
+	assert.Equal(t, schema.GetVersion(), bakSchema.GetVersion())
 	assert.ElementsMatch(t, schema.GetProperties(), pbconv.BakKVToMilvusKV(bakSchema.GetProperties()))
 }
 
