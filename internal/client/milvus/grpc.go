@@ -515,23 +515,50 @@ func releaseVersion(ver string) (*semver.Version, bool) {
 	return sem, true
 }
 
-// _versionPattern recovers MAJOR.MINOR[.PATCH] from a string that is not a version itself.
-// It matches only at the start of the string, for dev build tags like "2.6-20260404-31fb3fc",
-// or right after "Milvus", for vendor descriptions like
-// "Zilliz Cloud Vector Database(Compatible with Milvus 2.6)". Anchoring both alternatives is
-// what keeps an unrelated number elsewhere in a product name from being read as the server
-// version.
-var _versionPattern = regexp.MustCompile(`(?i)(?:^|milvus[ _-]*)v?(\d+)\.(\d+)(?:\.(\d+))?`)
+// _versionPatterns recover MAJOR.MINOR[.PATCH] from a string that is not a version itself,
+// tried in order and the first pattern that matches decides.
+//
+// Product descriptions and build tags are read differently.
+//
+// A product description mixes the vendor's product version with the Milvus version it is
+// compatible with: in "Zilliz Cloud 3.0 Vector Database(Compatible with Milvus 2.5)" the
+// 3.0 does not describe the server, so when the string attributes a version to Milvus,
+// only that one is believed — even if the product version carries a patch level. A build
+// tag has the shape "{branch}-{date}-{commit}", where dates carry no dots and commits are
+// hex, so every dotted number in it is the version, wherever the builder put it
+// ("poc_2.6.17-20260824-5d93a6d13"). Hence the order:
+//
+//  1. a version explicitly attributed to Milvus;
+//  2. a full MAJOR.MINOR.PATCH anywhere;
+//  3. any bare MAJOR.MINOR, for dev build tags like "2.6-20260404-31fb3fc" that name only
+//     the line.
+//
+// A match that stops at MAJOR.MINOR resolves to the head of that line, see
+// _headOfLinePatch.
+var _versionPatterns = []*regexp.Regexp{
+	regexp.MustCompile(`(?i)milvus[ _-]*v?(\d+)\.(\d+)(?:\.(\d+))?`),
+	regexp.MustCompile(`v?(\d+)\.(\d+)\.(\d+)`),
+	regexp.MustCompile(`v?(\d+)\.(\d+)`),
+}
 
 // embeddedVersion recovers a version embedded in a string that is not a release version
-// itself, such as a dev build tag or a vendor product description. A match that stops at
-// MAJOR.MINOR resolves to the head of that line, see _headOfLinePatch.
+// itself, such as a dev build tag or a vendor product description.
 func embeddedVersion(ver string) (*semver.Version, bool) {
-	match := _versionPattern.FindStringSubmatch(ver)
-	if match == nil {
-		return nil, false
+	for _, pattern := range _versionPatterns {
+		match := pattern.FindStringSubmatch(ver)
+		if match == nil {
+			continue
+		}
+		return embeddedMatchVersion(match)
 	}
 
+	return nil, false
+}
+
+// embeddedMatchVersion turns a _versionPatterns match into a version. Every pattern
+// captures MAJOR in group 1 and MINOR in group 2; the PATCH group is only present when
+// the pattern or the matched string carries one.
+func embeddedMatchVersion(match []string) (*semver.Version, bool) {
 	major, err := strconv.ParseUint(match[1], 10, 64)
 	if err != nil {
 		return nil, false
@@ -542,7 +569,7 @@ func embeddedVersion(ver string) (*semver.Version, bool) {
 	}
 
 	patch := uint64(_headOfLinePatch)
-	if match[3] != "" {
+	if len(match) > 3 && match[3] != "" {
 		if patch, err = strconv.ParseUint(match[3], 10, 64); err != nil {
 			return nil, false
 		}
