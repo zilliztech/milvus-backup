@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
+	"github.com/milvus-io/milvus/pkg/v3/common"
 	"go.uber.org/zap"
 	"google.golang.org/protobuf/proto"
 
@@ -53,6 +54,7 @@ func (cdft *collDynFieldTask) Execute(ctx context.Context) error {
 	collIDs := cdft.metaBuilder.backupCollectionIDs()
 
 	dynFields := make(map[int64]*schemapb.FieldSchema)
+	namespaceFields := make(map[int64]*schemapb.FieldSchema)
 	for _, collID := range collIDs {
 		prefix := fmt.Sprintf("%s/meta/root-coord/fields/%d/", cdft.etcdRootPath, collID)
 		cdft.logger.Info("start to get field schemas from etcd", zap.String("prefix", prefix))
@@ -70,6 +72,10 @@ func (cdft *collDynFieldTask) Execute(ctx context.Context) error {
 				// rather than fail the whole backup.
 				cdft.logger.Warn("skip field that cannot be unmarshalled",
 					zap.String("key", string(kv.Key)), zap.Error(err))
+				continue
+			}
+			if field.GetName() == common.NamespaceFieldName {
+				namespaceFields[collID] = field
 				continue
 			}
 			if !field.GetIsDynamic() {
@@ -93,6 +99,10 @@ func (cdft *collDynFieldTask) Execute(ctx context.Context) error {
 	}
 
 	if err := cdft.metaBuilder.addDynamicFields(dynFields); err != nil {
+		return err
+	}
+
+	if err := cdft.metaBuilder.addNamespaceFields(namespaceFields); err != nil {
 		return err
 	}
 

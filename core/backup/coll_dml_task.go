@@ -184,6 +184,9 @@ func (dmlt *collDMLTask) getSegments(ctx context.Context) ([]*backuppb.SegmentBa
 }
 
 func (dmlt *collDMLTask) getSegment(ctx context.Context, seg *milvuspb.PersistentSegmentInfo) (*backuppb.SegmentBackupInfo, error) {
+	if seg.GetStorageVersion() >= 3 {
+		return nil, fmt.Errorf("backup: segment %d uses manifest storage version %d; use snapshot backup format instead of binlog", seg.GetSegmentID(), seg.GetStorageVersion())
+	}
 	dmlt.logger.Info("get segment info", zap.Int64("segment_id", seg.SegmentID))
 
 	var bakSeg *backuppb.SegmentBackupInfo

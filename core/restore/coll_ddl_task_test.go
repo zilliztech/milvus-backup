@@ -14,6 +14,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
+	"github.com/zilliztech/milvus-backup/internal/pbconv"
 )
 
 func newTestCollDDLTask() *collDDLTask {
@@ -287,6 +288,7 @@ func TestCollDDLTask_createColl(t *testing.T) {
 		}
 
 		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().HasFeature(milvus.PreserveFieldIDs).Return(false).Once()
 		cli.EXPECT().CreateCollection(mock.Anything, mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
 			coll := args[1].(milvus.CreateCollectionInput)
 			assert.Equal(t, "db1", coll.DB)
@@ -304,11 +306,9 @@ func TestCollDDLTask_createColl(t *testing.T) {
 			assert.Equal(t, int32(10), coll.ShardNum)
 			assert.Equal(t, 0, coll.PartitionNum)
 
-			assert.Equal(t, 2, len(coll.Properties))
-			assert.Equal(t, "key", coll.Properties[0].GetKey())
-			assert.Equal(t, "val", coll.Properties[0].GetValue())
-			assert.Equal(t, common.DisableFuncRuntimeCheck, coll.Properties[1].GetKey())
-			assert.Equal(t, "true", coll.Properties[1].GetValue())
+			assert.Equal(t, map[string]string{
+				"key": "val", "key1": "val1", common.DisableFuncRuntimeCheck: "true",
+			}, pbconv.MilvusKVToMap(coll.Properties))
 		})
 		cli.EXPECT().HasFeature(milvus.FuncRuntimeCheck).Return(true).Once()
 		ct.grpcCli = cli
@@ -335,6 +335,7 @@ func TestCollDDLTask_createColl(t *testing.T) {
 		}
 
 		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().HasFeature(milvus.PreserveFieldIDs).Return(false).Once()
 		cli.EXPECT().CreateCollection(mock.Anything, mock.Anything).Return(nil).Once().Run(func(args mock.Arguments) {
 			coll := args[1].(milvus.CreateCollectionInput)
 			assert.Equal(t, "overridden desc", coll.Schema.Description)
