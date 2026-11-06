@@ -1244,6 +1244,92 @@ jobs:
         run: |
           python example/secondary/verify_data.py --uri http://127.0.0.1:19500
 
+      # Live CDC replay of inserts written AFTER the backup, into a collection
+      # whose schema version is > 0: hello_milvus_added went through
+      # add_collection_field during prepare, so its source schema version is 1,
+      # while the restored secondary collection always starts at 0 — the
+      # target-side create callback resets the version and nothing replays the
+      # schema-DDL history the counter aggregates. Milvus 3.0's WAL rejects
+      # every insert whose message schema_version does not exactly match the
+      # collection's current one, so each replayed insert fails with
+      # STREAMING_CODE_SCHEMA_VERSION_MISMATCH and the secondary never
+      # converges; 2.6 has no version check and converges fine. Run this on
+      # the released 3.0 line, independently of master-only regressions. The
+      # step continues on error, so the expected failure signals without gating
+      # CI, and it turns green once the restore carries the schema version
+      # through and the target create honors it.
+      - name: Verify live replay of post-backup inserts
+        id: schema_replay
+        if: ${{ matrix.scenario == 'same-version-3.0' }}
+        continue-on-error: true
+        timeout-minutes: 10
+        shell: bash
+        run: |
+          python - <<'EOF'
+          import time
+
+          from pymilvus import MilvusClient
+
+          UPSTREAM = "http://127.0.0.1:19530"
+          DOWNSTREAM = "http://127.0.0.1:19500"
+          COLLECTION = "hello_milvus_added"
+          BASE_PK = 3000  # prepare_data inserted pks 0..2999 before the backup
+          EXTRA = 500
+          DIM = 8
+
+          rows = [
+              {
+                  "pk": i,
+                  "random": float(i) / (BASE_PK + EXTRA),
+                  "var": str(i),
+                  "embeddings": [float((i + j) % 7) / 7 for j in range(DIM)],
+                  "added_int64": i * 10,
+                  "added_varchar": f"value_{i}",
+                  "added_double": float(i) * 1.5,
+                  "added_bool": i % 2 == 0,
+                  "added_json": {"k": i},
+              }
+              for i in range(BASE_PK, BASE_PK + EXTRA)
+          ]
+
+          upstream = MilvusClient(uri=UPSTREAM, token="root:Milvus")
+          upstream.insert(collection_name=COLLECTION, data=rows)
+          upstream.flush(collection_name=COLLECTION)
+          print(f"inserted {EXTRA} post-backup rows into {COLLECTION} on the upstream")
+
+          downstream = MilvusClient(uri=DOWNSTREAM, token="root:Milvus")
+          expected = set(range(BASE_PK, BASE_PK + EXTRA))
+          for attempt in range(30):
+              try:
+                  pks = {
+                      row["pk"]
+                      for row in downstream.query(
+                          collection_name=COLLECTION,
+                          filter=f"pk >= {BASE_PK}",
+                          output_fields=["pk"],
+                      )
+                  }
+              except Exception as e:
+                  print(f"attempt {attempt}: downstream not queryable yet: {e}")
+                  time.sleep(10)
+                  continue
+              if pks == expected:
+                  print(f"attempt {attempt}: downstream holds all {EXTRA} replayed rows")
+                  break
+              print(
+                  f"attempt {attempt}: downstream holds {len(pks)} of {EXTRA} "
+                  "replayed rows, waiting"
+              )
+              time.sleep(10)
+          else:
+              raise SystemExit(
+                  "post-backup inserts never converged downstream: the CDC replay "
+                  "of inserts into a collection with schema version > 0 is rejected "
+                  "by the schema version check (STREAMING_CODE_SCHEMA_VERSION_"
+                  "MISMATCH); see the secondary-restore-logs artifact"
+              )
+          EOF
+
       - name: List MinIO files after backup
         if: ${{ always() }}
         shell: bash
@@ -1265,7 +1351,7 @@ jobs:
           sudo docker compose -f docker-compose.yml logs minio > /tmp/ci_logs/minio.log 2>&1 || true
 
       - name: Upload logs
-        if: ${{ ! success() }}
+        if: ${{ ! success() || steps.schema_replay.outcome == 'failure' }}
         uses: actions/upload-artifact@v7
         with:
           name: secondary-restore-logs-${{ matrix.scenario }}
