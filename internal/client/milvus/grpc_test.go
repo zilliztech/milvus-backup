@@ -274,6 +274,15 @@ func TestGrpcClient_parseVersionForFeature(t *testing.T) {
 		{"UnknownBranchTag_HasFlushAll", []string{_cloudBuildTag}, ">= 2.6.11-0", true},
 		{"MasterTag_HasFlushAll", []string{"master-20260226-abcdef"}, ">= 2.6.11-0", true},
 
+		// Internal build tags that name their base release resolve to that exact release —
+		// not to the head of the line and not to _latestDevVersion. "poc_..." is a real
+		// PoC build tag; unhandled it falls to _latestDevVersion and enables 3.0-only
+		// features on a 2.6 build.
+		{"PocTag2.6.17_HasFlushAll", []string{"poc_2.6.17-20260824-5d93a6d13"}, ">= 2.6.11-0", true},
+		{"PocTag2.6.17_NoSnapshot", []string{"poc_2.6.17-20260824-5d93a6d13"}, ">= 3.0.0-0", false},
+		// Pins the exact patch: resolving to the head of the line (2.6.9999) would pass here.
+		{"PocTag2.6.17_ExactPatch", []string{"poc_2.6.17-20260824-5d93a6d13"}, ">= 2.6.18-0", false},
+
 		// Empty strings: also fall back to dev.
 		{"Empty_HasFlushAll", []string{""}, ">= 2.6.11-0", true},
 		{"AllEmpty_HasFlushAll", []string{"", ""}, ">= 2.6.11-0", true},
@@ -300,6 +309,14 @@ func TestEmbeddedVersion(t *testing.T) {
 		{"DescriptionMinorOnly", _cloudDesc, "2.6.9999"},
 		{"DescriptionWithPatchKeepsPatch", "Zilliz Cloud Vector Database(Compatible with Milvus 2.5.8)", "2.5.8"},
 		{"NoSeparatorBeforeVersion", "milvus2.6", "2.6.9999"},
+		{"PocTagResolvesToBaseRelease", "poc_2.6.17-20260824-5d93a6d13", "2.6.17"},
+		{"PrefixWordsBeforeVersion", "poc_dev_2.6-20260824-5d93a6d13", "2.6.9999"},
+		{"ProductVersionBeforeMilvusIgnored", "Zilliz Cloud 3.0 Vector Database(Compatible with Milvus 2.5)", "2.5.9999"},
+		// The version attributed to Milvus wins even over an earlier marketing name that
+		// carries a patch level: only the number after "Milvus" describes the server.
+		{"AttributedMinorBeatsEarlierPatch", "Zilliz Cloud 3.0.5(Compatible with Milvus 2.5)", "2.5.9999"},
+		// Without attribution the full version outranks an earlier bare MAJOR.MINOR.
+		{"PatchVersionPreferredOverBareMinor", "2.6 line build 2.6.17-20260824-5d93a6d13", "2.6.17"},
 	}
 
 	for _, tt := range tests {
@@ -311,7 +328,7 @@ func TestEmbeddedVersion(t *testing.T) {
 	}
 
 	t.Run("NoVersionAtAll", func(t *testing.T) {
-		for _, ver := range []string{_cloudBuildTag, "master-20260226-abcdef", ""} {
+		for _, ver := range []string{_cloudBuildTag, "master-20260226-abcdef", "poc_unknown-20260824-5d93a6d13", ""} {
 			_, ok := embeddedVersion(ver)
 			assert.False(t, ok, ver)
 		}
