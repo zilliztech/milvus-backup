@@ -303,8 +303,6 @@ message FieldSchema {
   string default_value_base64 = 17;
   bool element_nullable = 18;
   bytes type_schema = 19; // serialized schemapb.TypeSchema
-  bool is_clustering_key = 20;
-  string external_field = 21;
 }
 
 message FunctionSchema {
@@ -331,7 +329,7 @@ message CollectionSchema {
   repeated KeyValuePair properties = 6;
   repeated FunctionSchema functions = 7;
   repeated StructArrayFieldSchema struct_array_fields = 9;
-  bytes schema_proto = 10; // original serialized schemapb.CollectionSchema from DescribeCollection
+  int32 version = 10;
   bool enable_namespace = 11;
 }
 

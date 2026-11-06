@@ -115,9 +115,8 @@ func (builder *metaBuilder) addCollection(collRef collref.Name, collectionBackup
 	builder.mu.Lock()
 	defer builder.mu.Unlock()
 
-	// DescribeCollectionResponse.Properties is authoritative; the raw schema
-	// bytes remain the original response while its projection includes these
-	// properties for hidden-field capture and older metadata readers.
+	// DescribeCollectionResponse.Properties is authoritative. Include its
+	// values in the schema metadata for hidden-field capture and restore.
 	if schema := collectionBackup.GetSchema(); schema != nil {
 		schema.Properties = pbconv.MilvusKVToBakKV(pbconv.MergeMilvusKV(
 			pbconv.BakKVToMilvusKV(schema.GetProperties()),

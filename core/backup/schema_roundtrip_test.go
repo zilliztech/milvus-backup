@@ -20,26 +20,25 @@ import (
 
 func TestCollectionSchemaRoundTrip(t *testing.T) {
 	leaf := &schemapb.TypeSchema{Kind: &schemapb.TypeSchema_LeafType{LeafType: schemapb.DataType_Int64}}
-	inner := &schemapb.TypeSchema{Kind: &schemapb.TypeSchema_ArrayElement{ArrayElement: leaf}, Nullable: true}
+	inner := &schemapb.TypeSchema{Kind: &schemapb.TypeSchema_ArrayElement{ArrayElement: leaf}, Nullable: true,
+		TypeParams: []*commonpb.KeyValuePair{{Key: "max_capacity", Value: "8"}}}
 	nested := &schemapb.TypeSchema{Kind: &schemapb.TypeSchema_ArrayElement{ArrayElement: inner}}
 	source := &schemapb.CollectionSchema{
-		Name: "source", Version: 12,
-		Fields: []*schemapb.FieldSchema{{FieldID: 100, Name: "id", DataType: schemapb.DataType_Int64,
-			IsPrimaryKey: true, IsClusteringKey: true, ExternalField: "external_id"}},
+		Name: "source", Description: "collection", Version: 12, EnableNamespace: true,
+		Fields: []*schemapb.FieldSchema{
+			{FieldID: 100, Name: "id", DataType: schemapb.DataType_Int64, IsPrimaryKey: true},
+			{FieldID: 101, Name: "$namespace_id", DataType: schemapb.DataType_VarChar, IsPartitionKey: true},
+			{FieldID: 104, Name: "output", DataType: schemapb.DataType_Int64, IsFunctionOutput: true},
+		},
 		Properties: []*commonpb.KeyValuePair{{Key: "max_field_id", Value: "110"}},
-		Functions:  []*schemapb.FunctionSchema{{Id: 7, Name: "function", InputFieldIds: []int64{100}, OutputFieldIds: []int64{108}}},
-		StructArrayFields: []*schemapb.StructArrayFieldSchema{{
-			FieldID: 101, Name: "items", Nullable: true,
+		Functions:  []*schemapb.FunctionSchema{{Id: 100, Name: "function", InputFieldNames: []string{"id"}, InputFieldIds: []int64{100}, OutputFieldNames: []string{"output"}, OutputFieldIds: []int64{104}}},
+		StructArrayFields: []*schemapb.StructArrayFieldSchema{{FieldID: 102, Name: "items", Description: "structure", Nullable: true,
 			Fields: []*schemapb.FieldSchema{
-				{FieldID: 103, Name: "values", DataType: schemapb.DataType_Array, ElementType: schemapb.DataType_Array,
-					ElementNullable: true, Nullable: true, TypeSchema: nested},
-				{FieldID: 108, Name: "vectors", DataType: schemapb.DataType_ArrayOfVector, ElementType: schemapb.DataType_FloatVector,
-					ElementNullable: true, Nullable: true, TypeParams: []*commonpb.KeyValuePair{{Key: "dim", Value: "4"}}},
+				{FieldID: 103, Name: "values", DataType: schemapb.DataType_Array, ElementType: schemapb.DataType_Array, ElementNullable: true, Nullable: true, TypeSchema: nested},
+				{FieldID: 108, Name: "vectors", DataType: schemapb.DataType_ArrayOfVector, ElementType: schemapb.DataType_FloatVector, ElementNullable: true, Nullable: true, TypeParams: []*commonpb.KeyValuePair{{Key: "dim", Value: "4"}}},
 			},
 		}},
 	}
-	// A field unknown to this client must survive the persisted raw protobuf too.
-	source.ProtoReflect().SetUnknown([]byte{0xa0, 0x06, 0x01})
 	bak, err := newTestCollDDLTask().convSchema(source)
 	require.NoError(t, err)
 	builder := newMetaBuilder("backup", "backup")
@@ -48,8 +47,7 @@ func TestCollectionSchemaRoundTrip(t *testing.T) {
 		name string
 		fn   func() ([]byte, error)
 	}{
-		{"CollectionMetadata", builder.buildCollectionMeta},
-		{"FullMetadata", builder.buildFullMeta},
+		{"CollectionMetadata", builder.buildCollectionMeta}, {"FullMetadata", builder.buildFullMeta},
 	} {
 		t.Run(build.name, func(t *testing.T) {
 			data, err := build.fn()
@@ -64,36 +62,29 @@ func TestCollectionSchemaRoundTrip(t *testing.T) {
 				require.NoError(t, json.Unmarshal(data, &meta))
 				stored = meta.GetCollectionBackups()[0].GetSchema()
 			}
-			raw, err := conv.RawSchema(stored)
+			restored, err := conv.Schema(stored)
 			require.NoError(t, err)
-			assert.True(t, proto.Equal(source, raw), "raw collection schema must survive metadata JSON")
-			fields, err := conv.Fields(stored.GetFields())
-			require.NoError(t, err)
-			assert.True(t, proto.Equal(source.GetFields()[0], fields[0]))
+			assert.Equal(t, source.GetName(), restored.GetName())
+			assert.Equal(t, source.GetDescription(), restored.GetDescription())
+			assert.Equal(t, source.GetVersion(), restored.GetVersion())
+			assert.True(t, restored.GetEnableNamespace())
+			require.Len(t, restored.GetFields(), len(source.GetFields()))
+			for i, field := range source.GetFields() {
+				assert.True(t, proto.Equal(field, restored.GetFields()[i]), "field %s", field.GetName())
+			}
 			subs, err := conv.Fields(stored.GetStructArrayFields()[0].GetFields())
 			require.NoError(t, err)
 			for i, field := range source.GetStructArrayFields()[0].GetFields() {
-				assert.True(t, proto.Equal(field, subs[i]), "fallback field %s", field.GetName())
+				assert.True(t, proto.Equal(field, subs[i]), "sub-field %s", field.GetName())
 			}
-			stored.SchemaProto = nil
-			legacy, err := conv.Schema(stored)
-			require.NoError(t, err)
-			assert.Equal(t, int64(101), legacy.GetStructArrayFields()[0].GetFieldID())
-			assert.Equal(t, int64(108), legacy.GetStructArrayFields()[0].GetFields()[1].GetFieldID())
-			assert.True(t, proto.Equal(source.GetFunctions()[0], legacy.GetFunctions()[0]))
+			assert.Equal(t, int64(102), restored.GetStructArrayFields()[0].GetFieldID())
+			assert.Equal(t, "structure", restored.GetStructArrayFields()[0].GetDescription())
+			assert.Equal(t, "items[values]", restored.GetStructArrayFields()[0].GetFields()[0].GetName())
+			assert.Equal(t, int64(108), restored.GetStructArrayFields()[0].GetFields()[1].GetFieldID())
+			assert.True(t, proto.Equal(source.GetFunctions()[0], restored.GetFunctions()[0]))
+			assert.Equal(t, "110", pbconv.MilvusKVToMap(restored.GetProperties())["max_field_id"])
 		})
 	}
-}
-
-func TestDynamicFieldConversionIncludesNewAttributes(t *testing.T) {
-	source := &schemapb.FieldSchema{FieldID: 102, Name: "$meta", IsDynamic: true,
-		DataType: schemapb.DataType_JSON, Nullable: true, ElementNullable: true, IsClusteringKey: true,
-		ExternalField: "metadata", TypeSchema: &schemapb.TypeSchema{Kind: &schemapb.TypeSchema_LeafType{LeafType: schemapb.DataType_JSON}}}
-	stored, err := convDynField(source)
-	require.NoError(t, err)
-	fields, err := conv.Fields([]*backuppb.FieldSchema{stored})
-	require.NoError(t, err)
-	assert.True(t, proto.Equal(source, fields[0]))
 }
 
 func TestBinlogRejectsManifestSegments(t *testing.T) {
@@ -125,7 +116,7 @@ func TestHiddenNamespaceFieldCapture(t *testing.T) {
 				assert.ErrorContains(t, builder.addNamespaceFields(nil), "missing $namespace_id")
 				require.NoError(t, builder.addNamespaceFields(map[int64]*schemapb.FieldSchema{1: hidden}))
 			}
-			restored, err := conv.RawSchema(coll.GetSchema())
+			restored, err := conv.SchemaFromCollection(coll)
 			require.NoError(t, err)
 			require.Len(t, restored.GetFields(), 2)
 			assert.True(t, proto.Equal(hidden, restored.GetFields()[1]))
@@ -153,7 +144,6 @@ func TestCollectionResponsePropertiesControlHiddenFieldCapture(t *testing.T) {
 			}
 			schema, err := newTestCollDDLTask().convSchema(public)
 			require.NoError(t, err)
-			originalBytes := append([]byte(nil), schema.GetSchemaProto()...)
 			coll := &backuppb.CollectionBackupInfo{CollectionId: 1, DbName: "default", CollectionName: "namespace", Schema: schema,
 				Properties: []*backuppb.KeyValuePair{{Key: "namespace.mode", Value: "partition"}, {Key: "max_field_id", Value: "200"}}}
 			builder := newMetaBuilder("backup", "backup")
@@ -161,10 +151,7 @@ func TestCollectionResponsePropertiesControlHiddenFieldCapture(t *testing.T) {
 			assert.Equal(t, map[string]string{"schema.only": "keep", "namespace.mode": "partition", "max_field_id": "200"}, pbconv.MilvusKVToMap(pbconv.BakKVToMilvusKV(coll.GetSchema().GetProperties())))
 			assert.Empty(t, builder.dynamicSchemaCollections(), "partition namespaces require no hidden field")
 			assert.NoError(t, builder.addNamespaceFields(nil))
-			assert.Equal(t, originalBytes, coll.GetSchema().GetSchemaProto())
-			var original schemapb.CollectionSchema
-			require.NoError(t, proto.Unmarshal(coll.GetSchema().GetSchemaProto(), &original))
-			assert.Equal(t, conflict, pbconv.MilvusKVToMap(original.GetProperties())["namespace.mode"] == "partition_key")
+			assert.Equal(t, conflict, pbconv.MilvusKVToMap(public.GetProperties())["namespace.mode"] == "partition_key", "source describe response must remain unchanged")
 		})
 	}
 }

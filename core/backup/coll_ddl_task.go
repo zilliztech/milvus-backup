@@ -81,9 +81,6 @@ func convFields(fields []*schemapb.FieldSchema) ([]*backuppb.FieldSchema, error)
 			DefaultValueBase64: defaultValueBase64,
 			ElementNullable:    field.GetElementNullable(),
 			TypeSchema:         typeSchema,
-			IsClusteringKey:    field.GetIsClusteringKey(),
-			ExternalField:      field.GetExternalField(),
-			State:              backuppb.FieldState(field.GetState()),
 		}
 		bakFields = append(bakFields, f)
 	}
@@ -146,13 +143,8 @@ func (ddlt *collDDLTask) convSchema(schema *schemapb.CollectionSchema) (*backupp
 		return nil, fmt.Errorf("backup: convert struct array fields %w", err)
 	}
 
-	rawSchema, err := proto.Marshal(schema)
-	if err != nil {
-		return nil, fmt.Errorf("backup: marshal collection schema: %w", err)
-	}
-
 	bakSchema := &backuppb.CollectionSchema{
-		SchemaProto:        rawSchema,
+		Version:            schema.GetVersion(),
 		Name:               schema.GetName(),
 		Description:        schema.GetDescription(),
 		AutoID:             schema.GetAutoID(), //nolint:staticcheck // SA1019: deprecated but needed for backward compatibility

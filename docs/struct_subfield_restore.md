@@ -1,6 +1,6 @@
 # Restore struct sub-field schemas
 
-Backups retain the original protobuf collection schema in `schema.schema_proto`, encoded as base64 in metadata JSON. The field projection also retains `element_nullable`, recursive `type_schema`, clustering-key flags, external field mappings, and namespace enablement. Restore prefers the protobuf schema; metadata without it uses the existing field projection. Collection properties saved from DescribeCollectionResponse are merged into that schema and override duplicate schema property keys. Unknown schema properties and the original protobuf bytes are retained.
+Backups retain source field, struct, and function IDs together with `element_nullable`, the recursive `type_schema`, collection schema `version`, and namespace enablement. `type_schema` stores the serialized upstream `schemapb.TypeSchema` message; metadata JSON encodes those bytes as base64. Collection properties saved from DescribeCollectionResponse are merged into the schema and override duplicate schema property keys. Other schema properties remain unchanged.
 
 ## Enable source field ID preservation
 
@@ -30,7 +30,7 @@ Preserved-ID restore sends source IDs for all fields, structs, sub-fields, hidde
 
 A nonempty collection missing hidden field IDs fails before a requested target collection drop. Recreate its backup with schema ID capture enabled. Unknown binlog field IDs are not assigned to hidden fields: they can belong to deleted fields or sub-fields. A binlog collection proven empty by its metadata may use ordinary creation when its hidden IDs were not recorded; that request omits `preserve_field_ids`, creates all visible fields together, and lets Milvus allocate hidden IDs. Snapshot metadata does not enumerate segments at this level, so it must retain its bundle's hidden schemas.
 
-With the capability disabled, the existing ordinary restore remains available for older schemas. Nullable elements, nested arrays, and struct field ID evolution that ordinary creation cannot preserve fail explicitly. Gaps and the `max_field_id` high-water mark detect incompatible struct evolution. A sub-field appended to the last struct can leave IDs contiguous, so a nonzero raw schema version also requires the capability. This check is conservative: unrelated schema changes on a struct-bearing collection can require the override too, because DescribeCollection removes the sub-field origin markers. Older metadata without a raw schema version keeps its existing behavior.
+With the capability disabled, the existing ordinary restore remains available for older schemas. Nullable elements, nested arrays, and struct field ID evolution that ordinary creation cannot preserve fail explicitly. Gaps and the `max_field_id` high-water mark detect incompatible struct evolution. A sub-field appended to the last struct can leave IDs contiguous, so a nonzero schema version also requires the capability. This check is conservative: unrelated schema changes on a struct-bearing collection can require the override too, because DescribeCollection removes the sub-field origin markers. Older metadata without a schema version keeps its existing behavior.
 
 ## Restore paths
 

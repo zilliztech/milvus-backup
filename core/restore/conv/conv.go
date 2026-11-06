@@ -7,7 +7,6 @@ import (
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
-	"github.com/milvus-io/milvus/pkg/v3/common"
 	"github.com/samber/lo"
 	"google.golang.org/protobuf/proto"
 
@@ -75,53 +74,6 @@ func TypeSchema(field *backuppb.FieldSchema) (*schemapb.TypeSchema, error) {
 	return &schema, nil
 }
 
-// RawSchema returns a fresh copy of the original DescribeCollection schema. The
-// public API hides $meta and $namespace_id, so supplement separately captured fields.
-// A nil result means this backup predates lossless schema storage.
-func RawSchema(bak *backuppb.CollectionSchema) (*schemapb.CollectionSchema, error) {
-	return rawSchema(bak, nil)
-}
-
-func rawSchema(bak *backuppb.CollectionSchema, responseProperties []*backuppb.KeyValuePair) (*schemapb.CollectionSchema, error) {
-	if len(bak.GetSchemaProto()) == 0 {
-		return nil, nil
-	}
-	var schema schemapb.CollectionSchema
-	if err := proto.Unmarshal(bak.GetSchemaProto(), &schema); err != nil {
-		return nil, fmt.Errorf("restore: decode schema_proto of collection %q: %w", bak.GetName(), err)
-	}
-	// Namespace mode must be resolved before supplementing hidden fields.
-	schema.Properties = pbconv.MergeMilvusKV(schema.GetProperties(), pbconv.BakKVToMilvusKV(responseProperties))
-	for _, hiddenName := range []string{common.MetaFieldName, common.NamespaceFieldName} {
-		needed := hiddenName == common.MetaFieldName && schema.GetEnableDynamicField() || hiddenName == common.NamespaceFieldName && NeedsNamespaceField(&schema)
-		if !needed {
-			continue
-		}
-		present := false
-		for _, field := range schema.GetFields() {
-			if field.GetName() == hiddenName {
-				present = true
-				break
-			}
-		}
-		if present {
-			continue
-		}
-		for _, field := range bak.GetFields() {
-			if field.GetName() != hiddenName {
-				continue
-			}
-			hidden, err := Fields([]*backuppb.FieldSchema{field})
-			if err != nil {
-				return nil, fmt.Errorf("restore: decode hidden field %s: %w", hiddenName, err)
-			}
-			schema.Fields = append(schema.Fields, hidden[0])
-			break
-		}
-	}
-	return &schema, nil
-}
-
 func Fields(bakFields []*backuppb.FieldSchema) ([]*schemapb.FieldSchema, error) {
 	fields := make([]*schemapb.FieldSchema, 0, len(bakFields))
 
@@ -153,9 +105,6 @@ func Fields(bakFields []*backuppb.FieldSchema) ([]*schemapb.FieldSchema, error) 
 			DefaultValue:     defaultValue,
 			ElementNullable:  bakField.GetElementNullable(),
 			TypeSchema:       typeSchema,
-			IsClusteringKey:  bakField.GetIsClusteringKey(),
-			ExternalField:    bakField.GetExternalField(),
-			State:            schemapb.FieldState(bakField.GetState()),
 		}
 
 		fields = append(fields, fieldRestore)
@@ -232,28 +181,15 @@ func ApplyStructNullable(bak *backuppb.StructArrayFieldSchema, fields []*schemap
 // proxy requests and WAL replay use the collection response's property values.
 // Callers entering Proxy normalize the qualified sub-field names afterward.
 func SchemaFromCollection(collection *backuppb.CollectionBackupInfo) (*schemapb.CollectionSchema, error) {
-	return schema(collection.GetSchema(), collection.GetProperties())
-}
-
-func Schema(bakSchema *backuppb.CollectionSchema) (*schemapb.CollectionSchema, error) {
-	return schema(bakSchema, nil)
-}
-
-func schema(bakSchema *backuppb.CollectionSchema, responseProperties []*backuppb.KeyValuePair) (*schemapb.CollectionSchema, error) {
-	raw, err := rawSchema(bakSchema, responseProperties)
+	converted, err := Schema(collection.GetSchema())
 	if err != nil {
 		return nil, err
 	}
-	if raw != nil {
-		// Secondary replay bypasses Proxy, which normally qualifies sub-field names.
-		for _, structure := range raw.GetStructArrayFields() {
-			for _, field := range structure.GetFields() {
-				field.Name = qualifySubFieldName(structure.GetName(), field.GetName())
-			}
-		}
-		return raw, nil
-	}
+	converted.Properties = pbconv.MergeMilvusKV(converted.GetProperties(), pbconv.BakKVToMilvusKV(collection.GetProperties()))
+	return converted, nil
+}
 
+func Schema(bakSchema *backuppb.CollectionSchema) (*schemapb.CollectionSchema, error) {
 	fields, err := Fields(bakSchema.GetFields())
 	if err != nil {
 		return nil, fmt.Errorf("conv: conv fields: %w", err)
@@ -266,9 +202,10 @@ func schema(bakSchema *backuppb.CollectionSchema, responseProperties []*backuppb
 		return nil, fmt.Errorf("conv: conv struct array fields: %w", err)
 	}
 
-	properties := pbconv.MergeMilvusKV(pbconv.BakKVToMilvusKV(bakSchema.GetProperties()), pbconv.BakKVToMilvusKV(responseProperties))
+	properties := pbconv.BakKVToMilvusKV(bakSchema.GetProperties())
 
 	schema := &schemapb.CollectionSchema{
+		Version:            bakSchema.GetVersion(),
 		Name:               bakSchema.GetName(),
 		Description:        bakSchema.GetDescription(),
 		Functions:          functions,
