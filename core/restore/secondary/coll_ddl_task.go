@@ -138,6 +138,17 @@ func (ddlt *collDDLTask) createColl(ctx context.Context) error {
 
 	ddlt.logger.Info("create collection", zap.Any("header", header))
 
+	// The create-collection broadcast callback on the target resets the schema
+	// version to 0, so the restored collection starts below its source whenever
+	// the source collection had any schema-update DDL since creation. Until the
+	// versions are aligned, every insert the CDC replays into the secondary is
+	// rejected with STREAMING_CODE_SCHEMA_VERSION_MISMATCH and replication
+	// stalls — hence this warning; a plain restore is unaffected.
+	if version := ddlt.collBackup.GetSchema().GetVersion(); version > 0 {
+		ddlt.logger.Warn("source collection has schema version > 0; the restored collection starts at 0 and CDC replay into the secondary will be rejected with STREAMING_CODE_SCHEMA_VERSION_MISMATCH until source and target schema versions are aligned",
+			zap.Int32("source_schema_version", version))
+	}
+
 	schema, err := conv.Schema(ddlt.collBackup.GetSchema())
 	if err != nil {
 		return fmt.Errorf("secondary: convert schema: %w", err)

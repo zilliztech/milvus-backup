@@ -141,6 +141,7 @@ func (ddlt *collDDLTask) convSchema(schema *schemapb.CollectionSchema) (*backupp
 		EnableDynamicField: schema.GetEnableDynamicField(),
 		Functions:          functions,
 		StructArrayFields:  structArrayFields,
+		Version:            schema.GetVersion(),
 	}
 
 	return bakSchema, nil

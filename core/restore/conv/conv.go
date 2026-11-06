@@ -181,6 +181,13 @@ func Schema(bakSchema *backuppb.CollectionSchema) (*schemapb.CollectionSchema, e
 		EnableDynamicField: bakSchema.GetEnableDynamicField(),
 		Properties:         properties,
 		StructArrayFields:  structArrayFields,
+		// The source collection's schema version. Currently advisory: rootcoord
+		// resets the schema version to 0 on CreateCollection and on the secondary
+		// path the create-collection broadcast callback does the same, so the
+		// restored collection always starts at 0. Consumers use GetVersion on the
+		// backup meta to warn about CDC version mismatches; once upstream honors a
+		// replicated create's carried version, this field becomes load-bearing.
+		Version: bakSchema.GetVersion(),
 	}
 
 	return schema, nil

@@ -14,6 +14,21 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 )
 
+func TestSchemaCarriesVersion(t *testing.T) {
+	bakSchema := &backuppb.CollectionSchema{
+		Name:    "name",
+		Version: 7,
+		Fields: []*backuppb.FieldSchema{
+			{FieldID: 100, Name: "pk", IsPrimaryKey: true, DataType: backuppb.DataType_Int64},
+		},
+	}
+
+	got, err := Schema(bakSchema)
+	require.NoError(t, err)
+	assert.Equal(t, bakSchema.GetName(), got.GetName())
+	assert.Equal(t, bakSchema.GetVersion(), got.GetVersion())
+}
+
 func TestDefaultValue(t *testing.T) {
 	t.Run("HasBase64", func(t *testing.T) {
 		defaultValue := &schemapb.ValueField{Data: &schemapb.ValueField_BoolData{BoolData: true}}
