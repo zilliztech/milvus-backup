@@ -8,25 +8,39 @@ milvus-backup drives that two-phase flow when it knows the secondaries: the impo
 
 ## How to use
 
-Pass the secondaries' REST endpoints with the `--secondaries` flag (comma-separated or repeated):
+Pass each secondary with a repeated `--secondary` flag in `address[,token]` form:
 
 ```shell
-milvus-backup restore -n my_backup --secondaries http://10.0.0.2:19530,http://10.0.0.3:19530
+milvus-backup restore -n my_backup \
+  --secondary 'http://10.0.0.2:19530,secondary_user:secondary_password' \
+  --secondary 'http://10.0.0.3:19530,raw-api-token'
 ```
 
-The RESTful API takes the same option as the `secondaries` string array of `POST /api/v1/restore`:
+The token is the raw Milvus credential: use `username:password` for a Milvus user, or an API token directly. Do not add a `Bearer ` prefix or base64-encode it. The flag splits only at the first comma, so later commas belong to the token. Omit the comma and token to inherit the restore target's `milvus.user` and `milvus.password`:
+
+```shell
+milvus-backup restore -n my_backup --secondary http://10.0.0.2:19530
+```
+
+The RESTful API takes a `secondaries` object array on `POST /api/v1/restore`, with the same address and raw-token semantics:
 
 ```json
-{"backup_name": "my_backup", "secondaries": ["http://10.0.0.2:19530", "http://10.0.0.3:19530"]}
+{
+  "backup_name": "my_backup",
+  "secondaries": [
+    {"address": "http://10.0.0.2:19530", "token": "secondary_user:secondary_password"},
+    {"address": "http://10.0.0.3:19530", "token": "raw-api-token"}
+  ]
+}
 ```
 
-On a replicating 3.0+ target a restore *without* `--secondaries` is refused up front, because the server no longer accepts plain auto-commit import jobs there; the same check runs when `--strategy per_seg` is combined with `--secondaries`, since the per-segment path imports through the v1 grpc api, which has no two-phase commit.
+On a replicating 3.0+ target a restore *without* `--secondary` is refused up front, because the server no longer accepts plain auto-commit import jobs there; the same check runs when `--strategy per_seg` is combined with `--secondary`, since the per-segment path imports through the v1 grpc api, which has no two-phase commit.
 
 > **Note**: Two-phase commit requires Milvus 3.0 or newer on the restore target and on every secondary.
 
 ## Prerequisites
 
-- The restore target runs Milvus 3.0+ with `dataCoord.import.enableInReplicatingCluster=true`, and every endpoint in `--secondaries` is a replication target of it.
+- The restore target runs Milvus 3.0+ with `dataCoord.import.enableInReplicatingCluster=true`, and every address passed with `--secondary` is a replication target of it.
 - **Every cluster must resolve the same object-storage paths.** An import job references bucket-relative file paths. milvus-backup stages the backup files once, into the restore target's storage, and each secondary's mirrored job reads the same paths from the secondary's own configured storage. The ends therefore need a shared bucket, or bucket content synced across clusters; a secondary whose storage does not see the staged files fails its mirror, and the restore reports the failure before committing anything.
 
 ## How it works

@@ -305,11 +305,11 @@ definitions:
         description: Per-database restore plan with renames and a task filter.
       secondaries:
         description: |-
-          REST endpoints of the secondary clusters that replicate this target,
-          e.g. http://10.0.0.2:19530; when set, every import job is committed
+          Secondary clusters that replicate this target. Each item carries its REST
+          address and optional raw token; when set, every import job is committed
           two-phase so its mirror commits on every secondary.
         items:
-          type: string
+          $ref: '#/definitions/apiv1.Secondary'
         type: array
       skipCreateCollection:
         description: |-
@@ -463,6 +463,13 @@ definitions:
         type: string
       targetClusterID:
         description: Cdc target cluster id.
+        type: string
+    type: object
+  apiv1.Secondary:
+    properties:
+      address:
+        type: string
+      token:
         type: string
     type: object
   apiv1.SkipParams:

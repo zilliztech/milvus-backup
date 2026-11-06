@@ -82,7 +82,9 @@ class TestRestoreSecondaries(TestcaseBase):
             "async": False,
             "backup_name": backup_name,
             "collection_suffix": "_secondaries",
-            "secondaries": [secondary_milvus_uri],
+            "secondaries": [
+                {"address": secondary_milvus_uri, "token": "root:Milvus"}
+            ],
         }
         res = self.client.restore_backup(payload)
         log.info(f"restore with secondaries response: {res}")
@@ -119,7 +121,7 @@ class TestRestoreSecondaries(TestcaseBase):
             "async": False,
             "backup_name": backup_name,
             "collection_suffix": "_bad_secondary",
-            "secondaries": ["127.0.0.1:19500"],
+            "secondaries": [{"address": "127.0.0.1:19500"}],
         }
         res = self.client.restore_backup(payload)
         log.info(f"restore with invalid secondary response: {res}")
@@ -137,11 +139,13 @@ class TestRestoreSecondaries(TestcaseBase):
             "backup_name": backup_name,
             "collection_suffix": "_per_seg",
             "strategy": "per_seg",
-            "secondaries": [secondary_milvus_uri],
+            "secondaries": [
+                {"address": secondary_milvus_uri, "token": "root:Milvus"}
+            ],
         }
         res = self.client.restore_backup(payload)
         log.info(f"restore with per_seg and secondaries response: {res}")
         assert res.get("code", 0) != 0
-        assert "--secondaries" in res.get("msg", "")
+        assert "secondaries" in res.get("msg", "")
         res, _ = self.utility_wrap.list_collections()
         assert name + "_per_seg" not in res

@@ -230,9 +230,9 @@ func validateRestoreRequest(request *apiv1.RestoreBackupRequest) error {
 	}
 
 	for _, secondary := range request.Secondaries {
-		u, err := url.Parse(secondary)
+		u, err := url.Parse(secondary.Address)
 		if err != nil || u.Scheme == "" || u.Host == "" {
-			return fmt.Errorf("invalid secondary %q, expect an http(s) url like http://10.0.0.2:19530", secondary)
+			return fmt.Errorf("invalid secondary address %q, expect an http(s) url like http://10.0.0.2:19530", secondary.Address)
 		}
 	}
 
@@ -281,6 +281,11 @@ func newOptionFromRequest(request *apiv1.RestoreBackupRequest) (*restore.Option,
 		return nil, err
 	}
 
+	secondaries := make([]restore.Secondary, 0, len(request.Secondaries))
+	for _, secondary := range request.Secondaries {
+		secondaries = append(secondaries, restore.Secondary{Address: secondary.Address, Token: secondary.Token})
+	}
+
 	return &restore.Option{
 		DropExistIndex:       request.DropExistIndex,
 		RebuildIndex:         request.RestoreIndex,
@@ -294,7 +299,7 @@ func newOptionFromRequest(request *apiv1.RestoreBackupRequest) (*restore.Option,
 		TruncateBinlogByTs:   request.TruncateBinlogByTs,
 		RestoreRBAC:          request.Rbac,
 		EZKMapping:           request.EzkMapping,
-		SecondaryEndpoints:   request.Secondaries,
+		Secondaries:          secondaries,
 	}, nil
 }
 

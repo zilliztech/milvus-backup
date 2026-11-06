@@ -681,10 +681,10 @@ const docTemplate = `{
                     ]
                 },
                 "secondaries": {
-                    "description": "REST endpoints of the secondary clusters that replicate this target,\ne.g. http://10.0.0.2:19530; when set, every import job is committed\ntwo-phase so its mirror commits on every secondary.",
+                    "description": "Secondary clusters that replicate this target. Each item carries its REST\naddress and optional raw token; when set, every import job is committed\ntwo-phase so its mirror commits on every secondary.",
                     "type": "array",
                     "items": {
-                        "type": "string"
+                        "$ref": "#/definitions/apiv1.Secondary"
                     }
                 },
                 "skipCreateCollection": {
@@ -898,6 +898,17 @@ const docTemplate = `{
                 },
                 "targetClusterID": {
                     "description": "Cdc target cluster id.",
+                    "type": "string"
+                }
+            }
+        },
+        "apiv1.Secondary": {
+            "type": "object",
+            "properties": {
+                "address": {
+                    "type": "string"
+                },
+                "token": {
                     "type": "string"
                 }
             }

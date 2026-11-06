@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
@@ -36,6 +38,44 @@ func newTestTask() *Task {
 			Params: &cfg.Config{},
 			Store:  store,
 		},
+	}
+}
+
+func TestNewSecondaryRestfulAuthentication(t *testing.T) {
+	tests := []struct {
+		name  string
+		token string
+		want  string
+	}{
+		{name: "UserPasswordTokenOverridesPrimary", token: "secondary:secret", want: "Bearer secondary:secret"},
+		{name: "APITokenOverridesPrimary", token: "raw-api-token", want: "Bearer raw-api-token"},
+		{name: "EmptyTokenInheritsPrimary", want: "Bearer primary:password"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			authorization := make(chan string, 1)
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				authorization <- r.Header.Get("Authorization")
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(`{"code":0}`))
+			}))
+			defer srv.Close()
+
+			primary := &cfg.MilvusConfig{}
+			primary.User.Val = "primary"
+			primary.Password.Val = "password"
+			primary.Rest.Endpoint.Val = "http://primary:19530"
+
+			cli, err := newSecondaryRestful(primary, Secondary{Address: srv.URL, Token: tt.token})
+			require.NoError(t, err)
+			require.NoError(t, cli.CommitImport(t.Context(), "db1", "job1"))
+			assert.Equal(t, tt.want, <-authorization)
+
+			assert.Equal(t, "primary", primary.User.Val)
+			assert.Equal(t, "password", primary.Password.Val)
+			assert.Equal(t, "http://primary:19530", primary.Rest.Endpoint.Val)
+		})
 	}
 }
 
@@ -143,7 +183,7 @@ func TestCheckSnapshotSupport(t *testing.T) {
 	t.Run("RefusedOnEveryStrategy", func(t *testing.T) {
 		for _, strategy := range []Strategy{StrategyRestoreSnap, StrategyImportSnap} {
 			assert.Error(t, checkSnapshotSupport(&Option{TruncateBinlogByTs: true}, strategy))
-			assert.Error(t, checkSnapshotSupport(&Option{SecondaryEndpoints: []string{"http://secondary:19530"}}, strategy))
+			assert.Error(t, checkSnapshotSupport(&Option{Secondaries: []Secondary{{Address: "http://secondary:19530"}}}, strategy))
 		}
 	})
 
@@ -208,7 +248,10 @@ func TestTask_CheckImport2PCSetup(t *testing.T) {
 
 	newTaskWithSecondaries := func(secondaries []string, grpcCli *milvus.MockGrpc) *Task {
 		task := newTestTask()
-		task.args.Option = &Option{SecondaryEndpoints: secondaries}
+		configs := lo.Map(secondaries, func(address string, _ int) Secondary {
+			return Secondary{Address: address}
+		})
+		task.args.Option = &Option{Secondaries: configs}
 		task.grpc = grpcCli
 		return task
 	}
@@ -240,6 +283,25 @@ func TestTask_CheckImport2PCSetup(t *testing.T) {
 		assert.ErrorContains(t, err, "not part of a replication topology")
 	})
 
+	t.Run("SecondariesErrorDoesNotLeakToken", func(t *testing.T) {
+		grpcCli := milvus.NewMockGrpc(t)
+		grpcCli.EXPECT().HasFeature(milvus.Import2PC).Return(true)
+		grpcCli.EXPECT().GetReplicateConfiguration(mock.Anything).
+			Return(&commonpb.ReplicateConfiguration{}, nil)
+
+		task := newTestTask()
+		task.args.Option = &Option{Secondaries: []Secondary{{
+			Address: "http://secondary:19530",
+			Token:   "secret-token",
+		}}}
+		task.grpc = grpcCli
+
+		err := task.checkImport2PCSetup(t.Context())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "http://secondary:19530")
+		assert.NotContains(t, err.Error(), "secret-token")
+	})
+
 	t.Run("SecondariesWithReplicationOK", func(t *testing.T) {
 		grpcCli := milvus.NewMockGrpc(t)
 		grpcCli.EXPECT().HasFeature(milvus.Import2PC).Return(true)
@@ -254,7 +316,7 @@ func TestTask_CheckImport2PCSetup(t *testing.T) {
 		grpcCli.EXPECT().GetReplicateConfiguration(mock.Anything).Return(replicatingCfg, nil)
 
 		err := newTaskWithSecondaries(nil, grpcCli).checkImport2PCSetup(t.Context())
-		assert.ErrorContains(t, err, "--secondaries")
+		assert.ErrorContains(t, err, "secondaries")
 	})
 
 	// Without secondaries the replication probe is best-effort: a target that
