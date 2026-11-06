@@ -57,9 +57,11 @@ func TestPreserveFieldIDsCapabilityAndWireRequest(t *testing.T) {
 			if !enabled {
 				return
 			}
-			schema := &schemapb.CollectionSchema{Name: "restored", EnableDynamicField: true,
-				Fields:            []*schemapb.FieldSchema{{FieldID: 100, Name: "id"}, {FieldID: 102, Name: "$meta", IsDynamic: true, DataType: schemapb.DataType_JSON}},
-				StructArrayFields: []*schemapb.StructArrayFieldSchema{{FieldID: 103, Name: "items", Fields: []*schemapb.FieldSchema{{FieldID: 109, Name: "value", ElementNullable: true}}}}}
+			schema := &schemapb.CollectionSchema{Name: "restored", Version: 3, EnableDynamicField: true, EnableNamespace: true,
+				Fields: []*schemapb.FieldSchema{{FieldID: 100, Name: "id"}, {FieldID: 101, Name: "$meta", IsDynamic: true, DataType: schemapb.DataType_JSON}, {FieldID: 102, Name: "$namespace_id", DataType: schemapb.DataType_VarChar}},
+				StructArrayFields: []*schemapb.StructArrayFieldSchema{{FieldID: 103, Name: "items", Fields: []*schemapb.FieldSchema{{FieldID: 109, Name: "value", DataType: schemapb.DataType_Array, ElementType: schemapb.DataType_Array, ElementNullable: true,
+					TypeSchema: &schemapb.TypeSchema{Kind: &schemapb.TypeSchema_ArrayElement{ArrayElement: &schemapb.TypeSchema{Nullable: true, Kind: &schemapb.TypeSchema_ArrayElement{ArrayElement: &schemapb.TypeSchema{Kind: &schemapb.TypeSchema_LeafType{LeafType: schemapb.DataType_Int64}}}}}},
+				}}}}}
 			require.NoError(t, client.CreateCollection(context.Background(), CreateCollectionInput{DB: "default", Schema: schema,
 				Properties: []*commonpb.KeyValuePair{{Key: "preserve_field_ids", Value: "true"}, {Key: "max_field_id", Value: "111"}}}))
 			request := <-srv.requests

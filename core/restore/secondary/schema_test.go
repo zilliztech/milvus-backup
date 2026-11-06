@@ -20,28 +20,26 @@ import (
 
 func secondaryEvolvedSchema(t *testing.T) *backuppb.CollectionSchema {
 	t.Helper()
-	source := &schemapb.CollectionSchema{Name: "test_coll", EnableDynamicField: true, EnableNamespace: true,
-		Fields: []*schemapb.FieldSchema{
-			{FieldID: 100, Name: "id", IsClusteringKey: true},
-			{FieldID: 102, Name: "$meta", IsDynamic: true, DataType: schemapb.DataType_JSON},
-			{FieldID: 103, Name: "$namespace_id", DataType: schemapb.DataType_VarChar},
-		},
-		Properties: []*commonpb.KeyValuePair{{Key: "max_field_id", Value: "111"}},
-		Functions:  []*schemapb.FunctionSchema{{Id: 100, Name: "function", InputFieldIds: []int64{100}, InputFieldNames: []string{"id"}}},
-		StructArrayFields: []*schemapb.StructArrayFieldSchema{{FieldID: 104, Name: "items", Fields: []*schemapb.FieldSchema{
-			{FieldID: 109, Name: "value", DataType: schemapb.DataType_Array, ElementType: schemapb.DataType_Array, ElementNullable: true,
-				TypeSchema: &schemapb.TypeSchema{Kind: &schemapb.TypeSchema_ArrayElement{ArrayElement: &schemapb.TypeSchema{Kind: &schemapb.TypeSchema_LeafType{LeafType: schemapb.DataType_Int64}}}}},
-		}}}}
-	data, err := proto.Marshal(source)
+	typeSchema, err := proto.Marshal(&schemapb.TypeSchema{Kind: &schemapb.TypeSchema_ArrayElement{ArrayElement: &schemapb.TypeSchema{Kind: &schemapb.TypeSchema_LeafType{LeafType: schemapb.DataType_Int64}}}})
 	require.NoError(t, err)
-	return &backuppb.CollectionSchema{SchemaProto: data}
+	return &backuppb.CollectionSchema{Name: "test_coll", Version: 3, EnableDynamicField: true, EnableNamespace: true,
+		Fields: []*backuppb.FieldSchema{
+			{FieldID: 100, Name: "id"},
+			{FieldID: 102, Name: "$meta", IsDynamic: true, DataType: backuppb.DataType_JSON},
+			{FieldID: 103, Name: "$namespace_id", DataType: backuppb.DataType_VarChar},
+		},
+		Properties: []*backuppb.KeyValuePair{{Key: "max_field_id", Value: "111"}},
+		Functions:  []*backuppb.FunctionSchema{{Id: 100, Name: "function", InputFieldIds: []int64{100}, InputFieldNames: []string{"id"}}},
+		StructArrayFields: []*backuppb.StructArrayFieldSchema{{FieldID: 104, Name: "items", Fields: []*backuppb.FieldSchema{
+			{FieldID: 109, Name: "value", DataType: backuppb.DataType_Array, ElementType: backuppb.DataType_Array, ElementNullable: true, TypeSchema: typeSchema},
+		}}}}
 }
 
 func assertSecondarySchema(t *testing.T, schema *schemapb.CollectionSchema) {
 	t.Helper()
 	assert.True(t, schema.GetEnableNamespace())
 	assert.True(t, schema.GetEnableDynamicField())
-	assert.True(t, schema.GetFields()[0].GetIsClusteringKey())
+	assert.Equal(t, int32(3), schema.GetVersion())
 	assert.Equal(t, int64(102), schema.GetFields()[1].GetFieldID())
 	assert.Equal(t, int64(103), schema.GetFields()[2].GetFieldID())
 	assert.Equal(t, int64(100), schema.GetFunctions()[0].GetId())
@@ -118,7 +116,6 @@ func TestSecondaryMessagesUseResponseProperties(t *testing.T) {
 			stream := &recordingStream{}
 			coll := newTestCollBackup(newTestVChannels(), []*backuppb.PartitionBackupInfo{{PartitionId: 10, PartitionName: "_default"}}, nil)
 			coll.Schema = secondaryEvolvedSchema(t)
-			originalBytes := append([]byte(nil), coll.GetSchema().GetSchemaProto()...)
 			coll.Properties = []*backuppb.KeyValuePair{{Key: "max_field_id", Value: "200"}, {Key: "response.only", Value: "carry"}}
 			switch name {
 			case "CollectionDDL":
@@ -151,17 +148,14 @@ func TestSecondaryMessagesUseResponseProperties(t *testing.T) {
 				assert.Equal(t, "200", pbconv.MilvusKVToMap(schema.GetProperties())["max_field_id"])
 				assert.Equal(t, "carry", pbconv.MilvusKVToMap(schema.GetProperties())["response.only"])
 			}
-			assert.Equal(t, originalBytes, coll.GetSchema().GetSchemaProto())
+			assert.Equal(t, "111", pbconv.MilvusKVToMap(pbconv.BakKVToMilvusKV(coll.GetSchema().GetProperties()))["max_field_id"], "conversion must not mutate metadata")
 		})
 	}
 }
 
 func TestSecondaryPreflightUsesResponseNamespaceMode(t *testing.T) {
-	source := &schemapb.CollectionSchema{Name: "namespaced", EnableNamespace: true,
-		Fields: []*schemapb.FieldSchema{{FieldID: 100, Name: "id"}}}
-	data, err := proto.Marshal(source)
-	require.NoError(t, err)
-	coll := &backuppb.CollectionBackupInfo{CollectionName: "namespaced", Schema: &backuppb.CollectionSchema{SchemaProto: data},
+	coll := &backuppb.CollectionBackupInfo{CollectionName: "namespaced", Schema: &backuppb.CollectionSchema{Name: "namespaced", EnableNamespace: true,
+		Fields: []*backuppb.FieldSchema{{FieldID: 100, Name: "id"}}},
 		Properties: []*backuppb.KeyValuePair{{Key: "namespace.mode", Value: "partition"}}}
 	assert.NoError(t, taskWithBackup(milvus.NewMockGrpc(t), coll).checkSchemaSupport())
 }
