@@ -1189,7 +1189,7 @@ jobs:
             --downstream-uri downstream-standalone:19530
 
       # Two-phase import restore: restore the backup back into the upstream
-      # (now a replication source) with --secondaries aimed at the downstream,
+      # (now a replication source) with --secondary aimed at the downstream,
       # so every import job holds at Uncommitted until its mirror shows up on
       # the secondary and is then committed on both ends. 3.0+ only: the
       # commit endpoint and the enableInReplicatingCluster toggle exist on
@@ -1200,7 +1200,7 @@ jobs:
         shell: bash
         run: |
           yq -i '.milvus.grpc.port = 19530' configs/backup.yaml
-          ./milvus-backup restore -n my_backup --suffix _2pc --secondaries http://127.0.0.1:19500
+          ./milvus-backup restore -n my_backup --suffix _2pc --secondary http://127.0.0.1:19500
 
       - name: Verify two-phase restore on both ends
         if: ${{ matrix.two_phase_commit }}

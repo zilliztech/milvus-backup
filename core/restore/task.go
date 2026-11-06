@@ -110,6 +110,13 @@ func (r *TableMapper) TargetNames(collRef collref.Name) []collref.Name {
 	return []collref.Name{collRef}
 }
 
+// Secondary identifies a cluster that mirrors the target's import jobs. Token
+// is the raw Milvus token; empty inherits the target's user/password.
+type Secondary struct {
+	Address string
+	Token   string
+}
+
 type Option struct {
 	// Index related options
 	DropExistIndex bool
@@ -129,12 +136,11 @@ type Option struct {
 	Strategy           Strategy
 	TruncateBinlogByTs bool
 
-	// SecondaryEndpoints are the REST endpoints of the secondary clusters that
-	// mirror the target's import jobs over the replication stream. When set,
-	// every import job is committed two-phase: held at Uncommitted until every
-	// secondary's mirror is there too, then committed on the target and all
-	// secondaries. Empty for a plain restore.
-	SecondaryEndpoints []string
+	// Secondaries are the clusters that mirror the target's import jobs over
+	// the replication stream. When set, every import job is committed two-phase:
+	// held at Uncommitted until every secondary's mirror is there too, then
+	// committed on the target and all secondaries. Empty for a plain restore.
+	Secondaries []Secondary
 
 	RestoreRBAC bool
 
@@ -262,7 +268,7 @@ func checkSnapshotSupport(opt *Option, strategy Strategy) error {
 	if opt.TruncateBinlogByTs {
 		unsupported = append(unsupported, "truncate_binlog_by_ts")
 	}
-	if len(opt.SecondaryEndpoints) != 0 {
+	if len(opt.Secondaries) != 0 {
 		unsupported = append(unsupported, "secondaries")
 	}
 	// A description override stays available on both paths: the restore api applies it
@@ -475,6 +481,15 @@ func (t *Task) checkCollExist(ctx context.Context, target collref.Name) error {
 	return nil
 }
 
+func newSecondaryRestful(primary *cfg.MilvusConfig, secondary Secondary) (*milvus.RestfulClient, error) {
+	secondaryCfg := *primary
+	secondaryCfg.Rest.Endpoint.Val = secondary.Address
+	if secondary.Token != "" {
+		return milvus.NewRestfulWithToken(&secondaryCfg, secondary.Token)
+	}
+	return milvus.NewRestful(&secondaryCfg)
+}
+
 func (t *Task) initClients() error {
 	grpcCli, err := milvus.NewGrpc(&t.args.Params.Milvus)
 	if err != nil {
@@ -488,16 +503,12 @@ func (t *Task) initClients() error {
 	}
 	t.restful = restfulCli
 
-	for _, endpoint := range t.args.Option.SecondaryEndpoints {
-		// A secondary shares the target's credentials — a replication pair
-		// practically always does — and differs only in the REST endpoint.
-		secondaryCfg := t.args.Params.Milvus
-		secondaryCfg.Rest.Endpoint.Val = endpoint
-		secondaryCli, err := milvus.NewRestful(&secondaryCfg)
+	for _, secondary := range t.args.Option.Secondaries {
+		secondaryCli, err := newSecondaryRestful(&t.args.Params.Milvus, secondary)
 		if err != nil {
-			return fmt.Errorf("restore: create secondary restful client for %s: %w", endpoint, err)
+			return fmt.Errorf("restore: create secondary restful client for %s: %w", secondary.Address, err)
 		}
-		t.secondaries = append(t.secondaries, importSecondary{addr: endpoint, cli: secondaryCli})
+		t.secondaries = append(t.secondaries, importSecondary{addr: secondary.Address, cli: secondaryCli})
 	}
 
 	return nil
@@ -596,11 +607,11 @@ func (t *Task) privateExecute(ctx context.Context) error {
 // secondary by replication; every mismatch fails here, before any DDL runs,
 // rather than as one rejected import job per collection.
 func (t *Task) checkImport2PCSetup(ctx context.Context) error {
-	hasSecondaries := len(t.args.Option.SecondaryEndpoints) != 0
+	hasSecondaries := len(t.args.Option.Secondaries) != 0
 	has2PC := t.grpc.HasFeature(milvus.Import2PC)
 
 	if hasSecondaries && !has2PC {
-		return fmt.Errorf("restore: --secondaries asks for two-phase committed imports, which need a " +
+		return fmt.Errorf("restore: the secondaries option asks for two-phase committed imports, which need a " +
 			"Milvus 3.0 or newer target; this server is older")
 	}
 	if !hasSecondaries && !has2PC {
@@ -612,7 +623,7 @@ func (t *Task) checkImport2PCSetup(ctx context.Context) error {
 	repCfg, err := t.grpc.GetReplicateConfiguration(ctx)
 	if err != nil {
 		if hasSecondaries {
-			return fmt.Errorf("restore: read the target's replication configuration to validate --secondaries: %w", err)
+			return fmt.Errorf("restore: read the target's replication configuration to validate secondaries: %w", err)
 		}
 		t.logger.Warn("cannot read the target's replication configuration, skipping the two-phase commit check",
 			zap.Error(err))
@@ -624,14 +635,18 @@ func (t *Task) checkImport2PCSetup(ctx context.Context) error {
 		(len(repCfg.GetCrossClusterTopology()) > 0 || len(repCfg.GetClusters()) > 1)
 
 	if hasSecondaries && !replicating {
-		return fmt.Errorf("restore: --secondaries is set (%s) but the target is not part of a replication "+
+		addresses := make([]string, 0, len(t.args.Option.Secondaries))
+		for _, secondary := range t.args.Option.Secondaries {
+			addresses = append(addresses, secondary.Address)
+		}
+		return fmt.Errorf("restore: secondaries are set (%s) but the target is not part of a replication "+
 			"topology, so no cluster will ever mirror its import jobs for the secondaries to commit; "+
-			"drop --secondaries, or set up replication first", strings.Join(t.args.Option.SecondaryEndpoints, ","))
+			"remove secondaries, or set up replication first", strings.Join(addresses, ","))
 	}
 	if !hasSecondaries && replicating {
 		return fmt.Errorf("restore: the target is part of a replication topology, where Milvus " +
-			"rejects auto-commit import jobs; pass --secondaries with the secondaries' REST " +
-			"endpoints so imports commit two-phase on all ends (the target also needs " +
+			"rejects auto-commit import jobs; configure secondaries with their REST addresses " +
+			"so imports commit two-phase on all ends (the target also needs " +
 			"dataCoord.import.enableInReplicatingCluster=true to accept import jobs at all)")
 	}
 

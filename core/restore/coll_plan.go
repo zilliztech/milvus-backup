@@ -59,7 +59,7 @@ func (t *Task) selectPlan(ctx context.Context, targets []collTarget) (tasklet.Ta
 	// A secondary commit rides the restful import api: the v1 grpc import has
 	// no two-phase commit at all. Auto resolves to the restful plan directly —
 	// the preflight has already established the target is new enough.
-	hasSecondaries := len(t.args.Option.SecondaryEndpoints) != 0
+	hasSecondaries := len(t.args.Option.Secondaries) != 0
 
 	switch strategy := t.args.Option.Strategy; strategy {
 	case StrategyAuto:
@@ -85,7 +85,7 @@ func (t *Task) selectPlan(ctx context.Context, targets []collTarget) (tasklet.Ta
 			return nil, wrongFormat("per_seg", meta.FormatBinlog, t.format)
 		}
 		if hasSecondaries {
-			return nil, errors.New("restore: --secondaries needs the restful import api for its two-phase " +
+			return nil, errors.New("restore: the secondaries option needs the restful import api for its two-phase " +
 				"commit, but the per_seg strategy imports through the v1 grpc api; use merged_seg or auto")
 		}
 		t.logger.Info("use binlog grpc plan")

@@ -137,7 +137,7 @@ func (rt *importViaRESTFul2PCTask) waitSecondaryMirrored(ctx context.Context, se
 				return fmt.Errorf("restore: the secondary %s still does not know the mirrored import "+
 					"job %s after %s — the secondary is expected to be a replication target of "+
 					"the cluster being restored into, mirroring its import jobs under the same "+
-					"job id; check that --secondaries points at that cluster and that the "+
+					"job id; check that the secondaries option points at that cluster and that the "+
 					"replication stream is running", secondary.addr, jobID, _secondaryMirrorTimeout)
 			}
 		default:

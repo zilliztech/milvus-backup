@@ -53,6 +53,25 @@ type options struct {
 	secondaries          []string
 }
 
+func (o *options) parseSecondaries() ([]restore.Secondary, error) {
+	secondaries := make([]restore.Secondary, 0, len(o.secondaries))
+	for _, value := range o.secondaries {
+		address, token, hasToken := strings.Cut(value, ",")
+		if address == "" {
+			return nil, errors.New("secondary address is required")
+		}
+		u, err := url.Parse(address)
+		if err != nil || u.Scheme == "" || u.Host == "" {
+			return nil, fmt.Errorf("invalid secondary address %q, expect an http(s) url like http://10.0.0.2:19530", address)
+		}
+		if hasToken && token == "" {
+			return nil, fmt.Errorf("invalid secondary %q, token must not be empty after the comma", address)
+		}
+		secondaries = append(secondaries, restore.Secondary{Address: address, Token: token})
+	}
+	return secondaries, nil
+}
+
 func (o *options) validate() error {
 	// TODO: add more validation
 	if o.backupName == "" {
@@ -71,11 +90,8 @@ func (o *options) validate() error {
 		return fmt.Errorf("invalid strategy %s, only support %s", o.strategy, strings.Join(restore.SupportStrategy(), ","))
 	}
 
-	for _, secondary := range o.secondaries {
-		u, err := url.Parse(secondary)
-		if err != nil || u.Scheme == "" || u.Host == "" {
-			return fmt.Errorf("invalid secondary %q, expect an http(s) url like http://10.0.0.2:19530", secondary)
-		}
+	if _, err := o.parseSecondaries(); err != nil {
+		return err
 	}
 
 	return nil
@@ -99,7 +115,7 @@ func (o *options) addFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVarP(&o.skipCreateCollection, "skip_create_collection", "", false, "if true, will skip collection, use when collection exist, restore index or data")
 	cmd.Flags().BoolVarP(&o.rbac, "rbac", "", false, "whether restore RBAC meta")
 	cmd.Flags().StringVarP(&o.strategy, "strategy", "", "", "restore strategy, one of [auto, per_seg, merged_seg, restore_snap, import_snap], if not set will auto select")
-	cmd.Flags().StringSliceVarP(&o.secondaries, "secondaries", "", nil, "REST endpoints of the secondary clusters that replicate this target, comma-separated or repeated, e.g. --secondaries http://10.0.0.2:19530,http://10.0.0.3:19530. Every import job is then committed two-phase: held uncommitted until its mirror shows up on every secondary, then committed on this cluster; the commit replicates and commits the mirrors")
+	cmd.Flags().StringArrayVarP(&o.secondaries, "secondary", "", nil, "secondary REST address and optional raw token, format address[,token], repeated for multiple clusters; token is username:password or an API token, and omitting it inherits milvus.user/password. Every import job is committed two-phase once any secondary is set")
 
 	// The deprecated bool of the pre-strategy days keeps working so an old
 	// command line restores exactly what it used to: cobra answers every use
@@ -125,6 +141,11 @@ func (o *options) toOption() (*restore.Option, error) {
 		strategy = restore.StrategyMergedSeg
 	}
 
+	secondaries, err := o.parseSecondaries()
+	if err != nil {
+		return nil, err
+	}
+
 	return &restore.Option{
 		DropExistIndex:       o.dropExistIndex,
 		RebuildIndex:         o.rebuildIndex,
@@ -134,7 +155,7 @@ func (o *options) toOption() (*restore.Option, error) {
 		MetaOnly:             o.metaOnly,
 		Strategy:             strategy,
 		RestoreRBAC:          o.rbac,
-		SecondaryEndpoints:   o.secondaries,
+		Secondaries:          secondaries,
 	}, nil
 }
 

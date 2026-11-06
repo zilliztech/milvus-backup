@@ -67,12 +67,15 @@ func TestValidateRestoreRequest(t *testing.T) {
 	})
 
 	t.Run("ValidSecondaries", func(t *testing.T) {
-		request := &apiv1.RestoreBackupRequest{BackupName: "backup", Secondaries: []string{"http://10.0.0.2:19530", "http://10.0.0.3:19530"}}
+		request := &apiv1.RestoreBackupRequest{BackupName: "backup", Secondaries: []apiv1.Secondary{
+			{Address: "http://10.0.0.2:19530", Token: "user:password"},
+			{Address: "http://10.0.0.3:19530"},
+		}}
 		assert.NoError(t, validateRestoreRequest(request))
 	})
 
 	t.Run("InvalidSecondary", func(t *testing.T) {
-		request := &apiv1.RestoreBackupRequest{BackupName: "backup", Secondaries: []string{"10.0.0.2:19530"}}
+		request := &apiv1.RestoreBackupRequest{BackupName: "backup", Secondaries: []apiv1.Secondary{{Address: "10.0.0.2:19530"}}}
 		assert.Error(t, validateRestoreRequest(request))
 	})
 }
@@ -598,20 +601,36 @@ func TestHandleRestoreBackup(t *testing.T) {
 		stub := &stubRestoreFactory{job: job}
 		s := newListTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{status: newStubRestoreStatus()}, nil))
 
-		resp := restoreBackup(t, s, `{"backup_name":"backup1","secondaries":["http://10.0.0.2:19530","http://10.0.0.3:19530"]}`, "rid-1")
+		resp := restoreBackup(t, s, `{"backup_name":"backup1","secondaries":[{"address":"http://10.0.0.2:19530","token":"user:password"},{"address":"http://10.0.0.3:19530","token":"raw-api-token"}]}`, "rid-1")
 
 		assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
-		assert.Equal(t, []string{"http://10.0.0.2:19530", "http://10.0.0.3:19530"}, stub.req.Option.SecondaryEndpoints)
+		assert.Equal(t, []restore.Secondary{
+			{Address: "http://10.0.0.2:19530", Token: "user:password"},
+			{Address: "http://10.0.0.3:19530", Token: "raw-api-token"},
+		}, stub.req.Option.Secondaries)
 	})
 
 	t.Run("RejectsInvalidSecondaryWithoutBuildingAJob", func(t *testing.T) {
 		stub := &stubRestoreFactory{}
 		s := newListTestServer(t, withRestoreBackup(stub))
 
-		resp := restoreBackup(t, s, `{"backup_name":"backup1","secondaries":["10.0.0.2:19530"]}`, "rid-1")
+		resp := restoreBackup(t, s, `{"backup_name":"backup1","secondaries":[{"address":"10.0.0.2:19530"}]}`, "rid-1")
 
 		assert.Equal(t, backuppb.ResponseCode_Parameter_Error, resp.GetCode())
 		assert.Contains(t, resp.GetMsg(), "invalid secondary")
+		assert.Zero(t, stub.calls)
+	})
+
+	t.Run("RejectsLegacyStringSecondaries", func(t *testing.T) {
+		stub := &stubRestoreFactory{}
+		s := newListTestServer(t, withRestoreBackup(stub))
+
+		w := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodPost, "/api/v1/restore", strings.NewReader(
+			`{"backup_name":"backup1","secondaries":["http://10.0.0.2:19530"]}`))
+		s.engine.ServeHTTP(w, req)
+
+		assert.Equal(t, http.StatusBadRequest, w.Code)
 		assert.Zero(t, stub.calls)
 	})
 

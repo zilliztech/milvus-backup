@@ -211,7 +211,7 @@ func TestTask_selectPlan(t *testing.T) {
 	// losing the two-phase commit.
 	t.Run("BinlogAutoWithSecondariesUsesRestful", func(t *testing.T) {
 		task := newSelectPlanTask(t, meta.FormatBinlog, StrategyAuto)
-		task.args.Option.SecondaryEndpoints = []string{"http://secondary:19530"}
+		task.args.Option.Secondaries = []Secondary{{Address: "http://secondary:19530"}}
 		grpcCli := milvus.NewMockGrpc(t)
 		grpcCli.EXPECT().HasFeature(milvus.MultiL0InOneJob).Return(false).Maybe()
 		task.grpc = grpcCli
@@ -223,10 +223,10 @@ func TestTask_selectPlan(t *testing.T) {
 
 	t.Run("BinlogPerSegWithSecondariesFails", func(t *testing.T) {
 		task := newSelectPlanTask(t, meta.FormatBinlog, StrategyPerSeg)
-		task.args.Option.SecondaryEndpoints = []string{"http://secondary:19530"}
+		task.args.Option.Secondaries = []Secondary{{Address: "http://secondary:19530"}}
 
 		_, err := task.selectPlan(t.Context(), nil)
-		assert.ErrorContains(t, err, "--secondaries")
+		assert.ErrorContains(t, err, "secondaries")
 	})
 }
 
