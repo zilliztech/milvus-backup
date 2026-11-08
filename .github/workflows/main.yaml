@@ -1276,8 +1276,19 @@ jobs:
 
   test-backup-restore-secondary-api:
     needs: unit-test-go
-    name: Backup and restore secondary api
+    name: Backup and restore secondary api (${{ matrix.scenario }})
     runs-on: ubuntu-latest
+    # The master scenario runs for signal but does not gate CI (see
+    # cross-version for the rationale).
+    continue-on-error: ${{ matrix.scenario == 'same-version-master' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - scenario: same-version-3.0
+            image_tag: 3.0-latest
+          - scenario: same-version-master
+            image_tag: master-latest
     steps:
       - uses: actions/checkout@v7
 
@@ -1308,14 +1319,14 @@ jobs:
         run: |
           pip install -r requirements.txt --trusted-host https://test.pypi.org
 
-      # Master is the only line with import two-phase commit, which the
+      # Both 3.0 and master have import two-phase commit, which the
       # restful secondaries test exercises; the secondary restore api runs here too.
       - name: Deploy dual Milvus
         timeout-minutes: 15
         shell: bash
         working-directory: deployment/secondary
         run: |
-          tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag master-latest) && echo $tag
+          tag=$(python ../../scripts/get_image_tag_by_short_name.py --tag ${{ matrix.image_tag }}) && echo $tag
           yq -i ".services.upstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
           yq -i ".services.downstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
           yq -i ".services.upstream-cdc.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
@@ -1417,7 +1428,7 @@ jobs:
         if: ${{ ! success() }}
         uses: actions/upload-artifact@v7
         with:
-          name: secondary-restore-api-logs
+          name: secondary-restore-api-logs-${{ matrix.scenario }}
           path: |
             /tmp/ci_logs
 
