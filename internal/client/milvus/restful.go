@@ -361,12 +361,22 @@ func restfulAuth(username, password string) string {
 }
 
 func NewRestful(c *cfg.MilvusConfig) (*RestfulClient, error) {
+	return newRestful(c, restfulAuth(c.User.Val, c.Password.Val))
+}
+
+// NewRestfulWithToken authenticates with a raw Milvus token, either
+// username:password or an API token. The caller supplies neither a Bearer
+// prefix nor base64 encoding; the REST transport adds the Bearer prefix.
+func NewRestfulWithToken(c *cfg.MilvusConfig, token string) (*RestfulClient, error) {
+	return newRestful(c, token)
+}
+
+func newRestful(c *cfg.MilvusConfig, auth string) (*RestfulClient, error) {
 	baseURL := restfulBaseURL(c)
 	log.Info("new milvus restful client", zap.String("baseURL", baseURL))
 
 	cli := req.C().SetBaseURL(baseURL)
-
-	if auth := restfulAuth(c.User.Val, c.Password.Val); len(auth) != 0 {
+	if len(auth) != 0 {
 		cli.SetCommonBearerAuthToken(auth)
 	}
 

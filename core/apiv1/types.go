@@ -161,6 +161,14 @@ type RestoreSecondaryRequest struct {
 	Path string `json:"path,omitempty"`
 }
 
+// Secondary identifies a cluster that mirrors the restore target's import jobs.
+// Token is the raw Milvus token: username:password or an API token, without a
+// Bearer prefix or base64 encoding. Empty inherits the target's credentials.
+type Secondary struct {
+	Address string `json:"address"`
+	Token   string `json:"token,omitempty"`
+}
+
 type RestoreBackupRequest struct {
 	// Uuid of request, defaults to a generated one when unset.
 	RequestId string `json:"requestId,omitempty"`
@@ -223,10 +231,10 @@ type RestoreBackupRequest struct {
 	// import_snap]; auto, like leaving the field unset, lets the restore pick
 	// the plan against the backup's format.
 	Strategy string `json:"strategy,omitempty"`
-	// REST endpoints of the secondary clusters that replicate this target,
-	// e.g. http://10.0.0.2:19530; when set, every import job is committed
+	// Secondary clusters that replicate this target. Each item carries its REST
+	// address and optional raw token; when set, every import job is committed
 	// two-phase so its mirror commits on every secondary.
-	Secondaries []string `json:"secondaries,omitempty"`
+	Secondaries []Secondary `json:"secondaries,omitempty"`
 }
 
 // SkipParams names the collection, field and index params the restore leaves

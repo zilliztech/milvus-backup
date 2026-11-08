@@ -204,7 +204,7 @@ func TestImportViaRESTFul2PCTaskExecute(t *testing.T) {
 			task := newTwoPCTask(t, local, secondary)
 			err := task.Execute(t.Context())
 			require.Error(t, err)
-			assert.Contains(t, err.Error(), "--secondaries")
+			assert.Contains(t, err.Error(), "secondaries option")
 
 			assert.Equal(t, []string{"local:create", "local:abort"}, log)
 		})
