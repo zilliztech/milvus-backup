@@ -144,14 +144,18 @@ func TestCollSnapDMLTask_SendImportMsg(t *testing.T) {
 		assert.NotContains(t, opts, "storage_version")
 		assert.NotContains(t, opts, "ezk")
 
-		// The schema travels with the system fields appended, as every other
-		// replayed message carries it.
+		// The import job's schema is the user schema. Milvus appends the system
+		// fields itself; a schema carrying explicit RowID/Timestamp makes the
+		// import pipeline synthesize the system columns a second time, and the
+		// storage v3 pack writer then fails on the duplicated columns
+		// ("Column [col_name=0] not found in schema"). The create-collection
+		// broadcast is the only replayed message that carries them.
 		fieldNames := make([]string, 0, len(body.GetSchema().GetFields()))
 		for _, field := range body.GetSchema().GetFields() {
 			fieldNames = append(fieldNames, field.GetName())
 		}
-		assert.Contains(t, fieldNames, "RowID")
-		assert.Contains(t, fieldNames, "Timestamp")
+		assert.NotContains(t, fieldNames, "RowID")
+		assert.NotContains(t, fieldNames, "Timestamp")
 	}
 }
 

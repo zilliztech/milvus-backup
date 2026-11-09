@@ -426,7 +426,6 @@ func (dmlt *collBinlogDMLTask) sendImportMsg(ctx context.Context, partitionID in
 	if err := checkDynamicField(schema); err != nil {
 		return 0, err
 	}
-	appendSysFields(schema)
 
 	err = dmlt.streamCli.Send(ctx, func(ts uint64) []message.MutableMessage {
 		header := &message.ImportMessageHeader{}
