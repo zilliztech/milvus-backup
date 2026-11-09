@@ -254,7 +254,6 @@ func (st *collSnapDMLTask) sendImportMsg(ctx context.Context) (int64, error) {
 	if err := checkDynamicField(schema); err != nil {
 		return 0, err
 	}
-	appendSysFields(schema)
 
 	err = st.streamCli.Send(ctx, func(ts uint64) []message.MutableMessage {
 		header := &message.ImportMessageHeader{}
