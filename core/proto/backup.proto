@@ -327,6 +327,12 @@ message CollectionSchema {
   repeated KeyValuePair properties = 6;
   repeated FunctionSchema functions = 7;
   repeated StructArrayFieldSchema struct_array_fields = 9;
+  // The source collection's schema version at backup time (schemapb.CollectionSchema.version).
+  // Server-assigned: 0 when the collection is created, +1 on every schema-update DDL.
+  // Recorded so a restored collection can be aligned with its source; a collection
+  // restored with a version lower than its source breaks CDC replay of inserts
+  // (STREAMING_CODE_SCHEMA_VERSION_MISMATCH). Field number mirrors the upstream proto.
+  int32 version = 10;
 }
 
 message StructArrayFieldSchema {
