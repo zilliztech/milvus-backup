@@ -2,6 +2,7 @@ package restore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -12,6 +13,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore/conv"
+	"github.com/zilliztech/milvus-backup/core/restore/fieldid"
 	"github.com/zilliztech/milvus-backup/core/tasklet"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
@@ -578,6 +580,13 @@ func (t *Task) privateExecute(ctx context.Context) error {
 		return fmt.Errorf("restore: select plan: %w", err)
 	}
 
+	// Nothing has touched the target yet: refuse a backup whose columns the
+	// create path cannot key back to their source ids before any database,
+	// RBAC or collection side effect.
+	if err := t.checkFieldIDsReproducible(collTargets, plan); err != nil {
+		return fmt.Errorf("restore: check source field ids: %w", err)
+	}
+
 	if err := t.restoreRBAC(ctx); err != nil {
 		return fmt.Errorf("restore: restore rbac %w", err)
 	}
@@ -599,6 +608,39 @@ func (t *Task) privateExecute(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+// checkFieldIDsReproducible is the pre-create half of the field id gate. It
+// models the create path for every collection that will import rows, so a
+// backup whose columns cannot be reproduced fails before a target collection is
+// dropped or created. The post-create check in the ddl task is the exact one;
+// this one only buys an early, side-effect-free failure.
+//
+// Two paths are exempt. The restore api creates the collection from the
+// bundle's own schema and keeps its ids. meta_only imports no row.
+// skip_create_collection means the target was made outside restore and cannot
+// be modeled here; the post-create check judges the real collection.
+func (t *Task) checkFieldIDsReproducible(colls []collTarget, plan tasklet.Tasklet) error {
+	switch plan.(type) {
+	case *restoreSnapPlan, *metaOnlyPlan:
+		return nil
+	}
+	if t.args.Option.SkipCreateCollection {
+		t.logger.Info("skip create collection, source field ids are checked after the target is described")
+		return nil
+	}
+
+	var errs []error
+	for _, tgt := range colls {
+		if !backupHasData(tgt.collBackup) {
+			continue
+		}
+		if err := fieldid.CheckLegacy(tgt.collBackup.GetSchema()); err != nil {
+			errs = append(errs, fmt.Errorf("collection %s: %w", tgt.target.String(), err))
+		}
+	}
+
+	return errors.Join(errs...)
 }
 
 // checkImport2PCSetup validates the secondaries option against what the target

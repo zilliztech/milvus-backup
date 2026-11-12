@@ -13,7 +13,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore/conv"
-	"github.com/zilliztech/milvus-backup/core/restore/funcs"
+	"github.com/zilliztech/milvus-backup/core/restore/fieldid"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
@@ -71,6 +71,9 @@ func (ddlt *collDDLTask) execute(ctx context.Context) error {
 	}
 	if err := ddlt.createColl(ctx); err != nil {
 		return fmt.Errorf("restore: create collection: %w", err)
+	}
+	if err := ddlt.checkFieldIDs(ctx); err != nil {
+		return err
 	}
 	if err := ddlt.restoreFuncRuntimeCheck(ctx); err != nil {
 		return fmt.Errorf("restore: restore func runtime check: %w", err)
@@ -131,37 +134,57 @@ func (ddlt *collDDLTask) dropExistedColl(ctx context.Context) error {
 // $meta schema in the backup metadata (see zilliztech/milvus-backup#1013) but
 // for the regular restore path it is purely informational.
 func (ddlt *collDDLTask) fields() ([]*schemapb.FieldSchema, []*schemapb.FieldSchema, error) {
-	allFields, err := ddlt.convFields(ddlt.collBackup.GetSchema().GetFields())
+	plan, err := fieldid.BuildPlan(ddlt.collBackup.GetSchema())
+	if err != nil {
+		return nil, nil, fmt.Errorf("collection: build field plan: %w", err)
+	}
+
+	createFields, err := ddlt.convFields(plan.Create)
+	if err != nil {
+		return nil, nil, fmt.Errorf("collection: get fields: %w", err)
+	}
+	addFields, err := ddlt.convFields(plan.Add)
 	if err != nil {
 		return nil, nil, fmt.Errorf("collection: get fields: %w", err)
 	}
 
-	// Drop the dynamic field if present; CreateCollection / Milvus owns it.
-	fields := make([]*schemapb.FieldSchema, 0, len(allFields))
-	for _, f := range allFields {
-		if f.GetIsDynamic() {
-			continue
-		}
-		fields = append(fields, f)
-	}
-
-	if !ddlt.collBackup.GetSchema().GetEnableDynamicField() {
-		ddlt.logger.Info("fields", zap.Any("fields", fields))
-		return fields, nil, nil
-	}
-
-	dynFieldID := funcs.GuessDynFieldID(fields)
-	var createFields, addFields []*schemapb.FieldSchema
-	for _, field := range fields {
-		if field.GetFieldID() < dynFieldID {
-			createFields = append(createFields, field)
-		} else {
-			addFields = append(addFields, field)
-		}
-	}
-
 	ddlt.logger.Info("fields", zap.Any("create_fields", createFields), zap.Any("add_fields", addFields))
 	return createFields, addFields, nil
+}
+
+// checkFieldIDs refuses to go on when the target did not reproduce the source
+// field ids. The backup's columns are stored under those ids, so a mismatch is
+// silent corruption: every row would read another column's values. The check
+// runs after create and add field, before any index, partition or import work,
+// and it also judges a collection created outside restore.
+//
+// A collection without data and a meta_only restore are exempt: no row can be
+// read from the wrong slot.
+func (ddlt *collDDLTask) checkFieldIDs(ctx context.Context) error {
+	if ddlt.option.MetaOnly || !backupHasData(ddlt.collBackup) {
+		return nil
+	}
+	if err := fieldid.Verify(ctx, ddlt.grpcCli, ddlt.target, ddlt.collBackup.GetSchema()); err != nil {
+		return fmt.Errorf("restore: verify target field ids: %w", err)
+	}
+
+	return nil
+}
+
+// backupHasData reports whether the collection carries rows whose columns are
+// addressed by field id. Older snapshot metadata does not enumerate segments,
+// so a bundle counts as data.
+func backupHasData(coll *backuppb.CollectionBackupInfo) bool {
+	if coll.GetSnapshotBackup() != nil || len(coll.GetL0Segments()) != 0 || coll.GetSize() > 0 {
+		return true
+	}
+	for _, part := range coll.GetPartitionBackups() {
+		if len(part.GetSegmentBackups()) != 0 {
+			return true
+		}
+	}
+
+	return false
 }
 
 func (ddlt *collDDLTask) addFields(ctx context.Context, fields []*schemapb.FieldSchema) error {

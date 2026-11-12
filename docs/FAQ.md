@@ -91,3 +91,22 @@ If the output contains:
 then at least one of `milvus.storage.address` / `milvus.storage.bucketName` / `milvus.storage.rootPath` in `backup.yaml` disagrees with the source Milvus configuration. `rootPath` is the most frequent culprit — an empty string, `files`, and `/files` all behave differently. Align each field with the source Milvus config and retry.
 
 **Related issues:** [#1033](https://github.com/zilliztech/milvus-backup/issues/1033), [#441](https://github.com/zilliztech/milvus-backup/issues/441), [#183](https://github.com/zilliztech/milvus-backup/issues/183), [#176](https://github.com/zilliztech/milvus-backup/issues/176)
+
+---
+
+### Restore fails with `the target does not reproduce the source field ids`
+
+This error means the target collection was created with different field ids than the ones the backup stores its columns under. It is refused before the import on purpose: the import reads a column by its field id, so a mismatch would copy one column's values into another field without reporting anything.
+
+**Why does this happen?**
+
+The backup stores each column under the source field's id. Milvus's `CreateCollection` ignores ids in the request and numbers fields from 100 in schema order. When the source collection ever dropped a field in the middle of its schema, or added a field after such a hole, the two layouts no longer agree — for example, a source whose fields are `100, 101, 103` gets created as `100, 101, 102`.
+
+The backup itself is intact: the check protects the data, it does not mean the backup is corrupt.
+
+**How to fix it?**
+
+- **Snapshot-format backup (Milvus 3.0+):** restore it with the `restore_snap` strategy. Milvus creates the collection from the bundle's own schema and keeps the original ids, so this check does not apply.
+- **Binlog backup:** the target must preserve the source ids (`preserve_field_ids` in `CreateCollection`). Sending the ids from the backup is tracked in [#1378](https://github.com/zilliztech/milvus-backup/pull/1378); until it lands, a backup whose source schema has a hole cannot be imported into a target that renumbers fields.
+
+Do not try to bypass the check by creating the target yourself with `--skip_create_collection` unless its field ids match the backup's: the post-create check describes the real collection and refuses a mismatch there too.

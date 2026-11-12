@@ -5,10 +5,12 @@ import (
 	"testing"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
+	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
 	"github.com/milvus-io/milvus/pkg/v3/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
@@ -343,5 +345,55 @@ func TestCollDDLTask_createColl(t *testing.T) {
 		ct.grpcCli = cli
 		err := ct.createColl(context.Background())
 		assert.NoError(t, err)
+	})
+}
+
+func TestCollDDLTask_checkFieldIDs(t *testing.T) {
+	newTask := func() *collDDLTask {
+		return &collDDLTask{
+			option: &Option{},
+			target: collref.New("db", "coll"),
+			logger: zap.NewNop(),
+			collBackup: &backuppb.CollectionBackupInfo{
+				Size: 1,
+				Schema: &backuppb.CollectionSchema{
+					Fields: []*backuppb.FieldSchema{{FieldID: common.StartOfUserFieldID, Name: "id", DataType: backuppb.DataType_Int64}},
+				},
+			},
+		}
+	}
+
+	t.Run("MetaOnlySkips", func(t *testing.T) {
+		ddlt := newTask()
+		ddlt.option.MetaOnly = true
+		assert.NoError(t, ddlt.checkFieldIDs(context.Background()))
+	})
+
+	t.Run("EmptyCollectionSkips", func(t *testing.T) {
+		ddlt := newTask()
+		ddlt.collBackup.Size = 0
+		assert.NoError(t, ddlt.checkFieldIDs(context.Background()))
+	})
+
+	t.Run("MatchingIDs", func(t *testing.T) {
+		ddlt := newTask()
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().DescribeCollection(mock.Anything, "db", "coll").Return(&milvuspb.DescribeCollectionResponse{
+			Schema: &schemapb.CollectionSchema{Fields: []*schemapb.FieldSchema{{FieldID: common.StartOfUserFieldID, Name: "id"}}},
+		}, nil).Once()
+		ddlt.grpcCli = cli
+		assert.NoError(t, ddlt.checkFieldIDs(context.Background()))
+	})
+
+	t.Run("MismatchedIDs", func(t *testing.T) {
+		ddlt := newTask()
+		cli := milvus.NewMockGrpc(t)
+		cli.EXPECT().DescribeCollection(mock.Anything, "db", "coll").Return(&milvuspb.DescribeCollectionResponse{
+			Schema: &schemapb.CollectionSchema{Fields: []*schemapb.FieldSchema{{FieldID: common.StartOfUserFieldID + 1, Name: "id"}}},
+		}, nil).Once()
+		ddlt.grpcCli = cli
+		err := ddlt.checkFieldIDs(context.Background())
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "verify target field ids")
 	})
 }
