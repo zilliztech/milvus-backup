@@ -39,7 +39,7 @@ func TestCollDDLTask_convSchema(t *testing.T) {
 	assert.Equal(t, schema.GetAutoID(), bakSchema.GetAutoID()) //nolint:staticcheck // SA1019: testing deprecated field
 	assert.Equal(t, schema.GetEnableDynamicField(), bakSchema.GetEnableDynamicField())
 	assert.Equal(t, schema.GetVersion(), bakSchema.GetVersion())
-	assert.ElementsMatch(t, schema.GetProperties(), pbconv.BakKVToMilvusKV(bakSchema.GetProperties()))
+	assert.ElementsMatch(t, pbconv.MilvusKVToBakKV(schema.GetProperties()), bakSchema.GetProperties())
 }
 
 func TestCollDDLTask_Execute(t *testing.T) {

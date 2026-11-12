@@ -149,7 +149,7 @@ func (ddlt *collDDLTask) createColl(ctx context.Context) error {
 			zap.Int32("source_schema_version", version))
 	}
 
-	schema, err := conv.Schema(ddlt.collBackup.GetSchema())
+	schema, err := conv.SchemaFromCollection(ddlt.collBackup)
 	if err != nil {
 		return fmt.Errorf("secondary: convert schema: %w", err)
 	}

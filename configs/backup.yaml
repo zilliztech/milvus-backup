@@ -21,6 +21,13 @@ milvus:
   user: "root"
   password: "Milvus"
 
+  # Enable only when the target implements CreateCollection preserve_field_ids.
+  # This is an explicit capability override while the first supported release
+  # is being established. It preserves source field IDs for binlog/import_snap
+  # restore. On binlog backup, also captures hidden field IDs from the
+  # configured etcd source, even when index-extra backup is off.
+  preserveFieldIDs: false
+
   # The public gRPC endpoint, used for metadata, collection and database
   # operations, flush, and RBAC.
   grpc:
