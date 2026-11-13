@@ -221,10 +221,10 @@ func NewTask(ctx context.Context, args TaskArgs) (*Task, error) {
 	}
 
 	if format == meta.FormatSnapshot {
-		// The import path is opt-in only, so the option checks key on the pin
-		// itself; the target's capabilities are checked at plan time, once the
-		// client is up.
-		strategy := args.Option.Strategy
+		// Secondaries need an import job to commit two-phase, so their auto path
+		// is the import api rather than the restore api. The target's capabilities
+		// are checked at plan time, once the client is up.
+		strategy := snapshotStrategy(args.Option)
 		if err := checkSnapshotSupport(args.Option, strategy); err != nil {
 			return nil, err
 		}
@@ -256,6 +256,16 @@ func NewTask(ctx context.Context, args TaskArgs) (*Task, error) {
 	return task, nil
 }
 
+// snapshotStrategy resolves the one secondary-dependent auto choice: two-phase
+// commit belongs to import jobs, so a snapshot restore with secondaries must use
+// the import api. Without secondaries auto keeps the faster restore api path.
+func snapshotStrategy(opt *Option) Strategy {
+	if opt.Strategy == StrategyAuto && len(opt.Secondaries) != 0 {
+		return StrategyImportSnap
+	}
+	return opt.Strategy
+}
+
 // checkSnapshotSupport refuses the options no snapshot data path can honor, and —
 // keyed on the resolved strategy — the ones only the import path honors. The restore
 // api path hands the whole restore to Milvus: it creates the collection from the
@@ -270,9 +280,6 @@ func checkSnapshotSupport(opt *Option, strategy Strategy) error {
 	if opt.TruncateBinlogByTs {
 		unsupported = append(unsupported, "truncate_binlog_by_ts")
 	}
-	if len(opt.Secondaries) != 0 {
-		unsupported = append(unsupported, "secondaries")
-	}
 	// A description override stays available on both paths: the restore api applies it
 	// with an AlterCollection once the job completes, the import path sets it at
 	// creation time. A shard_num override is checked per collection, where the bundle's
@@ -286,6 +293,9 @@ func checkSnapshotSupport(opt *Option, strategy Strategy) error {
 		return nil
 	}
 	var restoreOnly []string
+	if len(opt.Secondaries) != 0 {
+		restoreOnly = append(restoreOnly, "secondaries")
+	}
 	if opt.SkipCreateCollection {
 		restoreOnly = append(restoreOnly, "skip_create_collection")
 	}
@@ -561,9 +571,11 @@ func (t *Task) privateExecute(ctx context.Context) error {
 		return fmt.Errorf("restore: a snapshot format backup needs a milvus 3.0 or newer server")
 	}
 
-	// Binlog restores import through jobs, which is where the two-phase commit
-	// contract lives; the snapshot path runs no import job at all.
-	if t.format == meta.FormatBinlog {
+	// Two-phase commit belongs to import jobs. Snapshot's restore api has no
+	// import job, but its import path has the same replication contract as binlog.
+	usesImportJobs := t.format == meta.FormatBinlog ||
+		(t.format == meta.FormatSnapshot && snapshotStrategy(t.args.Option) == StrategyImportSnap)
+	if usesImportJobs {
 		if err := t.checkImport2PCSetup(ctx); err != nil {
 			return err
 		}

@@ -77,7 +77,7 @@ func (rt *importViaRESTFul2PCTask) execute(ctx context.Context) error {
 	}
 
 	for _, secondary := range rt.secondaries {
-		if err := rt.waitSecondaryMirrored(ctx, secondary, jobID); err != nil {
+		if err := waitSecondaryMirrored(ctx, rt.importer.args.logger, rt.importer.args.target.DBName(), secondary, jobID); err != nil {
 			return err
 		}
 	}
@@ -88,7 +88,7 @@ func (rt *importViaRESTFul2PCTask) execute(ctx context.Context) error {
 	committed = true
 
 	for _, secondary := range rt.secondaries {
-		if err := rt.waitSecondaryCommitted(ctx, secondary, jobID); err != nil {
+		if err := waitSecondaryCommitted(ctx, rt.importer.args.logger, rt.importer.args.target.DBName(), secondary, jobID); err != nil {
 			return err
 		}
 	}
@@ -99,9 +99,7 @@ func (rt *importViaRESTFul2PCTask) execute(ctx context.Context) error {
 // waitSecondaryMirrored waits until the secondary's mirrored job also holds at
 // Uncommitted. Committing or Completed mirrors are accepted too: a retried task
 // meets them when the commit of the crashed first run already replicated.
-func (rt *importViaRESTFul2PCTask) waitSecondaryMirrored(ctx context.Context, secondary importSecondary, jobID string) error {
-	db := rt.importer.args.target.DBName()
-
+func waitSecondaryMirrored(ctx context.Context, logger *zap.Logger, db string, secondary importSecondary, jobID string) error {
 	// Stays zero until the secondary reports an empty state, so the window
 	// only starts once there is something to wait out.
 	var unknownSince time.Time
@@ -114,7 +112,7 @@ func (rt *importViaRESTFul2PCTask) waitSecondaryMirrored(ctx context.Context, se
 			return fmt.Errorf("restore: get the mirrored import job %s on secondary %s: %w", jobID, secondary.addr, err)
 		}
 
-		rt.importer.args.logger.Info("secondary mirrored bulk insert task state",
+		logger.Info("secondary mirrored bulk insert task state",
 			zap.String("secondary", secondary.addr),
 			zap.String("job_id", jobID),
 			zap.String("state", resp.Data.State),
@@ -157,9 +155,7 @@ func (rt *importViaRESTFul2PCTask) waitSecondaryMirrored(ctx context.Context, se
 // commit's fence message travels the replication stream and commits the mirror
 // — so all this wait can surface is a mirror that failed on its own or a
 // commit that never arrived, both of which leave the two ends diverged.
-func (rt *importViaRESTFul2PCTask) waitSecondaryCommitted(ctx context.Context, secondary importSecondary, jobID string) error {
-	db := rt.importer.args.target.DBName()
-
+func waitSecondaryCommitted(ctx context.Context, logger *zap.Logger, db string, secondary importSecondary, jobID string) error {
 	// The local commit has just landed, so the mirror is expected to be mid
 	// flight; the window starts right away, unlike the mirror wait's.
 	pendingSince := time.Now()
@@ -172,7 +168,7 @@ func (rt *importViaRESTFul2PCTask) waitSecondaryCommitted(ctx context.Context, s
 			return fmt.Errorf("restore: get the mirrored import job %s on secondary %s after the local commit: %w", jobID, secondary.addr, err)
 		}
 
-		rt.importer.args.logger.Info("secondary mirrored bulk insert task state",
+		logger.Info("secondary mirrored bulk insert task state",
 			zap.String("secondary", secondary.addr),
 			zap.String("job_id", jobID),
 			zap.String("state", resp.Data.State),
