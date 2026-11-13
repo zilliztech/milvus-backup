@@ -620,3 +620,52 @@ func TestMapRenamer(t *testing.T) {
 		assert.ElementsMatch(t, expect, r.TargetNames(in))
 	})
 }
+
+func TestTask_checkFieldIDsReproducible(t *testing.T) {
+	newTask := func(opt *Option) *Task {
+		return &Task{logger: zap.NewNop(), args: TaskArgs{Option: opt}}
+	}
+
+	// c(104) with a hole at 103: the legacy create path slides it to 103.
+	withGap := &backuppb.CollectionBackupInfo{
+		Size: 1,
+		Schema: &backuppb.CollectionSchema{Fields: []*backuppb.FieldSchema{
+			{FieldID: 100, Name: "id"}, {FieldID: 101, Name: "vec"}, {FieldID: 102, Name: "a"}, {FieldID: 104, Name: "c"},
+		}},
+	}
+	target := collTarget{target: collref.New("db", "coll"), collBackup: withGap}
+
+	t.Run("RestoreSnapSkips", func(t *testing.T) {
+		err := newTask(&Option{}).checkFieldIDsReproducible([]collTarget{target}, &restoreSnapPlan{})
+		assert.NoError(t, err)
+	})
+
+	t.Run("MetaOnlySkips", func(t *testing.T) {
+		err := newTask(&Option{}).checkFieldIDsReproducible([]collTarget{target}, &metaOnlyPlan{})
+		assert.NoError(t, err)
+	})
+
+	t.Run("SkipCreateCollectionSkips", func(t *testing.T) {
+		err := newTask(&Option{SkipCreateCollection: true}).checkFieldIDsReproducible([]collTarget{target}, &binlogPlan{})
+		assert.NoError(t, err)
+	})
+
+	t.Run("BinlogRefuses", func(t *testing.T) {
+		err := newTask(&Option{}).checkFieldIDsReproducible([]collTarget{target}, &binlogPlan{})
+		require.Error(t, err)
+		assert.ErrorContains(t, err, "collection db.coll")
+		assert.ErrorContains(t, err, `field "c" would get id 103 instead of the source id 104`)
+	})
+
+	t.Run("ImportSnapRefuses", func(t *testing.T) {
+		err := newTask(&Option{}).checkFieldIDsReproducible([]collTarget{target}, &importSnapPlan{})
+		require.Error(t, err)
+		assert.ErrorContains(t, err, `field "c" would get id 103`)
+	})
+
+	t.Run("EmptyCollectionSkips", func(t *testing.T) {
+		empty := collTarget{target: collref.New("db", "coll"), collBackup: &backuppb.CollectionBackupInfo{Schema: withGap.GetSchema()}}
+		err := newTask(&Option{}).checkFieldIDsReproducible([]collTarget{empty}, &binlogPlan{})
+		assert.NoError(t, err)
+	})
+}
