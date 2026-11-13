@@ -1052,6 +1052,13 @@ jobs:
           yq -i ".services.upstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
           yq -i ".services.downstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
           yq -i ".services.upstream-cdc.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          if [ "${{ matrix.two_phase_commit }}" == "true" ]; then
+            # Snapshot secondary imports read StorageV3 segments. 3.0 still
+            # defaults to V2, so opt in before any data is written; 2.6 keeps
+            # its default and continues to exercise the binlog path.
+            yq -i '.common.storage.useLoonFFI = true' upstream.yaml
+            yq -i '.common.storage.useLoonFFI = true' downstream.yaml
+          fi
           mkdir -p volumes/etcd volumes/minio volumes/upstream volumes/downstream volumes/upstream-runtime volumes/downstream-runtime
           sudo chmod -R 777 volumes
           sudo docker compose -f docker-compose.yml up -d --wait
@@ -1135,10 +1142,8 @@ jobs:
         run: |
           ./milvus-backup check
           ./milvus-backup list
-          # Pin binlog until ExportSnapshot lands on the milvus master line: master
-          # reports the snapshot feature, so auto resolves to the snapshot format
-          # there, which its export RPC does not implement yet.
-          ./milvus-backup create -n my_backup --backup_index_extra --format=binlog
+          # Exercise the default format selection: binlog on 2.6, snapshot on 3.0+.
+          ./milvus-backup create -n my_backup --backup_index_extra
           ./milvus-backup list
 
       - name: Init downstream replicate configuration
@@ -1429,6 +1434,11 @@ jobs:
           yq -i ".services.upstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
           yq -i ".services.downstream-standalone.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
           yq -i ".services.upstream-cdc.image=\"milvusdb/milvus:${tag}\"" docker-compose.yml
+          # Both cells restore snapshot backups through the import api, which
+          # accepts StorageV3 segments only. Enable it before writing test data;
+          # 3.0 otherwise defaults to V2.
+          yq -i '.common.storage.useLoonFFI = true' upstream.yaml
+          yq -i '.common.storage.useLoonFFI = true' downstream.yaml
           mkdir -p volumes/etcd volumes/minio volumes/upstream volumes/downstream volumes/upstream-runtime volumes/downstream-runtime
           sudo chmod -R 777 volumes
           sudo docker compose -f docker-compose.yml up -d --wait
