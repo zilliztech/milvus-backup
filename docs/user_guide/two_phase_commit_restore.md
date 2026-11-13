@@ -34,14 +34,17 @@ The RESTful API takes a `secondaries` object array on `POST /api/v1/restore`, wi
 }
 ```
 
+Snapshot-format backups are supported through `import_snap`. Leaving the strategy at `auto` selects it automatically whenever secondaries are configured; pinning `--strategy import_snap` also works. An explicit `--strategy restore_snap` is rejected because the snapshot restore api does not create an import job to commit two-phase.
+
 On a replicating 3.0+ target a restore *without* `--secondary` is refused up front, because the server no longer accepts plain auto-commit import jobs there; the same check runs when `--strategy per_seg` is combined with `--secondary`, since the per-segment path imports through the v1 grpc api, which has no two-phase commit.
 
-> **Note**: Two-phase commit requires Milvus 3.0 or newer on the restore target and on every secondary.
+> **Note**: Two-phase commit requires Milvus 3.0 or newer on the restore target and on every secondary. Snapshot imports raise that floor to Milvus 3.0.4 on every cluster.
 
 ## Prerequisites
 
-- The restore target runs Milvus 3.0+ with `dataCoord.import.enableInReplicatingCluster=true`, and every address passed with `--secondary` is a replication target of it.
-- **Every cluster must resolve the same object-storage paths.** An import job references bucket-relative file paths. milvus-backup stages the backup files once, into the restore target's storage, and each secondary's mirrored job reads the same paths from the secondary's own configured storage. The ends therefore need a shared bucket, or bucket content synced across clusters; a secondary whose storage does not see the staged files fails its mirror, and the restore reports the failure before committing anything.
+- The restore target runs Milvus 3.0+ with `dataCoord.import.enableInReplicatingCluster=true`, and every address passed with `--secondary` is a replication target of it. Snapshot imports require Milvus 3.0.4+ on every cluster.
+- **For binlog backups, every cluster must resolve the same object-storage paths.** An import job references bucket-relative file paths. milvus-backup stages the backup files once, into the restore target's storage, and each secondary's mirrored job reads the same paths from the secondary's own configured storage. The ends therefore need a shared bucket, or bucket content synced across clusters; a secondary whose storage does not see the staged files fails its mirror, and the restore reports the failure before committing anything.
+- **For snapshot backups, every cluster must be able to read the snapshot bundle.** Each collection has one snapshot-sourced import whose metadata URI and external spec replicate to the mirrors. No files are staged by milvus-backup; the primary and every secondary read the bundle themselves, so the URI and credentials must work from each cluster. For an endpoint-less MinIO URI, the URI bucket must be every cluster's own `minio.bucketName`: copy the complete backup prefix into that bucket on each MinIO with its key layout intact. A separate bucket that merely shares a name across the clusters does not satisfy this check. Cross-service external specs remain subject to Milvus's provider and endpoint admission rules.
 
 ## How it works
 

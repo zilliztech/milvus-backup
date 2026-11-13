@@ -61,12 +61,17 @@ func (t *Task) selectPlan(ctx context.Context, targets []collTarget) (tasklet.Ta
 	// the preflight has already established the target is new enough.
 	hasSecondaries := len(t.args.Option.Secondaries) != 0
 
-	switch strategy := t.args.Option.Strategy; strategy {
+	strategy := t.args.Option.Strategy
+	if t.format == meta.FormatSnapshot {
+		strategy = snapshotStrategy(t.args.Option)
+	}
+
+	switch strategy {
 	case StrategyAuto:
 		if t.format == meta.FormatSnapshot {
-			// The restore api is the fast path — a physical copy, indexes
-			// carried over — so auto always takes it. The import path is
-			// opt-in only, pinned with --strategy=import_snap.
+			// Without secondaries the restore api is the fast path — a physical
+			// copy, indexes carried over. Their presence resolves to import_snap
+			// above because two-phase commit belongs to import jobs.
 			t.logger.Info("use restore snap plan")
 			return newRestoreSnapPlan(t, targets), nil
 		}
@@ -99,6 +104,10 @@ func (t *Task) selectPlan(ctx context.Context, targets []collTarget) (tasklet.Ta
 	case StrategyRestoreSnap:
 		if t.format != meta.FormatSnapshot {
 			return nil, wrongFormat("restore_snap", meta.FormatSnapshot, t.format)
+		}
+		if hasSecondaries {
+			return nil, errors.New("restore: secondaries need an import job for two-phase commit, " +
+				"but the restore_snap strategy uses the snapshot restore api; use import_snap or auto")
 		}
 		t.logger.Info("use restore snap plan")
 		return newRestoreSnapPlan(t, targets), nil
@@ -598,8 +607,7 @@ func (t *Task) newImportSnapCollTask(tgt collTarget) (*collImportSnapTask, error
 		return nil, err
 	}
 
-	imp := &snapshotImportTask{
-		taskID:           t.args.TaskID,
+	importer := &snapshotImporter{
 		target:           tgt.target,
 		metadataURI:      metadataURI,
 		externalSpec:     t.snapshotSource.ExternalSpec,
@@ -610,6 +618,10 @@ func (t *Task) newImportSnapCollTask(tgt collTarget) (*collImportSnapTask, error
 		job:        collTracker.NewJob(tgt.collBackup.GetSize()),
 
 		logger: logger,
+	}
+	var imp tasklet.Tasklet = &snapshotImportTask{importer: importer}
+	if len(t.secondaries) != 0 {
+		imp = &snapshotImport2PCTask{importer: importer, secondaries: t.secondaries}
 	}
 
 	return &collImportSnapTask{ddl: ddl, imp: imp, logger: logger}, nil

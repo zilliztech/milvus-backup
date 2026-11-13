@@ -31,7 +31,9 @@ type twoPCCluster struct {
 	states []string
 	calls  int
 
-	manualCommit bool
+	manualCommit  bool
+	gotBulkInsert milvus.BulkInsertV2Input
+	recordStates  bool
 }
 
 func newTwoPCCluster(name string, log *[]string, logMu *sync.Mutex, states ...string) *twoPCCluster {
@@ -46,6 +48,7 @@ func (c *twoPCCluster) record(op string) {
 
 func (c *twoPCCluster) BulkInsert(_ context.Context, in milvus.BulkInsertV2Input) (string, error) {
 	c.manualCommit = in.ManualCommit
+	c.gotBulkInsert = in
 	c.record("create")
 	return "job1", nil
 }
@@ -56,6 +59,9 @@ func (c *twoPCCluster) GetBulkInsertState(context.Context, string, string) (*mil
 
 	resp := &milvus.GetProcessResp{}
 	resp.Data.State = c.states[i]
+	if c.recordStates {
+		c.record("state:" + c.states[i])
+	}
 	if c.states[i] == string(milvus.ImportStateFailed) {
 		resp.Data.Reason = "disk quota exceeded"
 	}

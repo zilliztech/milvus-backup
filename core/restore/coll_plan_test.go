@@ -156,6 +156,14 @@ func TestTask_selectPlan(t *testing.T) {
 		assert.IsType(t, &restoreSnapPlan{}, plan)
 	})
 
+	t.Run("SnapshotRestoreSnapWithSecondariesFails", func(t *testing.T) {
+		task := newSelectPlanTask(t, meta.FormatSnapshot, StrategyRestoreSnap)
+		task.args.Option.Secondaries = []Secondary{{Address: "http://secondary:19530"}}
+
+		_, err := task.selectPlan(t.Context(), nil)
+		assert.ErrorContains(t, err, "import_snap")
+	})
+
 	// The import plan is one DDL head and one snapshot import job per
 	// collection: the api expands the bundle's partitions and segments itself.
 	t.Run("SnapshotImportSnap", func(t *testing.T) {
@@ -172,12 +180,51 @@ func TestTask_selectPlan(t *testing.T) {
 		require.Len(t, ip.colls, 1)
 		assert.IsType(t, &collDDLTask{}, ip.colls[0].ddl)
 		imp := ip.colls[0].imp.(*snapshotImportTask)
-		assert.Equal(t, "s3://backup-bucket/backup/mybackup/bundle/snapshots/1/metadata/2.json", imp.metadataURI)
-		assert.JSONEq(t, `{"p1": "p1"}`, imp.partitionMapping)
+		assert.Equal(t, "s3://backup-bucket/backup/mybackup/bundle/snapshots/1/metadata/2.json", imp.importer.metadataURI)
+		assert.JSONEq(t, `{"p1": "p1"}`, imp.importer.partitionMapping)
 	})
+
+	for _, tt := range []struct {
+		name     string
+		strategy Strategy
+	}{
+		{name: "Auto", strategy: StrategyAuto},
+		{name: "ImportSnap", strategy: StrategyImportSnap},
+	} {
+		t.Run(tt.name+"WithSecondariesUses2PC", func(t *testing.T) {
+			task := newSelectPlanTask(t, meta.FormatSnapshot, tt.strategy)
+			task.args.Option.Secondaries = []Secondary{{Address: "http://secondary:19530"}}
+			task.secondaries = []importSecondary{{addr: "secondary", cli: &snapshotImportEndpoint{}}}
+			task.snapshotSource = snapshotsource.Source{DirURI: "s3://backup-bucket/backup/mybackup", SameService: true}
+			grpcCli := milvus.NewMockGrpc(t)
+			grpcCli.EXPECT().HasFeature(milvus.ImportSnapshot).Return(true)
+			task.grpc = grpcCli
+
+			plan, err := task.selectPlan(t.Context(), oneSnapCollTargets())
+			require.NoError(t, err)
+			ip, ok := plan.(*importSnapPlan)
+			require.True(t, ok, "plan is %T, want *importSnapPlan", plan)
+			require.Len(t, ip.colls, 1)
+			imp, ok := ip.colls[0].imp.(*snapshotImport2PCTask)
+			require.True(t, ok, "import task is %T, want *snapshotImport2PCTask", ip.colls[0].imp)
+			assert.Equal(t, task.secondaries, imp.secondaries)
+			assert.Equal(t, "s3://backup-bucket/backup/mybackup/bundle/snapshots/1/metadata/2.json", imp.importer.metadataURI)
+		})
+	}
 
 	t.Run("SnapshotImportSnapNeedsNewerServer", func(t *testing.T) {
 		task := newSelectPlanTask(t, meta.FormatSnapshot, StrategyImportSnap)
+		grpcCli := milvus.NewMockGrpc(t)
+		grpcCli.EXPECT().HasFeature(milvus.ImportSnapshot).Return(false)
+		task.grpc = grpcCli
+
+		_, err := task.selectPlan(t.Context(), oneSnapCollTargets())
+		assert.ErrorContains(t, err, "3.0.4")
+	})
+
+	t.Run("SnapshotAutoWithSecondariesNeedsNewerServer", func(t *testing.T) {
+		task := newSelectPlanTask(t, meta.FormatSnapshot, StrategyAuto)
+		task.args.Option.Secondaries = []Secondary{{Address: "http://secondary:19530"}}
 		grpcCli := milvus.NewMockGrpc(t)
 		grpcCli.EXPECT().HasFeature(milvus.ImportSnapshot).Return(false)
 		task.grpc = grpcCli
@@ -209,16 +256,17 @@ func TestTask_selectPlan(t *testing.T) {
 	// resolves to it directly — the preflight has already established the
 	// target is new enough — and a per_seg pin is refused rather than silently
 	// losing the two-phase commit.
-	t.Run("BinlogAutoWithSecondariesUsesRestful", func(t *testing.T) {
+	t.Run("BinlogAutoWithSecondariesUses2PC", func(t *testing.T) {
 		task := newSelectPlanTask(t, meta.FormatBinlog, StrategyAuto)
 		task.args.Option.Secondaries = []Secondary{{Address: "http://secondary:19530"}}
+		task.secondaries = []importSecondary{{addr: "secondary", cli: &snapshotImportEndpoint{}}}
 		grpcCli := milvus.NewMockGrpc(t)
 		grpcCli.EXPECT().HasFeature(milvus.MultiL0InOneJob).Return(false).Maybe()
 		task.grpc = grpcCli
 
 		plan, err := task.selectPlan(t.Context(), oneCollTargets())
 		require.NoError(t, err)
-		assertBinlogPlan(t, plan, &importViaRESTFulTask{})
+		assertBinlogPlan(t, plan, &importViaRESTFul2PCTask{})
 	})
 
 	t.Run("BinlogPerSegWithSecondariesFails", func(t *testing.T) {

@@ -173,18 +173,42 @@ func TestNewTask_SnapshotCrossService(t *testing.T) {
 		assert.False(t, task.snapshotSource.SameService)
 		assert.Contains(t, task.snapshotSource.ExternalSpec, `"access_key_id":"ak"`)
 	})
+
+	t.Run("AutoWithSecondariesPermits", func(t *testing.T) {
+		args := newArgs(StrategyAuto)
+		args.Option.Secondaries = []Secondary{{Address: "http://secondary:19530"}}
+		task, err := NewTask(t.Context(), args)
+		require.NoError(t, err)
+		assert.False(t, task.snapshotSource.SameService)
+		assert.Contains(t, task.snapshotSource.ExternalSpec, `"access_key_id":"ak"`)
+	})
+}
+
+func TestSnapshotStrategy(t *testing.T) {
+	secondaries := []Secondary{{Address: "http://secondary:19530"}}
+	assert.Equal(t, StrategyRestoreSnap, snapshotStrategy(&Option{Strategy: StrategyRestoreSnap}))
+	assert.Equal(t, StrategyAuto, snapshotStrategy(&Option{Strategy: StrategyAuto}))
+	assert.Equal(t, StrategyImportSnap, snapshotStrategy(&Option{Strategy: StrategyAuto, Secondaries: secondaries}))
+	assert.Equal(t, StrategyImportSnap, snapshotStrategy(&Option{Strategy: StrategyImportSnap, Secondaries: secondaries}))
 }
 
 // Milvus restores a snapshot bundle on its own terms on the restore api path, so an
 // option asking for anything else is refused rather than silently dropped. The import
 // path creates the collection through the ordinary DDL task and honors them.
 func TestCheckSnapshotSupport(t *testing.T) {
-	// No snapshot data path honors these.
+	// No snapshot data path honors binlog truncation.
 	t.Run("RefusedOnEveryStrategy", func(t *testing.T) {
 		for _, strategy := range []Strategy{StrategyRestoreSnap, StrategyImportSnap} {
 			assert.Error(t, checkSnapshotSupport(&Option{TruncateBinlogByTs: true}, strategy))
-			assert.Error(t, checkSnapshotSupport(&Option{Secondaries: []Secondary{{Address: "http://secondary:19530"}}}, strategy))
 		}
+	})
+
+	t.Run("SecondariesNeedTheImportPath", func(t *testing.T) {
+		opt := &Option{Secondaries: []Secondary{{Address: "http://secondary:19530"}}}
+		err := checkSnapshotSupport(opt, StrategyRestoreSnap)
+		assert.ErrorContains(t, err, "secondaries")
+		assert.ErrorContains(t, err, "import_snap")
+		assert.NoError(t, checkSnapshotSupport(opt, StrategyImportSnap))
 	})
 
 	// The restore api creates the collection itself, so these only work on the
@@ -236,6 +260,12 @@ func TestSnapshotIgnoredOptions(t *testing.T) {
 	assert.ElementsMatch(t, []string{"restore_index", "use_auto_index"}, snapshotIgnoredOptions(opt, StrategyRestoreSnap))
 	assert.Empty(t, snapshotIgnoredOptions(opt, StrategyImportSnap))
 	assert.Empty(t, snapshotIgnoredOptions(&Option{}, StrategyRestoreSnap))
+
+	autoOpt := &Option{
+		Strategy: StrategyAuto, RebuildIndex: true,
+		Secondaries: []Secondary{{Address: "http://secondary:19530"}},
+	}
+	assert.Empty(t, snapshotIgnoredOptions(autoOpt, snapshotStrategy(autoOpt)))
 }
 
 // The secondaries option means something only on a server new enough to commit
@@ -331,6 +361,56 @@ func TestTask_CheckImport2PCSetup(t *testing.T) {
 
 		err := newTaskWithSecondaries([]string{"http://secondary:19530"}, grpcCli).checkImport2PCSetup(t.Context())
 		assert.ErrorContains(t, err, "permission denied")
+	})
+}
+
+func TestTask_SnapshotImport2PCPreflight(t *testing.T) {
+	newSnapshotTask := func(strategy Strategy, secondaries []Secondary, grpcCli *milvus.MockGrpc) *Task {
+		task := newTestTask()
+		task.format = meta.FormatSnapshot
+		task.args.Backup = &backuppb.BackupInfo{Format: meta.FormatSnapshot}
+		task.args.Option = &Option{Strategy: strategy, Secondaries: secondaries}
+		task.grpc = grpcCli
+		return task
+	}
+
+	for _, tt := range []struct {
+		name     string
+		strategy Strategy
+	}{
+		{name: "ImportSnap", strategy: StrategyImportSnap},
+		{name: "Auto", strategy: StrategyAuto},
+	} {
+		t.Run(tt.name+"RunsPreflightBeforeDDL", func(t *testing.T) {
+			grpcCli := milvus.NewMockGrpc(t)
+			grpcCli.EXPECT().HasFeature(milvus.Snapshot).Return(true)
+			grpcCli.EXPECT().HasFeature(milvus.Import2PC).Return(false)
+			secondaries := []Secondary{{Address: "http://secondary:19530"}}
+
+			err := newSnapshotTask(tt.strategy, secondaries, grpcCli).privateExecute(t.Context())
+			assert.ErrorContains(t, err, "3.0")
+		})
+	}
+
+	t.Run("ImportSnapWithoutSecondariesRejectsReplicatingTarget", func(t *testing.T) {
+		grpcCli := milvus.NewMockGrpc(t)
+		grpcCli.EXPECT().HasFeature(milvus.Snapshot).Return(true)
+		grpcCli.EXPECT().HasFeature(milvus.Import2PC).Return(true)
+		grpcCli.EXPECT().GetReplicateConfiguration(mock.Anything).Return(&commonpb.ReplicateConfiguration{
+			Clusters: []*commonpb.MilvusCluster{{ClusterId: "a"}, {ClusterId: "b"}},
+		}, nil)
+
+		err := newSnapshotTask(StrategyImportSnap, nil, grpcCli).privateExecute(t.Context())
+		assert.ErrorContains(t, err, "secondaries")
+	})
+
+	t.Run("RestoreSnapSkipsImportPreflight", func(t *testing.T) {
+		grpcCli := milvus.NewMockGrpc(t)
+		grpcCli.EXPECT().HasFeature(milvus.Snapshot).Return(true)
+		grpcCli.EXPECT().ListDatabases(mock.Anything).Return([]string{}, nil).Twice()
+
+		err := newSnapshotTask(StrategyRestoreSnap, nil, grpcCli).privateExecute(t.Context())
+		assert.NoError(t, err)
 	})
 }
 

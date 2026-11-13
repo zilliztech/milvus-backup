@@ -98,12 +98,11 @@ func (e *snapshotImportEndpoint) CommitImport(context.Context, string, string) e
 
 func (e *snapshotImportEndpoint) AbortImport(context.Context, string, string) error { return nil }
 
-func newSnapshotImportTask(endpoint *snapshotImportEndpoint) *snapshotImportTask {
+func newSnapshotImporter(endpoint milvus.Restful) *snapshotImporter {
 	target := collref.New("db", "coll")
 	collTracker := jobstate.NewStore().AddRestoreTask("task1").NewCollTracker(target, 1)
 
-	return &snapshotImportTask{
-		taskID:           "task1",
+	return &snapshotImporter{
 		target:           target,
 		metadataURI:      "s3://backup-bucket/backup/mybackup/bundle/snapshots/1/metadata/2.json",
 		externalSpec:     `{"extfs":{"access_key_id":"ak"}}`,
@@ -115,6 +114,10 @@ func newSnapshotImportTask(endpoint *snapshotImportEndpoint) *snapshotImportTask
 
 		logger: zap.NewNop(),
 	}
+}
+
+func newSnapshotImportTask(endpoint milvus.Restful) *snapshotImportTask {
+	return &snapshotImportTask{importer: newSnapshotImporter(endpoint)}
 }
 
 func TestSnapshotImportTaskExecute(t *testing.T) {

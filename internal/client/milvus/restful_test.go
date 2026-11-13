@@ -33,16 +33,19 @@ func TestBulkInsertV2InputOpts(t *testing.T) {
 		assert.Equal(t, "false", opts["auto_commit"])
 	})
 
-	// The snapshot source contract: source_type alongside backup, with the
-	// external spec and partition mapping; the binlog-only knobs stay out.
+	// The snapshot source contract composes with manual commit: source_type
+	// alongside backup and auto_commit=false, with the external spec and
+	// partition mapping; the binlog-only knobs stay out.
 	t.Run("SnapshotSource", func(t *testing.T) {
 		opts := (&BulkInsertV2Input{
 			SourceType:       SourceTypeSnapshot,
 			ExternalSpec:     `{"extfs":{"access_key_id":"ak"}}`,
 			PartitionMapping: `{"p1":"p1"}`,
+			ManualCommit:     true,
 		}).opts()
 		assert.Equal(t, "snapshot", opts["source_type"])
 		assert.Equal(t, "true", opts["backup"])
+		assert.Equal(t, "false", opts["auto_commit"])
 		assert.Equal(t, `{"extfs":{"access_key_id":"ak"}}`, opts["external_spec"])
 		assert.Equal(t, `{"p1":"p1"}`, opts["partition_mapping"])
 		assert.NotContains(t, opts, "storage_version")
