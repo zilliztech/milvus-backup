@@ -55,6 +55,15 @@ func (ddlt *collDDLTask) convFields(fields []*schemapb.FieldSchema) ([]*backuppb
 			defaultValueBase64 = base64.StdEncoding.EncodeToString(bytes)
 		}
 
+		var typeSchema []byte
+		if field.GetTypeSchema() != nil {
+			var err error
+			typeSchema, err = proto.Marshal(field.GetTypeSchema())
+			if err != nil {
+				return nil, fmt.Errorf("backup: marshal type schema of field %q: %w", field.GetName(), err)
+			}
+		}
+
 		f := &backuppb.FieldSchema{
 			FieldID:            field.GetFieldID(),
 			Name:               field.GetName(),
@@ -70,6 +79,8 @@ func (ddlt *collDDLTask) convFields(fields []*schemapb.FieldSchema) ([]*backuppb
 			ElementType:        backuppb.DataType(field.GetElementType()),
 			IsFunctionOutput:   field.GetIsFunctionOutput(),
 			DefaultValueBase64: defaultValueBase64,
+			ElementNullable:    field.GetElementNullable(),
+			TypeSchema:         typeSchema,
 		}
 		bakFields = append(bakFields, f)
 	}

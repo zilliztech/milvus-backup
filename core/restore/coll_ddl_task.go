@@ -3,6 +3,7 @@ package restore
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
@@ -65,11 +66,22 @@ func (ddlt *collDDLTask) Execute(ctx context.Context) error {
 }
 
 func (ddlt *collDDLTask) execute(ctx context.Context) error {
+	// Build the create request before a requested drop can remove the target:
+	// undecodable backup metadata must fail while the target still stands.
+	var input milvus.CreateCollectionInput
+	var addFields []*schemapb.FieldSchema
+	if !ddlt.option.SkipCreateCollection {
+		var err error
+		input, addFields, err = ddlt.createCollectionInput()
+		if err != nil {
+			return err
+		}
+	}
 	// restore collection schema
 	if err := ddlt.dropExistedColl(ctx); err != nil {
 		return fmt.Errorf("restore: drop exist collection: %w", err)
 	}
-	if err := ddlt.createColl(ctx); err != nil {
+	if err := ddlt.createColl(ctx, input, addFields); err != nil {
 		return fmt.Errorf("restore: create collection: %w", err)
 	}
 	if err := ddlt.checkFieldIDs(ctx); err != nil {
@@ -258,20 +270,19 @@ func (ddlt *collDDLTask) restoreFuncRuntimeCheck(ctx context.Context) error {
 	return nil
 }
 
-func (ddlt *collDDLTask) createColl(ctx context.Context) error {
-	if ddlt.option.SkipCreateCollection {
-		ddlt.logger.Info("skip create collection")
-		return nil
-	}
-
+// createCollectionInput builds the CreateCollection request and the fields that
+// follow it through AddField. It runs before any drop: converting the backup's
+// schema is where corrupt metadata surfaces, and that must happen while the
+// target collection still exists.
+func (ddlt *collDDLTask) createCollectionInput() (milvus.CreateCollectionInput, []*schemapb.FieldSchema, error) {
 	createFields, addFields, err := ddlt.fields()
 	if err != nil {
-		return fmt.Errorf("collection: get fields: %w", err)
+		return milvus.CreateCollectionInput{}, nil, fmt.Errorf("collection: get fields: %w", err)
 	}
 	functions := conv.Functions(ddlt.collBackup.GetSchema().GetFunctions())
 	structArrayFields, err := ddlt.structArrayFields()
 	if err != nil {
-		return fmt.Errorf("restore: conv struct array fields: %w", err)
+		return milvus.CreateCollectionInput{}, nil, fmt.Errorf("restore: conv struct array fields: %w", err)
 	}
 	// CollectionSchema.AutoID is a deprecated proto field that Milvus proxy has zeroed
 	// on entry of every supported target since 2.2, so the backup value is never
@@ -295,15 +306,20 @@ func (ddlt *collDDLTask) createColl(ctx context.Context) error {
 		PartitionNum: ddlt.partitionNum(),
 		Properties:   ddlt.properties(),
 	}
-	if err := ddlt.grpcCli.CreateCollection(ctx, opt); err != nil {
+	return opt, addFields, nil
+}
+
+func (ddlt *collDDLTask) createColl(ctx context.Context, input milvus.CreateCollectionInput, addFields []*schemapb.FieldSchema) error {
+	if ddlt.option.SkipCreateCollection {
+		ddlt.logger.Info("skip create collection")
+		return nil
+	}
+
+	if err := ddlt.grpcCli.CreateCollection(ctx, input); err != nil {
 		return fmt.Errorf("restore: call create collection api after retry: %w", err)
 	}
 
-	if err := ddlt.addFields(ctx, addFields); err != nil {
-		return fmt.Errorf("restore: add fields: %w", err)
-	}
-
-	return nil
+	return ddlt.addFields(ctx, addFields)
 }
 
 func (ddlt *collDDLTask) convFields(bakFields []*backuppb.FieldSchema) ([]*schemapb.FieldSchema, error) {
@@ -313,6 +329,11 @@ func (ddlt *collDDLTask) convFields(bakFields []*backuppb.FieldSchema) ([]*schem
 		defaultValue, err := conv.DefaultValue(bakField)
 		if err != nil {
 			return nil, fmt.Errorf("restore: get default value: %w", err)
+		}
+
+		typeSchema, err := conv.TypeSchema(bakField)
+		if err != nil {
+			return nil, err
 		}
 
 		fieldRestore := &schemapb.FieldSchema{
@@ -330,12 +351,26 @@ func (ddlt *collDDLTask) convFields(bakFields []*backuppb.FieldSchema) ([]*schem
 			ElementType:      schemapb.DataType(bakField.GetElementType()),
 			IsFunctionOutput: bakField.GetIsFunctionOutput(),
 			DefaultValue:     defaultValue,
+			ElementNullable:  bakField.GetElementNullable(),
+			TypeSchema:       typeSchema,
+		}
+		// A recursive type schema carries type params at every level of the
+		// nesting, so the skip list applies to the whole chain.
+		for t := fieldRestore.GetTypeSchema(); t != nil; t = t.GetArrayElement() {
+			t.TypeParams = filterParams(t.GetTypeParams(), ddlt.option.SkipParams.FieldTypeParams)
 		}
 
 		fields = append(fields, fieldRestore)
 	}
 
 	return fields, nil
+}
+
+// filterParams removes the skipped keys without mutating the input slice.
+func filterParams(params []*commonpb.KeyValuePair, skip []string) []*commonpb.KeyValuePair {
+	return slices.DeleteFunc(slices.Clone(params), func(kv *commonpb.KeyValuePair) bool {
+		return slices.Contains(skip, kv.GetKey())
+	})
 }
 
 func (ddlt *collDDLTask) structArrayFields() ([]*schemapb.StructArrayFieldSchema, error) {
