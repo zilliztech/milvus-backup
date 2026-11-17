@@ -62,6 +62,21 @@ func Functions(bakFuncs []*backuppb.FunctionSchema) []*schemapb.FunctionSchema {
 	return funcs
 }
 
+// TypeSchema decodes a field's recursive type representation. The backup stores
+// it as serialized schemapb.TypeSchema bytes because the message is recursive
+// (an array element can itself be an array) and cannot be flattened into the
+// backup's flat FieldSchema.
+func TypeSchema(field *backuppb.FieldSchema) (*schemapb.TypeSchema, error) {
+	if len(field.GetTypeSchema()) == 0 {
+		return nil, nil
+	}
+	var schema schemapb.TypeSchema
+	if err := proto.Unmarshal(field.GetTypeSchema(), &schema); err != nil {
+		return nil, fmt.Errorf("restore: decode type_schema of field %q (id %d): %w", field.GetName(), field.GetFieldID(), err)
+	}
+	return &schema, nil
+}
+
 func Fields(bakFields []*backuppb.FieldSchema) ([]*schemapb.FieldSchema, error) {
 	fields := make([]*schemapb.FieldSchema, 0, len(bakFields))
 
@@ -69,6 +84,11 @@ func Fields(bakFields []*backuppb.FieldSchema) ([]*schemapb.FieldSchema, error) 
 		defaultValue, err := DefaultValue(bakField)
 		if err != nil {
 			return nil, fmt.Errorf("conv: get default value: %w", err)
+		}
+
+		typeSchema, err := TypeSchema(bakField)
+		if err != nil {
+			return nil, err
 		}
 
 		fieldRestore := &schemapb.FieldSchema{
@@ -86,6 +106,8 @@ func Fields(bakFields []*backuppb.FieldSchema) ([]*schemapb.FieldSchema, error) 
 			ElementType:      schemapb.DataType(bakField.GetElementType()),
 			IsFunctionOutput: bakField.GetIsFunctionOutput(),
 			DefaultValue:     defaultValue,
+			ElementNullable:  bakField.GetElementNullable(),
+			TypeSchema:       typeSchema,
 		}
 
 		fields = append(fields, fieldRestore)

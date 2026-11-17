@@ -261,7 +261,7 @@ func TestCollDDLTask_createColl(t *testing.T) {
 	t.Run("Skip", func(t *testing.T) {
 		ct := newTestCollDDLTask()
 		ct.option.SkipCreateCollection = true
-		err := ct.createColl(context.Background())
+		err := ct.createColl(context.Background(), milvus.CreateCollectionInput{}, nil)
 		assert.NoError(t, err)
 	})
 
@@ -314,7 +314,9 @@ func TestCollDDLTask_createColl(t *testing.T) {
 		})
 		cli.EXPECT().HasFeature(milvus.FuncRuntimeCheck).Return(true).Once()
 		ct.grpcCli = cli
-		err := ct.createColl(context.Background())
+		input, addFields, err := ct.createCollectionInput()
+		require.NoError(t, err)
+		err = ct.createColl(context.Background(), input, addFields)
 		assert.NoError(t, err)
 	})
 
@@ -343,7 +345,9 @@ func TestCollDDLTask_createColl(t *testing.T) {
 			assert.Equal(t, int32(2), coll.ShardNum)
 		})
 		ct.grpcCli = cli
-		err := ct.createColl(context.Background())
+		input, addFields, err := ct.createCollectionInput()
+		require.NoError(t, err)
+		err = ct.createColl(context.Background(), input, addFields)
 		assert.NoError(t, err)
 	})
 }
