@@ -103,7 +103,7 @@ jobs:
         run: |
           sudo apt-get install -y tree > /dev/null 2>&1 || true
           echo "=== RustFS volume tree (before backup) ==="
-          sudo tree volumes/rustfs/ | head -500
+          sudo tree volumes/rustfs/ | sed -n '1,500p'
 
       - name: Backup
         timeout-minutes: 5
@@ -132,7 +132,7 @@ jobs:
         working-directory: deployment/standalone
         run: |
           echo "=== RustFS volume tree (after backup) ==="
-          sudo tree volumes/rustfs/ | head -500
+          sudo tree volumes/rustfs/ | sed -n '1,500p'
 
       - name: delete backup
         timeout-minutes: 5
