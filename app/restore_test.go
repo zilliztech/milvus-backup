@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"testing"
+	"testing/synctest"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -13,7 +14,9 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
+	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
+	"github.com/zilliztech/milvus-backup/internal/restoreplan"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
@@ -137,6 +140,7 @@ func TestNewRestoreSecondaryJob(t *testing.T) {
 			BackupName:      "backup1",
 			SourceClusterID: "source",
 			TargetClusterID: "target",
+			Resumable:       true,
 		}
 		job, err := newRestoreSecondaryJob(context.Background(), cfg.New(), store, backupCli, milvusCli, req)
 
@@ -147,6 +151,7 @@ func TestNewRestoreSecondaryJob(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "restore_1", status.ID)
 		assert.Equal(t, jobstate.RestoreStateInitial, status.State)
+		assert.True(t, status.Resumable)
 	})
 
 	t.Run("FailsWhenBackupNotFound", func(t *testing.T) {
@@ -162,31 +167,12 @@ func TestNewRestoreSecondaryJob(t *testing.T) {
 	})
 }
 
-// stubRestoreTask settles the tracker the way a real task does before Execute
-// returns: the job's Wait reads the settlement through the same handle.
-type stubRestoreTask struct {
-	tracker *jobstate.RestoreTracker
-	err     error
-}
-
-func (s stubRestoreTask) Execute(context.Context) error {
-	if s.err != nil {
-		s.tracker.SetFail(s.err)
-		return s.err
-	}
-
-	s.tracker.SetSuccess()
-	return nil
-}
-
-// newStubRestoreJob builds the job around a stubbed run: the tracker is the
-// job's own, as NewRestoreJob gets it from the task.
-func newStubRestoreJob(store *jobstate.Store, taskID string, runErr error) *RestoreJob {
-	tracker := store.AddRestoreTask(taskID)
-
+func newStubRestoreJob(t *testing.T, store *jobstate.Store, taskID string, runErr error) *RestoreJob {
+	t.Helper()
+	tracker, addErr := store.AddRestoreTask(taskID, false)
+	require.NoError(t, addErr)
 	return &RestoreJob{
-		task:    stubRestoreTask{tracker: tracker, err: runErr},
-		tracker: tracker,
+		execute: func(context.Context) (jobstate.RestoreStatus, error) { return tracker.Finish(runErr), runErr },
 		done:    make(chan struct{}),
 	}
 }
@@ -194,7 +180,7 @@ func newStubRestoreJob(store *jobstate.Store, taskID string, runErr error) *Rest
 func TestRestoreJobRun(t *testing.T) {
 	t.Run("SuccessSettlesTheStatus", func(t *testing.T) {
 		store := jobstate.NewStore()
-		job := newStubRestoreJob(store, "task-1", nil)
+		job := newStubRestoreJob(t, store, "task-1", nil)
 
 		// Run is fire-and-forget; the outcome is read back through Wait.
 		job.Run(context.Background())
@@ -202,6 +188,7 @@ func TestRestoreJobRun(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, jobstate.RestoreStateSuccess, status.State)
 		assert.True(t, status.Terminal())
+		assert.Nil(t, job.execute)
 
 		// The store sees the same settlement the Wait answered with.
 		stored, err := store.GetRestoreTask("task-1")
@@ -211,7 +198,7 @@ func TestRestoreJobRun(t *testing.T) {
 
 	t.Run("FailureLandsInTheStatus", func(t *testing.T) {
 		store := jobstate.NewStore()
-		job := newStubRestoreJob(store, "task-1", errors.New("boom"))
+		job := newStubRestoreJob(t, store, "task-1", errors.New("boom"))
 
 		job.Run(context.Background())
 		status, err := job.Wait(context.Background())
@@ -223,9 +210,58 @@ func TestRestoreJobRun(t *testing.T) {
 }
 
 func TestRestoreJobWait(t *testing.T) {
+	t.Run("OriginalWaitReturnsFailureAfterImmediateResume", func(t *testing.T) {
+		synctest.Test(t, func(t *testing.T) {
+			store := jobstate.NewStore()
+			tracker, addErr := store.AddRestoreTask("task", true)
+			require.NoError(t, addErr)
+			target := collref.New("db", "coll")
+			importJob := tracker.NewCollTracker(target, 10).NewJob(10)
+			importJob.SetFailed(assert.AnError)
+			tracker.SavePlan(&restoreplan.Plan{})
+			failed, release := make(chan struct{}), make(chan struct{})
+			job := &RestoreJob{done: make(chan struct{}), execute: func(context.Context) (jobstate.RestoreStatus, error) {
+				result := tracker.Finish(assert.AnError)
+				close(failed)
+				<-release
+				return result, assert.AnError
+			}}
+			waiting := make(chan jobstate.RestoreStatus, 1)
+			go func() {
+				status, err := job.Wait(t.Context())
+				assert.NoError(t, err)
+				waiting <- status
+			}()
+			synctest.Wait()
+			assert.Empty(t, waiting)
+			job.Run(t.Context())
+			<-failed
+			// Resume settles before the original Run even returns to the job handle.
+			owner, _, err := store.StartResume("task")
+			require.NoError(t, err)
+			importJob.SetCompleted()
+			owner.SetSuccess()
+			synctest.Wait()
+			assert.Equal(t, jobstate.RestoreStateSuccess, tracker.Snapshot().State)
+			close(release)
+			status := <-waiting
+			assert.Equal(t, "task", status.ID)
+			assert.Equal(t, jobstate.RestoreStateFail, status.State)
+			assert.Equal(t, assert.AnError.Error(), status.ErrorMessage)
+			assert.True(t, status.Resumable)
+			assert.Equal(t, jobstate.RestoreJobFailed, status.Colls[target].Jobs[0].State)
+			// Each caller owns the status returned by Wait.
+			status.Colls[target].Jobs[0].State = jobstate.RestoreJobCompleted
+			again, err := job.Wait(t.Context())
+			require.NoError(t, err)
+			assert.Equal(t, jobstate.RestoreStateFail, again.State)
+			assert.Equal(t, jobstate.RestoreJobFailed, again.Colls[target].Jobs[0].State)
+		})
+	})
+
 	t.Run("StopsWhenContextCanceled", func(t *testing.T) {
 		store := jobstate.NewStore()
-		job := newStubRestoreJob(store, "task-1", nil)
+		job := newStubRestoreJob(t, store, "task-1", nil)
 
 		// The job never runs, so only the context can release the wait.
 		ctx, cancel := context.WithCancel(context.Background())

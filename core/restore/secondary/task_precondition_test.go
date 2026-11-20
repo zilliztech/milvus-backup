@@ -416,7 +416,7 @@ func TestExecuteSecondaryPreflight(t *testing.T) {
 		checkpoint *commonpb.ReplicateCheckpoint
 		want       string
 	}{
-		{name: "FreshSecondary", checkpoint: &commonpb.ReplicateCheckpoint{ClusterId: "src"}},
+		{name: "FreshSecondary", checkpoint: &commonpb.ReplicateCheckpoint{ClusterId: "src", Pchannel: "src-rootcoord-dml_0"}},
 		{name: "CDCAlreadyAdvanced", checkpoint: &commonpb.ReplicateCheckpoint{ClusterId: "src", TimeTick: 468522223459106838}, want: "CDC"},
 		{name: "ConfigurationReadFailure", configErr: status.Error(codes.PermissionDenied, "cannot inspect replication"), want: "cannot inspect replication"},
 		{name: "MissingCheckpoint", want: "no replicate checkpoint"},
@@ -437,7 +437,7 @@ func TestExecuteSecondaryPreflight(t *testing.T) {
 			params.Milvus.Grpc.TLSMode.Val = cfg.TLSDisabled
 			store := jobstate.NewStore()
 			task, err := NewTask(TaskArgs{
-				TaskID: "restore", SourceClusterID: "src", TargetClusterID: "tgt", Params: params, Store: store,
+				TaskID: "restore", Resumable: tc.want != "", SourceClusterID: "src", TargetClusterID: "tgt", Params: params, Store: store,
 				Backup: &backuppb.BackupInfo{
 					ControlChannelName:   "src-rootcoord-dml_0_vcchan",
 					PhysicalChannelNames: []string{"src-rootcoord-dml_0"},
@@ -468,6 +468,10 @@ func TestExecuteSecondaryPreflight(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, jobstate.RestoreStateFail, view.State)
 			assert.Contains(t, view.ErrorMessage, tc.want)
+			assert.True(t, view.Resumable)
+			assert.Nil(t, task.Tracker().SecondaryProgress())
+			_, _, err = store.StartResume("restore")
+			assert.ErrorIs(t, err, jobstate.ErrRestoreConflict)
 		})
 	}
 }

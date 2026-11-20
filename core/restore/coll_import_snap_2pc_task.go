@@ -20,39 +20,18 @@ func (it *snapshotImport2PCTask) Execute(ctx context.Context) error {
 }
 
 func (it *snapshotImport2PCTask) execute(ctx context.Context) error {
-	jobID, err := it.importer.submit2PC(ctx)
-	if err != nil {
-		return err
+	si := it.importer
+	rt := importViaRESTFul2PCTask{
+		importer: &restfulImporter{
+			args: importTaskArgs{
+				target:     si.target,
+				restfulCli: si.restfulCli,
+				logger:     si.logger,
+				jobs:       si.jobs,
+			},
+			job: si.job,
+		},
+		secondaries: it.secondaries,
 	}
-
-	// Before the primary commit, aborting it replicates a rollback that fails
-	// the mirrors. Afterwards rollback is impossible and a mirror failure is
-	// reported as divergence instead.
-	committed := false
-	defer func() {
-		if !committed {
-			it.importer.abort(context.WithoutCancel(ctx), jobID)
-		}
-	}()
-
-	if err := it.importer.waitUncommitted(ctx, jobID); err != nil {
-		return err
-	}
-	for _, secondary := range it.secondaries {
-		if err := waitSecondaryMirrored(ctx, it.importer.logger, it.importer.target.DBName(), secondary, jobID); err != nil {
-			return err
-		}
-	}
-
-	if err := it.importer.commit(ctx, jobID); err != nil {
-		return err
-	}
-	committed = true
-
-	for _, secondary := range it.secondaries {
-		if err := waitSecondaryCommitted(ctx, it.importer.logger, it.importer.target.DBName(), secondary, jobID); err != nil {
-			return err
-		}
-	}
-	return it.importer.waitCompleted(ctx, jobID)
+	return rt.executeImport(ctx, si.submit2PC)
 }

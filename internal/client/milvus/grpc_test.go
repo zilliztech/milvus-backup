@@ -8,6 +8,7 @@ import (
 	"time"
 
 	semver "github.com/Masterminds/semver/v3"
+	grpcretry "github.com/grpc-ecosystem/go-grpc-middleware/retry"
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
 	"github.com/stretchr/testify/assert"
@@ -24,6 +25,43 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/cfg/param"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
+
+func TestGetBulkInsertStateMissingID(t *testing.T) {
+	const missing = "import job does not exist, jobID=42"
+	response := func(id int64, code int32, reason string) *milvuspb.GetImportStateResponse {
+		return &milvuspb.GetImportStateResponse{Id: id, Status: &commonpb.Status{Code: code, Reason: reason}}
+	}
+	for _, tc := range []struct {
+		name    string
+		resp    *milvuspb.GetImportStateResponse
+		rpcErr  error
+		missing bool
+	}{
+		{"ImportError", response(0, 2100, missing+": importing data failed"), nil, true},
+		{"ImportSystemError", response(0, 2101, missing+": importing data failed on server side"), nil, true},
+		{"OtherIDInReason", response(0, 2101, missing+"0"), nil, false},
+		{"ConflictingResponseID", response(420, 2101, missing), nil, false},
+		{"MissingStatus", &milvuspb.GetImportStateResponse{State: commonpb.ImportState_ImportFailed}, nil, false},
+		{"OtherReason", response(0, 2100, "parse job id failed"), nil, false},
+		{"OtherCode", response(0, 1100, missing), nil, false},
+		{"TransportError", response(0, 2101, missing), context.DeadlineExceeded, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				srv := NewMockMilvusServiceClient(t)
+				call := srv.EXPECT().GetImportState(mock.Anything, &milvuspb.GetImportStateRequest{Task: 42}).
+					Return(tc.resp, tc.rpcErr)
+				if tc.missing {
+					call.Once()
+				}
+				client := &GrpcClient{srv: srv}
+				_, err := client.GetBulkInsertState(t.Context(), 42)
+				require.Error(t, err)
+				assert.Equal(t, tc.missing, errors.Is(err, ErrImportJobNotFound))
+			})
+		})
+	}
+}
 
 func TestGrpcAuth(t *testing.T) {
 	got := grpcAuth("username", "password")
@@ -652,6 +690,43 @@ func TestGrpcClient_DropSnapshot(t *testing.T) {
 }
 
 func TestGrpcClient_RestoreExternalSnapshot(t *testing.T) {
+	t.Run("UnavailableDoesNotRepeatSubmission", func(t *testing.T) {
+		srv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: srv, flags: Snapshot}
+		attempts := 0
+		srv.EXPECT().RestoreExternalSnapshot(mock.Anything, mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, req *milvuspb.RestoreExternalSnapshotRequest, opts ...grpc.CallOption) (*milvuspb.RestoreExternalSnapshotResponse, error) {
+			retry := grpcretry.UnaryClientInterceptor(grpcretry.WithMax(3))
+			err := retry(ctx, "RestoreExternalSnapshot", req, nil, nil, func(context.Context, string, any, any, *grpc.ClientConn, ...grpc.CallOption) error {
+				attempts++
+				return status.Error(codes.Unavailable, "reply lost")
+			}, opts...)
+			return nil, err
+		})
+		_, err := cli.RestoreExternalSnapshot(t.Context(), RestoreExternalSnapshotInput{DisableRetry: true})
+		assert.Error(t, err)
+		assert.Equal(t, 1, attempts)
+	})
+
+	t.Run("DefaultRetriesUnavailable", func(t *testing.T) {
+		srv := NewMockMilvusServiceClient(t)
+		cli := &GrpcClient{srv: srv, flags: Snapshot}
+		attempts := 0
+		srv.EXPECT().RestoreExternalSnapshot(mock.Anything, mock.Anything).RunAndReturn(func(ctx context.Context, req *milvuspb.RestoreExternalSnapshotRequest, opts ...grpc.CallOption) (*milvuspb.RestoreExternalSnapshotResponse, error) {
+			retry := grpcretry.UnaryClientInterceptor(grpcretry.WithMax(3))
+			err := retry(ctx, "RestoreExternalSnapshot", req, nil, nil, func(context.Context, string, any, any, *grpc.ClientConn, ...grpc.CallOption) error {
+				attempts++
+				if attempts == 1 {
+					return status.Error(codes.Unavailable, "temporarily unavailable")
+				}
+				return nil
+			}, opts...)
+			return &milvuspb.RestoreExternalSnapshotResponse{Status: &commonpb.Status{}, JobId: 9002}, err
+		})
+		id, err := cli.RestoreExternalSnapshot(t.Context(), RestoreExternalSnapshotInput{})
+		assert.NoError(t, err)
+		assert.EqualValues(t, 9002, id)
+		assert.Equal(t, 2, attempts)
+	})
 	t.Run("Success", func(t *testing.T) {
 		mockSrv := NewMockMilvusServiceClient(t)
 		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}
@@ -692,6 +767,25 @@ func TestGrpcClient_RestoreExternalSnapshot(t *testing.T) {
 }
 
 func TestGrpcClient_GetRestoreSnapshotState(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		id   int64
+	}{{"OmittedID", 0}, {"MismatchedID", 9003}} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := NewMockMilvusServiceClient(t)
+			cli := &GrpcClient{srv: srv, flags: Snapshot}
+			srv.EXPECT().GetRestoreSnapshotState(mock.Anything, mock.Anything).Return(&milvuspb.GetRestoreSnapshotStateResponse{Status: &commonpb.Status{}, Info: &milvuspb.RestoreSnapshotInfo{JobId: tc.id, State: milvuspb.RestoreSnapshotState_RestoreSnapshotFailed}}, nil)
+			info, err := cli.GetRestoreSnapshotState(t.Context(), 9002)
+			if tc.id == 0 {
+				assert.NoError(t, err)
+				assert.NotNil(t, info)
+			} else {
+				assert.ErrorContains(t, err, "received job 9003")
+				assert.Nil(t, info)
+			}
+		})
+	}
+
 	t.Run("Success", func(t *testing.T) {
 		mockSrv := NewMockMilvusServiceClient(t)
 		cli := &GrpcClient{srv: mockSrv, flags: Snapshot}

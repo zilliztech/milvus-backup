@@ -25,7 +25,8 @@ func newTestCollSnapshotTask(t *testing.T, grpcCli milvus.Grpc, dropExist bool) 
 	target := collref.New("db2", "coll2")
 
 	mgr := jobstate.NewStore()
-	tracker := mgr.AddRestoreTask("task-1")
+	tracker, addErr := mgr.AddRestoreTask("task-1", false)
+	require.NoError(t, addErr)
 
 	collBackup := &backuppb.CollectionBackupInfo{
 		DbName:         "db1",
@@ -47,7 +48,7 @@ func newTestCollSnapshotTask(t *testing.T, grpcCli milvus.Grpc, dropExist bool) 
 		source:     snapshotsource.Source{DirURI: "s3://backup-bucket/backup/mybackup", ExternalSpec: `{"extfs":{}}`},
 		dropExist:  dropExist,
 		grpcCli:    grpcCli,
-		job:        collTracker.NewJob(collBackup.GetSize()),
+		tracker:    collTracker.NewSnapshotRestoreJob(collBackup.GetSize()),
 	})
 	task.pollInterval = time.Millisecond
 	task.logger = zap.NewNop()
@@ -320,4 +321,158 @@ func TestCollSnapshotTask_Execute(t *testing.T) {
 		err := task.Execute(context.Background())
 		assert.ErrorContains(t, err, "drop skipped collection properties")
 	})
+}
+
+func TestSnapshotResumeAfterPostprocessingFailure(t *testing.T) {
+	cli := milvus.NewMockGrpc(t)
+	cli.EXPECT().RestoreExternalSnapshot(mock.Anything, mock.Anything).Return(9001, nil).Once()
+	cli.EXPECT().GetRestoreSnapshotState(mock.Anything, int64(9001)).Return(&milvuspb.RestoreSnapshotInfo{State: milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted}, nil).Once()
+	cli.EXPECT().AlterCollection(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(assert.AnError).Once()
+	task, _ := newTestCollSnapshotTask(t, cli, true)
+	task.tracker.MarkSnapshotTargetPrepared()
+	task.descOverride = "description"
+	require.ErrorIs(t, task.Execute(t.Context()), assert.AnError)
+	cli.EXPECT().AlterCollection(mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return(nil).Once()
+	require.NoError(t, task.Execute(t.Context()))
+	require.NoError(t, task.Execute(t.Context()))
+}
+
+func TestSnapshotResumeWaitFailure(t *testing.T) {
+	cli := milvus.NewMockGrpc(t)
+	task, _ := newTestCollSnapshotTask(t, cli, true)
+	task.tracker.MarkSnapshotTargetPrepared()
+	task.tracker.Bind("9000")
+	cli.EXPECT().GetRestoreSnapshotState(mock.Anything, int64(9000)).
+		Return(&milvuspb.RestoreSnapshotInfo{State: milvuspb.RestoreSnapshotState_RestoreSnapshotExecuting}, nil).Once()
+	cli.EXPECT().GetRestoreSnapshotState(mock.Anything, int64(9000)).
+		Return(&milvuspb.RestoreSnapshotInfo{State: milvuspb.RestoreSnapshotState_RestoreSnapshotFailed}, nil).Once()
+
+	assert.ErrorIs(t, task.Execute(t.Context()), milvus.ErrRemoteJobFailed)
+	id, done := task.tracker.Current()
+	assert.Equal(t, "9000", id)
+	assert.False(t, done)
+	assert.False(t, task.tracker.SnapshotDataRestored())
+
+	cli.EXPECT().GetRestoreSnapshotState(mock.Anything, int64(9000)).
+		Return(&milvuspb.RestoreSnapshotInfo{State: milvuspb.RestoreSnapshotState_RestoreSnapshotFailed}, nil).Once()
+	cli.EXPECT().HasCollection(mock.Anything, "db2", "coll2").Return(true, nil).Once()
+	cli.EXPECT().DropCollection(mock.Anything, "db2", "coll2").Return(nil).Once()
+	cli.EXPECT().RestoreExternalSnapshot(mock.Anything, mock.Anything).Return(int64(9001), nil).Once()
+	cli.EXPECT().GetRestoreSnapshotState(mock.Anything, int64(9001)).
+		Return(&milvuspb.RestoreSnapshotInfo{State: milvuspb.RestoreSnapshotState_RestoreSnapshotFailed}, nil).Once()
+	assert.ErrorIs(t, task.Execute(t.Context()), milvus.ErrRemoteJobFailed)
+	id, done = task.tracker.Current()
+	assert.Equal(t, "9001", id)
+	assert.False(t, done)
+	assert.False(t, task.tracker.SnapshotDataRestored())
+}
+
+func TestSnapshotResumeCleanup(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		dropExist bool
+		state     milvuspb.RestoreSnapshotState
+		queryErr  error
+		cleanup   bool
+		exists    bool
+		replace   bool
+	}{
+		{name: "FailedWithDropEnabled", dropExist: true, state: milvuspb.RestoreSnapshotState_RestoreSnapshotFailed, cleanup: true, exists: true, replace: true},
+		{name: "FailedTargetAbsent", dropExist: true, state: milvuspb.RestoreSnapshotState_RestoreSnapshotFailed, cleanup: true, replace: true},
+		{name: "FailedWithDropDisabled", state: milvuspb.RestoreSnapshotState_RestoreSnapshotFailed, replace: true},
+		{name: "Executing", dropExist: true, state: milvuspb.RestoreSnapshotState_RestoreSnapshotExecuting},
+		{name: "Pending", dropExist: true, state: milvuspb.RestoreSnapshotState_RestoreSnapshotPending},
+		{name: "Completed", dropExist: true, state: milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted},
+		{name: "QueryError", dropExist: true, queryErr: assert.AnError},
+		{name: "MissingJob", dropExist: true, queryErr: milvus.ErrImportJobNotFound},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cli := milvus.NewMockGrpc(t)
+			task, _ := newTestCollSnapshotTask(t, cli, tc.dropExist)
+			task.tracker.MarkSnapshotTargetPrepared()
+			task.tracker.Bind("9000")
+			calls := []*mock.Call{cli.EXPECT().GetRestoreSnapshotState(mock.Anything, int64(9000)).
+				Return(&milvuspb.RestoreSnapshotInfo{State: tc.state}, tc.queryErr).Once()}
+			if tc.cleanup {
+				calls = append(calls, cli.EXPECT().HasCollection(mock.Anything, "db2", "coll2").Return(tc.exists, nil).Once())
+				if tc.exists {
+					calls = append(calls, cli.EXPECT().DropCollection(mock.Anything, "db2", "coll2").Return(nil).Once())
+				}
+			}
+			id := int64(9000)
+			if tc.replace {
+				calls = append(calls, cli.EXPECT().RestoreExternalSnapshot(mock.Anything, mock.Anything).Return(int64(9001), nil).Once())
+				id = 9001
+			}
+			if tc.replace || (tc.queryErr == nil && tc.state != milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted) {
+				calls = append(calls, cli.EXPECT().GetRestoreSnapshotState(mock.Anything, id).
+					Return(&milvuspb.RestoreSnapshotInfo{State: milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted}, nil).Once())
+			}
+			mock.InOrder(calls...)
+			err := task.Execute(t.Context())
+			if tc.queryErr != nil && !tc.replace {
+				assert.ErrorIs(t, err, tc.queryErr)
+				id, done := task.tracker.Current()
+				assert.Equal(t, "9000", id)
+				assert.False(t, done)
+			} else {
+				assert.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestSnapshotResumeCleanupFailureRetainsJob(t *testing.T) {
+	for _, operation := range []string{"Check", "Drop"} {
+		t.Run(operation, func(t *testing.T) {
+			cli := milvus.NewMockGrpc(t)
+			task, _ := newTestCollSnapshotTask(t, cli, true)
+			task.tracker.MarkSnapshotTargetPrepared()
+			task.tracker.Bind("9000")
+			cli.EXPECT().GetRestoreSnapshotState(mock.Anything, int64(9000)).
+				Return(&milvuspb.RestoreSnapshotInfo{State: milvuspb.RestoreSnapshotState_RestoreSnapshotFailed}, nil).Twice()
+			if operation == "Check" {
+				cli.EXPECT().HasCollection(mock.Anything, "db2", "coll2").Return(false, assert.AnError).Once()
+			} else {
+				cli.EXPECT().HasCollection(mock.Anything, "db2", "coll2").Return(true, nil).Once()
+				cli.EXPECT().DropCollection(mock.Anything, "db2", "coll2").Return(assert.AnError).Once()
+			}
+			require.ErrorIs(t, task.Execute(t.Context()), assert.AnError)
+			id, done := task.tracker.Current()
+			assert.Equal(t, "9000", id)
+			assert.False(t, done)
+			check := cli.EXPECT().HasCollection(mock.Anything, "db2", "coll2").Return(true, nil).Once()
+			drop := cli.EXPECT().DropCollection(mock.Anything, "db2", "coll2").Return(nil).Once()
+			submit := cli.EXPECT().RestoreExternalSnapshot(mock.Anything, mock.Anything).Return(int64(9001), nil).Once()
+			poll := cli.EXPECT().GetRestoreSnapshotState(mock.Anything, int64(9001)).
+				Return(&milvuspb.RestoreSnapshotInfo{State: milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted}, nil).Once()
+			mock.InOrder(check, drop, submit, poll)
+			require.NoError(t, task.Execute(t.Context()))
+		})
+	}
+}
+
+func TestSnapshotSubmitWithoutIDDoesNotRepeatCleanup(t *testing.T) {
+	cli := milvus.NewMockGrpc(t)
+	task, _ := newTestCollSnapshotTask(t, cli, true)
+	cli.EXPECT().HasCollection(mock.Anything, "db2", "coll2").Return(false, nil).Once()
+	cli.EXPECT().RestoreExternalSnapshot(mock.Anything, mock.Anything).Return(int64(0), assert.AnError).Once()
+	require.ErrorIs(t, task.Execute(t.Context()), assert.AnError)
+	cli.EXPECT().RestoreExternalSnapshot(mock.Anything, mock.Anything).Return(int64(9001), nil).Once()
+	cli.EXPECT().GetRestoreSnapshotState(mock.Anything, int64(9001)).
+		Return(&milvuspb.RestoreSnapshotInfo{State: milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted}, nil).Once()
+	require.NoError(t, task.Execute(t.Context()))
+}
+
+func TestSnapshotFailedJobPreservesTargetWithoutDrop(t *testing.T) {
+	cli := milvus.NewMockGrpc(t)
+	task, _ := newTestCollSnapshotTask(t, cli, false)
+	task.tracker.MarkSnapshotTargetPrepared()
+	task.tracker.Bind("9000")
+	cli.EXPECT().GetRestoreSnapshotState(mock.Anything, int64(9000)).
+		Return(&milvuspb.RestoreSnapshotInfo{State: milvuspb.RestoreSnapshotState_RestoreSnapshotFailed}, nil).Once()
+	cli.EXPECT().RestoreExternalSnapshot(mock.Anything, mock.Anything).
+		Return(int64(0), errors.New("collection already exists")).Once()
+	assert.ErrorContains(t, task.Execute(t.Context()), "collection already exists")
+	assert.False(t, task.tracker.SnapshotDataRestored())
 }

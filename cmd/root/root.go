@@ -1,6 +1,7 @@
 package root
 
 import (
+	"context"
 	"errors"
 	"os"
 	"strings"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/cfg/loader"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
@@ -31,6 +33,7 @@ func (o *Options) InitGlobalVars() *cfg.Config {
 	}
 
 	log.InitLogger(logConfig(&params.Log))
+	jobstate.Default().InitializePersistence(context.Background(), params.Restore.Persistence)
 
 	return params
 }

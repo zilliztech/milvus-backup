@@ -25,12 +25,15 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
-func newTestTask() *Task {
+func newTestTask(t *testing.T, resumable bool) *Task {
+	t.Helper()
 	store := jobstate.NewStore()
+	tracker, addErr := store.AddRestoreTask("task-1", resumable)
+	require.NoError(t, addErr)
 	return &Task{
 		logger: zap.NewNop(),
 
-		tracker: store.AddRestoreTask("task-1"),
+		tracker: tracker,
 
 		args: TaskArgs{
 			TaskID: "task-1",
@@ -75,6 +78,34 @@ func TestNewSecondaryRestfulAuthentication(t *testing.T) {
 			assert.Equal(t, "primary", primary.User.Val)
 			assert.Equal(t, "password", primary.Password.Val)
 			assert.Equal(t, "http://primary:19530", primary.Rest.Endpoint.Val)
+		})
+	}
+}
+
+func TestNewTaskResumeSetting(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		option Option
+		want   bool
+	}{
+		{"Default", Option{}, false},
+		{"Enabled", Option{Resumable: true}, true},
+		{"TwoPhaseDefault", Option{Secondaries: []Secondary{{Address: "http://secondary:19530"}}}, false},
+		{"TwoPhaseEnabled", Option{Resumable: true, Secondaries: []Secondary{{Address: "http://secondary:19530"}}}, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			store := jobstate.NewStore()
+			local := newTestStorageClient(t, cfg.ProviderLocal)
+			task, err := NewTask(t.Context(), TaskArgs{
+				TaskID: "job", Backup: &backuppb.BackupInfo{Format: meta.FormatBinlog},
+				Params: cfg.New(), Option: &tc.option, Store: store, BackupStorage: local, MilvusStorage: local,
+			})
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, task.Tracker().Snapshot().Resumable)
+			require.True(t, task.Tracker().Start())
+			failed := task.Tracker().Finish(assert.AnError) // Failure before a plan was prepared.
+			assert.Equal(t, tc.want, failed.Resumable)
+			assert.ErrorIs(t, Resume(t.Context(), store, "job"), jobstate.ErrRestoreConflict)
 		})
 	}
 }
@@ -277,7 +308,7 @@ func TestTask_CheckImport2PCSetup(t *testing.T) {
 	}
 
 	newTaskWithSecondaries := func(secondaries []string, grpcCli *milvus.MockGrpc) *Task {
-		task := newTestTask()
+		task := newTestTask(t, false)
 		configs := lo.Map(secondaries, func(address string, _ int) Secondary {
 			return Secondary{Address: address}
 		})
@@ -319,7 +350,7 @@ func TestTask_CheckImport2PCSetup(t *testing.T) {
 		grpcCli.EXPECT().GetReplicateConfiguration(mock.Anything).
 			Return(&commonpb.ReplicateConfiguration{}, nil)
 
-		task := newTestTask()
+		task := newTestTask(t, false)
 		task.args.Option = &Option{Secondaries: []Secondary{{
 			Address: "http://secondary:19530",
 			Token:   "secret-token",
@@ -366,7 +397,7 @@ func TestTask_CheckImport2PCSetup(t *testing.T) {
 
 func TestTask_SnapshotImport2PCPreflight(t *testing.T) {
 	newSnapshotTask := func(strategy Strategy, secondaries []Secondary, grpcCli *milvus.MockGrpc) *Task {
-		task := newTestTask()
+		task := newTestTask(t, false)
 		task.format = meta.FormatSnapshot
 		task.args.Backup = &backuppb.BackupInfo{Format: meta.FormatSnapshot}
 		task.args.Option = &Option{Strategy: strategy, Secondaries: secondaries}
@@ -387,7 +418,7 @@ func TestTask_SnapshotImport2PCPreflight(t *testing.T) {
 			grpcCli.EXPECT().HasFeature(milvus.Import2PC).Return(false)
 			secondaries := []Secondary{{Address: "http://secondary:19530"}}
 
-			err := newSnapshotTask(tt.strategy, secondaries, grpcCli).privateExecute(t.Context())
+			err := newSnapshotTask(tt.strategy, secondaries, grpcCli).prepare(t.Context())
 			assert.ErrorContains(t, err, "3.0")
 		})
 	}
@@ -400,7 +431,7 @@ func TestTask_SnapshotImport2PCPreflight(t *testing.T) {
 			Clusters: []*commonpb.MilvusCluster{{ClusterId: "a"}, {ClusterId: "b"}},
 		}, nil)
 
-		err := newSnapshotTask(StrategyImportSnap, nil, grpcCli).privateExecute(t.Context())
+		err := newSnapshotTask(StrategyImportSnap, nil, grpcCli).prepare(t.Context())
 		assert.ErrorContains(t, err, "secondaries")
 	})
 
@@ -409,7 +440,7 @@ func TestTask_SnapshotImport2PCPreflight(t *testing.T) {
 		grpcCli.EXPECT().HasFeature(milvus.Snapshot).Return(true)
 		grpcCli.EXPECT().ListDatabases(mock.Anything).Return([]string{}, nil).Twice()
 
-		err := newSnapshotTask(StrategyRestoreSnap, nil, grpcCli).privateExecute(t.Context())
+		err := newSnapshotTask(StrategyRestoreSnap, nil, grpcCli).prepare(t.Context())
 		assert.NoError(t, err)
 	})
 }
@@ -452,7 +483,7 @@ func TestTask_CheckCollExist(t *testing.T) {
 
 func TestTask_filterDBBackup(t *testing.T) {
 	t.Run("NoFilter", func(t *testing.T) {
-		task := newTestTask()
+		task := newTestTask(t, false)
 		dbBackup := []*backuppb.DatabaseBackupInfo{{DbName: "db1"}, {DbName: "db2"}, {DbName: "db3"}}
 		assert.ElementsMatch(t, dbBackup, task.filterDBBackup(dbBackup))
 	})
@@ -478,7 +509,7 @@ func TestTask_filterDBBackup(t *testing.T) {
 
 func TestTask_filterCollBackup(t *testing.T) {
 	t.Run("NoFilter", func(t *testing.T) {
-		task := newTestTask()
+		task := newTestTask(t, false)
 		collBackup := []*backuppb.CollectionBackupInfo{
 			{DbName: "db1", CollectionName: "coll1"},
 			{DbName: "db1", CollectionName: "coll2"},
@@ -494,7 +525,7 @@ func TestTask_filterCollBackup(t *testing.T) {
 				"coll1": {},
 			}},
 		}}}
-		task := newTestTask()
+		task := newTestTask(t, false)
 		task.args.Plan = p
 		collBackup := []*backuppb.CollectionBackupInfo{
 			{DbName: "db1", CollectionName: "coll1"},
@@ -511,7 +542,7 @@ func TestTask_filterCollBackup(t *testing.T) {
 		p := &Plan{BackupFilter: filter.Filter{DBCollFilter: map[string]filter.CollFilter{
 			"db1": {AllowAll: true},
 		}}}
-		task := newTestTask()
+		task := newTestTask(t, false)
 		task.args.Plan = p
 		collBackup := []*backuppb.CollectionBackupInfo{
 			{DbName: "db1", CollectionName: "coll1"},
@@ -528,7 +559,7 @@ func TestTask_filterCollBackup(t *testing.T) {
 
 func TestTask_filterDBTask(t *testing.T) {
 	t.Run("NoFilter", func(t *testing.T) {
-		task := newTestTask()
+		task := newTestTask(t, false)
 		dbTasks := []*databaseTask{
 			{targetName: "db1"},
 			{targetName: "db2"},
@@ -542,7 +573,7 @@ func TestTask_filterDBTask(t *testing.T) {
 			"db1": {AllowAll: true},
 			"db3": {AllowAll: true},
 		}}}
-		task := newTestTask()
+		task := newTestTask(t, false)
 		task.args.Plan = p
 		dbTasks := []*databaseTask{
 			{targetName: "db1"},
@@ -559,7 +590,7 @@ func TestTask_filterDBTask(t *testing.T) {
 
 func TestTask_filterCollTask(t *testing.T) {
 	t.Run("NoFilter", func(t *testing.T) {
-		task := newTestTask()
+		task := newTestTask(t, false)
 		collTargets := []collTarget{
 			{target: collref.New("db1", "coll1")},
 			{target: collref.New("db1", "coll2")},
@@ -572,7 +603,7 @@ func TestTask_filterCollTask(t *testing.T) {
 		p := &Plan{TaskFilter: filter.Filter{DBCollFilter: map[string]filter.CollFilter{
 			"db1": {CollName: map[string]struct{}{"coll1": {}}},
 		}}}
-		task := newTestTask()
+		task := newTestTask(t, false)
 		task.args.Plan = p
 		collTargets := []collTarget{
 			{target: collref.New("db1", "coll1")},
@@ -589,7 +620,7 @@ func TestTask_filterCollTask(t *testing.T) {
 		p := &Plan{TaskFilter: filter.Filter{DBCollFilter: map[string]filter.CollFilter{
 			"db1": {AllowAll: true},
 		}}}
-		task := newTestTask()
+		task := newTestTask(t, false)
 		task.args.Plan = p
 		collTargets := []collTarget{
 			{target: collref.New("db1", "coll1")},
@@ -606,7 +637,7 @@ func TestTask_filterCollTask(t *testing.T) {
 
 func TestTask_newDBTask(t *testing.T) {
 	t.Run("NoMapping", func(t *testing.T) {
-		task := newTestTask()
+		task := newTestTask(t, false)
 		dbBak := &backuppb.DatabaseBackupInfo{DbName: "db1"}
 		dbTasks := task.newDBTask(dbBak)
 		assert.Len(t, dbTasks, 1)
@@ -615,7 +646,7 @@ func TestTask_newDBTask(t *testing.T) {
 
 	t.Run("WithMapping", func(t *testing.T) {
 		p := &Plan{DBMapper: map[string][]DBMapping{"db1": {{Target: "db2"}, {Target: "db3"}}}}
-		task := newTestTask()
+		task := newTestTask(t, false)
 		task.args.Plan = p
 		dbBak := &backuppb.DatabaseBackupInfo{DbName: "db1"}
 		dbTasks := task.newDBTask(dbBak)
@@ -634,10 +665,11 @@ func TestTask_newCollTarget(t *testing.T) {
 		collref.New("db3", "coll3"),
 	}).Once()
 
-	task := newTestTask()
+	task := newTestTask(t, false)
 	task.args.Plan = &Plan{CollMapper: mapper}
 	mgr := jobstate.NewStore()
-	mgr.AddRestoreTask("task1")
+	_, addErr := mgr.AddRestoreTask("task1", false)
+	require.NoError(t, addErr)
 	task.args.TaskID = "task1"
 	task.args.Store = mgr
 
@@ -748,4 +780,51 @@ func TestTask_checkFieldIDsReproducible(t *testing.T) {
 		err := newTask(&Option{}).checkFieldIDsReproducible([]collTarget{empty}, &binlogPlan{})
 		assert.NoError(t, err)
 	})
+}
+
+func TestNewTaskChecksEffectiveTargetsBeforeRegistration(t *testing.T) {
+	cli := storage.NewMockClient(t)
+	cli.EXPECT().Config().Return(storage.Config{})
+	store := jobstate.NewStore()
+	x := collref.New("db", "x")
+	// The explicit rename collides with the other source's default target.
+	args := TaskArgs{TaskID: "job", Store: store, Params: cfg.New(), Option: &Option{MetaOnly: true},
+		BackupStorage: cli, MilvusStorage: cli,
+		Backup: &backuppb.BackupInfo{Format: meta.FormatBinlog, CollectionBackups: []*backuppb.CollectionBackupInfo{
+			{DbName: "db", CollectionName: "a"}, {DbName: "db", CollectionName: "x"},
+		}},
+		Plan: &Plan{CollMapper: &TableMapper{NameMapping: map[string][]collref.Name{"db.a": {x}}}},
+	}
+	_, err := NewTask(t.Context(), args)
+	require.ErrorIs(t, err, ErrDuplicateTarget)
+	assert.ErrorContains(t, err, "db.x")
+	_, err = store.GetRestoreTask("job")
+	assert.ErrorIs(t, err, jobstate.ErrTaskNotFound)
+
+	args.Plan.BackupFilter = filter.Filter{DBCollFilter: map[string]filter.CollFilter{"db": {CollName: map[string]struct{}{"a": {}}}}}
+	task, err := NewTask(t.Context(), args)
+	require.NoError(t, err)
+	require.Len(t, task.collTargets, 1)
+	assert.Equal(t, x, task.collTargets[0].target)
+
+	for _, tc := range []struct {
+		name string
+		plan *Plan
+		want []collref.Name
+	}{
+		{"NoPlan", nil, []collref.Name{collref.New("db", "a"), x}},
+		{"NoMapper", &Plan{}, []collref.Name{collref.New("db", "a"), x}},
+		{"DistinctTargetsAcrossDatabases", &Plan{CollMapper: &TableMapper{NameMapping: map[string][]collref.Name{
+			"db.a": {collref.New("first", "x"), collref.New("second", "x")},
+		}}}, []collref.Name{collref.New("first", "x"), collref.New("second", "x"), x}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			input := args
+			input.TaskID, input.Plan = tc.name, tc.plan
+			task, err := NewTask(t.Context(), input)
+			require.NoError(t, err)
+			got := lo.Map(task.collTargets, func(coll collTarget, _ int) collref.Name { return coll.target })
+			assert.ElementsMatch(t, tc.want, got)
+		})
+	}
 }

@@ -2,6 +2,7 @@ package milvus
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strconv"
@@ -108,8 +109,9 @@ type ImportDetail struct {
 }
 
 type GetProcessResp struct {
-	Code int `json:"code"`
-	Data struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Data    struct {
 		JobId          string `json:"jobId"`
 		CollectionName string `json:"collectionName"`
 		FileName       string `json:"fileName"`
@@ -251,18 +253,23 @@ func (r *RestfulClient) BulkInsert(ctx context.Context, input BulkInsertV2Input)
 		return "", fmt.Errorf("client: failed to create import job via restful: %v", createResp)
 	}
 
+	if createResp.Data.JobId == "" {
+		return "", fmt.Errorf("client: bulk insert returned no job ID")
+	}
 	return createResp.Data.JobId, nil
 }
 
 func (r *RestfulClient) GetBulkInsertState(ctx context.Context, dbName, jobID string) (*GetProcessResp, error) {
-	var getResp GetProcessResp
 	getReq := &GetProgressReq{DBName: dbName, JobId: jobID}
-
+	var result *GetProcessResp
 	err := retry.Do(ctx, func() error {
+		// A failed JSON decode can leave fields populated. Each attempt
+		// needs a fresh envelope, with a missing code distinct from success (0).
+		reply := &GetProcessResp{Code: -1}
 		resp, err := r.cli.R().
 			SetContext(ctx).
 			SetBody(getReq).
-			SetSuccessResult(&getResp).
+			SetSuccessResult(reply).
 			Post("/v2/vectordb/jobs/import/describe")
 		if err != nil {
 			return fmt.Errorf("client: get import job state via restful: %w", err)
@@ -271,7 +278,15 @@ func (r *RestfulClient) GetBulkInsertState(ctx context.Context, dbName, jobID st
 		if resp.IsErrorState() {
 			return fmt.Errorf("client: get import job state via restful: %v", resp)
 		}
-
+		if reply.Code < 0 {
+			return retry.Unrecoverable(fmt.Errorf("client: import lookup for job %s returned a missing or invalid status code: %s", jobID, reply.Message))
+		}
+		// Retry lookup failures, not a successfully queried job's Failed state.
+		// Missing IDs are handled by the caller's visibility/recovery policy.
+		if err := ImportLookupError(jobID, reply.Code, reply.Message); err != nil && !errors.Is(err, ErrImportJobNotFound) {
+			return err
+		}
+		result = reply
 		return nil
 	})
 
@@ -279,7 +294,7 @@ func (r *RestfulClient) GetBulkInsertState(ctx context.Context, dbName, jobID st
 		return nil, err
 	}
 
-	return &getResp, nil
+	return result, nil
 }
 
 // CommitImport commits an import job that is holding at Uncommitted, making its

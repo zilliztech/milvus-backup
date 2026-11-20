@@ -106,7 +106,7 @@ func (ddlt *collDDLTask) createIndex(ctx context.Context, index *backuppb.IndexI
 		WithBody(body).
 		WithBroadcast([]string{ddlt.backupInfo.GetControlChannelName()})
 
-	err := ddlt.streamCli.Send(ctx, func(uint64) []message.MutableMessage {
+	err := ddlt.streamCli.Send(ctx, fmt.Sprintf("index/%d/%d", ddlt.collBackup.GetCollectionId(), index.GetIndexId()), func(uint64) []message.MutableMessage {
 		broadcast := builder.MustBuildBroadcast().WithBroadcastID(rand.Uint64())
 		return broadcast.SplitIntoMutableMessage()
 	})
@@ -164,7 +164,7 @@ func (ddlt *collDDLTask) createColl(ctx context.Context) error {
 
 	ddlt.logger.Info("collection schema", zap.Any("schema", schema))
 
-	err = ddlt.streamCli.Send(ctx, func(ts uint64) []message.MutableMessage {
+	err = ddlt.streamCli.Send(ctx, fmt.Sprintf("collection/%d", ddlt.collBackup.GetCollectionId()), func(ts uint64) []message.MutableMessage {
 		req := &message.CreateCollectionRequest{
 			Base: &commonpb.MsgBase{
 				MsgType:   commonpb.MsgType_CreateCollection,

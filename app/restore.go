@@ -3,12 +3,12 @@ package app
 import (
 	"context"
 	"fmt"
+	"sync"
 
 	"go.uber.org/zap"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore"
-	"github.com/zilliztech/milvus-backup/core/tasklet"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
@@ -26,49 +26,35 @@ import (
 // is the caller's immediate answer. Running is Run, which releases the job
 // into the background; Wait blocks on the settlement.
 type RestoreJob struct {
-	// task is the restore run itself. Held as the shared tasklet interface so
-	// tests stub the run and exercise the job's lifecycle without a cluster
-	// behind the restore.
-	task tasklet.Tasklet
+	once sync.Once
 
-	// tracker is the job's handle on its own state: the task settles it before
-	// the run returns, and Wait reads the settlement through it.
-	tracker *jobstate.RestoreTracker
-
-	// done closes when the run settles. Wait selects on it, so the caller
-	// learns the outcome without polling the job store.
-	done chan struct{}
+	execute func(context.Context) (jobstate.RestoreStatus, error)
+	done    chan struct{}
+	result  jobstate.RestoreStatus
 }
 
 var _ AsyncJob[jobstate.RestoreStatus] = (*RestoreJob)(nil)
 
-// Run releases the job into the background and answers nothing: once the job
-// is released there is nobody on the call path who could act on an error, so
-// the outcome lives only in the job store, where Wait and the task APIs read
-// it. The context must be process-scoped, not the request's — see AsyncJob.Run.
-func (j *RestoreJob) Run(ctx context.Context) { go j.run(ctx) }
+// Run releases the job into the background using the process-scoped context.
+func (j *RestoreJob) Run(ctx context.Context) { j.once.Do(func() { go j.run(ctx) }) }
 
-// run is the job's whole body. The task settles the tracker itself, before
-// Execute returns, so closing done is the signal that the terminal state is
-// already in the store.
 func (j *RestoreJob) run(ctx context.Context) {
 	defer close(j.done)
-
-	if err := j.task.Execute(ctx); err != nil {
+	result, err := j.execute(ctx)
+	j.execute = nil // Wait only needs the result; release the bound task and its plan.
+	j.result = result
+	if err != nil {
 		log.Error("restore task fail", zap.Error(err))
 	}
 }
 
-// Wait blocks until a Run settles and answers with the job's snapshot in the
-// job store — the terminal state, error message and per-collection halves are
-// on it. It is only meaningful after Run; waiting on a job that was never
-// started blocks until the context is done.
+// Wait returns the result of this job's Run, including after a later Resume.
 func (j *RestoreJob) Wait(ctx context.Context) (jobstate.RestoreStatus, error) {
 	select {
 	case <-ctx.Done():
 		return jobstate.RestoreStatus{}, ctx.Err()
 	case <-j.done:
-		return j.tracker.Snapshot(), nil
+		return j.result.Clone(), nil
 	}
 }
 
@@ -139,8 +125,7 @@ func newRestoreJob(ctx context.Context, params *cfg.Config, store *jobstate.Stor
 	}
 
 	return &RestoreJob{
-		task:    task,
-		tracker: task.Tracker(),
+		execute: task.ExecuteWithResult,
 		done:    make(chan struct{}),
 	}, nil
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/restore/conv"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
@@ -72,7 +73,9 @@ type snapDMLTaskArgs struct {
 // the external spec when it sits on another storage service. No bytes move
 // through this process and nothing is staged.
 type collSnapDMLTask struct {
-	taskID string
+	op               *jobstate.SecondaryImportProgress
+	streamCheckpoint *milvus.StreamCheckpoint
+	taskID           string
 
 	collBackup *backuppb.CollectionBackupInfo
 
@@ -125,6 +128,7 @@ func newCollSnapDMLTask(args snapDMLTaskArgs, collBackup *backuppb.CollectionBac
 	}
 
 	return &collSnapDMLTask{
+		op:     &jobstate.SecondaryImportProgress{},
 		taskID: args.TaskID,
 
 		collBackup: collBackup,
@@ -197,16 +201,17 @@ func (st *collSnapDMLTask) Execute(ctx context.Context) error {
 		zap.Bool("external_spec_set", st.externalSpec != ""),
 		zap.Int64s("partition_ids", st.partitionIDs))
 
-	jobID, err := st.sendImportMsg(ctx)
+	job := st.importJob()
+	state, err := job.start(ctx, st.op)
 	if err != nil {
 		return fmt.Errorf("secondary: send snapshot import msg: %w", err)
 	}
 
-	if err := st.importJob().check(ctx, jobID); err != nil {
-		return fmt.Errorf("secondary: check snapshot import job %d: %w", jobID, err)
+	if err := job.wait(ctx, st.op, state); err != nil {
+		return fmt.Errorf("secondary: check snapshot import job %d: %w", st.op.JobID, err)
 	}
 
-	st.logger.Info("restore collection dml from snapshot done", zap.Int64("job_id", jobID))
+	st.logger.Info("restore collection dml from snapshot done", zap.Int64("job_id", st.op.JobID))
 	return nil
 }
 
@@ -240,22 +245,20 @@ func (st *collSnapDMLTask) options() map[string]string {
 }
 
 // sendImportMsg broadcasts the one import message of the collection and
-// returns the job id it minted into it. The body carries exactly one file
+// embeds the saved job ID. The body carries exactly one file
 // with no path, which is how a coordinator encodes a snapshot source whose
 // reference lives in the options; a target older than the contract rejects
 // the empty path instead of reading metadata as row data.
-func (st *collSnapDMLTask) sendImportMsg(ctx context.Context) (int64, error) {
-	jobID := rand.Int64()
-
+func (st *collSnapDMLTask) sendImportMsg(ctx context.Context, jobID int64) error {
 	schema, err := conv.Schema(st.collBackup.GetSchema())
 	if err != nil {
-		return 0, fmt.Errorf("secondary: convert schema: %w", err)
+		return fmt.Errorf("secondary: convert schema: %w", err)
 	}
 	if err := checkDynamicField(schema); err != nil {
-		return 0, err
+		return err
 	}
 
-	err = st.streamCli.Send(ctx, func(ts uint64) []message.MutableMessage {
+	err = st.streamCli.Send(ctx, importKey(jobID), func(ts uint64) []message.MutableMessage {
 		header := &message.ImportMessageHeader{}
 		body := &message.ImportMsg{
 			Base: &commonpb.MsgBase{
@@ -281,10 +284,10 @@ func (st *collSnapDMLTask) sendImportMsg(ctx context.Context) (int64, error) {
 		return broadcast.SplitIntoMutableMessage()
 	})
 	if err != nil {
-		return 0, fmt.Errorf("secondary: broadcast import: %w", err)
+		return fmt.Errorf("secondary: broadcast import: %w", err)
 	}
 
-	return jobID, nil
+	return nil
 }
 
 // importJob is the lifecycle view of the import job this collection submits,
@@ -292,9 +295,11 @@ func (st *collSnapDMLTask) sendImportMsg(ctx context.Context) (int64, error) {
 // honored.
 func (st *collSnapDMLTask) importJob() bulkInsertJob {
 	return bulkInsertJob{
-		dbName:       st.collBackup.GetDbName(),
-		collectionID: st.collBackup.GetCollectionId(),
-		vchannels:    st.collBackup.GetVirtualChannelNames(),
+		streamCheckpoint: st.streamCheckpoint,
+		submit:           st.sendImportMsg,
+		dbName:           st.collBackup.GetDbName(),
+		collectionID:     st.collBackup.GetCollectionId(),
+		vchannels:        st.collBackup.GetVirtualChannelNames(),
 
 		streamCli:  st.streamCli,
 		restfulCli: st.restfulCli,

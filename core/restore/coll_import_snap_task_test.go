@@ -98,9 +98,11 @@ func (e *snapshotImportEndpoint) CommitImport(context.Context, string, string) e
 
 func (e *snapshotImportEndpoint) AbortImport(context.Context, string, string) error { return nil }
 
-func newSnapshotImporter(endpoint milvus.Restful) *snapshotImporter {
+func newSnapshotImporter(t *testing.T, endpoint milvus.Restful) *snapshotImporter {
 	target := collref.New("db", "coll")
-	collTracker := jobstate.NewStore().AddRestoreTask("task1").NewCollTracker(target, 1)
+	restoreTracker, addErr := jobstate.NewStore().AddRestoreTask("task1", false)
+	require.NoError(t, addErr)
+	collTracker := restoreTracker.NewCollTracker(target, 1)
 
 	return &snapshotImporter{
 		target:           target,
@@ -110,14 +112,15 @@ func newSnapshotImporter(endpoint milvus.Restful) *snapshotImporter {
 		ezk:              "key",
 
 		restfulCli: endpoint,
+		jobs:       collTracker,
 		job:        collTracker.NewJob(1),
 
 		logger: zap.NewNop(),
 	}
 }
 
-func newSnapshotImportTask(endpoint milvus.Restful) *snapshotImportTask {
-	return &snapshotImportTask{importer: newSnapshotImporter(endpoint)}
+func newSnapshotImportTask(t *testing.T, endpoint milvus.Restful) *snapshotImportTask {
+	return &snapshotImportTask{importer: newSnapshotImporter(t, endpoint)}
 }
 
 func TestSnapshotImportTaskExecute(t *testing.T) {
@@ -131,7 +134,7 @@ func TestSnapshotImportTaskExecute(t *testing.T) {
 				string(milvus.ImportStateCompleted),
 			}}
 
-			task := newSnapshotImportTask(endpoint)
+			task := newSnapshotImportTask(t, endpoint)
 			require.NoError(t, task.Execute(t.Context()))
 
 			in := endpoint.gotBulkInsert
@@ -155,7 +158,7 @@ func TestSnapshotImportTaskExecute(t *testing.T) {
 		synctest.Test(t, func(t *testing.T) {
 			endpoint := &snapshotImportEndpoint{states: []string{string(milvus.ImportStateFailed)}}
 
-			task := newSnapshotImportTask(endpoint)
+			task := newSnapshotImportTask(t, endpoint)
 			err := task.Execute(t.Context())
 			assert.ErrorContains(t, err, "source bucket not readable")
 		})

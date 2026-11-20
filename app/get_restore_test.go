@@ -13,7 +13,9 @@ import (
 func TestGetRestoreExecute(t *testing.T) {
 	t.Run("ReturnsSnapshotForKnownID", func(t *testing.T) {
 		mgr := jobstate.NewStore()
-		mgr.AddRestoreTask("task-1").SetExecuting()
+		restoreTracker, addErr := mgr.AddRestoreTask("task-1", false)
+		require.NoError(t, addErr)
+		restoreTracker.SetExecuting()
 
 		uc := NewGetRestore(mgr)
 		status, err := uc.Execute(context.Background(), "task-1")
