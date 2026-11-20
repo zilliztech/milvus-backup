@@ -4,9 +4,10 @@ import (
 	"context"
 	"encoding/base64"
 	"fmt"
+	"maps"
 	"math/rand/v2"
 	"path"
-	"sort"
+	"slices"
 	"strings"
 	"time"
 
@@ -386,12 +387,7 @@ func (t *Task) checkTargetIsUnused(ctx context.Context) error {
 			present = append(present, name)
 		}
 	}
-	dbs := make([]string, 0, len(skipped))
-	for db := range skipped {
-		dbs = append(dbs, db)
-	}
-	sort.Strings(dbs)
-	for _, db := range dbs {
+	for _, db := range slices.Sorted(maps.Keys(skipped)) {
 		t.logger.Info("database does not exist on the target yet, as expected for a newly deployed secondary; skipping the duplicate-collection check for it",
 			zap.String("db", db), zap.Int("collections", skipped[db]))
 	}

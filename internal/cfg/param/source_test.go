@@ -26,8 +26,7 @@ func TestSourceEnvSnapshot(t *testing.T) {
 	src, err := NewSource(p, nil)
 	require.NoError(t, err)
 
-	require.NoError(t, os.Setenv("SNAPSHOT_TEST_VAR", "after-construction"))
-	t.Cleanup(func() { require.NoError(t, os.Unsetenv("SNAPSHOT_TEST_VAR")) })
+	t.Setenv("SNAPSHOT_TEST_VAR", "after-construction")
 
 	v, ok := src.EnvValue("SNAPSHOT_TEST_VAR")
 	assert.True(t, ok)

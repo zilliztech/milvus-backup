@@ -1,10 +1,12 @@
 package backup
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 	"testing"
 
@@ -67,7 +69,7 @@ func TestCollDMLTask_listInsertLogByListFile(t *testing.T) {
 		assert.NoError(t, err)
 		assert.Equal(t, int64(10), size)
 		assert.Len(t, fields, 2)
-		sort.Slice(fields, func(i, j int) bool { return fields[i].GetFieldID() < fields[j].GetFieldID() })
+		slices.SortFunc(fields, func(a, b *backuppb.FieldBinlog) int { return cmp.Compare(a.GetFieldID(), b.GetFieldID()) })
 		assert.Len(t, fields[0].GetBinlogs(), 2)
 		assert.ElementsMatch(t, fields[0].GetBinlogs(), []*backuppb.Binlog{
 			{LogId: 1, LogPath: objs[0].Key, LogSize: 1},
@@ -241,7 +243,7 @@ func TestCollDMLTask_verifySegmentsData(t *testing.T) {
 	}()
 	insertObjs := func(partID, baseSegID, logID int64, n int) []storage.ObjectAttr {
 		objs := make([]storage.ObjectAttr, 0, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			key := insertKey(newSeg(partID, baseSegID+int64(i), logID, 20), logID)
 			objs = append(objs, storage.ObjectAttr{Key: key, Length: 5})
 		}
@@ -249,7 +251,7 @@ func TestCollDMLTask_verifySegmentsData(t *testing.T) {
 	}
 	deltaObjs := func(partID, baseSegID, logID int64, n int) []storage.ObjectAttr {
 		objs := make([]storage.ObjectAttr, 0, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			key := deltaKey(newSeg(partID, baseSegID+int64(i), 11, logID), logID)
 			objs = append(objs, storage.ObjectAttr{Key: key, Length: 7})
 		}
@@ -396,7 +398,7 @@ func TestSplitByPrefix(t *testing.T) {
 	// keyed fills expected with n keys file-0 .. file-n-1 under prefix.
 	keyed := func(prefix string, n int) map[string]int64 {
 		keys := make(map[string]int64, n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			keys[fmt.Sprintf("%sfile-%d", prefix, i)] = int64(i)
 		}
 		return keys
@@ -404,9 +406,7 @@ func TestSplitByPrefix(t *testing.T) {
 	merge := func(ms ...map[string]int64) map[string]int64 {
 		out := make(map[string]int64)
 		for _, m := range ms {
-			for k, v := range m {
-				out[k] = v
-			}
+			maps.Copy(out, m)
 		}
 		return out
 	}

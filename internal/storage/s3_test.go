@@ -663,7 +663,7 @@ func TestNewS3ClientDiscoversRegion(t *testing.T) {
 <LocationConstraint xmlns="http://s3.amazonaws.com/doc/2006-03-01/">eu-west-2</LocationConstraint>`), nil
 				}
 
-				authHeader.Store(lo.ToPtr(r.Header.Get("Authorization")))
+				authHeader.Store(new(r.Header.Get("Authorization")))
 				return headResponse(), nil
 			})}
 		})
@@ -696,7 +696,7 @@ func TestNewS3ClientRegionFallbackOnMissingBucket(t *testing.T) {
 </Error>`), nil
 				}
 
-				authHeader.Store(lo.ToPtr(r.Header.Get("Authorization")))
+				authHeader.Store(new(r.Header.Get("Authorization")))
 				return headResponse(), nil
 			})}
 		})

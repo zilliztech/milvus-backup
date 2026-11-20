@@ -26,6 +26,7 @@ linters:
     - errorlint
     - copyloopvar
     - makezero
+    - modernize
     - nilerr
     - prealloc
     - reassign

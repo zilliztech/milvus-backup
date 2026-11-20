@@ -1,13 +1,14 @@
 package storage
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
 	"iter"
 	"net/http"
-	"sort"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -294,8 +295,8 @@ func (a *AzureClient) multiPartCopy(ctx context.Context, srcCli *AzureClient, i 
 	}
 
 	// Sort block IDs by index to maintain order
-	sort.Slice(blockInfos, func(i, j int) bool {
-		return blockInfos[i].index < blockInfos[j].index
+	slices.SortFunc(blockInfos, func(a, b azureBlockInfo) int {
+		return cmp.Compare(a.index, b.index)
 	})
 
 	blockIDs := make([]string, len(blockInfos))
@@ -469,8 +470,7 @@ func (a *AzureClient) deleteObjects(ctx context.Context, keys []string) error {
 // isBlobNotFound reports whether err is a BlobNotFound rejection, from either
 // a single DeleteBlob or one sub-response of a Blob Batch.
 func isBlobNotFound(err error) bool {
-	var azErr *azcore.ResponseError
-	if errors.As(err, &azErr) {
+	if azErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		return azErr.ErrorCode == string(bloberror.BlobNotFound)
 	}
 	return false
@@ -482,8 +482,7 @@ func isBlobNotFound(err error) bool {
 // response never reach here: SubmitBatch returns them on the response, not
 // as the error.
 func isAzureBatchDeleteUnsupported(err error) bool {
-	var azErr *azcore.ResponseError
-	if errors.As(err, &azErr) {
+	if azErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		return azErr.StatusCode == http.StatusNotImplemented
 	}
 	return false
@@ -494,8 +493,7 @@ func (a *AzureClient) BucketExist(ctx context.Context, _ string) (bool, error) {
 		GetProperties(ctx, &container.GetPropertiesOptions{})
 
 	if err != nil {
-		var azErr *azcore.ResponseError
-		ok := errors.As(err, &azErr)
+		azErr, ok := errors.AsType[*azcore.ResponseError](err)
 		if !ok {
 			return false, fmt.Errorf("storage: azure get container properties: %w", err)
 		}

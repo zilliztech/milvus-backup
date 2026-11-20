@@ -516,9 +516,7 @@ func splitByPrefix(dir string, expected map[string]int64) map[string]map[string]
 
 	leaves := make(map[string]map[string]int64)
 	for prefix, keys := range groups {
-		for leaf, leafKeys := range splitByPrefix(prefix, keys) {
-			leaves[leaf] = leafKeys
-		}
+		maps.Copy(leaves, splitByPrefix(prefix, keys))
 	}
 	return leaves
 }
