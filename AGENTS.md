@@ -47,6 +47,10 @@ assert.Len(t, got.GetCollectionBackups(), 1)         // the actual check
 Use PascalCase for sub-test names in `t.Run()`, e.g. `t.Run("SecretValueIsMasked", ...)`.
 See `internal/cfg/param/value_test.go` for a table-driven test in the intended style.
 
+## Modern Go
+
+Before pushing, run `go fix` on the packages you touched (not `./...`, to avoid unrelated diffs).
+
 ## Commit titles
 
 Use etcd-style subjects — `scope: short description in lowercase`:
