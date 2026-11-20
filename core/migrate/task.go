@@ -61,6 +61,9 @@ func (v *volume) awsValue() aws.Credentials {
 }
 
 func (v *volume) oauth2Token() *oauth2.Token {
+	if v.currentResp.resp == nil {
+		return nil
+	}
 	return &oauth2.Token{AccessToken: v.currentResp.resp.Credentials.SessionToken, Expiry: v.currentResp.expiration}
 }
 
@@ -71,10 +74,11 @@ func (v *volume) oauth2Token() *oauth2.Token {
 func (v *volume) Retrieve(ctx context.Context) (aws.Credentials, error) {
 	v.logger.Debug("retrieve volume credential")
 	v.currentResp.mu.RLock()
-	if !v.IsExpired() {
-		v.logger.Debug("volume credential not expired, return cached credential")
+	if !v.isExpired() {
+		creds := v.awsValue()
 		v.currentResp.mu.RUnlock()
-		return v.awsValue(), nil
+		v.logger.Debug("volume credential not expired, return cached credential")
+		return creds, nil
 	}
 	v.currentResp.mu.RUnlock()
 
@@ -82,7 +86,7 @@ func (v *volume) Retrieve(ctx context.Context) (aws.Credentials, error) {
 	// maybe other thread has already applied for a new credential
 	v.currentResp.mu.Lock()
 	defer v.currentResp.mu.Unlock()
-	if !v.IsExpired() {
+	if !v.isExpired() {
 		return v.awsValue(), nil
 	}
 
@@ -97,7 +101,9 @@ func (v *volume) Retrieve(ctx context.Context) (aws.Credentials, error) {
 	return v.awsValue(), nil
 }
 
-func (v *volume) IsExpired() bool { return time.Now().After(v.currentResp.expiration) }
+func (v *volume) isExpired() bool {
+	return v.currentResp.resp == nil || time.Now().After(v.currentResp.expiration)
+}
 
 func (v *volume) Token() (*oauth2.Token, error) {
 	v.logger.Debug("get volume token")
@@ -105,12 +111,11 @@ func (v *volume) Token() (*oauth2.Token, error) {
 	// first check if the token is still valid
 	v.currentResp.mu.RLock()
 	token := v.oauth2Token()
+	v.currentResp.mu.RUnlock()
 	if token.Valid() {
-		v.currentResp.mu.RUnlock()
 		v.logger.Debug("volume token not expired, return cached token")
 		return token, nil
 	}
-	v.currentResp.mu.RUnlock()
 
 	// double check, maybe other thread has already applied for a new credential
 	v.currentResp.mu.Lock()
