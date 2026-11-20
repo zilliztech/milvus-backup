@@ -15,13 +15,11 @@ backup_prefix = "backup"
 class TestRestoreSecondaries(TestcaseBase):
     """Restful restore against a replicating target, with and without the
     secondaries option. The dual-cluster environment turns the upstream into a
-    replication source: a plain restore must be refused there, a secondaries
-    restore must commit two-phase, and the restored data must converge on the
-    downstream secondary through replication."""
+    replication source: an import restore without secondaries must be refused
+    there, a secondaries restore must commit two-phase, and the restored data
+    must converge on the downstream secondary through replication."""
 
-    def _create_binlog_backup(self, nb):
-        # master reports the snapshot feature, so pin the binlog format the
-        # same way the cli secondary job does
+    def _create_backup(self, nb):
         self._connect()
         name = cf.gen_unique_str(prefix)
         self.prepare_data(
@@ -32,7 +30,6 @@ class TestRestoreSecondaries(TestcaseBase):
             "async": False,
             "backup_name": backup_name,
             "collection_names": [name],
-            "format": "binlog",
         }
         res = self.client.create_backup(payload)
         log.info(f"create backup response: {res}")
@@ -76,7 +73,7 @@ class TestRestoreSecondaries(TestcaseBase):
 
     @pytest.mark.tags(CaseLabel.SECONDARY)
     def test_restore_with_secondaries_commits_two_phase(self, secondary_milvus_uri):
-        name, backup_name = self._create_binlog_backup(nb=2000)
+        name, backup_name = self._create_backup(nb=2000)
         suffixed = name + "_secondaries"
         payload = {
             "async": False,
@@ -100,11 +97,15 @@ class TestRestoreSecondaries(TestcaseBase):
 
     @pytest.mark.tags(CaseLabel.SECONDARY)
     def test_restore_without_secondaries_refused_on_replicating_target(self):
-        name, backup_name = self._create_binlog_backup(nb=1000)
+        name, backup_name = self._create_backup(nb=1000)
+        # Auto picks restore_snap for a snapshot backup without secondaries,
+        # which has no import job to guard. Pin import_snap so this keeps
+        # exercising the replicating-target guard.
         payload = {
             "async": False,
             "backup_name": backup_name,
             "collection_suffix": "_no_secondaries",
+            "strategy": "import_snap",
         }
         res = self.client.restore_backup(payload)
         log.info(f"restore without secondaries response: {res}")
@@ -116,7 +117,7 @@ class TestRestoreSecondaries(TestcaseBase):
 
     @pytest.mark.tags(CaseLabel.SECONDARY)
     def test_restore_with_invalid_secondary_rejected(self):
-        name, backup_name = self._create_binlog_backup(nb=1000)
+        name, backup_name = self._create_backup(nb=1000)
         payload = {
             "async": False,
             "backup_name": backup_name,
@@ -132,20 +133,22 @@ class TestRestoreSecondaries(TestcaseBase):
         assert name + "_bad_secondary" not in res
 
     @pytest.mark.tags(CaseLabel.SECONDARY)
-    def test_restore_with_per_seg_and_secondaries_refused(self, secondary_milvus_uri):
-        name, backup_name = self._create_binlog_backup(nb=1000)
+    def test_restore_with_restore_snap_and_secondaries_refused(
+        self, secondary_milvus_uri
+    ):
+        name, backup_name = self._create_backup(nb=1000)
         payload = {
             "async": False,
             "backup_name": backup_name,
-            "collection_suffix": "_per_seg",
-            "strategy": "per_seg",
+            "collection_suffix": "_restore_snap",
+            "strategy": "restore_snap",
             "secondaries": [
                 {"address": secondary_milvus_uri, "token": "root:Milvus"}
             ],
         }
         res = self.client.restore_backup(payload)
-        log.info(f"restore with per_seg and secondaries response: {res}")
+        log.info(f"restore with restore_snap and secondaries response: {res}")
         assert res.get("code", 0) != 0
         assert "secondaries" in res.get("msg", "")
         res, _ = self.utility_wrap.list_collections()
-        assert name + "_per_seg" not in res
+        assert name + "_restore_snap" not in res
