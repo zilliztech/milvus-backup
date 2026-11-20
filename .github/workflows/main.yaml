@@ -1632,7 +1632,7 @@ jobs:
         run: |
           MINIO_POD=$(kubectl get pods -o name | grep milvus-backup.*minio | sed -n '1p')
           echo "=== MinIO file tree (before backup) ==="
-          kubectl exec $MINIO_POD -- sh -c "apt-get install -y tree > /dev/null 2>&1 || true; tree /export/ -I '.minio.sys' | sed -n '1,500p'"
+          kubectl exec $MINIO_POD -- sh -c "apt-get install -y tree > /dev/null 2>&1 || true; tree /export/ -I '.minio.sys' | head -500"
 
       - name: Backup
         timeout-minutes: 5
@@ -1672,7 +1672,7 @@ jobs:
         run: |
           MINIO_POD=$(kubectl get pods -o name | grep milvus-backup.*minio | sed -n '1p')
           echo "=== MinIO file tree (after backup) ==="
-          kubectl exec $MINIO_POD -- sh -c "apt-get install -y tree > /dev/null 2>&1 || true; tree /export/ -I '.minio.sys' | sed -n '1,500p'"
+          kubectl exec $MINIO_POD -- sh -c "apt-get install -y tree > /dev/null 2>&1 || true; tree /export/ -I '.minio.sys' | head -500"
 
       - name: Export logs
         if: ${{ always() }}
