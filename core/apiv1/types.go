@@ -235,6 +235,12 @@ type RestoreBackupRequest struct {
 	// address and optional raw token; when set, every import job is committed
 	// two-phase so its mirror commits on every secondary.
 	Secondaries []Secondary `json:"secondaries,omitempty"`
+	// Where a snapshot-format restore reads the bundle from: shared (default,
+	// like leaving the field unset) sends one complete uri pointed at a single
+	// bucket, which every cluster must admit; own_bucket sends a bucket-relative
+	// object key, and the target and every secondary each read their own staged
+	// copy. Snapshot format and the import path only.
+	SnapshotSource string `json:"snapshot_source,omitempty"`
 }
 
 // SkipParams names the collection, field and index params the restore leaves

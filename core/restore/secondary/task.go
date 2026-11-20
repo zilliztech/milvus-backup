@@ -229,7 +229,7 @@ func (t *Task) checkFormatSupport(ctx context.Context) error {
 			return fmt.Errorf("secondary: a snapshot format backup needs the target's storage config to " +
 				"resolve where the target reads the bundles from")
 		}
-		source, err := snapshotsource.New(ctx, t.args.MilvusStorage.Config(), t.args.BackupStorage.Config(), t.args.BackupDir, true)
+		source, err := snapshotsource.New(ctx, t.args.MilvusStorage.Config(), t.args.BackupStorage.Config(), t.args.BackupDir, true, snapshotsource.SourceKeyURI)
 		if err != nil {
 			return fmt.Errorf("secondary: resolve the snapshot source: %w", err)
 		}

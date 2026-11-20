@@ -22,6 +22,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/snapshotsource"
 	"github.com/zilliztech/milvus-backup/internal/validate"
 )
 
@@ -229,6 +230,12 @@ func validateRestoreRequest(request *apiv1.RestoreBackupRequest) error {
 		}
 	}
 
+	if request.SnapshotSource != "" {
+		if _, err := snapshotsource.ParseSourceKey(request.SnapshotSource); err != nil {
+			return err
+		}
+	}
+
 	for _, secondary := range request.Secondaries {
 		u, err := url.Parse(secondary.Address)
 		if err != nil || u.Scheme == "" || u.Host == "" {
@@ -281,6 +288,11 @@ func newOptionFromRequest(request *apiv1.RestoreBackupRequest) (*restore.Option,
 		return nil, err
 	}
 
+	sourceKey, err := snapshotsource.ParseSourceKey(request.SnapshotSource)
+	if err != nil {
+		return nil, err
+	}
+
 	secondaries := make([]restore.Secondary, 0, len(request.Secondaries))
 	for _, secondary := range request.Secondaries {
 		secondaries = append(secondaries, restore.Secondary{Address: secondary.Address, Token: secondary.Token})
@@ -300,6 +312,7 @@ func newOptionFromRequest(request *apiv1.RestoreBackupRequest) (*restore.Option,
 		RestoreRBAC:          request.Rbac,
 		EZKMapping:           request.EzkMapping,
 		Secondaries:          secondaries,
+		SnapshotSourceKey:    sourceKey,
 	}, nil
 }
 

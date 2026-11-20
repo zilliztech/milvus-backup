@@ -23,6 +23,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
+	"github.com/zilliztech/milvus-backup/internal/snapshotsource"
 )
 
 func TestValidateRestoreRequest(t *testing.T) {
@@ -77,6 +78,44 @@ func TestValidateRestoreRequest(t *testing.T) {
 	t.Run("InvalidSecondary", func(t *testing.T) {
 		request := &apiv1.RestoreBackupRequest{BackupName: "backup", Secondaries: []apiv1.Secondary{{Address: "10.0.0.2:19530"}}}
 		assert.Error(t, validateRestoreRequest(request))
+	})
+
+	t.Run("ValidSnapshotSource", func(t *testing.T) {
+		request := &apiv1.RestoreBackupRequest{BackupName: "backup", SnapshotSource: "own_bucket"}
+		assert.NoError(t, validateRestoreRequest(request))
+	})
+
+	t.Run("InvalidSnapshotSource", func(t *testing.T) {
+		request := &apiv1.RestoreBackupRequest{BackupName: "backup", SnapshotSource: "relative"}
+		assert.Error(t, validateRestoreRequest(request))
+	})
+}
+
+// The snapshot source field maps straight onto the option: unset and shared
+// both land on the zero value, own_bucket selects the bucket-relative source,
+// and anything else is the caller's mistake answered before the job exists.
+func TestNewOptionFromRequestSnapshotSource(t *testing.T) {
+	t.Run("UnsetIsShared", func(t *testing.T) {
+		option, err := newOptionFromRequest(&apiv1.RestoreBackupRequest{BackupName: "backup"})
+		require.NoError(t, err)
+		assert.Equal(t, snapshotsource.SourceKeyURI, option.SnapshotSourceKey)
+	})
+
+	t.Run("SharedIsShared", func(t *testing.T) {
+		option, err := newOptionFromRequest(&apiv1.RestoreBackupRequest{BackupName: "backup", SnapshotSource: "shared"})
+		require.NoError(t, err)
+		assert.Equal(t, snapshotsource.SourceKeyURI, option.SnapshotSourceKey)
+	})
+
+	t.Run("OwnBucketIsRelative", func(t *testing.T) {
+		option, err := newOptionFromRequest(&apiv1.RestoreBackupRequest{BackupName: "backup", SnapshotSource: "own_bucket"})
+		require.NoError(t, err)
+		assert.Equal(t, snapshotsource.SourceKeyRelative, option.SnapshotSourceKey)
+	})
+
+	t.Run("InvalidValueFails", func(t *testing.T) {
+		_, err := newOptionFromRequest(&apiv1.RestoreBackupRequest{BackupName: "backup", SnapshotSource: "uri"})
+		assert.ErrorContains(t, err, "only support")
 	})
 }
 
