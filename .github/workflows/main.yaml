@@ -183,7 +183,7 @@ jobs:
         run: |
           sudo apt-get install -y tree > /dev/null 2>&1 || true
           echo "=== MinIO volume tree (before backup) ==="
-          sudo tree volumes/minio/ -I '.minio.sys' | head -500
+          sudo tree volumes/minio/ -I '.minio.sys' | sed -n '1,500p'
 
       - name: Backup
         timeout-minutes: 5
@@ -210,7 +210,7 @@ jobs:
         working-directory: deployment/${{ matrix.milvus_mode }}
         run: |
           echo "=== MinIO volume tree (after backup) ==="
-          sudo tree volumes/minio/ -I '.minio.sys' | head -500
+          sudo tree volumes/minio/ -I '.minio.sys' | sed -n '1,500p'
 
       - name: Save Backup
         timeout-minutes: 5
@@ -396,7 +396,7 @@ jobs:
         run: |
           sudo apt-get install -y tree > /dev/null 2>&1 || true
           echo "=== milvus local data tree (before backup) ==="
-          sudo tree volumes/milvus/data | head -500
+          sudo tree volumes/milvus/data | sed -n '1,500p'
 
       - name: Configure backup.yaml for local storage
         timeout-minutes: 1
@@ -425,7 +425,7 @@ jobs:
         working-directory: deployment/standalone
         run: |
           echo "=== MinIO volume tree (after backup) ==="
-          sudo tree volumes/minio/ -I '.minio.sys' | head -500
+          sudo tree volumes/minio/ -I '.minio.sys' | sed -n '1,500p'
 
       - name: Save Backup
         timeout-minutes: 5
@@ -627,7 +627,7 @@ jobs:
         run: |
           sudo apt-get install -y tree > /dev/null 2>&1 || true
           echo "=== MinIO volume tree (before backup) ==="
-          sudo tree volumes/minio/ -I '.minio.sys' | head -500
+          sudo tree volumes/minio/ -I '.minio.sys' | sed -n '1,500p'
 
       - name: Backup
         timeout-minutes: 5
@@ -657,7 +657,7 @@ jobs:
         working-directory: deployment/${{ matrix.milvus_mode }}
         run: |
           echo "=== MinIO volume tree (after backup) ==="
-          sudo tree volumes/minio/ -I '.minio.sys' | head -500
+          sudo tree volumes/minio/ -I '.minio.sys' | sed -n '1,500p'
 
 
   test-backup-restore-cli:
@@ -742,7 +742,7 @@ jobs:
         run: |
           sudo apt-get install -y tree > /dev/null 2>&1 || true
           echo "=== MinIO volume tree (before backup) ==="
-          sudo tree volumes/minio/ -I '.minio.sys' | head -500
+          sudo tree volumes/minio/ -I '.minio.sys' | sed -n '1,500p'
 
       - name: Backup
         timeout-minutes: 5
@@ -769,7 +769,7 @@ jobs:
         working-directory: deployment/${{ matrix.milvus_mode }}
         run: |
           echo "=== MinIO volume tree (after backup) ==="
-          sudo tree volumes/minio/ -I '.minio.sys' | head -500
+          sudo tree volumes/minio/ -I '.minio.sys' | sed -n '1,500p'
 
       - name: Save Backup
         timeout-minutes: 5
@@ -1127,7 +1127,7 @@ jobs:
         run: |
           sudo apt-get install -y tree > /dev/null 2>&1 || true
           echo "=== MinIO volume tree (before backup) ==="
-          sudo tree volumes/minio/ -I '.minio.sys' | head -500
+          sudo tree volumes/minio/ -I '.minio.sys' | sed -n '1,500p'
 
       - name: Create backup
         timeout-minutes: 5
@@ -1349,7 +1349,7 @@ jobs:
         working-directory: deployment/secondary
         run: |
           echo "=== MinIO volume tree (after backup) ==="
-          sudo tree volumes/minio/ -I '.minio.sys' | head -500
+          sudo tree volumes/minio/ -I '.minio.sys' | sed -n '1,500p'
 
       - name: Export logs
         if: ${{ always() }}
@@ -1630,9 +1630,9 @@ jobs:
       - name: List MinIO files before backup
         shell: bash
         run: |
-          MINIO_POD=$(kubectl get pods -o name | grep milvus-backup.*minio | head -1)
+          MINIO_POD=$(kubectl get pods -o name | grep milvus-backup.*minio | sed -n '1p')
           echo "=== MinIO file tree (before backup) ==="
-          kubectl exec $MINIO_POD -- sh -c "apt-get install -y tree > /dev/null 2>&1 || true; tree /export/ -I '.minio.sys' | head -500"
+          kubectl exec $MINIO_POD -- sh -c "apt-get install -y tree > /dev/null 2>&1 || true; tree /export/ -I '.minio.sys' | sed -n '1,500p'"
 
       - name: Backup
         timeout-minutes: 5
@@ -1670,9 +1670,9 @@ jobs:
         if: ${{ always() }}
         shell: bash
         run: |
-          MINIO_POD=$(kubectl get pods -o name | grep milvus-backup.*minio | head -1)
+          MINIO_POD=$(kubectl get pods -o name | grep milvus-backup.*minio | sed -n '1p')
           echo "=== MinIO file tree (after backup) ==="
-          kubectl exec $MINIO_POD -- sh -c "apt-get install -y tree > /dev/null 2>&1 || true; tree /export/ -I '.minio.sys' | head -500"
+          kubectl exec $MINIO_POD -- sh -c "apt-get install -y tree > /dev/null 2>&1 || true; tree /export/ -I '.minio.sys' | sed -n '1,500p'"
 
       - name: Export logs
         if: ${{ always() }}
