@@ -80,7 +80,6 @@ func Unrecoverable(err error) error {
 
 // IsUnRecoverable is used to judge whether the error is wrapped by unrecoverableError.
 func IsUnRecoverable(err error) bool {
-	var ue unrecoverableError
-	isUnrecoverable := errors.As(err, &ue)
-	return isUnrecoverable
+	_, ok := errors.AsType[unrecoverableError](err)
+	return ok
 }

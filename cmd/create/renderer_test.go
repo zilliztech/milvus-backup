@@ -402,7 +402,7 @@ func TestRenderBackupEmitsFrames(t *testing.T) {
 	dml.SetPrepare()
 	time.Sleep(50 * time.Millisecond)
 	dml.SetExecuting(100 << 20)
-	for i := 0; i < 10; i++ {
+	for range 10 {
 		dml.AddCopiedSize(10 << 20)
 		time.Sleep(30 * time.Millisecond)
 	}

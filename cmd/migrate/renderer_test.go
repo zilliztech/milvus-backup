@@ -195,7 +195,7 @@ func TestRenderMigrateEmitsFrames(t *testing.T) {
 		result <- err
 	}()
 
-	for i := 0; i < 20; i++ {
+	for range 20 {
 		tracker.IncCopied(5 << 20)
 		time.Sleep(50 * time.Millisecond)
 	}

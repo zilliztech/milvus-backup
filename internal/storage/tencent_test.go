@@ -66,12 +66,10 @@ func TestTencentCredProviderSurvivesConcurrentFetches(t *testing.T) {
 
 	var wg sync.WaitGroup
 	for range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, err := p.Retrieve(context.Background())
 			assert.NoError(t, err)
-		}()
+		})
 	}
 	wg.Wait()
 }

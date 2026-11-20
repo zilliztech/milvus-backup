@@ -180,7 +180,7 @@ func TestRenderDelete(t *testing.T) {
 		// 1ms, so it observes whichever of these states it lands on and must
 		// still converge on the terminal snapshot.
 		tracker.SetListingDone()
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			tracker.AddDeleted(1)
 		}
 		tracker.SetSuccess()

@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"slices"
-	"sort"
 	"strconv"
 	"time"
 
@@ -217,7 +216,7 @@ func (ct *collSnapshotTask) applySkipParams(ctx context.Context) error {
 		if len(present) == 0 {
 			continue
 		}
-		sort.Strings(present)
+		slices.Sort(present)
 		if err := ct.grpcCli.DropIndexProperties(ctx, ct.target.DBName(), ct.target.CollName(), index.GetIndexName(), present); err != nil {
 			return fmt.Errorf("restore: drop skipped params of index %s: %w", index.GetIndexName(), err)
 		}

@@ -1,10 +1,11 @@
 package main
 
 import (
+	stdcmp "cmp"
 	"context"
 	"fmt"
 	"path"
-	"sort"
+	"slices"
 	"strconv"
 
 	clientv3 "go.etcd.io/etcd/client/v3"
@@ -186,10 +187,10 @@ func (r *reader) loadCollectionDetail(ctx context.Context, coll *etcdpb.Collecti
 	}
 
 	// sort for deterministic comparison
-	sort.Slice(d.Fields, func(i, j int) bool { return d.Fields[i].FieldID < d.Fields[j].FieldID })
-	sort.Slice(d.Partitions, func(i, j int) bool { return d.Partitions[i].PartitionID < d.Partitions[j].PartitionID })
-	sort.Slice(d.Indexes, func(i, j int) bool { return d.Indexes[i].IndexID < d.Indexes[j].IndexID })
-	sort.Slice(d.Functions, func(i, j int) bool { return d.Functions[i].ID < d.Functions[j].ID })
+	slices.SortFunc(d.Fields, func(a, b FieldDump) int { return stdcmp.Compare(a.FieldID, b.FieldID) })
+	slices.SortFunc(d.Partitions, func(a, b PartitionDump) int { return stdcmp.Compare(a.PartitionID, b.PartitionID) })
+	slices.SortFunc(d.Indexes, func(a, b IndexDump) int { return stdcmp.Compare(a.IndexID, b.IndexID) })
+	slices.SortFunc(d.Functions, func(a, b FunctionDump) int { return stdcmp.Compare(a.ID, b.ID) })
 
 	return d, nil
 }

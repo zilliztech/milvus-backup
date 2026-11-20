@@ -1,10 +1,11 @@
 package create
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"io"
-	"sort"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -192,7 +193,7 @@ func reconcileBackupCollBars(p *mpb.Progress, latest *atomic.Value, bars map[col
 			active = append(active, name)
 		}
 	}
-	sort.Slice(active, func(i, j int) bool { return active[i].String() < active[j].String() })
+	slices.SortFunc(active, func(a, b collref.Name) int { return cmp.Compare(a.String(), b.String()) })
 	if len(active) > maxBars {
 		active = active[:maxBars]
 	}

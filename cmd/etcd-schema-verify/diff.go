@@ -2,8 +2,8 @@ package main
 
 import (
 	"fmt"
+	"maps"
 	"slices"
-	"sort"
 )
 
 func diffCollections(src, dst *CollectionDump) []Diff {
@@ -219,11 +219,7 @@ func diffMap(diffs *[]Diff, prefix string, src, dst map[string]string) {
 		allKeys[k] = struct{}{}
 	}
 
-	sorted := make([]string, 0, len(allKeys))
-	for k := range allKeys {
-		sorted = append(sorted, k)
-	}
-	sort.Strings(sorted)
+	sorted := slices.Sorted(maps.Keys(allKeys))
 
 	for _, k := range sorted {
 		sv, inSrc := src[k]
