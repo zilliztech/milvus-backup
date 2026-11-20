@@ -22,6 +22,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
+	"github.com/zilliztech/milvus-backup/internal/restoreplan"
 	"github.com/zilliztech/milvus-backup/internal/snapshotsource"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 )
@@ -31,20 +32,8 @@ type DBMapping struct {
 	WithProp bool
 }
 
-type SkipParams struct {
-	CollectionProperties []string
-
-	FieldIndexParams []string
-	FieldTypeParams  []string
-
-	IndexParams []string
-}
-
-// CollOverride contains per-collection overrides for restore.
-type CollOverride struct {
-	ShardNum    int32
-	Description string
-}
+type SkipParams = restoreplan.SkipParams
+type CollOverride = restoreplan.CollOverride
 
 type Plan struct {
 	// BackupFilter filters databases and collections from the backup.
@@ -112,45 +101,8 @@ func (r *TableMapper) TargetNames(collRef collref.Name) []collref.Name {
 	return []collref.Name{collRef}
 }
 
-// Secondary identifies a cluster that mirrors the target's import jobs. Token
-// is the raw Milvus token; empty inherits the target's user/password.
-type Secondary struct {
-	Address string
-	Token   string
-}
-
-type Option struct {
-	// Index related options
-	DropExistIndex bool
-	RebuildIndex   bool
-	UseAutoIndex   bool
-
-	// Collection schema related options
-	DropExistCollection  bool
-	SkipCreateCollection bool
-	MaxShardNum          int32
-	SkipParams           SkipParams
-
-	// data related options
-	MetaOnly bool
-	// Strategy pins the data path the restore takes. The zero value auto
-	// resolves it against the backup's format and the target's capabilities.
-	Strategy           Strategy
-	TruncateBinlogByTs bool
-
-	// Secondaries are the clusters that mirror the target's import jobs over
-	// the replication stream. When set, every import job is committed two-phase:
-	// held at Uncommitted until every secondary's mirror is there too, then
-	// committed on the target and all secondaries. Empty for a plain restore.
-	Secondaries []Secondary
-
-	RestoreRBAC bool
-
-	// EZKMapping maps old encryption keys to new ones.
-	// During restore, the old EZK from backup is looked up in this map
-	// and replaced with the new EZK if a match is found.
-	EZKMapping map[string]string
-}
+type Secondary = restoreplan.SecondaryEndpoint
+type Option = restoreplan.Option
 
 type TaskArgs struct {
 	TaskID string
@@ -169,8 +121,13 @@ type TaskArgs struct {
 	Store *jobstate.Store
 }
 
+var ErrDuplicateTarget = errors.New("restore: duplicate target collection")
+
 type Task struct {
+	collTargets []collTarget
+
 	args TaskArgs
+	plan tasklet.Tasklet
 
 	// format is the backup's, which decides how every collection in it is restored.
 	format string
@@ -209,6 +166,9 @@ func NewTask(ctx context.Context, args TaskArgs) (*Task, error) {
 
 	logger := log.With(zap.String("backup_name", args.Backup.GetName()), zap.String("task_id", args.TaskID))
 
+	if args.Plan == nil {
+		args.Plan = &Plan{}
+	}
 	task := &Task{
 		args: args,
 
@@ -251,7 +211,21 @@ func NewTask(ctx context.Context, args TaskArgs) (*Task, error) {
 			zap.Bool("streaming", task.streaming))
 	}
 
-	task.tracker = args.Store.AddRestoreTask(args.TaskID)
+	task.collTargets = task.collectionTargets(args.Backup)
+	seen := make(map[collref.Name]bool, len(task.collTargets))
+	for _, coll := range task.collTargets {
+		if seen[coll.target] {
+			return nil, fmt.Errorf("%w %s", ErrDuplicateTarget, coll.target)
+		}
+		seen[coll.target] = true
+	}
+
+	resumable := args.Option != nil && args.Option.Resumable
+	var err error
+	task.tracker, err = args.Store.AddRestoreTask(args.TaskID, resumable)
+	if err != nil {
+		return nil, err
+	}
 
 	return task, nil
 }
@@ -336,41 +310,39 @@ func snapshotIgnoredOptions(opt *Option, strategy Strategy) []string {
 	return ignored
 }
 
-func (t *Task) newDBAndCollTasks(backup *backuppb.BackupInfo) ([]*databaseTask, []collTarget) {
+func (t *Task) databaseTasks(backup *backuppb.BackupInfo) []*databaseTask {
 	dbNames := lo.Map(backup.GetDatabaseBackups(), func(db *backuppb.DatabaseBackupInfo, _ int) string { return db.GetDbName() })
 	t.logger.Info("databases in backup", zap.Strings("db_names", dbNames))
+	dbBackups := t.filterDBBackup(backup.GetDatabaseBackups())
+	dbNames = lo.Map(dbBackups, func(db *backuppb.DatabaseBackupInfo, _ int) string { return db.GetDbName() })
+	t.logger.Info("databases backup after filtering", zap.Strings("db_names", dbNames))
+	dbTasks := t.newDBTasks(dbBackups)
+	dbNames = lo.Map(dbTasks, func(db *databaseTask, _ int) string { return db.targetName })
+	t.logger.Info("databases task after mapping", zap.Strings("db_names", dbNames))
+	dbTasks = t.filterDBTask(dbTasks)
+	dbNames = lo.Map(dbTasks, func(db *databaseTask, _ int) string { return db.targetName })
+	t.logger.Info("databases task after filtering", zap.Strings("db_names", dbNames))
+	return dbTasks
+}
+
+func (t *Task) collectionTargets(backup *backuppb.BackupInfo) []collTarget {
 	collNames := lo.Map(backup.GetCollectionBackups(), func(coll *backuppb.CollectionBackupInfo, _ int) string {
 		return collref.New(coll.GetDbName(), coll.GetCollectionName()).String()
 	})
 	t.logger.Info("collections in backup", zap.Strings("coll_names", collNames))
-
-	// filter backup
-	dbBackups := t.filterDBBackup(backup.GetDatabaseBackups())
 	collBackups := t.filterCollBackup(backup.GetCollectionBackups())
-	dbNames = lo.Map(dbBackups, func(db *backuppb.DatabaseBackupInfo, _ int) string { return db.GetDbName() })
-	t.logger.Info("databases backup after filtering", zap.Strings("db_names", dbNames))
 	collNames = lo.Map(collBackups, func(coll *backuppb.CollectionBackupInfo, _ int) string {
 		return collref.New(coll.GetDbName(), coll.GetCollectionName()).String()
 	})
 	t.logger.Info("collections backup after filtering", zap.Strings("coll_names", collNames))
-
-	// generate restore tasks
-	dbTasks := t.newDBTasks(dbBackups)
+	dbBackups := t.filterDBBackup(backup.GetDatabaseBackups())
 	collTargets := t.newCollTargets(dbBackups, collBackups)
-	dbNames = lo.Map(dbTasks, func(db *databaseTask, _ int) string { return db.targetName })
-	t.logger.Info("databases task after mapping", zap.Strings("db_names", dbNames))
 	collNames = lo.Map(collTargets, func(tgt collTarget, _ int) string { return tgt.target.String() })
 	t.logger.Info("collections task after mapping", zap.Strings("colls", collNames))
-
-	// filter task
-	dbTasks = t.filterDBTask(dbTasks)
 	collTargets = t.filterCollTask(collTargets)
-	dbNames = lo.Map(dbTasks, func(db *databaseTask, _ int) string { return db.targetName })
-	t.logger.Info("databases task after filtering", zap.Strings("db_names", dbNames))
 	collNames = lo.Map(collTargets, func(tgt collTarget, _ int) string { return tgt.target.String() })
 	t.logger.Info("collections task after filtering", zap.Strings("colls", collNames))
-
-	return dbTasks, collTargets
+	return collTargets
 }
 
 func (t *Task) filterDBBackup(dbBackups []*backuppb.DatabaseBackupInfo) []*backuppb.DatabaseBackupInfo {
@@ -416,7 +388,11 @@ func (t *Task) newDBTasks(dbBackups []*backuppb.DatabaseBackupInfo) []*databaseT
 
 func (t *Task) newCollTarget(dbBackup *backuppb.DatabaseBackupInfo, collBackup *backuppb.CollectionBackupInfo) []collTarget {
 	source := collref.New(collBackup.GetDbName(), collBackup.GetCollectionName())
-	targets := t.args.Plan.CollMapper.TargetNames(source)
+	mapper := t.args.Plan.CollMapper
+	if mapper == nil {
+		mapper = NewDefaultCollMapper()
+	}
+	targets := mapper.TargetNames(source)
 
 	collTargets := make([]collTarget, 0, len(targets))
 	for _, target := range targets {
@@ -502,12 +478,52 @@ func newSecondaryRestful(primary *cfg.MilvusConfig, secondary Secondary) (*milvu
 	return milvus.NewRestful(&secondaryCfg)
 }
 
-func (t *Task) initClients() error {
+func (t *Task) closeClients() {
+	if t.grpc != nil {
+		if err := t.grpc.Close(); err != nil {
+			t.logger.Warn("close grpc client", zap.Error(err))
+		}
+		t.grpc = nil
+	}
+}
+
+var _ tasklet.Tasklet = (*Task)(nil)
+
+// Tracker returns the handle for this restore's current state.
+func (t *Task) Tracker() *jobstate.RestoreTracker { return t.tracker }
+
+func (t *Task) Execute(ctx context.Context) error {
+	_, err := t.ExecuteWithResult(ctx)
+	return err
+}
+
+// ExecuteWithResult returns the settlement of this invocation for synchronous callers.
+func (t *Task) ExecuteWithResult(ctx context.Context) (jobstate.RestoreStatus, error) {
+	if !t.tracker.Start() {
+		return jobstate.RestoreStatus{}, jobstate.ErrRestoreConflict
+	}
+	return t.run(ctx, nil)
+}
+
+// run executes an admitted restore and publishes its terminal state after closing clients.
+func (t *Task) run(ctx context.Context, saved *restoreplan.Plan) (jobstate.RestoreStatus, error) {
+	err := t.executePlan(ctx, saved)
+	if err != nil {
+		t.logger.Error("restore task failed", zap.Error(err))
+	} else {
+		t.logger.Info("restore task finished")
+	}
+	return t.tracker.Finish(err), err
+}
+
+// Each execution uses fresh clients, including when rebuilding a saved plan.
+func (t *Task) executePlan(ctx context.Context, saved *restoreplan.Plan) error {
 	grpcCli, err := milvus.NewGrpc(&t.args.Params.Milvus)
 	if err != nil {
 		return fmt.Errorf("restore: create grpc client: %w", err)
 	}
 	t.grpc = grpcCli
+	defer t.closeClients()
 
 	restfulCli, err := milvus.NewRestful(&t.args.Params.Milvus)
 	if err != nil {
@@ -523,48 +539,21 @@ func (t *Task) initClients() error {
 		t.secondaries = append(t.secondaries, importSecondary{addr: secondary.Address, cli: secondaryCli})
 	}
 
-	return nil
-}
-
-func (t *Task) closeClients() {
-	if t.grpc != nil {
-		if err := t.grpc.Close(); err != nil {
-			t.logger.Warn("close grpc client", zap.Error(err))
-		}
+	if saved == nil {
+		err = t.prepare(ctx)
+	} else {
+		err = t.rebuild(ctx, saved)
 	}
-}
-
-var _ tasklet.Tasklet = (*Task)(nil)
-
-// Tracker hands the job the write handle the task registered at construction.
-// The task settles it before Execute returns; the job that owns the run reads
-// its terminal state through it.
-func (t *Task) Tracker() *jobstate.RestoreTracker { return t.tracker }
-
-func (t *Task) Execute(ctx context.Context) error {
-	defer t.closeClients()
-	if err := t.initClients(); err != nil {
-		// Client construction fails before the job has a state to run in, but
-		// the job still has to settle: a caller waiting on the store must not
-		// be left watching a task that is never going to move again.
-		t.tracker.SetFail(err)
+	if err != nil {
 		return err
 	}
-
-	if err := t.privateExecute(ctx); err != nil {
-		t.logger.Error("restore task failed", zap.Error(err))
-		t.tracker.SetFail(err)
-		return fmt.Errorf("restore: execute %w", err)
+	if err := t.plan.Execute(ctx); err != nil {
+		return fmt.Errorf("restore: run collection plan %w", err)
 	}
-
-	t.logger.Info("restore task finished")
-	t.tracker.SetSuccess()
 	return nil
 }
 
-func (t *Task) privateExecute(ctx context.Context) error {
-	t.tracker.SetExecuting()
-
+func (t *Task) prepare(ctx context.Context) error {
 	// The server is only known once the client is connected, so this cannot be part of
 	// NewTask. Checking it once here beats one identical failure per collection.
 	if t.format == meta.FormatSnapshot && !t.grpc.HasFeature(milvus.Snapshot) {
@@ -581,7 +570,8 @@ func (t *Task) privateExecute(ctx context.Context) error {
 		}
 	}
 
-	dbTasks, collTargets := t.newDBAndCollTasks(t.args.Backup)
+	dbTasks := t.databaseTasks(t.args.Backup)
+	collTargets := t.collTargets
 
 	// Selecting the plan before anything touches the target keeps a strategy
 	// pin that mismatches the backup a pure validation failure, with no RBAC
@@ -615,8 +605,9 @@ func (t *Task) privateExecute(ctx context.Context) error {
 		return fmt.Errorf("restore: check collection exist %w", err)
 	}
 
-	if err := plan.Execute(ctx); err != nil {
-		return fmt.Errorf("restore: run collection plan %w", err)
+	t.plan = plan
+	if t.tracker.Resumable() {
+		t.tracker.SavePlan(t.savedPlan(plan))
 	}
 
 	return nil

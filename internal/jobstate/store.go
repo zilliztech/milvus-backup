@@ -22,7 +22,9 @@ func NewStore() *Store {
 }
 
 type Store struct {
-	mu sync.RWMutex
+	mu            sync.RWMutex
+	restoreLoadMu sync.Mutex
+	persistence   storePersistence
 
 	// restoreID -> restoreTask
 	restoreTask map[string]*restoreTask
@@ -41,29 +43,29 @@ type Store struct {
 	deleteNameDeleteID map[string]string
 }
 
-// AddRestoreTask registers one restore job and returns its tracker, the write
-// side the job holds for its whole run.
-func (m *Store) AddRestoreTask(taskID string) *RestoreTracker {
+// AddRestoreTask registers a new task in memory without accessing persistence.
+// Only IDs already present in memory are rejected.
+func (m *Store) AddRestoreTask(id string, resumable bool) (*RestoreTracker, error) {
+	m.restoreLoadMu.Lock()
+	defer m.restoreLoadMu.Unlock()
 	m.mu.Lock()
 	defer m.mu.Unlock()
-
-	task := newRestoreTask(taskID)
-	m.restoreTask[taskID] = task
-
-	return &RestoreTracker{task: task}
+	if m.restoreTask[id] != nil {
+		return nil, fmt.Errorf("%w: task ID %q already exists", ErrRestoreConflict, id)
+	}
+	task := newRestoreTask(id, resumable)
+	task.persistence = m
+	m.restoreTask[id] = task
+	return &RestoreTracker{task: task}, nil
 }
 
 // GetRestoreTask reads a snapshot of one restore job.
 func (m *Store) GetRestoreTask(taskID string) (RestoreStatus, error) {
-	m.mu.RLock()
-	defer m.mu.RUnlock()
-
-	task, ok := m.restoreTask[taskID]
-	if !ok {
-		return RestoreStatus{}, ErrTaskNotFound
+	tr, err := m.restoreTracker(taskID)
+	if err != nil {
+		return RestoreStatus{}, err
 	}
-
-	return task.snapshot(), nil
+	return tr.Snapshot(), nil
 }
 
 // AddBackupTask registers one backup job and returns its tracker. A backup

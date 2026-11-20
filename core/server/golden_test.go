@@ -128,8 +128,8 @@ func TestGoldenV1(t *testing.T) {
 	})
 
 	t.Run("RestoreSuccess", func(t *testing.T) {
-		stub := &stubRestoreFactory{job: &stubRestoreJob{}}
-		s := newListTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{status: newGoldenRestoreStatus()}, nil))
+		stub := &stubRestoreFactory{job: &stubRestoreJob{status: newGoldenRestoreStatus()}}
+		s := newListTestServer(t, withRestoreBackup(stub))
 		body := call(t, s, http.MethodPost, "/api/v1/restore", `{"requestId":"rid-1","backup_name":"backup1"}`, "")
 		assertGolden(t, t.Name(), body)
 	})
@@ -148,8 +148,8 @@ func TestGoldenV1(t *testing.T) {
 	})
 
 	t.Run("RestoreSecondarySuccess", func(t *testing.T) {
-		stub := &stubRestoreSecondaryFactory{job: &stubRestoreJob{}}
-		s := newListTestServer(t, withRestoreSecondary(stub), withGetRestore(&stubGetRestore{status: newGoldenRestoreStatus()}, nil))
+		stub := &stubRestoreSecondaryFactory{job: &stubRestoreJob{status: newGoldenRestoreStatus()}}
+		s := newListTestServer(t, withRestoreSecondary(stub))
 		body := call(t, s, http.MethodPost, "/api/v1/restore_secondary",
 			`{"requestId":"rid-1","backup_name":"backup1","sourceClusterID":"src","targetClusterID":"dst"}`, "")
 		assertGolden(t, t.Name(), body)

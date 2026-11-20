@@ -54,17 +54,17 @@ type Stream interface {
 	//
 	// Returns once every message is buffered (not when the broker has
 	// confirmed it).
-	Send(ctx context.Context, build func(ts uint64) []message.MutableMessage) error
+	Send(ctx context.Context, key string, build func(ts uint64) []message.MutableMessage) error
 
 	// Forward enqueues pre-built immutable messages on their matching
 	// pchannels without re-stamping their time-ticks. Used to replay messages
 	// whose time-ticks were assigned by the source cluster (e.g. flush-all
 	// messages captured at backup time).
-	Forward(ctx context.Context, msgs ...*commonpb.ImmutableMessage) error
+	Forward(ctx context.Context, key string, msgs ...*commonpb.ImmutableMessage) error
 
 	// WaitConfirm blocks until every pchannel has drained its replay buffer,
 	// i.e. the broker has confirmed every enqueued message.
-	WaitConfirm()
+	WaitConfirm(ctx context.Context) error
 
 	// Close stops every per-pchannel reconnect loop and releases resources.
 	// Safe to call multiple times.
@@ -72,7 +72,8 @@ type Stream interface {
 }
 
 type StreamClient struct {
-	pchClient map[string]*pchClient
+	streamCheckpoint *StreamCheckpoint
+	pchClient        map[string]*pchClient
 
 	// sourceWALName names the WAL kind of the source cluster being
 	// impersonated. Fabricated message ids claim this kind so the replicate
@@ -92,14 +93,29 @@ type StreamClient struct {
 }
 
 func NewStreamClient(srcClusterID, taskID string, pch []string, sourceWALName message.WALName, grpc Grpc) *StreamClient {
+	return newStreamClient(srcClusterID, taskID, pch, sourceWALName, grpc, nil)
+}
+
+// NewResumedStreamClient restores the queue before admitting new operations.
+func NewResumedStreamClient(srcClusterID, taskID string, pch []string, sourceWALName message.WALName, grpc Grpc, streamCheckpoint *StreamCheckpoint) *StreamClient {
+	return newStreamClient(srcClusterID, taskID, pch, sourceWALName, grpc, streamCheckpoint)
+}
+
+func newStreamClient(srcClusterID, taskID string, pch []string, sourceWALName message.WALName, grpc Grpc, streamCheckpoint *StreamCheckpoint) *StreamClient {
 	ctx, cancel := context.WithCancel(context.Background())
 
+	var tick uint64
+	var pending map[string][]*commonpb.ImmutableMessage
+	if streamCheckpoint != nil {
+		tick, pending = streamCheckpoint.replay()
+	}
 	pchClients := make(map[string]*pchClient, len(pch))
 	for _, p := range pch {
-		pchClients[p] = newPchClient(ctx, srcClusterID, taskID, p, grpc)
+		pchClients[p] = newPchClient(ctx, srcClusterID, taskID, p, grpc, streamCheckpoint, pending[p])
 	}
 
 	return &StreamClient{
+		streamCheckpoint: streamCheckpoint, ttCounter: tick,
 		pchClient:     pchClients,
 		sourceWALName: sourceWALName,
 		ctx:           ctx,
@@ -107,10 +123,16 @@ func NewStreamClient(srcClusterID, taskID string, pch []string, sourceWALName me
 	}
 }
 
-func (s *StreamClient) Send(ctx context.Context, build func(ts uint64) []message.MutableMessage) error {
+func (s *StreamClient) Send(ctx context.Context, key string, build func(ts uint64) []message.MutableMessage) error {
 	s.dispatchMu.Lock()
 	defer s.dispatchMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
+	if s.streamCheckpoint != nil && s.streamCheckpoint.Sent(key) {
+		return nil
+	}
 	s.ttCounter++
 	bodyTS := s.ttCounter
 
@@ -142,23 +164,18 @@ func (s *StreamClient) Send(ctx context.Context, build func(ts uint64) []message
 		byPch[pch] = append(byPch[pch], imm)
 	}
 
-	for pch, pchMsgs := range byPch {
-		cli, ok := s.pchClient[pch]
-		if !ok {
-			return fmt.Errorf("stream: no pch client for %s", pch)
-		}
-		for _, m := range pchMsgs {
-			log.Debug("stream: send message", zap.Object("msg", newMsgLogObject(m)))
-		}
-		if err := cli.enqueue(ctx, pchMsgs...); err != nil {
-			return fmt.Errorf("stream: send message: %w", err)
-		}
-	}
-
-	return nil
+	return s.enqueue(ctx, key, byPch, false)
 }
 
-func (s *StreamClient) Forward(ctx context.Context, msgs ...*commonpb.ImmutableMessage) error {
+func (s *StreamClient) Forward(ctx context.Context, key string, msgs ...*commonpb.ImmutableMessage) error {
+	s.dispatchMu.Lock()
+	defer s.dispatchMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if s.streamCheckpoint != nil && s.streamCheckpoint.Sent(key) {
+		return nil
+	}
 	if len(msgs) == 0 {
 		return nil
 	}
@@ -174,23 +191,39 @@ func (s *StreamClient) Forward(ctx context.Context, msgs ...*commonpb.ImmutableM
 		byPch[pch] = append(byPch[pch], msg)
 	}
 
-	for pch, pchMsgs := range byPch {
-		cli, ok := s.pchClient[pch]
-		if !ok {
+	return s.enqueue(ctx, key, byPch, true)
+}
+
+func (s *StreamClient) enqueue(ctx context.Context, key string, byPch map[string][]*commonpb.ImmutableMessage, forward bool) error {
+	for pch := range byPch {
+		if s.pchClient[pch] == nil {
 			return fmt.Errorf("stream: no pch client for %s", pch)
 		}
-		if err := cli.enqueue(ctx, pchMsgs...); err != nil {
-			return fmt.Errorf("stream: forward message: %w", err)
+	}
+	if s.streamCheckpoint != nil {
+		if err := s.streamCheckpoint.record(key, s.ttCounter, byPch, forward); err != nil {
+			return err
 		}
 	}
-
+	for ch, msgs := range byPch {
+		if err := s.pchClient[ch].enqueue(ctx, msgs...); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
-func (s *StreamClient) WaitConfirm() {
+func (s *StreamClient) WaitConfirm(ctx context.Context) error {
+	waitCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	stop := context.AfterFunc(s.ctx, cancel)
+	defer stop()
 	for _, cli := range s.pchClient {
-		cli.waitConfirm()
+		if err := cli.waitConfirm(waitCtx); err != nil {
+			return err
+		}
 	}
+	return waitCtx.Err()
 }
 
 // Close cancels every pchannel's reconnect loop and releases its resources.
@@ -220,9 +253,10 @@ func (s *StreamClient) Close() {
 //
 // Producers (enqueue) only touch the queue and never block on the network.
 type pchClient struct {
-	sourceClusterID string
-	pch             string
-	grpc            Grpc
+	streamCheckpoint *StreamCheckpoint
+	sourceClusterID  string
+	pch              string
+	grpc             Grpc
 
 	queue msgQueue
 
@@ -242,13 +276,16 @@ type pchClient struct {
 	connConfirmed       int // messages this connection's Confirm dropped
 }
 
-func newPchClient(ctx context.Context, sourceClusterID, taskID, pch string, grpc Grpc) *pchClient {
+func newPchClient(ctx context.Context, sourceClusterID, taskID, pch string, grpc Grpc, streamCheckpoint *StreamCheckpoint, pending []*commonpb.ImmutableMessage) *pchClient {
+	queue := newMemMsgQueue()
+	queue.buf = pending
 	p := &pchClient{
-		sourceClusterID: sourceClusterID,
-		pch:             pch,
-		grpc:            grpc,
+		streamCheckpoint: streamCheckpoint,
+		sourceClusterID:  sourceClusterID,
+		pch:              pch,
+		grpc:             grpc,
 
-		queue: newMemMsgQueue(),
+		queue: queue,
 
 		ctx:        ctx,
 		finishedCh: make(chan struct{}),
@@ -263,10 +300,10 @@ func (p *pchClient) enqueue(ctx context.Context, msgs ...*commonpb.ImmutableMess
 	return p.queue.Enqueue(ctx, msgs...)
 }
 
-func (p *pchClient) waitConfirm() {
+func (p *pchClient) waitConfirm(ctx context.Context) error {
 	done := make(chan error, 1)
 	go func() {
-		done <- p.queue.WaitEmpty(p.ctx)
+		done <- p.queue.WaitEmpty(ctx)
 	}()
 
 	waitStart := time.Now()
@@ -279,7 +316,7 @@ func (p *pchClient) waitConfirm() {
 			if err != nil {
 				p.logger.Warn("wait confirm aborted", zap.Error(err))
 			}
-			return
+			return err
 		case now := <-ticker.C:
 			p.warnIfNoProgress(waitStart, now)
 		}
@@ -518,6 +555,9 @@ func (p *pchClient) recvLoop(ctx context.Context, cli milvuspb.MilvusService_Cre
 		}
 		dropped := p.queue.Confirm(confirmedTT)
 		if dropped > 0 {
+			if p.streamCheckpoint != nil {
+				p.streamCheckpoint.confirm(p.pch, confirmedTT)
+			}
 			p.observeConfirm(dropped)
 			p.logger.Debug("recv confirm",
 				zap.Uint64("confirmed_tt", confirmedTT),

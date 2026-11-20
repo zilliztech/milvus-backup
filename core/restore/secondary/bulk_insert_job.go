@@ -3,6 +3,7 @@ package secondary
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"math/rand/v2"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"google.golang.org/protobuf/encoding/protowire"
 
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
 const (
@@ -37,15 +39,17 @@ var (
 // stream, which both data paths share once their import message is out: the
 // job id travels inside that message, so the target learns the job only when
 // the message is applied; the restore then watches it through the target's
-// import api, and, as every replayed import is submitted with auto_commit
-// off, commits it with a broadcast commit message once the target holds it at
-// Uncommitted. What differs between the binlog and the snapshot path is only
+// import api and commits it with a broadcast commit message if the target
+// holds it at Uncommitted. Targets without explicit commit finish automatically.
+// What differs between the binlog and the snapshot path is only
 // what the import message asks for, never how the job it creates is seen
 // through.
 type bulkInsertJob struct {
-	dbName       string
-	collectionID int64
-	vchannels    []string
+	streamCheckpoint *milvus.StreamCheckpoint
+	submit           func(context.Context, int64) error
+	dbName           string
+	collectionID     int64
+	vchannels        []string
 
 	streamCli  milvus.Stream
 	restfulCli milvus.Restful
@@ -53,13 +57,64 @@ type bulkInsertJob struct {
 	logger *zap.Logger
 }
 
+func importKey(id int64) string { return fmt.Sprintf("import/%d", id) }
+func commitKey(id int64) string { return fmt.Sprintf("commit/%d", id) }
+
+// start submits a new import or returns the initial state of an adopted job.
+func (j bulkInsertJob) start(ctx context.Context, op *jobstate.SecondaryImportProgress) (milvus.ImportState, error) {
+	if op.State == jobstate.SecondaryImportCompleted {
+		return milvus.ImportStateCompleted, nil
+	}
+	if op.JobID != 0 &&
+		op.State != jobstate.SecondaryImportFailed &&
+		j.streamCheckpoint != nil && j.streamCheckpoint.Sent(importKey(op.JobID)) {
+		state, _, err := j.importProgress(ctx, strconv.FormatInt(op.JobID, 10))
+		if !errors.Is(err, milvus.ErrRemoteJobFailed) {
+			if errors.Is(err, milvus.ErrImportJobNotFound) {
+				return "", nil // Keep the ID and wait for the job to become visible.
+			}
+			return state, err
+		}
+		op.State = jobstate.SecondaryImportFailed
+	}
+	if op.JobID == 0 || op.State == jobstate.SecondaryImportFailed {
+		// Only a failure confirmed before waiting authorizes a replacement.
+		// Replaying a failed import is at-least-once, even after commit:
+		// published data or compaction effects may remain on the target.
+		op.JobID = rand.Int64N(1<<62) + 1
+		op.State = jobstate.SecondaryImportPending
+	}
+	// The saved ID is Pending before submit; interruption before registration
+	// reuses this ID on the next Resume instead of allocating another one.
+	return "", j.submit(ctx, op.JobID)
+}
+
+func (j bulkInsertJob) wait(ctx context.Context, op *jobstate.SecondaryImportProgress, state milvus.ImportState) error {
+	if op.State == jobstate.SecondaryImportCompleted {
+		return nil
+	}
+	err := j.check(ctx, op, state)
+	if err == nil {
+		op.State = jobstate.SecondaryImportCompleted
+	} else if errors.Is(err, milvus.ErrRemoteJobFailed) {
+		// A failure while waiting ends this execution. A later explicit Resume
+		// can replace it; query errors never authorize a new job ID.
+		op.State = jobstate.SecondaryImportFailed
+	}
+	return err
+}
+
 // check sees the job through to Completed: a job the target already finished
 // needs nothing more, one held at Uncommitted is committed here, and one
 // another coordinator is committing is only waited for.
-func (j bulkInsertJob) check(ctx context.Context, jobID int64) error {
-	state, err := j.waitReadyToCommit(ctx, jobID)
-	if err != nil {
-		return err
+func (j bulkInsertJob) check(ctx context.Context, op *jobstate.SecondaryImportProgress, state milvus.ImportState) error {
+	jobID := op.JobID
+	if state != milvus.ImportStateCompleted && state != milvus.ImportStateUncommitted && state != milvus.ImportStateCommitting {
+		var err error
+		state, err = j.waitReadyToCommit(ctx, jobID)
+		if err != nil {
+			return err
+		}
 	}
 
 	switch state {
@@ -75,6 +130,7 @@ func (j bulkInsertJob) check(ctx context.Context, jobID int64) error {
 		return fmt.Errorf("secondary: unexpected bulk insert state %s", state)
 	}
 
+	op.State = jobstate.SecondaryImportCommitting
 	return j.waitCompleted(ctx, jobID)
 }
 
@@ -93,6 +149,27 @@ func (j bulkInsertJob) waitCompleted(ctx context.Context, jobID int64) error {
 	return err
 }
 
+func (j bulkInsertJob) importProgress(ctx context.Context, jobID string) (milvus.ImportState, int, error) {
+	resp, err := j.restfulCli.GetBulkInsertState(ctx, j.dbName, jobID)
+	if err != nil {
+		return "", 0, fmt.Errorf("secondary: get bulk insert state: %w", err)
+	}
+	if resp == nil {
+		return "", 0, fmt.Errorf("secondary: target returned no usable status for import job %s", jobID)
+	}
+	if id := resp.Data.JobId; id != "" && id != jobID {
+		return "", 0, fmt.Errorf("secondary: queried import job %s but received job %s", jobID, id)
+	}
+	if err := milvus.ImportLookupError(jobID, resp.Code, resp.Message); err != nil {
+		return "", 0, err
+	}
+	state := milvus.ImportState(resp.Data.State)
+	if state == milvus.ImportStateFailed {
+		return "", 0, fmt.Errorf("secondary: bulk insert failed: %w", milvus.ImportFailure(jobID, resp.Data.Reason))
+	}
+	return state, resp.Data.Progress, nil
+}
+
 func (j bulkInsertJob) waitState(
 	ctx context.Context,
 	jobID int64,
@@ -109,21 +186,15 @@ func (j bulkInsertJob) waitState(
 	defer ticker.Stop()
 
 	for {
-		resp, err := j.restfulCli.GetBulkInsertState(ctx, j.dbName, jobIDStr)
-		if err != nil {
-			return "", fmt.Errorf("secondary: get bulk insert state: %w", err)
+		state, currentProgress, err := j.importProgress(ctx, jobIDStr)
+		if err != nil && !errors.Is(err, milvus.ErrImportJobNotFound) {
+			return "", err
 		}
-
-		state := milvus.ImportState(resp.Data.State)
 		j.logger.Info("bulk insert task state", zap.Int64("job_id", jobID),
-			zap.String("state", resp.Data.State),
-			zap.Int("progress", resp.Data.Progress))
-		if state == milvus.ImportStateFailed {
-			return "", fmt.Errorf("secondary: bulk insert failed: %s", resp.Data.Reason)
-		}
-		// An empty state is not a state the job can be in: the target does not
-		// have this job at all. That never turns into anything else, so waiting
-		// for it is waiting forever.
+			zap.String("state", string(state)),
+			zap.Int("progress", currentProgress))
+		// A replicated import can be invisible until its broadcast is applied.
+		// An expired record looks the same, so keep its ID across Resume.
 		if state == "" {
 			if unknownSince.IsZero() {
 				unknownSince = time.Now()
@@ -149,7 +220,6 @@ func (j bulkInsertJob) waitState(
 			return state, nil
 		}
 
-		currentProgress := resp.Data.Progress
 		if currentProgress > lastProgress {
 			lastProgress = currentProgress
 			lastUpdateTime = time.Now()
@@ -188,7 +258,7 @@ func (j bulkInsertJob) sendCommitMsg(ctx context.Context, jobID int64) error {
 		"_bh": broadcastHeader,
 	}
 
-	if err := j.streamCli.Send(ctx, func(uint64) []message.MutableMessage {
+	if err := j.streamCli.Send(ctx, commitKey(jobID), func(uint64) []message.MutableMessage {
 		broadcast := message.NewBroadcastMutableMessageBeforeAppend(nil, properties).
 			WithBroadcastID(rand.Uint64())
 		return broadcast.SplitIntoMutableMessage()

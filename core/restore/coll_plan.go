@@ -16,6 +16,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
+	"github.com/zilliztech/milvus-backup/internal/restoreplan"
 )
 
 // collTarget is one collection the restore task will land: the backup's view
@@ -28,22 +29,14 @@ type collTarget struct {
 	collOverride CollOverride
 }
 
-// Strategy pins the data path a restore takes. Every value names both the
-// backup format it applies to and the path it selects, so no value is
-// ambiguous across formats: per_seg and merged_seg are binlog strategies,
-// restore_snap and import_snap are snapshot ones. What carries the data in
-// the first place is the backup's format, the other axis the task resolves
-// at start.
-//
-//go:generate stringer -type=Strategy
-type Strategy int
+type Strategy = restoreplan.Strategy
 
 const (
-	StrategyAuto Strategy = iota
-	StrategyPerSeg
-	StrategyMergedSeg
-	StrategyRestoreSnap
-	StrategyImportSnap
+	StrategyAuto        = restoreplan.StrategyAuto
+	StrategyPerSeg      = restoreplan.StrategyPerSeg
+	StrategyMergedSeg   = restoreplan.StrategyMergedSeg
+	StrategyRestoreSnap = restoreplan.StrategyRestoreSnap
+	StrategyImportSnap  = restoreplan.StrategyImportSnap
 )
 
 // selectPlan composes the two option axes into the plan that runs: the
@@ -51,10 +44,8 @@ const (
 // auto, resolved against the target's capabilities — picks among what remains.
 // A pin outside the format's set is a loud error, not a silent fallback.
 //
-// The chosen plan comes back fully built: everything a restore will run is
-// enumerated from the backup meta at selection time, so the work is known —
-// and reportable, and resumable — before the first task executes. Building
-// reads the backup bucket but never touches the target.
+// Plan construction reads the backup and registers progress for every task.
+// Resumable restores also record their import batches before execution.
 func (t *Task) selectPlan(ctx context.Context, targets []collTarget) (tasklet.Tasklet, error) {
 	// A secondary commit rides the restful import api: the v1 grpc import has
 	// no two-phase commit at all. Auto resolves to the restful plan directly —
@@ -125,12 +116,12 @@ func (t *Task) selectPlan(ctx context.Context, targets []collTarget) (tasklet.Ta
 // newBinlogDataPlan picks the binlog-side plan: meta_only restores schemas
 // only, so its plan is the binlog plan's DDL half and the import protocol
 // never matters.
-func (t *Task) newBinlogDataPlan(ctx context.Context, targets []collTarget, newPlanner importPlannerFactory) (tasklet.Tasklet, error) {
+func (t *Task) newBinlogDataPlan(ctx context.Context, targets []collTarget, factory importPlannerFactory) (tasklet.Tasklet, error) {
 	if t.args.Option.MetaOnly {
 		t.logger.Info("use meta only plan")
 		return newMetaOnlyPlan(t, targets), nil
 	}
-	return newBinlogPlan(ctx, t, targets, newPlanner)
+	return newBinlogPlan(ctx, t, targets, factory)
 }
 
 // wrongFormat rejects a strategy pin aimed at the other backup format.
@@ -224,12 +215,16 @@ func (t *Task) mappedEZK(dbBackup *backuppb.DatabaseBackupInfo) string {
 
 // importPlannerFactory mints the per-collection import planner: grpc or
 // restful, the only thing the binlog data paths ever differ in.
-type importPlannerFactory func(args importTaskArgs) importPlanner
+type importPlannerFactory struct {
+	strategy   Strategy
+	newPlanner func(importTaskArgs) importPlanner
+}
 
 // grpcPlannerFactory plans one import job per partition dir through the v1
 // grpc bulk insert api.
-func grpcPlannerFactory(args importTaskArgs) importPlanner {
-	return newGRPCImportPlanner(args)
+var grpcPlannerFactory = importPlannerFactory{
+	strategy:   StrategyPerSeg,
+	newPlanner: func(args importTaskArgs) importPlanner { return newGRPCImportPlanner(args) },
 }
 
 // restfulPlannerFactory plans chunked import jobs through the v2 restful bulk
@@ -238,8 +233,11 @@ func grpcPlannerFactory(args importTaskArgs) importPlanner {
 // here, not per collection.
 func (t *Task) restfulPlannerFactory() importPlannerFactory {
 	multiL0InOneJob := t.grpc.HasFeature(milvus.MultiL0InOneJob)
-	return func(args importTaskArgs) importPlanner {
-		return newRestfulImportPlanner(args, multiL0InOneJob, t.secondaries)
+	return importPlannerFactory{
+		strategy: StrategyMergedSeg,
+		newPlanner: func(args importTaskArgs) importPlanner {
+			return newRestfulImportPlanner(args, multiL0InOneJob, t.secondaries)
+		},
 	}
 }
 
@@ -294,30 +292,29 @@ func (p *metaOnlyPlan) Execute(ctx context.Context) error {
 // importPlannerFactory having chosen the protocol at build time. The two
 // binlog data paths differ only in the import tasks the factory minted.
 type binlogPlan struct {
-	colls []*collBinlogTask
-	limit int
+	strategy Strategy
+	colls    []*collBinlogTask
+	limit    int
 
 	logger *zap.Logger
 }
 
 // newBinlogPlan expands every target into its collection node: the DDL and
 // every import task of its data, all built now.
-func newBinlogPlan(ctx context.Context, t *Task, targets []collTarget, newPlanner importPlannerFactory) (*binlogPlan, error) {
-	colls := make([]*collBinlogTask, 0, len(targets))
+func newBinlogPlan(ctx context.Context, t *Task, targets []collTarget, factory importPlannerFactory) (*binlogPlan, error) {
+	p := &binlogPlan{
+		strategy: factory.strategy,
+		limit:    t.args.Params.Restore.Concurrency.Collections.Val,
+		logger:   log.With(zap.String("task_id", t.args.TaskID)),
+	}
 	for _, tgt := range targets {
-		coll, err := t.newCollBinlogTask(ctx, tgt, newPlanner)
+		coll, err := t.newCollBinlogTask(ctx, tgt, factory)
 		if err != nil {
 			return nil, err
 		}
-		colls = append(colls, coll)
+		p.colls = append(p.colls, coll)
 	}
-
-	return &binlogPlan{
-		colls: colls,
-		limit: t.args.Params.Restore.Concurrency.Collections.Val,
-
-		logger: log.With(zap.String("task_id", t.args.TaskID)),
-	}, nil
+	return p, nil
 }
 
 func (p *binlogPlan) Execute(ctx context.Context) error {
@@ -370,7 +367,7 @@ func (t *Task) newCollSchemaTask(tgt collTarget) (*collDDLTask, *jobstate.Restor
 
 // newCollBinlogTask builds the whole node: the schema half plus every import
 // task of the collection's data, enumerated from the backup meta now.
-func (t *Task) newCollBinlogTask(ctx context.Context, tgt collTarget, newPlanner importPlannerFactory) (*collBinlogTask, error) {
+func (t *Task) newCollBinlogTask(ctx context.Context, tgt collTarget, factory importPlannerFactory) (*collBinlogTask, error) {
 	ddl, collTracker := t.newCollSchemaTask(tgt)
 
 	src := collref.New(tgt.collBackup.GetDbName(), tgt.collBackup.GetCollectionName())
@@ -380,7 +377,8 @@ func (t *Task) newCollBinlogTask(ctx context.Context, tgt collTarget, newPlanner
 		zap.String("target_coll", tgt.target.String()))
 
 	source := newBinlogSource(tgt.collBackup, t.args.Option, t.args.BackupDir, t.args.BackupStorage, logger)
-	planner := newPlanner(t.newImportTaskArgs(tgt, collTracker))
+	args := t.newImportTaskArgs(tgt, collTracker)
+	planner := factory.newPlanner(args)
 
 	task := &collBinlogTask{
 		ddl:    ddl,
@@ -389,7 +387,7 @@ func (t *Task) newCollBinlogTask(ctx context.Context, tgt collTarget, newPlanner
 	}
 
 	task.parts = make([]partBinlogTasks, 0, len(tgt.collBackup.GetPartitionBackups()))
-	for _, part := range tgt.collBackup.GetPartitionBackups() {
+	for i, part := range tgt.collBackup.GetPartitionBackups() {
 		notL0Groups, err := source.notL0DirGroups(ctx, part)
 		if err != nil {
 			return nil, fmt.Errorf("restore_collection: build not L0 dir groups: %w", err)
@@ -403,8 +401,8 @@ func (t *Task) newCollBinlogTask(ctx context.Context, tgt collTarget, newPlanner
 		}
 
 		task.parts = append(task.parts, partBinlogTasks{
-			leveled: planner.planTasks(part.GetPartitionName(), notL0Groups),
-			l0:      planner.planTasks(part.GetPartitionName(), l0Groups),
+			leveled: planner.planTasks(i, part.GetPartitionName(), notL0Groups),
+			l0:      planner.planTasks(i, part.GetPartitionName(), l0Groups),
 		})
 	}
 
@@ -412,7 +410,7 @@ func (t *Task) newCollBinlogTask(ctx context.Context, tgt collTarget, newPlanner
 	if err != nil {
 		return nil, fmt.Errorf("restore_collection: build global L0 dir groups: %w", err)
 	}
-	task.globalL0 = planner.planTasks("", globalL0Groups)
+	task.globalL0 = planner.planTasks(-1, "", globalL0Groups)
 
 	task.logger.Info("collection restore plan built",
 		zap.Int("partitions", len(task.parts)),
@@ -482,7 +480,8 @@ type restoreSnapPlan struct {
 func newRestoreSnapPlan(t *Task, targets []collTarget) *restoreSnapPlan {
 	colls := make([]*collSnapshotTask, 0, len(targets))
 	for _, tgt := range targets {
-		colls = append(colls, t.newRestoreSnapCollTask(tgt))
+		collTracker := t.tracker.NewCollTracker(tgt.target, tgt.collBackup.GetSize())
+		colls = append(colls, t.newRestoreSnapCollTask(tgt, collTracker.NewSnapshotRestoreJob(tgt.collBackup.GetSize())))
 	}
 
 	return &restoreSnapPlan{
@@ -502,26 +501,23 @@ func (p *restoreSnapPlan) Execute(ctx context.Context) error {
 	return runCollTasks(ctx, p.logger, p.limit, tasks)
 }
 
-// newRestoreSnapCollTask expands one target into its restore job on Milvus's
-// restore api. Building it registers the collection; the task settles the
-// collection's single job half itself.
-func (t *Task) newRestoreSnapCollTask(tgt collTarget) *collSnapshotTask {
+// newRestoreSnapCollTask builds a snapshot restore task with its progress tracker.
+func (t *Task) newRestoreSnapCollTask(tgt collTarget, tracker *jobstate.RestoreJobTracker) *collSnapshotTask {
 	// The export job reported the bundle's size, index files included, so it
 	// is what the restore job's progress is a fraction of.
-	collTracker := t.tracker.NewCollTracker(tgt.target, tgt.collBackup.GetSize())
-
 	return newCollSnapshotTask(collSnapshotTaskArgs{
 		taskID:           t.args.TaskID,
 		collBackup:       tgt.collBackup,
 		target:           tgt.target,
 		source:           t.snapshotSource,
 		dropExist:        t.args.Option.DropExistCollection,
+		resumable:        t.args.Option.Resumable,
 		maxShardNum:      t.args.Option.MaxShardNum,
 		shardNumOverride: tgt.collOverride.ShardNum,
 		descOverride:     tgt.collOverride.Description,
 		skipParams:       t.args.Option.SkipParams,
 		grpcCli:          t.grpc,
-		job:              collTracker.NewJob(tgt.collBackup.GetSize()),
+		tracker:          tracker,
 	})
 }
 
@@ -560,7 +556,8 @@ type importSnapPlan struct {
 func newImportSnapPlan(t *Task, targets []collTarget) (*importSnapPlan, error) {
 	colls := make([]*collImportSnapTask, 0, len(targets))
 	for _, tgt := range targets {
-		coll, err := t.newImportSnapCollTask(tgt)
+		collTracker := t.tracker.NewCollTracker(tgt.target, tgt.collBackup.GetSize())
+		coll, err := t.newImportSnapCollTask(tgt, collTracker, collTracker.NewJob(tgt.collBackup.GetSize()))
 		if err != nil {
 			return nil, err
 		}
@@ -588,8 +585,7 @@ func (p *importSnapPlan) Execute(ctx context.Context) error {
 // like every other plan's, and the single snapshot import job behind it. The
 // bundle's metadata path resolves against where the backup is read from, so a
 // relocated backup imports from wherever it sits now.
-func (t *Task) newImportSnapCollTask(tgt collTarget) (*collImportSnapTask, error) {
-	collTracker := t.tracker.NewCollTracker(tgt.target, tgt.collBackup.GetSize())
+func (t *Task) newImportSnapCollTask(tgt collTarget, collTracker *jobstate.RestoreCollTracker, job *jobstate.RestoreJobTracker) (*collImportSnapTask, error) {
 	ddl := newCollDDLTask(t.args.TaskID, t.args.Option, tgt.collOverride, tgt.collBackup, tgt.target, t.grpc, collTracker.DDL())
 
 	src := collref.New(tgt.collBackup.GetDbName(), tgt.collBackup.GetCollectionName())
@@ -608,6 +604,7 @@ func (t *Task) newImportSnapCollTask(tgt collTarget) (*collImportSnapTask, error
 	}
 
 	importer := &snapshotImporter{
+		jobs:             collTracker,
 		target:           tgt.target,
 		metadataURI:      metadataURI,
 		externalSpec:     t.snapshotSource.ExternalSpec,
@@ -615,7 +612,7 @@ func (t *Task) newImportSnapCollTask(tgt collTarget) (*collImportSnapTask, error
 		ezk:              t.mappedEZK(tgt.dbBackup),
 
 		restfulCli: t.restful,
-		job:        collTracker.NewJob(tgt.collBackup.GetSize()),
+		job:        job,
 
 		logger: logger,
 	}

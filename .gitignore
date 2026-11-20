@@ -5,6 +5,7 @@ milvus-backup
 **/__pycache__/*
 **/.pytest_cache/*
 logs/
+restore-state/
 examplebackup/
 
 dist/

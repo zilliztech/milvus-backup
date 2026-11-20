@@ -149,3 +149,40 @@ func TestLoad_V1ValidationError(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "bogus")
 }
+
+func TestRestorePersistenceConfig(t *testing.T) {
+	file := write(t, `configVersion: v2
+restore:
+  persistence:
+    type: local
+    local:
+      directory: /state/from-yaml
+    encryption:
+      enabled: true
+      provider: config
+      config:
+        keyID: first
+        key: example-test-value
+`)
+	out, err := Load(file, map[string]string{"restore.persistence.local.directory": "/state/override"})
+	require.NoError(t, err)
+	assert.Equal(t, "local", out.Restore.Persistence.Type.Val)
+	assert.Equal(t, "/state/override", out.Restore.Persistence.Local.Directory.Val)
+	assert.True(t, out.Restore.Persistence.Encryption.Enabled.Val)
+	assert.Equal(t, "config", out.Restore.Persistence.Encryption.Provider.Val)
+	assert.Equal(t, "first", out.Restore.Persistence.Encryption.Config.KeyID.Val)
+	assert.Equal(t, "example-test-value", out.Restore.Persistence.Encryption.Config.Key.Val)
+	assert.True(t, out.Restore.Persistence.Encryption.Config.Key.IsSecret())
+	out, err = Load(write(t, "configVersion: v2\n"), nil)
+	require.NoError(t, err)
+	assert.Equal(t, "local", out.Restore.Persistence.Type.Val)
+	assert.True(t, out.Restore.Persistence.Enabled.Val)
+	assert.False(t, out.Restore.Persistence.Encryption.Enabled.Val)
+	assert.Equal(t, "restore-state", out.Restore.Persistence.Local.Directory.Val)
+	assert.Equal(t, "backup-state", out.Restore.Persistence.S3.Bucket.Val)
+	out, err = Load(file, map[string]string{"restore.persistence.enabled": "false"})
+	require.NoError(t, err)
+	assert.False(t, out.Restore.Persistence.Enabled.Val)
+	_, err = Load(file, map[string]string{"restore.persistence.type": "invalid"})
+	assert.Error(t, err)
+}

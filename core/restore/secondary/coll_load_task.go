@@ -2,6 +2,7 @@ package secondary
 
 import (
 	"context"
+	"fmt"
 	"math/rand/v2"
 	"slices"
 
@@ -67,7 +68,7 @@ func (clt *collLoadTask) Execute(ctx context.Context) error {
 		WithBody(&messagespb.AlterLoadConfigMessageBody{}).
 		WithBroadcast([]string{clt.backupInfo.GetControlChannelName()})
 
-	err := clt.streamCli.Send(ctx, func(uint64) []message.MutableMessage {
+	err := clt.streamCli.Send(ctx, fmt.Sprintf("load/%d", clt.collBackup.GetCollectionId()), func(uint64) []message.MutableMessage {
 		broadcast := builder.MustBuildBroadcast().WithBroadcastID(rand.Uint64())
 		return broadcast.SplitIntoMutableMessage()
 	})

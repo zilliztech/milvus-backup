@@ -48,7 +48,7 @@ func newRestfulImportPlanner(args importTaskArgs, multiL0InOneJob bool, secondar
 
 // planTasks turns the dir groups into one import task per chunk of dirs. An
 // L0 dir chunks alone unless the target takes several L0 segments per job.
-func (p *restfulImportPlanner) planTasks(partitionName string, groups []dirGroup) []tasklet.Tasklet {
+func (p *restfulImportPlanner) planTasks(partitionIndex int, partitionName string, groups []dirGroup) []tasklet.Tasklet {
 	var tasks []tasklet.Tasklet
 	for _, g := range groups {
 		chunkSize := p.args.maxSegsPerImportJob
@@ -56,15 +56,20 @@ func (p *restfulImportPlanner) planTasks(partitionName string, groups []dirGroup
 			chunkSize = 1
 		}
 		for dirs := range slices.Chunk(g.dirs, chunkSize) {
-			tasks = append(tasks, p.newTask(partitionName, g, dirs))
+			tasks = append(tasks, p.newTask(partitionIndex, partitionName, g, dirs))
 		}
 	}
 	return tasks
 }
 
-func (p *restfulImportPlanner) newTask(partitionName string, g dirGroup, dirs []partitionDir) tasklet.Tasklet {
+func (p *restfulImportPlanner) newTask(partitionIndex int, partitionName string, g dirGroup, dirs []partitionDir) tasklet.Tasklet {
+	job := p.args.registerImport(partitionIndex, partitionName, g, dirs)
+	return newRESTImportTask(p.args, job, partitionName, g, dirs, p.secondaries)
+}
+
+func newRESTImportTask(args importTaskArgs, job *jobstate.RestoreJobTracker, partitionName string, g dirGroup, dirs []partitionDir, secondaries []importSecondary) tasklet.Tasklet {
 	importer := &restfulImporter{
-		args: p.args,
+		args: args,
 
 		partitionName:  partitionName,
 		dirs:           dirs,
@@ -72,10 +77,10 @@ func (p *restfulImportPlanner) newTask(partitionName string, g dirGroup, dirs []
 		isL0:           g.isL0,
 		storageVersion: g.storageVersion,
 
-		job: p.args.jobs.NewJob(lo.SumBy(dirs, func(dir partitionDir) int64 { return dir.size })),
+		job: job,
 	}
-	if len(p.secondaries) != 0 {
-		return &importViaRESTFul2PCTask{importer: importer, secondaries: p.secondaries}
+	if len(secondaries) != 0 {
+		return &importViaRESTFul2PCTask{importer: importer, secondaries: secondaries}
 	}
 	return &importViaRESTFulTask{importer: importer}
 }
@@ -99,19 +104,32 @@ func (rt *importViaRESTFulTask) Execute(ctx context.Context) error {
 }
 
 func (rt *importViaRESTFulTask) execute(ctx context.Context) error {
-	staging := newCopyTask(rt.importer.args)
+	staging := newImportCopyTask(rt.importer.args, rt.importer.job)
 	defer staging.Cleanup(ctx)
-
-	if err := rt.importer.stage(ctx, staging); err != nil {
-		return err
+	if _, done := rt.importer.job.Current(); done {
+		return nil
 	}
 
-	jobID, err := rt.importer.submit(ctx)
+	submit := func(ctx context.Context) (string, error) {
+		im := *rt.importer
+		if err := im.stage(ctx, staging); err != nil {
+			return "", err
+		}
+		return submitImport(ctx, im.args.jobs.Resumable(), im.submit)
+	}
+	im := rt.importer
+	state := func(ctx context.Context, jobID string) (importJobState, error) {
+		return restfulJobState(im.args.logger, im.args.restfulCli, im.args.target.DBName(), jobID, milvus.ImportStateCompleted)(ctx)
+	}
+	id, done, err := startImport(ctx, im.job, submit, state)
 	if err != nil {
 		return err
 	}
-
-	return rt.importer.waitCompleted(ctx, jobID)
+	if done {
+		im.job.SetCompleted()
+		return nil
+	}
+	return im.waitCompleted(ctx, id)
 }
 
 // restfulImporter is the mechanism of a restful bulk insert import: it stages
@@ -148,7 +166,7 @@ func (im *restfulImporter) stage(ctx context.Context, staging *copyTask) error {
 	return nil
 }
 
-// submit sends the import request and binds the job half its server-side id.
+// submit sends the import request and returns its server-side ID.
 func (im *restfulImporter) submit(ctx context.Context) (string, error) {
 	return im.createJob(ctx, false)
 }
@@ -181,7 +199,6 @@ func (im *restfulImporter) createJob(ctx context.Context, manualCommit bool) (st
 		return "", fmt.Errorf("restore: failed to bulk insert via restful: %w", err)
 	}
 	im.args.logger.Info("create bulk insert via restful success", zap.String("job_id", jobID))
-	im.job.Bind(jobID)
 
 	return jobID, nil
 }
@@ -196,16 +213,24 @@ func restfulJobState(logger *zap.Logger, cli milvus.Restful, db, jobID string, t
 			return importJobState{}, err
 		}
 
+		if resp == nil || (resp.Data.JobId != "" && resp.Data.JobId != jobID) {
+			return importJobState{}, fmt.Errorf("restore: invalid import state response for job %s", jobID)
+		}
+		if err := milvus.ImportLookupError(jobID, resp.Code, resp.Message); err != nil {
+			return importJobState{}, err
+		}
 		logger.Info("bulk insert task state", zap.String("job_id", jobID),
 			zap.String("state", resp.Data.State),
 			zap.Int("progress", resp.Data.Progress))
 		switch resp.Data.State {
 		case string(milvus.ImportStateFailed):
-			return importJobState{failedReason: resp.Data.Reason}, nil
+			return importJobState{}, milvus.ImportFailure(jobID, resp.Data.Reason)
 		case string(terminal):
 			return importJobState{completed: true}, nil
-		default:
+		case string(milvus.ImportStatePending), string(milvus.ImportStateImporting), string(milvus.ImportStateUncommitted), string(milvus.ImportStateCommitting), string(milvus.ImportStateCompleted):
 			return importJobState{progress: resp.Data.Progress}, nil
+		default:
+			return importJobState{}, fmt.Errorf("restore: unknown import state %q for job %s", resp.Data.State, jobID)
 		}
 	}
 }
@@ -241,11 +266,12 @@ func (im *restfulImporter) commit(ctx context.Context, jobID string) error {
 
 // abort rolls the job back, dropping whatever it staged. It only works before
 // the commit; the two-phase task calls it when the flow fails ahead of one.
-func (im *restfulImporter) abort(ctx context.Context, jobID string) {
+func (im *restfulImporter) abort(ctx context.Context, jobID string) error {
 	im.args.logger.Info("abort import job", zap.String("job_id", jobID))
 	if err := im.args.restfulCli.AbortImport(ctx, im.args.target.DBName(), jobID); err != nil {
-		im.args.logger.Warn("abort import job failed", zap.String("job_id", jobID), zap.Error(err))
+		return fmt.Errorf("restore: abort import job %s: %w", jobID, err)
 	}
+	return nil
 }
 
 // toPaths builds the [insertLogDir, deltaLogDir] argument for the restful bulk

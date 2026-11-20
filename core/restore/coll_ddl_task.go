@@ -3,14 +3,17 @@ package restore
 import (
 	"context"
 	"fmt"
+	"maps"
 	"slices"
 	"strings"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
+	"github.com/milvus-io/milvus-proto/go-api/v3/milvuspb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
 	"github.com/milvus-io/milvus/pkg/v3/common"
 	"github.com/samber/lo"
 	"go.uber.org/zap"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/restore/conv"
@@ -23,7 +26,20 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/validate"
 )
 
+type ddlStep int
+
+const (
+	ddlSchema ddlStep = iota
+	ddlIndexes
+	ddlPartitions
+	ddlDone
+)
+
 type collDDLTask struct {
+	step         ddlStep
+	collectionID int64
+	savedHasData bool
+
 	option       *Option
 	collOverride CollOverride
 
@@ -53,6 +69,14 @@ func newCollDDLTask(taskID string, opt *Option, override CollOverride, collBacku
 // state itself: the collection's overall state is derived from its halves, so
 // no one above the task settles it.
 func (ddlt *collDDLTask) Execute(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	step, id := ddlt.tracker.DDLProgress()
+	ddlt.step, ddlt.collectionID = ddlStep(step), id
+	if ddlt.step == ddlDone {
+		return nil
+	}
 	ddlt.tracker.SetExecuting()
 	ddlt.logger.Info("start restore collection ddl")
 
@@ -65,68 +89,71 @@ func (ddlt *collDDLTask) Execute(ctx context.Context) error {
 	return nil
 }
 
+func (ddlt *collDDLTask) checkOrBind(ctx context.Context) (*milvuspb.DescribeCollectionResponse, error) {
+	info, err := ddlt.grpcCli.DescribeCollection(ctx, ddlt.target.DBName(), ddlt.target.CollName())
+	if err != nil {
+		return nil, err
+	}
+	id := info.GetCollectionID()
+	if id == 0 {
+		return nil, fmt.Errorf("restore: no collection ID returned for %s", ddlt.target)
+	}
+	if ddlt.collectionID == 0 {
+		ddlt.collectionID = id
+		ddlt.tracker.SetDDLProgress(int(ddlt.step), id)
+	} else if ddlt.collectionID != id {
+		return nil, fmt.Errorf("restore: target collection identity changed for %s (expected %d, got %d)", ddlt.target, ddlt.collectionID, id)
+	}
+	return info, nil
+}
+
+func (ddlt *collDDLTask) advance(step ddlStep) {
+	ddlt.step = step
+	ddlt.tracker.SetDDLProgress(int(step), ddlt.collectionID)
+}
+
 func (ddlt *collDDLTask) execute(ctx context.Context) error {
-	// Build the create request before a requested drop can remove the target:
-	// undecodable backup metadata must fail while the target still stands.
-	var input milvus.CreateCollectionInput
-	var addFields []*schemapb.FieldSchema
-	if !ddlt.option.SkipCreateCollection {
-		var err error
-		input, addFields, err = ddlt.createCollectionInput()
-		if err != nil {
+	// The schema path checks its target in createColl. Skipping creation or
+	// resuming a later DDL step still needs the target's identity.
+	if ddlt.option.Resumable && (ddlt.option.SkipCreateCollection || ddlt.step != ddlSchema) {
+		if _, err := ddlt.checkOrBind(ctx); err != nil {
 			return err
 		}
 	}
-	// restore collection schema
-	if err := ddlt.dropExistedColl(ctx); err != nil {
-		return fmt.Errorf("restore: drop exist collection: %w", err)
+	if ddlt.step == ddlSchema {
+		var input milvus.CreateCollectionInput
+		var addFields []*schemapb.FieldSchema
+		if !ddlt.option.SkipCreateCollection {
+			var err error
+			input, addFields, err = ddlt.createCollectionInput()
+			if err != nil {
+				return err
+			}
+		}
+		if err := ddlt.createColl(ctx, input, addFields); err != nil {
+			return fmt.Errorf("restore: create collection: %w", err)
+		}
+		if err := ddlt.checkFieldIDs(ctx); err != nil {
+			return err
+		}
+		if err := ddlt.restoreFuncRuntimeCheck(ctx); err != nil {
+			return fmt.Errorf("restore: restore func runtime check: %w", err)
+		}
+		ddlt.advance(ddlIndexes)
 	}
-	if err := ddlt.createColl(ctx, input, addFields); err != nil {
-		return fmt.Errorf("restore: create collection: %w", err)
+	if ddlt.step == ddlIndexes {
+		if err := ddlt.dropExistedIndex(ctx); err != nil {
+			return fmt.Errorf("restore: drop exist index: %w", err)
+		}
+		if err := ddlt.createIndex(ctx); err != nil {
+			return fmt.Errorf("restore: create index: %w", err)
+		}
+		ddlt.advance(ddlPartitions)
 	}
-	if err := ddlt.checkFieldIDs(ctx); err != nil {
-		return err
-	}
-	if err := ddlt.restoreFuncRuntimeCheck(ctx); err != nil {
-		return fmt.Errorf("restore: restore func runtime check: %w", err)
-	}
-
-	// restore collection index
-	if err := ddlt.dropExistedIndex(ctx); err != nil {
-		return fmt.Errorf("restore: drop exist index: %w", err)
-	}
-	if err := ddlt.createIndex(ctx); err != nil {
-		return fmt.Errorf("restore: create index: %w", err)
-	}
-
-	// restore collection partitions
 	if err := ddlt.createPartitions(ctx); err != nil {
 		return fmt.Errorf("restore: create partitions: %w", err)
 	}
-
-	return nil
-}
-
-func (ddlt *collDDLTask) dropExistedColl(ctx context.Context) error {
-	if !ddlt.option.DropExistCollection {
-		ddlt.logger.Info("skip drop existed collection")
-		return nil
-	}
-
-	ddlt.logger.Info("start drop existed collection")
-	exist, err := ddlt.grpcCli.HasCollection(ctx, ddlt.target.DBName(), ddlt.target.CollName())
-	if err != nil {
-		return fmt.Errorf("collection: check collection exist: %w", err)
-	}
-	if !exist {
-		ddlt.logger.Info("collection not exist, skip drop collection")
-		return nil
-	}
-
-	if err := ddlt.grpcCli.DropCollection(ctx, ddlt.target.DBName(), ddlt.target.CollName()); err != nil {
-		return fmt.Errorf("collection: drop collection: %w", err)
-	}
-
+	ddlt.advance(ddlDone)
 	return nil
 }
 
@@ -173,7 +200,7 @@ func (ddlt *collDDLTask) fields() ([]*schemapb.FieldSchema, []*schemapb.FieldSch
 // A collection without data and a meta_only restore are exempt: no row can be
 // read from the wrong slot.
 func (ddlt *collDDLTask) checkFieldIDs(ctx context.Context) error {
-	if ddlt.option.MetaOnly || !backupHasData(ddlt.collBackup) {
+	if ddlt.option.MetaOnly || !(ddlt.savedHasData || backupHasData(ddlt.collBackup)) {
 		return nil
 	}
 	if err := fieldid.Verify(ctx, ddlt.grpcCli, ddlt.target, ddlt.collBackup.GetSchema()); err != nil {
@@ -197,6 +224,55 @@ func backupHasData(coll *backuppb.CollectionBackupInfo) bool {
 	}
 
 	return false
+}
+
+// Compare the planned AddField requests before issuing any writes.
+func missingFields(planned, existing []*schemapb.FieldSchema) ([]*schemapb.FieldSchema, error) {
+	byName := lo.KeyBy(existing, (*schemapb.FieldSchema).GetName)
+	byID := lo.KeyBy(existing, (*schemapb.FieldSchema).GetFieldID)
+	var missing []*schemapb.FieldSchema
+	for _, field := range planned {
+		got := byName[field.GetName()]
+		if got == nil && byID[field.GetFieldID()] == nil {
+			missing = append(missing, field)
+			continue
+		}
+		if got == nil || !sameFieldDefinition(got, field) {
+			return nil, fmt.Errorf("restore: target field conflicts with planned field %s id %d", field.GetName(), field.GetFieldID())
+		}
+	}
+	return missing, nil
+}
+
+// Compare only the properties convFields sends to Milvus.
+func sameFieldDefinition(a, b *schemapb.FieldSchema) bool {
+	return a.FieldID == b.FieldID &&
+		a.Name == b.Name &&
+		a.IsPrimaryKey == b.IsPrimaryKey &&
+		a.AutoID == b.AutoID &&
+		a.Description == b.Description &&
+		a.DataType == b.DataType &&
+		a.IsDynamic == b.IsDynamic &&
+		a.IsPartitionKey == b.IsPartitionKey &&
+		a.Nullable == b.Nullable &&
+		a.ElementType == b.ElementType &&
+		a.ElementNullable == b.ElementNullable &&
+		sameTypeSchema(a.TypeSchema, b.TypeSchema) &&
+		a.IsFunctionOutput == b.IsFunctionOutput &&
+		proto.Equal(a.DefaultValue, b.DefaultValue) &&
+		maps.Equal(pbconv.MilvusKVToMap(a.TypeParams), pbconv.MilvusKVToMap(b.TypeParams)) &&
+		maps.Equal(pbconv.MilvusKVToMap(a.IndexParams), pbconv.MilvusKVToMap(b.IndexParams))
+}
+
+// Older backups omit the type schema. DescribeCollection may return an empty message.
+func sameTypeSchema(a, b *schemapb.TypeSchema) bool {
+	if a == nil {
+		a = &schemapb.TypeSchema{}
+	}
+	if b == nil {
+		b = &schemapb.TypeSchema{}
+	}
+	return proto.Equal(a, b)
 }
 
 func (ddlt *collDDLTask) addFields(ctx context.Context, fields []*schemapb.FieldSchema) error {
@@ -270,6 +346,29 @@ func (ddlt *collDDLTask) restoreFuncRuntimeCheck(ctx context.Context) error {
 	return nil
 }
 
+func (ddlt *collDDLTask) resumeCreateColl(ctx context.Context, addFields []*schemapb.FieldSchema) error {
+	savedID := ddlt.collectionID
+	info, err := ddlt.checkOrBind(ctx)
+	if err != nil {
+		return err
+	}
+	if savedID == 0 {
+		// The target was absent or dropped. A different writer creating it
+		// before Resume would be indistinguishable from our own create.
+		ddlt.logger.Warn("resuming with existing collection after create checkpoint without a recorded ID", zap.Int64("collection_id", ddlt.collectionID))
+	}
+
+	if len(addFields) > 0 && info.GetSchema() == nil {
+		return fmt.Errorf("restore: target collection schema unavailable")
+	}
+	missing, err := missingFields(addFields, info.GetSchema().GetFields())
+	if err != nil {
+		return err
+	}
+
+	return ddlt.addFields(ctx, missing)
+}
+
 // createCollectionInput builds the CreateCollection request and the fields that
 // follow it through AddField. It runs before any drop: converting the backup's
 // schema is where corrupt metadata surfaces, and that must happen while the
@@ -279,6 +378,7 @@ func (ddlt *collDDLTask) createCollectionInput() (milvus.CreateCollectionInput, 
 	if err != nil {
 		return milvus.CreateCollectionInput{}, nil, fmt.Errorf("collection: get fields: %w", err)
 	}
+
 	functions := conv.Functions(ddlt.collBackup.GetSchema().GetFunctions())
 	structArrayFields, err := ddlt.structArrayFields()
 	if err != nil {
@@ -309,17 +409,53 @@ func (ddlt *collDDLTask) createCollectionInput() (milvus.CreateCollectionInput, 
 	return opt, addFields, nil
 }
 
-func (ddlt *collDDLTask) createColl(ctx context.Context, input milvus.CreateCollectionInput, addFields []*schemapb.FieldSchema) error {
+func (ddlt *collDDLTask) createColl(ctx context.Context, opt milvus.CreateCollectionInput, addFields []*schemapb.FieldSchema) error {
 	if ddlt.option.SkipCreateCollection {
-		ddlt.logger.Info("skip create collection")
 		return nil
 	}
-
-	if err := ddlt.grpcCli.CreateCollection(ctx, input); err != nil {
-		return fmt.Errorf("restore: call create collection api after retry: %w", err)
+	var err error
+	var exists bool
+	if ddlt.option.DropExistCollection || ddlt.option.Resumable {
+		exists, err = ddlt.grpcCli.HasCollection(ctx, ddlt.target.DBName(), ddlt.target.CollName())
+		if err != nil {
+			return fmt.Errorf("restore: check collection exists: %w", err)
+		}
+	}
+	if ddlt.option.Resumable {
+		if exists && (ddlt.collectionID != 0 || ddlt.tracker.CreateTargetPrepared()) {
+			return ddlt.resumeCreateColl(ctx, addFields)
+		}
+		if !exists && ddlt.collectionID != 0 {
+			return fmt.Errorf("restore: bound collection %s (ID %d) no longer exists", ddlt.target, ddlt.collectionID)
+		}
+		if exists && !ddlt.option.DropExistCollection {
+			return fmt.Errorf("restore: collection already exists: %s", ddlt.target)
+		}
+	}
+	if ddlt.option.DropExistCollection && exists {
+		ddlt.logger.Info("drop existing collection")
+		if err := ddlt.grpcCli.DropCollection(ctx, ddlt.target.DBName(), ddlt.target.CollName()); err != nil {
+			return fmt.Errorf("restore: drop existing collection: %w", err)
+		}
+	}
+	if ddlt.option.Resumable {
+		ddlt.tracker.MarkCreateTargetPrepared()
 	}
 
-	return ddlt.addFields(ctx, addFields)
+	if err := ddlt.grpcCli.CreateCollection(ctx, opt); err != nil {
+		return fmt.Errorf("restore: create collection %s: %w", ddlt.target, err)
+	}
+
+	if ddlt.option.Resumable {
+		if _, err := ddlt.checkOrBind(ctx); err != nil {
+			return err
+		}
+	}
+	if err := ddlt.addFields(ctx, addFields); err != nil {
+		return fmt.Errorf("restore: add fields: %w", err)
+	}
+
+	return nil
 }
 
 func (ddlt *collDDLTask) convFields(bakFields []*backuppb.FieldSchema) ([]*schemapb.FieldSchema, error) {
@@ -570,6 +706,7 @@ func (ddlt *collDDLTask) restoreVectorFieldIdx(ctx context.Context, indexes []*b
 			ddlt.logger.Info("use source index", zap.String("field_name", index.GetFieldName()))
 			params = index.GetParams()
 			if params["index_type"] == "marisa-trie" {
+				params = maps.Clone(params)
 				params["index_type"] = "Trie"
 			}
 		}

@@ -186,3 +186,22 @@ func TestOptions_toTaskFilter(t *testing.T) {
 		}, f.DBCollFilter)
 	})
 }
+
+func TestResumeFlags(t *testing.T) {
+	var opts options
+	command := NewCmd(&root.Options{})
+	require.NotNil(t, command.Flags().Lookup("enable_resume"))
+	opts.enableResume = true
+	option, err := opts.toOption()
+	require.NoError(t, err)
+	assert.True(t, option.Resumable)
+	secondary := secondaryOption{enableResume: true}
+	assert.True(t, secondary.toRequest().Resumable)
+	for _, name := range []string{"resume", "cleanup"} {
+		command := NewCmd(&root.Options{})
+		command.SetOut(io.Discard)
+		command.SetErr(io.Discard)
+		command.SetArgs([]string{name})
+		assert.ErrorContains(t, command.Execute(), `required flag(s) "id" not set`)
+	}
+}

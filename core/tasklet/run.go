@@ -23,12 +23,18 @@ type Semaphore interface {
 func RunConcurrent(ctx context.Context, sem Semaphore, tasks []Tasklet) error {
 	g, subCtx := errgroup.WithContext(ctx)
 	for _, task := range tasks {
-		if err := sem.Acquire(ctx, 1); err != nil {
+		if err := sem.Acquire(subCtx, 1); err != nil {
 			// Report through the group rather than returning here, so
 			// g.Wait drains the tasks already spawned before the call ends.
 			g.Go(func() error {
 				return fmt.Errorf("tasklet: acquire semaphore: %w", err)
 			})
+			break
+		}
+
+		if err := subCtx.Err(); err != nil {
+			sem.Release(1)
+			g.Go(func() error { return err })
 			break
 		}
 

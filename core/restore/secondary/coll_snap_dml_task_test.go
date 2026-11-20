@@ -109,9 +109,9 @@ func TestCollSnapDMLTask_SendImportMsg(t *testing.T) {
 	stream := &recordingStream{}
 	task := newTestSnapDMLTask(t, collBackup, stream)
 
-	jobID, err := task.sendImportMsg(context.Background())
+	jobID := int64(123)
+	err := task.sendImportMsg(context.Background(), jobID)
 	require.NoError(t, err)
-	assert.NotZero(t, jobID)
 
 	bodies := importBodies(t, stream)
 	// One broadcast, split onto every vchannel of the collection.

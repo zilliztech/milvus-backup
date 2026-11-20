@@ -36,6 +36,7 @@ func NewRestoreTaskResp(status jobstate.RestoreStatus) *RestoreBackupTaskRespons
 	}
 
 	return &RestoreBackupTaskResponse{
+		Resumable:              status.Resumable,
 		Id:                     status.ID,
 		StateCode:              restoreStateToPB(status.State),
 		ErrorMessage:           status.ErrorMessage,
@@ -150,6 +151,10 @@ func restoreStateToPB(state jobstate.RestoreState) backuppb.RestoreTaskStateCode
 		return backuppb.RestoreTaskStateCode_SUCCESS
 	case jobstate.RestoreStateFail:
 		return backuppb.RestoreTaskStateCode_FAIL
+	case jobstate.RestoreStateFailedCleanupPending:
+		return backuppb.RestoreTaskStateCode_FAILED_CLEANUP_PENDING
+	case jobstate.RestoreStateFailedCleaned:
+		return backuppb.RestoreTaskStateCode_FAILED_CLEANED
 	default:
 		return backuppb.RestoreTaskStateCode_INITIAL
 	}

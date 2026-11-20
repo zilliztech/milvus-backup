@@ -65,11 +65,19 @@ func (it *snapshotImportTask) Execute(ctx context.Context) error {
 }
 
 func (it *snapshotImportTask) execute(ctx context.Context) error {
-	jobID, err := it.importer.submit(ctx)
+	si := it.importer
+	state := func(ctx context.Context, id string) (importJobState, error) {
+		return restfulJobState(si.logger, si.restfulCli, si.target.DBName(), id, milvus.ImportStateCompleted)(ctx)
+	}
+	id, done, err := startImport(ctx, si.job, si.submit, state)
 	if err != nil {
 		return err
 	}
-	return it.importer.waitCompleted(ctx, jobID)
+	if done {
+		si.job.SetCompleted()
+		return nil
+	}
+	return si.waitCompleted(ctx, id)
 }
 
 // snapshotImporter is the mechanism of a snapshot-sourced restful import. The
@@ -78,6 +86,7 @@ func (it *snapshotImportTask) execute(ctx context.Context) error {
 // rewrite on the server's own scope. Milvus reads the source storage directly,
 // authorized by the external spec when the backup sits on another service.
 type snapshotImporter struct {
+	jobs   *jobstate.RestoreCollTracker
 	target collref.Name
 
 	metadataURI      string
@@ -119,12 +128,11 @@ func (si *snapshotImporter) createJob(ctx context.Context, manualCommit bool) (s
 	si.logger.Info("start import snapshot via restful",
 		zap.String("metadata_uri", si.metadataURI), zap.Bool("manual_commit", manualCommit))
 
-	jobID, err := si.restfulCli.BulkInsert(ctx, in)
+	jobID, err := submitImport(ctx, si.jobs.Resumable(), func(ctx context.Context) (string, error) { return si.restfulCli.BulkInsert(ctx, in) })
 	if err != nil {
 		return "", fmt.Errorf("restore: import snapshot via restful: %w", err)
 	}
 	si.logger.Info("create snapshot import job success", zap.String("job_id", jobID))
-	si.job.Bind(jobID)
 	return jobID, nil
 }
 
@@ -135,26 +143,6 @@ func (si *snapshotImporter) waitCompleted(ctx context.Context, jobID string) err
 	}
 	si.job.SetCompleted()
 	return nil
-}
-
-func (si *snapshotImporter) waitUncommitted(ctx context.Context, jobID string) error {
-	state := restfulJobState(si.logger, si.restfulCli, si.target.DBName(), jobID, milvus.ImportStateUncommitted)
-	return waitImportJob(ctx, si.logger, si.job, jobID, state)
-}
-
-func (si *snapshotImporter) commit(ctx context.Context, jobID string) error {
-	si.logger.Info("commit snapshot import job", zap.String("job_id", jobID))
-	if err := si.restfulCli.CommitImport(ctx, si.target.DBName(), jobID); err != nil {
-		return fmt.Errorf("restore: commit snapshot import job %s: %w", jobID, err)
-	}
-	return nil
-}
-
-func (si *snapshotImporter) abort(ctx context.Context, jobID string) {
-	si.logger.Info("abort snapshot import job", zap.String("job_id", jobID))
-	if err := si.restfulCli.AbortImport(ctx, si.target.DBName(), jobID); err != nil {
-		si.logger.Warn("abort snapshot import job failed", zap.String("job_id", jobID), zap.Error(err))
-	}
 }
 
 // snapshotPartitionMapping renders the identity mapping of every source
