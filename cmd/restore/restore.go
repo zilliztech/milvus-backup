@@ -22,6 +22,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/filter"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/progressbar"
+	"github.com/zilliztech/milvus-backup/internal/snapshotsource"
 )
 
 // removedFlags are the restore flags dropped in 0.6, after 0.5 accepted them
@@ -51,6 +52,7 @@ type options struct {
 	strategy             string
 	useV2Restore         bool
 	secondaries          []string
+	snapshotSource       string
 }
 
 func (o *options) parseSecondaries() ([]restore.Secondary, error) {
@@ -90,6 +92,10 @@ func (o *options) validate() error {
 		return fmt.Errorf("invalid strategy %s, only support %s", o.strategy, strings.Join(restore.SupportStrategy(), ","))
 	}
 
+	if _, err := snapshotsource.ParseSourceKey(o.snapshotSource); err != nil {
+		return err
+	}
+
 	if _, err := o.parseSecondaries(); err != nil {
 		return err
 	}
@@ -116,6 +122,7 @@ func (o *options) addFlags(cmd *cobra.Command) {
 	cmd.Flags().BoolVarP(&o.rbac, "rbac", "", false, "whether restore RBAC meta")
 	cmd.Flags().StringVarP(&o.strategy, "strategy", "", "", "restore strategy, one of [auto, per_seg, merged_seg, restore_snap, import_snap], if not set will auto select")
 	cmd.Flags().StringArrayVarP(&o.secondaries, "secondary", "", nil, "secondary REST address and optional raw token, format address[,token], repeated for multiple clusters; token is username:password or an API token, and omitting it inherits milvus.user/password. Every import job is committed two-phase once any secondary is set")
+	cmd.Flags().StringVarP(&o.snapshotSource, "snapshot_source", "", "", "where a snapshot-format restore reads the bundle from: shared (default) sends one complete uri pointed at a single bucket, which the target and every secondary must admit; own_bucket sends a bare object key with no bucket, endpoint or credential, and every cluster reads its own staged copy, so the bundle must be mirrored into each one first; import path only")
 
 	// The deprecated bool of the pre-strategy days keeps working so an old
 	// command line restores exactly what it used to: cobra answers every use
@@ -146,6 +153,11 @@ func (o *options) toOption() (*restore.Option, error) {
 		return nil, err
 	}
 
+	sourceKey, err := snapshotsource.ParseSourceKey(o.snapshotSource)
+	if err != nil {
+		return nil, err
+	}
+
 	return &restore.Option{
 		DropExistIndex:       o.dropExistIndex,
 		RebuildIndex:         o.rebuildIndex,
@@ -156,6 +168,7 @@ func (o *options) toOption() (*restore.Option, error) {
 		Strategy:             strategy,
 		RestoreRBAC:          o.rbac,
 		Secondaries:          secondaries,
+		SnapshotSourceKey:    sourceKey,
 	}, nil
 }
 

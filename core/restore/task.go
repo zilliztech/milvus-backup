@@ -144,6 +144,15 @@ type Option struct {
 	// committed on the target and all secondaries. Empty for a plain restore.
 	Secondaries []Secondary
 
+	// SnapshotSourceKey picks where a snapshot import reads the bundle from.
+	// The zero value (user-facing "shared") sends the complete uri of one
+	// bucket; SourceKeyRelative (user-facing "own_bucket") sends a
+	// bucket-relative object key that the target and every secondary resolve
+	// against their own bucket, which needs the bundle staged in each one
+	// first. It only applies to snapshot format backups, and only on the
+	// import path.
+	SnapshotSourceKey snapshotsource.SourceKey
+
 	RestoreRBAC bool
 
 	// EZKMapping maps old encryption keys to new ones.
@@ -206,6 +215,10 @@ func NewTask(ctx context.Context, args TaskArgs) (*Task, error) {
 		return nil, fmt.Errorf("restore: backup %s was taken in the %q format, which this version of milvus-backup cannot restore",
 			args.Backup.GetName(), format)
 	}
+	if args.Option.SnapshotSourceKey == snapshotsource.SourceKeyRelative && format != meta.FormatSnapshot {
+		return nil, fmt.Errorf("restore: snapshot_source=own_bucket applies only to a snapshot format backup, but backup %s was taken in the %q format",
+			args.Backup.GetName(), format)
+	}
 
 	logger := log.With(zap.String("backup_name", args.Backup.GetName()), zap.String("task_id", args.TaskID))
 
@@ -234,7 +247,7 @@ func NewTask(ctx context.Context, args TaskArgs) (*Task, error) {
 		}
 
 		source, err := snapshotsource.New(ctx, args.MilvusStorage.Config(), args.BackupStorage.Config(), args.BackupDir,
-			strategy == StrategyImportSnap)
+			strategy == StrategyImportSnap, args.Option.SnapshotSourceKey)
 		if err != nil {
 			return nil, err
 		}
