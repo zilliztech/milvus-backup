@@ -1,15 +1,17 @@
 # Milvus Backup
 
-<div align="left">
-  <a href="https://discord.com/invite/8uyFbECzPX"><img height="20" src="https://img.shields.io/badge/Discord-%235865F2.svg?style=for-the-badge&logo=discord&logoColor=white" alt="Discord" /></a>
-  <img src="https://img.shields.io/github/license/zilliztech/milvus-backup" alt="License" />
-</div>
+[![Release](https://img.shields.io/github/v/release/zilliztech/milvus-backup)](https://github.com/zilliztech/milvus-backup/releases)
+[![CI](https://github.com/zilliztech/milvus-backup/actions/workflows/main.yaml/badge.svg)](https://github.com/zilliztech/milvus-backup/actions/workflows/main.yaml)
+[![License](https://img.shields.io/github/license/zilliztech/milvus-backup)](LICENSE)
+[![Discord](https://img.shields.io/badge/Discord-join%20chat-5865F2?logo=discord&logoColor=white)](https://discord.com/invite/8uyFbECzPX)
 
 Milvus Backup is a command-line tool and API service for backing up and restoring Milvus data. Backup and restore operations run while the Milvus cluster remains available.
 
+[Installation](#installation) · [Command-line usage](#command-line-usage) · [Compatibility](#compatibility) · [Configuration](#configuration) · [API server](#api-server) · [FAQ](docs/FAQ.md)
+
 ## Installation
 
-Download a binary from the [release page](https://github.com/zilliztech/milvus-backup/releases), or install it with Homebrew on macOS:
+Download a binary from the [release page](https://github.com/zilliztech/milvus-backup/releases), pull the [Docker image](https://hub.docker.com/r/milvusdb/milvus-backup) (`milvusdb/milvus-backup:latest`), or install with Homebrew on macOS:
 
 ```shell
 brew install zilliztech/tap/milvus-backup
@@ -77,13 +79,41 @@ milvus-backup restore -n my_backup -r db1.coll1:db2.coll1 --filter db2.coll1
 
 Filtering on the pre-rename name matches nothing and restores nothing.
 
-How a restore moves the data is picked by `--strategy`, whose values name both the backup format and the path: `per_seg` and `merged_seg` for binlog backups (one import job per segment vs. segments merged into fewer jobs), `restore_snap` for snapshot backups (Milvus's own restore api), and `import_snap` for snapshot backups through the v2 import api (Milvus 3.0.4+). The `auto` value, which is also the default, resolves on its own — a binlog backup takes the merged path when the target supports the v2 import api (Milvus 2.5+) and the per-segment path otherwise, and a snapshot backup takes the restore api unless secondaries are configured, in which case it takes `import_snap` for two-phase commit. See [multi-segment merged restore](docs/user_guide/mul_seg_restore.md). The old `--use_v2_restore` flag is deprecated: `true` still selects the merged path, and an explicit `--strategy` wins when both are given.
+### Restore strategies
 
-### Restoring a secondary
+`--strategy` selects how `restore` moves the data. Its values name both the backup format and the restore path:
 
-Use `restore secondary` to bootstrap a fresh secondary. Keep CDC stopped until restore succeeds. See the [secondary restore guide](docs/user_guide/secondary_restore.md) for backup and restore commands.
+| Strategy | Backup format | Description |
+|----------|---------------|-------------|
+| `auto` (default) | Any | Binlog backups use `merged_seg` on Milvus 2.5+ (v2 import API) and `per_seg` on older versions. Snapshot backups use `restore_snap`, or `import_snap` when `--secondary` is set. |
+| `merged_seg` | Binlog | Merge multiple segments into fewer import jobs ([multi-segment merged restore](docs/user_guide/mul_seg_restore.md)). Requires Milvus 2.5+. |
+| `per_seg` | Binlog | Run one import job per segment. |
+| `restore_snap` | Snapshot | Restore through Milvus's native snapshot restore API. |
+| `import_snap` | Snapshot | Restore a snapshot through the v2 import API (requires Milvus 3.0.4+). |
 
-Restoring into a cluster that replicates to other clusters (CDC) needs the import jobs committed two-phase, or the target and its secondaries diverge. Pass each secondary with a repeated `--secondary` flag in `address[,token]` form, e.g. `milvus-backup restore -n my_backup --secondary 'http://10.0.0.2:19530,secondary_user:secondary_password' --secondary 'http://10.0.0.3:19530,raw-api-token'`. The raw token is either `username:password` or an API token; omit it to inherit the target's `milvus.user/password`. Every import job is held uncommitted until its mirror appears on every secondary, committed on the restore target, and the replicated commit commits the mirrors (a replication target refuses client-side commits). The RESTful API takes a `secondaries` object array with `address` and optional `token` on `POST /api/v1/restore`. This needs a Milvus 3.0 or newer target with `dataCoord.import.enableInReplicatingCluster=true`; on a replicating target of that version a restore without `--secondary` is refused up front, because the server no longer accepts plain auto-commit import jobs. Snapshot backups use `import_snap` on this path and need Milvus 3.0.4 or newer on the target and every secondary; an explicit `restore_snap` cannot be combined with secondaries. See [two-phase commit restore](docs/user_guide/two_phase_commit_restore.md) for how it works and the prerequisites.
+> [!NOTE]
+> The legacy `--use_v2_restore` flag is deprecated. Setting it to `true` still selects `merged_seg`, and an explicit `--strategy` takes precedence when both are given.
+
+### Restoring a secondary or replicating cluster
+
+**Bootstrapping a fresh secondary:** Use `restore secondary` and keep CDC stopped until the restore succeeds. See the [secondary restore guide](docs/user_guide/secondary_restore.md) for backup and restore commands.
+
+**Restoring into a live CDC cluster:** When the target cluster replicates to secondaries, import jobs must be committed in two phases so the target and its secondaries do not diverge. Pass each secondary with a repeated `--secondary` flag in `address[,token]` form:
+
+```shell
+milvus-backup restore -n my_backup \
+  --secondary 'http://10.0.0.2:19530,secondary_user:secondary_password' \
+  --secondary 'http://10.0.0.3:19530,raw-api-token'
+```
+
+- **Authentication:** The optional token is either `username:password` or an API token; omit it to inherit the target's `milvus.user` and `milvus.password`.
+- **How it works:** Every import job is held uncommitted until its mirror appears on every secondary, then committed on the restore target; the replicated commit commits the mirrors (a replication target refuses client-side commits).
+- **REST API:** Pass a `secondaries` object array (`[{"address": "...", "token": "..."}]`) to `POST /api/v1/restore`.
+- **Prerequisites:**
+  - Target must be **Milvus 3.0+** with `dataCoord.import.enableInReplicatingCluster=true` (restoring to such a target without `--secondary` is refused up front).
+  - Snapshot backups use `import_snap` on this path and require **Milvus 3.0.4+** on the target and every secondary (`restore_snap` cannot be combined with secondaries).
+
+See [two-phase commit restore](docs/user_guide/two_phase_commit_restore.md) for details.
 
 ## Compatibility
 
@@ -104,9 +134,13 @@ For example, a backup created from Milvus 2.6 cannot be restored to Milvus 2.5.
 
 ### Backup formats
 
-On Milvus 3.0 and later, backups are taken in the snapshot format by default: Milvus freezes each collection into a snapshot, and milvus-backup reads the snapshot's manifest and copies its files to the backup storage itself. Like the binlog format, the copy moves data between any two supported backends; whether it streams through the milvus-backup host or is performed by the storage service follows the same `transfer.mode` policy as the binlog copy. Older servers use the binlog format, and `--format=binlog` selects it explicitly.
+- **Snapshot format (default on Milvus 3.0+):** Milvus freezes each collection into a snapshot, and `milvus-backup` reads the snapshot manifest and copies its files to the backup storage. Like the binlog format, the copy moves data between any two supported backends following the configured `transfer.mode` policy.
+- **Binlog format (default on Milvus 2.x, or via `--format=binlog`):** Directly backs up collection segments and metadata.
 
-Restore moves the bundle the other way with a server-side copy inside one storage service, so restoring a snapshot backup requires the backup storage to be the same service as the target Milvus storage: another bucket, account, or region of the same cloud provider works, but a different provider — or a second self-hosted MinIO — does not, and milvus-backup refuses the restore instead of producing a partial one. On Milvus 3.0.4 and later, `--strategy=import_snap` lifts that restriction: the target reads the backup storage itself, so any reachable service works. Auto also selects this path when secondaries are configured.
+> [!IMPORTANT]
+> **Cross-storage restore with snapshot backups:**
+> - With `--strategy=restore_snap` (default on Milvus 3.0–3.0.3), restore uses a server-side copy within one storage service. The backup storage must be the **same provider** as the target Milvus storage (another bucket, account, or region of the same cloud provider works, but a different provider or a second self-hosted MinIO is refused).
+> - On **Milvus 3.0.4+**, `--strategy=import_snap` lifts this restriction: the target reads the backup storage directly, so any reachable storage service works. `--strategy=auto` also selects `import_snap` automatically when secondaries are configured.
 
 ## Configuration
 
