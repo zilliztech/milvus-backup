@@ -54,7 +54,7 @@ Run `milvus-backup <command> --help` for command-specific flags. See the [CLI en
 
 ### Selecting collections
 
-`--filter` limits a command to some of the collections instead of all of them. It takes a comma-separated list, where an entry is a collection in the default database (`coll1`), a collection in a named database (`db1.coll1`), or every collection in a database (`db1.*`):
+`--filter` limits an operation to specific databases or collections. It takes a comma-separated list, where each entry is a collection in the default database (`coll1`), a collection in a named database (`db1.coll1`), or every collection in a database (`db1.*`):
 
 ```shell
 # back up two collections
@@ -67,7 +67,7 @@ milvus-backup create -n my_backup --filter 'db1.*'
 milvus-backup restore -n my_backup
 ```
 
-On `restore`, `--filter` names collections as they will exist in the target Milvus, so it matches the name **after** `--suffix` or `--rename` has been applied:
+On `restore`, `--filter` matches collection names as they will exist in the target Milvus **after** `--suffix` or `--rename` is applied:
 
 ```shell
 # restores hello_milvus from the backup into a new hello_milvus_recover
@@ -77,11 +77,11 @@ milvus-backup restore -n my_backup -s _recover --filter hello_milvus_recover
 milvus-backup restore -n my_backup -r db1.coll1:db2.coll1 --filter db2.coll1
 ```
 
-Filtering on the pre-rename name matches nothing and restores nothing.
+Filtering by the original name matches nothing and restores nothing.
 
 ### Restore strategies
 
-`--strategy` selects how `restore` moves the data. Its values name both the backup format and the restore path:
+`--strategy` controls how `restore` loads data into the target cluster:
 
 | Strategy | Backup format | Description |
 |----------|---------------|-------------|
@@ -107,7 +107,7 @@ milvus-backup restore -n my_backup \
 ```
 
 - **Authentication:** The optional token is either `username:password` or an API token; omit it to inherit the target's `milvus.user` and `milvus.password`.
-- **How it works:** Every import job is held uncommitted until its mirror appears on every secondary, then committed on the restore target; the replicated commit commits the mirrors (a replication target refuses client-side commits).
+- **How it works:** Each import job is held uncommitted until its mirror job appears on every secondary. Milvus Backup then commits the job on the primary target, which replicates the commit to the secondaries (secondaries reject direct client commits).
 - **REST API:** Pass a `secondaries` object array (`[{"address": "...", "token": "..."}]`) to `POST /api/v1/restore`.
 - **Prerequisites:**
   - Target must be **Milvus 3.0+** with `dataCoord.import.enableInReplicatingCluster=true` (restoring to such a target without `--secondary` is refused up front).
@@ -134,7 +134,7 @@ For example, a backup created from Milvus 2.6 cannot be restored to Milvus 2.5.
 
 ### Backup formats
 
-- **Snapshot format (default on Milvus 3.0+):** Milvus freezes each collection into a snapshot, and `milvus-backup` reads the snapshot manifest and copies its files to the backup storage. Like the binlog format, the copy moves data between any two supported backends following the configured `transfer.mode` policy.
+- **Snapshot format (default on Milvus 3.0+):** Milvus freezes each collection into a snapshot, and `milvus-backup` reads the snapshot manifest and copies its files to the backup storage. Like the binlog format, it can transfer data between any two supported storage backends according to `transfer.mode`.
 - **Binlog format (default on Milvus 2.x, or via `--format=binlog`):** Directly backs up collection segments and metadata.
 
 > [!IMPORTANT]
@@ -152,7 +152,7 @@ The configuration file tells Milvus Backup how to reach Milvus, the storage used
 - `transfer`: how objects move between the two storage backends.
 - `log`: log level and output settings.
 
-Both storage sections describe a backend the same way, and `backup.storage` inherits anything it does not name from `milvus.storage`. Backing up into the same backend takes little more than a bucket name; `rootPath` is the exception, and always defaults to `backup`.
+Both storage sections share the same schema, and `backup.storage` inherits any omitted fields from `milvus.storage`. When backing up to the same storage backend, you typically only need to set `bucketName` (`rootPath` always defaults to `backup`).
 
 ### Configuration examples
 
@@ -184,13 +184,13 @@ Run `milvus-backup config show` to print the resolved configuration along with w
 
 ### Upgrading an existing configuration file
 
-Configuration files carry a `configVersion`. A file written before it existed still loads — it is read with the older schema and translated, with a warning naming the file. Convert one with:
+Configuration files declare a `configVersion`. Legacy v1 files without this field still load — Milvus Backup translates them automatically and logs a deprecation warning. To upgrade a file to v2, run:
 
 ```shell
 milvus-backup config migrate --config backup.yaml -o backup-v2.yaml
 ```
 
-The migration report is written to stderr and lists everything that needs a decision, such as a secret that has to move to a renamed environment variable, or a v1 variable whose parameter now belongs in the file. The converted file goes to stdout, or to `-o`.
+The converted configuration is written to stdout (or to the path given by `-o`). Any items requiring manual review — such as renamed secret environment variables or v1 environment overrides that should move into the config file — are reported to stderr.
 
 ## API server
 
@@ -254,7 +254,7 @@ backup:
       secretAccessKey: <your-secret-access-key>
 ```
 
-The two ends are different backends, so the default `transfer.mode` of `auto` streams the objects through milvus-backup rather than asking either service to copy them. See [configs/backup-s3.yaml](configs/backup-s3.yaml) for the complete file.
+Because the source and destination use different storage providers, the default `transfer.mode` (`auto`) streams objects through `milvus-backup` instead of using server-side copy. See [configs/backup-s3.yaml](configs/backup-s3.yaml) for the complete file.
 
 Do not commit storage credentials to the repository. Prefer environment variables or another secret-management mechanism in production.
 
