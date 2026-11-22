@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -663,7 +664,7 @@ func TestNewS3ClientDiscoversRegion(t *testing.T) {
 <LocationConstraint xmlns="http://s3.amazonaws.com/doc/2006-03-01/">eu-west-2</LocationConstraint>`), nil
 				}
 
-				authHeader.Store(lo.ToPtr(r.Header.Get("Authorization")))
+				authHeader.Store(new(r.Header.Get("Authorization")))
 				return headResponse(), nil
 			})}
 		})
@@ -696,7 +697,7 @@ func TestNewS3ClientRegionFallbackOnMissingBucket(t *testing.T) {
 </Error>`), nil
 				}
 
-				authHeader.Store(lo.ToPtr(r.Header.Get("Authorization")))
+				authHeader.Store(new(r.Header.Get("Authorization")))
 				return headResponse(), nil
 			})}
 		})
@@ -752,9 +753,11 @@ func TestIsVirtualHostEndpoint(t *testing.T) {
 
 // TestS3ClientSelfSignedTLS drives a real TLS handshake against a server
 // presenting a self-signed certificate: the configured CA must be what
-// admits the connection, and its absence must fail with an x509 error.
+// admits the connection, and its absence must fail with an x509 error without
+// retrying.
 func TestS3ClientSelfSignedTLS(t *testing.T) {
-	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	var attempts atomic.Int32
+	srv := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Query().Has("location") {
 			w.Header().Set("Content-Type", "application/xml")
 			fmt.Fprint(w, `<?xml version="1.0" encoding="UTF-8"?><LocationConstraint xmlns="http://s3.amazonaws.com/doc/2006-03-01/"/>`)
@@ -763,6 +766,12 @@ func TestS3ClientSelfSignedTLS(t *testing.T) {
 		w.Header().Set("ETag", `"deadbeef"`)
 		w.WriteHeader(http.StatusOK)
 	}))
+	srv.Config.ConnState = func(_ net.Conn, s http.ConnState) {
+		if s == http.StateNew {
+			attempts.Add(1)
+		}
+	}
+	srv.StartTLS()
 	t.Cleanup(srv.Close)
 
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
@@ -783,8 +792,10 @@ func TestS3ClientSelfSignedTLS(t *testing.T) {
 		cli, err := newS3ClientWithCreds(t.Context(), newCfg(), provider, true)
 		require.NoError(t, err)
 
+		attempts.Store(0)
 		_, err = cli.HeadObject(context.Background(), "key")
 		assert.ErrorContains(t, err, "x509")
+		assert.EqualValues(t, 1, attempts.Load(), "certificate verification failure must not be retried")
 	})
 
 	t.Run("WithTheCA", func(t *testing.T) {
