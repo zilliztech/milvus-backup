@@ -931,3 +931,18 @@ func TestHandleRestoreSecondary(t *testing.T) {
 		assert.Eventually(t, func() bool { return job.calls.Load() == 1 }, time.Second, 10*time.Millisecond)
 	})
 }
+
+func TestRestoreRejectsInvalidTaskID(t *testing.T) {
+	s := newListTestServer(t)
+	for _, tc := range []struct{ name, path, body string }{
+		{"Restore", "/api/v1/restore", `{"backup_name":"backup1","id":"team//job"}`},
+		{"Secondary", "/api/v1/restore_secondary", `{"backup_name":"backup1","requestId":"team/job"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			w := httptest.NewRecorder()
+			s.engine.ServeHTTP(w, httptest.NewRequest(http.MethodPost, tc.path, strings.NewReader(tc.body)))
+			assert.Equal(t, http.StatusBadRequest, w.Code)
+			assert.Contains(t, w.Body.String(), "restore task ID")
+		})
+	}
+}

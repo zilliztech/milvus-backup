@@ -47,3 +47,10 @@ func TestHasWhitespace(t *testing.T) {
 		})
 	}
 }
+
+func TestRestoreTaskID(t *testing.T) {
+	assert.NoError(t, RestoreTaskID("Restore_123-a"))
+	for _, id := range []string{"", "team//job", "job.1", "任务", "job 1"} {
+		assert.Error(t, RestoreTaskID(id), id)
+	}
+}

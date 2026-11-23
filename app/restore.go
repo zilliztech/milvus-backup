@@ -15,6 +15,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/meta"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 	"github.com/zilliztech/milvus-backup/internal/storage/mpath"
+	"github.com/zilliztech/milvus-backup/internal/validate"
 )
 
 // RestoreJob is one registered restore job, ready to execute. A job is what
@@ -97,6 +98,9 @@ type RestoreRequest struct {
 // clients are created per call; sharing them across calls is a lifecycle
 // decision this layer deliberately does not make.
 func NewRestoreJob(ctx context.Context, params *cfg.Config, store *jobstate.Store, req RestoreRequest) (*RestoreJob, error) {
+	if err := validate.RestoreTaskID(req.TaskID); err != nil {
+		return nil, err
+	}
 	backupStorage, err := storage.NewBackupStorage(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("app: %w", err)

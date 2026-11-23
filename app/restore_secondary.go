@@ -12,6 +12,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/storage"
+	"github.com/zilliztech/milvus-backup/internal/validate"
 )
 
 // RestoreSecondaryJob is one registered secondary-restore job, ready to
@@ -75,6 +76,9 @@ type RestoreSecondaryRequest struct {
 // them across calls is a lifecycle decision this layer deliberately does not
 // make.
 func NewRestoreSecondaryJob(ctx context.Context, params *cfg.Config, store *jobstate.Store, req RestoreSecondaryRequest) (*RestoreSecondaryJob, error) {
+	if err := validate.RestoreTaskID(req.TaskID); err != nil {
+		return nil, err
+	}
 	backupStorage, err := storage.NewBackupStorage(ctx, params)
 	if err != nil {
 		return nil, fmt.Errorf("app: %w", err)

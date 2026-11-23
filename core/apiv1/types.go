@@ -146,7 +146,7 @@ type GetRestoreStateRequest struct {
 }
 
 type RestoreSecondaryRequest struct {
-	// Uuid of request; doubles as the restore task id.
+	// Request and restore task ID. Use ASCII letters, digits, underscores or hyphens, or omit to generate one.
 	RequestId string `json:"requestId,omitempty"`
 	// Backup name to restore.
 	BackupName string `json:"backup_name,omitempty"`
@@ -204,7 +204,7 @@ type RestoreBackupRequest struct {
 	// Skip collection create; use when the collection exists and only index
 	// or data is restored.
 	SkipCreateCollection bool `json:"skipCreateCollection,omitempty"`
-	// Restore task id, defaults to a generated one when unset.
+	// Restore task ID. Use ASCII letters, digits, underscores or hyphens, or omit to generate one.
 	ID string `json:"id,omitempty"`
 	// Skip the disk quota check in import.
 	//
