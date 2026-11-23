@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"crypto/md5"
+	"crypto/tls"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -154,9 +155,7 @@ func s3Options(cfg Config, provider aws.CredentialsProvider, usePathStyle bool) 
 		// Transient errors retry here, inside the SDK retryer, not in
 		// client-method wrappers: one retry domain in the stack, with the
 		// SDK's error classification, jitter and throttle-aware rate limiter.
-		Retryer: awsretry.AddWithMaxBackoffDelay(
-			awsretry.AddWithMaxAttempts(awsretry.NewStandard(), _sdkRetryAttempts),
-			_sdkRetryMaxBackoff),
+		Retryer: s3Retryer(),
 		// Old MinIO, Ceph and OSS releases reject the checksum headers the
 		// SDK adds by default, so only send and validate them when the
 		// backend asks for it.
@@ -192,6 +191,26 @@ func s3Options(cfg Config, provider aws.CredentialsProvider, usePathStyle bool) 
 	})
 
 	return opts, nil
+}
+
+// s3Retryer returns the SDK standard retryer configured for S3 operations,
+// failing fast on TLS certificate verification failures.
+func s3Retryer() aws.Retryer {
+	return awsretry.NewStandard(func(o *awsretry.StandardOptions) {
+		o.MaxAttempts = _sdkRetryAttempts
+		o.MaxBackoff = _sdkRetryMaxBackoff
+		// smithy's RequestSendError marks every transport failure as a
+		// ConnectionError, so RetryableConnectionError would retry an x509
+		// handshake failure across all 10 attempts (~37s). Reject certificate
+		// verification errors up front, like the SDK already does for NXDOMAIN.
+		noRetryTLS := awsretry.IsErrorRetryableFunc(func(err error) aws.Ternary {
+			if _, ok := errors.AsType[*tls.CertificateVerificationError](err); ok {
+				return aws.FalseTernary
+			}
+			return aws.UnknownTernary
+		})
+		o.Retryables = append([]awsretry.IsErrorRetryable{noRetryTLS}, o.Retryables...)
+	})
 }
 
 // contentMD5 sets the Content-MD5 header on DeleteObjects requests. The body
@@ -268,8 +287,7 @@ func discoverRegion(ctx context.Context, cfg Config, opts s3.Options) (string, e
 
 	out, err := probe.GetBucketLocation(ctx, &s3.GetBucketLocationInput{Bucket: aws.String(cfg.Bucket)})
 	if err != nil {
-		var ae smithy.APIError
-		if errors.As(err, &ae) {
+		if ae, ok := errors.AsType[smithy.APIError](err); ok {
 			switch ae.ErrorCode() {
 			case "NoSuchBucket", "AccessDenied", "AuthorizationHeaderMalformed", "InvalidRegion":
 				return "us-east-1", nil

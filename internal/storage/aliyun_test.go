@@ -5,7 +5,6 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/alibabacloud-go/tea/tea"
 	aliyunCred "github.com/aliyun/credentials-go/credentials"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -43,9 +42,9 @@ func (f *fakeAliCred) GetType() *string                     { return nil }
 // stale; the AWS signing middleware calls Retrieve per operation.
 func TestAliCredProviderServesFreshSession(t *testing.T) {
 	fake := &fakeAliCred{model: &aliyunCred.CredentialModel{
-		AccessKeyId:     tea.String("ak-1"),
-		AccessKeySecret: tea.String("sk-1"),
-		SecurityToken:   tea.String("token-1"),
+		AccessKeyId:     new("ak-1"),
+		AccessKeySecret: new("sk-1"),
+		SecurityToken:   new("token-1"),
 	}}
 	p := &aliCredProvider{cred: fake}
 
@@ -54,9 +53,9 @@ func TestAliCredProviderServesFreshSession(t *testing.T) {
 	assert.Equal(t, "ak-1", first.AccessKeyID)
 
 	fake.model = &aliyunCred.CredentialModel{
-		AccessKeyId:     tea.String("ak-2"),
-		AccessKeySecret: tea.String("sk-2"),
-		SecurityToken:   tea.String("token-2"),
+		AccessKeyId:     new("ak-2"),
+		AccessKeySecret: new("sk-2"),
+		SecurityToken:   new("token-2"),
 	}
 
 	second, err := p.Retrieve(context.Background())
@@ -69,20 +68,18 @@ func TestAliCredProviderServesFreshSession(t *testing.T) {
 // must be safe; run under -race to pin the provider-level mutex.
 func TestAliCredProviderSurvivesConcurrentFetches(t *testing.T) {
 	fake := &fakeAliCred{model: &aliyunCred.CredentialModel{
-		AccessKeyId:     tea.String("ak"),
-		AccessKeySecret: tea.String("sk"),
-		SecurityToken:   tea.String("token"),
+		AccessKeyId:     new("ak"),
+		AccessKeySecret: new("sk"),
+		SecurityToken:   new("token"),
 	}}
 	p := &aliCredProvider{cred: fake}
 
 	var wg sync.WaitGroup
 	for range 8 {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			_, err := p.Retrieve(context.Background())
 			assert.NoError(t, err)
-		}()
+		})
 	}
 	wg.Wait()
 }

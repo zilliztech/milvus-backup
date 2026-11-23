@@ -469,8 +469,7 @@ func (a *AzureClient) deleteObjects(ctx context.Context, keys []string) error {
 // isBlobNotFound reports whether err is a BlobNotFound rejection, from either
 // a single DeleteBlob or one sub-response of a Blob Batch.
 func isBlobNotFound(err error) bool {
-	var azErr *azcore.ResponseError
-	if errors.As(err, &azErr) {
+	if azErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		return azErr.ErrorCode == string(bloberror.BlobNotFound)
 	}
 	return false
@@ -482,8 +481,7 @@ func isBlobNotFound(err error) bool {
 // response never reach here: SubmitBatch returns them on the response, not
 // as the error.
 func isAzureBatchDeleteUnsupported(err error) bool {
-	var azErr *azcore.ResponseError
-	if errors.As(err, &azErr) {
+	if azErr, ok := errors.AsType[*azcore.ResponseError](err); ok {
 		return azErr.StatusCode == http.StatusNotImplemented
 	}
 	return false
