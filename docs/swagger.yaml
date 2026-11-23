@@ -273,6 +273,9 @@ definitions:
       dropExistIndex:
         description: Drop existing index of target collection before create.
         type: boolean
+      enableResume:
+        description: Enable Resume for this restore and retain staged binlogs on failure.
+        type: boolean
       ezkMapping:
         additionalProperties:
           type: string
@@ -375,6 +378,9 @@ definitions:
         type: string
       progress:
         type: integer
+      enableResume:
+        description: Whether Resume was enabled for this task at registration.
+        type: boolean
       start_time:
         type: integer
       state_code:
@@ -415,6 +421,13 @@ definitions:
       target_db_name:
         type: string
     type: object
+  apiv1.RestoreControlRequest:
+    properties:
+      id:
+        type: string
+      requestId:
+        type: string
+    type: object
   apiv1.RestoreMapping:
     properties:
       colls:
@@ -452,6 +465,9 @@ definitions:
       backup_name:
         description: Backup name to restore.
         type: string
+      enableResume:
+        description: Enable Resume for this restore and retain staged binlogs on failure.
+        type: boolean
       path:
         description: Path, overriding the config for this call.
         type: string
@@ -774,6 +790,8 @@ definitions:
     - 2
     - 3
     - 4
+    - 5
+    - 6
     format: int32
     type: integer
     x-enum-varnames:
@@ -782,6 +800,8 @@ definitions:
     - RestoreTaskStateCode_SUCCESS
     - RestoreTaskStateCode_FAIL
     - RestoreTaskStateCode_TIMEOUT
+    - RestoreTaskStateCode_FAILED_CLEANUP_PENDING
+    - RestoreTaskStateCode_FAILED_CLEANED
   backuppb.StructArrayFieldSchema:
     properties:
       description:
@@ -814,6 +834,51 @@ info:
   title: Milvus Backup Service
   version: "1.0"
 paths:
+  /cleanup_failed_restore:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Restore identity
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/apiv1.RestoreControlRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apiv1.RestoreBackupResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Abandon a failed restore and clean its temporary files in one pass
+      tags:
+      - Restore
   /create:
     post:
       consumes:
@@ -987,6 +1052,51 @@ paths:
           schema:
             $ref: '#/definitions/apiv1.RestoreBackupResponse'
       summary: Restore interface
+      tags:
+      - Restore
+  /resume_restore:
+    post:
+      consumes:
+      - application/json
+      parameters:
+      - description: Restore identity
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/apiv1.RestoreControlRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apiv1.RestoreBackupResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Resume the original immutable restore plan from memory or persisted state
       tags:
       - Restore
 swagger: "2.0"

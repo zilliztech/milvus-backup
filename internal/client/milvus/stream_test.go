@@ -19,6 +19,7 @@ import (
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"
 	"google.golang.org/grpc"
+	"google.golang.org/protobuf/proto"
 
 	"github.com/zilliztech/milvus-backup/internal/log"
 )
@@ -225,7 +226,7 @@ func TestStreamClient_SendAndConfirm(t *testing.T) {
 
 		synctest.Wait() // runOneConnection establishes
 
-		err := cli.Send(context.Background(), func(ts uint64) []message.MutableMessage {
+		err := cli.Send(context.Background(), "", func(ts uint64) []message.MutableMessage {
 			body := &message.ImportMsg{
 				Base:           &commonpb.MsgBase{MsgType: commonpb.MsgType_Import, Timestamp: ts},
 				DbName:         "default",
@@ -251,7 +252,7 @@ func TestStreamClient_SendAndConfirm(t *testing.T) {
 		fs.pushConfirm(tt)
 
 		done := make(chan struct{})
-		go func() { cli.WaitConfirm(); close(done) }()
+		go func() { _ = cli.WaitConfirm(context.Background()); close(done) }()
 		synctest.Wait()
 		select {
 		case <-done:
@@ -270,7 +271,7 @@ func TestStreamClient_ForwardPreservesSourceTT(t *testing.T) {
 		synctest.Wait()
 
 		imm := buildImportMsg(t, 99, testDataVch)
-		assert.NoError(t, cli.Forward(context.Background(), imm))
+		assert.NoError(t, cli.Forward(context.Background(), "", imm))
 
 		synctest.Wait()
 
@@ -294,7 +295,7 @@ func TestStreamClient_BroadcastCollidingPchGetsDistinctTT(t *testing.T) {
 
 		synctest.Wait()
 
-		err := cli.Send(context.Background(), func(uint64) []message.MutableMessage {
+		err := cli.Send(context.Background(), "", func(uint64) []message.MutableMessage {
 			return buildBroadcastDDL(testDataVch, testCtrlVch)
 		})
 		assert.NoError(t, err)
@@ -324,7 +325,7 @@ func TestStreamClient_ReplayOnReconnect(t *testing.T) {
 
 		synctest.Wait()
 
-		assert.NoError(t, cli.Forward(context.Background(),
+		assert.NoError(t, cli.Forward(context.Background(), "",
 			buildImportMsg(t, 10, testDataVch),
 			buildImportMsg(t, 11, testDataVch)))
 
@@ -350,7 +351,7 @@ func TestStreamClient_ReplayOnReconnect(t *testing.T) {
 
 		second.pushConfirm(11)
 		done := make(chan struct{})
-		go func() { cli.WaitConfirm(); close(done) }()
+		go func() { _ = cli.WaitConfirm(context.Background()); close(done) }()
 		synctest.Wait()
 		select {
 		case <-done:
@@ -372,7 +373,7 @@ func TestStreamClient_ConfirmDropsPrefix(t *testing.T) {
 
 		synctest.Wait()
 
-		assert.NoError(t, cli.Forward(context.Background(),
+		assert.NoError(t, cli.Forward(context.Background(), "",
 			buildImportMsg(t, 1, testDataVch),
 			buildImportMsg(t, 2, testDataVch),
 			buildImportMsg(t, 3, testDataVch)))
@@ -385,7 +386,7 @@ func TestStreamClient_ConfirmDropsPrefix(t *testing.T) {
 		synctest.Wait()
 
 		done := make(chan struct{})
-		go func() { cli.WaitConfirm(); close(done) }()
+		go func() { _ = cli.WaitConfirm(context.Background()); close(done) }()
 		synctest.Wait()
 		select {
 		case <-done:
@@ -420,7 +421,7 @@ func TestStreamClient_RoutesByPch(t *testing.T) {
 
 		synctest.Wait()
 
-		assert.NoError(t, cli.Forward(context.Background(),
+		assert.NoError(t, cli.Forward(context.Background(), "",
 			buildImportMsg(t, 1, testDataVch),
 			buildImportMsg(t, 2, testDataVch2)))
 
@@ -442,7 +443,7 @@ func TestStreamClient_UnknownPchRejected(t *testing.T) {
 		synctest.Wait()
 
 		// Vchannel maps to a pch that has no client.
-		err := cli.Forward(context.Background(), buildImportMsg(t, 1, "other-pch_1v0"))
+		err := cli.Forward(context.Background(), "", buildImportMsg(t, 1, "other-pch_1v0"))
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "no pch client")
 	})
@@ -463,7 +464,7 @@ func TestStreamClient_ImmediateEOFBacksOff(t *testing.T) {
 		defer cli.Close()
 
 		imm := buildImportMsg(t, 77, testDataVch)
-		assert.NoError(t, cli.Forward(context.Background(), imm))
+		assert.NoError(t, cli.Forward(context.Background(), "", imm))
 		time.Sleep(2 * time.Second)
 		synctest.Wait()
 
@@ -496,7 +497,7 @@ func TestStreamClient_ConfirmedDisconnectReconnectsImmediately(t *testing.T) {
 
 		synctest.Wait()
 
-		assert.NoError(t, cli.Forward(context.Background(),
+		assert.NoError(t, cli.Forward(context.Background(), "",
 			buildImportMsg(t, 10, testDataVch),
 			buildImportMsg(t, 11, testDataVch)))
 		synctest.Wait()
@@ -528,7 +529,7 @@ func TestStreamClient_LifetimeWithoutConfirmCountsAsEstablished(t *testing.T) {
 			defer cli.Close()
 
 			synctest.Wait()
-			assert.NoError(t, cli.Forward(context.Background(), buildImportMsg(t, 7, testDataVch)))
+			assert.NoError(t, cli.Forward(context.Background(), "", buildImportMsg(t, 7, testDataVch)))
 			synctest.Wait()
 			assert.Len(t, first.sentMsgs(), 1)
 
@@ -552,7 +553,7 @@ func TestStreamClient_LifetimeWithoutConfirmCountsAsEstablished(t *testing.T) {
 			defer cli.Close()
 
 			synctest.Wait()
-			assert.NoError(t, cli.Forward(context.Background(), buildImportMsg(t, 7, testDataVch)))
+			assert.NoError(t, cli.Forward(context.Background(), "", buildImportMsg(t, 7, testDataVch)))
 			synctest.Wait()
 			assert.Len(t, first.sentMsgs(), 1)
 
@@ -584,10 +585,10 @@ func TestStreamClient_WaitConfirmNoProgress(t *testing.T) {
 			defer cli.Close()
 
 			synctest.Wait()
-			assert.NoError(t, cli.Forward(context.Background(), buildImportMsg(t, 42, testDataVch)))
+			assert.NoError(t, cli.Forward(context.Background(), "", buildImportMsg(t, 42, testDataVch)))
 
 			done := make(chan struct{})
-			go func() { cli.WaitConfirm(); close(done) }()
+			go func() { _ = cli.WaitConfirm(context.Background()); close(done) }()
 			synctest.Wait()
 
 			time.Sleep(pchNoProgressWarnAfter - time.Nanosecond)
@@ -629,10 +630,10 @@ func TestStreamClient_WaitConfirmNoProgress(t *testing.T) {
 			cli := NewStreamClient("src", "task", []string{testPch}, message.WALNameKafka, newFakeGrpc(fs))
 
 			synctest.Wait()
-			assert.NoError(t, cli.Forward(context.Background(), buildImportMsg(t, 42, testDataVch)))
+			assert.NoError(t, cli.Forward(context.Background(), "", buildImportMsg(t, 42, testDataVch)))
 
 			done := make(chan struct{})
-			go func() { cli.WaitConfirm(); close(done) }()
+			go func() { _ = cli.WaitConfirm(context.Background()); close(done) }()
 			synctest.Wait()
 
 			cli.Close()
@@ -647,5 +648,108 @@ func TestStreamClient_WaitConfirmNoProgress(t *testing.T) {
 			assert.NotEmpty(t, aborted)
 			assert.Empty(t, logs.FilterMessage("replicate stream failing").All())
 		})
+	})
+}
+
+func TestResumeStreamAfterPartialBroadcast(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx := t.Context()
+		channels := []string{testPch, testPch2}
+		streamCheckpoint := NewStreamCheckpoint(map[string]uint64{testPch: 80, testPch2: 90})
+		first, second := newFakeReplicateStream(), newFakeReplicateStream()
+		stream := NewResumedStreamClient("source", "job", channels, message.WALNameKafka, newFakeGrpc(first, second), streamCheckpoint)
+		build := func(uint64) []message.MutableMessage { return buildBroadcastDDL(testDataVch, testDataVch2) }
+		require.NoError(t, stream.Send(ctx, "create", build))
+		synctest.Wait()
+		for _, ch := range []*fakeReplicateStream{first, second} {
+			require.Len(t, ch.sentMsgs(), 1)
+		}
+		if GetPch(first.sentMsgs()[0]) != testPch {
+			first, second = second, first
+		}
+		tt, err := GetTT(first.sentMsgs()[0])
+		require.NoError(t, err)
+		first.pushConfirm(tt)
+		synctest.Wait()
+		stream.Close()
+		original := second.sentMsgs()[0]
+		lostACK, err := GetTT(original)
+		require.NoError(t, err)
+		assert.NoError(t, streamCheckpoint.ValidatePosition(testPch2, lostACK))
+		assert.NoError(t, streamCheckpoint.ValidatePosition(testPch2, 0))
+		assert.Error(t, streamCheckpoint.ValidatePosition(testPch, 0))
+		assert.Error(t, streamCheckpoint.ValidatePosition(testPch2, 99))
+
+		first, second = newFakeReplicateStream(), newFakeReplicateStream()
+		stream = NewResumedStreamClient("source", "job", channels, message.WALNameKafka, newFakeGrpc(first, second), streamCheckpoint)
+		defer stream.Close()
+		require.NoError(t, stream.Send(ctx, "create", func(uint64) []message.MutableMessage {
+			assert.Fail(t, "registered broadcast was rebuilt")
+			return nil
+		}))
+		require.NoError(t, stream.Send(ctx, "next", build))
+		synctest.Wait()
+		if len(first.sentMsgs()) == 2 {
+			first, second = second, first
+		}
+		require.Len(t, first.sentMsgs(), 1)
+		require.Len(t, second.sentMsgs(), 2)
+		assert.True(t, proto.Equal(original, second.sentMsgs()[0]))
+		for _, ch := range []*fakeReplicateStream{first, second} {
+			sent := ch.sentMsgs()
+			tt, err := GetTT(sent[len(sent)-1])
+			require.NoError(t, err)
+			assert.Greater(t, tt, uint64(2))
+			ch.pushConfirm(tt)
+		}
+		require.NoError(t, stream.WaitConfirm(ctx))
+	})
+}
+
+// Interrupt the handoff after checkpoint registration without starting senders.
+type interruptedMsgQueue struct{ msgQueue }
+
+func (*interruptedMsgQueue) Enqueue(context.Context, ...*commonpb.ImmutableMessage) error {
+	return context.Canceled
+}
+
+func TestResumeStreamAfterRegistrationBeforeEnqueue(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		checkpoint := NewStreamCheckpoint(map[string]uint64{testPch: 80, testPch2: 90})
+		channels := []string{testPch, testPch2}
+		stream := &StreamClient{
+			streamCheckpoint: checkpoint,
+			sourceWALName:    message.WALNameKafka,
+			pchClient: map[string]*pchClient{
+				testPch:  {queue: &interruptedMsgQueue{}},
+				testPch2: {queue: &interruptedMsgQueue{}},
+			},
+		}
+		err := stream.Send(t.Context(), "import/42", func(uint64) []message.MutableMessage {
+			return buildBroadcastDDL(testDataVch, testDataVch2)
+		})
+		require.ErrorIs(t, err, context.Canceled)
+		assert.True(t, checkpoint.Sent("import/42"))
+		_, pending := checkpoint.replay()
+		require.Len(t, pending[testPch], 1)
+		require.Len(t, pending[testPch2], 1)
+
+		first, second := newFakeReplicateStream(), newFakeReplicateStream()
+		stream = NewResumedStreamClient("source", "job", channels, message.WALNameKafka, newFakeGrpc(first, second), checkpoint)
+		defer stream.Close()
+		require.NoError(t, stream.Send(t.Context(), "import/42", func(uint64) []message.MutableMessage {
+			assert.Fail(t, "registered import must be replayed without rebuilding")
+			return nil
+		}))
+		synctest.Wait()
+		for _, ch := range []*fakeReplicateStream{first, second} {
+			sent := ch.sentMsgs()
+			require.Len(t, sent, 1)
+			assert.True(t, proto.Equal(pending[GetPch(sent[0])][0], sent[0]))
+			tick, err := GetTT(sent[0])
+			require.NoError(t, err)
+			ch.pushConfirm(tick)
+		}
+		require.NoError(t, stream.WaitConfirm(t.Context()))
 	})
 }

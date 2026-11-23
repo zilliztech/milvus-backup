@@ -89,6 +89,7 @@ func (c *BackupConfig) validate() error {
 
 func (c *RestoreConfig) validate() error {
 	return errors.Join(
+		validateEnum(&c.Persistence.Type, []string{PersistenceTypeLocal, PersistenceTypeS3}),
 		validatePositive(&c.Concurrency.Collections),
 		validatePositive(&c.Concurrency.ImportJobs),
 		validatePositive(&c.MaxSegmentsPerImportJob),

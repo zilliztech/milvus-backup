@@ -11,6 +11,7 @@ import (
 	"golang.org/x/sync/semaphore"
 
 	"github.com/zilliztech/milvus-backup/internal/cfg"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
@@ -24,6 +25,7 @@ type copyTask struct {
 	backupDir string
 
 	tempDir string
+	job     *jobstate.RestoreJobTracker
 
 	sem *semaphore.Weighted
 
@@ -61,6 +63,17 @@ func newCopyTask(args importTaskArgs) *copyTask {
 	}
 }
 
+func newImportCopyTask(args importTaskArgs, job *jobstate.RestoreJobTracker) *copyTask {
+	c := newCopyTask(args)
+	if c != nil && args.jobs.ResumeEnabled() {
+		c.job = job
+		if dir := job.StagingDir(); dir != "" {
+			c.tempDir = dir
+		}
+	}
+	return c
+}
+
 // Execute copies every non-empty dir to the temp dir, verifies each copy, and
 // returns the dirs rewritten to point at the copies. A nil copy task is a
 // no-op pass-through: the plan decided the backup is imported in place, so
@@ -70,6 +83,9 @@ func (t *copyTask) Execute(ctx context.Context, dirs []partitionDir) ([]partitio
 		return dirs, nil
 	}
 
+	if t.job != nil {
+		t.job.SetStagingDir(t.tempDir)
+	}
 	copied := make([]partitionDir, len(dirs))
 	for i, dir := range dirs {
 		if dir.insertLogDir != "" {
@@ -125,14 +141,16 @@ func (t *copyTask) copyPrefix(ctx context.Context, srcPrefix string) (string, er
 	return dest, nil
 }
 
-// Cleanup removes the staged copy once the import is over, succeeded or not:
-// the import has either consumed the data or never will. A copy that failed
-// midway is safe too, whatever was copied sits under the same temp dir. A nil
-// copy task means the backup was imported in place and there is nothing to
-// remove.
+// Cleanup runs on import exit. Resumable jobs retain their inputs until the
+// import completes or the caller explicitly abandons the failed restore.
 func (t *copyTask) Cleanup(ctx context.Context) {
 	if t == nil {
 		return
+	}
+	if t.job != nil {
+		if _, done := t.job.Current(); !done || t.job.StagingDir() == "" {
+			return
+		}
 	}
 	if t.keepTempFiles {
 		t.logger.Info("skip clean temporary files")
@@ -142,6 +160,10 @@ func (t *copyTask) Cleanup(ctx context.Context) {
 	t.logger.Info("delete temporary file", zap.String("dir", t.tempDir))
 	if err := storage.DeletePrefix(ctx, t.dest, destKey(t.dest, t.milvusRootPath, t.tempDir)); err != nil {
 		t.logger.Warn("clean temporary restore files failed", zap.Error(err))
+		return
+	}
+	if t.job != nil {
+		t.job.SetStagingDir("")
 	}
 }
 

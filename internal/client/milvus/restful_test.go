@@ -3,10 +3,13 @@ package milvus
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 
 	"github.com/imroc/req/v3"
 	"github.com/stretchr/testify/assert"
@@ -19,6 +22,91 @@ func TestRestfulAuth(t *testing.T) {
 
 	got = restfulAuth("", "")
 	assert.Equal(t, "", got)
+}
+
+func TestGetBulkInsertStateDiscardsPartialResponseOnRetry(t *testing.T) {
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch calls.Add(1) {
+		case 1:
+			// JSON can populate message before reporting a type error on another field.
+			_, _ = w.Write([]byte(`{"message":"import job does not exist, jobID=42","code":"invalid"}`))
+			return
+		case 2:
+			_, _ = w.Write([]byte(`{"code":2100}`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"code":0}`))
+	}))
+	defer srv.Close()
+
+	cli := &RestfulClient{cli: req.C().SetBaseURL(srv.URL)}
+	resp, err := cli.GetBulkInsertState(t.Context(), "db", "42")
+	require.NoError(t, err)
+	assert.EqualValues(t, 3, calls.Load())
+	assert.Zero(t, resp.Code)
+	assert.Empty(t, resp.Message)
+	assert.NotErrorIs(t, ImportLookupError("42", resp.Code, resp.Message), ErrImportJobNotFound)
+}
+
+func TestGetBulkInsertStateQueryRetries(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		first, next       string
+		calls             int
+		wantError, cancel bool
+	}{
+		{"TransientBusinessError", `{"code":1,"message":"temporarily unavailable"}`, `{"code":0,"data":{"state":"Completed"}}`, 2, false, false},
+		{"RetryLimit", `{"code":1,"message":"temporarily unavailable"}`, `{"code":1,"message":"temporarily unavailable"}`, 10, true, false},
+		{"TaskFailedIsNotQueryFailure", `{"code":0,"data":{"state":"Failed","reason":"s3 read failed"}}`, "", 1, false, false},
+		{"MissingJobIsNotRetriedHere", `{"code":2100,"message":"import job does not exist, jobID=42"}`, "", 1, false, false},
+		{"MissingJobInFailureReason", `{"code":0,"data":{"state":"Failed","reason":"import job does not exist, jobID=42"}}`, "", 1, false, false},
+		{"InvalidEnvelope", `{}`, "", 1, true, false},
+		{"CanceledQuery", `{"code":1}`, "", 1, true, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				ctx, cancel := context.WithCancel(t.Context())
+				defer cancel()
+				var calls int
+				client := req.C().SetBaseURL("http://milvus.test")
+				client.Transport.WrapRoundTripFunc(func(_ http.RoundTripper) req.HttpRoundTripFunc {
+					return func(request *http.Request) (*http.Response, error) {
+						calls++
+						body := tc.first
+						if calls > 1 {
+							body = tc.next
+						}
+						if tc.cancel {
+							cancel()
+						}
+						return &http.Response{StatusCode: http.StatusOK, Header: http.Header{"Content-Type": {"application/json"}}, Body: io.NopCloser(strings.NewReader(body)), Request: request}, nil
+					}
+				})
+				cli := &RestfulClient{cli: client}
+				resp, err := cli.GetBulkInsertState(ctx, "db", "42")
+				if tc.wantError {
+					assert.Error(t, err)
+					assert.Nil(t, resp)
+				} else {
+					require.NoError(t, err)
+					require.NotNil(t, resp)
+					var expected GetProcessResp
+					body := tc.first
+					if tc.calls > 1 {
+						body = tc.next
+					}
+					require.NoError(t, json.Unmarshal([]byte(body), &expected))
+					assert.Equal(t, expected, *resp)
+				}
+				assert.Equal(t, tc.calls, calls)
+				if tc.cancel {
+					assert.ErrorIs(t, err, context.Canceled)
+				}
+			})
+		})
+	}
 }
 
 func TestBulkInsertV2InputOpts(t *testing.T) {

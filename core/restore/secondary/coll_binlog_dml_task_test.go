@@ -16,6 +16,7 @@ import (
 	"github.com/milvus-io/milvus/pkg/v3/util/funcutil"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/protobuf/encoding/protowire"
@@ -23,6 +24,8 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
+	"github.com/zilliztech/milvus-backup/internal/restoreplan"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
@@ -35,7 +38,7 @@ type recordingStream struct {
 	msgs  []*commonpb.ImmutableMessage
 }
 
-func (s *recordingStream) Send(_ context.Context, build func(ts uint64) []message.MutableMessage) error {
+func (s *recordingStream) Send(_ context.Context, _ string, build func(ts uint64) []message.MutableMessage) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -57,15 +60,15 @@ func (s *recordingStream) Send(_ context.Context, build func(ts uint64) []messag
 	return nil
 }
 
-func (s *recordingStream) Forward(_ context.Context, msgs ...*commonpb.ImmutableMessage) error {
+func (s *recordingStream) Forward(_ context.Context, _ string, msgs ...*commonpb.ImmutableMessage) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.msgs = append(s.msgs, msgs...)
 	return nil
 }
 
-func (s *recordingStream) WaitConfirm() {}
-func (s *recordingStream) Close()       {}
+func (s *recordingStream) WaitConfirm(context.Context) error { return nil }
+func (s *recordingStream) Close()                            {}
 
 func (s *recordingStream) messagesByType(messageType string) []*commonpb.ImmutableMessage {
 	s.mu.Lock()
@@ -339,6 +342,7 @@ func TestExecute_TimestampOrderingPerPch(t *testing.T) {
 	stream := &recordingStream{}
 	task := newTestBinlogDMLTask(t, collBackup, stream)
 
+	prepareTestBinlogPlan(t, task)
 	err := task.Execute(context.Background())
 	assert.NoError(t, err)
 
@@ -373,6 +377,7 @@ func TestExecute_NonL0BeforeL0(t *testing.T) {
 	stream := &recordingStream{}
 	task := newTestBinlogDMLTask(t, collBackup, stream)
 
+	prepareTestBinlogPlan(t, task)
 	err := task.Execute(context.Background())
 	assert.NoError(t, err)
 
@@ -403,6 +408,7 @@ func TestExecute_EmptyPartitions(t *testing.T) {
 	stream := &recordingStream{}
 	task := newTestBinlogDMLTask(t, collBackup, stream)
 
+	prepareTestBinlogPlan(t, task)
 	err := task.Execute(context.Background())
 	assert.NoError(t, err)
 	assert.Empty(t, stream.msgs, "no messages should be sent for empty partitions")
@@ -475,6 +481,7 @@ func TestConcurrentCollections_TimestampOrderingPerPch(t *testing.T) {
 	// Run all collection DML tasks concurrently.
 	g, ctx := errgroup.WithContext(context.Background())
 	for _, task := range tasks {
+		prepareTestBinlogPlan(t, task)
 		g.Go(func() error {
 			return task.Execute(ctx)
 		})
@@ -500,9 +507,12 @@ func TestSendBatches(t *testing.T) {
 		{timestamp: 100, partitionDirs: []partitionDir{{insertLogDir: "/a"}}, storageVersion: 2},
 		{timestamp: 200, partitionDirs: []partitionDir{{insertLogDir: "/b"}}, storageVersion: 2},
 	}
+	task.saved = &restoreplan.SecondaryCollection{}
+	task.saved.Phases[0] = planImports(1, batches)
+	task.progress = jobstate.NewSecondaryCollectionProgress(task.saved)
 
 	g, ctx := errgroup.WithContext(context.Background())
-	n, err := task.sendBatches(ctx, g, 1, batches)
+	n, err := task.sendBatches(ctx, g, 0)
 	assert.NoError(t, err)
 	assert.Equal(t, 2, n)
 	assert.NoError(t, g.Wait())
@@ -531,11 +541,15 @@ func TestSendBatchesWaitsFromSubmission(t *testing.T) {
 	b := func(ts uint64, dir string) batch {
 		return batch{timestamp: ts, partitionDirs: []partitionDir{{insertLogDir: dir}}, storageVersion: 2}
 	}
+	task.saved = &restoreplan.SecondaryCollection{}
+	task.saved.Phases[0] = planImports(1, []batch{b(100, "/a")})
+	task.saved.Phases[1] = planImports(1, []batch{b(200, "/b"), b(300, "/c")})
+	task.progress = jobstate.NewSecondaryCollectionProgress(task.saved)
 
 	g, ctx := errgroup.WithContext(context.Background())
 
 	// Submit one batch and nothing else. Its wait has to get going on its own.
-	n, err := task.sendBatches(ctx, g, 1, []batch{b(100, "/a")})
+	n, err := task.sendBatches(ctx, g, 0)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, n)
 
@@ -545,7 +559,7 @@ func TestSendBatchesWaitsFromSubmission(t *testing.T) {
 		t.Fatal("the first job's wait had not started before any further batch was submitted")
 	}
 
-	n, err = task.sendBatches(ctx, g, 1, []batch{b(200, "/b"), b(300, "/c")})
+	n, err = task.sendBatches(ctx, g, 1)
 	assert.NoError(t, err)
 	assert.Equal(t, 2, n)
 	assert.NoError(t, g.Wait())
@@ -560,7 +574,7 @@ func TestCheckBulkInsertJob_Import2PCStates(t *testing.T) {
 		task := newTestBinlogDMLTask(t, collBackup, stream)
 		task.restfulCli = &sequencedRestful{states: []milvus.ImportState{milvus.ImportStateCompleted}}
 
-		err := task.importJob().check(context.Background(), 101)
+		err := task.importJob().check(context.Background(), &jobstate.SecondaryImportProgress{JobID: 101}, "")
 		assert.NoError(t, err)
 		assert.Empty(t, stream.messagesByType(strconv.Itoa(_commitImportMessageType)))
 	})
@@ -574,7 +588,7 @@ func TestCheckBulkInsertJob_Import2PCStates(t *testing.T) {
 		task := newTestBinlogDMLTask(t, collBackup, stream)
 		task.restfulCli = restful
 
-		err := task.importJob().check(context.Background(), 102)
+		err := task.importJob().check(context.Background(), &jobstate.SecondaryImportProgress{JobID: 102}, "")
 		assert.NoError(t, err)
 		assert.Equal(t, 2, restful.calls)
 		assert.Len(t, stream.messagesByType(strconv.Itoa(_commitImportMessageType)), len(vchannels))
@@ -589,7 +603,7 @@ func TestCheckBulkInsertJob_Import2PCStates(t *testing.T) {
 		task := newTestBinlogDMLTask(t, collBackup, stream)
 		task.restfulCli = restful
 
-		err := task.importJob().check(context.Background(), 103)
+		err := task.importJob().check(context.Background(), &jobstate.SecondaryImportProgress{JobID: 103}, "")
 		assert.NoError(t, err)
 		assert.Equal(t, 2, restful.calls)
 		assert.Empty(t, stream.messagesByType(strconv.Itoa(_commitImportMessageType)))
@@ -602,7 +616,7 @@ func TestSendImportMsg_DisablesAutoCommit(t *testing.T) {
 	stream := &recordingStream{}
 	task := newTestBinlogDMLTask(t, collBackup, stream)
 
-	_, err := task.sendImportMsg(context.Background(), 1, batch{
+	err := task.sendImportMsg(context.Background(), 123, 1, batch{
 		timestamp:      100,
 		storageVersion: 2,
 		partitionDirs:  []partitionDir{{insertLogDir: "/insert"}},
@@ -681,6 +695,7 @@ func TestExecute_Import2PCPreservesPhaseAndTimestampOrdering(t *testing.T) {
 	task := newTestBinlogDMLTask(t, collBackup, stream)
 	task.restfulCli = &perJobSequencedRestful{}
 
+	prepareTestBinlogPlan(t, task)
 	err := task.Execute(context.Background())
 	assert.NoError(t, err)
 
@@ -789,4 +804,19 @@ func TestWaitBulkInsertStateUnknownJob(t *testing.T) {
 		assert.Error(t, err)
 		assert.Contains(t, err.Error(), "bulk insert failed")
 	})
+}
+
+func prepareTestBinlogPlan(t *testing.T, task *collBinlogDMLTask) {
+	t.Helper()
+	plan, err := task.plan(t.Context())
+	require.NoError(t, err)
+	task.saved = plan
+	task.progress = jobstate.NewSecondaryCollectionProgress(plan)
+}
+
+func TestBinlogExecuteRequiresPreparedPlanAndProgress(t *testing.T) {
+	task := &collBinlogDMLTask{logger: zap.NewNop(), collBackup: &backuppb.CollectionBackupInfo{CollectionId: 42}}
+	assert.ErrorContains(t, task.Execute(t.Context()), "collection 42")
+	task.saved = &restoreplan.SecondaryCollection{}
+	assert.ErrorContains(t, task.Execute(t.Context()), "collection 42")
 }

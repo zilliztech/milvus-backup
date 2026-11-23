@@ -19,6 +19,7 @@ type secondaryOption struct {
 
 	sourceClusterID string
 	targetClusterID string
+	enableResume    bool
 }
 
 func (o *secondaryOption) addCmd(cmd *cobra.Command) {
@@ -26,6 +27,7 @@ func (o *secondaryOption) addCmd(cmd *cobra.Command) {
 
 	cmd.Flags().StringVarP(&o.sourceClusterID, "source_cluster_id", "", "", "source cluster id")
 	cmd.Flags().StringVarP(&o.targetClusterID, "target_cluster_id", "", "", "target cluster id")
+	cmd.Flags().BoolVar(&o.enableResume, "enable_resume", false, "retain failed restore state for Resume")
 }
 
 func (o *secondaryOption) validate() error {
@@ -47,13 +49,18 @@ func (o *secondaryOption) toRequest() app.RestoreSecondaryRequest {
 
 		SourceClusterID: o.sourceClusterID,
 		TargetClusterID: o.targetClusterID,
+		EnableResume:    o.enableResume,
 	}
 }
 
 func (o *secondaryOption) run(cmd *cobra.Command, params *cfg.Config) error {
 	ctx := context.Background()
 	store := jobstate.Default()
-	job, err := app.NewRestoreSecondaryJob(ctx, params, store, o.toRequest())
+	req := o.toRequest()
+	if o.enableResume {
+		cmd.Println("restore ID: " + req.TaskID)
+	}
+	job, err := app.NewRestoreSecondaryJob(ctx, params, store, req)
 	if err != nil {
 		return fmt.Errorf("restore: new restore secondary job: %w", err)
 	}
@@ -63,7 +70,7 @@ func (o *secondaryOption) run(cmd *cobra.Command, params *cfg.Config) error {
 	if err != nil {
 		return fmt.Errorf("restore: wait restore secondary job: %w", err)
 	}
-	if status.State == jobstate.RestoreStateFail {
+	if status.Failed() {
 		return fmt.Errorf("restore: run restore secondary job: %s", status.ErrorMessage)
 	}
 

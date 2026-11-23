@@ -29,7 +29,9 @@ func onlyJob(t *testing.T, coll RestoreCollStatus) RestoreJobStatus {
 // are renderings over them, pinned at the transport edge (core/apiv1).
 func TestRestoreCollTask_Snapshot(t *testing.T) {
 	newCollTracker := func() *RestoreCollTracker {
-		return NewStore().AddRestoreTask("task-1").NewCollTracker(collref.New("db1", "coll1"), 100)
+		restoreTracker, addErr := NewStore().AddRestoreTask("task-1", false)
+		require.NoError(t, addErr)
+		return restoreTracker.NewCollTracker(collref.New("db1", "coll1"), 100)
 	}
 
 	t.Run("RegisteredOnlyHasNoHalves", func(t *testing.T) {
@@ -83,7 +85,8 @@ func TestRestoreCollTask_Snapshot(t *testing.T) {
 
 func TestRestoreTracker(t *testing.T) {
 	t.Run("JobLifecycle", func(t *testing.T) {
-		tracker := NewStore().AddRestoreTask("task-1")
+		tracker, addErr := NewStore().AddRestoreTask("task-1", false)
+		require.NoError(t, addErr)
 
 		assert.Equal(t, RestoreStateInitial, tracker.Snapshot().State)
 
@@ -100,7 +103,8 @@ func TestRestoreTracker(t *testing.T) {
 	})
 
 	t.Run("SnapshotIsDeadData", func(t *testing.T) {
-		tracker := NewStore().AddRestoreTask("task-1")
+		tracker, addErr := NewStore().AddRestoreTask("task-1", false)
+		require.NoError(t, addErr)
 		coll := tracker.NewCollTracker(collref.New("db1", "coll1"), 100)
 		job := coll.NewJob(100)
 		job.Bind("job-1")
@@ -115,7 +119,9 @@ func TestRestoreTracker(t *testing.T) {
 	})
 
 	t.Run("DDLHandleMintsOnce", func(t *testing.T) {
-		coll := NewStore().AddRestoreTask("task-1").NewCollTracker(collref.New("db1", "coll1"), 100)
+		restoreTracker, addErr := NewStore().AddRestoreTask("task-1", false)
+		require.NoError(t, addErr)
+		coll := restoreTracker.NewCollTracker(collref.New("db1", "coll1"), 100)
 		coll.DDL().SetExecuting()
 		// a second handle to the same half writes the same node
 		coll.DDL().SetSuccess()
@@ -131,7 +137,8 @@ func TestStore_GetRestoreTask(t *testing.T) {
 	_, err := store.GetRestoreTask("unknown")
 	assert.ErrorIs(t, err, ErrTaskNotFound)
 
-	tracker := store.AddRestoreTask("task-1")
+	tracker, addErr := store.AddRestoreTask("task-1", false)
+	require.NoError(t, addErr)
 	tracker.NewCollTracker(collref.New("db1", "coll1"), 100).DDL().SetSuccess()
 
 	snap, err := store.GetRestoreTask("task-1")

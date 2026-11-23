@@ -295,7 +295,8 @@ func TestRenderRestore(t *testing.T) {
 
 	t.Run("SuccessSettlesFromSnapshots", func(t *testing.T) {
 		store := jobstate.NewStore()
-		tracker := store.AddRestoreTask("t1")
+		tracker, addErr := store.AddRestoreTask("t1", false)
+		require.NoError(t, addErr)
 		collRef := collref.New("db1", "coll1")
 		coll := tracker.NewCollTracker(collRef, 100)
 
@@ -335,7 +336,8 @@ func TestRenderRestore(t *testing.T) {
 
 	t.Run("FailureCarriesMessage", func(t *testing.T) {
 		store := jobstate.NewStore()
-		tracker := store.AddRestoreTask("t2")
+		tracker, addErr := store.AddRestoreTask("t2", false)
+		require.NoError(t, addErr)
 		tracker.SetExecuting()
 		tracker.SetFail(errors.New("boom"))
 
@@ -347,7 +349,8 @@ func TestRenderRestore(t *testing.T) {
 
 	t.Run("NoBarsBeforeFirstPoll", func(t *testing.T) {
 		store := jobstate.NewStore()
-		tracker := store.AddRestoreTask("t3")
+		tracker, addErr := store.AddRestoreTask("t3", false)
+		require.NoError(t, addErr)
 		tracker.SetFail(errors.New("boom"))
 
 		// The job settled before the renderer's first poll, so no bar is
@@ -366,7 +369,8 @@ func TestRenderRestore(t *testing.T) {
 
 	t.Run("ContextCancelAborts", func(t *testing.T) {
 		store := jobstate.NewStore()
-		tracker := store.AddRestoreTask("t4")
+		tracker, addErr := store.AddRestoreTask("t4", false)
+		require.NoError(t, addErr)
 		tracker.SetExecuting()
 
 		ctx, cancel := context.WithCancel(context.Background())
@@ -385,7 +389,8 @@ func TestRenderRestoreEmitsFrames(t *testing.T) {
 	p := mpb.New(mpb.WithOutput(&buf), mpb.WithAutoRefresh())
 
 	store := jobstate.NewStore()
-	tracker := store.AddRestoreTask("frames")
+	tracker, addErr := store.AddRestoreTask("frames", false)
+	require.NoError(t, addErr)
 	collRef := collref.New("db1", "coll1")
 	coll := tracker.NewCollTracker(collRef, 100)
 

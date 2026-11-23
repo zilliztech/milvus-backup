@@ -4,57 +4,13 @@ import (
 	"context"
 	"fmt"
 
-	"go.uber.org/zap"
-
 	"github.com/zilliztech/milvus-backup/core/restore/secondary"
-	"github.com/zilliztech/milvus-backup/core/tasklet"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
-	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
-// RestoreSecondaryJob is one registered secondary-restore job, ready to
-// execute. A secondary restore replays the source cluster's DDL verbatim
-// under the target cluster's id. Registration happens in
-// NewRestoreSecondaryJob, synchronously; running is Run, exactly as on
-// RestoreJob.
-type RestoreSecondaryJob struct {
-	// task is the restore run itself, held as the shared tasklet interface for
-	// the same reason RestoreJob holds it.
-	task tasklet.Tasklet
-
-	// tracker is the job's handle on its own state: the task settles it before
-	// the run returns, and Wait reads the settlement through it.
-	tracker *jobstate.RestoreTracker
-
-	// done closes when the run settles. Wait selects on it.
-	done chan struct{}
-}
-
-var _ AsyncJob[jobstate.RestoreStatus] = (*RestoreSecondaryJob)(nil)
-
-// Run releases the job into the background; see RestoreJob.Run.
-func (j *RestoreSecondaryJob) Run(ctx context.Context) { go j.run(ctx) }
-
-// run is the job's whole body; see RestoreJob.run.
-func (j *RestoreSecondaryJob) run(ctx context.Context) {
-	defer close(j.done)
-
-	if err := j.task.Execute(ctx); err != nil {
-		log.Error("restore secondary task fail", zap.Error(err))
-	}
-}
-
-// Wait blocks until a Run settles; see RestoreJob.Wait.
-func (j *RestoreSecondaryJob) Wait(ctx context.Context) (jobstate.RestoreStatus, error) {
-	select {
-	case <-ctx.Done():
-		return jobstate.RestoreStatus{}, ctx.Err()
-	case <-j.done:
-		return j.tracker.Snapshot(), nil
-	}
-}
+type RestoreSecondaryJob = RestoreJob
 
 // RestoreSecondaryRequest selects one secondary restore.
 type RestoreSecondaryRequest struct {
@@ -67,6 +23,7 @@ type RestoreSecondaryRequest struct {
 	SourceClusterID string
 	// TargetClusterID is the cluster the DDL is replayed under.
 	TargetClusterID string
+	EnableResume    bool
 }
 
 // NewRestoreSecondaryJob creates both storage clients from the config and
@@ -102,6 +59,7 @@ func newRestoreSecondaryJob(ctx context.Context, params *cfg.Config, store *jobs
 
 		SourceClusterID: req.SourceClusterID,
 		TargetClusterID: req.TargetClusterID,
+		EnableResume:    req.EnableResume,
 
 		Backup:        backup,
 		Params:        params,
@@ -115,9 +73,5 @@ func newRestoreSecondaryJob(ctx context.Context, params *cfg.Config, store *jobs
 		return nil, fmt.Errorf("app: new restore task: %w", err)
 	}
 
-	return &RestoreSecondaryJob{
-		task:    task,
-		tracker: task.Tracker(),
-		done:    make(chan struct{}),
-	}, nil
+	return &RestoreSecondaryJob{execute: task.ExecuteWithResult, done: make(chan struct{})}, nil
 }

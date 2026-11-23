@@ -191,6 +191,8 @@ enum RestoreTaskStateCode {
   SUCCESS = 2;
   FAIL = 3;
   TIMEOUT = 4;
+  FAILED_CLEANUP_PENDING = 5;
+  FAILED_CLEANED = 6;
 }
 
 // copied from milvus data_coord.proto

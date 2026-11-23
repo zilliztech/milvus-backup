@@ -152,6 +152,33 @@ backup:
   pauseGC: true
 
 restore:
+  # Task state persistence is used by requests that enable Resume.
+  # Server/CLI startup checks read/write/delete access; failure only logs a warning.
+  # See docs/user_guide/restore_resume.md.
+  persistence:
+    # Enable for recovery across server restarts or separate CLI invocations.
+    # Records can contain Milvus and storage credentials and are plaintext by default.
+    # Choose a restricted directory or S3 location and review encryption before enabling.
+    enabled: false
+    type: local # local (default) or s3
+    encryption:
+      enabled: false # encrypt task records in either backend
+      provider: config # config or env (RESTORE_PERSISTENCE_ENCRYPTION_KEY_ID and RESTORE_PERSISTENCE_ENCRYPTION_KEY)
+      config: # used only by the config provider
+        keyID: "" # stable identifier for the master key
+        key: "" # Base64 of 32 random bytes, required when encryption is enabled
+    s3:
+      endpoint: localhost:9000 # host[:port], no scheme; independent of backup.storage
+      region: ""
+      useSSL: true
+      bucket: backup-state # must already exist
+      prefix: restore/
+      accessKeyID: "" # or RESTORE_PERSISTENCE_S3_ACCESS_KEY_ID
+      secretAccessKey: "" # or RESTORE_PERSISTENCE_S3_SECRET_ACCESS_KEY
+      sessionToken: "" # or RESTORE_PERSISTENCE_S3_SESSION_TOKEN
+    local:
+      directory: restore-state # use a persistent volume for cross-process recovery
+
   concurrency:
     # Collection level parallelism to restore
     collections: 2

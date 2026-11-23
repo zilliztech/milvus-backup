@@ -30,20 +30,25 @@ func (p *grpcImportPlanner) planTasks(partitionName string, groups []dirGroup) [
 	var tasks []tasklet.Tasklet
 	for _, g := range groups {
 		for _, dir := range g.dirs {
-			tasks = append(tasks, &importViaGRPCTask{
-				args: p.args,
-
-				partitionName:  partitionName,
-				dir:            dir,
-				timestamp:      g.timestamp,
-				isL0:           g.isL0,
-				storageVersion: g.storageVersion,
-
-				job: p.args.jobs.NewJob(dir.size),
-			})
+			job := p.args.registerImport(partitionName, g, []partitionDir{dir})
+			tasks = append(tasks, newGRPCImportTask(p.args, job, partitionName, g, dir))
 		}
 	}
 	return tasks
+}
+
+func newGRPCImportTask(args importTaskArgs, job *jobstate.RestoreJobTracker, partitionName string, g dirGroup, dir partitionDir) *importViaGRPCTask {
+	return &importViaGRPCTask{
+		args: args,
+
+		partitionName:  partitionName,
+		dir:            dir,
+		timestamp:      g.timestamp,
+		isL0:           g.isL0,
+		storageVersion: g.storageVersion,
+
+		job: job,
+	}
 }
 
 // importViaGRPCTask imports one partition dir through the v1 grpc bulk insert
@@ -72,27 +77,42 @@ func (gt *importViaGRPCTask) Execute(ctx context.Context) error {
 }
 
 func (gt *importViaGRPCTask) execute(ctx context.Context) error {
-	staging := newCopyTask(gt.args)
+	staging := newImportCopyTask(gt.args, gt.job)
 	defer staging.Cleanup(ctx)
+	if _, done := gt.job.Current(); done {
+		return nil
+	}
 
-	dirs, err := staging.Execute(ctx, []partitionDir{gt.dir})
+	submit := func(ctx context.Context) (string, error) {
+		dirs, err := staging.Execute(ctx, []partitionDir{gt.dir})
+		if err != nil {
+			return "", err
+		}
+		id, err := submitImport(ctx, gt.args.jobs.ResumeEnabled(), func(submitCtx context.Context) (int64, error) {
+			return gt.sendImportReq(submitCtx, dirs[0])
+		})
+		return strconv.FormatInt(id, 10), err
+	}
+	id, done, err := startImport(ctx, gt.job, submit, gt.importState)
 	if err != nil {
 		return err
 	}
-	gt.dir = dirs[0]
-
-	jobID, err := gt.sendImportReq(ctx)
+	if done {
+		gt.job.SetCompleted()
+		return nil
+	}
+	n, err := strconv.ParseInt(id, 10, 64)
 	if err != nil {
 		return err
 	}
-
-	return gt.waitImport(ctx, jobID)
+	return gt.waitImport(ctx, n)
 }
 
-func (gt *importViaGRPCTask) sendImportReq(ctx context.Context) (int64, error) {
-	paths := gt.toGrpcPaths(gt.dir)
+func (gt *importViaGRPCTask) sendImportReq(ctx context.Context, dir partitionDir) (int64, error) {
+	paths := gt.toGrpcPaths(dir)
 	gt.args.logger.Info("start bulk insert via grpc", zap.Strings("paths", paths), zap.String("partition", gt.partitionName))
 	in := milvus.GrpcBulkInsertInput{
+		DisableRetry:   gt.args.jobs.ResumeEnabled(),
 		DB:             gt.args.target.DBName(),
 		CollectionName: gt.args.target.CollName(),
 		PartitionName:  gt.partitionName,
@@ -107,29 +127,40 @@ func (gt *importViaGRPCTask) sendImportReq(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("restore: failed to bulk insert via grpc: %w", err)
 	}
-	gt.job.Bind(strconv.FormatInt(jobID, 10))
 	gt.args.logger.Info("create bulk insert via grpc success", zap.Int64("job_id", jobID))
 
 	return jobID, nil
 }
 
+func (gt *importViaGRPCTask) importState(ctx context.Context, id string) (importJobState, error) {
+	jobID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		return importJobState{}, err
+	}
+	s, err := gt.args.grpcCli.GetBulkInsertState(ctx, jobID)
+	if err != nil {
+		return importJobState{}, err
+	}
+	gt.args.logger.Info("bulk insert task state", zap.Int64("jobID", jobID), zap.Any("state", s.State),
+		zap.Any("backup", s.Infos))
+	switch s.State {
+	case commonpb.ImportState_ImportFailed, commonpb.ImportState_ImportFailedAndCleaned:
+		reason := getFailedReason(s.Infos)
+		// The v1 proxy also maps an unrecognized DataCoord state to ImportFailed.
+		if reason == "unknown import job state" {
+			return importJobState{}, fmt.Errorf("restore: unknown import state for job %d", jobID)
+		}
+		return importJobState{}, milvus.ImportFailure(strconv.FormatInt(jobID, 10), reason)
+	case commonpb.ImportState_ImportCompleted:
+		return importJobState{completed: true}, nil
+	default:
+		return importJobState{progress: getProcess(s.Infos)}, nil
+	}
+}
+
 func (gt *importViaGRPCTask) waitImport(ctx context.Context, jobID int64) error {
 	state := func(ctx context.Context) (importJobState, error) {
-		s, err := gt.args.grpcCli.GetBulkInsertState(ctx, jobID)
-		if err != nil {
-			return importJobState{}, err
-		}
-
-		gt.args.logger.Info("bulk insert task state", zap.Int64("jobID", jobID), zap.Any("state", s.State),
-			zap.Any("backup", s.Infos))
-		switch s.State {
-		case commonpb.ImportState_ImportFailed:
-			return importJobState{failedReason: getFailedReason(s.Infos)}, nil
-		case commonpb.ImportState_ImportCompleted:
-			return importJobState{completed: true}, nil
-		default:
-			return importJobState{progress: getProcess(s.Infos)}, nil
-		}
+		return gt.importState(ctx, strconv.FormatInt(jobID, 10))
 	}
 
 	if err := waitImportJob(ctx, gt.args.logger, gt.job, strconv.FormatInt(jobID, 10), state); err != nil {

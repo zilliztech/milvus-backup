@@ -363,6 +363,11 @@ func TestLoadV1Golden(t *testing.T) {
 
 			var b strings.Builder
 			for _, e := range param.Entries(out) {
+				// Persistence did not exist in v1. Its defaults and overrides are
+				// tested separately; keep this historical translation oracle intact.
+				if strings.HasPrefix(e.Name, "Restore.Persistence.") {
+					continue
+				}
 				fmt.Fprintf(&b, "%s\t%s\n", e.Name, e.Value)
 			}
 

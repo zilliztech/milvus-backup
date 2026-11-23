@@ -536,6 +536,9 @@ func withRestoreBackup(stub *stubRestoreFactory) Option {
 			if stub.newErr != nil {
 				return nil, stub.newErr
 			}
+			if stub.job.status.ID == "" {
+				stub.job.status.ID = req.TaskID
+			}
 			return stub.job, nil
 		}
 	}
@@ -569,10 +572,9 @@ func restoreBackup(t *testing.T, s *Server, body string, requestID string) apiv1
 
 func TestHandleRestoreBackup(t *testing.T) {
 	t.Run("SyncRunsTheJob", func(t *testing.T) {
-		job := &stubRestoreJob{}
+		job := &stubRestoreJob{status: newStubRestoreStatus()}
 		stub := &stubRestoreFactory{job: job}
-		gr := &stubGetRestore{status: newStubRestoreStatus()}
-		s := newListTestServer(t, withRestoreBackup(stub), withGetRestore(gr, nil))
+		s := newListTestServer(t, withRestoreBackup(stub))
 
 		resp := restoreBackup(t, s, `{"backup_name":"backup1"}`, "")
 
@@ -580,10 +582,8 @@ func TestHandleRestoreBackup(t *testing.T) {
 		assert.Equal(t, "success", resp.GetMsg())
 		assert.Equal(t, "task-1", resp.Data.Id)
 		assert.Equal(t, 1, stub.calls)
+		assert.False(t, stub.req.Option.EnableResume)
 		assert.Equal(t, int32(1), job.calls.Load())
-		// The view is read through the get-restore usecase, for the same
-		// task id that went to the job factory.
-		assert.Equal(t, stub.req.TaskID, gr.id)
 	})
 
 	t.Run("RejectsInvalidBody", func(t *testing.T) {
@@ -729,6 +729,15 @@ func TestHandleRestoreBackup(t *testing.T) {
 		assert.Equal(t, 1, stub.calls)
 	})
 
+	t.Run("RejectsDuplicateTargetBeforeAsyncAcceptance", func(t *testing.T) {
+		stub := &stubRestoreFactory{newErr: fmt.Errorf("%w db.x", restore.ErrDuplicateTarget)}
+		s := newListTestServer(t, withRestoreBackup(stub))
+		resp := restoreBackup(t, s, `{"backup_name":"backup1","async":true}`, "")
+		assert.Equal(t, backuppb.ResponseCode_Parameter_Error, resp.GetCode())
+		assert.Contains(t, resp.GetMsg(), "duplicate target collection db.x")
+		assert.Nil(t, resp.Data)
+	})
+
 	t.Run("MapsJobBuildErrorToFail", func(t *testing.T) {
 		stub := &stubRestoreFactory{newErr: errors.New("dial timeout")}
 		s := newListTestServer(t, withRestoreBackup(stub))
@@ -744,14 +753,21 @@ func TestHandleRestoreBackup(t *testing.T) {
 		job := &stubRestoreJob{status: jobstate.RestoreStatus{
 			State:        jobstate.RestoreStateFail,
 			ErrorMessage: "bulk insert failed",
+			EnableResume: true,
 		}}
 		stub := &stubRestoreFactory{job: job}
 		s := newListTestServer(t, withRestoreBackup(stub))
 
-		resp := restoreBackup(t, s, `{"backup_name":"backup1"}`, "rid-1")
+		resp := restoreBackup(t, s, `{"backup_name":"backup1","enableResume":true}`, "rid-1")
 
 		assert.Equal(t, backuppb.ResponseCode_Fail, resp.GetCode())
 		assert.Contains(t, resp.GetMsg(), "bulk insert failed")
+		assert.True(t, stub.req.Option.EnableResume)
+		require.NotNil(t, resp.Data)
+		assert.NotEmpty(t, stub.req.TaskID)
+		assert.Equal(t, stub.req.TaskID, resp.Data.Id)
+		assert.Equal(t, backuppb.RestoreTaskStateCode_FAIL, resp.Data.StateCode)
+		assert.True(t, resp.Data.EnableResume)
 		assert.Equal(t, int32(1), job.calls.Load())
 	})
 
@@ -766,12 +782,12 @@ func TestHandleRestoreBackup(t *testing.T) {
 		assert.Contains(t, resp.GetMsg(), "context deadline exceeded")
 	})
 
-	t.Run("MapsGetRestoreErrorToFail", func(t *testing.T) {
+	t.Run("AsyncMapsGetRestoreErrorToFail", func(t *testing.T) {
 		job := &stubRestoreJob{}
 		stub := &stubRestoreFactory{job: job}
 		s := newListTestServer(t, withRestoreBackup(stub), withGetRestore(&stubGetRestore{executeErr: errors.New("task mgr closed")}, nil))
 
-		resp := restoreBackup(t, s, `{"backup_name":"backup1"}`, "rid-1")
+		resp := restoreBackup(t, s, `{"backup_name":"backup1","async":true}`, "rid-1")
 
 		assert.Equal(t, backuppb.ResponseCode_Fail, resp.GetCode())
 		assert.Contains(t, resp.GetMsg(), "task mgr closed")
@@ -836,10 +852,9 @@ func restoreSecondary(t *testing.T, s *Server, body string, requestID string) ap
 
 func TestHandleRestoreSecondary(t *testing.T) {
 	t.Run("SyncRunsTheJob", func(t *testing.T) {
-		job := &stubRestoreJob{}
+		job := &stubRestoreJob{status: newStubRestoreStatus()}
 		stub := &stubRestoreSecondaryFactory{job: job}
-		gr := &stubGetRestore{status: newStubRestoreStatus()}
-		s := newListTestServer(t, withRestoreSecondary(stub), withGetRestore(gr, nil))
+		s := newListTestServer(t, withRestoreSecondary(stub))
 
 		resp := restoreSecondary(t, s, `{"backup_name":"backup1","sourceClusterID":"src","targetClusterID":"dst"}`, "")
 
@@ -851,9 +866,7 @@ func TestHandleRestoreSecondary(t *testing.T) {
 		// The request id doubles as the restore task id.
 		assert.NotEmpty(t, resp.GetRequestId())
 		assert.Equal(t, resp.GetRequestId(), stub.req.TaskID)
-		// The view is read through the get-restore usecase, for the task id
-		// the request id doubles as.
-		assert.Equal(t, stub.req.TaskID, gr.id)
+		assert.False(t, stub.req.EnableResume)
 	})
 
 	t.Run("RejectsMissingClusterIDsWithoutBuildingAJob", func(t *testing.T) {
@@ -924,10 +937,11 @@ func TestHandleRestoreSecondary(t *testing.T) {
 		stub := &stubRestoreSecondaryFactory{job: job}
 		s := newListTestServer(t, withRestoreSecondary(stub), withGetRestore(&stubGetRestore{status: newStubRestoreStatus()}, nil))
 
-		resp := restoreSecondary(t, s, `{"backup_name":"backup1","sourceClusterID":"src","targetClusterID":"dst","async":true}`, "rid-1")
+		resp := restoreSecondary(t, s, `{"backup_name":"backup1","sourceClusterID":"src","targetClusterID":"dst","async":true,"enableResume":true}`, "rid-1")
 
 		assert.Equal(t, backuppb.ResponseCode_Success, resp.GetCode())
 		assert.Equal(t, "restore backup is executing asynchronously", resp.GetMsg())
+		assert.True(t, stub.req.EnableResume)
 		assert.Eventually(t, func() bool { return job.calls.Load() == 1 }, time.Second, 10*time.Millisecond)
 	})
 }

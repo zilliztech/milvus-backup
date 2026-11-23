@@ -330,6 +330,7 @@ type RestoreConcurrencyConfig struct {
 }
 
 type RestoreConfig struct {
+	Persistence PersistenceConfig `json:"-"` // Store startup settings, excluded from persisted task plans.
 	Concurrency RestoreConcurrencyConfig
 
 	// MaxSegmentsPerImportJob caps how many segments are merged into one import
@@ -342,6 +343,7 @@ type RestoreConfig struct {
 
 func newRestoreConfig() RestoreConfig {
 	return RestoreConfig{
+		Persistence: newPersistenceConfig(),
 		Concurrency: RestoreConcurrencyConfig{
 			Collections: param.Value[int]{Default: 2, Keys: []string{"restore.concurrency.collections"}},
 			// Should be less than the Milvus dataCoord.import.maxImportJobNum.
@@ -354,7 +356,7 @@ func newRestoreConfig() RestoreConfig {
 }
 
 func (c *RestoreConfig) Resolve(s *param.Source) error {
-	return param.Resolve(s, &c.Concurrency.Collections, &c.Concurrency.ImportJobs, &c.MaxSegmentsPerImportJob, &c.KeepTempFiles)
+	return param.Resolve(s, &c.Persistence, &c.Concurrency.Collections, &c.Concurrency.ImportJobs, &c.MaxSegmentsPerImportJob, &c.KeepTempFiles)
 }
 
 // TransferConfig is the object transfer policy shared by backup, restore,

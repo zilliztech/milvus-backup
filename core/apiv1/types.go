@@ -157,6 +157,8 @@ type RestoreSecondaryRequest struct {
 	// Async or not: return after the job is registered instead of waiting for
 	// it to settle.
 	Async bool `json:"async,omitempty"`
+	// Enable Resume for this restore and retain staged binlogs on failure.
+	EnableResume bool `json:"enableResume,omitempty"`
 	// Path, overriding the config for this call.
 	Path string `json:"path,omitempty"`
 }
@@ -182,6 +184,8 @@ type RestoreBackupRequest struct {
 	CollectionRenames map[string]string `json:"collection_renames,omitempty"`
 	// Execute asynchronously: return after the job is registered.
 	Async bool `json:"async,omitempty"`
+	// Enable Resume for this restore and retain staged binlogs on failure.
+	EnableResume bool `json:"enableResume,omitempty"`
 	// Bucket name; with path, overrides the config for this call.
 	BucketName string `json:"bucket_name,omitempty"`
 	// Path; with bucket_name, overrides the config for this call.
@@ -391,6 +395,8 @@ func (r *RestoreBackupResponse) GetCode() backuppb.ResponseCode { return r.Code 
 func (r *RestoreBackupResponse) GetMsg() string                 { return r.Msg }
 
 type RestoreBackupTaskResponse struct {
+	// Whether Resume was enabled for this task at registration.
+	EnableResume bool                          `json:"enableResume,omitempty"`
 	Id           string                        `json:"id,omitempty"`
 	StateCode    backuppb.RestoreTaskStateCode `json:"state_code"`
 	ErrorMessage string                        `json:"errorMessage,omitempty"`
@@ -399,6 +405,11 @@ type RestoreBackupTaskResponse struct {
 	Progress     int32                         `json:"progress"`
 
 	CollectionRestoreTasks []*RestoreCollectionTaskResponse `json:"collection_restore_tasks,omitempty"`
+}
+
+type RestoreControlRequest struct {
+	ID        string `json:"id"`
+	RequestID string `json:"requestId,omitempty"`
 }
 
 type RestoreCollectionTaskResponse struct {

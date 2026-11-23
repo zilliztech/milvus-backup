@@ -21,6 +21,10 @@ import (
 
 	"github.com/zilliztech/milvus-backup/core/restore/conv"
 
+	"maps"
+
+	"google.golang.org/protobuf/protoadapt"
+
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/core/tasklet"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
@@ -29,6 +33,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/meta"
+	"github.com/zilliztech/milvus-backup/internal/restoreplan"
 	"github.com/zilliztech/milvus-backup/internal/snapshotbundle"
 	"github.com/zilliztech/milvus-backup/internal/snapshotsource"
 	"github.com/zilliztech/milvus-backup/internal/storage"
@@ -39,6 +44,7 @@ type TaskArgs struct {
 
 	SourceClusterID string
 	TargetClusterID string
+	EnableResume    bool
 
 	Backup *backuppb.BackupInfo
 
@@ -59,7 +65,10 @@ type TaskArgs struct {
 }
 
 type Task struct {
-	args TaskArgs
+	plan           *restoreplan.Secondary
+	progress       *jobstate.SecondaryProgress
+	targetChannels map[string]string
+	args           TaskArgs
 
 	// snapSource is where the target reads a snapshot backup's bundles from,
 	// and snapLayouts is what the preflight read of every bundle learned, keyed
@@ -79,10 +88,14 @@ type Task struct {
 }
 
 func NewTask(args TaskArgs) (*Task, error) {
+	tracker, err := args.Store.AddRestoreTask(args.TaskID, args.EnableResume)
+	if err != nil {
+		return nil, err
+	}
 	return &Task{
 		args: args,
 
-		tracker: args.Store.AddRestoreTask(args.TaskID),
+		tracker: tracker,
 
 		logger: log.With(zap.String("task_id", args.TaskID)),
 	}, nil
@@ -123,89 +136,103 @@ var _ tasklet.Tasklet = (*Task)(nil)
 func (t *Task) Tracker() *jobstate.RestoreTracker { return t.tracker }
 
 func (t *Task) Execute(ctx context.Context) error {
-	// Check before any client is created or any DDL is broadcast, so a backup
-	// that cannot produce a matching secondary is rejected before it leaves a
-	// half-created collection behind.
-	if err := checkIndexExtra(t.args.Backup); err != nil {
-		t.tracker.SetFail(err)
-		return err
-	}
+	_, err := t.ExecuteWithResult(ctx)
+	return err
+}
 
+func (t *Task) ExecuteWithResult(ctx context.Context) (jobstate.RestoreStatus, error) {
+	if !t.tracker.Start() {
+		return jobstate.RestoreStatus{}, jobstate.ErrRestoreConflict
+	}
+	err := t.run(ctx)
+	return t.tracker.Finish(err), err
+}
+
+func (t *Task) run(ctx context.Context) error {
+	if t.plan == nil {
+		if t.args.Backup == nil {
+			return fmt.Errorf("secondary: missing backup metadata")
+		}
+		if err := checkIndexExtra(t.args.Backup); err != nil {
+			return err
+		}
+	}
 	defer t.closeClients()
 	if err := t.initClients(); err != nil {
-		// Client construction fails before the job has a state to run in, but
-		// the job still has to settle: a caller waiting on the store must not
-		// be left watching a task that is never going to move again.
-		t.tracker.SetFail(err)
 		return err
 	}
+	if t.plan == nil {
+		if t.tracker.ResumeEnabled() {
+			t.args.Backup = protoadapt.MessageV1Of(proto.Clone(protoadapt.MessageV2Of(t.args.Backup))).(*backuppb.BackupInfo)
+		}
+		if err := t.prepare(ctx); err != nil {
+			return err
+		}
+	} else if err := t.checkTargetReady(ctx); err != nil {
+		return err
+	}
+	if err := t.validatePreparedProgress(); err != nil {
+		return err
+	}
+	t.streamCli = milvus.NewResumedStreamClient(t.args.SourceClusterID, t.args.TaskID, t.args.Backup.GetPhysicalChannelNames(), t.plan.SourceWAL, t.grpc, t.progress.StreamCheckpoint)
+	if err := t.runDBTasks(ctx); err != nil {
+		return fmt.Errorf("secondary: run database tasks: %w", err)
+	}
+	if err := t.runCollTasks(ctx); err != nil {
+		return fmt.Errorf("secondary: run collection tasks: %w", err)
+	}
+	if t.progress.StreamCheckpoint == nil || !t.progress.StreamCheckpoint.Sent("rbac") {
+		if err := t.sendRBACMsg(ctx); err != nil {
+			return fmt.Errorf("secondary: send rbac msg: %w", err)
+		}
+	}
+	if err := t.sendFlushAll(ctx); err != nil {
+		return err
+	}
+	if err := t.streamCli.WaitConfirm(ctx); err != nil {
+		return err
+	}
+	return t.verifyRestored(ctx)
+}
 
-	t.tracker.SetExecuting()
+func (t *Task) validatePreparedProgress() error {
+	if t.progress == nil {
+		return fmt.Errorf("secondary: missing restore progress for task %s", t.args.TaskID)
+	}
+	if t.tracker.ResumeEnabled() && t.progress.StreamCheckpoint == nil {
+		return fmt.Errorf("secondary: missing stream checkpoint for task %s", t.args.TaskID)
+	}
+	for _, coll := range t.args.Backup.GetCollectionBackups() {
+		id := coll.GetCollectionId()
+		if t.plan.Collections[id] == nil || t.progress.Collections[id] == nil {
+			return fmt.Errorf("secondary: missing plan or progress for collection %d", id)
+		}
+	}
+	return nil
+}
 
+func (t *Task) prepare(ctx context.Context) error {
 	if err := t.checkFormatSupport(ctx); err != nil {
-		t.tracker.SetFail(err)
 		return err
 	}
 
 	if err := t.checkBackupHasFullMeta(); err != nil {
-		t.tracker.SetFail(err)
 		return err
 	}
 
 	if err := t.checkTargetReady(ctx); err != nil {
-		t.tracker.SetFail(err)
 		return err
 	}
 
 	if err := t.checkTargetIsUnused(ctx); err != nil {
-		t.tracker.SetFail(err)
 		return err
 	}
 
 	if err := t.checkSnapshotBundles(ctx); err != nil {
-		t.tracker.SetFail(err)
 		return err
 	}
 
-	pchs := t.args.Backup.GetPhysicalChannelNames()
-	walName, err := sourceWALName(t.args.Backup)
-	if err != nil {
-		t.tracker.SetFail(err)
-		return err
-	}
-	t.streamCli = milvus.NewStreamClient(t.args.SourceClusterID, t.args.TaskID, pchs, walName, t.grpc)
-
-	if err := t.runDBTasks(ctx); err != nil {
-		t.tracker.SetFail(err)
-		return fmt.Errorf("secondary: run database tasks: %w", err)
-	}
-
-	if err := t.runCollTasks(ctx); err != nil {
-		t.tracker.SetFail(err)
-		return fmt.Errorf("secondary: run collection tasks: %w", err)
-	}
-
-	if err := t.sendRBACMsg(ctx); err != nil {
-		t.tracker.SetFail(err)
-		return fmt.Errorf("secondary: send rbac msg: %w", err)
-	}
-
-	if err := t.sendFlushAll(ctx); err != nil {
-		t.tracker.SetFail(err)
-		return fmt.Errorf("secondary: send flush all: %w", err)
-	}
-
-	t.logger.Info("wait confirm")
-	t.streamCli.WaitConfirm()
-
-	if err := t.verifyRestored(ctx); err != nil {
-		t.tracker.SetFail(err)
-		return err
-	}
-
-	t.tracker.SetSuccess()
-	t.logger.Info("restore done")
-	return nil
+	return t.savePlan(ctx)
 }
 
 // checkFormatSupport refuses a backup whose data this restore cannot replay,
@@ -332,6 +359,7 @@ func (t *Task) checkTargetReady(ctx context.Context) error {
 		return fmt.Errorf("secondary: target %q has no pchannels in its replicate configuration; configure the target as a secondary before restoring", t.args.TargetClusterID)
 	}
 
+	mapping := make(map[string]string, len(pchannels))
 	for _, pchannel := range pchannels {
 		resp, err := t.grpc.GetReplicateInfo(ctx, t.args.SourceClusterID, pchannel)
 		if err != nil {
@@ -344,14 +372,23 @@ func (t *Task) checkTargetReady(ctx context.Context) error {
 		if checkpoint.GetClusterId() != t.args.SourceClusterID {
 			return fmt.Errorf("secondary: target channel %s has source cluster %q, expected %q", pchannel, checkpoint.GetClusterId(), t.args.SourceClusterID)
 		}
-		if tick := checkpoint.GetTimeTick(); tick != 0 {
+		sourceChannel := checkpoint.GetPchannel()
+		mapping[pchannel] = sourceChannel
+		if t.plan != nil {
+			if err := t.progress.StreamCheckpoint.ValidatePosition(sourceChannel, checkpoint.GetTimeTick()); err != nil {
+				return err
+			}
+		} else if tick := checkpoint.GetTimeTick(); tick != 0 {
 			return fmt.Errorf("secondary: target %q already has a replicate checkpoint (%s is at time tick %d); "+
 				"CDC or an earlier restore has advanced it. Restore messages start at time tick 1 and may be discarded. "+
 				"Deploy a new secondary and keep CDC stopped until restore completes", t.args.TargetClusterID, pchannel, tick)
 		}
 	}
 
-	t.logger.Info("all target replicate checkpoints are at zero", zap.Int("pchannels", len(pchannels)))
+	if t.plan != nil && !maps.Equal(mapping, t.plan.TargetChannels) {
+		return fmt.Errorf("secondary: source/target channel mapping changed since restore began")
+	}
+	t.targetChannels = mapping
 	return nil
 }
 
@@ -511,6 +548,9 @@ func (t *Task) pchTS() (map[string]uint64, error) {
 			return nil, fmt.Errorf("secondary: get tt from flush all msg: %w", err)
 		}
 
+		if t.args.EnableResume && milvus.GetPch(&msg) != pch {
+			return nil, fmt.Errorf("secondary: flush message channel differs from backup channel %s", pch)
+		}
 		pchTS[pch] = ts
 	}
 
@@ -556,22 +596,27 @@ func (t *Task) ddlTaskArgs() ddlTaskArgs {
 }
 
 func (t *Task) runCollTask(ctx context.Context, dbBackup *backuppb.DatabaseBackupInfo, collBackup *backuppb.CollectionBackupInfo, ddlArgs ddlTaskArgs, dml tasklet.Tasklet, loadArgs loadTaskArgs) error {
-	collRef := collref.New(dbBackup.GetDbName(), collBackup.GetCollectionName())
-	collTracker := t.tracker.NewCollTracker(collRef, collBackup.GetSize())
+	collRef := collref.New(collBackup.GetDbName(), collBackup.GetCollectionName())
+	collTracker := t.tracker.TrackerForCollection(collRef)
 	ddlTracker := collTracker.DDL()
 	// The copy half covers everything past the schema: the create wait, the
 	// data replay and the load. It moves bytes through this process on the
 	// binlog path and hands the target a bundle to read on the snapshot path,
 	// so there is no server-side job id to bind either way.
-	copyJob := collTracker.NewJob(collBackup.GetSize())
-
-	ddlTracker.SetExecuting()
-	ddlTask := newCollDDLTask(ddlArgs, dbBackup, collBackup)
-	if err := ddlTask.Execute(ctx); err != nil {
-		ddlTracker.SetFail(err)
-		return fmt.Errorf("secondary: execute collection ddl task: %w", err)
+	copyJob := collTracker.TrackerForSingleJob()
+	if _, done := copyJob.Current(); done {
+		return nil
 	}
-	ddlTracker.SetSuccess()
+
+	if ddlTracker.State() != jobstate.RestoreDDLSuccess {
+		ddlTracker.SetExecuting()
+		ddlTask := newCollDDLTask(ddlArgs, dbBackup, collBackup)
+		if err := ddlTask.Execute(ctx); err != nil {
+			ddlTracker.SetFail(err)
+			return fmt.Errorf("secondary: execute collection ddl task: %w", err)
+		}
+		ddlTracker.SetSuccess()
+	}
 
 	copyJob.SetRunning()
 	if err := t.waitCollCreated(ctx, collRef, collBackup.GetCollectionId()); err != nil {
@@ -664,6 +709,18 @@ func (t *Task) runCollTasks(ctx context.Context) error {
 			dml, err := newDML(coll)
 			if err != nil {
 				return fmt.Errorf("secondary: create collection dml task: %w", err)
+			}
+			id := coll.GetCollectionId()
+			progress := t.progress.Collections[id]
+			switch task := dml.(type) {
+			case *collBinlogDMLTask:
+				task.enableResume = t.tracker.ResumeEnabled()
+				task.saved = t.plan.Collections[id]
+				task.progress = progress
+				task.streamCheckpoint = t.progress.StreamCheckpoint
+			case *collSnapDMLTask:
+				task.op = &progress.SnapshotImport
+				task.streamCheckpoint = t.progress.StreamCheckpoint
 			}
 			return t.runCollTask(subCtx, dbNameBackup[coll.GetDbName()], coll, ddlArgs, dml, loadArgs)
 		})
@@ -771,7 +828,7 @@ func (t *Task) checkSnapshotBundles(ctx context.Context) error {
 
 func (t *Task) sendRBACMsg(ctx context.Context) error {
 	t.logger.Info("send rbac msg")
-	curRBAC, err := t.grpc.BackupRBAC(context.Background())
+	curRBAC, err := t.grpc.BackupRBAC(ctx)
 	if err != nil {
 		return fmt.Errorf("secondary: get current rbac: %w", err)
 	}
@@ -793,7 +850,7 @@ func (t *Task) sendRBACMsg(ctx context.Context) error {
 		WithBody(&message.RestoreRBACMessageBody{RbacMeta: rbacMeta}).
 		WithBroadcast([]string{t.args.Backup.GetControlChannelName()})
 
-	err = t.streamCli.Send(ctx, func(uint64) []message.MutableMessage {
+	err = t.streamCli.Send(ctx, "rbac", func(uint64) []message.MutableMessage {
 		broadcast := builder.MustBuildBroadcast().WithBroadcastID(rand.Uint64())
 		return broadcast.SplitIntoMutableMessage()
 	})
@@ -818,7 +875,7 @@ func (t *Task) sendFlushAll(ctx context.Context) error {
 			return fmt.Errorf("secondary: unmarshal flush all msg: %w", err)
 		}
 
-		if err := t.streamCli.Forward(ctx, &msg); err != nil {
+		if err := t.streamCli.Forward(ctx, "flush/"+milvus.GetPch(&msg), &msg); err != nil {
 			return fmt.Errorf("secondary: send flush all msg: %w", err)
 		}
 	}

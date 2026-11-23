@@ -16,6 +16,7 @@ import (
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
 func newTestCollDDLTask() *collDDLTask {
@@ -268,6 +269,9 @@ func TestCollDDLTask_createColl(t *testing.T) {
 	t.Run("Normal", func(t *testing.T) {
 		ct := newTestCollDDLTask()
 		ct.target = collref.New("db1", "coll1")
+		restoreTracker, addErr := jobstate.NewStore().AddRestoreTask("job", false)
+		require.NoError(t, addErr)
+		ct.tracker = restoreTracker.NewCollTracker(ct.target, 0).DDL()
 		ct.collBackup = &backuppb.CollectionBackupInfo{
 			Schema: &backuppb.CollectionSchema{
 				Fields: []*backuppb.FieldSchema{{
@@ -323,6 +327,9 @@ func TestCollDDLTask_createColl(t *testing.T) {
 	t.Run("WithCollOverride", func(t *testing.T) {
 		ct := newTestCollDDLTask()
 		ct.target = collref.New("db1", "coll1")
+		restoreTracker, addErr := jobstate.NewStore().AddRestoreTask("job", false)
+		require.NoError(t, addErr)
+		ct.tracker = restoreTracker.NewCollTracker(ct.target, 0).DDL()
 		ct.collOverride = CollOverride{ShardNum: 2, Description: "overridden desc"}
 		ct.collBackup = &backuppb.CollectionBackupInfo{
 			Schema: &backuppb.CollectionSchema{

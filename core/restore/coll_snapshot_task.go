@@ -2,6 +2,7 @@ package restore
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -32,6 +33,7 @@ type collSnapshotTask struct {
 
 	source           snapshotsource.Source
 	dropExist        bool
+	enableResume     bool
 	maxShardNum      int32
 	shardNumOverride int32
 	descOverride     string
@@ -40,10 +42,8 @@ type collSnapshotTask struct {
 	pollInterval time.Duration
 
 	grpcCli milvus.Grpc
-	// job is the collection's single half on the snapshot path: the restore
-	// job Milvus runs plus the fixups after it, minted when the plan was
-	// built. The task settles it.
-	job *jobstate.RestoreJobTracker
+	// tracker records progress for the Milvus restore and local postprocessing.
+	tracker *jobstate.RestoreJobTracker
 
 	logger *zap.Logger
 }
@@ -56,13 +56,14 @@ type collSnapshotTaskArgs struct {
 
 	source           snapshotsource.Source
 	dropExist        bool
+	enableResume     bool
 	maxShardNum      int32
 	shardNumOverride int32
 	descOverride     string
 	skipParams       SkipParams
 
 	grpcCli milvus.Grpc
-	job     *jobstate.RestoreJobTracker
+	tracker *jobstate.RestoreJobTracker
 }
 
 func newCollSnapshotTask(args collSnapshotTaskArgs) *collSnapshotTask {
@@ -81,6 +82,7 @@ func newCollSnapshotTask(args collSnapshotTaskArgs) *collSnapshotTask {
 
 		source:           args.source,
 		dropExist:        args.dropExist,
+		enableResume:     args.enableResume,
 		maxShardNum:      args.maxShardNum,
 		shardNumOverride: args.shardNumOverride,
 		descOverride:     args.descOverride,
@@ -89,7 +91,7 @@ func newCollSnapshotTask(args collSnapshotTaskArgs) *collSnapshotTask {
 		pollInterval: _snapshotPollInterval,
 
 		grpcCli: args.grpcCli,
-		job:     args.job,
+		tracker: args.tracker,
 
 		logger: logger,
 	}
@@ -104,28 +106,71 @@ func (ct *collSnapshotTask) Target() collref.Name { return ct.target }
 // returns, completed when the fixups after the restore have run — and the
 // collection's state derives from it.
 func (ct *collSnapshotTask) Execute(ctx context.Context) error {
+	if _, done := ct.tracker.Current(); done {
+		return nil
+	}
 	if err := ct.privateExecute(ctx); err != nil {
 		ct.logger.Error("restore collection failed", zap.Error(err))
-		ct.job.SetFailed(err)
+		ct.tracker.SetFailed(err)
 		return err
 	}
 
 	ct.logger.Info("restore collection success")
-	ct.job.SetCompleted()
+	ct.tracker.SetCompleted()
 
 	return nil
 }
 
 func (ct *collSnapshotTask) privateExecute(ctx context.Context) error {
 	ct.logger.Info("start restore collection from snapshot")
+	if err := ct.restoreSnapshot(ctx); err != nil {
+		return err
+	}
+	if err := ct.applySkipParams(ctx); err != nil {
+		return err
+	}
+	return ct.applyDescOverride(ctx)
+}
 
+func (ct *collSnapshotTask) restoreSnapshot(ctx context.Context) error {
+	if ct.tracker.SnapshotDataRestored() {
+		return nil
+	}
+	id, done, err := startImport(ctx, ct.tracker, ct.submit, ct.resumeState)
+	if err != nil {
+		return err
+	}
+	if !done {
+		if err := ct.waitRestore(ctx, id); err != nil {
+			return err
+		}
+	}
+	ct.tracker.MarkSnapshotDataRestored()
+	return nil
+}
+
+// Only the initial lookup of an old job can authorize cleanup before replacement.
+// Keep its ID if cleanup fails so the next Resume can check and retry it.
+func (ct *collSnapshotTask) resumeState(ctx context.Context, id string) (importJobState, error) {
+	state, err := ct.restoreState(ctx, id)
+	if !errors.Is(err, milvus.ErrRemoteJobFailed) || !ct.dropExist {
+		return state, err
+	}
+	if dropErr := ct.dropExistedColl(ctx); dropErr != nil {
+		return importJobState{}, dropErr
+	}
+	ct.tracker.MarkSnapshotTargetPrepared()
+	return state, err
+}
+
+func (ct *collSnapshotTask) submit(ctx context.Context) (string, error) {
 	// Milvus creates the collection from the schema in the bundle, so the shard count
 	// cannot be capped here. max_shard_num is only a bound: it changes nothing while it
 	// is not smaller than the bundle's shard count, so only a request that would actually
 	// cap shards is refused.
 	if ct.maxShardNum > 0 {
 		if shardNum := ct.collBackup.GetShardsNum(); shardNum > ct.maxShardNum {
-			return fmt.Errorf("restore: collection has %d shards, exceeding max_shard_num=%d; the snapshot path cannot cap the shard count",
+			return "", fmt.Errorf("restore: collection has %d shards, exceeding max_shard_num=%d; the snapshot path cannot cap the shard count",
 				shardNum, ct.maxShardNum)
 		}
 		ct.logger.Info("max_shard_num does not bind, keeping the bundle's shard count",
@@ -138,7 +183,7 @@ func (ct *collSnapshotTask) privateExecute(ctx context.Context) error {
 	// actually produces, so that alone is allowed through.
 	if ct.shardNumOverride > 0 {
 		if shardNum := ct.collBackup.GetShardsNum(); shardNum != ct.shardNumOverride {
-			return fmt.Errorf("restore: shard_num override is %d, but the collection has %d shards; the snapshot path can neither raise nor lower the shard count",
+			return "", fmt.Errorf("restore: shard_num override is %d, but the collection has %d shards; the snapshot path can neither raise nor lower the shard count",
 				ct.shardNumOverride, shardNum)
 		}
 		ct.logger.Info("shard_num override matches the bundle's shard count",
@@ -147,35 +192,35 @@ func (ct *collSnapshotTask) privateExecute(ctx context.Context) error {
 
 	metadataURI, err := ct.source.MetadataURI(ct.collBackup.GetSnapshotBackup().GetMetadataPath())
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	if err := ct.dropExistedColl(ctx); err != nil {
-		return err
+	if !ct.tracker.SnapshotTargetPrepared() {
+		if err := ct.dropExistedColl(ctx); err != nil {
+			return "", err
+		}
+		ct.tracker.MarkSnapshotTargetPrepared()
 	}
 
-	jobID, err := ct.grpcCli.RestoreExternalSnapshot(ctx, milvus.RestoreExternalSnapshotInput{
+	in := milvus.RestoreExternalSnapshotInput{
 		DB:                   ct.target.DBName(),
 		TargetCollectionName: ct.target.CollName(),
 		SnapshotMetadataURI:  metadataURI,
 		ExternalSpec:         ct.source.ExternalSpec,
+		DisableRetry:         ct.enableResume,
+	}
+	jobID, err := submitImport(ctx, ct.enableResume, func(submitCtx context.Context) (int64, error) {
+		return ct.grpcCli.RestoreExternalSnapshot(submitCtx, in)
 	})
 	if err != nil {
-		return fmt.Errorf("restore: restore external snapshot: %w", err)
+		return "", fmt.Errorf("restore: restore external snapshot: %w", err)
 	}
 	ct.logger.Info("snapshot restore job accepted",
 		zap.Int64("job_id", jobID),
 		zap.String("metadata_uri", metadataURI))
 
-	if err := ct.waitRestore(ctx, jobID); err != nil {
-		return err
-	}
-
-	if err := ct.applySkipParams(ctx); err != nil {
-		return err
-	}
-
-	return ct.applyDescOverride(ctx)
+	id := strconv.FormatInt(jobID, 10)
+	return id, nil
 }
 
 // applySkipParams drops the params the caller asked to skip from the restored collection.
@@ -282,39 +327,57 @@ func (ct *collSnapshotTask) dropExistedColl(ctx context.Context) error {
 	return nil
 }
 
-// waitRestore polls the restore job until it is done, reporting progress on
-// the job half. A job that failed comes back through the info rather than as
-// an error from the state query, so both are checked.
-func (ct *collSnapshotTask) waitRestore(ctx context.Context, jobID int64) error {
+func (ct *collSnapshotTask) restoreState(ctx context.Context, id string) (importJobState, error) {
+	jobID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		return importJobState{}, err
+	}
+	info, err := ct.grpcCli.GetRestoreSnapshotState(ctx, jobID)
+	if err != nil {
+		return importJobState{}, fmt.Errorf("restore: get restore snapshot state: %w", err)
+	}
+
+	ct.tracker.SetProgress(info.GetProgress())
+
+	switch info.GetState() {
+	case milvuspb.RestoreSnapshotState_RestoreSnapshotPending, milvuspb.RestoreSnapshotState_RestoreSnapshotExecuting:
+		return importJobState{progress: int(info.GetProgress())}, nil
+	case milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted:
+		return importJobState{progress: int(info.GetProgress()), completed: true}, nil
+	case milvuspb.RestoreSnapshotState_RestoreSnapshotFailed:
+		// Milvus drops the collection it created if the restore fails before the copy
+		// starts, but a copy that fails partway leaves it in place, and the next
+		// attempt will refuse to restore over it.
+		ct.logger.Error("snapshot restore job failed, the target collection may need to be dropped by hand",
+			zap.Int64("job_id", jobID),
+			zap.String("reason", info.GetReason()))
+		return importJobState{}, fmt.Errorf("restore: %w: snapshot restore job %d failed: %s", milvus.ErrRemoteJobFailed, jobID, info.GetReason())
+	default:
+		return importJobState{}, fmt.Errorf("restore: snapshot job %d has unknown state %s", jobID, info.GetState())
+	}
+}
+
+// waitRestore polls the selected job until it completes or fails.
+func (ct *collSnapshotTask) waitRestore(ctx context.Context, id string) error {
+	jobID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil {
+		return err
+	}
 	ticker := time.NewTicker(ct.pollInterval)
 	defer ticker.Stop()
 
-	ct.job.Bind(strconv.FormatInt(jobID, 10))
-
 	for {
-		info, err := ct.grpcCli.GetRestoreSnapshotState(ctx, jobID)
+		s, err := ct.restoreState(ctx, id)
 		if err != nil {
-			return fmt.Errorf("restore: get restore snapshot state: %w", err)
+			return err
 		}
-
-		ct.job.SetProgress(info.GetProgress())
-
-		switch info.GetState() {
-		case milvuspb.RestoreSnapshotState_RestoreSnapshotCompleted:
+		if s.completed {
 			return nil
-		case milvuspb.RestoreSnapshotState_RestoreSnapshotFailed:
-			// Milvus drops the collection it created if the restore fails before the copy
-			// starts, but a copy that fails partway leaves it in place, and the next
-			// attempt will refuse to restore over it.
-			ct.logger.Error("snapshot restore job failed, the target collection may need to be dropped by hand",
-				zap.Int64("job_id", jobID),
-				zap.String("reason", info.GetReason()))
-			return fmt.Errorf("restore: snapshot restore job %d failed: %s", jobID, info.GetReason())
 		}
 
 		ct.logger.Debug("waiting for snapshot restore",
 			zap.Int64("job_id", jobID),
-			zap.Int32("progress", info.GetProgress()))
+			zap.Int32("progress", int32(s.progress)))
 
 		select {
 		case <-ctx.Done():

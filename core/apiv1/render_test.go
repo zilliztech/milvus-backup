@@ -1,10 +1,12 @@
 package apiv1
 
 import (
+	"encoding/json"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 
 	"github.com/zilliztech/milvus-backup/core/proto/backuppb"
 	"github.com/zilliztech/milvus-backup/internal/collref"
@@ -55,6 +57,22 @@ func TestNewRestoreTaskResp(t *testing.T) {
 
 	assert.Len(t, res.CollectionRestoreTasks, 1)
 	assert.Equal(t, backuppb.RestoreTaskStateCode_INITIAL, res.CollectionRestoreTasks[0].StateCode)
+}
+
+func TestRestoreResponseEnableResume(t *testing.T) {
+	for _, enabled := range []bool{false, true} {
+		response := NewRestoreTaskResp(jobstate.RestoreStatus{State: jobstate.RestoreStateSuccess, EnableResume: enabled})
+		data, err := json.Marshal(response)
+		require.NoError(t, err)
+		var fields map[string]json.RawMessage
+		require.NoError(t, json.Unmarshal(data, &fields))
+		assert.NotContains(t, fields, "resumable")
+		if enabled {
+			assert.Equal(t, "true", string(fields["enableResume"]))
+		} else {
+			assert.NotContains(t, fields, "enableResume")
+		}
+	}
 }
 
 // The collection's state is derived from its halves: nothing has started is
