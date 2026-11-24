@@ -3,6 +3,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"os"
 	"sync"
 
 	"github.com/alibabacloud-go/tea/tea"
@@ -47,12 +48,33 @@ type aliCredProvider struct {
 	cred aliyunCred.Credential
 }
 
+// resolveAliCredConfig chooses the credentials-go Config for IAM auth.
+// When RRSA/OIDC environment variables are set and static env keys are not,
+// select oidc_role_arn explicitly instead of relying on the default chain:
+// credentials-go's DefaultCredentialsProvider sets lastUsedProvider before
+// calling p.GetCredentials() and falls through on error without resetting it,
+// so a transient STS AssumeRoleWithOIDC failure silently falls back to
+// ecs_ram_role (IMDS) and permanently latches that provider on the singleton.
+func resolveAliCredConfig() *aliyunCred.Config {
+	if os.Getenv("ALIBABA_CLOUD_ACCESS_KEY_ID") != "" && os.Getenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET") != "" {
+		return nil
+	}
+	if os.Getenv("ALIBABA_CLOUD_OIDC_TOKEN_FILE") != "" || os.Getenv("ALIBABA_CLOUD_OIDC_PROVIDER_ARN") != "" {
+		return &aliyunCred.Config{Type: new("oidc_role_arn")}
+	}
+	return nil
+}
+
+func newAliyunCredential() (aliyunCred.Credential, error) {
+	return aliyunCred.NewCredential(resolveAliCredConfig())
+}
+
 // newAliCredProvider returns the process-wide aliyun credential provider. One
 // per process, because the credentials-go SDK fetches and refreshes STS tokens
 // per provider instance: one per client would multiply the AssumeRoleWithOIDC
 // traffic by the number of clients and trip the STS rate limit.
 var newAliCredProvider = sync.OnceValues(func() (aws.CredentialsProvider, error) {
-	cred, err := aliyunCred.NewCredential(nil)
+	cred, err := newAliyunCredential()
 	if err != nil {
 		return nil, fmt.Errorf("storage: create aliyun credential: %w", err)
 	}
