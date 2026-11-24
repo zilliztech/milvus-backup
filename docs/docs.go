@@ -21,6 +21,7 @@ const docTemplate = `{
     "paths": {
         "/cleanup_failed_restore": {
             "post": {
+                "description": "Restore Resume is Alpha (experimental). Its HTTP endpoints and request parameters, CLI commands and flags, configuration keys, and persisted state format may change without backward compatibility.",
                 "consumes": [
                     "application/json"
                 ],
@@ -30,7 +31,7 @@ const docTemplate = `{
                 "tags": [
                     "Restore"
                 ],
-                "summary": "Abandon a failed restore and clean its temporary files in one pass",
+                "summary": "Abandon a failed restore and clean its temporary files in one pass (Alpha)",
                 "parameters": [
                     {
                         "description": "Restore identity",
@@ -274,7 +275,7 @@ const docTemplate = `{
         },
         "/restore": {
             "post": {
-                "description": "Submit a request to restore the data from backup",
+                "description": "Submit a request to restore the data from backup. Restore Resume is Alpha (experimental). Its HTTP endpoints and request parameters, CLI commands and flags, configuration keys, and persisted state format may change without backward compatibility.",
                 "consumes": [
                     "application/json"
                 ],
@@ -314,7 +315,7 @@ const docTemplate = `{
         },
         "/restore_secondary": {
             "post": {
-                "description": "Submit a request to restore the data from backup",
+                "description": "Submit a request to restore the data from backup. Restore Resume is Alpha (experimental). Its HTTP endpoints and request parameters, CLI commands and flags, configuration keys, and persisted state format may change without backward compatibility.",
                 "consumes": [
                     "application/json"
                 ],
@@ -354,6 +355,7 @@ const docTemplate = `{
         },
         "/resume_restore": {
             "post": {
+                "description": "Restore Resume is Alpha (experimental). Its HTTP endpoints and request parameters, CLI commands and flags, configuration keys, and persisted state format may change without backward compatibility.",
                 "consumes": [
                     "application/json"
                 ],
@@ -363,7 +365,7 @@ const docTemplate = `{
                 "tags": [
                     "Restore"
                 ],
-                "summary": "Resume the original immutable restore plan from memory or persisted state",
+                "summary": "Resume the original immutable restore plan from memory or persisted state (Alpha)",
                 "parameters": [
                     {
                         "description": "Restore identity",
@@ -776,7 +778,7 @@ const docTemplate = `{
                     "type": "boolean"
                 },
                 "enableResume": {
-                    "description": "Enable Resume for this restore and retain staged binlogs on failure.",
+                    "description": "Enable Restore Resume (Alpha) for this task and retain staged binlogs on failure.",
                     "type": "boolean"
                 },
                 "ezkMapping": {
@@ -901,6 +903,10 @@ const docTemplate = `{
                         "$ref": "#/definitions/apiv1.RestoreCollectionTaskResponse"
                     }
                 },
+                "enableResume": {
+                    "description": "Whether Restore Resume (Alpha) was enabled for this task at registration.",
+                    "type": "boolean"
+                },
                 "end_time": {
                     "type": "integer"
                 },
@@ -912,10 +918,6 @@ const docTemplate = `{
                 },
                 "progress": {
                     "type": "integer"
-                },
-                "enableResume": {
-                    "description": "Whether Resume was enabled for this task at registration.",
-                    "type": "boolean"
                 },
                 "start_time": {
                     "type": "integer"
@@ -1042,7 +1044,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "enableResume": {
-                    "description": "Enable Resume for this restore and retain staged binlogs on failure.",
+                    "description": "Enable Restore Resume (Alpha) for this task and retain staged binlogs on failure.",
                     "type": "boolean"
                 },
                 "path": {

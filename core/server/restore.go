@@ -47,7 +47,7 @@ type restoreJobFactory func(ctx context.Context, params *cfg.Config, req app.Res
 
 // RestoreBackup Restore interface
 // @Summary Restore interface
-// @Description Submit a request to restore the data from backup
+// @Description Submit a request to restore the data from backup. Restore Resume is Alpha (experimental). Its HTTP endpoints and request parameters, CLI commands and flags, configuration keys, and persisted state format may change without backward compatibility.
 // @Tags Restore
 // @Accept application/json
 // @Produce application/json

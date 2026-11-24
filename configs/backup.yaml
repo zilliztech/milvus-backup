@@ -152,6 +152,9 @@ backup:
   pauseGC: true
 
 restore:
+  # Restore Resume is Alpha (experimental). Its HTTP endpoints and request parameters,
+  # CLI commands and flags, configuration keys, and persisted state format may change
+  # without backward compatibility.
   # Task state persistence is used by requests that enable Resume.
   # Server/CLI startup checks read/write/delete access; failure only logs a warning.
   # See docs/user_guide/restore_resume.md.

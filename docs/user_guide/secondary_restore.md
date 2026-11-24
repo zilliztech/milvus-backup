@@ -48,6 +48,8 @@ The check neither blocks CDC nor detects uncommitted replicated transactions. If
 
 ## Resuming a failed secondary restore
 
+Restore Resume is Alpha (experimental). See the [compatibility notice](restore_resume.md).
+
 Set `"enableResume": true` in the original `POST /api/v1/restore_secondary` request. It defaults to false. `GET /api/v1/get_restore?id=<id>` reports `enableResume: true` from registration when enabled. After preflight and batch planning, a failed task can be resumed by sending `{"id":"<id>"}` to `POST /api/v1/resume_restore` using the same persistence location. Its recovery state is held in memory and saved after a prepared attempt fails. See [durable recovery state](restore_resume.md#durable-recovery-state) for storage configuration, CLI use, and the stain marker that blocks replay after an interrupted attempt.
 
 Keep CDC stopped, with earlier replication requests drained, and reserve the target for this restore until verification succeeds or the restore is abandoned. Resume verifies the original source and channel mapping. A channel may be at its last confirmed position or at a position the restore sent but did not hear acknowledged. A position alone cannot identify a competing writer.

@@ -125,7 +125,7 @@ func (o *options) addFlags(cmd *cobra.Command) {
 	cmd.Flags().StringArrayVarP(&o.secondaries, "secondary", "", nil, "secondary REST address and optional raw token, format address[,token], repeated for multiple clusters; token is username:password or an API token, and omitting it inherits milvus.user/password. Every import job is committed two-phase once any secondary is set")
 	cmd.Flags().StringVarP(&o.snapshotSource, "snapshot_source", "", "", "where a snapshot-format restore reads the bundle from: shared (default) sends one complete uri pointed at a single bucket, which the target and every secondary must admit; own_bucket sends a bare object key with no bucket, endpoint or credential, and every cluster reads its own staged copy, so the bundle must be mirrored into each one first; import path only")
 
-	cmd.Flags().BoolVar(&o.enableResume, "enable_resume", false, "retain failed restore state for Resume")
+	cmd.Flags().BoolVar(&o.enableResume, "enable_resume", false, "retain failed restore state for Resume. "+resumeCompatibility)
 
 	// The deprecated bool of the pre-strategy days keeps working so an old
 	// command line restores exactly what it used to: cobra answers every use

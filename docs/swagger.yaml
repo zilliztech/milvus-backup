@@ -274,7 +274,8 @@ definitions:
         description: Drop existing index of target collection before create.
         type: boolean
       enableResume:
-        description: Enable Resume for this restore and retain staged binlogs on failure.
+        description: Enable Restore Resume (Alpha) for this task and retain staged
+          binlogs on failure.
         type: boolean
       ezkMapping:
         additionalProperties:
@@ -370,6 +371,9 @@ definitions:
         items:
           $ref: '#/definitions/apiv1.RestoreCollectionTaskResponse'
         type: array
+      enableResume:
+        description: Whether Restore Resume (Alpha) was enabled for this task at registration.
+        type: boolean
       end_time:
         type: integer
       errorMessage:
@@ -378,9 +382,6 @@ definitions:
         type: string
       progress:
         type: integer
-      enableResume:
-        description: Whether Resume was enabled for this task at registration.
-        type: boolean
       start_time:
         type: integer
       state_code:
@@ -466,7 +467,8 @@ definitions:
         description: Backup name to restore.
         type: string
       enableResume:
-        description: Enable Resume for this restore and retain staged binlogs on failure.
+        description: Enable Restore Resume (Alpha) for this task and retain staged
+          binlogs on failure.
         type: boolean
       path:
         description: Path, overriding the config for this call.
@@ -838,6 +840,9 @@ paths:
     post:
       consumes:
       - application/json
+      description: Restore Resume is Alpha (experimental). Its HTTP endpoints and
+        request parameters, CLI commands and flags, configuration keys, and persisted
+        state format may change without backward compatibility.
       parameters:
       - description: Restore identity
         in: body
@@ -877,6 +882,7 @@ paths:
               type: string
             type: object
       summary: Abandon a failed restore and clean its temporary files in one pass
+        (Alpha)
       tags:
       - Restore
   /create:
@@ -1006,7 +1012,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: Submit a request to restore the data from backup
+      description: Submit a request to restore the data from backup. Restore Resume
+        is Alpha (experimental). Its HTTP endpoints and request parameters, CLI commands
+        and flags, configuration keys, and persisted state format may change without
+        backward compatibility.
       parameters:
       - description: request_id
         in: header
@@ -1032,7 +1041,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: Submit a request to restore the data from backup
+      description: Submit a request to restore the data from backup. Restore Resume
+        is Alpha (experimental). Its HTTP endpoints and request parameters, CLI commands
+        and flags, configuration keys, and persisted state format may change without
+        backward compatibility.
       parameters:
       - description: request_id
         in: header
@@ -1058,6 +1070,9 @@ paths:
     post:
       consumes:
       - application/json
+      description: Restore Resume is Alpha (experimental). Its HTTP endpoints and
+        request parameters, CLI commands and flags, configuration keys, and persisted
+        state format may change without backward compatibility.
       parameters:
       - description: Restore identity
         in: body
@@ -1096,7 +1111,8 @@ paths:
             additionalProperties:
               type: string
             type: object
-      summary: Resume the original immutable restore plan from memory or persisted state
+      summary: Resume the original immutable restore plan from memory or persisted
+        state (Alpha)
       tags:
       - Restore
 swagger: "2.0"

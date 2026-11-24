@@ -12,13 +12,16 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
+const resumeCompatibility = "Restore Resume is Alpha (experimental). Its HTTP endpoints and request parameters, CLI commands and flags, configuration keys, and persisted state format may change without backward compatibility."
+
 func newControlCmd(opt *root.Options, cleanup bool) *cobra.Command {
 	name := "resume"
 	if cleanup {
 		name = "cleanup"
 	}
 	var id string
-	cmd := &cobra.Command{Use: name, Short: name + " a saved restore task", Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
+	summary := name + " a saved restore task (Alpha)"
+	cmd := &cobra.Command{Use: name, Short: summary, Long: summary + ".\n\n" + resumeCompatibility, Args: cobra.NoArgs, RunE: func(cmd *cobra.Command, _ []string) error {
 		opt.InitGlobalVars()
 		store := jobstate.Default()
 		if cleanup {

@@ -27,7 +27,7 @@ func (o *secondaryOption) addCmd(cmd *cobra.Command) {
 
 	cmd.Flags().StringVarP(&o.sourceClusterID, "source_cluster_id", "", "", "source cluster id")
 	cmd.Flags().StringVarP(&o.targetClusterID, "target_cluster_id", "", "", "target cluster id")
-	cmd.Flags().BoolVar(&o.enableResume, "enable_resume", false, "retain failed restore state for Resume")
+	cmd.Flags().BoolVar(&o.enableResume, "enable_resume", false, "retain failed restore state for Resume. "+resumeCompatibility)
 }
 
 func (o *secondaryOption) validate() error {

@@ -1,5 +1,7 @@
 # Resume a failed restore
 
+> **Restore Resume is Alpha (experimental).** Its HTTP endpoints and request parameters, CLI commands and flags, configuration keys, and persisted state format may change without backward compatibility. A newer release may be unable to resume a task saved by an earlier release.
+
 Each selected collection mapping in a restore request must have a unique target database and collection name. The server checks the effective targets after filtering and renaming, before registering the job. One source can still map to several distinct targets.
 
 Set `"enableResume": true` in the original `POST /api/v1/restore` request to enable Resume for that task. It defaults to false. By default each binlog import attempts to clean its staged files on exit, including after a partial copy or a failed import. With Resume enabled, a failed import keeps its files for the next attempt. For ordinary restores, automatic cleanup in both modes honors `restore.keepTempFiles`.

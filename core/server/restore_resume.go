@@ -45,7 +45,8 @@ func restoreControlError(c *echo.Context, err error) error {
 }
 
 // handleResumeRestore accepts only identity, never a replacement plan.
-// @Summary Resume the original immutable restore plan from memory or persisted state
+// @Summary Resume the original immutable restore plan from memory or persisted state (Alpha)
+// @Description Restore Resume is Alpha (experimental). Its HTTP endpoints and request parameters, CLI commands and flags, configuration keys, and persisted state format may change without backward compatibility.
 // @Tags Restore
 // @Accept json
 // @Produce json
@@ -70,7 +71,8 @@ func (s *Server) handleResumeRestore(c *echo.Context) error {
 	return c.JSON(http.StatusOK, &apiv1.RestoreBackupResponse{RequestId: req.RequestID, Msg: "success", Data: apiv1.NewRestoreTaskResp(status)})
 }
 
-// @Summary Abandon a failed restore and clean its temporary files in one pass
+// @Summary Abandon a failed restore and clean its temporary files in one pass (Alpha)
+// @Description Restore Resume is Alpha (experimental). Its HTTP endpoints and request parameters, CLI commands and flags, configuration keys, and persisted state format may change without backward compatibility.
 // @Tags Restore
 // @Accept json
 // @Produce json
