@@ -5,9 +5,9 @@ import (
 )
 
 type PersistenceEncryptionConfig struct {
-	Enabled  param.Value[bool]
-	Provider param.Value[string]
-	Config   struct{ KeyID, Key param.Value[string] }
+	Enabled param.Value[bool]
+	KeyID   param.Value[string]
+	Key     param.Value[string]
 }
 
 type PersistenceConfig struct {
@@ -24,9 +24,15 @@ func newPersistenceConfig() PersistenceConfig {
 	c.Storage.RootPath.Default = "restore-state"
 	e := &c.Encryption
 	e.Enabled.Keys = []string{"restore.persistence.encryption.enabled"}
-	e.Provider = param.Value[string]{Default: "config", Keys: []string{"restore.persistence.encryption.provider"}}
-	e.Config.KeyID.Keys = []string{"restore.persistence.encryption.config.keyID"}
-	e.Config.Key = param.Value[string]{Keys: []string{"restore.persistence.encryption.config.key"}, Opts: param.SecretValue}
+	e.KeyID = param.Value[string]{
+		Keys:    []string{"restore.persistence.encryption.keyID"},
+		EnvKeys: []string{"RESTORE_PERSISTENCE_ENCRYPTION_KEY_ID"},
+	}
+	e.Key = param.Value[string]{
+		Keys:    []string{"restore.persistence.encryption.key"},
+		EnvKeys: []string{"RESTORE_PERSISTENCE_ENCRYPTION_KEY"},
+		Opts:    param.SecretValue,
+	}
 	return c
 }
 func (c *PersistenceConfig) Resolve(s *param.Source) error {
@@ -35,8 +41,7 @@ func (c *PersistenceConfig) Resolve(s *param.Source) error {
 		&c.Enabled,
 		&c.Storage,
 		&c.Encryption.Enabled,
-		&c.Encryption.Provider,
-		&c.Encryption.Config.KeyID,
-		&c.Encryption.Config.Key,
+		&c.Encryption.KeyID,
+		&c.Encryption.Key,
 	)
 }

@@ -165,10 +165,8 @@ restore:
       rootPath: restore-state # use a persistent volume for cross-process recovery
     encryption:
       enabled: false # encrypt task records in the selected backend
-      provider: config # config or env (RESTORE_PERSISTENCE_ENCRYPTION_KEY_ID and RESTORE_PERSISTENCE_ENCRYPTION_KEY)
-      config: # used only by the config provider
-        keyID: "" # stable identifier for the master key
-        key: "" # Base64 of 32 random bytes, required when encryption is enabled
+      keyID: "" # stable master key ID; or RESTORE_PERSISTENCE_ENCRYPTION_KEY_ID
+      key: "" # Base64 of 32 random bytes; or RESTORE_PERSISTENCE_ENCRYPTION_KEY
 
   concurrency:
     # Collection level parallelism to restore

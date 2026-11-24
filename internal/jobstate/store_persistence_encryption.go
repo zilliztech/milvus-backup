@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 )
@@ -41,35 +40,18 @@ func aes256GCM(key []byte) (cipher.AEAD, error) {
 	return cipher.NewGCMWithRandomNonce(block)
 }
 
-const (
-	envMasterKeyID = "RESTORE_PERSISTENCE_ENCRYPTION_KEY_ID"
-	envMasterKey   = "RESTORE_PERSISTENCE_ENCRYPTION_KEY"
-)
-
 func newKeyProvider(c cfg.PersistenceEncryptionConfig) (KeyProvider, error) {
-	var id, encoded string
-	switch c.Provider.Val {
-	case "config":
-		id, encoded = c.Config.KeyID.Val, c.Config.Key.Val
-		if id == "" {
-			return nil, errors.New("persistence encryption: keyID is required")
-		}
-	case "env":
-		id, encoded = os.Getenv(envMasterKeyID), os.Getenv(envMasterKey)
-		var missing error
-		if id == "" {
-			missing = fmt.Errorf("persistence encryption: %s is required", envMasterKeyID)
-		}
-		if encoded == "" {
-			missing = errors.Join(missing, fmt.Errorf("persistence encryption: %s is required", envMasterKey))
-		}
-		if missing != nil {
-			return nil, missing
-		}
-	default:
-		return nil, errors.New("persistence encryption: unsupported key provider")
+	var missing error
+	if c.KeyID.Val == "" {
+		missing = errors.New("persistence encryption: keyID is required")
 	}
-	key, err := base64.StdEncoding.DecodeString(encoded)
+	if c.Key.Val == "" {
+		missing = errors.Join(missing, errors.New("persistence encryption: key is required"))
+	}
+	if missing != nil {
+		return nil, missing
+	}
+	key, err := base64.StdEncoding.DecodeString(c.Key.Val)
 	if err != nil {
 		return nil, errors.New("persistence encryption: key must be base64 encoded")
 	}
@@ -77,7 +59,7 @@ func newKeyProvider(c cfg.PersistenceEncryptionConfig) (KeyProvider, error) {
 	if err != nil {
 		return nil, err
 	}
-	return aesKeyProvider{id: id, cipher: a}, nil
+	return aesKeyProvider{id: c.KeyID.Val, cipher: a}, nil
 }
 
 func (p aesKeyProvider) Wrap(_ context.Context, key []byte) (WrappedKey, error) {

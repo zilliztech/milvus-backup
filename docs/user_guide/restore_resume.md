@@ -118,30 +118,19 @@ All persistence backends store plaintext by default. To enable application-level
 ```yaml
 encryption:
   enabled: true
-  provider: config
-  config:
-    keyID: restore-key-1
-    key: "<Base64 of 32 random bytes>"
+  keyID: restore-key-1
+  key: "<Base64 of 32 random bytes>"
 ```
 
-To provide the key through the environment, keep the switch and provider in YAML:
+To supply credentials through the environment, set `RESTORE_PERSISTENCE_ENCRYPTION_KEY_ID` and `RESTORE_PERSISTENCE_ENCRYPTION_KEY` in each server or CLI process that uses this persistence location. Each field resolves independently in this order: a `--set` override, the environment variable, then the YAML value. An explicitly empty value takes precedence over lower-priority sources. Encryption is enabled separately with `restore.persistence.encryption.enabled`.
 
-```yaml
-encryption:
-  enabled: true
-  provider: env
-```
+If you used the earlier development configuration, move `encryption.config.keyID` and `encryption.config.key` directly under `encryption` and remove `encryption.provider`. Keep the original key ID and key to read existing records. The environment variable names are unchanged.
 
-Supply both variables to every server or CLI process that uses this persistence location:
+When encryption is enabled, the startup probe checks that both fields are present, then writes, decrypts, verifies and deletes a test record.
 
-- `RESTORE_PERSISTENCE_ENCRYPTION_KEY_ID` holds the stable master key ID.
-- `RESTORE_PERSISTENCE_ENCRYPTION_KEY` holds the Base64 encoding of the 32-byte master key.
+Generate the key once with `openssl rand -base64 32`. Protect the configuration file and keep a separate, secure backup of the key. Every write, including a stain, uses a fresh data key and AES-256-GCM. The key provider wraps the data key with the master key using AES-256-GCM. The record contains the key ID, wrapped data key and authenticated ciphertext. The payload is bound to its storage key. The master key is excluded from the task plan even when encryption is disabled.
 
-The env provider reads both values exclusively from the environment. An unset or empty variable produces a startup check warning naming the missing variable. With valid settings the existing startup probe writes, decrypts, verifies and deletes a test record. Setting the variables alone does not enable encryption.
-
-Generate the key once with `openssl rand -base64 32`. Protect the configuration file and keep a separate, secure backup of the key. Every write, including a stain, uses a fresh data key and AES-256-GCM. Both providers wrap the data key with the master key using AES-256-GCM. The record contains the key ID, wrapped data key and authenticated ciphertext. The payload is bound to its storage key. The master key is excluded from the task plan even when encryption is disabled.
-
-Use the same encryption mode, key ID and master key to resume or clean up across processes. Each provider supports one master key at a time. Finish or clean up outstanding tasks before changing modes or rotating keys, or keep their original configuration and use a separate directory or prefix for new tasks. Existing records are not migrated. The startup probe tests the configured mode on a new record. A successful probe cannot verify that old records are readable. Encryption failures follow the usual persistence error handling and never fall back to writing plaintext.
+Use the same encryption mode, key ID and master key to resume or clean up across processes. The key provider supports one master key at a time. Finish or clean up outstanding tasks before changing modes or rotating keys, or keep their original configuration and use a separate directory or prefix for new tasks. Existing records are not migrated. The startup probe tests the configured mode on a new record. A successful probe cannot verify that old records are readable. Encryption failures follow the usual persistence error handling and never fall back to writing plaintext.
 
 ### Inspecting persisted task progress
 

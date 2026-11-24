@@ -63,6 +63,30 @@ Backup.Storage.Auth.Endpoint
 Backup.Concurrency.Collections	8
 Backup.Concurrency.Segments	512
 Backup.PauseGC	false
+Restore.Persistence.Enabled	false
+Restore.Persistence.Storage.Provider	local
+Restore.Persistence.Storage.Address	localhost
+Restore.Persistence.Storage.Port	9000
+Restore.Persistence.Storage.Region	
+Restore.Persistence.Storage.UseSSL	false
+Restore.Persistence.Storage.CACertPath	
+Restore.Persistence.Storage.AccountName	
+Restore.Persistence.Storage.SourceSASToken	
+Restore.Persistence.Storage.BucketName	a-bucket
+Restore.Persistence.Storage.RootPath	restore-state
+Restore.Persistence.Storage.LocalPath	
+Restore.Persistence.Storage.MilvusAddress	
+Restore.Persistence.Storage.MilvusPort	0
+Restore.Persistence.Storage.Auth.Type	static
+Restore.Persistence.Storage.Auth.AccessKeyID	minioadmin
+Restore.Persistence.Storage.Auth.SecretAccessKey	****
+Restore.Persistence.Storage.Auth.SessionToken	
+Restore.Persistence.Storage.Auth.AccountKey	
+Restore.Persistence.Storage.Auth.CredentialsFile	
+Restore.Persistence.Storage.Auth.Endpoint	
+Restore.Persistence.Encryption.Enabled	false
+Restore.Persistence.Encryption.KeyID	
+Restore.Persistence.Encryption.Key	
 Restore.Concurrency.Collections	3
 Restore.Concurrency.ImportJobs	64
 Restore.MaxSegmentsPerImportJob	256

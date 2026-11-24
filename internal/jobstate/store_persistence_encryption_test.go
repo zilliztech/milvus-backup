@@ -19,9 +19,8 @@ func encryptionConfig(t *testing.T) cfg.PersistenceConfig {
 	c.Storage.Provider.Val = "local"
 	c.Storage.RootPath.Val = t.TempDir()
 	c.Encryption.Enabled.Val = true
-	c.Encryption.Provider.Val = "config"
-	c.Encryption.Config.KeyID.Val = "test-key"
-	c.Encryption.Config.Key.Val = base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{42}, 32))
+	c.Encryption.KeyID.Val = "test-key"
+	c.Encryption.Key.Val = base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{42}, 32))
 	return c
 }
 
@@ -80,7 +79,7 @@ func TestEncryptedPersistence(t *testing.T) {
 		})
 	}
 	put("job", second)
-	c.Encryption.Config.Key.Val = base64.StdEncoding.EncodeToString(make([]byte, 32))
+	c.Encryption.Key.Val = base64.StdEncoding.EncodeToString(make([]byte, 32))
 	wrong, err := openPersistenceBackend(c)
 	require.NoError(t, err)
 	_, err = wrong.Load(ctx, "job")
@@ -109,7 +108,7 @@ func TestColdResumeEncryptedState(t *testing.T) {
 		tr.task.plan.Restore.Persistence.Encryption.Enabled.Val = enabled
 		encoded, err := tr.task.encodeLocked(markerAvailable, persistenceLocationFromConfig(config))
 		require.NoError(t, err)
-		assert.NotContains(t, string(encoded), config.Encryption.Config.Key.Val)
+		assert.NotContains(t, string(encoded), config.Encryption.Key.Val)
 	}
 	cold := NewStore()
 	cold.ConfigurePersistence(config)
@@ -124,43 +123,22 @@ func TestColdResumeEncryptedState(t *testing.T) {
 	assert.ErrorIs(t, err, ErrTaskNotFound)
 }
 
-func TestInvalidEncryptionConfiguration(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		edit func(*cfg.PersistenceEncryptionConfig)
-	}{
-		{"UnsupportedProvider", func(c *cfg.PersistenceEncryptionConfig) { c.Provider.Val = "unknown" }},
-		{"MissingID", func(c *cfg.PersistenceEncryptionConfig) { c.Config.KeyID.Val = "" }},
-		{"InvalidBase64", func(c *cfg.PersistenceEncryptionConfig) { c.Config.Key.Val = "!!!!" }},
-		{"ShortKey", func(c *cfg.PersistenceEncryptionConfig) { c.Config.Key.Val = "YQ==" }},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			config := encryptionConfig(t)
-			tc.edit(&config.Encryption)
-			b, err := openPersistenceBackend(config)
-			assert.Error(t, err)
-			assert.Nil(t, b)
-		})
-	}
-}
-
-func TestEnvEncryptionStartupCheck(t *testing.T) {
-	config := encryptionConfig(t) // Valid YAML keys must not satisfy the env provider.
-	config.Encryption.Provider.Val = "env"
-	key := base64.StdEncoding.EncodeToString(bytes.Repeat([]byte{17}, 32))
+func TestEncryptionStartupCheck(t *testing.T) {
+	validKey := encryptionConfig(t).Encryption.Key.Val
 	for _, tc := range []struct {
 		name, id, key string
 		want          []string
 	}{
-		{"MissingID", "", key, []string{envMasterKeyID + " is required"}},
-		{"MissingKey", "from-env", "", []string{envMasterKey + " is required"}},
-		{"MissingBoth", "", "", []string{envMasterKeyID + " is required", envMasterKey + " is required"}},
-		{"MalformedKey", "from-env", "invalid-secret", []string{"base64"}},
-		{"ShortKey", "from-env", "YQ==", []string{"32-byte"}},
+		{"MissingID", "", validKey, []string{"keyID is required"}},
+		{"MissingKey", "id", "", []string{"key is required"}},
+		{"MissingBoth", "", "", []string{"keyID is required", "key is required"}},
+		{"MalformedKey", "id", "invalid-secret", []string{"base64"}},
+		{"ShortKey", "id", "YQ==", []string{"32-byte"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			t.Setenv(envMasterKeyID, tc.id)
-			t.Setenv(envMasterKey, tc.key)
+			config := encryptionConfig(t)
+			config.Encryption.KeyID.Val = tc.id
+			config.Encryption.Key.Val = tc.key
 			store := NewStore()
 			store.ConfigurePersistence(config)
 			err := store.CheckPersistence(t.Context())
@@ -173,26 +151,26 @@ func TestEnvEncryptionStartupCheck(t *testing.T) {
 			}
 		})
 	}
-	t.Setenv(envMasterKeyID, "from-env")
-	t.Setenv(envMasterKey, key)
-	store := NewStore()
-	store.ConfigurePersistence(config)
-	require.NoError(t, store.CheckPersistence(t.Context()))
-	// A fresh config provider using the env credentials can read the same record.
-	backend, _, err := store.persistenceStore()
+}
+
+func TestEncryptedRecordAcrossKeySources(t *testing.T) {
+	c := encryptionConfig(t)
+	writer, err := openPersistenceBackend(c)
 	require.NoError(t, err)
-	value := []byte("saved progress")
-	require.NoError(t, backend.Save(t.Context(), "job", value))
-	config.Encryption.Provider.Val = "config"
-	reader, err := openPersistenceBackend(config)
+	require.NoError(t, writer.Save(t.Context(), "job", []byte("saved progress")))
+
+	t.Setenv("RESTORE_PERSISTENCE_ENCRYPTION_KEY_ID", c.Encryption.KeyID.Val)
+	t.Setenv("RESTORE_PERSISTENCE_ENCRYPTION_KEY", c.Encryption.Key.Val)
+	loaded, err := cfg.Load("", map[string]string{
+		"restore.persistence.enabled":            "true",
+		"restore.persistence.storage.rootPath":   c.Storage.RootPath.Val,
+		"restore.persistence.encryption.enabled": "true",
+	})
 	require.NoError(t, err)
-	_, err = reader.Load(t.Context(), "job")
-	assert.Error(t, err)
-	config.Encryption.Config.KeyID.Val = "from-env"
-	config.Encryption.Config.Key.Val = key
-	reader, err = openPersistenceBackend(config)
+	reader, err := openPersistenceBackend(loaded.Restore.Persistence)
 	require.NoError(t, err)
+	require.NoError(t, reader.Check(t.Context()))
 	got, err := reader.Load(t.Context(), "job")
 	require.NoError(t, err)
-	assert.Equal(t, value, got)
+	assert.Equal(t, []byte("saved progress"), got)
 }
