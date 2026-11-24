@@ -206,8 +206,8 @@ func TestSecondaryResumeImports(t *testing.T) {
 			c := cfg.New()
 			c.Restore.KeepTempFiles.Val = true // Independent secondary staging follows import progress.
 			c.Restore.Persistence.Enabled.Val = true
-			c.Restore.Persistence.Type.Val = "local"
-			c.Restore.Persistence.Local.Directory.Val = t.TempDir()
+			c.Restore.Persistence.Storage.Provider.Val = "local"
+			c.Restore.Persistence.Storage.RootPath.Val = t.TempDir()
 			c.Milvus.Grpc.Address.Val = "127.0.0.1"
 			c.Milvus.Grpc.Port.Val = listener.Addr().(*net.TCPAddr).Port
 			c.Milvus.Grpc.TLSMode.Val = cfg.TLSDisabled

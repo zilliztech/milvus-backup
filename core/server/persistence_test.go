@@ -26,8 +26,8 @@ func TestServerStartupChecksPersistence(t *testing.T) {
 			params := cfg.New()
 			dir := filepath.Join(t.TempDir(), "state")
 			params.Restore.Persistence.Enabled.Val = tc.enabled
-			params.Restore.Persistence.Type.Val = "local"
-			params.Restore.Persistence.Local.Directory.Val = dir
+			params.Restore.Persistence.Storage.Provider.Val = "local"
+			params.Restore.Persistence.Storage.RootPath.Val = dir
 			if tc.blocked {
 				require.NoError(t, os.WriteFile(dir, []byte("blocked"), 0600))
 			}

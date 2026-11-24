@@ -93,6 +93,11 @@ func BackupStorageConfig(c *cfg.Config) Config {
 	return storageConfig(&c.Backup.Storage, c.Transfer.MultipartCopyThresholdMiB.Val)
 }
 
+// PersistenceStorageConfig uses the same endpoint and credentials as other storage sections.
+func PersistenceStorageConfig(s *cfg.StorageConfig) Config {
+	return storageConfig(s, 0)
+}
+
 func NewMilvusStorage(ctx context.Context, c *cfg.Config) (Client, error) {
 	conf := MilvusStorageConfig(c)
 	log.Info("create milvus storage client",

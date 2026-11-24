@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/http/httputil"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -42,6 +44,24 @@ func TestLocalPersistenceBackend(t *testing.T) {
 	require.NoError(t, store.Delete(t.Context(), id))
 	assert.NoError(t, store.Delete(t.Context(), id))
 }
+func persistenceTestStorage(t *testing.T, server *httptest.Server) cfg.StorageConfig {
+	t.Helper()
+	host, port, err := net.SplitHostPort(server.Listener.Addr().String())
+	require.NoError(t, err)
+	s := cfg.New().Restore.Persistence.Storage
+	s.Provider.Val = cfg.ProviderS3
+	s.Address.Val = host
+	s.Port.Val, err = strconv.Atoi(port)
+	require.NoError(t, err)
+	s.Region.Val = "us-east-1"
+	s.BucketName.Val = "state"
+	s.RootPath.Val = "restore/"
+	s.Auth.Type.Val = cfg.AuthStatic
+	s.Auth.AccessKeyID.Val = "key"
+	s.Auth.SecretAccessKey.Val = "secret"
+	return s
+}
+
 func TestS3PersistenceBackend(t *testing.T) {
 	var saved []byte
 	denied := false
@@ -73,7 +93,10 @@ func TestS3PersistenceBackend(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	store, err := newS3PersistenceBackend(strings.TrimPrefix(server.URL, "http://"), "us-east-1", "key", "secret", "", false, "state", "restore/")
+	c := encryptionConfig(t)
+	c.Encryption.Enabled.Val = false
+	c.Storage = persistenceTestStorage(t, server)
+	store, err := openPersistenceBackend(c)
 	require.NoError(t, err)
 	_, err = store.Load(t.Context(), "job")
 	assert.ErrorIs(t, err, ErrPersistenceKeyNotFound)
@@ -111,8 +134,7 @@ func TestLocalPersistenceCheck(t *testing.T) {
 
 func TestPersistenceRejectsInvalidKeys(t *testing.T) {
 	local := localPersistenceBackend{Directory: t.TempDir()}
-	s3, err := newS3PersistenceBackend("localhost:9000", "us-east-1", "key", "secret", "", false, "state", "")
-	require.NoError(t, err)
+	s3 := &objectPersistenceBackend{}
 	for _, backend := range []PersistenceBackend{local, s3} {
 		for _, key := range []string{"", ".", "..", "../escape", "/absolute", "a/../b", `a\b`} {
 			assert.Error(t, backend.Save(t.Context(), key, []byte("value")), key)
@@ -182,13 +204,8 @@ func TestS3PersistenceCheck(t *testing.T) {
 			t.Cleanup(server.Close)
 			c := encryptionConfig(t)
 			c.Encryption.Enabled.Val = tc.name == "Encrypted"
-			c.Type.Val = "s3"
-			c.S3.Endpoint.Val = strings.TrimPrefix(server.URL, "http://")
-			c.S3.Region.Val = "us-east-1"
-			c.S3.Bucket.Val = "state"
-			c.S3.Prefix.Val = "records/"
-			c.S3.AccessKeyID.Val = "key"
-			c.S3.SecretAccessKey.Val = "secret"
+			c.Storage = persistenceTestStorage(t, server)
+			c.Storage.RootPath.Val = "records/"
 			backend, err := openPersistenceBackend(c)
 			require.NoError(t, err)
 			err = backend.Check(t.Context())
@@ -250,11 +267,11 @@ func (b *startupCheckBackend) Check(ctx context.Context) error {
 func TestInitializePersistence(t *testing.T) {
 	config := cfg.New().Restore.Persistence
 	config.Enabled.Val = true
-	config.Type.Val = "local"
-	config.Local.Directory.Val = t.TempDir()
+	config.Storage.Provider.Val = "local"
+	config.Storage.RootPath.Val = t.TempDir()
 	store := NewStore()
 	store.ConfigurePersistence(config)
-	backend := &startupCheckBackend{PersistenceBackend: localPersistenceBackend{Directory: config.Local.Directory.Val}, err: assert.AnError}
+	backend := &startupCheckBackend{PersistenceBackend: localPersistenceBackend{Directory: config.Storage.RootPath.Val}, err: assert.AnError}
 	store.persistence.backend = backend
 	var wg sync.WaitGroup
 	for range 8 {
@@ -275,12 +292,12 @@ func TestInitializePersistence(t *testing.T) {
 
 func TestInitializeDisabledPersistence(t *testing.T) {
 	config := cfg.New().Restore.Persistence
-	config.Type.Val = "invalid"
-	config.Local.Directory.Val = filepath.Join(t.TempDir(), "unused")
+	config.Storage.Provider.Val = "invalid"
+	config.Storage.RootPath.Val = filepath.Join(t.TempDir(), "unused")
 	store := NewStore()
 	store.InitializePersistence(t.Context(), config)
 	assert.Nil(t, store.persistence.backend)
-	assert.NoDirExists(t, config.Local.Directory.Val)
+	assert.NoDirExists(t, config.Storage.RootPath.Val)
 	assert.NoError(t, store.CheckPersistence(t.Context()))
 }
 

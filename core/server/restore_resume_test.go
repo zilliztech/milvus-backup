@@ -68,7 +68,7 @@ func TestRestoreControl(t *testing.T) {
 func TestRestoreControlLoadsStartupLocation(t *testing.T) {
 	config := cfg.New().Restore.Persistence
 	config.Enabled.Val = true
-	config.Type.Val, config.Local.Directory.Val = "local", t.TempDir()
+	config.Storage.Provider.Val, config.Storage.RootPath.Val = "local", t.TempDir()
 	params := cfg.New()
 	params.Restore.Persistence = config
 	server, err := New(params)
@@ -99,8 +99,8 @@ func TestRestoreControlLoadsStartupLocation(t *testing.T) {
 func TestRestoreControlRejectsUnusableSnapshotUntilCleanup(t *testing.T) {
 	params := cfg.New()
 	params.Restore.Persistence.Enabled.Val = true
-	params.Restore.Persistence.Type.Val = "local"
-	params.Restore.Persistence.Local.Directory.Val = t.TempDir()
+	params.Restore.Persistence.Storage.Provider.Val = "local"
+	params.Restore.Persistence.Storage.RootPath.Val = t.TempDir()
 	server, err := New(params)
 	require.NoError(t, err)
 	silenceEngine(server)
@@ -147,9 +147,9 @@ func TestRestoreControlReturnsPersistenceErrorBeforeExecution(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			params := cfg.New()
 			params.Restore.Persistence.Enabled.Val = true
-			params.Restore.Persistence.Type.Val = "local"
-			params.Restore.Persistence.Local.Directory.Val = filepath.Join(t.TempDir(), "blocked")
-			require.NoError(t, os.WriteFile(params.Restore.Persistence.Local.Directory.Val, []byte("not a directory"), 0600))
+			params.Restore.Persistence.Storage.Provider.Val = "local"
+			params.Restore.Persistence.Storage.RootPath.Val = filepath.Join(t.TempDir(), "blocked")
+			require.NoError(t, os.WriteFile(params.Restore.Persistence.Storage.RootPath.Val, []byte("not a directory"), 0600))
 			server, err := New(params)
 			require.NoError(t, err)
 			silenceEngine(server)

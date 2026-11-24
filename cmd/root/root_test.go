@@ -33,7 +33,7 @@ func TestCLIStartupChecksPersistence(t *testing.T) {
 				require.NoError(t, os.WriteFile(dir, []byte("blocked"), 0600))
 			}
 			configFile := filepath.Join(root, "backup.yaml")
-			body := fmt.Sprintf("configVersion: v2\nlog:\n  console: false\n  file:\n    path: %q\nrestore:\n  persistence:\n    enabled: %t\n    type: local\n    local:\n      directory: %q\n", logFile, tc.enabled, dir)
+			body := fmt.Sprintf("configVersion: v2\nlog:\n  console: false\n  file:\n    path: %q\nrestore:\n  persistence:\n    enabled: %t\n    storage:\n      provider: local\n      rootPath: %q\n", logFile, tc.enabled, dir)
 			require.NoError(t, os.WriteFile(configFile, []byte(body), 0600))
 			t.Cleanup(func() {
 				jobstate.Default().ConfigurePersistence(cfg.PersistenceConfig{})

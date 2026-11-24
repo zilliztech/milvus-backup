@@ -25,8 +25,8 @@ func TestWaitRestoreTerminal(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				config := cfg.New().Restore.Persistence
 				config.Enabled.Val = true
-				config.Type.Val = "local"
-				config.Local.Directory.Val = t.TempDir()
+				config.Storage.Provider.Val = "local"
+				config.Storage.RootPath.Val = t.TempDir()
 				store := jobstate.NewStore()
 				store.ConfigurePersistence(config)
 				tracker, err := store.AddRestoreTask("job", true)

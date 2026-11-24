@@ -16,8 +16,8 @@ func encryptionConfig(t *testing.T) cfg.PersistenceConfig {
 	t.Helper()
 	c := cfg.New().Restore.Persistence
 	c.Enabled.Val = true
-	c.Type.Val = "local"
-	c.Local.Directory.Val = t.TempDir()
+	c.Storage.Provider.Val = "local"
+	c.Storage.RootPath.Val = t.TempDir()
 	c.Encryption.Enabled.Val = true
 	c.Encryption.Provider.Val = "config"
 	c.Encryption.Config.KeyID.Val = "test-key"
@@ -31,7 +31,7 @@ func TestEncryptedPersistence(t *testing.T) {
 	b, err := openPersistenceBackend(c)
 	require.NoError(t, err)
 	require.NoError(t, b.Check(ctx))
-	disk := localPersistenceBackend{Directory: c.Local.Directory.Val}
+	disk := localPersistenceBackend{Directory: c.Storage.RootPath.Val}
 	value := []byte("secret task payload")
 	save := func() encryptedRecord {
 		require.NoError(t, b.Save(ctx, "job", value))
@@ -102,7 +102,7 @@ func TestColdResumeEncryptedState(t *testing.T) {
 	tr.task.plan.Restore.Persistence = config
 	tr.Finish(assert.AnError)
 	key := restoreStateKey("job")
-	data, err := localPersistenceBackend{Directory: config.Local.Directory.Val}.Load(t.Context(), key)
+	data, err := localPersistenceBackend{Directory: config.Storage.RootPath.Val}.Load(t.Context(), key)
 	require.NoError(t, err)
 	assert.NotContains(t, string(data), "remote-job")
 	for _, enabled := range []bool{true, false} {

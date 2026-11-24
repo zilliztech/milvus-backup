@@ -145,8 +145,8 @@ func persistenceFixture(t *testing.T) (*Store, *RestoreTracker, cfg.PersistenceC
 	t.Helper()
 	config := cfg.New().Restore.Persistence
 	config.Enabled.Val = true
-	config.Type.Val = "local"
-	config.Local.Directory.Val = t.TempDir()
+	config.Storage.Provider.Val = "local"
+	config.Storage.RootPath.Val = t.TempDir()
 	store := NewStore()
 	store.ConfigurePersistence(config)
 	tr, err := store.AddRestoreTask("job", true)
@@ -373,7 +373,7 @@ func TestPersistenceMemoryPriorityAndPreparationFailure(t *testing.T) {
 	store, tr, config := persistenceFixture(t)
 	// An inaccessible startup backend cannot force a reload of an in-memory task.
 	invalid := config
-	invalid.Type.Val = "invalid"
+	invalid.Storage.Provider.Val = "invalid"
 	store.ConfigurePersistence(invalid)
 	status, err := store.GetRestoreTask("job")
 	require.NoError(t, err)
@@ -478,7 +478,7 @@ func TestDisabledPersistenceUsesMemoryOnly(t *testing.T) {
 
 func TestDisabledPersistenceIgnoresBackendConfiguration(t *testing.T) {
 	config := cfg.New().Restore.Persistence
-	config.Type.Val = "invalid"
+	config.Storage.Provider.Val = "invalid"
 	store := NewStore()
 	store.ConfigurePersistence(config)
 	tracker, err := store.AddRestoreTask("job", true)
@@ -511,9 +511,9 @@ func TestAddRestoreTaskOnlyRegistersInMemory(t *testing.T) {
 	t.Run("UnavailableStorageDoesNotBlockCreation", func(t *testing.T) {
 		config := cfg.New().Restore.Persistence
 		config.Enabled.Val = true
-		config.Type.Val = "local"
-		config.Local.Directory.Val = filepath.Join(t.TempDir(), "not-a-directory")
-		require.NoError(t, os.WriteFile(config.Local.Directory.Val, []byte("occupied"), 0600))
+		config.Storage.Provider.Val = "local"
+		config.Storage.RootPath.Val = filepath.Join(t.TempDir(), "not-a-directory")
+		require.NoError(t, os.WriteFile(config.Storage.RootPath.Val, []byte("occupied"), 0600))
 		store := NewStore()
 		store.ConfigurePersistence(config)
 		tracker, err := store.AddRestoreTask("job", true)
@@ -526,7 +526,7 @@ func TestAddRestoreTaskOnlyRegistersInMemory(t *testing.T) {
 		assert.ErrorIs(t, err, ErrPersistence)
 		assert.Equal(t, RestoreStateFail, tracker.Snapshot().State)
 		// Once storage recovers, Resume must write its marker before executing.
-		require.NoError(t, os.Remove(config.Local.Directory.Val))
+		require.NoError(t, os.Remove(config.Storage.RootPath.Val))
 		_, _, err = store.StartResume("job")
 		require.NoError(t, err)
 		assert.Equal(t, RestoreStateExecuting, tracker.Snapshot().State)
@@ -535,7 +535,7 @@ func TestAddRestoreTaskOnlyRegistersInMemory(t *testing.T) {
 	t.Run("BackendInitializationFailureDoesNotBlockCreation", func(t *testing.T) {
 		config := cfg.New().Restore.Persistence
 		config.Enabled.Val = true
-		config.Type.Val = "invalid"
+		config.Storage.Provider.Val = "invalid"
 		store := NewStore()
 		store.ConfigurePersistence(config)
 		tracker, err := store.AddRestoreTask("job", true)
@@ -566,8 +566,8 @@ func TestAddRestoreTaskOnlyRegistersInMemory(t *testing.T) {
 	t.Run("TasksUseSystemConfiguration", func(t *testing.T) {
 		config := cfg.New().Restore.Persistence
 		config.Enabled.Val = true
-		config.Type.Val = "local"
-		config.Local.Directory.Val = t.TempDir()
+		config.Storage.Provider.Val = "local"
+		config.Storage.RootPath.Val = t.TempDir()
 		store := NewStore()
 		tracker, err := store.AddRestoreTask("job", true)
 		require.NoError(t, err)
@@ -621,9 +621,10 @@ func TestRestoreTasksSharePersistenceBackend(t *testing.T) {
 func TestRestorePersistenceConcurrentInitialization(t *testing.T) {
 	config := cfg.New().Restore.Persistence
 	config.Enabled.Val = true
-	config.Type.Val = "s3"
-	config.S3.Endpoint.Val = "localhost:9000"
-	config.S3.Bucket.Val = "restore-state"
+	config.Storage.Provider.Val = "s3"
+	config.Storage.Address.Val = "localhost"
+	config.Storage.Port.Val = 9000
+	config.Storage.BucketName.Val = "restore-state"
 	store := NewStore()
 	store.ConfigurePersistence(config)
 	backends := make([]PersistenceBackend, 16)

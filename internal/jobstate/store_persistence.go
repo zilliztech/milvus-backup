@@ -16,6 +16,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
 // PersistenceBackend stores opaque values. The owning Store defines task keys,
@@ -107,7 +108,7 @@ func (s *Store) InitializePersistence(ctx context.Context, c cfg.PersistenceConf
 		checkCtx, cancel := context.WithTimeout(ctx, 15*time.Second)
 		defer cancel()
 		if err := s.CheckPersistence(checkCtx); err != nil {
-			log.Warn("persistence startup check failed; continuing startup", zap.String("backend", c.Type.Val), zap.Error(err))
+			log.Warn("persistence startup check failed; continuing startup", zap.String("backend", c.Storage.Provider.Val), zap.Error(err))
 		}
 	})
 }
@@ -143,7 +144,10 @@ func (s *Store) persistenceStore() (PersistenceBackend, persistenceLocation, err
 
 // persistenceLocationFromConfig records the namespace selected at startup.
 func persistenceLocationFromConfig(c cfg.PersistenceConfig) persistenceLocation {
-	return persistenceLocation{Type: c.Type.Val, Directory: c.Local.Directory.Val, Bucket: c.S3.Bucket.Val, Prefix: c.S3.Prefix.Val}
+	if c.Storage.Provider.Val == cfg.ProviderLocal {
+		return persistenceLocation{Type: cfg.ProviderLocal, Directory: c.Storage.RootPath.Val}
+	}
+	return persistenceLocation{Type: c.Storage.Provider.Val, Bucket: c.Storage.BucketName.Val, Prefix: c.Storage.RootPath.Val}
 }
 
 // openPersistenceBackend returns no backend when persistence is disabled. No filesystem or
@@ -168,15 +172,14 @@ func openPersistenceBackend(c cfg.PersistenceConfig) (PersistenceBackend, error)
 
 func openStorageBackend(c cfg.PersistenceConfig) (PersistenceBackend, error) {
 	location := persistenceLocationFromConfig(c)
-	switch location.Type {
-	case cfg.PersistenceTypeLocal:
+	if location.Type == cfg.ProviderLocal {
 		if location.Directory == "" {
 			return nil, fmt.Errorf("persistence: local directory is required")
 		}
 		return localPersistenceBackend{Directory: location.Directory}, nil
-	case cfg.PersistenceTypeS3:
-		return newS3PersistenceBackend(c.S3.Endpoint.Val, c.S3.Region.Val, c.S3.AccessKeyID.Val, c.S3.SecretAccessKey.Val, c.S3.SessionToken.Val, c.S3.UseSSL.Val, location.Bucket, location.Prefix)
-	default:
-		return nil, fmt.Errorf("persistence: unsupported type %q", location.Type)
 	}
+	if location.Bucket == "" {
+		return nil, fmt.Errorf("persistence: storage bucketName is required")
+	}
+	return &objectPersistenceBackend{config: storage.PersistenceStorageConfig(&c.Storage), prefix: location.Prefix}, nil
 }

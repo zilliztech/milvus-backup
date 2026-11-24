@@ -67,11 +67,11 @@ Cleanup first changes memory to FailedCleanupPending, then must save that state 
 
 Server and CLI use the same `--config` and `--set` loader. The Store receives persistence configuration at startup and owns one shared, task-independent key/value backend. Restore-specific persisted state encoding, keys and recovery rules remain in the Store’s restore logic. Restore tasks pass only their ID and Resume setting; they do not keep separate persistence configurations or clients. Cold loads and lifecycle operations use the shared backend, while saving, deletion and the pre-Resume marker remain serialized under each task lock.
 
-When persistence is enabled, Server and CLI startup check the configured backend by writing a unique probe, reading it back, comparing the bytes, and deleting it. The probe uses the same directory or S3 prefix as task records without touching existing persisted state records. The check has a 15-second context deadline; cleanup has a separate 5-second deadline so it can still run after cancellation. A cleanup failure can leave a probe object behind and is included in the warning. Failures are logged and do not block startup or disable later persistence attempts. Starting the server through the CLI checks the same configuration only once. A successful check does not guarantee later storage availability; the pre-Resume stain write remains mandatory.
+When persistence is enabled, Server and CLI startup check the configured backend by writing a unique probe, reading it back, comparing the bytes, and deleting it. The probe uses the same directory or object storage prefix as task records without touching existing persisted state records. The check has a 15-second context deadline; cleanup has a separate 5-second deadline so it can still run after cancellation. A cleanup failure can leave a probe object behind and is included in the warning. Failures are logged and do not block startup or disable later persistence attempts. Starting the server through the CLI checks the same configuration only once. A successful check does not guarantee later storage availability; the pre-Resume stain write remains mandatory.
 
 `restore.persistence.enabled` defaults to false. Setting `enableResume` on a task allows Resume within the same running server. To recover after a server restart or from a separate CLI process, enable persistence before starting the original resumable task. With persistence disabled, the Store skips all persisted state reads, writes and deletions, including for existing records.
 
-Persisted plans can include Milvus tokens and object storage credentials. Records are plaintext by default. Before enabling persistence, choose a directory or S3 location with restricted access and decide whether to enable [encryption](#optional-encryption).
+Persisted plans can include Milvus tokens and object storage credentials. Records are plaintext by default. Before enabling persistence, choose a directory or object storage location with restricted access and decide whether to enable [encryption](#optional-encryption).
 
 The default backend is local, with files under `restore-state` relative to the process working directory. To use a persistent local volume:
 
@@ -80,9 +80,9 @@ configVersion: v2
 restore:
   persistence:
     enabled: true
-    type: local
-    local:
-      directory: /var/lib/milvus-backup/restore
+    storage:
+      provider: local
+      rootPath: /var/lib/milvus-backup/restore
 ```
 
 For S3:
@@ -92,28 +92,28 @@ configVersion: v2
 restore:
   persistence:
     enabled: true
-    type: s3
-    s3:
-      endpoint: s3.us-east-1.amazonaws.com  # host[:port], no scheme
+    storage:
+      provider: s3
+      address: s3.us-east-1.amazonaws.com
+      port: 443
       region: us-east-1
       useSSL: true
-      bucket: backup-state
-      prefix: restore/
-      accessKeyID: ""
-      secretAccessKey: ""
-      sessionToken: ""
+      bucketName: backup-state
+      rootPath: restore/
+      auth:
+        type: default
 ```
 
-The bucket must already exist. These are separate persistence settings; they do not inherit `backup.storage`. The default endpoint is `localhost:9000`, bucket `backup-state`, prefix `restore/`, with TLS enabled. Set the endpoint and credentials for your deployment. Empty access keys use the SDK IAM credential provider. Credentials can also come from `RESTORE_PERSISTENCE_S3_ACCESS_KEY_ID`, `RESTORE_PERSISTENCE_S3_SECRET_ACCESS_KEY` and `RESTORE_PERSISTENCE_S3_SESSION_TOKEN`.
+Configure `restore.persistence.storage` independently using the same providers, endpoint fields and authentication options as `backup.storage`. For object storage, provision the bucket or container and grant read, write and delete access under `rootPath`. The S3 example uses the SDK's default credential chain. For static S3 credentials, set `auth.type: static` and supply `RESTORE_PERSISTENCE_STORAGE_AUTH_ACCESS_KEY_ID` and `RESTORE_PERSISTENCE_STORAGE_AUTH_SECRET_ACCESS_KEY`. Temporary credentials also require `RESTORE_PERSISTENCE_STORAGE_AUTH_SESSION_TOKEN`.
 
-Persisted state records contain the original execution configuration, including credentials and external source specifications. Restrict access to the directory or bucket. Local files use mode 0600 and atomic replacement; S3 writes one complete object per task. Object/file names are SHA-256 hashes of task IDs with a `.json` suffix. New tasks register only in memory and reject IDs already present there. Creation does not read or modify persisted state records and is not blocked by an inaccessible store. When supplying task IDs yourself, do not reuse an ID with a persisted state record you still need: a later save or deletion for the new task can replace or remove that persisted state.
+Persisted state records contain the original execution configuration, including credentials and external source specifications. Restrict access to the directory or bucket. Local files use mode 0600 and atomic replacement; object storage writes one complete object per task. Object/file names are SHA-256 hashes of task IDs with a `.json` suffix. New tasks register only in memory and reject IDs already present there. Creation does not read or modify persisted state records and is not blocked by an inaccessible store. When supplying task IDs yourself, do not reuse an ID with a persisted state record you still need: a later save or deletion for the new task can replace or remove that persisted state.
 
 The persistence backend and location come exclusively from startup configuration, shared by ordinary and independent secondary restores. Restore, Resume and Cleanup requests do not accept a persistence override; Get, Resume and Cleanup identify the task by its ID.
 
 Use the same persistence location after restarting the server or starting a new CLI process. Cold recovery uses startup configuration to access the persisted state and the saved original configuration to execute the restore. Existing in-memory tasks retain their backend and are never replaced by persisted state. Unsupported versions and malformed records are errors, not missing tasks.
 
 ### Optional encryption
-Local and S3 store plaintext by default. To enable application-level encryption, add the following settings under the existing `restore.persistence` section in the YAML used by both the server and CLI:
+All persistence backends store plaintext by default. To enable application-level encryption, add the following settings under the existing `restore.persistence` section in the YAML used by both the server and CLI:
 
 ```yaml
 encryption:
@@ -153,7 +153,7 @@ To locate a local record and inspect its status with `jq`:
 
 ```sh
 restore_id='your-restore-task-id'
-state_dir='/data/restore-state' # restore.persistence.local.directory
+state_dir='/data/restore-state' # restore.persistence.storage.rootPath
 state_hash=$(printf '%s' "$restore_id" | shasum -a 256 | awk '{print $1}')
 state_file="$state_dir/$state_hash.json"
 
@@ -161,7 +161,7 @@ printf '%s\n' "$state_file"
 jq '{Version, Marker, Status}' "$state_file"
 ```
 
-Use the exact task ID, including its original case. `printf '%s'` adds no newline; hashing a trailing newline produces a different filename. On Linux, `sha256sum` can replace `shasum -a 256`. If the configured directory is relative, resolve it from the backup process's working directory. For S3, use the same filename under the configured `restore.persistence.s3.prefix` in `restore.persistence.s3.bucket`; download that object to inspect it with `jq`.
+Use the exact task ID, including its original case. `printf '%s'` adds no newline; hashing a trailing newline produces a different filename. On Linux, `sha256sum` can replace `shasum -a 256`. If the configured directory is relative, resolve it from the backup process's working directory. For object storage, use the same filename under `restore.persistence.storage.rootPath` in the configured bucket or container; download that object to inspect it with `jq`.
 
 `Status` contains the task ID, error, timestamps and collection/job status. In the current format, `Status.State` is `0` Initial, `1` Executing, `2` Success, `3` Fail, `4` FailedCleanupPending or `5` FailedCleaned. These values apply to the task state; nested DDL and job states have separate enums. To inspect the saved import IDs, batches and staging directories, use:
 
@@ -191,8 +191,8 @@ Use the same persistence location across CLI processes. For example:
 ```sh
 milvus-backup restore resume --config backup.yaml --id <restore-id> \
   --set restore.persistence.enabled=true \
-  --set restore.persistence.type=local \
-  --set restore.persistence.local.directory=/data/restore-state
+  --set restore.persistence.storage.provider=local \
+  --set restore.persistence.storage.rootPath=/data/restore-state
 ```
 
 Persistence does not change import replay semantics. A missing remote job may already have completed, so Resume reports the lookup failure and retains the ID. Resume within Milvus's job retention period, keep the backup immutable, and keep CDC stopped for independent secondary recovery.

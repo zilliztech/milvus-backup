@@ -36,7 +36,7 @@ func TestRebuiltSnapshotRunsOnlyPostprocessing(t *testing.T) {
 	store := jobstate.NewStore()
 	persist := cfg.New().Restore.Persistence
 	persist.Enabled.Val = true
-	persist.Type.Val, persist.Local.Directory.Val = "local", t.TempDir()
+	persist.Storage.Provider.Val, persist.Storage.RootPath.Val = "local", t.TempDir()
 	store.ConfigurePersistence(persist)
 	tracker, err := store.AddRestoreTask("job", true)
 	require.NoError(t, err)
@@ -120,7 +120,7 @@ func TestRebuiltImportSnapUsesOriginalJob(t *testing.T) {
 	original := newSelectPlanTask(t, "snapshot", StrategyImportSnap, true)
 	persist := cfg.New().Restore.Persistence
 	persist.Enabled.Val = true
-	persist.Type.Val, persist.Local.Directory.Val = "local", t.TempDir()
+	persist.Storage.Provider.Val, persist.Storage.RootPath.Val = "local", t.TempDir()
 	store := jobstate.NewStore()
 	store.ConfigurePersistence(persist)
 	tracker, err := store.AddRestoreTask("job", true)
@@ -220,7 +220,7 @@ func testColdResumeTwoPhaseImport(t *testing.T, format string) {
 	original := newSelectPlanTask(t, format, StrategyAuto, true)
 	config := cfg.New()
 	config.Restore.Persistence.Enabled.Val = true
-	config.Restore.Persistence.Type.Val, config.Restore.Persistence.Local.Directory.Val = "local", t.TempDir()
+	config.Restore.Persistence.Storage.Provider.Val, config.Restore.Persistence.Storage.RootPath.Val = "local", t.TempDir()
 	store.ConfigurePersistence(config.Restore.Persistence)
 	original.tracker, err = store.AddRestoreTask("job", true)
 	require.NoError(t, err)
@@ -417,9 +417,9 @@ func TestResumeReturnsBeforeBackgroundFailure(t *testing.T) {
 func TestResumeReturnsStainFailureWithoutStarting(t *testing.T) {
 	config := cfg.New().Restore.Persistence
 	config.Enabled.Val = true
-	config.Type.Val = "local"
-	config.Local.Directory.Val = filepath.Join(t.TempDir(), "blocked")
-	require.NoError(t, os.WriteFile(config.Local.Directory.Val, []byte("not a directory"), 0600))
+	config.Storage.Provider.Val = "local"
+	config.Storage.RootPath.Val = filepath.Join(t.TempDir(), "blocked")
+	require.NoError(t, os.WriteFile(config.Storage.RootPath.Val, []byte("not a directory"), 0600))
 	store := jobstate.NewStore()
 	store.ConfigurePersistence(config)
 	tracker, err := store.AddRestoreTask("job", true)
@@ -441,8 +441,8 @@ func TestColdCleanupRejectsInvalidStagingBeforeDeletingFiles(t *testing.T) {
 	config.Milvus.Storage.RootPath.Val = root
 	persist := config.Restore.Persistence
 	persist.Enabled.Val = true
-	persist.Type.Val = "local"
-	persist.Local.Directory.Val = t.TempDir()
+	persist.Storage.Provider.Val = "local"
+	persist.Storage.RootPath.Val = t.TempDir()
 	store := jobstate.NewStore()
 	store.ConfigurePersistence(persist)
 	tr, err := store.AddRestoreTask("job", true)
