@@ -54,7 +54,7 @@ func TestStartImport(t *testing.T) {
 		{name: "LocallyCompleted", id: "old", localDone: true, wantID: "old", wantDone: true},
 		{name: "RemotelyCompleted", id: "old", state: importJobState{completed: true}, wantID: "old", wantDone: true, wantQueries: 1},
 		{name: "AdoptRunning", id: "old", state: importJobState{progress: 40}, wantID: "old", wantQueries: 1},
-		{name: "ReplaceFailed", id: "old", lookupErr: milvus.ErrRemoteJobFailed, wantID: "new", wantQueries: 1, wantSubmits: 1},
+		{name: "ReplaceFailed", id: "old", state: importJobState{confirmedFailed: true}, lookupErr: milvus.ErrRemoteJobFailed, wantID: "new", wantQueries: 1, wantSubmits: 1},
 		{name: "KeepMissing", id: "old", lookupErr: milvus.ErrImportJobNotFound, wantID: "old", wantQueries: 1, wantErr: milvus.ErrImportJobNotFound},
 		{name: "KeepOnQueryError", id: "old", lookupErr: assert.AnError, wantID: "old", wantErr: assert.AnError, wantQueries: 1},
 	} {
@@ -98,7 +98,7 @@ func TestStartImportRetainsIDWhenSubmissionIsInterrupted(t *testing.T) {
 	ctx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	state := func(context.Context, string) (importJobState, error) {
-		return importJobState{}, milvus.ErrRemoteJobFailed
+		return importJobState{confirmedFailed: true}, milvus.ErrRemoteJobFailed
 	}
 	submit := func(context.Context) (string, error) {
 		cancel()

@@ -22,6 +22,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.uber.org/zap"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 	"google.golang.org/grpc"
 	"google.golang.org/protobuf/proto"
@@ -122,25 +123,27 @@ func TestSecondaryResumeImports(t *testing.T) {
 		{"SnapshotMismatchedID", meta.FormatSnapshot, []string{"query-error"}, []string{"wrong-job"}, false, false, ""},
 		{"BinlogWithoutResume", meta.FormatBinlog, []string{"Failed"}, nil, false, false, ""},
 		{"SnapshotFinalVerification", meta.FormatSnapshot, []string{"Completed"}, nil, false, true, ""},
+		{"BinlogRecordedFailureNowCompleted", meta.FormatBinlog, []string{"Failed"}, []string{"Completed"}, false, true, ""},
+		{"BinlogRecordedFailureQueryError", meta.FormatBinlog, []string{"Failed"}, []string{"query-error"}, false, false, ""},
 		{"BinlogLostPoll", meta.FormatBinlog, []string{"query-error"}, []string{"Completed"}, false, true, ""},
-		{"BinlogPreCommitFailure", meta.FormatBinlog, []string{"Failed"}, []string{"Uncommitted", "Completed"}, true, true, ""},
+		{"BinlogPreCommitFailure", meta.FormatBinlog, []string{"Failed"}, []string{"Failed", "Uncommitted", "Completed"}, true, true, ""},
 		{"BinlogGCReportedAsFailed", meta.FormatBinlog, []string{"query-error"}, []string{"missing-in-reason", "Completed"}, false, true, ""},
 		{"SnapshotJobNotYetVisible", meta.FormatSnapshot, []string{"query-error"}, []string{"not-found", "Completed"}, false, true, ""},
-		{"SnapshotPreCommitFailure", meta.FormatSnapshot, []string{"Failed"}, []string{"Uncommitted", "Completed"}, true, true, ""},
+		{"SnapshotPreCommitFailure", meta.FormatSnapshot, []string{"Failed"}, []string{"Failed", "Uncommitted", "Completed"}, true, true, ""},
 		{"SnapshotAdoptedPreCommitFailure", meta.FormatSnapshot, []string{"query-error"}, []string{"Failed", "Uncommitted", "Completed"}, true, true, ""},
 		{"SnapshotReplacementFailsAgain", meta.FormatSnapshot, []string{"query-error"}, []string{"Failed", "Failed"}, true, false, ""},
 		{"BinlogLostCommitResponse", meta.FormatBinlog, []string{"Uncommitted", "query-error"}, []string{"Completed"}, false, true, ""},
 		{"BinlogObservedCommitting", meta.FormatBinlog, []string{"Committing", "query-error"}, []string{"Failed", "Uncommitted", "Completed"}, true, true, ""},
-		{"SnapshotPostCommitFailure", meta.FormatSnapshot, []string{"Uncommitted", "Failed"}, []string{"Uncommitted", "Completed"}, true, true, ""},
-		{"BinlogPostCommitFailure", meta.FormatBinlog, []string{"Uncommitted", "Failed"}, []string{"Uncommitted", "Completed"}, true, true, ""},
+		{"SnapshotPostCommitFailure", meta.FormatSnapshot, []string{"Uncommitted", "Failed"}, []string{"Failed", "Uncommitted", "Completed"}, true, true, ""},
+		{"BinlogPostCommitFailure", meta.FormatBinlog, []string{"Uncommitted", "Failed"}, []string{"Failed", "Uncommitted", "Completed"}, true, true, ""},
 		{"BinlogAdoptedFailure", meta.FormatBinlog, []string{"query-error"}, []string{"Failed", "Completed"}, true, true, ""},
 		{"BinlogPendingThenFailed", meta.FormatBinlog, []string{"query-error"}, []string{"Pending", "Failed"}, false, false, ""},
 		{"BinlogImportingThenFailed", meta.FormatBinlog, []string{"query-error"}, []string{"Importing", "Failed"}, false, false, ""},
 		{"SnapshotUncommittedThenFailed", meta.FormatSnapshot, []string{"query-error"}, []string{"Uncommitted", "Failed"}, false, false, ""},
 		{"SnapshotCommittingThenFailed", meta.FormatSnapshot, []string{"query-error"}, []string{"Committing", "Failed"}, false, false, ""},
-		{"Binlog26Failed", meta.FormatBinlog, []string{"Failed"}, []string{"Completed"}, true, true, "2.6.27"},
+		{"Binlog26Failed", meta.FormatBinlog, []string{"Failed"}, []string{"Failed", "Completed"}, true, true, "2.6.27"},
 		{"Binlog26AdoptedFailure", meta.FormatBinlog, []string{"query-error"}, []string{"Failed", "Completed"}, true, true, "2.6.27"},
-		{"Binlog26ReplacementFails", meta.FormatBinlog, []string{"Failed"}, []string{"Failed"}, true, false, "2.6.27"},
+		{"Binlog26ReplacementFails", meta.FormatBinlog, []string{"Failed"}, []string{"Failed", "Failed"}, true, false, "2.6.27"},
 		{"Binlog26ImportingThenFailed", meta.FormatBinlog, []string{"query-error"}, []string{"Importing", "Failed"}, false, false, "2.6.27"},
 		{"Binlog26LostPoll", meta.FormatBinlog, []string{"query-error"}, []string{"Completed"}, false, true, "2.6.27"},
 		{"Binlog26MissingJob", meta.FormatBinlog, []string{"query-error"}, []string{"missing-in-reason", "Completed"}, false, true, "2.6.27"},
@@ -343,6 +346,72 @@ func TestSecondaryResumeImports(t *testing.T) {
 	}
 }
 
+func TestSiblingFailureKeepsSubmittedImport(t *testing.T) {
+	for _, phase := range []string{"Wait", "Start"} {
+		t.Run(phase, func(t *testing.T) {
+			bQuery := make(chan struct{})
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var req milvus.GetProgressReq
+				if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&req)) {
+					return
+				}
+				if req.JobId == "42" {
+					close(bQuery)
+					<-r.Context().Done()
+					return
+				}
+				assert.Equal(t, "41", req.JobId)
+				w.Header().Set("Content-Type", "application/json")
+				fmt.Fprint(w, `{"code":0,"data":{"jobId":"41","state":"Failed","reason":"access denied"}}`)
+			}))
+			defer server.Close()
+			conf := cfg.New()
+			conf.Milvus.Rest.Endpoint.Val = server.URL
+			cli, err := milvus.NewRestful(&conf.Milvus)
+			require.NoError(t, err)
+			checkpoint, err := milvus.RestoreStreamCheckpoint(&milvus.StreamCheckpointSnapshot{
+				Operations: map[string]bool{importKey(42): true},
+			})
+			require.NoError(t, err)
+			job := bulkInsertJob{restfulCli: cli, streamCheckpoint: checkpoint, logger: zap.NewNop(),
+				submit: func(context.Context, int64) error {
+					return fmt.Errorf("unexpected replacement submission")
+				},
+			}
+			a := jobstate.SecondaryImportProgress{JobID: 41}
+			b := jobstate.SecondaryImportProgress{JobID: 42}
+			timeout, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+			defer cancel()
+			group, ctx := errgroup.WithContext(timeout)
+			group.Go(func() error {
+				select {
+				case <-bQuery:
+					return job.wait(ctx, &a, "")
+				case <-ctx.Done():
+					return ctx.Err()
+				}
+			})
+			var bErr error
+			group.Go(func() error {
+				if phase == "Start" {
+					_, bErr = job.start(ctx, &b)
+				} else {
+					bErr = job.wait(ctx, &b, "")
+				}
+				return bErr
+			})
+			require.ErrorIs(t, group.Wait(), milvus.ErrRemoteJobFailed)
+			assert.ErrorIs(t, bErr, milvus.ErrRemoteJobFailed)
+			assert.Equal(t, jobstate.SecondaryImportFailed, a.State)
+			job.restfulCli = &completedRestful{}
+			state, err := job.start(timeout, &b)
+			require.NoError(t, err)
+			require.Equal(t, milvus.ImportStateCompleted, state)
+			assert.Equal(t, int64(42), b.JobID)
+		})
+	}
+}
+
 func TestResumeReplacementInterruptedBeforeSubmission(t *testing.T) {
 	store := jobstate.NewStore()
 	tracker, addErr := store.AddRestoreTask("job", true)
@@ -351,7 +420,11 @@ func TestResumeReplacementInterruptedBeforeSubmission(t *testing.T) {
 		Collections: map[int64]*restoreplan.SecondaryCollection{123: {}},
 	}}
 	progress := jobstate.NewSecondaryProgress(plan.Secondary)
-	progress.StreamCheckpoint = milvus.NewStreamCheckpoint(nil)
+	checkpoint, err := milvus.RestoreStreamCheckpoint(&milvus.StreamCheckpointSnapshot{
+		Operations: map[string]bool{importKey(41): true},
+	})
+	require.NoError(t, err)
+	progress.StreamCheckpoint = checkpoint
 	progress.Collections[123].SnapshotImport = jobstate.SecondaryImportProgress{
 		JobID: 41, State: jobstate.SecondaryImportFailed,
 	}
@@ -364,8 +437,8 @@ func TestResumeReplacementInterruptedBeforeSubmission(t *testing.T) {
 		require.NoError(t, err)
 		saved := owner.SecondaryProgress()
 		op := &saved.Collections[123].SnapshotImport
-		// Reconstruct the executor from the store for each Resume. No query
-		// client is supplied: an unregistered ID must go straight to submit.
+		// Only the original failed ID needs confirmation; the pending replacement
+		// has not yet been registered and must go straight to submit.
 		job := bulkInsertJob{
 			streamCheckpoint: saved.StreamCheckpoint,
 			logger:           zap.NewNop(),
@@ -375,6 +448,9 @@ func TestResumeReplacementInterruptedBeforeSubmission(t *testing.T) {
 				assert.Equal(t, jobstate.SecondaryImportPending, op.State)
 				return submitErr // Fail before the message is registered/sent.
 			},
+		}
+		if op.JobID == 41 {
+			job.restfulCli = &sequencedRestful{states: []milvus.ImportState{milvus.ImportStateFailed}}
 		}
 		state, err := job.start(t.Context(), op)
 		assert.NotZero(t, op.JobID)

@@ -224,7 +224,7 @@ func restfulJobState(logger *zap.Logger, cli milvus.Restful, db, jobID string, t
 			zap.Int("progress", resp.Data.Progress))
 		switch resp.Data.State {
 		case string(milvus.ImportStateFailed):
-			return importJobState{}, milvus.ImportFailure(jobID, resp.Data.Reason)
+			return failedImportState(jobID, resp.Data.Reason)
 		case string(terminal):
 			return importJobState{completed: true}, nil
 		default:

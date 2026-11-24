@@ -1,7 +1,9 @@
 package restore
 
 import (
+	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -338,4 +340,103 @@ func TestRESTJobStateReportsProgressForNone(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 73, got.progress)
 	assert.False(t, got.completed)
+}
+
+// Use the real HTTP lookup so cancellation carries the sibling's failure cause.
+// Record lifecycle calls separately, including abort calls made with a canceled context.
+type cancelLookupREST struct {
+	*twoPCCluster
+	lookup *milvus.RestfulClient
+}
+
+func (c cancelLookupREST) GetBulkInsertState(ctx context.Context, db, id string) (*milvus.GetProcessResp, error) {
+	return c.lookup.GetBulkInsertState(ctx, db, id)
+}
+
+func TestRESTResumeLookupErrorRetainsID(t *testing.T) {
+	for _, tc := range []struct {
+		name                                     string
+		snapshot, twoPC, waitReady, invalidReply bool
+	}{
+		{name: "Binlog"},
+		{name: "BinlogLookupError", invalidReply: true},
+		{name: "SnapshotTwoPCLookupError", snapshot: true, twoPC: true, invalidReply: true},
+		{name: "Snapshot", snapshot: true},
+		{name: "BinlogTwoPCInitial", twoPC: true},
+		{name: "SnapshotTwoPCInitial", twoPC: true, snapshot: true},
+		{name: "BinlogTwoPCWaitReady", twoPC: true, waitReady: true},
+		{name: "SnapshotTwoPCWaitReady", twoPC: true, snapshot: true, waitReady: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			timeout, stop := context.WithTimeout(t.Context(), 5*time.Second)
+			defer stop()
+			ctx, cancel := context.WithCancelCause(timeout)
+			defer cancel(nil)
+			var calls atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var req milvus.GetProgressReq
+				if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&req)) {
+					return
+				}
+				assert.Equal(t, "old", req.JobId)
+				w.Header().Set("Content-Type", "application/json")
+				call := calls.Add(1)
+				switch {
+				case tc.waitReady && call == 1:
+					fmt.Fprint(w, `{"code":0,"data":{"state":"Importing","progress":70}}`)
+				case tc.invalidReply && call == 1:
+					fmt.Fprint(w, `{"message":"invalid lookup response"}`)
+				case !tc.invalidReply && ctx.Err() == nil:
+					cancel(fmt.Errorf("sibling import: %w", milvus.ErrRemoteJobFailed))
+					<-r.Context().Done()
+				default:
+					fmt.Fprint(w, `{"code":0,"data":{"state":"Completed"}}`)
+				}
+			}))
+			defer server.Close()
+			conf := cfg.New()
+			conf.Milvus.Rest.Endpoint.Val = server.URL
+			lookup, err := milvus.NewRestful(&conf.Milvus)
+			require.NoError(t, err)
+			var events []string
+			var mu sync.Mutex
+			primary := newTwoPCCluster("primary", &events, &mu)
+			client := cancelLookupREST{twoPCCluster: primary, lookup: lookup}
+			local, _, _ := newLocalGRPCTask(t, true, false)
+			local.args.restfulCli = client
+			var mirrors []importSecondary
+			if tc.twoPC {
+				mirror := newTwoPCCluster("mirror", &events, &mu, "Completed")
+				mirrors = []importSecondary{{addr: "mirror", cli: mirror}}
+			}
+			job := local.job
+			task := newRESTImportTask(local.args, job, "p1", dirGroup{}, []partitionDir{local.dir}, mirrors)
+			if tc.snapshot {
+				si := newSnapshotImporter(t, primary)
+				si.restfulCli, si.jobs, si.job = client, local.args.jobs, job
+				if tc.twoPC {
+					task = &snapshotImport2PCTask{importer: si, secondaries: mirrors}
+				} else {
+					task = &snapshotImportTask{importer: si}
+				}
+			}
+			job.Bind("old")
+			err = task.Execute(ctx)
+			if tc.invalidReply {
+				require.ErrorContains(t, err, "invalid status code")
+			} else {
+				require.ErrorIs(t, err, milvus.ErrRemoteJobFailed)
+			}
+			id, done := job.Current()
+			require.Equal(t, "old", id)
+			assert.False(t, done)
+			assert.Empty(t, events)
+
+			require.NoError(t, task.Execute(timeout))
+			id, done = job.Current()
+			assert.Equal(t, "old", id)
+			assert.True(t, done)
+			assert.Empty(t, events)
+		})
+	}
 }

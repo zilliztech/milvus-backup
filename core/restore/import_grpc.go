@@ -150,7 +150,7 @@ func (gt *importViaGRPCTask) importState(ctx context.Context, id string) (import
 		if reason == "unknown import job state" {
 			return importJobState{}, fmt.Errorf("restore: unknown import state for job %d", jobID)
 		}
-		return importJobState{}, milvus.ImportFailure(strconv.FormatInt(jobID, 10), reason)
+		return failedImportState(strconv.FormatInt(jobID, 10), reason)
 	case commonpb.ImportState_ImportCompleted:
 		return importJobState{completed: true}, nil
 	default:

@@ -111,6 +111,14 @@ type importJobState struct {
 	progress int
 	// completed reports whether the job reached its success terminal state.
 	completed bool
+	// Only a response for this job can confirm failure. A canceled lookup can
+	// carry ErrRemoteJobFailed from a sibling in its error chain.
+	confirmedFailed bool
+}
+
+func failedImportState(id, reason string) (importJobState, error) {
+	err := milvus.ImportFailure(id, reason)
+	return importJobState{confirmedFailed: errors.Is(err, milvus.ErrRemoteJobFailed)}, err
 }
 
 // waitImportJob polls an import job every _bulkInsertCheckInterval until it
@@ -194,7 +202,7 @@ func startImport(ctx context.Context, job *jobstate.RestoreJobTracker, submit fu
 			job.SetProgress(int32(s.progress))
 			return id, s.completed, nil
 		}
-		if !errors.Is(err, milvus.ErrRemoteJobFailed) {
+		if !s.confirmedFailed {
 			return id, false, err
 		}
 		job.Bind("")

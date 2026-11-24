@@ -2,7 +2,6 @@ package restore
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -153,7 +152,7 @@ func (ct *collSnapshotTask) restoreSnapshot(ctx context.Context) error {
 // Keep its ID if cleanup fails so the next Resume can check and retry it.
 func (ct *collSnapshotTask) resumeState(ctx context.Context, id string) (importJobState, error) {
 	state, err := ct.restoreState(ctx, id)
-	if !errors.Is(err, milvus.ErrRemoteJobFailed) || !ct.dropExist {
+	if !state.confirmedFailed || !ct.dropExist {
 		return state, err
 	}
 	if dropErr := ct.dropExistedColl(ctx); dropErr != nil {
@@ -351,7 +350,7 @@ func (ct *collSnapshotTask) restoreState(ctx context.Context, id string) (import
 		ct.logger.Error("snapshot restore job failed, the target collection may need to be dropped by hand",
 			zap.Int64("job_id", jobID),
 			zap.String("reason", info.GetReason()))
-		return importJobState{}, fmt.Errorf("restore: %w: snapshot restore job %d failed: %s", milvus.ErrRemoteJobFailed, jobID, info.GetReason())
+		return importJobState{confirmedFailed: true}, fmt.Errorf("restore: %w: snapshot restore job %d failed: %s", milvus.ErrRemoteJobFailed, jobID, info.GetReason())
 	default:
 		return importJobState{}, fmt.Errorf("restore: snapshot job %d has unknown state %s", jobID, info.GetState())
 	}

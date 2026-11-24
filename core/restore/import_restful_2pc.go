@@ -151,7 +151,7 @@ func (rt *restImport2PC) start(ctx context.Context, submit func(context.Context)
 			rt.job.SetProgress(int32(progress))
 			return id, phase, nil
 		}
-		if rt.job.CommitRequested() || !errors.Is(err, milvus.ErrRemoteJobFailed) {
+		if rt.job.CommitRequested() || phase != milvus.ImportStateFailed || !errors.Is(err, milvus.ErrRemoteJobFailed) {
 			return id, phase, err
 		}
 		if err := rt.abort(ctx, id); err != nil {
@@ -241,7 +241,7 @@ func (rt *restImport2PC) waitPrimaryReady(ctx context.Context, jobID string) (mi
 		var err error
 		phase, progress, err = rt.primaryState(ctx, jobID)
 		if err != nil {
-			if !rt.job.CommitRequested() && errors.Is(err, milvus.ErrRemoteJobFailed) {
+			if !rt.job.CommitRequested() && phase == milvus.ImportStateFailed && errors.Is(err, milvus.ErrRemoteJobFailed) {
 				if abortErr := rt.abort(ctx, jobID); abortErr != nil {
 					return importJobState{}, abortErr
 				}

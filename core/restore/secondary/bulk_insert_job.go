@@ -65,25 +65,20 @@ func (j bulkInsertJob) start(ctx context.Context, op *jobstate.SecondaryImportPr
 	if op.State == jobstate.SecondaryImportCompleted {
 		return milvus.ImportStateCompleted, nil
 	}
-	if op.JobID != 0 &&
-		op.State != jobstate.SecondaryImportFailed &&
-		j.streamCheckpoint != nil && j.streamCheckpoint.Sent(importKey(op.JobID)) {
+	if op.JobID == 0 {
+		op.JobID = rand.Int64N(1<<62) + 1
+	} else if j.streamCheckpoint != nil && j.streamCheckpoint.Sent(importKey(op.JobID)) {
 		state, _, err := j.importProgress(ctx, strconv.FormatInt(op.JobID, 10))
-		if !errors.Is(err, milvus.ErrRemoteJobFailed) {
-			if errors.Is(err, milvus.ErrImportJobNotFound) {
-				return "", nil // Keep the ID and wait for the job to become visible.
-			}
+		if errors.Is(err, milvus.ErrImportJobNotFound) {
+			return "", nil // Keep the ID and wait for the job to become visible.
+		}
+		if state != milvus.ImportStateFailed {
 			return state, err
 		}
-		op.State = jobstate.SecondaryImportFailed
-	}
-	if op.JobID == 0 || op.State == jobstate.SecondaryImportFailed {
-		// Only a failure confirmed before waiting authorizes a replacement.
-		// Replaying a failed import is at-least-once, even after commit:
-		// published data or compaction effects may remain on the target.
+		// Only a confirmed failure of the registered job authorizes replacement.
 		op.JobID = rand.Int64N(1<<62) + 1
-		op.State = jobstate.SecondaryImportPending
 	}
+	op.State = jobstate.SecondaryImportPending
 	// The saved ID is Pending before submit; interruption before registration
 	// reuses this ID on the next Resume instead of allocating another one.
 	return "", j.submit(ctx, op.JobID)
@@ -165,7 +160,11 @@ func (j bulkInsertJob) importProgress(ctx context.Context, jobID string) (milvus
 	}
 	state := milvus.ImportState(resp.Data.State)
 	if state == milvus.ImportStateFailed {
-		return "", 0, fmt.Errorf("secondary: bulk insert failed: %w", milvus.ImportFailure(jobID, resp.Data.Reason))
+		err := milvus.ImportFailure(jobID, resp.Data.Reason)
+		if !errors.Is(err, milvus.ErrRemoteJobFailed) {
+			return "", 0, err
+		}
+		return state, 0, fmt.Errorf("secondary: bulk insert failed: %w", err)
 	}
 	return state, resp.Data.Progress, nil
 }
