@@ -43,7 +43,6 @@ class TestRestoreSecondary(TestcaseBase):
             "backup_name": back_up_name,
             "collection_names": names_origin,
             "with_index_extra": True,
-            "format": "binlog",
         }
         res = self.client.create_backup(payload)
         log.info(f"create backup response: {res}")
