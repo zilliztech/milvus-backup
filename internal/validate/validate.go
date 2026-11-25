@@ -1,6 +1,10 @@
 package validate
 
-import "unicode"
+import (
+	"errors"
+	"regexp"
+	"unicode"
+)
 
 // HasSpecialChar checks if the name contains special characters.
 func HasSpecialChar(name string) bool {
@@ -36,4 +40,14 @@ func IsNumber(c rune) bool {
 		return false
 	}
 	return true
+}
+
+var restoreTaskID = regexp.MustCompile(`^[A-Za-z0-9_-]+$`)
+
+// RestoreTaskID validates an ID before it is used in staging paths.
+func RestoreTaskID(id string) error {
+	if !restoreTaskID.MatchString(id) {
+		return errors.New("restore task ID must contain only ASCII letters, digits, underscores or hyphens")
+	}
+	return nil
 }

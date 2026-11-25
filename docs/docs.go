@@ -309,6 +309,15 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/apiv1.RestoreBackupResponse"
                         }
+                    },
+                    "400": {
+                        "description": "Invalid request body or restore task ID",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
                     }
                 }
             }
@@ -348,6 +357,15 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/apiv1.RestoreBackupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid request body or restore task ID",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 }
@@ -789,7 +807,7 @@ const docTemplate = `{
                     }
                 },
                 "id": {
-                    "description": "Restore task id, defaults to a generated one when unset.",
+                    "description": "Restore task ID. Use ASCII letters, digits, underscores or hyphens, or omit to generate one.",
                     "type": "string"
                 },
                 "maxShardNum": {
@@ -1052,7 +1070,7 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "requestId": {
-                    "description": "Uuid of request; doubles as the restore task id.",
+                    "description": "Request and restore task ID. Use ASCII letters, digits, underscores or hyphens, or omit to generate one.",
                     "type": "string"
                 },
                 "sourceClusterID": {

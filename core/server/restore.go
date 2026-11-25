@@ -54,11 +54,18 @@ type restoreJobFactory func(ctx context.Context, params *cfg.Config, req app.Res
 // @Param request_id header string false "request_id"
 // @Param object body apiv1.RestoreBackupRequest   true  "RestoreBackupRequest JSON"
 // @Success 200 {object} apiv1.RestoreBackupResponse
+// @Failure 400 {object} map[string]string "Invalid request body or restore task ID"
 // @Router /restore [post]
 func (s *Server) handleRestoreBackup(c *echo.Context) error {
 	var request apiv1.RestoreBackupRequest
 	if err := json.NewDecoder(c.Request().Body).Decode(&request); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]any{"error": fmt.Sprintf("invalid request body: %s", err)})
+	}
+
+	if request.ID != "" {
+		if err := validate.RestoreTaskID(request.ID); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})
+		}
 	}
 
 	// The restore outlives the HTTP request, so the job runs detached

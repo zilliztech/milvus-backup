@@ -17,6 +17,7 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
 	"github.com/zilliztech/milvus-backup/internal/log"
+	"github.com/zilliztech/milvus-backup/internal/validate"
 )
 
 // restoreSecondaryJobFactory is the secondary-restore counterpart of
@@ -32,11 +33,18 @@ type restoreSecondaryJobFactory func(ctx context.Context, params *cfg.Config, re
 // @Param request_id header string false "request_id"
 // @Param object body apiv1.RestoreSecondaryRequest   true  "RestoreSecondaryRequest JSON"
 // @Success 200 {object} apiv1.RestoreBackupResponse
+// @Failure 400 {object} map[string]string "Invalid request body or restore task ID"
 // @Router /restore_secondary [post]
 func (s *Server) handleRestoreSecondary(c *echo.Context) error {
 	var request apiv1.RestoreSecondaryRequest
 	if err := json.NewDecoder(c.Request().Body).Decode(&request); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]any{"error": fmt.Sprintf("invalid request body: %s", err)})
+	}
+
+	if request.RequestId != "" {
+		if err := validate.RestoreTaskID(request.RequestId); err != nil {
+			return c.JSON(http.StatusBadRequest, map[string]any{"error": err.Error()})
+		}
 	}
 
 	log.Info("receive restore secondary request", zap.Any("request", &request))
