@@ -1,7 +1,14 @@
 package storage
 
 import (
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+
+	gcs "cloud.google.com/go/storage"
+	"github.com/stretchr/testify/require"
+	"google.golang.org/api/option"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -43,4 +50,17 @@ func TestIsStandardGCSEndpoint(t *testing.T) {
 				"endpoint %q", tc.endpoint)
 		})
 	}
+}
+
+func TestGCPNativeUploadReturnsCommitFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "access denied", http.StatusForbidden)
+	}))
+	defer server.Close()
+	client, err := gcs.NewClient(t.Context(), option.WithEndpoint(server.URL), option.WithoutAuthentication())
+	require.NoError(t, err)
+	defer client.Close()
+	store := GCPNativeClient{client: client, cfg: Config{Bucket: "state"}}
+	err = store.UploadObject(t.Context(), UploadObjectInput{Key: "task", Body: strings.NewReader("stain"), Size: 5})
+	require.ErrorContains(t, err, "403")
 }

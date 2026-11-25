@@ -273,6 +273,10 @@ definitions:
       dropExistIndex:
         description: Drop existing index of target collection before create.
         type: boolean
+      enableResume:
+        description: Enable Restore Resume (Alpha) for this task and retain staged
+          binlogs on failure.
+        type: boolean
       ezkMapping:
         additionalProperties:
           type: string
@@ -367,6 +371,9 @@ definitions:
         items:
           $ref: '#/definitions/apiv1.RestoreCollectionTaskResponse'
         type: array
+      enableResume:
+        description: Whether Restore Resume (Alpha) was enabled for this task at registration.
+        type: boolean
       end_time:
         type: integer
       errorMessage:
@@ -415,6 +422,13 @@ definitions:
       target_db_name:
         type: string
     type: object
+  apiv1.RestoreControlRequest:
+    properties:
+      id:
+        type: string
+      requestId:
+        type: string
+    type: object
   apiv1.RestoreMapping:
     properties:
       colls:
@@ -452,6 +466,10 @@ definitions:
       backup_name:
         description: Backup name to restore.
         type: string
+      enableResume:
+        description: Enable Restore Resume (Alpha) for this task and retain staged
+          binlogs on failure.
+        type: boolean
       path:
         description: Path, overriding the config for this call.
         type: string
@@ -774,6 +792,8 @@ definitions:
     - 2
     - 3
     - 4
+    - 5
+    - 6
     format: int32
     type: integer
     x-enum-varnames:
@@ -782,6 +802,8 @@ definitions:
     - RestoreTaskStateCode_SUCCESS
     - RestoreTaskStateCode_FAIL
     - RestoreTaskStateCode_TIMEOUT
+    - RestoreTaskStateCode_FAILED_CLEANUP_PENDING
+    - RestoreTaskStateCode_FAILED_CLEANED
   backuppb.StructArrayFieldSchema:
     properties:
       description:
@@ -814,6 +836,55 @@ info:
   title: Milvus Backup Service
   version: "1.0"
 paths:
+  /cleanup_failed_restore:
+    post:
+      consumes:
+      - application/json
+      description: Restore Resume is Alpha (experimental). Its HTTP endpoints and
+        request parameters, CLI commands and flags, configuration keys, and persisted
+        state format may change without backward compatibility.
+      parameters:
+      - description: Restore identity
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/apiv1.RestoreControlRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apiv1.RestoreBackupResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Abandon a failed restore and clean its temporary files in one pass
+        (Alpha)
+      tags:
+      - Restore
   /create:
     post:
       consumes:
@@ -941,7 +1012,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: Submit a request to restore the data from backup
+      description: Submit a request to restore the data from backup. Restore Resume
+        is Alpha (experimental). Its HTTP endpoints and request parameters, CLI commands
+        and flags, configuration keys, and persisted state format may change without
+        backward compatibility.
       parameters:
       - description: request_id
         in: header
@@ -967,7 +1041,10 @@ paths:
     post:
       consumes:
       - application/json
-      description: Submit a request to restore the data from backup
+      description: Submit a request to restore the data from backup. Restore Resume
+        is Alpha (experimental). Its HTTP endpoints and request parameters, CLI commands
+        and flags, configuration keys, and persisted state format may change without
+        backward compatibility.
       parameters:
       - description: request_id
         in: header
@@ -987,6 +1064,55 @@ paths:
           schema:
             $ref: '#/definitions/apiv1.RestoreBackupResponse'
       summary: Restore interface
+      tags:
+      - Restore
+  /resume_restore:
+    post:
+      consumes:
+      - application/json
+      description: Restore Resume is Alpha (experimental). Its HTTP endpoints and
+        request parameters, CLI commands and flags, configuration keys, and persisted
+        state format may change without backward compatibility.
+      parameters:
+      - description: Restore identity
+        in: body
+        name: request
+        required: true
+        schema:
+          $ref: '#/definitions/apiv1.RestoreControlRequest'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/apiv1.RestoreBackupResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "409":
+          description: Conflict
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "500":
+          description: Internal Server Error
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Resume the original immutable restore plan from memory or persisted
+        state (Alpha)
       tags:
       - Restore
 swagger: "2.0"

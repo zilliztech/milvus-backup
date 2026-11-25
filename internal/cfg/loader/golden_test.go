@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 
+	"github.com/zilliztech/milvus-backup/internal/cfg"
 	"github.com/zilliztech/milvus-backup/internal/cfg/param"
 )
 
@@ -24,7 +25,8 @@ import (
 // tests pin that instead.
 //
 // Regenerating the goldens requires the pre-translation tree: run this test
-// with GOLDEN_WRITE=1 there, then copy testdata/golden back.
+// with GOLDEN_WRITE=1 there, then copy testdata/golden back. Fields introduced
+// only in v2, such as Restore.Persistence, also pin their current defaults.
 type goldenCase struct {
 	Name      string            `yaml:"name"`
 	Config    string            `yaml:"config"`
@@ -344,6 +346,14 @@ const goldenCasesYAML = `cases:
 `
 
 func TestLoadV1Golden(t *testing.T) {
+	// The v2 cases must reflect fixture inputs even on a host configured for persistence.
+	param.Walk(&cfg.New().Restore.Persistence, func(_ string, f param.Field) {
+		for _, name := range f.EnvNames() {
+			t.Setenv(name, "")
+			require.NoError(t, os.Unsetenv(name))
+		}
+	})
+
 	var cases struct {
 		Cases []goldenCase `yaml:"cases"`
 	}

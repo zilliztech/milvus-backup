@@ -152,6 +152,25 @@ backup:
   pauseGC: true
 
 restore:
+  # Restore Resume is Alpha (experimental). Its HTTP endpoints and request parameters,
+  # CLI commands and flags, configuration keys, and persisted state format may change
+  # without backward compatibility.
+  # Task state persistence is used by requests that enable Resume.
+  # Server/CLI startup checks read/write/delete access; failure only logs a warning.
+  # See docs/user_guide/restore_resume.md.
+  persistence:
+    # Enable for recovery across server restarts or separate CLI invocations.
+    # Records can contain Milvus and storage credentials and are plaintext by default.
+    # Choose a restricted directory or object storage location and review encryption before enabling.
+    enabled: false
+    storage: # same providers and authentication fields as backup.storage
+      provider: local
+      rootPath: restore-state # use a persistent volume for cross-process recovery
+    encryption:
+      enabled: false # encrypt task records in the selected backend
+      keyID: "" # stable master key ID; or RESTORE_PERSISTENCE_ENCRYPTION_KEY_ID
+      key: "" # Base64 of 32 random bytes; or RESTORE_PERSISTENCE_ENCRYPTION_KEY
+
   concurrency:
     # Collection level parallelism to restore
     collections: 2

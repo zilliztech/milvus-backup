@@ -61,7 +61,7 @@ func (dbt *databaseTask) Execute(ctx context.Context) error {
 		WithBody(body).
 		WithBroadcast([]string{dbt.backupInfo.GetControlChannelName()})
 
-	err := dbt.streamCli.Send(ctx, func(uint64) []message.MutableMessage {
+	err := dbt.streamCli.Send(ctx, "db/"+dbt.dbBackup.GetDbName(), func(uint64) []message.MutableMessage {
 		broadcast := builder.MustBuildBroadcast().WithBroadcastID(rand.Uint64())
 		return broadcast.SplitIntoMutableMessage()
 	})

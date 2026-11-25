@@ -49,9 +49,11 @@ func TestRunConcurrent(t *testing.T) {
 		sentinel := errors.New("boom")
 
 		var canceledObserved atomic.Bool
+		secondStarted := make(chan struct{})
 		tasks := []Tasklet{
-			funcTask(func(ctx context.Context) error { return sentinel }),
+			funcTask(func(ctx context.Context) error { <-secondStarted; return sentinel }),
 			funcTask(func(ctx context.Context) error {
+				close(secondStarted)
 				<-ctx.Done()
 				canceledObserved.Store(true)
 				return ctx.Err()

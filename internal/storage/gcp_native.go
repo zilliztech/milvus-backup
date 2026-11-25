@@ -11,12 +11,10 @@ import (
 	"strings"
 
 	"cloud.google.com/go/storage"
-	"go.uber.org/zap"
 	"golang.org/x/oauth2/google"
 	"google.golang.org/api/iterator"
 	"google.golang.org/api/option"
 
-	"github.com/zilliztech/milvus-backup/internal/log"
 	"github.com/zilliztech/milvus-backup/internal/retry"
 )
 
@@ -30,18 +28,15 @@ type GCPNativeClient struct {
 }
 
 func (gcm *GCPNativeClient) UploadObject(ctx context.Context, i UploadObjectInput) error {
+	ctx, cancel := context.WithCancel(ctx)
+	defer cancel()
 	wc := gcm.client.Bucket(gcm.cfg.Bucket).Object(i.Key).NewWriter(ctx)
-	defer func() {
-		if err := wc.Close(); err != nil {
-			log.Error("Failed to close writer", zap.Error(err))
-		}
-	}()
-
 	if _, err := io.Copy(wc, i.Body); err != nil {
+		cancel()
+		_ = wc.Close()
 		return fmt.Errorf("storage: gcp native upload object: %w", err)
 	}
-
-	return nil
+	return wc.Close()
 }
 
 func (gcm *GCPNativeClient) CopyObject(ctx context.Context, i CopyObjectInput) error {

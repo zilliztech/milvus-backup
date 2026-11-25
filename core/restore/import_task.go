@@ -18,10 +18,13 @@ import (
 	"github.com/zilliztech/milvus-backup/internal/client/milvus"
 	"github.com/zilliztech/milvus-backup/internal/collref"
 	"github.com/zilliztech/milvus-backup/internal/jobstate"
+	"github.com/zilliztech/milvus-backup/internal/restoreplan"
 	"github.com/zilliztech/milvus-backup/internal/storage"
 )
 
 const (
+	// Match the REST client's timeout for receiving the job ID.
+	_importSubmitTimeout     = 2 * time.Minute
 	_bulkInsertTimeout       = 60 * time.Minute
 	_bulkInsertCheckInterval = 3 * time.Second
 )
@@ -78,14 +81,44 @@ type importPlanner interface {
 	planTasks(partitionName string, groups []dirGroup) []tasklet.Tasklet
 }
 
+func (a importTaskArgs) registerImport(partition string, g dirGroup, dirs []partitionDir) *jobstate.RestoreJobTracker {
+	if !a.jobs.ResumeEnabled() {
+		return a.jobs.NewJob(lo.SumBy(dirs, func(d partitionDir) int64 { return d.size }))
+	}
+	batch := restoreplan.BinlogImportBatch{PartitionName: partition, L0: g.isL0, Timestamp: g.timestamp, StorageVersion: g.storageVersion}
+	for _, d := range dirs {
+		batch.Dirs = append(batch.Dirs, restoreplan.Directory{Insert: d.insertLogDir, Delta: d.deltaLogDir, Size: d.size})
+	}
+	return a.jobs.NewBinlogImport(batch).Tracker
+}
+
+func (a importTaskArgs) importTask(strategy Strategy, job jobstate.BinlogImport, secondaries []importSecondary) tasklet.Tasklet {
+	batch := job.Batch
+	dirs := make([]partitionDir, len(batch.Dirs))
+	for i, d := range batch.Dirs {
+		dirs[i] = partitionDir{insertLogDir: d.Insert, deltaLogDir: d.Delta, size: d.Size}
+	}
+	g := dirGroup{timestamp: batch.Timestamp, storageVersion: batch.StorageVersion, isL0: batch.L0}
+	if strategy == StrategyPerSeg {
+		return newGRPCImportTask(a, job.Tracker, batch.PartitionName, g, dirs[0])
+	}
+	return newRESTImportTask(a, job.Tracker, batch.PartitionName, g, dirs, secondaries)
+}
+
 // importJobState is one snapshot of an import job, normalized across the grpc
 // and restful apis.
 type importJobState struct {
 	progress int
 	// completed reports whether the job reached its success terminal state.
 	completed bool
-	// failedReason is non-empty when the job failed, carrying why it did.
-	failedReason string
+	// Only a response for this job can confirm failure. A canceled lookup can
+	// carry ErrRemoteJobFailed from a sibling in its error chain.
+	confirmedFailed bool
+}
+
+func failedImportState(id, reason string) (importJobState, error) {
+	err := milvus.ImportFailure(id, reason)
+	return importJobState{confirmedFailed: errors.Is(err, milvus.ErrRemoteJobFailed)}, err
 }
 
 // waitImportJob polls an import job every _bulkInsertCheckInterval until it
@@ -103,15 +136,17 @@ func waitImportJob(
 ) error {
 	var lastProgress int
 	lastUpdateTime := time.Now()
-	for range time.Tick(_bulkInsertCheckInterval) {
+	ticker := time.NewTicker(_bulkInsertCheckInterval)
+	defer ticker.Stop()
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		s, err := state(ctx)
 		if err != nil {
-			return fmt.Errorf("restore: failed to get bulk insert state: %w", err)
+			return fmt.Errorf("restore: wait for import job %s: %w", jobID, err)
 		}
 
-		if s.failedReason != "" {
-			return fmt.Errorf("restore: bulk insert failed: %s", s.failedReason)
-		}
 		if s.completed {
 			logger.Info("bulk insert task reached awaited state", zap.String("job_id", jobID))
 			return nil
@@ -127,9 +162,66 @@ func waitImportJob(
 				zap.Duration("timeout", _bulkInsertTimeout))
 			lastUpdateTime = time.Now()
 		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-ticker.C:
+		}
 	}
+}
 
-	return errors.New("restore: walk into unreachable code")
+// For resumable tasks, give Milvus time to return its job ID even if a
+// sibling fails. Staging and polling still use the collection's context.
+func submitImport[ID any](ctx context.Context, enableResume bool, submit func(context.Context) (ID, error)) (ID, error) {
+	if !enableResume {
+		return submit(ctx)
+	}
+	if err := ctx.Err(); err != nil {
+		var zero ID
+		return zero, err
+	}
+	submitCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), _importSubmitTimeout)
+	defer cancel()
+	return submit(submitCtx)
+}
+
+// startImport selects the job for this execution. Only the initial lookup of
+// an existing ID can authorize replacement; waiting never submits another job.
+func startImport(ctx context.Context, job *jobstate.RestoreJobTracker, submit func(context.Context) (string, error), state func(context.Context, string) (importJobState, error)) (string, bool, error) {
+	id, done := job.Current()
+	if done {
+		return id, true, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return id, false, err
+	}
+	if id != "" {
+		job.Bind(id)
+		s, err := state(ctx, id)
+		if err == nil {
+			job.SetProgress(int32(s.progress))
+			return id, s.completed, nil
+		}
+		if !s.confirmedFailed {
+			return id, false, err
+		}
+		job.Bind("")
+	}
+	if err := ctx.Err(); err != nil {
+		return "", false, err
+	}
+	// A failed job may already have published data. Replacing it,
+	// or submitting after a lost response without an ID, is at-least-once.
+	id, err := submit(ctx)
+	if err != nil {
+		return id, false, err
+	}
+	if id == "" {
+		return "", false, errors.New("restore: Milvus returned an empty import ID")
+	}
+	// Record the accepted job even if a sibling canceled this execution.
+	job.Bind(id)
+	return id, false, ctx.Err()
 }
 
 // importPath maps a bucket-relative restore key onto the path handed to the

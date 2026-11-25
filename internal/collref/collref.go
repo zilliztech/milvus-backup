@@ -41,3 +41,14 @@ func New(dbName, collName string) Name {
 func (n Name) String() string   { return n.dbName + "." + n.collName }
 func (n Name) DBName() string   { return n.dbName }
 func (n Name) CollName() string { return n.collName }
+
+// MarshalText preserves both components when collection references are encoded.
+func (n Name) MarshalText() ([]byte, error) { return []byte(n.String()), nil }
+func (n *Name) UnmarshalText(data []byte) error {
+	value, err := Parse(string(data))
+	if err != nil {
+		return err
+	}
+	*n = value
+	return nil
+}

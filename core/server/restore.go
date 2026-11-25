@@ -47,7 +47,7 @@ type restoreJobFactory func(ctx context.Context, params *cfg.Config, req app.Res
 
 // RestoreBackup Restore interface
 // @Summary Restore interface
-// @Description Submit a request to restore the data from backup
+// @Description Submit a request to restore the data from backup. Restore Resume is Alpha (experimental). Its HTTP endpoints and request parameters, CLI commands and flags, configuration keys, and persisted state format may change without backward compatibility.
 // @Tags Restore
 // @Accept application/json
 // @Produce application/json
@@ -108,10 +108,8 @@ func (s *Server) restore(ctx context.Context, request *apiv1.RestoreBackupReques
 
 	job, err := s.config.newRestoreJob(ctx, params, *req)
 	if err != nil {
-		// A backup that is not there is the caller's mistake; everything
-		// else is the server's.
 		code := backuppb.ResponseCode_Fail
-		if errors.Is(err, app.ErrBackupNotFound) {
+		if errors.Is(err, app.ErrBackupNotFound) || errors.Is(err, restore.ErrDuplicateTarget) {
 			code = backuppb.ResponseCode_Parameter_Error
 		}
 		return &apiv1.RestoreBackupResponse{Code: code, Msg: err.Error()}
@@ -132,26 +130,18 @@ func (s *Server) restore(ctx context.Context, request *apiv1.RestoreBackupReques
 		log.Error("restore backup task wait fail", zap.String("backupId", request.ID), zap.Error(err))
 		return &apiv1.RestoreBackupResponse{Code: backuppb.ResponseCode_Fail, Msg: err.Error()}
 	}
-	if status.State == jobstate.RestoreStateFail {
-		log.Error("restore backup task execute fail", zap.String("backupId", request.ID), zap.String("message", status.ErrorMessage))
-		return &apiv1.RestoreBackupResponse{Code: backuppb.ResponseCode_Fail, Msg: status.ErrorMessage}
-	}
-
-	view, err := s.restoreTaskView(ctx, request.ID)
-	if err != nil {
-		resp := &apiv1.RestoreBackupResponse{RequestId: request.RequestId}
-		resp.Code = backuppb.ResponseCode_Fail
-		log.Error("get restore task fail", zap.String("taskId", request.ID), zap.Error(err))
-		resp.Msg = err.Error()
-		return resp
-	}
-
-	return &apiv1.RestoreBackupResponse{
+	resp := &apiv1.RestoreBackupResponse{
 		RequestId: request.RequestId,
 		Code:      backuppb.ResponseCode_Success,
 		Msg:       "success",
-		Data:      apiv1.NewRestoreTaskResp(view),
+		Data:      apiv1.NewRestoreTaskResp(status),
 	}
+	if status.Failed() {
+		log.Error("restore backup task execute fail", zap.String("backupId", request.ID), zap.String("message", status.ErrorMessage))
+		resp.Code = backuppb.ResponseCode_Fail
+		resp.Msg = status.ErrorMessage
+	}
+	return resp
 }
 
 // restoreAsync launches the job in the background — async is a deployment
@@ -299,6 +289,7 @@ func newOptionFromRequest(request *apiv1.RestoreBackupRequest) (*restore.Option,
 	}
 
 	return &restore.Option{
+		EnableResume:         request.EnableResume,
 		DropExistIndex:       request.DropExistIndex,
 		RebuildIndex:         request.RestoreIndex,
 		UseAutoIndex:         request.UseAutoIndex,

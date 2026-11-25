@@ -149,3 +149,78 @@ func TestLoad_V1ValidationError(t *testing.T) {
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "bogus")
 }
+
+func TestRestorePersistenceConfig(t *testing.T) {
+	for _, name := range []string{"RESTORE_PERSISTENCE_ENCRYPTION_KEY_ID", "RESTORE_PERSISTENCE_ENCRYPTION_KEY"} {
+		t.Setenv(name, "")
+		require.NoError(t, os.Unsetenv(name))
+	}
+	file := write(t, `configVersion: v2
+restore:
+  persistence:
+    enabled: true
+    storage:
+      provider: local
+      rootPath: /state/from-yaml
+    encryption:
+      enabled: true
+      keyID: first
+      key: example-test-value
+`)
+	out, err := Load(file, map[string]string{"restore.persistence.storage.rootPath": "/state/override"})
+	require.NoError(t, err)
+	assert.Equal(t, "local", out.Restore.Persistence.Storage.Provider.Val)
+	assert.True(t, out.Restore.Persistence.Enabled.Val)
+	assert.Equal(t, "/state/override", out.Restore.Persistence.Storage.RootPath.Val)
+	assert.True(t, out.Restore.Persistence.Encryption.Enabled.Val)
+	assert.Equal(t, "first", out.Restore.Persistence.Encryption.KeyID.Val)
+	assert.Equal(t, "example-test-value", out.Restore.Persistence.Encryption.Key.Val)
+	assert.True(t, out.Restore.Persistence.Encryption.Key.IsSecret())
+	out, err = Load(write(t, "configVersion: v2\n"), nil)
+	require.NoError(t, err)
+	assert.Equal(t, "local", out.Restore.Persistence.Storage.Provider.Val)
+	assert.False(t, out.Restore.Persistence.Enabled.Val)
+	assert.False(t, out.Restore.Persistence.Encryption.Enabled.Val)
+	assert.Equal(t, "restore-state", out.Restore.Persistence.Storage.RootPath.Val)
+	assert.Equal(t, "a-bucket", out.Restore.Persistence.Storage.BucketName.Val)
+	out, err = Load(file, map[string]string{"restore.persistence.enabled": "false"})
+	require.NoError(t, err)
+	assert.False(t, out.Restore.Persistence.Enabled.Val)
+	_, err = Load(file, map[string]string{"restore.persistence.storage.provider": "invalid"})
+	assert.Error(t, err)
+}
+
+func TestPersistenceEncryptionKeySources(t *testing.T) {
+	t.Setenv("RESTORE_PERSISTENCE_ENCRYPTION_KEY_ID", "")
+	require.NoError(t, os.Unsetenv("RESTORE_PERSISTENCE_ENCRYPTION_KEY_ID"))
+	file := write(t, `configVersion: v2
+restore:
+  persistence:
+    encryption:
+      keyID: yaml-id
+      key: yaml-key
+`)
+	t.Setenv("RESTORE_PERSISTENCE_ENCRYPTION_KEY", "env-key")
+	config, err := Load(file, nil)
+	require.NoError(t, err)
+	e := config.Restore.Persistence.Encryption
+	assert.False(t, e.Enabled.Val)
+	assert.Equal(t, "yaml-id", e.KeyID.Val)
+	assert.Equal(t, "env-key", e.Key.Val)
+	assert.Equal(t, param.SourceEnv, e.Key.Used.Kind)
+	assert.Equal(t, "****", e.Key.Display("key").Value)
+
+	t.Setenv("RESTORE_PERSISTENCE_ENCRYPTION_KEY_ID", "env-id")
+	config, err = Load(file, map[string]string{"restore.persistence.encryption.key": "override-key"})
+	require.NoError(t, err)
+	e = config.Restore.Persistence.Encryption
+	assert.Equal(t, "env-id", e.KeyID.Val)
+	assert.Equal(t, "override-key", e.Key.Val)
+	assert.Equal(t, param.SourceOverride, e.Key.Used.Kind)
+
+	fork, err := config.Fork(map[string]string{"RESTORE_PERSISTENCE_ENCRYPTION_KEY_ID": "fork-id"})
+	require.NoError(t, err)
+	assert.Equal(t, "fork-id", fork.Restore.Persistence.Encryption.KeyID.Val)
+	assert.Equal(t, "env-id", config.Restore.Persistence.Encryption.KeyID.Val)
+	assert.Equal(t, "override-key", fork.Restore.Persistence.Encryption.Key.Val)
+}

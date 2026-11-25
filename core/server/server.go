@@ -1,6 +1,7 @@
 package server
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"sync"
@@ -15,6 +16,7 @@ import (
 
 	"github.com/zilliztech/milvus-backup/docs"
 	"github.com/zilliztech/milvus-backup/internal/cfg"
+	"github.com/zilliztech/milvus-backup/internal/jobstate"
 )
 
 // Server is the Backup Server
@@ -32,6 +34,7 @@ func New(params *cfg.Config, opts ...Option) (*Server, error) {
 		opt(conf)
 	}
 
+	jobstate.Default().InitializePersistence(context.Background(), params.Restore.Persistence)
 	s := &Server{config: conf, params: params}
 	s.initEngine()
 
@@ -80,6 +83,8 @@ func (s *Server) initEngine() {
 	apiv1.GET("/get_backup", s.handleGetBackup)
 	apiv1.DELETE("/delete", s.handleDeleteBackup)
 	apiv1.POST("/restore", s.handleRestoreBackup)
+	apiv1.POST("/resume_restore", s.handleResumeRestore)
+	apiv1.POST("/cleanup_failed_restore", s.handleCleanupFailedRestore)
 	apiv1.POST("/restore_secondary", s.handleRestoreSecondary)
 	apiv1.GET("/get_restore", s.handleGetRestore)
 	apiv1.GET("/check", s.handleCheck)

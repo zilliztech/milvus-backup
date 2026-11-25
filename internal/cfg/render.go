@@ -60,7 +60,7 @@ func Render(c *Config, comments map[string]string) ([]byte, error) {
 // explicitly set rather than defaulted.
 func skippableKeys(c *Config) map[string]struct{} {
 	skip := map[string]struct{}{}
-	for _, s := range []*StorageConfig{&c.Milvus.Storage, &c.Backup.Storage} {
+	for _, s := range []*StorageConfig{&c.Milvus.Storage, &c.Backup.Storage, &c.Restore.Persistence.Storage} {
 		for _, key := range s.inapplicableKeys() {
 			skip[strings.ToLower(key)] = struct{}{}
 		}

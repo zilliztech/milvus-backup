@@ -25,7 +25,7 @@ type restoreSecondaryJobFactory func(ctx context.Context, params *cfg.Config, re
 
 // RestoreBackup Restore interface
 // @Summary Restore interface
-// @Description Submit a request to restore the data from backup
+// @Description Submit a request to restore the data from backup. Restore Resume is Alpha (experimental). Its HTTP endpoints and request parameters, CLI commands and flags, configuration keys, and persisted state format may change without backward compatibility.
 // @Tags Restore
 // @Accept application/json
 // @Produce application/json
@@ -104,6 +104,7 @@ func (s *Server) restoreSecondary(ctx context.Context, request *apiv1.RestoreSec
 		resp.Msg = err.Error()
 		return resp
 	}
+	resp.Data = apiv1.NewRestoreTaskResp(status)
 	if status.State == jobstate.RestoreStateFail {
 		log.Error("restore secondary task execute fail", zap.String("request_id", request.RequestId), zap.String("message", status.ErrorMessage))
 		resp.Code = backuppb.ResponseCode_Fail
@@ -111,16 +112,8 @@ func (s *Server) restoreSecondary(ctx context.Context, request *apiv1.RestoreSec
 		return resp
 	}
 
-	view, err := s.restoreTaskView(ctx, request.RequestId)
-	if err != nil {
-		resp.Code = backuppb.ResponseCode_Fail
-		resp.Msg = err.Error()
-		return resp
-	}
-
 	resp.Code = backuppb.ResponseCode_Success
 	resp.Msg = "success"
-	resp.Data = apiv1.NewRestoreTaskResp(view)
 	return resp
 }
 
@@ -173,5 +166,6 @@ func newRestoreSecondaryRequest(request *apiv1.RestoreSecondaryRequest) app.Rest
 		BackupName:      request.BackupName,
 		SourceClusterID: request.SourceClusterID,
 		TargetClusterID: request.TargetClusterID,
+		EnableResume:    request.EnableResume,
 	}
 }

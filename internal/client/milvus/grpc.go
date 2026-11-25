@@ -923,7 +923,16 @@ func (g *GrpcClient) HasCollectionByID(ctx context.Context, collectionID int64) 
 	return true, nil
 }
 
+// A resumable submission may already have created a job when its reply is lost.
+func submitCallOptions(disableRetry bool) []grpc.CallOption {
+	if disableRetry {
+		return []grpc.CallOption{grpcretry.Disable()}
+	}
+	return nil
+}
+
 type GrpcBulkInsertInput struct {
+	DisableRetry   bool
 	DB             string
 	CollectionName string
 	PartitionName  string
@@ -968,11 +977,14 @@ func (g *GrpcClient) BulkInsert(ctx context.Context, input GrpcBulkInsertInput) 
 		Files:          input.Paths,
 		Options:        input.opts(),
 	}
-	resp, err := g.srv.Import(ctx, in)
+	resp, err := g.srv.Import(ctx, in, submitCallOptions(input.DisableRetry)...)
 	if err := checkResponse(resp, err); err != nil {
 		return 0, fmt.Errorf("client: bulk insert failed: %w", err)
 	}
 
+	if len(resp.GetTasks()) == 0 || resp.GetTasks()[0] <= 0 {
+		return 0, fmt.Errorf("client: bulk insert returned no job ID")
+	}
 	return resp.GetTasks()[0], nil
 }
 
@@ -981,11 +993,27 @@ func (g *GrpcClient) GetBulkInsertState(ctx context.Context, taskID int64) (*mil
 
 	var resp *milvuspb.GetImportStateResponse
 	err := retry.Do(ctx, func() error {
-		innerResp, innerErr := g.srv.GetImportState(ctx, &milvuspb.GetImportStateRequest{Task: taskID})
-		if err := checkResponse(innerResp, innerErr); err != nil {
+		reply, err := g.srv.GetImportState(ctx, &milvuspb.GetImportStateRequest{Task: taskID})
+		if err != nil {
 			return fmt.Errorf("client: get bulk insert state: %w", err)
 		}
-		resp = innerResp
+		s := reply.GetStatus()
+		if s == nil {
+			return retry.Unrecoverable(fmt.Errorf("client: missing import lookup status for job %d", taskID))
+		}
+		if id := reply.GetId(); id != 0 && id != taskID {
+			return retry.Unrecoverable(fmt.Errorf("client: queried import job %d but received job %d", taskID, id))
+		}
+		if err := ImportLookupError(strconv.FormatInt(taskID, 10), int(s.GetCode()), s.GetReason()); err != nil {
+			if errors.Is(err, ErrImportJobNotFound) {
+				return retry.Unrecoverable(err)
+			}
+			return err
+		}
+		if err := checkResponse(s, nil); err != nil {
+			return fmt.Errorf("client: get bulk insert state: %w", err)
+		}
+		resp = reply
 		return nil
 	})
 
@@ -1399,6 +1427,7 @@ func (g *GrpcClient) DescribeSnapshot(ctx context.Context, db, collName, snapsho
 //
 // ExternalSpec carries the source credentials under the same rules as the export side.
 type RestoreExternalSnapshotInput struct {
+	DisableRetry         bool
 	DB                   string
 	TargetCollectionName string
 	SnapshotMetadataURI  string
@@ -1419,11 +1448,14 @@ func (g *GrpcClient) RestoreExternalSnapshot(ctx context.Context, input RestoreE
 		SnapshotMetadataUri:  input.SnapshotMetadataURI,
 		ExternalSpec:         input.ExternalSpec,
 	}
-	resp, err := g.srv.RestoreExternalSnapshot(ctx, in)
+	resp, err := g.srv.RestoreExternalSnapshot(ctx, in, submitCallOptions(input.DisableRetry)...)
 	if err := checkResponse(resp, err); err != nil {
 		return 0, fmt.Errorf("client: restore external snapshot failed: %w", err)
 	}
 
+	if resp.GetJobId() <= 0 {
+		return 0, fmt.Errorf("client: snapshot restore returned no job ID")
+	}
 	return resp.GetJobId(), nil
 }
 
@@ -1441,5 +1473,9 @@ func (g *GrpcClient) GetRestoreSnapshotState(ctx context.Context, jobID int64) (
 		return nil, fmt.Errorf("client: get restore snapshot state failed: %w", err)
 	}
 
-	return resp.GetInfo(), nil
+	info := resp.GetInfo()
+	if id := info.GetJobId(); id != 0 && id != jobID {
+		return nil, fmt.Errorf("client: queried snapshot restore job %d but received job %d", jobID, id)
+	}
+	return info, nil
 }

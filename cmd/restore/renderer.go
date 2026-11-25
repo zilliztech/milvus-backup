@@ -244,7 +244,7 @@ func reconcileRestoreCollBars(p *mpb.Progress, latest *atomic.Value, bars map[co
 // remaining bars at 100%, failure drops them so the error line that follows
 // is what the user reads.
 func settleRestoreBars(total *mpb.Bar, bars map[collref.Name]*mpb.Bar, status jobstate.RestoreStatus) {
-	if status.State == jobstate.RestoreStateFail {
+	if status.Failed() {
 		total.Abort(true)
 		for _, bar := range bars {
 			bar.Abort(true)
@@ -321,6 +321,10 @@ func restoreStage(status jobstate.RestoreStatus) string {
 		return pad("done", 14)
 	case jobstate.RestoreStateFail:
 		return pad("failed", 14)
+	case jobstate.RestoreStateFailedCleanupPending:
+		return pad("cleanup pending", 14)
+	case jobstate.RestoreStateFailedCleaned:
+		return pad("failed cleaned", 14)
 	default:
 		return pad("", 14)
 	}

@@ -19,6 +19,76 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
+        "/cleanup_failed_restore": {
+            "post": {
+                "description": "Restore Resume is Alpha (experimental). Its HTTP endpoints and request parameters, CLI commands and flags, configuration keys, and persisted state format may change without backward compatibility.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Restore"
+                ],
+                "summary": "Abandon a failed restore and clean its temporary files in one pass (Alpha)",
+                "parameters": [
+                    {
+                        "description": "Restore identity",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apiv1.RestoreControlRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apiv1.RestoreBackupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                }
+            }
+        },
         "/create": {
             "post": {
                 "description": "Create a backup with the given name and collections\nStorage preflight failures return HTTP 200 with code 503 (Storage_Not_Ready), without registering a task. The caller may retry the same request.\nA backup name whose artifact directory already exists fails with code Fail, also without registering a task.",
@@ -205,7 +275,7 @@ const docTemplate = `{
         },
         "/restore": {
             "post": {
-                "description": "Submit a request to restore the data from backup",
+                "description": "Submit a request to restore the data from backup. Restore Resume is Alpha (experimental). Its HTTP endpoints and request parameters, CLI commands and flags, configuration keys, and persisted state format may change without backward compatibility.",
                 "consumes": [
                     "application/json"
                 ],
@@ -245,7 +315,7 @@ const docTemplate = `{
         },
         "/restore_secondary": {
             "post": {
-                "description": "Submit a request to restore the data from backup",
+                "description": "Submit a request to restore the data from backup. Restore Resume is Alpha (experimental). Its HTTP endpoints and request parameters, CLI commands and flags, configuration keys, and persisted state format may change without backward compatibility.",
                 "consumes": [
                     "application/json"
                 ],
@@ -278,6 +348,76 @@ const docTemplate = `{
                         "description": "OK",
                         "schema": {
                             "$ref": "#/definitions/apiv1.RestoreBackupResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/resume_restore": {
+            "post": {
+                "description": "Restore Resume is Alpha (experimental). Its HTTP endpoints and request parameters, CLI commands and flags, configuration keys, and persisted state format may change without backward compatibility.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Restore"
+                ],
+                "summary": "Resume the original immutable restore plan from memory or persisted state (Alpha)",
+                "parameters": [
+                    {
+                        "description": "Restore identity",
+                        "name": "request",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/apiv1.RestoreControlRequest"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/apiv1.RestoreBackupResponse"
+                        }
+                    },
+                    "400": {
+                        "description": "Bad Request",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Conflict",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Internal Server Error",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": {
+                                "type": "string"
+                            }
                         }
                     }
                 }
@@ -637,6 +777,10 @@ const docTemplate = `{
                     "description": "Drop existing index of target collection before create.",
                     "type": "boolean"
                 },
+                "enableResume": {
+                    "description": "Enable Restore Resume (Alpha) for this task and retain staged binlogs on failure.",
+                    "type": "boolean"
+                },
                 "ezkMapping": {
                     "description": "Map of old ezk to new ezk, replacing encryption keys during restore.",
                     "type": "object",
@@ -759,6 +903,10 @@ const docTemplate = `{
                         "$ref": "#/definitions/apiv1.RestoreCollectionTaskResponse"
                     }
                 },
+                "enableResume": {
+                    "description": "Whether Restore Resume (Alpha) was enabled for this task at registration.",
+                    "type": "boolean"
+                },
                 "end_time": {
                     "type": "integer"
                 },
@@ -833,6 +981,17 @@ const docTemplate = `{
                 }
             }
         },
+        "apiv1.RestoreControlRequest": {
+            "type": "object",
+            "properties": {
+                "id": {
+                    "type": "string"
+                },
+                "requestId": {
+                    "type": "string"
+                }
+            }
+        },
         "apiv1.RestoreMapping": {
             "type": "object",
             "properties": {
@@ -883,6 +1042,10 @@ const docTemplate = `{
                 "backup_name": {
                     "description": "Backup name to restore.",
                     "type": "string"
+                },
+                "enableResume": {
+                    "description": "Enable Restore Resume (Alpha) for this task and retain staged binlogs on failure.",
+                    "type": "boolean"
                 },
                 "path": {
                     "description": "Path, overriding the config for this call.",
@@ -1326,14 +1489,18 @@ const docTemplate = `{
                 1,
                 2,
                 3,
-                4
+                4,
+                5,
+                6
             ],
             "x-enum-varnames": [
                 "RestoreTaskStateCode_INITIAL",
                 "RestoreTaskStateCode_EXECUTING",
                 "RestoreTaskStateCode_SUCCESS",
                 "RestoreTaskStateCode_FAIL",
-                "RestoreTaskStateCode_TIMEOUT"
+                "RestoreTaskStateCode_TIMEOUT",
+                "RestoreTaskStateCode_FAILED_CLEANUP_PENDING",
+                "RestoreTaskStateCode_FAILED_CLEANED"
             ]
         },
         "backuppb.StructArrayFieldSchema": {

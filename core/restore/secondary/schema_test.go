@@ -58,12 +58,12 @@ func TestSecondaryMessagesCarryStructSchema(t *testing.T) {
 				ddlt := newTestDDLTask(coll, stream, zap.NewNop())
 				require.NoError(t, ddlt.createColl(context.Background()))
 			case "BinlogImport":
-				_, err := newTestBinlogDMLTask(t, coll, stream).sendImportMsg(context.Background(), 10, batch{
+				err := newTestBinlogDMLTask(t, coll, stream).sendImportMsg(context.Background(), 123, 10, batch{
 					timestamp: 100, storageVersion: 2, partitionDirs: []partitionDir{{insertLogDir: "/insert"}},
 				})
 				require.NoError(t, err)
 			case "SnapshotImport":
-				_, err := newTestSnapDMLTask(t, coll, stream).sendImportMsg(context.Background())
+				err := newTestSnapDMLTask(t, coll, stream).sendImportMsg(context.Background(), 123)
 				require.NoError(t, err)
 			}
 

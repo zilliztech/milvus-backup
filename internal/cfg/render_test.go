@@ -113,3 +113,26 @@ func TestRender_CACertPathRoundTrip(t *testing.T) {
 	assert.Equal(t, "/etc/ssl/private-ca.pem", out.Milvus.Storage.CACertPath.Val)
 	assert.Equal(t, "/etc/ssl/private-ca.pem", out.Backup.Storage.CACertPath.Val)
 }
+
+func TestRenderPersistenceStorage(t *testing.T) {
+	t.Setenv("RESTORE_PERSISTENCE_STORAGE_AUTH_ACCOUNT_KEY", "persistence-key")
+	in, err := Load(writeYAML(t, `restore:
+  persistence:
+    enabled: true
+    storage:
+      provider: azure
+      accountName: stateaccount
+      bucketName: state
+      rootPath: restores
+      auth:
+        type: sharedKey
+`), nil)
+	require.NoError(t, err)
+	out := roundTrip(t, in)
+	s := out.Restore.Persistence.Storage
+	assert.Equal(t, ProviderAzure, s.Provider.Val)
+	assert.Equal(t, "persistence-key", s.Auth.AccountKey.Val)
+	assert.Equal(t, "restores", s.RootPath.Val)
+	assert.Equal(t, "state", s.BucketName.Val)
+	assert.NotEqual(t, s.Provider.Val, out.Backup.Storage.Provider.Val)
+}
