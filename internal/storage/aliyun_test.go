@@ -5,6 +5,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/alibabacloud-go/tea/tea"
 	aliyunCred "github.com/aliyun/credentials-go/credentials"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -82,4 +83,126 @@ func TestAliCredProviderSurvivesConcurrentFetches(t *testing.T) {
 		})
 	}
 	wg.Wait()
+}
+
+func TestNewAliyunCredential(t *testing.T) {
+	allEnvKeys := []string{
+		"ALIBABA_CLOUD_ACCESS_KEY_ID",
+		"ALIBABA_CLOUD_ACCESS_KEY_SECRET",
+		"ALIBABA_CLOUD_OIDC_TOKEN_FILE",
+		"ALIBABA_CLOUD_OIDC_PROVIDER_ARN",
+		"ALIBABA_CLOUD_ROLE_ARN",
+	}
+
+	tests := []struct {
+		name     string
+		env      map[string]string
+		wantType string
+		wantErr  bool
+	}{
+		{
+			name:     "NoEnvVarsUsesDefault",
+			wantType: "default",
+		},
+		{
+			name: "FullRRSAEnvUsesExplicitOIDC",
+			env: map[string]string{
+				"ALIBABA_CLOUD_OIDC_TOKEN_FILE":   "/var/run/secrets/tokens/oidc-token",
+				"ALIBABA_CLOUD_OIDC_PROVIDER_ARN": "acs:ram::1234567890123456:oidc-provider/ack-rrsa-example",
+				"ALIBABA_CLOUD_ROLE_ARN":          "acs:ram::1234567890123456:role/example-role",
+			},
+			wantType: "oidc_role_arn",
+		},
+		{
+			name: "StaticEnvTakesPrecedenceOverRRSA",
+			env: map[string]string{
+				"ALIBABA_CLOUD_ACCESS_KEY_ID":     "static-ak",
+				"ALIBABA_CLOUD_ACCESS_KEY_SECRET": "static-sk",
+				"ALIBABA_CLOUD_OIDC_TOKEN_FILE":   "/var/run/secrets/tokens/oidc-token",
+				"ALIBABA_CLOUD_OIDC_PROVIDER_ARN": "acs:ram::1234567890123456:oidc-provider/ack-rrsa-example",
+				"ALIBABA_CLOUD_ROLE_ARN":          "acs:ram::1234567890123456:role/example-role",
+			},
+			wantType: "default",
+		},
+		{
+			name: "PartialStaticEnvWithRRSAUsesExplicitOIDC",
+			env: map[string]string{
+				"ALIBABA_CLOUD_ACCESS_KEY_ID":     "static-ak-only",
+				"ALIBABA_CLOUD_OIDC_TOKEN_FILE":   "/var/run/secrets/tokens/oidc-token",
+				"ALIBABA_CLOUD_OIDC_PROVIDER_ARN": "acs:ram::1234567890123456:oidc-provider/ack-rrsa-example",
+				"ALIBABA_CLOUD_ROLE_ARN":          "acs:ram::1234567890123456:role/example-role",
+			},
+			wantType: "oidc_role_arn",
+		},
+		{
+			name: "PartialRRSAOnlyTokenFileFailsFast",
+			env: map[string]string{
+				"ALIBABA_CLOUD_OIDC_TOKEN_FILE": "/var/run/secrets/tokens/oidc-token",
+			},
+			wantErr: true,
+		},
+		{
+			name: "PartialRRSAMissingRoleARNFailsFast",
+			env: map[string]string{
+				"ALIBABA_CLOUD_OIDC_TOKEN_FILE":   "/var/run/secrets/tokens/oidc-token",
+				"ALIBABA_CLOUD_OIDC_PROVIDER_ARN": "acs:ram::1234567890123456:oidc-provider/ack-rrsa-example",
+			},
+			wantErr: true,
+		},
+		{
+			name: "PartialRRSAOnlyProviderARNFailsFast",
+			env: map[string]string{
+				"ALIBABA_CLOUD_OIDC_PROVIDER_ARN": "acs:ram::1234567890123456:oidc-provider/ack-rrsa-example",
+			},
+			wantErr: true,
+		},
+		{
+			name: "RoleARNAloneUsesDefault",
+			env: map[string]string{
+				"ALIBABA_CLOUD_ROLE_ARN": "acs:ram::1234567890123456:role/example-role",
+			},
+			wantType: "default",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			for _, k := range allEnvKeys {
+				t.Setenv(k, "")
+			}
+			for k, v := range tt.env {
+				t.Setenv(k, v)
+			}
+
+			cred, err := newAliyunCredential()
+			if tt.wantErr {
+				assert.Error(t, err)
+				assert.Nil(t, cred)
+				return
+			}
+
+			require.NoError(t, err)
+			require.NotNil(t, cred)
+			assert.Equal(t, tt.wantType, tea.StringValue(cred.GetType()))
+		})
+	}
+
+	t.Run("StaticEnvCredentialsResolvedWhenRRSAAlsoSet", func(t *testing.T) {
+		for _, k := range allEnvKeys {
+			t.Setenv(k, "")
+		}
+		t.Setenv("ALIBABA_CLOUD_ACCESS_KEY_ID", "static-ak")
+		t.Setenv("ALIBABA_CLOUD_ACCESS_KEY_SECRET", "static-sk")
+		t.Setenv("ALIBABA_CLOUD_OIDC_TOKEN_FILE", "/var/run/secrets/tokens/oidc-token")
+		t.Setenv("ALIBABA_CLOUD_OIDC_PROVIDER_ARN", "acs:ram::1234567890123456:oidc-provider/ack-rrsa-example")
+		t.Setenv("ALIBABA_CLOUD_ROLE_ARN", "acs:ram::1234567890123456:role/example-role")
+
+		cred, err := newAliyunCredential()
+		require.NoError(t, err)
+
+		model, err := cred.GetCredential()
+		require.NoError(t, err)
+		assert.Equal(t, "static-ak", tea.StringValue(model.AccessKeyId))
+		assert.Equal(t, "static-sk", tea.StringValue(model.AccessKeySecret))
+	})
 }
