@@ -91,9 +91,7 @@ func (q *memMsgQueue) Confirm(confirmedTT uint64) int {
 		return 0
 	}
 
-	for i := 0; i < cut; i++ {
-		q.buf[i] = nil
-	}
+	clear(q.buf[:cut])
 	q.buf = q.buf[cut:]
 	q.readIdx -= cut
 	if q.readIdx < 0 {

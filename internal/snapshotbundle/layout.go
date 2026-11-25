@@ -73,8 +73,8 @@ func ExportedSnapshotPath(sourceRoot, src, targetRoot string) string {
 	if root != "" {
 		if src == root {
 			relative = ""
-		} else if strings.HasPrefix(src, root+"/") {
-			relative = strings.TrimPrefix(src, root+"/")
+		} else if after, ok := strings.CutPrefix(src, root+"/"); ok {
+			relative = after
 		}
 	}
 	return path.Join(targetRoot, ExportedSnapshotFilesPath, relative)

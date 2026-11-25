@@ -4,7 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"sort"
+	"slices"
 	"sync"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/schemapb"
@@ -411,7 +411,7 @@ func (builder *metaBuilder) dynamicSchemaCollections() []string {
 			names = append(names, coll.GetDbName()+"."+coll.GetCollectionName())
 		}
 	}
-	sort.Strings(names)
+	slices.Sort(names)
 
 	return names
 }

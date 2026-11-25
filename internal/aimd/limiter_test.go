@@ -56,13 +56,11 @@ func TestAIMDLimiter_OnFailure(t *testing.T) {
 		const failures = 6
 		var wg sync.WaitGroup
 		start := make(chan struct{})
-		for i := 0; i < failures; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
+		for range failures {
+			wg.Go(func() {
 				<-start
 				limiter.Failure()
-			}()
+			})
 		}
 		close(start)
 		wg.Wait()

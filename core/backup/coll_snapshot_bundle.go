@@ -1,10 +1,11 @@
 package backup
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"path"
-	"sort"
+	"slices"
 
 	"golang.org/x/sync/errgroup"
 
@@ -103,7 +104,7 @@ func (st *collSnapshotTask) enumerateBundleFiles(ctx context.Context, snapshot *
 	if err := st.fillBundleFileSizes(ctx, set); err != nil {
 		return nil, err
 	}
-	sort.Slice(set.attrs, func(i, j int) bool { return set.attrs[i].Src.Key < set.attrs[j].Src.Key })
+	slices.SortFunc(set.attrs, func(a, b storage.CopyAttr) int { return cmp.Compare(a.Src.Key, b.Src.Key) })
 	return set, nil
 }
 

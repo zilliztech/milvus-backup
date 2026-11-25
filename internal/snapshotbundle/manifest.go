@@ -16,7 +16,6 @@ import (
 	"github.com/iskorotkov/avro/v2"
 	"github.com/iskorotkov/avro/v2/ocf"
 	"google.golang.org/protobuf/encoding/protojson"
-	"google.golang.org/protobuf/proto"
 
 	"github.com/milvus-io/milvus-proto/go-api/v3/commonpb"
 	"github.com/milvus-io/milvus-proto/go-api/v3/msgpb"
@@ -454,7 +453,7 @@ func ManifestEntryToSegment(record ManifestEntry) *datapb.SegmentDescription {
 		CommitTimestamp: uint64(record.CommitTimestamp),
 	}
 	if record.manifestHasIndexPresent {
-		segment.ManifestHasIndex = proto.Bool(record.ManifestHasIndex)
+		segment.ManifestHasIndex = new(record.ManifestHasIndex)
 	}
 
 	for _, binlogFile := range record.BinlogFiles {

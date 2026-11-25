@@ -33,7 +33,7 @@ func main() {
 
 	upstreamPchannels := make([]string, 0, *pchannelNum)
 	downstreamPchannels := make([]string, 0, *pchannelNum)
-	for i := 0; i < *pchannelNum; i++ {
+	for i := range *pchannelNum {
 		upstreamPchannels = append(upstreamPchannels, fmt.Sprintf("%s-rootcoord-dml_%d", *upstreamID, i))
 		downstreamPchannels = append(downstreamPchannels, fmt.Sprintf("%s-rootcoord-dml_%d", *downstreamID, i))
 	}

@@ -407,7 +407,7 @@ func TestRenderRestoreEmitsFrames(t *testing.T) {
 	ddl.SetSuccess()
 	job := coll.NewJob(100)
 	job.Bind("job-1")
-	for i := 0; i < 10; i++ {
+	for i := range 10 {
 		job.SetProgress(int32((i + 1) * 10))
 		time.Sleep(30 * time.Millisecond)
 	}

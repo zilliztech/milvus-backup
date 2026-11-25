@@ -632,13 +632,11 @@ func (c *S3Client) deleteObjects(ctx context.Context, keys []string) error {
 // code check, while per-key failures of any other kind never read as
 // "unsupported".
 func isBatchDeleteUnsupported(err error) bool {
-	var re *smithyhttp.ResponseError
-	if errors.As(err, &re) && re.HTTPStatusCode() == http.StatusNotImplemented {
+	if re, ok := errors.AsType[*smithyhttp.ResponseError](err); ok && re.HTTPStatusCode() == http.StatusNotImplemented {
 		return true
 	}
 
-	var ae smithy.APIError
-	if errors.As(err, &ae) && ae.ErrorCode() == "NotImplemented" {
+	if ae, ok := errors.AsType[smithy.APIError](err); ok && ae.ErrorCode() == "NotImplemented" {
 		return true
 	}
 
@@ -646,8 +644,8 @@ func isBatchDeleteUnsupported(err error) bool {
 }
 
 func isNoSuchBucket(err error) bool {
-	var ae smithy.APIError
-	return errors.As(err, &ae) && ae.ErrorCode() == "NoSuchBucket"
+	ae, ok := errors.AsType[smithy.APIError](err)
+	return ok && ae.ErrorCode() == "NoSuchBucket"
 }
 
 // NewObjectIter lists objects in the bucket under prefix. The listing is

@@ -3,7 +3,7 @@ package secondary
 import (
 	"context"
 	"fmt"
-	"math/rand"
+	"math/rand/v2"
 
 	"github.com/milvus-io/milvus/pkg/v3/streaming/util/message"
 	"go.uber.org/zap"

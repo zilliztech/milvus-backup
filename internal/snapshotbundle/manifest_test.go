@@ -175,7 +175,7 @@ func TestSegmentManifestEncodingByVersion(t *testing.T) {
 
 func TestSegmentManifestIndexMarkerPresence(t *testing.T) {
 	t.Run("ExplicitFalseSurvivesV6", func(t *testing.T) {
-		segment := &datapb.SegmentDescription{SegmentId: 1001, ManifestHasIndex: proto.Bool(false)}
+		segment := &datapb.SegmentDescription{SegmentId: 1001, ManifestHasIndex: new(false)}
 		data, err := MarshalSegmentManifest(segment, 6)
 		require.NoError(t, err)
 

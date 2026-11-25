@@ -76,8 +76,11 @@ func (r *Report) recordValidation(err error) {
 		return
 	}
 
-	var joined interface{ Unwrap() []error }
-	if !errors.As(err, &joined) {
+	joined, ok := errors.AsType[interface {
+		error
+		Unwrap() []error
+	}](err)
+	if !ok {
 		if !r.isEnvDeferred(err) {
 			r.validations = append(r.validations, err)
 		}
