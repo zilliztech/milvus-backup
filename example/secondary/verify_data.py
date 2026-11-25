@@ -7,6 +7,47 @@ from pymilvus import (
 )
 import argparse
 
+# Row counts produced by example/prepare_data.py: hello_milvus,
+# hello_milvus_dynamic, and hello_milvus_added carry 3000 rows each;
+# hello_milvus2 inserts the same 3000-row batch twice (auto_id=True), so it
+# carries 6000. The downstream must match exactly — a missing segment and a
+# double-replayed one (the inflated-num_entities failure class) must both
+# fail here.
+EXPECTED_ROW_COUNTS = {
+    "hello_milvus": 3000,
+    "hello_milvus2": 6000,
+    "hello_milvus_dynamic": 3000,
+    "hello_milvus_added": 3000,
+}
+
+
+def verify_row_counts(timeout_seconds=120, poll_seconds=5):
+    """Assert the downstream row counts equal the fixture counts.
+
+    The replicate/import replay lands on the downstream asynchronously, so
+    poll until every collection reports its expected count. A count that
+    never converges — e.g. a fabricated checkpoint inflating num_entities —
+    fails the assertion with both sides in the message.
+    """
+    deadline = time.time() + timeout_seconds
+    counts = {}
+    while True:
+        counts = {name: Collection(name).num_entities for name in EXPECTED_ROW_COUNTS}
+        if counts == EXPECTED_ROW_COUNTS:
+            print(f"Row counts aligned with the fixture: {counts}")
+            return
+        if time.time() >= deadline:
+            break
+        print(
+            f"Row counts not converged yet: {counts} != {EXPECTED_ROW_COUNTS}, "
+            f"retrying in {poll_seconds}s"
+        )
+        time.sleep(poll_seconds)
+    raise AssertionError(
+        f"Row counts diverged after secondary restore: downstream {counts} "
+        f"!= expected {EXPECTED_ROW_COUNTS}"
+    )
+
 
 def main(uri, token):
     fmt = "\n=== {:30} ===\n"
@@ -34,6 +75,8 @@ def main(uri, token):
         "hello_milvus_added",
     ]
 
+    verify_row_counts()
+
     for collection_name in collections:
         has = utility.has_collection(collection_name)
         print(f"Does collection {collection_name} exist in Milvus: {has}")
@@ -47,6 +90,30 @@ def main(uri, token):
         # here and go straight to search/query verification.
 
         print(f"Number of entities in Milvus: {collection_name} : {collection.num_entities}")
+
+        expected_count = EXPECTED_ROW_COUNTS[collection_name]
+
+        # Read every row back instead of trusting the server-side counter:
+        # the pk set catches missing and wrong rows that a matching count
+        # alone would still hide. Milvus refuses an empty expression without
+        # a limit, so ask for twice the fixture — a duplicated row still lands
+        # in the read. hello_milvus2 uses auto_id, so its pks are
+        # server-generated and only the cardinality is assertable.
+        rows = collection.query("", output_fields=["pk"], limit=2 * expected_count)
+        pks = {row["pk"] for row in rows}
+        if collection_name == "hello_milvus2":
+            assert len(rows) == expected_count and len(pks) == expected_count, (
+                f"{collection_name}: queried {len(rows)} rows with {len(pks)} "
+                f"distinct pks, expected {expected_count} distinct"
+            )
+        else:
+            missing = sorted(set(range(expected_count)) - pks)
+            unexpected = sorted(pks - set(range(expected_count)))
+            assert pks == set(range(expected_count)), (
+                f"{collection_name}: pk set diverged — missing {missing[:10]}, "
+                f"unexpected {unexpected[:10]}"
+            )
+        print(f"PK set of {collection_name}: {len(pks)} pks match the fixture")
 
         print(fmt.format("Start searching based on vector similarity"))
         vectors_to_search = entities[-1][-2:]
