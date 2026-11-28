@@ -2,6 +2,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"testing"
 
@@ -9,6 +10,12 @@ import (
 	aliyunCred "github.com/aliyun/credentials-go/credentials"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/zap"
+	"go.uber.org/zap/zapcore"
+	"go.uber.org/zap/zaptest/observer"
+
+	"github.com/zilliztech/milvus-backup/internal/cfg"
+	"github.com/zilliztech/milvus-backup/internal/log"
 )
 
 // Building the provider must not depend on any config: every aliyun client in
@@ -25,18 +32,145 @@ func TestAliCredProviderIsProcessWide(t *testing.T) {
 }
 
 type fakeAliCred struct {
-	model *aliyunCred.CredentialModel
+	model    *aliyunCred.CredentialModel
+	err      error
+	credType string
 }
 
 func (f *fakeAliCred) GetCredential() (*aliyunCred.CredentialModel, error) {
-	return f.model, nil
+	return f.model, f.err
 }
 
 func (f *fakeAliCred) GetAccessKeyId() (*string, error)     { return nil, nil }
 func (f *fakeAliCred) GetAccessKeySecret() (*string, error) { return nil, nil }
 func (f *fakeAliCred) GetSecurityToken() (*string, error)   { return nil, nil }
 func (f *fakeAliCred) GetBearerToken() *string              { return nil }
-func (f *fakeAliCred) GetType() *string                     { return nil }
+func (f *fakeAliCred) GetType() *string                     { return new(f.credType) }
+
+func observeAliyunLogs(t *testing.T) *observer.ObservedLogs {
+	t.Helper()
+	previous := log.L()
+	level := log.GetLevel()
+	core, logs := observer.New(zapcore.InfoLevel)
+	log.ReplaceGlobals(zap.New(core), &log.ZapProperties{Level: zap.NewAtomicLevelAt(level)})
+	t.Cleanup(func() {
+		log.ReplaceGlobals(previous, &log.ZapProperties{Level: zap.NewAtomicLevelAt(level)})
+	})
+	return logs
+}
+
+func TestNewAliyunClientLogsAuthMode(t *testing.T) {
+	for _, auth := range []CredentialType{Static, IAM} {
+		t.Run(auth.String(), func(t *testing.T) {
+			logs := observeAliyunLogs(t)
+			client, err := newAliyunClient(context.Background(), Config{
+				Provider: cfg.ProviderAliyun,
+				Endpoint: "oss-cn-hangzhou.aliyuncs.com:443",
+				Bucket:   "example-bucket",
+				Region:   "cn-hangzhou",
+				UseSSL:   true,
+				Credential: Credential{
+					Type: auth, AK: "private-access-key", SK: "private-secret-key", Token: "private-token",
+				},
+			})
+			require.NoError(t, err)
+			require.NotNil(t, client)
+			entries := logs.FilterMessage("create aliyun storage client").All()
+			require.Len(t, entries, 1)
+			assert.Equal(t, map[string]any{
+				"endpoint":  "oss-cn-hangzhou.aliyuncs.com:443",
+				"bucket":    "example-bucket",
+				"auth_type": auth.String(),
+			}, entries[0].ContextMap())
+		})
+	}
+}
+
+func TestAliCredProviderLogsProviderChanges(t *testing.T) {
+	logs := observeAliyunLogs(t)
+	fake := &fakeAliCred{credType: "default", model: &aliyunCred.CredentialModel{
+		AccessKeyId:     new("private-access-key"),
+		AccessKeySecret: new("private-secret-key"),
+		SecurityToken:   new("private-session-token"),
+		ProviderName:    new("default/oidc_role_arn"),
+	}}
+	p := &aliCredProvider{cred: fake}
+
+	for _, name := range []string{"default/oidc_role_arn", "default/ecs_ram_role", ""} {
+		previous := p.providerName
+		fake.model.ProviderName = new(name)
+		_, err := p.Retrieve(context.Background())
+		require.NoError(t, err)
+		entries := logs.TakeAll()
+		require.Len(t, entries, 1)
+		assert.Equal(t, "aliyun credential provider resolved", entries[0].Message)
+		if name == "" {
+			name = "unknown"
+		}
+		assert.Equal(t, map[string]any{
+			"credential_type":        "default",
+			"provider_name":          name,
+			"previous_provider_name": previous,
+			"recovered":              false,
+		}, entries[0].ContextMap())
+
+		// A new session from the same provider must not emit another log.
+		fake.model.AccessKeyId = new("rotated-private-access-key")
+		_, err = p.Retrieve(context.Background())
+		require.NoError(t, err)
+		assert.Zero(t, logs.Len())
+	}
+}
+
+func TestAliCredProviderLogsFailureAndRecovery(t *testing.T) {
+	for _, resolved := range []bool{false, true} {
+		name := "InitialFailure"
+		if resolved {
+			name = "FailureAfterResolution"
+		}
+		t.Run(name, func(t *testing.T) {
+			logs := observeAliyunLogs(t)
+			fake := &fakeAliCred{credType: "oidc_role_arn", model: &aliyunCred.CredentialModel{
+				ProviderName: new("oidc_role_arn"),
+			}}
+			p := &aliCredProvider{cred: fake}
+			previous := ""
+			if resolved {
+				_, err := p.Retrieve(context.Background())
+				require.NoError(t, err)
+				logs.TakeAll()
+				previous = "oidc_role_arn"
+			}
+
+			fake.err = errors.New("SDK response containing private-token")
+			for range 2 {
+				_, err := p.Retrieve(context.Background())
+				assert.ErrorIs(t, err, fake.err)
+			}
+			entries := logs.TakeAll()
+			require.Len(t, entries, 1)
+			assert.Equal(t, zapcore.WarnLevel, entries[0].Level)
+			assert.Equal(t, "aliyun credential retrieval failed", entries[0].Message)
+			assert.Equal(t, map[string]any{
+				"credential_type":    "oidc_role_arn",
+				"last_provider_name": previous,
+			}, entries[0].ContextMap())
+
+			fake.err = nil
+			_, err := p.Retrieve(context.Background())
+			require.NoError(t, err)
+			entries = logs.TakeAll()
+			require.Len(t, entries, 1)
+			assert.Equal(t, "aliyun credential provider resolved", entries[0].Message)
+			assert.Equal(t, map[string]any{
+				"credential_type":        "oidc_role_arn",
+				"provider_name":          "oidc_role_arn",
+				"previous_provider_name": previous,
+				"recovered":              true,
+			}, entries[0].ContextMap())
+		})
+	}
+}
 
 // Retrieve must hand out whatever the SDK session currently holds. The SDK
 // rotates its session under our feet, so any provider-side snapshot would go
@@ -167,6 +301,7 @@ func TestNewAliyunCredential(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			logs := observeAliyunLogs(t)
 			for _, k := range allEnvKeys {
 				t.Setenv(k, "")
 			}
@@ -175,13 +310,32 @@ func TestNewAliyunCredential(t *testing.T) {
 			}
 
 			cred, err := newAliyunCredential()
+			credentialType := tt.wantType
 			if tt.wantErr {
+				credentialType = "oidc_role_arn"
+			}
+			entries := logs.FilterMessage("initialize aliyun credential").All()
+			require.Len(t, entries, 1)
+			assert.Equal(t, map[string]any{
+				"credential_type":           credentialType,
+				"env_access_key_id_set":     tt.env["ALIBABA_CLOUD_ACCESS_KEY_ID"] != "",
+				"env_access_key_secret_set": tt.env["ALIBABA_CLOUD_ACCESS_KEY_SECRET"] != "",
+				"oidc_token_file_set":       tt.env["ALIBABA_CLOUD_OIDC_TOKEN_FILE"] != "",
+				"oidc_provider_arn_set":     tt.env["ALIBABA_CLOUD_OIDC_PROVIDER_ARN"] != "",
+				"role_arn_set":              tt.env["ALIBABA_CLOUD_ROLE_ARN"] != "",
+			}, entries[0].ContextMap())
+			if tt.wantErr {
+				failures := logs.FilterMessage("initialize aliyun credential failed").All()
+				require.Len(t, failures, 1)
+				assert.Equal(t, zapcore.WarnLevel, failures[0].Level)
+				assert.Equal(t, entries[0].ContextMap(), failures[0].ContextMap())
 				assert.Error(t, err)
 				assert.Nil(t, cred)
 				return
 			}
 
 			require.NoError(t, err)
+			assert.Zero(t, logs.FilterLevelExact(zapcore.WarnLevel).Len())
 			require.NotNil(t, cred)
 			assert.Equal(t, tt.wantType, tea.StringValue(cred.GetType()))
 		})
